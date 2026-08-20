@@ -333,11 +333,19 @@ export function interviewOptions(scan, answered = []) {
         : `the structure evidences ${naming(evidenced)}; the rest are silent rather `
           + 'than absent, so every category stays in scope',
     },
-    // Only when the scan evidences something the answer does not already
-    // cover: with an empty gap this set IS the answered set, and the dedup
-    // below would keep it under a reason ("plus what it evidences") that names
-    // nothing. Two choices reading as one is exactly the #206 shape.
-    ...(gap.length ? [{
+    // Only when there IS an answered set AND the scan evidences something it
+    // does not already cover. Both halves are load-bearing against the same
+    // failure - a reason that names a set the user never chose:
+    //   - empty gap: this set IS the answered set, and the dedup below would
+    //     keep it under a reason ("plus what it evidences") naming nothing.
+    //     Two choices reading as one is exactly the #206 shape.
+    //   - empty `held`: this set IS `evidenced`, and because the dedup keeps
+    //     the FIRST occurrence it would win over choice 4 and present the
+    //     evidenced categories as "the answered set plus ..." to a project
+    //     that has answered nothing. That is the first-fire path, so it is the
+    //     sentence most users read. Dropping the choice here is what the ORDER
+    //     comment above means by "with nothing answered, 2 collapses onto 4".
+    ...(held.length && gap.length ? [{
       surfaces: order([...held, ...evidenced]),
       reason: `the answered set plus what the scan now evidences beyond it: ${naming(gap)}`,
     }] : []),

@@ -135,6 +135,26 @@ test('an answered set gains the newly evidenced category as the SECOND choice', 
   assert.match(options[1].reason, /stripe/, 'the union choice does not name what it added');
 });
 
+test('with nothing answered the evidenced choice states the EVIDENCE, not a phantom answer', () => {
+  // The first-fire path, and so the sentence most users ever read. The union
+  // choice and the evidenced-only choice carry the same set when `held` is
+  // empty, and the dedup keeps whichever came first - so the guard has to drop
+  // the union choice, or the six evidenced categories get presented as "the
+  // answered set plus what the scan now evidences beyond it" to a project that
+  // has answered nothing.
+  const options = interviewOptions(scanTree({
+    dirs: ['auth', 'migrations', 'api', 'workers'],
+    dependencies: ['stripe', 'express'],
+  }));
+  assert.equal(sets(options)[0], ALL_EIGHT);
+  assert.deepEqual(options[1].surfaces,
+    ['auth', 'migrations', 'billing', 'concurrency', 'api_contract', 'untrusted_input']);
+  assert.match(options[1].reason, /^only what the structure evidences: /,
+    `the evidenced choice reads as an answered set that does not exist: ${options[1].reason}`);
+  assert.doesNotMatch(options[1].reason, /answered set/,
+    `nothing was answered, yet the choice names an answered set: ${options[1].reason}`);
+});
+
 test('an answered set equal to all eight still leads with all eight and repeats nothing', () => {
   const options = interviewOptions(scanTree({ dependencies: ['stripe'] }), [...CATEGORIES]);
   assert.equal(sets(options)[0], ALL_EIGHT);
