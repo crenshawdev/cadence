@@ -7,14 +7,29 @@
 // so a row that never ran still looks green (route-cells.test.mjs states the
 // same reason).
 //
-// Only node: builtins and the module under test - it is pure, so there is no
-// fixture tree, no repository and no subprocess here. The seam's I/O half
-// (the SHA resolution, the citation check, the written path) is asserted in
-// planning.test.mjs, where the git fixtures already live.
+// The GRAMMAR half below takes only node: builtins and the module under test -
+// it is pure, so those cases need no fixture tree, no repository and no
+// subprocess. The seam's I/O half (the SHA resolution, the citation check, the
+// written path) is asserted in planning.test.mjs, where the git fixtures live.
+//
+// THE RECOUNT SECTION AT THE END IS THE ONE EXCEPTION, deliberately. It asserts
+// that counting a RECORD's rulings reproduces the figures its fire's trace
+// event carries, and that claim is only worth anything against a record the
+// SEAM actually wrote: a fixture assembled by hand here would pin the shape
+// this test file imagines rather than the one on disk, which is the failure
+// design-brief.test.mjs was cited for at the v3.2.0 audit. So it spawns the
+// real subcommand against a scratch repository and reads back what landed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildEntries, deriveCounts, RAISED_SEVERITIES, RULINGS } from './lib/adjudication-record.mjs';
 import { FINDING_SCHEMA } from './review-provider.mjs';
+
+const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
 
 /** A finding as a reviewer returns one. */
 const finding = (over = {}) => ({
@@ -383,4 +398,132 @@ test('a refusal names the entry it is about', () => {
   assert.equal(res.ok, false);
   assert.match(res.detail, /voices\[1\]\.rulings\[1\]/,
     'the detail must locate the entry, or a fifty-finding payload refuses with nothing to repair');
+});
+
+// --- AC4: the recount, against a record the SEAM wrote ----------------------
+//
+// D-01's cross-check compares two INDEPENDENT artifacts: the committed record
+// and the fire's trace event. What makes the survivor count recomputable rather
+// than asserted is that counting the record's rulings answers the same three
+// figures, from the record alone - no third source, and nothing stored on the
+// record that a tamperer could edit to agree with itself.
+
+/** A scratch git repo with `.planning/phases/2/` and two commits. */
+function scratchRepo() {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-recount-'));
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args],
+    { encoding: 'utf8', stdio: 'pipe' }).trim();
+  git('init', '-q');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 'T');
+  const dir = join(repo, '.planning');
+  mkdirSync(join(dir, 'phases', '2'), { recursive: true });
+  writeFileSync(join(repo, 'src.js'), 'let x = 1;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  writeFileSync(join(repo, 'src.js'), 'let x = 2;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'head');
+  return { repo, dir };
+}
+
+/**
+ * Run the REAL `planning.mjs adjudication` over one voice ruled as `rulings`
+ * says, and answer `{file, record, envelope}` - the bytes that landed plus the
+ * counts the seam derived, which are the figures a receipt copies.
+ */
+function seamRecord(rulings) {
+  const { repo, dir } = scratchRepo();
+  const findings = rulings.map((_r, i) => finding({
+    line: i + 1,
+    claim: `The ${i}th call writes before it validates.`,
+    failure_scenario: `A truncated ${i}th payload leaves a half-written record.`,
+  }));
+  const payloadFile = join(repo, 'payload.json');
+  writeFileSync(payloadFile, JSON.stringify({
+    voices: [{
+      voice: 'openai',
+      model: 'gpt-5',
+      returned: { findings },
+      rulings: rulings.map((r, i) => ruling(findings, i, {
+        ruling: r,
+        ...(r === 'survived' ? { fix_commit: 'abcdef1' } : {}),
+        ...(r === 'refuted'
+          ? { counter_evidence: { file: 'src.js', line: 1, note: 'the branch is unreachable' } }
+          : {}),
+      })),
+    }],
+  }));
+  const envelope = JSON.parse(execFileSync('node', [PLANNING, '--dir', dir, 'adjudication',
+    '--phase', '2', '--trigger', 'plan', '--discriminator', 'plan-1',
+    '--base', 'HEAD~1', '--head', 'HEAD', '--payload', payloadFile],
+  { encoding: 'utf8', cwd: repo }));
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  const file = join(dir, envelope.record);
+  return { file, record: JSON.parse(readFileSync(file, 'utf8')), envelope };
+}
+
+/** The outcome event a settle receipt writes, built from the seam's own counts. */
+const outcomeEvent = (envelope) => ({
+  family: 'outcome',
+  event: 'adjudication',
+  trigger: envelope.trigger,
+  plan: '1',
+  raised: envelope.counts.raised,
+  survivors: envelope.counts.survived,
+  downgraded: envelope.counts.downgraded,
+  refuted: envelope.counts.refuted,
+});
+
+test('AC4: counting a written record\'s rulings reproduces the figures on its trace event', () => {
+  const { record, envelope } = seamRecord(['survived', 'refuted', 'downgraded', 'refuted']);
+  const event = outcomeEvent(envelope);
+  // The RECORD stores no count of its own, so this is a recount and not a read.
+  assert.equal(record.counts, undefined);
+  const counted = deriveCounts(record.entries);
+  assert.deepEqual(
+    [counted.survived, counted.downgraded, counted.refuted],
+    [event.survivors, event.downgraded, event.refuted]);
+  assert.equal(counted.raised, record.entries.length);
+});
+
+test('AC4: flipping ONE entry\'s ruling makes the record and its event disagree', () => {
+  const { record, envelope } = seamRecord(['survived', 'refuted', 'downgraded', 'refuted']);
+  const event = outcomeEvent(envelope);
+  const before = deriveCounts(record.entries);
+
+  // The tampering the record exists to make visible: one `refuted` restated as
+  // `survived` after the fact, which is the ruling that DELETES a finding
+  // turned into one that kept it.
+  const tampered = { ...record, entries: record.entries.map((e, i) =>
+    (i === 1 ? { ...e, ruling: 'survived' } : e)) };
+  const after = deriveCounts(tampered.entries);
+
+  assert.notDeepEqual(after, before);
+  assert.equal(after.survived, before.survived + 1);
+  assert.equal(after.refuted, before.refuted - 1);
+  // DECIDABLE FROM THE TWO ARTIFACTS ALONE: the record's rulings and the
+  // event's figures, with no third source consulted to break the tie.
+  const agrees = (r, e) => {
+    const c = deriveCounts(r.entries);
+    return c.survived === e.survivors && c.downgraded === e.downgraded && c.refuted === e.refuted;
+  };
+  assert.equal(agrees(record, event), true);
+  assert.equal(agrees(tampered, event), false);
+  // The raised total is UNCHANGED by the flip, which is why a receipt carrying
+  // `--raised` alone could never have caught this.
+  assert.equal(after.raised, before.raised);
+});
+
+test('AC4: the recount reads the STORED entries, so an edited record answers differently', () => {
+  const { file, record, envelope } = seamRecord(['refuted', 'refuted']);
+  assert.deepEqual(envelope.counts, { raised: 2, survived: 0, downgraded: 0, refuted: 2 });
+  // Written back to disk and re-read, because the claim is about the file an
+  // auditor opens rather than an object this test happens to hold.
+  writeFileSync(file, `${JSON.stringify({ ...record,
+    entries: record.entries.map((e) => ({ ...e, ruling: 'survived', fix_commit: 'abcdef1' })) },
+  null, 2)}\n`);
+  const reread = JSON.parse(readFileSync(file, 'utf8'));
+  assert.deepEqual(deriveCounts(reread.entries),
+    { raised: 2, survived: 2, downgraded: 0, refuted: 0 });
 });

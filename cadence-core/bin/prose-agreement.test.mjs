@@ -1655,3 +1655,72 @@ test('REL-01: git.create_tag is read at one prose site, and its purpose names th
     + `which stopped reading the key: the cut is ${moment}'s, on the pulled base after the `
     + 'merge confirms');
 });
+
+// --- AC6: /cad-report's Gates line is rendered, not narrated ------------------
+//
+// The three clauses AC6 asks for live in ONE workflow file and nothing else can
+// hold them: the Gates line is prose the model executes, so a revert of any
+// clause is invisible to every other check here - self-verify's flag lint sees
+// no flag, the weight budget sees only bytes, and no seam is invoked by the
+// line at all. The Refuted clause is pinned in the same test because the
+// decision that made this edit safe was that the two lines have different
+// sources (D-10): gate findings for one, SUMMARY deviations that corrected a
+// D-NN for the other, and folding the record into the second is the edit this
+// row exists to catch.
+//
+// Read by NAMED ANCHOR - each line's own `Gates:` / `Refuted:` opening and the
+// rules bullet's own subject - never by the shape of the sentences around it,
+// so a rewrap that changed no fact stays green.
+
+test('AC6: report.md renders its Gates line from the record, states the unrecorded arm, and leaves Refuted on SUMMARY', () => {
+  const text = doc('cadence-core', 'workflows', 'report.md');
+  const where = 'cadence-core/workflows/report.md';
+  const line = (label) => {
+    const found = text.split('\n').find((l) => l.startsWith(`${label}:`));
+    assert.ok(found, `${where}: the composed shape no longer carries a ${label} line`);
+    return found;
+  };
+
+  // 1. THE RECORD IS AN ARTIFACT THE STEP OPENS. The `REVIEW-*.md` glob beside
+  //    it cannot match a `.json` sibling, so without this entry the Gates line
+  //    below asks for a file the step never opened.
+  assert.match(text, /\.planning\/phases\/<N>\/ADJUDICATION-\*\.json/,
+    `${where}: read_record's scoped-artifact list no longer opens the adjudication record`);
+
+  // 2. THE GATES LINE COUNTS, and compares against the event's own figures.
+  const gates = line('Gates');
+  assert.match(gates, /ADJUDICATION/,
+    `${where}: the Gates line no longer names the record: ${gates}`);
+  assert.match(gates, /COUNTED/,
+    `${where}: the Gates line stopped saying the rulings are COUNTED, so it is back to `
+    + `narrating a figure nothing recomputes: ${gates}`);
+  for (const flag of ['survivors', 'downgraded', 'refuted']) {
+    assert.ok(gates.includes(flag),
+      `${where}: the Gates line no longer compares the count against the event's ${flag}: ${gates}`);
+  }
+
+  // 3. THE UNRECORDED ARM, which is what stops a phase predating the format
+  //    being synthesized into a record it never had.
+  assert.match(gates, /unrecorded/,
+    `${where}: the Gates line no longer reads a fire with no record as unrecorded: ${gates}`);
+  const rule = sentenceAround(text, 'A fire with NO record', where);
+  assert.match(rule, /unrecorded/, `${where}: ${rule}`);
+  assert.match(sentenceAround(text, 'Synthesize no entry', where), /recomputed|recompute/,
+    `${where}: the no-synthesis rule stopped saying a count that cannot be recomputed is not `
+    + 'narrated, which is the whole of what "unrecorded" buys');
+
+  // 4. A DISAGREEMENT IS NAMED. Silently preferring one side would launder the
+  //    exact defect the two-artifact comparison exists to surface.
+  assert.match(sentenceAround(text, 'DISAGREEMENT', where), /NAMED/,
+    `${where}: a record disagreeing with its trace event is no longer NAMED`);
+
+  // 5. THE REFUTED LINE IS UNTOUCHED, and still sourced from SUMMARY.
+  const refuted = line('Refuted');
+  assert.match(refuted, /SUMMARY deviations/,
+    `${where}: the Refuted line stopped reading SUMMARY deviations: ${refuted}`);
+  assert.match(refuted, /D-NN/,
+    `${where}: the Refuted line stopped naming the decision a deviation corrected: ${refuted}`);
+  assert.doesNotMatch(refuted, /ADJUDICATION|survivors/,
+    `${where}: the Refuted line acquired gate findings - it consumes SUMMARY deviations that `
+    + `corrected a D-NN and nothing else (D-10): ${refuted}`);
+});
