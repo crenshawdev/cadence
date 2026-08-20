@@ -612,7 +612,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-42 | METHOD.md | 273 | `cadence-core/references/review-triggers.md`. | accurate | accurate | 1 |
 | METHOD-43 | METHOD.md | 277-280 | One `fire(trigger)` procedure, no embedded reviewer loops; that rule lives in `references/conventions.md`. | accurate | accurate | 2 |
 | METHOD-44 | METHOD.md | 286-289 | Trigger table rows for `plan`, `diff`, `risk_surface`, `phase_diff` (fired-by, when, gate at `shipped`). Re-stated v3.2.0: `pre_ship` was deleted and `plan`/`phase_diff` are `off` at `shipped`. | accurate | accurate | 2 |
-| METHOD-45 | METHOD.md | 301-304 | Gate vocabulary (4) and `review.mode` vocabulary (`single`, `panel`, `adjudicated`). | accurate | accurate | 2 |
+| METHOD-45 | METHOD.md | 301-304 | Gate vocabulary (5) and `review.mode` vocabulary (`single`, `panel`, `adjudicated`). Re-stated v3.5.7: `deferred` added, the arm whose findings stop the LAND rather than the RUN. | accurate | accurate | 2 |
 | METHOD-46 | METHOD.md | 310-313 | Gates resolve from `stakes`; `diff` is off/advisory/blocking across the three levels; `risk_surface` does not move; a typo loses to the level's gate and is named in warnings. | accurate | accurate | 1 |
 | METHOD-47 | METHOD.md | 322 | The default reviewer is a fresh-context Claude subagent needing no key. | accurate | accurate | 1 |
 | METHOD-48 | METHOD.md | 328-332 | The finding schema `{file, line, severity: blocker\|high\|medium\|low, claim, failure_scenario}`. | accurate | accurate | 2 |

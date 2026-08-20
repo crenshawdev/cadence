@@ -301,10 +301,10 @@ in the pipeline to halt on, no code exists yet, and a gate that stops something
 cannot be a findings file nobody reads. Setting
 `review.triggers.<t>.gate` puts any of them back on and beats the level.
 `phase_diff` only ever
-fires on the parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
-`adjudicated`) decides the consequence, `review.mode` (`single`, `panel`,
-`adjudicated`) decides how multiple reviewers combine, and where they disagree the
-gate wins, because it is the stronger signal.
+fires on the parallel path, which most projects never run. The gate (`off`, `advisory`, `deferred`, `blocking`,
+`adjudicated`) decides the consequence - at `deferred` the reviewer still runs, what it found is queued and the
+run finishes, so the LAND is what stops - `review.mode` (`single`, `panel`, `adjudicated`) decides how multiple
+reviewers combine, and where they disagree the gate wins, because it is the stronger signal.
 
 That gate column is the `shipped` level, not a fixed default. Every gate is
 resolved from the project's `stakes` level, so the same trigger fires differently
@@ -312,7 +312,7 @@ depending on what a break costs you: a `plan` review is advisory at `solo`, bloc
 `shipped` and adjudicated at `critical`, an ordinary `diff` is off at `solo` and
 `shipped`, and blocking at `critical`. `risk_surface` is the one that
 does not move, blocking at all three levels. An explicit gate you set in config
-beats the level's, as long as it is one of the four values above; a typo loses to
+beats the level's, as long as it is one of the five values above; a typo loses to
 the level's gate and is named in the warnings rather than silently disabling a
 review.
 
