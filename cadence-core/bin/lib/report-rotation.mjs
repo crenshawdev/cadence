@@ -70,6 +70,65 @@ function planDigits(raw) {
 }
 
 /**
+ * The ROTATED-NAME grammar, as a pattern source, stated here once.
+ *
+ * Both readers below build their RegExp from this one string, and so does
+ * `cmdLeaseCheck`'s report exemption in planning.mjs through `isReportName` -
+ * the rule that file's own block comment states for `lib/lease-grammar.mjs`,
+ * held for the same reason: a second copy is how two seams come to disagree
+ * about which staged name is a report, and the disagreement here is a
+ * parallel-safety gate refusing a file the executor's contract requires it to
+ * write, or exempting one nothing writes.
+ *
+ * Its anchors are load-bearing. The trailing `.md` and the dot before the
+ * suffix are what keep `plan-11.md` from reading as plan 1's rotation number 1,
+ * and `[1-9][0-9]*` is what keeps `plan-1.0.md` and `plan-1.01.md` out - the
+ * suffixes the picker below never mints. `k` reaches here only past
+ * `planDigits`, so the interpolation is digits and cannot carry pattern syntax.
+ *
+ * The FLAG is the caller's, deliberately, and the two callers differ: the scan
+ * matches case-insensitively so a rename cannot destroy a report stored in
+ * another case, while the lease question is byte-exact on the canonical
+ * lower-case spelling, because the name this module PRODUCES is always
+ * canonical and exempting a `PLAN-1.1.MD` no executor wrote would widen a
+ * parallel-safety gate in the direction it must not move.
+ *
+ * @param {string} k the plan number's digits, already through `planDigits`
+ * @returns {string}
+ */
+const rotatedSource = (k) => `^plan-${k}\\.([1-9][0-9]*)\\.md$`;
+
+/**
+ * Is `name` this plan's report - the canonical `plan-<k>.md`, or a rotated
+ * `plan-<k>.<n>.md` for the SAME `k`?
+ *
+ * The LEASE side's question, asked by `cmdLeaseCheck`'s single-name exemption:
+ * before rotation a plan had exactly one report and byte equality was the whole
+ * test, and once an executor holds `plan-<k>.md` and `plan-<k>.<n>.md` at once,
+ * staging the rotated one during a task commit read as `undeclared-files` -
+ * blocking the executor for obeying its own contract.
+ *
+ * NAMES ONLY, never a path: no separator is accepted or interpreted here, so
+ * the caller keeps the "directly in that plan's reports/ directory" half of the
+ * question, which is the half that needs to know where the directory is.
+ *
+ * @param {unknown} planKey the plan number - `1` for a bare `PLAN.md`. Refused
+ *   with the same TypeError `rotationTarget` raises rather than answering about
+ *   another plan.
+ * @param {unknown} name one directory-entry name
+ * @returns {boolean}
+ */
+export function isReportName(planKey, name) {
+  const k = planDigits(planKey);
+  // Not a THROW, unlike every input above: this one answers a filter, and the
+  // fail-closed direction for a lease gate is `false` - a name it cannot read
+  // is a name it does not exempt.
+  if (typeof name !== 'string') return false;
+  // No `'i'`: see rotatedSource. Byte-exact on both arms.
+  return name === `plan-${k}.md` || new RegExp(rotatedSource(k)).test(name);
+}
+
+/**
  * Where an existing `plan-<k>.md` must move before this run's first write.
  *
  * @param {unknown} planKey the plan number - `1` for a bare `PLAN.md`
@@ -106,11 +165,9 @@ export function rotationTarget(planKey, entries) {
   const from = entries.includes(canonical) ? canonical : entries.find((e) => base.test(e));
   if (from === undefined) return { rotate: false };
 
-  // `k` reaches the RegExp only past PLAN_NUMBER, so the interpolation is
-  // digits and cannot carry pattern syntax. The trailing `.md` and the dot
-  // before the suffix are what keep `plan-11.md` from reading as plan 1's
-  // rotation number 1.
-  const rotated = new RegExp(`^plan-${k}\\.([1-9][0-9]*)\\.md$`, 'i');
+  // The grammar itself is `rotatedSource`'s, stated once; the `'i'` is this
+  // caller's own and the reason for it is three comments down.
+  const rotated = new RegExp(rotatedSource(k), 'i');
   /** @type {Set<number>} */
   const taken = new Set();
   for (const e of entries) {

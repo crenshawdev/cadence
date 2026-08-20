@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, existsSync, globSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, sep } from 'node:path';
-import { rotationTarget } from './lib/report-rotation.mjs';
+import { rotationTarget, isReportName } from './lib/report-rotation.mjs';
 
 /** A fresh `<plandir>/reports/` holding `files` (name -> contents). */
 function makeReports(files = {}) {
@@ -197,4 +197,77 @@ test('AC6: both names rotation produces are matched by /cad-report\'s own glob',
     + 'hid the previous run from the only reader that lists reports');
   assert.deepEqual(readFileSync(join(reports, 'plan-1.1.md')), runA,
     "the rotated record's bytes changed");
+});
+
+// --- isReportName: the LEASE side of the same grammar (#195 -> #140's sibling)
+
+test('isReportName: this plan\'s canonical report and its rotated siblings', () => {
+  // What `cmdLeaseCheck` has to exempt once rotation is real: an executor holds
+  // both names at once, and staging the rotated one during a task commit was
+  // read as an undeclared file - the gate refusing the executor for obeying its
+  // own contract.
+  assert.equal(isReportName(1, 'plan-1.md'), true);
+  assert.equal(isReportName(1, 'plan-1.1.md'), true);
+  assert.equal(isReportName(1, 'plan-1.12.md'), true);
+  // A bare `PLAN.md` is plan 1, and every other plan answers about its own.
+  assert.equal(isReportName(2, 'plan-2.md'), true);
+  assert.equal(isReportName(2, 'plan-2.3.md'), true);
+});
+
+test('isReportName: the anchors are load-bearing - plan-11 is not plan 1 rotated', () => {
+  // The dot before the suffix and the trailing `.md` are the whole bound. A
+  // lease gate that lost either would exempt another plan's report, which is
+  // the parallel-safety property this exemption exists inside of.
+  for (const name of ['plan-11.md', 'plan-11.1.md', 'plan-2.md', 'plan-2.1.md',
+    'plan-1.md.bak', 'plan-1.mdx', 'plan-1.0.md', 'plan-1.01.md', 'plan-1..md',
+    'plan-1.1.2.md', 'plan-1.md ', ' plan-1.md', 'plan-1', 'plan-1.1']) {
+    assert.equal(isReportName(1, name), false, `${name} was read as plan 1's report`);
+  }
+
+  // The transient risk-diff evidence lives in this same directory and must NOT
+  // be exempt: a `risk_surface` checkpoint deliberately leaves flagged changes
+  // staged, so exempting them would let a blocking gate's own evidence ride
+  // into a task commit.
+  for (const name of ['plan-1-risk.diff', 'plan-1-risk-task-2.diff']) {
+    assert.equal(isReportName(1, name), false, `${name} was read as plan 1's report`);
+  }
+});
+
+test('isReportName: byte-exact on case, unlike the rename scan above it', () => {
+  // The deliberate split from `rotationTarget`'s `'i'`. There, case-insensitive
+  // matching stops the SCAN from renaming onto a report stored as `PLAN-1.MD`;
+  // the name PRODUCED is always canonical lower-case. Here the question is
+  // whether a STAGED name may ride a task commit undeclared, and a
+  // `PLAN-1.1.MD` no executor wrote is not an executor's report - exempting it
+  // widens a parallel-safety gate in the one direction it must not move.
+  for (const name of ['PLAN-1.MD', 'PLAN-1.1.MD', 'Plan-1.Md', 'plan-1.1.MD']) {
+    assert.equal(isReportName(1, name), false, `${name} was exempted`);
+  }
+});
+
+test('isReportName: a malformed plan number throws rather than answering', () => {
+  // Through the module's own `planDigits`, so `08` is refused outright instead
+  // of silently answering about plan 8 - the same refusal `rotationTarget`
+  // makes, from the same reader.
+  for (const bad of [0, -1, 1.5, '08', '', ' 1', null, undefined, '1; rm -rf /']) {
+    assert.throws(() => isReportName(bad, 'plan-1.md'), TypeError,
+      `plan number ${JSON.stringify(bad)} was accepted`);
+  }
+  // A name it cannot read is fail-CLOSED - `false`, never an exemption.
+  for (const bad of [null, undefined, 42, {}, ['plan-1.md']]) {
+    assert.equal(isReportName(1, bad), false);
+  }
+});
+
+test('isReportName: every name rotation PRODUCES is one it recognises', () => {
+  // The two halves cannot drift apart silently: the picker's answer is the
+  // lease's input, so a suffix minted in a spelling the exemption did not match
+  // would refuse the executor's own next commit.
+  let entries = ['plan-1.md'];
+  for (let i = 0; i < 12; i++) {
+    const answer = rotationTarget(1, entries);
+    assert.equal(answer.rotate, true);
+    assert.equal(isReportName(1, answer.to), true, `${answer.to} is not recognised as a report`);
+    entries = [...entries.filter((e) => e !== answer.from), answer.to, 'plan-1.md'];
+  }
 });
