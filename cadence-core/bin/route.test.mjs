@@ -1446,3 +1446,50 @@ test('a valueless --bracket-read is refused, not recorded as an empty read-set',
   assert.match(r.detail, /--bracket-read/);
   assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
 });
+
+// --- D-03: `deferred` is reachable by a CONFIG-SET gate only, this cycle ----
+//
+// Phase 2 admits `deferred` to the gate vocabulary and builds everything that
+// answers one - the queue, the land refusal, the progress count - but moves no
+// `review` cell onto it. That is a decision, not an omission: phase 3 (CER-01)
+// changes what a stakes LEVEL decides about gates and depends on this phase, so
+// moving the rows now means editing them twice, and the grid is quoted by four
+// documents plus the claims ledger, every one of which would then be stale
+// twice over.
+//
+// A HOLD, not a prohibition. This arm reddens the day a cell is moved onto
+// `deferred` - which is the phase-3 author being told to bring the quoting
+// surfaces with them, not being told no.
+
+test('no stakes level fires `deferred` - the review grid holds it in no cell', () => {
+  // 1. The shipped table, read directly: every cell of the grid, so a level or
+  //    a trigger ADDED to it is censused too rather than silently exempt.
+  for (const [level, row] of Object.entries(SHIPPED_TABLE.review)) {
+    for (const [trigger, gate] of Object.entries(row)) {
+      assert.notEqual(gate, 'deferred',
+        `route-table.json's review grid fires deferred at ${level}/${trigger}. No level `
+        + 'fires it this cycle (D-03): it is reachable by a config-set '
+        + 'review.triggers.<t>.gate alone. Moving a cell is phase 3\'s work and carries '
+        + 'README.md, METHOD.md, docs/WORKFLOW.md and .planning/DOCS-CLAIMS.md with it.');
+    }
+  }
+
+  // 2. What a resolve actually RETURNS with no config layer pinning a gate -
+  //    the same question asked of the resolver rather than of its data, so a
+  //    default injected anywhere between the table and the envelope is caught
+  //    by the half that never reads the table.
+  for (const stakes of ['solo', 'shipped', 'critical']) {
+    const r = resolve('cad-reviewer', cfg({ stakes }, `deferred-hold-${stakes}.json`));
+    assert.equal(r.ok, true, `${stakes}: ${r.reason}`);
+    for (const [trigger, gate] of Object.entries(r.review)) {
+      assert.notEqual(gate, 'deferred',
+        `stakes ${stakes} resolves ${trigger} to deferred with nothing configured`);
+    }
+  }
+
+  // 3. And the door it IS reachable through still opens, or this arm would be
+  //    pinning a dead value rather than holding a live one.
+  const pinned = rawCfg({ stakes: 'solo', review: { triggers: { diff: { gate: 'deferred' } } } },
+    'gate-deferred-pin.json');
+  assert.equal(resolve('cad-reviewer', pinned).review.diff, 'deferred');
+});
