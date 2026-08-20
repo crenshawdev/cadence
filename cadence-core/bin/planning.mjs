@@ -493,8 +493,24 @@ function cmdStatus(dir) {
     }
   }
 
+  // THE DEFERRED QUEUE, off the one derivation `deferred list` answers from, so
+  // /cad-progress and /cad-land cannot disagree about what is queued.
+  //
+  // ALWAYS PRESENT, unlike `cycle` and `drift` beside it, which appear only in
+  // their own states. This key is read by a REFUSAL surface: a caller has to be
+  // able to tell "nothing is deferred" from "this seam predates the queue", and
+  // a key that is absent in the empty state collapses those two into one answer
+  // - the fail-open one, on the gate whose whole job is to refuse.
+  //
+  // NOT a cursor status and NOT a drift kind (D-05). A `Status:` value outside
+  // `AGREE` above is reported as `cursor` drift and rewritten by the very next
+  // /cad-progress, so a queue recorded there would stop being recorded one
+  // command after it was written.
+  const queue = readQueue(dir, null);
+
   ok({
     current, total: derived.length,
+    deferred: queue,
     // Additive, and present ONLY in the closed state: a caller branching on
     // `current === null` alone would otherwise read a closed milestone as
     // "all phases complete" and route back to /cad-milestone.

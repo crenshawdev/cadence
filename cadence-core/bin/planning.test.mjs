@@ -7423,3 +7423,58 @@ test('deferred list: an ADJUDICATION symlink does not settle a member', () => {
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.deepEqual(r.members.map((m) => m.path), ['phases/2/DEFERRED-diff-plan-1.json']);
 });
+
+test('status: the deferred block is on EVERY envelope, off the same derivation', () => {
+  // ALWAYS present, unlike `cycle` and `drift`: this key is read by a refusal
+  // surface, and a key absent in the empty state cannot tell "nothing is
+  // deferred" from "this seam predates the queue" - which is the fail-open
+  // answer on the one gate whose job is to refuse.
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Auth' }], phases: { 1: { plan: true } } });
+  const empty = run(['status'], dir);
+  assert.equal(empty.ok, true, JSON.stringify(empty));
+  assert.deepEqual(empty.deferred, { members: [], findings: 0, unreadable: [] });
+
+  writeFileSync(join(dir, 'phases', '1', 'DEFERRED-diff-plan-1.json'), `${JSON.stringify({
+    phase: '1', trigger: 'diff', discriminator: 'plan-1', round: 1,
+    findings: [defPayload().findings[0], defPayload().findings[0]],
+  })}\n`);
+  const queued = run(['status'], dir);
+  assert.deepEqual(queued.deferred.members, [{
+    phase: '1', trigger: 'diff', discriminator: 'plan-1', round: 1,
+    path: 'phases/1/DEFERRED-diff-plan-1.json', findings: 2,
+  }]);
+  assert.equal(queued.deferred.findings, 2);
+  // ONE derivation and one reader, so /cad-progress and /cad-land cannot
+  // disagree about what is queued.
+  assert.deepEqual(defList(dir).members, queued.deferred.members);
+
+  writeFileSync(join(dir, 'phases', '1', 'ADJUDICATION-diff-plan-1.json'), '{}\n');
+  const settled = run(['status'], dir);
+  assert.deepEqual(settled.deferred, { members: [], findings: 0, unreadable: [] });
+  assert.equal(settled.ok, true, 'a settled queue is not a degraded status');
+
+  // NO cursor status value and no drift kind (D-05): a `Status:` outside AGREE
+  // is reported as cursor drift and rewritten by the very next /cad-progress.
+  assert.deepEqual(queued.drift, undefined);
+});
+
+test('status: an unreadable queue rides the envelope without failing the status', {
+  skip:
+    typeof process.getuid === 'function' && process.getuid() === 0
+      ? 'root bypasses mode bits'
+      : false,
+}, () => {
+  // The status answers about the roadmap; the block carries its own evidence.
+  // Degrading the whole envelope would take /cad-progress down over a queue it
+  // was only reporting on, and the refusal reads `unreadable` for itself.
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Auth' }], phases: { 1: { plan: true } } });
+  chmodSync(join(dir, 'phases', '1'), 0o000);
+  try {
+    const r = run(['status'], dir);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(r.deferred.unreadable.map((u) => u.path), ['phases/1']);
+    assert.deepEqual(r.deferred.members, []);
+  } finally {
+    chmodSync(join(dir, 'phases', '1'), 0o755);
+  }
+});
