@@ -56,7 +56,8 @@
 //                                   in warnings[], never a fall-through to a
 //                                   lower one (NOT --dir: --root is the
 //                                   PROJECT root, one level deep only)
-//   detect-surfaces [--root <path>]  which of the eight risk-surface categories
+//   detect-surfaces [--root <path>] [--answered <a,b,c>]
+//                                   which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
 //                                   manifests, file types, never source text
 //                                   (NOT --dir: --root is the PROJECT root,
@@ -191,7 +192,7 @@ import { isReportName } from './lib/report-rotation.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
-import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
+import { scanTree, CATEGORIES, answeredSurfaces, interviewOptions } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
 import { buildEntries, deriveCounts } from './lib/adjudication-record.mjs';
 import { evaluateFlag, evaluateRow, subcommandKey, CONTRACTS } from './lib/arg-contract.mjs';
@@ -2811,7 +2812,37 @@ function manifestDeps(name, text) {
   return out;
 }
 
-function cmdDetectSurfaces(root) {
+/**
+ * @param {string} root
+ * @param {string | true | undefined} answeredArg the `--answered` value: the
+ *   set a config layer already holds, comma-separated, or absent when nobody
+ *   has answered
+ */
+function cmdDetectSurfaces(root, answeredArg) {
+  // The ALREADY-ANSWERED set, read exactly the way `risk-check run` reads
+  // `--surfaces`: split, trim, drop empties, then refuse. It arrives as a flag
+  // and is never read from config HERE, so `/cad-config`'s re-entrant arm hands
+  // over the effective value it already resolved through the read face and this
+  // seam stays the pure map from a tree to an answer. A token outside the eight
+  // is a malformed CALL - refused rather than dropped, because a caller who
+  // mistyped the set they hold would otherwise be offered a narrower option
+  // list built from an answer nobody gave.
+  /** @type {string[]} */
+  let answered = [];
+  if (answeredArg !== undefined) {
+    const raw = typeof answeredArg === 'string' ? answeredArg : '';
+    const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
+    if (!tokens.length) {
+      return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>');
+    }
+    const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
+    if (unknown.length) {
+      return fail('bad-args',
+        `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
+    }
+    answered = tokens;
+  }
+
   /** @type {string[]} */
   const warnings = [];
   /** @type {string[]} */
@@ -2887,6 +2918,13 @@ function cmdDetectSurfaces(root) {
     unspeakable: scan.unspeakable,
     inconclusive: scan.inconclusive,
     recommended: scan.recommended,
+    // The QUESTION itself, built here rather than composed by a model at the
+    // ask site. Always present, like every field above it: an empty tree still
+    // gets its one all-eight choice, so "the structure evidences nothing" and
+    // "nobody built a list" stay distinguishable. #206 is what a composed list
+    // cost - the same eight categories in slot 1 and in the last slot, with no
+    // value for any check to read.
+    options: interviewOptions(scan, answered),
     ...(warnings.length ? { warnings } : {}),
   });
 }
@@ -6083,9 +6121,12 @@ const COMMANDS = {
   // ENOENT, one refusal vocabulary answering in two.
   'detect-commands': (_dir, _sub, opts) =>
     cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd()),
-  // Same --root row, same refusal, same door.
+  // Same --root row, same refusal, same door. `--answered` carries the set a
+  // config layer already holds, so the re-entrant ask reaches the same option
+  // rule the first fire does; absent means nobody has answered.
   'detect-surfaces': (_dir, _sub, opts) =>
-    cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd()),
+    cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd(),
+      'answered' in opts ? opts.answered : undefined),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   'risk-check': (dir, sub, opts) => cmdRiskCheck(dir, sub, opts),
   // The gate fire's per-finding rulings, beside the sibling REVIEW file. ONE

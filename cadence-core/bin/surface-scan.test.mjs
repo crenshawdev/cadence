@@ -219,6 +219,71 @@ test('detect-surfaces refuses a --root with nothing usable after it', () => {
   assert.equal(r.reason, 'bad-args');
 });
 
+/**
+ * The #206 demo tree: the project the duplicate-option report was filed from.
+ * Express + Stripe + Prisma + Passport, with the four category directories, a
+ * `.sql` file and an `openapi.yaml` - six of the eight evidenced, `destructive`
+ * and `secrets` silent.
+ */
+function demoTree() {
+  const root = mkdtempSync(join(tmpdir(), 'cad-206-'));
+  for (const d of ['auth', 'migrations', 'api', 'workers']) mkdirSync(join(root, d));
+  writeFileSync(join(root, 'package.json'), JSON.stringify({
+    dependencies: { express: '^4', stripe: '^14', prisma: '^5', passport: '^0.7' },
+  }));
+  writeFileSync(join(root, 'migrations', '001_init.sql'), 'select 1;\n');
+  writeFileSync(join(root, 'openapi.yaml'), 'openapi: 3.0.0\n');
+  return root;
+}
+
+const EVIDENCED_SIX = ['api_contract', 'auth', 'billing', 'concurrency',
+  'migrations', 'untrusted_input'];
+
+test('the #206 demo tree evidences six categories and offers two distinct options', () => {
+  // The defect itself: this question used to arrive with all eight in slot 1
+  // and all eight again in the last slot, because the prose told a model to
+  // "fill the remaining slots with ... the evidenced categories alone, and all
+  // eight". Two options, two different sets.
+  const r = run('--root', demoTree());
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.evidenced.map((e) => e.category).sort(), EVIDENCED_SIX,
+    JSON.stringify(r.evidenced));
+  const sets = r.options.map((o) => o.surfaces.join(','));
+  assert.equal(new Set(sets).size, sets.length, `a repeated option set: ${JSON.stringify(sets)}`);
+  assert.deepEqual(r.options[0].surfaces, [...CATEGORIES]);
+  assert.deepEqual([...r.options[1].surfaces].sort(), EVIDENCED_SIX, JSON.stringify(sets));
+});
+
+test('--answered on the demo tree keeps all eight first and puts the union second', () => {
+  // A project that answered `secrets` and then added the rest. The
+  // recommendation does not narrow (D-14); the union is the second choice, and
+  // it is NOT all eight - `destructive` is evidenced by nothing and was never
+  // answered, so it is absent from it.
+  const r = run('--root', demoTree(), '--answered', 'secrets');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.options[0].surfaces, [...CATEGORIES]);
+  assert.deepEqual([...r.options[1].surfaces].sort(), [...EVIDENCED_SIX, 'secrets'].sort(),
+    JSON.stringify(r.options[1]));
+  assert.ok(!r.options[1].surfaces.includes('destructive'), JSON.stringify(r.options[1]));
+});
+
+test('detect-surfaces refuses an --answered with nothing usable after it', () => {
+  const r = run('--root', demoTree(), '--answered');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /--answered/);
+});
+
+test('detect-surfaces refuses an --answered token outside the eight', () => {
+  // Narrowing to the tokens that parsed would build an option list from an
+  // answer nobody gave, which is how `["auth","secret"]` stops reviewing
+  // secrets forever.
+  const r = run('--root', demoTree(), '--answered', 'nope');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /nope/);
+});
+
 test('a bare PEP 621 pyproject evidences its dependencies, not an empty manifest', () => {
   // PEP 621 declares `dependencies` as an ARRAY under `[project]`, a header
   // that says nothing about dependencies. A section-scoped read finds the

@@ -574,8 +574,15 @@ export const CONTRACTS = {
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // `--answered` carries the set a config layer ALREADY holds, so the
+    // re-entrant ask (`/cad-config --surfaces`) reaches the same option rule
+    // the first fire does instead of merging the current answer itself. Same
+    // shape as `risk-check run`'s `--surfaces` row below and for the same
+    // reason: a comma-separated scope whose tokens are refused when they fall
+    // outside the eight, never narrowed to the ones that parsed.
     'detect-surfaces': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--answered': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     recall: {
       '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },

@@ -333,12 +333,14 @@ export function interviewOptions(scan, answered = []) {
         : `the structure evidences ${naming(evidenced)}; the rest are silent rather `
           + 'than absent, so every category stays in scope',
     },
-    {
+    // Only when the scan evidences something the answer does not already
+    // cover: with an empty gap this set IS the answered set, and the dedup
+    // below would keep it under a reason ("plus what it evidences") that names
+    // nothing. Two choices reading as one is exactly the #206 shape.
+    ...(gap.length ? [{
       surfaces: order([...held, ...evidenced]),
-      reason: gap.length
-        ? `the answered set plus what the scan now evidences beyond it: ${naming(gap)}`
-        : 'the answered set plus everything the scan evidences',
-    },
+      reason: `the answered set plus what the scan now evidences beyond it: ${naming(gap)}`,
+    }] : []),
     { surfaces: held, reason: 'the set already answered, left unchanged' },
     { surfaces: evidenced, reason: `only what the structure evidences: ${naming(evidenced)}` },
   ];
