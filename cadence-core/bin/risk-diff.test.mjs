@@ -353,6 +353,48 @@ test('risk-check run: a REVERT PAIR is empty too - the ids differ and the net di
     'the record read as empty on identical ids, which is not the case under test');
 });
 
+// The destructive line the diff-driver row commits, split the way JWT_CALL is:
+// this file is its own detector's corpus (the census row below), so a literal
+// would make the census match itself.
+const DESTRUCTIVE_LINE = 'rm' + ' -rf /';
+
+test('risk-check run: a diff DRIVER cannot turn a risky range into a completed EMPTY check', () => {
+  // The empty arm is only as honest as the read that feeds it. `diff=<driver>`
+  // is a CHECKED-IN `.gitattributes` attribute that binds to a
+  // `diff.<driver>.command` in the READER's own git config, so a helper that
+  // prints nothing and exits 0 makes `git diff <base> <head> --` emit zero
+  // bytes for a file whose changed line is a recursive delete. scanDiff then
+  // answers `checked: true, empty: true, matches: []` - a COMPLETED clear on
+  // the one gate that is blocking at every stakes level, and the code before
+  // the empty arm existed fail-closed on exactly this shape. No attacker is
+  // required: a `textconv` for pdf or docx in a developer's own ~/.gitconfig
+  // does it by accident. `--no-ext-diff --no-textconv` on the seam's read is
+  // what closes it.
+  const { repo, dir } = riskRepo();
+  execFileSync('git', ['config', 'diff.silent.command', '/bin/true'], { cwd: repo });
+  commitFile(repo, '.gitattributes', 'deploy.sh diff=silent\n');
+  const base = commitFile(repo, 'deploy.sh', '#!/bin/sh\necho safe\n');
+  const head = commitFile(repo, 'deploy.sh', `#!/bin/sh\n${DESTRUCTIVE_LINE}\n`);
+  assert.equal(
+    execFileSync('git', ['diff', base, head, '--'], { cwd: repo, encoding: 'utf8' }), '',
+    'the fixture no longer suppresses the diff, so this row proves nothing');
+
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', head]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.equal(r.empty, false,
+    'a suppressed diff was recorded as an EMPTY range - the seam read through the driver');
+  assert.deepEqual(r.matches.map((m) => m.category), ['destructive'], JSON.stringify(r));
+
+  // And the RECORD says the same, since that is what `risk-check status` and
+  // every later reader join on - an envelope that matched over a record that
+  // says `empty` still clears the range.
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.equal(records[0].empty, false);
+  assert.equal(records[0].matches.length, 1, JSON.stringify(records[0]));
+});
+
 test('risk-check run: a --surfaces token outside the eight is refused, and appends NOTHING', () => {
   // A caller who mistyped the scope of a blocking gate must see a refusal, not
   // a narrowed clean answer - the rule `trace append --tokens` already states.

@@ -3979,7 +3979,21 @@ function cmdRiskCheckRun(dir, opts) {
       // the spellings, so the body read is exactly the range recorded. The
       // trailing `--` ends the revision list: a ref that also names a path
       // cannot turn into a pathspec here.
-      body = execFileSync('git', ['-C', range.top, 'diff', baseId, headId, '--'],
+      //
+      // `--no-ext-diff --no-textconv` are what make the EMPTY answer mean what
+      // scanDiff reports it to mean. A `diff=<driver>` attribute in a checked-in
+      // `.gitattributes` binds to a `diff.<driver>.command` or `.textconv` in
+      // the reader's OWN git config, so a repository the user merely cloned can
+      // route this read through a helper that prints nothing and exits 0 - and
+      // no attacker is needed for it, since a `textconv` for pdf/docx in
+      // `~/.gitconfig` does it by accident. `git diff <base> <head> --` then
+      // emits zero bytes for a file whose changed line is a recursive delete, and
+      // scanDiff answers `checked: true, empty: true, matches: []`: a COMPLETED
+      // clear on the one gate that is blocking at every stakes level. Both flags
+      // are diff-generation switches only - they change no id, no range and no
+      // exit status, so the empty/unreadable split above is untouched.
+      body = execFileSync('git',
+        ['-C', range.top, 'diff', '--no-ext-diff', '--no-textconv', baseId, headId, '--'],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
     } catch (e) {
       // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set`
