@@ -316,7 +316,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
   // trigger keys as inert - <t> expands to all triggers.
   const root = fixture(
     '`review.triggers.<t>.gate` `review.triggers.<t>.tier` `review.triggers.<t>.effort`\n' +
-    '`review.triggers.<t>.surfaces`\n' +
+    '`review.triggers.<t>.surfaces` `review.triggers.<t>.waive_routing_floor`\n' +
     '`review.providers.<name>.tiers` `review.mode` `review.reviewers` `review.key_file`\n' +
     '`review.request_timeout_ms` `review.max_prompt_tokens`\n' +
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
