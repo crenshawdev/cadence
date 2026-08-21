@@ -1431,6 +1431,9 @@ test('the census: neither this file nor the detector matches the detector', () =
 const PARSE_CALL = 'JSON.' + 'parse';
 /** A body whose one line reads a request payload. */
 const PARSE_BODY = `export const read = (s) => ${PARSE_CALL}(s);\n`;
+/** One body carrying every assembled construct this file already keeps, so the
+ * CONTENT pass has to answer for four categories at once rather than one. */
+const SIGNAL_CORPUS = [AUTH_MODULE, MIGRATION_SQL, DESTRUCTIVE_LINE, PARSE_BODY].join('\n');
 
 test('scanDeclared: a declared path with NO body still matches by path segment', () => {
   // The create-a-file case: at plan time the file frequently does not exist, so
@@ -1444,7 +1447,7 @@ test('scanDeclared: a body matches only when its category is in the vocabulary',
   const files = [{ path: 'src/read.mjs', body: PARSE_BODY }];
   const inScope = scanDeclared(files, ['untrusted_input']);
   assert.deepEqual(inScope.matches,
-    [{ category: 'untrusted_input', signal: 'changed line: a ' + PARSE_CALL + ' call' }]);
+    [{ category: 'untrusted_input', signal: 'body line: a ' + PARSE_CALL + ' call' }]);
   // The same bytes, scoped to the surfaces a project actually answered: not
   // looked for, so not reported. This is D-10 in one row.
   const outOfScope = scanDeclared(files, ['secrets', 'destructive']);
@@ -1477,6 +1480,42 @@ test('scanDeclared: the OTHER signal-table file matches nothing under either pat
   const body = readFileSync(join(HERE, 'lib', 'risk-diff.mjs'), 'utf8');
   assert.deepEqual(scanDeclared([{ path: 'cadence-core/bin/lib/risk-diff.mjs', body }], ALL).matches, []);
   assert.deepEqual(scanDeclared([{ path: 'vendor/copied.mjs', body }], ALL).matches, []);
+});
+
+test('scanDeclared: a content match says `body line`, and never that a line CHANGED', () => {
+  // At plan time no diff exists: the whole current body was scanned, so the
+  // diff-time vocabulary would be a claim about an edit nobody made.
+  const declared = scanDeclared([{ path: 'src/read.mjs', body: PARSE_BODY }],
+    ['untrusted_input']).matches[0].signal;
+  const diffed = scanDiff(diffOf('src/read.mjs', [PARSE_BODY.trim()]),
+    ['untrusted_input']).matches[0].signal;
+  assert.equal(declared, 'body line: a ' + PARSE_CALL + ' call');
+  assert.equal(diffed, 'changed line: a ' + PARSE_CALL + ' call');
+  // The LABEL bytes after the prefix are byte-identical, which is the whole
+  // reason the walk is one function: a reader comparing a plan-time reason with
+  // a commit-time finding has to see the same construct named the same way.
+  assert.equal(declared.slice('body line: '.length),
+    diffed.slice('changed line: '.length));
+});
+
+test('scanDeclared: no signal this face returns anywhere contains "changed line"', () => {
+  // The census for the vocabulary. Every content pattern of every category is
+  // driven through the declared face, and the diff-time prefix may appear on
+  // none of them - a prefix left behind on one alternative is exactly the drift
+  // a single spot-check would miss.
+  let content = 0;
+  for (const category of ALL) {
+    // A path that evidences NOTHING by segment, base name or extension, so the
+    // content pass is what has to answer.
+    const r = scanDeclared([{ path: 'zz/plain.mjs', body: SIGNAL_CORPUS }], [category]);
+    for (const m of r.matches) {
+      assert.ok(!m.signal.includes('changed line'),
+        `${category} returned a diff-time signal at plan time: ${m.signal}`);
+      if (m.signal.startsWith('body line: ')) content++;
+    }
+  }
+  assert.equal(content, 4,
+    `the corpus stopped exercising the content pass (${content} content matches)`);
 });
 
 test('scanDeclared: a DOCUMENT body is prose - the same bytes are code under a source path', () => {

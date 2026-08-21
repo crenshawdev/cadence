@@ -218,12 +218,24 @@ function pathSets(/** @type {string[]} */ paths) {
  * `scanDiff`, the declared files' body lines for `scanDeclared`. Neither face
  * passes context lines - `scanDiff` because they are the code the range did not
  * touch, `scanDeclared` because it has no diff to draw a distinction in.
+ *
+ * `contentPrefix` is the ONE thing the two faces spell differently, and it is
+ * passed in rather than forked into a second table because the ORDER above is
+ * what must not drift - a second copy of this walk is how the two faces would
+ * come to answer the same question in two wordings. `scanDiff` read a range and
+ * says `changed line`; `scanDeclared` read a whole current body at a moment when
+ * no diff exists and nothing changed, so it says `body line`. The LABEL bytes
+ * after the prefix are identical on both faces on purpose: a reader comparing a
+ * plan-time reason with a commit-time `risk_surface` finding has to see the same
+ * construct named the same way, or the floor looks like a different detector.
+ * The PATH signal strings are face-neutral already and carry no prefix at all.
  * @param {string} category
  * @param {{segments: Set<string>, bases: Set<string>, exts: Set<string>}} sets
  * @param {string[]} lines
+ * @param {string} contentPrefix
  * @returns {string|null}
  */
-function signalIn(category, sets, lines) {
+function signalIn(category, sets, lines, contentPrefix) {
   for (const name of SEGMENT_SIGNALS[category] || []) {
     if (sets.segments.has(name)) return `path segment ${name}`;
   }
@@ -234,7 +246,7 @@ function signalIn(category, sets, lines) {
     if (sets.exts.has(ext)) return `${ext} file`;
   }
   for (const { re, label } of CONTENT_SIGNALS[category] || []) {
-    if (lines.some((l) => re.test(l))) return `changed line: ${label}`;
+    if (lines.some((l) => re.test(l))) return `${contentPrefix}: ${label}`;
   }
   return null;
 }
@@ -386,7 +398,9 @@ export function scanDiff(body, categories) {
   /** @type {Array<{category: string, signal: string}>} */
   const matches = [];
   for (const category of wanted) {
-    const signal = signalIn(category, sets, changed);
+    // `changed line`: this face read a RANGE, and the lines it matched are lines
+    // the range added or removed.
+    const signal = signalIn(category, sets, changed, 'changed line');
     if (signal) matches.push({ category, signal });
   }
 
@@ -511,7 +525,10 @@ export function scanDeclared(files, categories) {
   /** @type {Array<{category: string, signal: string}>} */
   const matches = [];
   for (const category of wanted) {
-    const signal = signalIn(category, sets, lines);
+    // `body line`, never `changed line`: this face runs at plan time, where no
+    // diff exists and nothing has changed - what it matched is a line of a
+    // declared file's CURRENT body, most of which the plan will not touch.
+    const signal = signalIn(category, sets, lines, 'body line');
     if (signal) matches.push({ category, signal });
   }
   return { categories: wanted, matches };
