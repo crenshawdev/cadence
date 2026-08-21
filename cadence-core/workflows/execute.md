@@ -217,11 +217,14 @@ merged its report lives in the worktree, not here: `git worktree list
 is bracketed in the joined run record, so a phase's trace attributes what
 happened to the worker that caused it. The DISPATCH half rides each executor's
 own resolve on the spawn-agent seam's routing step:
-`--bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
+`--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
 - the worker key is the plan NUMBER here, not the role name, and `--read` is
 what this site causes the executor to read: the shared set every plan in the
-phase re-reads, plus that plan's own file. Once that executor comes back,
-append the CLOSE:
+phase re-reads, plus that plan's own file. `--plan <k>` beside it is a different
+quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
+declared files, so an executor is routed for the plan it is being handed
+(references/seams.md's Routing block states the rule). Once that executor comes
+back, append the CLOSE:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --detail-file <path>
