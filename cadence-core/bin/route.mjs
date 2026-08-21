@@ -114,9 +114,9 @@
 // because the cursor lags at both their call sites and a floor computed for them
 // would be computed off a DIFFERENT phase's file list.
 
-import { readFileSync, lstatSync } from 'node:fs';
+import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, isAbsolute } from 'node:path';
+import { dirname, join, isAbsolute, sep } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
@@ -334,17 +334,40 @@ function providerModel(providers, name, tier) {
  * that climbs out of the repo root with `..` gets its path signals and no read
  * at all: the `files:` list is data from a file that can arrive with a clone,
  * no legitimate plan declares a path outside the repository, and a resolve is
- * not a place to open one. That check reads the SPELLING, so a second one reads
- * what the path RESOLVES to: a non-regular file is refused unopened, because
+ * not a place to open one. That check reads the SPELLING, so two more read what
+ * the path RESOLVES to. A non-regular file is refused unopened, because
  * `statSync` follows a symlink and a link to a character device reports size 0,
- * clearing the byte bound and then never reaching EOF. A file over
- * `MAX_BODY_BYTES` is the same arm for the bound's own reason. Every read sits
- * in its own try - nothing here throws, and a resolve that could not read a
- * body still returns a whole bundle.
+ * clearing the byte bound and then never reaching EOF. And a path whose REAL
+ * location sits outside the repository root is refused for the boundary itself:
+ * `lstatSync` declines to follow only the FINAL component, so `a/link/file.mjs`
+ * where `link` is a symlinked DIRECTORY resolved outside the tree, was read as
+ * evidence, and this function's own claim - that a `--file` pointed at another
+ * tree cannot read this one's files - was untrue for any repository whose layout
+ * carries such a link (raised by the `risk_surface` re-arm round, adjudicated
+ * medium). Containment is judged on `realpathSync`, both sides: the ROOT is
+ * resolved the same way and once, or a root itself reached through a link - a
+ * temp dir on a linked `/tmp` is the everyday case - would refuse every
+ * legitimate path in the tree.
+ *
+ * A file over `MAX_BODY_BYTES` is the same arm for the bound's own reason. Every
+ * read sits in its own try - nothing here throws, and a resolve that could not
+ * read a body still returns a whole bundle. What is never done is echo the body:
+ * a refused path may hold the very evidence a discount would claim is absent, so
+ * saying WHICH file was skipped and why is the whole of the report.
  * @param {string} repoRoot @param {string[]} files
- * @returns {Array<{path: string, body?: string}>}
+ * @returns {Array<{path: string, body?: string, unread?: string}>}
  */
 function declaredBodies(repoRoot, files) {
+  // Resolved ONCE, and fail-soft: a root this cannot resolve keeps its literal
+  // spelling, which can only ever refuse paths, never admit an outside one.
+  let root;
+  try {
+    root = realpathSync(repoRoot);
+  } catch {
+    root = repoRoot;
+  }
+  const inside = (/** @type {string} */ real) =>
+    real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
   return files.map((rel) => {
     // Refused by SPELLING. `unread` and not a bare path: a file this declined
     // to open may hold the very evidence a discount would claim is absent.
@@ -370,6 +393,21 @@ function declaredBodies(repoRoot, files) {
     // is that check, and it fails closed: a non-regular declared path is
     // evidence nobody read, never evidence of nothing.
     if (!st.isFile()) return { path: rel, unread: 'not a regular file' };
+    // Refused by WHERE IT REALLY IS, which neither check above can see: the
+    // spelling is repo-relative and clean, and `lstatSync` followed every
+    // component but the last, so a symlinked PARENT directory lands this at a
+    // file in another tree. Judged AFTER the regular-file arm on purpose - a
+    // link straight to a device is that arm's finding and keeps its wording -
+    // and before any read, since the point is that these bytes are not ours.
+    let real;
+    try {
+      real = realpathSync(abs);
+    } catch {
+      return { path: rel, unread: 'path could not be resolved' };
+    }
+    if (!inside(real)) {
+      return { path: rel, unread: 'path resolves outside the repository' };
+    }
     if (st.size > MAX_BODY_BYTES) {
       return { path: rel, unread: `body over ${MAX_BODY_BYTES} bytes` };
     }

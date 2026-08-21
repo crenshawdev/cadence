@@ -1655,6 +1655,45 @@ test('floor: a declared path that is not a REGULAR file is refused unopened and 
     JSON.stringify(r.warnings));
 });
 
+test('floor: a declared path through a symlinked PARENT is refused at the repository boundary', () => {
+  // `lstatSync` declines to follow only the FINAL component, so a symlinked
+  // DIRECTORY put the read in another tree while the declared spelling stayed
+  // repo-relative and clean - and this function's own claim, that a `--file`
+  // pointed elsewhere cannot read this tree's files, was untrue for any
+  // repository whose layout carries such a link.
+  const outside = mkdtempSync(join(tmpdir(), 'cad-route-outside-'));
+  // Given a body on an ANSWERED surface on purpose: if these bytes were read,
+  // the resolve would raise and cite them, so the silence below is a proof.
+  writeFileSync(join(outside, 'load.mjs'), SECRET_BODY);
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['vendor/linked/load.mjs'] });
+  mkdirSync(join(fx.repo, 'vendor'), { recursive: true });
+  symlinkSync(outside, join(fx.repo, 'vendor', 'linked'));
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the discount was taken on a body outside the tree');
+  assert.equal(r.model, 'opus');
+  assert.ok((r.warnings || []).some((w) =>
+    /^risk floor: phase 3 declares vendor\/linked\/load\.mjs, unread \(path resolves outside the repository\)/.test(w)),
+  JSON.stringify(r.warnings));
+  assert.ok(floorReasons(r).some((x) => /1 declared file in phase 3 went unread/.test(x)),
+    JSON.stringify(r.reason));
+  // Nothing was raised from the outside file's contents - the body never
+  // reached the content pass at all.
+  assert.deepEqual(floorReasons(r).filter((x) => /touches \w+ \(/.test(x)), []);
+});
+
+test('floor: an ordinary NESTED path is still read and still raises', () => {
+  // The paired positive. Without it the boundary check above is satisfied by one
+  // that refuses every declared body in the tree.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['src/deep/nest/load.mjs'] },
+    { 'src/deep/nest/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.match(floorReasons(r)[0], /src\/deep\/nest\/load\.mjs touches secrets/);
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+});
+
 test('floor: the two pre-plan roles are exempt and say they were not computed', () => {
   const fx = floorRoot({ ...ANSWERED },
     { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
