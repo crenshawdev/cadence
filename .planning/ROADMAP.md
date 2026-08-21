@@ -52,6 +52,8 @@ phase or visibly `unpicked` in `/cad-audit`.
 - [x] **Phase 1: The question you cannot ask again** - the risk-surface interview gains a deliberate entry point through `/cad-config`, and its menu stops offering the same set twice
 - [x] **Phase 2: Blocking that blocks the land** - a third gate mode `deferred` moves the block from the dispatch boundary to the land boundary, so a phase finishes unattended and `/cad-land` refuses until the queue is triaged
 - [x] **Phase 3: Ceremony the change pays for** - `stakes` becomes the floor rather than the level, and the phase's own declared files raise it
+- [ ] **Phase 4: The number nobody can spend** - read-set redundancy stops being a figure `/cad-report` prints and becomes a suggestion with a config key behind it
+- [ ] **Phase 5: One cold start, N reviews** - the review fires that each pay their own cold prefix batch into one process that pays it once
 
 ## Phase Details
 
@@ -219,4 +221,96 @@ is where that argument belongs.
 7. The load-bearing decision - the resolve reading planning state - carries a
    `/cad-decision-review` ruling before the plan is written.
 8. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an
+   empty `problems` array.
+
+### Phase 4: The number nobody can spend
+**Goal:** The read-set redundancy `lib/read-trace.mjs` already computes reaches
+a consumer that ACTS on it. Today `summarizeReads` returns `redundancy` and
+`fileRedundancy` and the only reader is `/cad-report`, which prints them as
+narrative. A figure that no decision consults is instrumentation the project
+pays for and never spends.
+**Depends on:** None
+**Requirements:** RDX-01
+
+The measurement is finished work. `summarizeReads` computes two deliberately
+separate ratios - `redundancy` over distinct TARGETS and `fileRedundancy` over
+distinct FILES - and both already return `null` rather than a fake figure when
+there is nothing to measure, which is the hard part of making a number safe to
+act on. `joinReads` attributes reads to the dispatch that caused them and
+distinguishes `unjoined` from the permanent `floor`, so an attribution gap is
+already legible as a limit rather than a failure.
+
+What is missing is the lever. `trace suggest` - the one seam that turns the run
+record into a retune with a config key, a value in force, a direction and a
+target - reads the joined TRACE and never opens `.planning/reads.jsonl` at all.
+So the redundancy figure has no path to `/cad-suggest`, and `/cad-suggest` is
+the only place in Cadence where evidence becomes a proposed config change.
+
+The thing to decide before planning: WHICH key a high redundancy should move.
+A redundant read-set is evidence about context discipline, and the honest answer
+may be that no existing key expresses the remedy - in which case this phase
+either names a new one or reports the figure with an explicit "no lever exists",
+which is still better than a number nothing reads. Do not invent a key to have
+somewhere to point.
+
+**Success Criteria:**
+
+1. `trace suggest` reads `.planning/reads.jsonl` and a high redundancy produces
+   a suggestion carrying its config key, the value in force, a direction and a
+   target - shown on this repository's own record.
+2. A `null` redundancy (no distinct targets, or no reads recorded) produces NO
+   suggestion, and a test pins that the null arm is never rendered as zero.
+3. The suggestion states the scope it was computed over, since nothing prunes
+   `reads.jsonl` at a close and an unscoped run spans every milestone in the
+   file.
+4. If no existing config key expresses the remedy, the suggestion says so
+   explicitly rather than pointing at an unrelated key; whichever arm ships, a
+   test pins which one.
+5. `/cad-report`'s existing `fileRedundancy` presentation still reads off the
+   same seam - one implementation, both faces, no recomputation in prose.
+6. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an
+   empty `problems` array.
+
+### Phase 5: One cold start, N reviews
+**Goal:** N review fires over N diffs run in one process paying ONE cold
+prefix, rather than N invocations each paying their own. This cycle measured 61
+security-review invocations; each one re-establishes the same context before it
+reads its first diff.
+**Depends on:** None
+**Requirements:** BCH-01
+
+The cost is structural and it sits at the dispatch boundary, not inside any
+reviewer. Both backends pay it. `claude-subagent` spawns a fresh `cad-reviewer`
+per fire, and the cross-model path calls `review-provider.mjs` once per fire -
+either way the prefix that describes what a review IS gets re-sent for every
+diff in the range.
+
+The constraint to respect: a review's VERDICT must stay per-diff. Batching is a
+transport change, not a semantic one, and a batched pass that returns one merged
+finding list over N ranges would destroy the per-fire adjudication record that
+`risk-check status` joins receipts to. Whatever ships has to keep one
+identifiable result per fired range, or the blocking gates that read those
+results stop working.
+
+Worth settling before a plan: whether the batch is a real multi-diff request or
+a warm process reused across sequential requests. They have different failure
+modes - a partial batch failure loses N results where a warm process loses one -
+and the second is likely cheaper to make correct.
+
+**Success Criteria:**
+
+1. N review fires over N diffs pay ONE cold prefix, measured against the N-fire
+   baseline on this repository's own record and the saving stated as a figure.
+2. Each fired range still returns its OWN identifiable result - a test pins that
+   N ranges in one batch yield N separately addressable verdicts, not one merged
+   list.
+3. `risk-check status` still joins a receipt to its record across a batched
+   fire, with no change to the correlation-id contract.
+4. A failure partway through a batch is reported per range: the ranges that
+   completed keep their verdicts and the ones that did not are named, never
+   silently dropped.
+5. Both backends are covered, or the one that is not is named explicitly with
+   the reason - a batching path that silently applies to `claude-subagent` alone
+   while the cross-model path still pays N is a half-shipped requirement.
+6. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an
    empty `problems` array.
