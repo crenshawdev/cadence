@@ -420,14 +420,25 @@ half-built change and cost a fresh-context re-dispatch per match, whose only job
 was writing code no plan task authorized - itself new risk surface, and the next
 halt. Blocking on the finished range keeps the gate and drops the loop.
 
-Detection sets no floor. What a plan declares raises no level: the `stakes` you
-set is the whole of it. The dispatch-time detector that read a phase's declared
-paths, and the eight `risk.override.<surface>` waivers that existed to lower what
-it raised, were both cut in v2.7.0 - the detector judged a file by its NAME, so
-one path token in one declared file was enough to put six roles on their top rung
-for the rest of the phase. What those surfaces drive instead is the one
-`risk_surface` review: blocking at every level, fired once on the completed
-commit range.
+The `stakes` you set is a MINIMUM, not a fixed price. A plan-time floor reads
+the phase's own declared `files:` before any code is written - the same
+anchored construct patterns and whole-path segments the commit-time
+`risk_surface` gate fires on, scanned over each declared file's current body
+and scoped to the surfaces the project answered, with a document contributing
+its path alone and never its prose. A matched phase routes at `shipped`, not
+at the top row: raising every match to `critical` is the tax the old floor
+died of. This is a different detector reading a different input from the one
+that came before it. The dispatch-time detector that read a phase's declared
+paths by NAME - one path token in one declared file was enough to put six
+roles on their top rung for the rest of the phase - and the eight
+`risk.override.<surface>` waivers that existed to lower what it raised, were
+both cut in v2.7.0 and stay cut: the eight keys are still retired. It fails
+CLOSED - a plan Cadence cannot read holds the configured level and never
+drops below it - and lowering below a computed raise takes the waiver key
+inside `review.triggers.risk_surface` naming the surface, which lowers the
+routing level alone and can never disable the blocking review. What these
+surfaces also drive, unconditionally, is that same `risk_surface` review:
+blocking at every level, fired once on the completed commit range.
 
 A blocking panel on every `rm -rf dist/` would train you to ignore the gate, so
 there is a narrow, evidence-based pre-filter. A destructive op drops only when
