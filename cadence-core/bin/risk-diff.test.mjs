@@ -1479,6 +1479,53 @@ test('scanDeclared: the OTHER signal-table file matches nothing under either pat
   assert.deepEqual(scanDeclared([{ path: 'vendor/copied.mjs', body }], ALL).matches, []);
 });
 
+test('scanDeclared: a DOCUMENT body is prose - the same bytes are code under a source path', () => {
+  // The mention-level raise, in one row. This body carries two real constructs;
+  // under a documentation extension it is a file DESCRIBING them, which is what
+  // METHOD.md does and what raised five of this repository's phases.
+  const body = `${DESTRUCTIVE_LINE}\nconst read = (s) => ${PARSE_CALL}(s);\n`;
+  const scope = ['destructive', 'untrusted_input'];
+  for (const doc of ['METHOD.md', 'docs/guide.markdown', 'notes.mdx',
+    'CHANGELOG.txt', 'docs/index.rst', 'docs/index.adoc', 'DOCS/UPPER.MD']) {
+    assert.deepEqual(scanDeclared([{ path: doc, body }], scope).matches, [], doc);
+  }
+  // The identical bytes under a source extension are ordinary evidence: the rule
+  // is about what the declared file IS, never about what the text says.
+  for (const src of ['cadence-core/bin/lib/run.mjs', 'scripts/deploy.sh']) {
+    assert.deepEqual(scanDeclared([{ path: src, body }], scope).matches
+      .map((m) => m.category), ['destructive', 'untrusted_input'], src);
+  }
+});
+
+test('scanDeclared: a document still evidences by PATH, and no extension is not a document', () => {
+  // The body is skipped, never the declaration: a document under a signalling
+  // path segment reports exactly as it did before, with no body at all.
+  assert.deepEqual(scanDeclared([{ path: 'docs/auth/note.md' }], ALL).matches,
+    [{ category: 'auth', signal: 'path segment auth' }]);
+  // ...and a body it does have changes nothing about that path signal.
+  assert.deepEqual(scanDeclared([{ path: 'docs/auth/note.md', body: PARSE_BODY }],
+    ['auth', 'untrusted_input']).matches,
+    [{ category: 'auth', signal: 'path segment auth' }]);
+  // An extensionless path is NOT a document. A `Makefile` or a shebang script
+  // is exactly that shape, so this arm fails toward raising - the safe way.
+  assert.deepEqual(scanDeclared([{ path: 'scripts/deploy', body: PARSE_BODY }],
+    ['untrusted_input']).matches.map((m) => m.category), ['untrusted_input']);
+  assert.deepEqual(scanDeclared([{ path: 'Makefile', body: PARSE_BODY }],
+    ['untrusted_input']).matches.map((m) => m.category), ['untrusted_input']);
+});
+
+test('scanDeclared: the document rule is scoped to THIS face - scanDiff still reads a .md hunk', () => {
+  // A line ADDED to a document is a change someone actually made in the range,
+  // so the commit-time face keeps matching it and its header's rule - fix at the
+  // MENTION, never a path exemption - stays in force. The two faces are given
+  // the same construct in the same file, and only the plan-time one is silent.
+  const scope = ['destructive'];
+  assert.deepEqual(scanDiff(diffOf('METHOD.md', [DESTRUCTIVE_LINE]), scope).matches
+    .map((m) => m.category), ['destructive']);
+  assert.deepEqual(scanDeclared([{ path: 'METHOD.md', body: `${DESTRUCTIVE_LINE}\n` }],
+    scope).matches, []);
+});
+
 test('scanDeclared: a null, a scalar and an absent body each report rather than throw', () => {
   const bodies = [null, 7, undefined, true, {}, []];
   for (const body of bodies) {

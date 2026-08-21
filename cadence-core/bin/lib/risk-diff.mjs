@@ -430,6 +430,38 @@ function isSignalTable(/** @type {string} */ path) {
 }
 
 /**
+ * Final extensions that name a DOCUMENT, whose body `scanDeclared` skips the
+ * same way it skips a signal table's. A document cannot execute the call it
+ * prints and a fenced example is a quotation, not a call site, so a whole-body
+ * content pass over prose evidences what the prose DESCRIBES rather than what
+ * the declared change does. Measured on this repository's 30 phase directories:
+ * `METHOD.md` alone raised five phases on a recursive-delete line it documents
+ * and references/review-triggers.md raised five more, and dropping the thirteen
+ * documentation evidences took the raising phases from 29 of 30 to 27 - every
+ * phase that lost one had no other evidence at all.
+ *
+ * A file with NO extension is deliberately not a document: that fails toward
+ * raising, which is the safe direction, and a `Makefile` or a shebang script is
+ * exactly the shape that would otherwise be exempted by accident.
+ *
+ * The PATH signals still run over a document's path, so `docs/auth/session.md`
+ * evidences `auth` by segment and a declaration is never ignored - the body is
+ * what is skipped, not the file.
+ *
+ * SCOPED TO THIS FACE, on the same reasoning the signal-table exemption above
+ * states and for the same reason `scanDiff` is left out of it: that face reads a
+ * HUNK, so a line ADDED to a document is a change someone actually made in this
+ * range and its header's rule - fix at the MENTION, never a path or filename
+ * exemption - stays in force unedited.
+ */
+const DOCUMENT_EXTS = Object.freeze(['.md', '.markdown', '.mdx', '.txt', '.rst', '.adoc']);
+
+/** Whether `path`'s final extension names a document. */
+function isDocument(/** @type {string} */ path) {
+  return DOCUMENT_EXTS.includes(baseAndExt(path).ext);
+}
+
+/**
  * What a DECLARED FILE SET touches - the plan-time face, where there is no diff
  * to read because the change has not been written yet.
  *
@@ -471,6 +503,7 @@ export function scanDeclared(files, categories) {
     const body = entry && typeof entry === 'object' ? entry.body : undefined;
     if (typeof body !== 'string' || !body) continue;
     if (isSignalTable(path)) continue;
+    if (isDocument(path)) continue;
     for (const raw of body.split('\n')) lines.push(raw.endsWith('\r') ? raw.slice(0, -1) : raw);
   }
 
