@@ -2174,6 +2174,79 @@ test('waiver: a value outside the eight categories rides warnings and waives not
     JSON.stringify(s.warnings));
 });
 
+// --- a detected surface floors the configured rung too (D-08) ---------------
+//
+// `model.effort.<role>` still wins over the cell, but a DETECTED surface floors
+// it, for post-plan roles only. Until this landed the configured rung won
+// unconditionally, so a project that pinned a cheap rung kept it on the one
+// phase the floor had just raised - and `references/config-reach.md` has claimed
+// the clamp exists since the v2.7.0 deletion.
+
+/** A repo whose phase 3 declares a secrets-carrying file, plus a pinned rung. */
+const clampFx = (extra, plan = ['src/load.mjs']) => floorRoot(
+  { model: { effort: { 'cad-plan-checker': 'low' } }, ...ANSWERED, ...extra },
+  { '3/PLAN-1.md': plan },
+  { 'src/load.mjs': SECRET_BODY, 'docs/README.md': '# Readme\n' });
+
+test('clamp: a raised level floors the configured rung, and the reason names the surface', () => {
+  const fx = clampFx({});
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.effort, 'medium', 'the shipped/cad-plan-checker cell\'s rung, not the pinned low');
+  const held = r.reason.find((x) => /does not apply/.test(x));
+  assert.ok(held, JSON.stringify(r.reason));
+  assert.match(held, /model\.effort\.cad-plan-checker="low"/);
+  assert.match(held, /touches secrets/);
+  assert.match(held, /"medium" rung is the floor/);
+});
+
+test('clamp: a surfaceless phase took a DISCOUNT, so the configured rung stands', () => {
+  // Clamping against a discounted cell would take the dial away in exactly the
+  // cheap case CER-01 buys.
+  const fx = clampFx({}, ['docs/README.md']);
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.effort, 'low');
+  assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
+});
+
+test('clamp: a WAIVED surface raised nothing, so it clamps nothing', () => {
+  const fx = clampFx(waiving(['secrets']));
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped', 'the waiver holds at the configured level');
+  assert.equal(r.effort, 'low', 'and the rung dial is untouched');
+  assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
+});
+
+test('clamp: a pre-plan role is exempt for free - no floor is computed for it', () => {
+  const fx = floorRoot(
+    { stakes: 'critical', model: { effort: { 'cad-planner': 'high' } }, ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-planner', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'critical');
+  // The critical/cad-planner cell names xhigh and the config names the rung
+  // below it; nothing raised, so nothing clamps.
+  assert.equal(r.effort, 'high');
+  assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
+});
+
+test('clamp: a rung_order that cannot place the two rungs keeps the configured one and warns', () => {
+  // The precedent is the retry block, which holds a configured start rung for
+  // exactly this reason: clamping on a comparison nothing made would take a
+  // user's dial away on the strength of a torn table.
+  const t = join(dir, 'torn-rung-order.json');
+  const shipped = JSON.parse(readFileSync(join(dirname(ROUTE), '..', 'route-table.json'), 'utf8'));
+  shipped.rung_order = ['first', 'second'];
+  writeFileSync(t, JSON.stringify(shipped));
+  const fx = clampFx({});
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3'], { table: t });
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.effort, 'low', 'the configured rung stands');
+  assert.ok((r.warnings || []).some((w) => /rung_order cannot compare/.test(w)),
+    JSON.stringify(r.warnings));
+});
+
 test('waiver: the replay honours it too - one implementation, both faces', () => {
   // The whole reason the scope-to-level half is one helper: a rule added on the
   // resolve side that did not reach the replay would print raises this project

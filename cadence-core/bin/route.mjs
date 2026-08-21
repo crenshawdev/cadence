@@ -519,9 +519,16 @@ function waivedSurfaces(cfg, warnings) {
  * what that scope RESOLVES TO is `levelFor` below, which `replay` calls with the
  * same scope addressed by directory instead.
  *
+ * WHAT IT RETURNS is `levelFor`'s whole record and not a bare level, because the
+ * rung clamp beneath the cell lookup (D-08) fires on a RAISE having fired and on
+ * nothing else: a scope that read clean and matched nothing has taken a
+ * discount, and clamping the user's configured rung against a discounted cell
+ * would take the dial away in exactly the cheap case CER-01 buys.
+ *
  * @param {{role: string, planningRoot: string, phase: any, planKey: any, cfg: any,
  *   surfaces: string[], waived: string[], reason: string[], warnings: string[]}} ctx
- * @returns {string} the stakes level to route on
+ * @returns {{level: string, raised: boolean, surface: string|null, signal: string|null,
+ *   file: string|null}}
  */
 function riskFloor(ctx) {
   const { role, planningRoot, phase, planKey, cfg, surfaces, waived, reason, warnings } = ctx;
@@ -536,7 +543,9 @@ function riskFloor(ctx) {
   const notComputed = (why) => {
     reason.push(`no risk-floor computation: ${why}; the configured `
       + `"${baseline}" stands`);
-    return baseline;
+    // `raised: false` is what makes the two pre-plan roles exempt from the rung
+    // clamp for free: no floor was computed for them, so nothing raised.
+    return { level: baseline, raised: false, surface: null, signal: null, file: null };
   };
 
   if (PRE_PLAN_ROLES.includes(role)) {
@@ -562,7 +571,7 @@ function riskFloor(ctx) {
     waived,
     reason,
     warnings,
-  }).level;
+  });
 }
 
 /**
@@ -880,10 +889,11 @@ function resolve(opts) {
   // THE STAKES LEVEL for this dispatch: the configured level as a FLOOR, raised
   // by what the phase's own declared `files:` touch (CER-01). All four knobs
   // then come from the floored row through the one cell grid.
-  const stakes = riskFloor({
+  const floor = riskFloor({
     role: opts.role, planningRoot, phase: tracePhase, planKey: opts.plan,
     cfg, surfaces, waived: waivedSurfaces(cfg, warnings), reason, warnings,
   });
+  const stakes = floor.level;
 
   // The three grids a torn LEVEL is fatal in (D-01). `model`, `effort` and
   // `retry` come from ONE cell keyed on (level, role); `review` keys on
@@ -951,11 +961,44 @@ function resolve(opts) {
     } else if (wanted === effort) {
       reason.push(`${key}="${wanted}" (already the routed rung)`);
     } else {
-      // (d) The configured rung wins.
-      reason.push(`${key}: ${effort} -> ${wanted} (config, wins over the `
-        + `${stakes}/${opts.role} cell)`);
-      effort = wanted;
-      startFromConfig = true;
+      // (d) The configured rung wins - UNLESS a surface raised the level, which
+      // floors the rung too (D-08). The floor already picked the ROW before this
+      // lookup ran, so the clamp is against `cell.effort`: the rung the FLOORED
+      // cell names. A project that pinned a cheap rung for a role otherwise
+      // keeps it on the one phase the floor just raised, which is the standing
+      // `references/config-reach.md` claim this makes true again.
+      //
+      // GATED ON A RAISE, never on a floor merely having been computed: a scope
+      // that read clean and matched nothing has taken a DISCOUNT, and clamping
+      // the user's rung against a discounted cell would take the dial away in
+      // exactly the cheap case CER-01 buys. The two pre-plan roles are exempt
+      // for free (no floor is computed for them at all) and a waived surface
+      // raised nothing, so it clamps nothing.
+      const rungOrder = Array.isArray(TABLE.rung_order) ? TABLE.rung_order : [];
+      const ci = rungOrder.indexOf(effort);
+      const wi = rungOrder.indexOf(wanted);
+      if (floor.raised && ci >= 0 && wi >= 0 && wi < ci) {
+        // SAYS what it did, in the voice the other three arms of this block
+        // already use: a rung that silently did not apply is the
+        // resolved-then-dropped shape this block exists to close.
+        reason.push(`${key}="${wanted}" does not apply: ${floor.file || 'a declared file'} `
+          + `touches ${floor.surface}, and the raised ${stakes}/${opts.role} cell's `
+          + `"${effort}" rung is the floor`);
+      } else {
+        // An unprovable comparison holds the CONFIGURED rung and says so, the
+        // precedent being the retry block below, which holds a configured start
+        // rung for exactly that reason. Clamping on a comparison nothing made
+        // would take a user's dial away on the strength of a torn table.
+        if (floor.raised && (ci < 0 || wi < 0)) {
+          warnings.push(`rung_order cannot compare ${key}="${wanted}" with the `
+            + `${stakes}/${opts.role} cell's "${effort}" rung, so the `
+            + `${floor.surface} surface floors no rung; the configured rung stands`);
+        }
+        reason.push(`${key}: ${effort} -> ${wanted} (config, wins over the `
+          + `${stakes}/${opts.role} cell)`);
+        effort = wanted;
+        startFromConfig = true;
+      }
     }
   }
 
