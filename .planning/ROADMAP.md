@@ -36,6 +36,24 @@ and `BCH-01` are held in `## Active` unplanned until their spike returns a
 verdict. A spike that comes back `invalidated` closes its issue with a note and
 its id moves to Deferred carrying that note - it does not quietly vanish.
 
+**Both spikes ran on 2026-08-21 and they split.** `RDX-01` **validated** and is
+now Phase 4: in-dispatch read redundancy is 3.64 for `cad-executor` and 2.05 for
+`cad-verifier`, nowhere near the 1.0 that would have closed #167 with a note -
+though the 7.0x the issue carries IS historical, since it was measured over
+declared read-sets rather than observed reads. The phase is scoped narrower than
+the requirement's wording as a result
+(`.planning/spikes/read-set-redundancy/SPIKE.md`).
+
+`BCH-01` **invalidated** and moved to `## Deferred` carrying its note, which is
+the exit this paragraph committed to. Batching saves 1.91% of reviewer spend and
+2.09% at the 61 invocations #174 cites - the ratio is fixed at ~2% for any N,
+because both sides scale with N. Reviewer cost is set by payload, not invocation
+count: six observed dispatches span 25,753 to 125,100 tokens around a
+1,676-token fixed prefix. The per-commit scoping #174 correctly names as a real
+cost would have been traded for a rounding error, and the fidelity question was
+never reached - C1 ended it for free, spending zero review dispatches
+(`.planning/spikes/batched-review-fidelity/SPIKE.md`).
+
 That last sentence is the point of writing this down. `v3.5.6` was scoped as
 four issues, shipped one, and the other three were never planned into a phase
 and never recorded as dropped, so nothing re-asked them. The audit could not
@@ -52,6 +70,7 @@ phase or visibly `unpicked` in `/cad-audit`.
 - [x] **Phase 1: The question you cannot ask again** - the risk-surface interview gains a deliberate entry point through `/cad-config`, and its menu stops offering the same set twice
 - [x] **Phase 2: Blocking that blocks the land** - a third gate mode `deferred` moves the block from the dispatch boundary to the land boundary, so a phase finishes unattended and `/cad-land` refuses until the queue is triaged
 - [x] **Phase 3: Ceremony the change pays for** - `stakes` becomes the floor rather than the level, and the phase's own declared files raise it
+- [ ] **Phase 4: The number nobody can spend** - in-dispatch read redundancy reaches `/cad-suggest` as a per-file suggestion, scoped to the one role the spike found it in
 
 ## Phase Details
 
@@ -221,3 +240,65 @@ is where that argument belongs.
 8. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an
    empty `problems` array.
 
+
+### Phase 4: The number nobody can spend
+**Goal:** The in-dispatch read redundancy `lib/read-trace.mjs` already computes
+reaches a consumer that ACTS on it. Today `summarizeReads` returns
+`fileRedundancy` and the only reader is `/cad-report`, which prints it as
+narrative. `trace suggest` - the one seam that turns the record into a retune
+with a config key behind it - never opens `.planning/reads.jsonl` at all.
+**Depends on:** None
+**Requirements:** RDX-01
+
+Scope comes from `.planning/spikes/read-set-redundancy/SPIKE.md`, which
+validated the premise and then narrowed it. Do not re-derive these; they are
+measured.
+
+The figure is **3.64**, not the 7.0x the issue carries. That 7.0x was over
+`trace.jsonl`'s DECLARED read-sets; the observed in-dispatch figure for the
+heaviest role is about half it. It is nowhere near the 1.0 that would have
+closed #167 with a note.
+
+It is also concentrated. `cad-executor` is 3.64 over 78 dispatches and
+`cad-verifier` is 2.05 over 31, while `cad-planner` (1.88),
+`cad-assumptions-analyzer` (1.78) and `cad-reviewer` (1.74) sit in a band where
+a suggestion would be noise. A single global ratio would fire on all five and
+spend the user's attention to save nothing.
+
+Two things the spike settled that this phase must not re-litigate. The
+suggestion should be PER FILE, not per role: "this dispatch read `planning.mjs`
+29 times" is actionable where "your redundancy is 3.64" is not, and 1,073 of
+3,611 file/dispatch pairs are re-read three or more times inside one dispatch.
+And `coordinator` holds 7,440 of the 10,114 joined reads with NO dispatch
+bracket by construction, so the main thread's re-reading is outside anything
+this lever can measure or cut - state the limit, do not discover it.
+
+The open question a plan has to answer is which config key a high redundancy
+moves. It may be that no existing key expresses the remedy, in which case this
+phase either names a new one or reports the figure with an explicit "no lever
+exists". Do not invent a key to have somewhere to point.
+
+**Success Criteria:**
+
+1. `trace suggest` reads `.planning/reads.jsonl` and a role over its threshold
+   produces a suggestion carrying its config key, the value in force, a
+   direction and a target - shown on this repository's own record.
+2. The threshold is PER ROLE, not one global ratio: a test pins that
+   `cad-planner` at 1.88 produces no suggestion while `cad-executor` at 3.64
+   does.
+3. The suggestion names the FILE and the count, not just the ratio - the worst
+   offender in the dispatch, in the form "read `<path>` N times".
+4. A `null` redundancy (no distinct files, or no reads recorded) produces NO
+   suggestion, and a test pins that the null arm is never rendered as zero.
+5. The suggestion states its coverage and scope: the file half covers 0.62 of
+   the corpus and nothing prunes `reads.jsonl` at a close, so an unscoped run
+   spans every milestone in the file.
+6. `coordinator` reads are excluded with the reason stated in the output, not
+   silently dropped - they carry no dispatch bracket and cannot be attributed.
+7. If no existing config key expresses the remedy, the suggestion says so
+   explicitly rather than pointing at an unrelated key; whichever arm ships, a
+   test pins which one.
+8. `/cad-report`'s existing `fileRedundancy` presentation reads off the same
+   seam - one implementation, both faces, no recomputation in prose.
+9. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an
+   empty `problems` array.
