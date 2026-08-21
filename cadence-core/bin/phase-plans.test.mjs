@@ -5,7 +5,7 @@
 // built in its own mkdtempSync directory so no row can see another's tree.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -342,4 +342,37 @@ test('an unreadable archive directory is skipped, never a throw', () => {
 test('an absent planning root is an empty list - the ordinary pre-project state', () => {
   assert.deepEqual(phaseDirsIn(join(tmpdir(), 'cad-no-such-root-97531')), []);
   assert.deepEqual(phaseDirsIn(planningRoot({})), []);
+});
+
+test('the locator does not leave the planning root through a symlink', () => {
+  // Raised by the blocking `risk_surface` review on this plan's own range:
+  // `readdirSync` FOLLOWS a symlinked directory, so an archive group or a phase
+  // entry that is a link puts the replay in another tree, reading PLAN files
+  // that are not this project's and scanning what they declare.
+  const root = planningRoot({ '1/PLAN.md': plan('README.md') });
+  const outside = mkdtempSync(join(tmpdir(), 'cad-outside-'));
+  mkdirSync(join(outside, '1'), { recursive: true });
+  writeFileSync(join(outside, '1', 'PLAN.md'), plan('secrets.mjs'));
+
+  // A whole archive GROUP that is a link out.
+  symlinkSync(outside, join(root, '_archive-escape'));
+  // And one phase ENTRY that is a link out, under a real group.
+  mkdirSync(join(root, '_archive-v1.0.0'), { recursive: true });
+  symlinkSync(join(outside, '1'), join(root, '_archive-v1.0.0', '1'));
+
+  assert.deepEqual(phaseDirsIn(root).map((e) => e.label), ['phases/1'],
+    'neither the linked group nor the linked entry is walked, and nothing throws');
+});
+
+test('a symlink that stays INSIDE the planning root is still a phase', () => {
+  // Containment is judged on what the path RESOLVES to, never on whether it is
+  // a link - a project that keeps its archive behind an in-root link is a
+  // legitimate layout and its phases still declare files a floor reads.
+  const root = planningRoot({ '1/PLAN.md': plan('README.md') });
+  mkdirSync(join(root, 'real-archive', '2'), { recursive: true });
+  writeFileSync(join(root, 'real-archive', '2', 'PLAN.md'), plan('old.mjs'));
+  symlinkSync(join(root, 'real-archive'), join(root, '_archive-v2.0.0'));
+
+  assert.deepEqual(phaseDirsIn(root).map((e) => e.label),
+    ['_archive-v2.0.0/2', 'phases/1']);
 });

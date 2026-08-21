@@ -29,8 +29,8 @@
 // override (references/seams.md), which is BELOW every floor.
 'use strict';
 
-import { lstatSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { parseCursor, readFrontmatterList } from './planning-files.mjs';
 
 // The byte bound a PLAN file is read under, matching `route.mjs`'s
@@ -205,14 +205,39 @@ const phaseDir = (planningRoot, phase) => join(planningRoot, 'phases', String(ph
  * @returns {Array<{label: string, path: string}>}
  */
 export function phaseDirsIn(planningRoot) {
+  // CONTAINED, on route.mjs's `declaredBodies` reasoning and by the same test:
+  // `readdirSync` follows a symlinked directory, so an archive group or a phase
+  // entry that is a link lands this walk in another tree and the replay then
+  // reads and scans PLAN files that are not this project's. Judged on what the
+  // path RESOLVES to rather than on how it is spelled, which is what keeps a
+  // legitimately symlinked archive inside the root working while an escape is
+  // skipped. Fails OPEN like every other arm here: a path that cannot be
+  // resolved contributes nothing and throws nothing.
+  let root;
+  try {
+    root = realpathSync(planningRoot);
+  } catch {
+    root = planningRoot;
+  }
+  const inside = (/** @type {string} */ dir) => {
+    try {
+      const real = realpathSync(dir);
+      return real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
+    } catch {
+      return false;
+    }
+  };
   const groups = ['phases', ...entriesIn(planningRoot).filter((e) => ARCHIVE_DIR.test(e))];
   const found = [];
   for (const group of groups) {
     const dir = join(planningRoot, group);
+    if (!inside(dir)) continue;
     for (const name of entriesIn(dir)) {
-      const names = planFilesIn(join(dir, name));
+      const path = join(dir, name);
+      if (!inside(path)) continue;
+      const names = planFilesIn(path);
       if (!names || !names.length) continue;
-      found.push({ label: `${group}/${name}`, path: join(dir, name) });
+      found.push({ label: `${group}/${name}`, path });
     }
   }
   // Label order, not directory order: `readdirSync` makes no ordering promise
