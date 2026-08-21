@@ -1,7 +1,12 @@
 // @ts-check
-// risk-diff.mjs - the ONE statement of whether a committed RANGE touched one of
-// the risk-surface categories, imported by planning.mjs's `risk-check`
-// subcommand (which reads the range out of git and hands the body here).
+// risk-diff.mjs - the ONE statement of whether a set of files touched one of the
+// risk-surface categories, in two faces over ONE signal table: `scanDiff` reads
+// a committed RANGE, for planning.mjs's `risk-check` subcommand (which reads the
+// range out of git and hands the body here), and `scanDeclared` reads a DECLARED
+// FILE SET, for route.mjs's plan-time risk floor (CER-01), where no diff exists
+// yet. Two faces and not two files because the signals and their ORDER are the
+// thing that must not drift: a floor that raised on evidence the commit-time
+// gate would not fire on is two detectors wearing one name.
 //
 // THE SPLIT, because two files now carry the word "surface" (RSK-01).
 // lib/surface-scan.mjs answers which categories a project SCOPES - a one-time
@@ -187,6 +192,53 @@ function baseAndExt(/** @type {string} */ path) {
   return { base, ext: dot > 0 ? base.slice(dot) : '' };
 }
 
+/** The three comparable sets a path list yields, built once per scan. */
+function pathSets(/** @type {string[]} */ paths) {
+  const segments = new Set();
+  const bases = new Set();
+  const exts = new Set();
+  for (const p of paths) {
+    for (const s of segmentsOf(p)) segments.add(s);
+    const { base, ext } = baseAndExt(p);
+    if (base) bases.add(base);
+    if (ext) exts.add(ext);
+  }
+  return { segments, bases, exts };
+}
+
+/**
+ * The first signal that evidences `category`, or null - THE one ordering, for
+ * both faces. Path evidence before content evidence, and within the paths
+ * segment before base name before extension: a `signal` string is what a fire
+ * site quotes as its reason, so the order decides which of several true
+ * sentences the user is shown, and two copies of it would answer the same
+ * question in two wordings.
+ *
+ * `lines` is the text this may read: the ADDED and REMOVED lines for
+ * `scanDiff`, the declared files' body lines for `scanDeclared`. Neither face
+ * passes context lines - `scanDiff` because they are the code the range did not
+ * touch, `scanDeclared` because it has no diff to draw a distinction in.
+ * @param {string} category
+ * @param {{segments: Set<string>, bases: Set<string>, exts: Set<string>}} sets
+ * @param {string[]} lines
+ * @returns {string|null}
+ */
+function signalIn(category, sets, lines) {
+  for (const name of SEGMENT_SIGNALS[category] || []) {
+    if (sets.segments.has(name)) return `path segment ${name}`;
+  }
+  for (const name of FILE_SIGNALS[category] || []) {
+    if (sets.bases.has(name)) return `file ${name}`;
+  }
+  for (const ext of EXT_SIGNALS[category] || []) {
+    if (sets.exts.has(ext)) return `${ext} file`;
+  }
+  for (const { re, label } of CONTENT_SIGNALS[category] || []) {
+    if (lines.some((l) => re.test(l))) return `changed line: ${label}`;
+  }
+  return null;
+}
+
 /**
  * A GITLINK section: a submodule pointer moving. Two markers, because git
  * spells the same change either way depending on which lines the range
@@ -329,37 +381,12 @@ export function scanDiff(body, categories) {
   }
 
   const { paths, changed, unreadable } = parseDiff(body);
-  const segments = new Set();
-  const bases = new Set();
-  const exts = new Set();
-  for (const p of paths) {
-    for (const s of segmentsOf(p)) segments.add(s);
-    const { base, ext } = baseAndExt(p);
-    if (base) bases.add(base);
-    if (ext) exts.add(ext);
-  }
-
-  /** The first signal that evidences `category`, or null. */
-  const signalFor = (/** @type {string} */ category) => {
-    for (const name of SEGMENT_SIGNALS[category] || []) {
-      if (segments.has(name)) return `path segment ${name}`;
-    }
-    for (const name of FILE_SIGNALS[category] || []) {
-      if (bases.has(name)) return `file ${name}`;
-    }
-    for (const ext of EXT_SIGNALS[category] || []) {
-      if (exts.has(ext)) return `${ext} file`;
-    }
-    for (const { re, label } of CONTENT_SIGNALS[category] || []) {
-      if (changed.some((l) => re.test(l))) return `changed line: ${label}`;
-    }
-    return null;
-  };
+  const sets = pathSets(paths);
 
   /** @type {Array<{category: string, signal: string}>} */
   const matches = [];
   for (const category of wanted) {
-    const signal = signalFor(category);
+    const signal = signalIn(category, sets, changed);
     if (signal) matches.push({ category, signal });
   }
 
@@ -370,4 +397,89 @@ export function scanDiff(body, categories) {
   // its ABSENCE marks a record written before this seam split the two states,
   // rather than a fresh honest `false` (D-03).
   return { checked: true, categories: wanted, matches, inconclusive: unreadable, empty: false };
+}
+
+/**
+ * The two files that ARE the signal table, exempt from `scanDeclared`'s
+ * whole-body content pass (D-01). A whole-body scan of a signal table matches
+ * its own patterns by construction - that is self-reference, not evidence about
+ * the change - and this file's own header records the measured cost of the
+ * confusion: a whole-file add of it evidenced six of the eight categories, every
+ * one of them from the table rather than from anything the file does.
+ *
+ * SCOPED TO THIS FACE, and deliberately not to `scanDiff`. That face reads a
+ * HUNK - the lines a range actually added or removed - so a self-match there is
+ * a real edit to a real pattern, and its header's rule holds unedited: the fix
+ * is at the MENTION, never a path or filename exemption. Here the input is the
+ * file's ENTIRE current body, most of which the plan does not touch, so the
+ * mention rule has nothing to bite on.
+ *
+ * Matched as a path SUFFIX so a checkout nested under another tree keeps the
+ * exemption, and never as a bare base name, which would exempt any file a
+ * project happened to call `risk-diff.mjs`.
+ */
+const SIGNAL_TABLE_FILES = Object.freeze([
+  'cadence-core/bin/lib/risk-diff.mjs',
+  'cadence-core/bin/lib/surface-scan.mjs',
+]);
+
+/** Whether `path` names one of the signal-table files themselves. */
+function isSignalTable(/** @type {string} */ path) {
+  const p = low(path).replace(/^\.\//, '');
+  return SIGNAL_TABLE_FILES.some((f) => p === f || p.endsWith(`/${f}`));
+}
+
+/**
+ * What a DECLARED FILE SET touches - the plan-time face, where there is no diff
+ * to read because the change has not been written yet.
+ *
+ * @param {any} files what the caller could read: a list of `{path, body}`, where
+ *   `body` is the file's current bytes or nothing at all. A bare string entry is
+ *   a path with no body. Trusted for nothing - a null, a scalar or a
+ *   non-list reports rather than throws.
+ * @param {any} categories the category vocabulary, from the CALLER, exactly as
+ *   `scanDiff` takes it: normally `CATEGORIES` from lib/surface-scan.mjs
+ *   narrowed to the project's answered
+ *   `review.triggers.risk_surface.surfaces` set. A category not in this list is
+ *   not looked for and is not reported.
+ * @returns {{categories: string[], matches: Array<{category: string, signal: string}>}}
+ *   the same `{category, signal}` entries `scanDiff` returns, so a fire site
+ *   states a reason from one shape whichever face produced it.
+ *
+ * A DECLARED PATH WITH NO READABLE BODY IS NOT INCONCLUSIVE, which is the one
+ * place this face deliberately parts from `scanDiff`'s silence-is-never-cleared
+ * rule. At plan time a declared file frequently does not exist yet - the plan is
+ * what creates it - so calling an absent body unjudgeable would raise every
+ * create-a-file plan. That is the raise-tax the retired name-keyed floor died
+ * of, where `tests/ingest_concurrency.rs` took six roles to their top rung. The
+ * path signals still run over such a file, so the declaration is not ignored;
+ * only the body it does not have yet is.
+ */
+export function scanDeclared(files, categories) {
+  const wanted = strs(categories);
+  const list = Array.isArray(files) ? files : [];
+  /** @type {string[]} */
+  const paths = [];
+  /** @type {string[]} */
+  const lines = [];
+  for (const entry of list) {
+    const path = typeof entry === 'string'
+      ? entry
+      : (entry && typeof entry === 'object' && typeof entry.path === 'string' ? entry.path : '');
+    if (!path) continue;
+    paths.push(path);
+    const body = entry && typeof entry === 'object' ? entry.body : undefined;
+    if (typeof body !== 'string' || !body) continue;
+    if (isSignalTable(path)) continue;
+    for (const raw of body.split('\n')) lines.push(raw.endsWith('\r') ? raw.slice(0, -1) : raw);
+  }
+
+  const sets = pathSets(paths);
+  /** @type {Array<{category: string, signal: string}>} */
+  const matches = [];
+  for (const category of wanted) {
+    const signal = signalIn(category, sets, lines);
+    if (signal) matches.push({ category, signal });
+  }
+  return { categories: wanted, matches };
 }

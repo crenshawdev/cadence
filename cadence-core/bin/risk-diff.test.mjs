@@ -19,7 +19,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanDiff } from './lib/risk-diff.mjs';
+import { scanDiff, scanDeclared } from './lib/risk-diff.mjs';
 import { CATEGORIES } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1420,4 +1420,96 @@ test('the census: neither this file nor the detector matches the detector', () =
     }
   }
   assert.equal(ran, 4, 'the census skipped a file or a scope');
+});
+
+// --- scanDeclared: the plan-time face over a DECLARED file set ----------------
+//
+// Same table, same ordering, no diff: the input is what a plan says it will
+// touch plus whatever body each of those files currently has. Fixtures keep the
+// assembly device the rest of this file uses, for the reason stated at the top -
+// the census below feeds a whole-file add of THIS file to the detector.
+const PARSE_CALL = 'JSON.' + 'parse';
+/** A body whose one line reads a request payload. */
+const PARSE_BODY = `export const read = (s) => ${PARSE_CALL}(s);\n`;
+
+test('scanDeclared: a declared path with NO body still matches by path segment', () => {
+  // The create-a-file case: at plan time the file frequently does not exist, so
+  // an absent body may never be the raise-tax arm - the path is still evidence.
+  const r = scanDeclared([{ path: 'src/auth/session.rs' }], ALL);
+  assert.deepEqual(r.matches, [{ category: 'auth', signal: 'path segment auth' }]);
+  assert.deepEqual(r.categories, ALL);
+});
+
+test('scanDeclared: a body matches only when its category is in the vocabulary', () => {
+  const files = [{ path: 'src/read.mjs', body: PARSE_BODY }];
+  const inScope = scanDeclared(files, ['untrusted_input']);
+  assert.deepEqual(inScope.matches,
+    [{ category: 'untrusted_input', signal: 'changed line: a ' + PARSE_CALL + ' call' }]);
+  // The same bytes, scoped to the surfaces a project actually answered: not
+  // looked for, so not reported. This is D-10 in one row.
+  const outOfScope = scanDeclared(files, ['secrets', 'destructive']);
+  assert.deepEqual(outOfScope.matches, []);
+  assert.deepEqual(outOfScope.categories, ['secrets', 'destructive']);
+});
+
+test('scanDeclared: a signal-table file is exempt from the CONTENT pass, by path', () => {
+  // lib/surface-scan.mjs is the file that PROVES the exemption: its own table
+  // matches three of the eight categories by construction. Under its own path
+  // that is self-reference and reports nothing; under any other path the
+  // identical bytes are ordinary evidence and report.
+  const rel = 'cadence-core/bin/lib/surface-scan.mjs';
+  const body = readFileSync(join(HERE, 'lib', 'surface-scan.mjs'), 'utf8');
+  assert.deepEqual(scanDeclared([{ path: rel, body }], ALL).matches, []);
+  const elsewhere = scanDeclared([{ path: 'vendor/copied.mjs', body }], ALL).matches;
+  assert.ok(elsewhere.length >= 1,
+    `the exemption is only meaningful if these bytes DO match elsewhere: ${JSON.stringify(elsewhere)}`);
+  // ...and a checkout nested under another tree keeps the exemption, since the
+  // match is on the path SUFFIX rather than on an exact repo-relative string.
+  assert.deepEqual(scanDeclared([{ path: `vendor/cadence/${rel}`, body }], ALL).matches, []);
+});
+
+test('scanDeclared: the OTHER signal-table file matches nothing under either path', () => {
+  // lib/risk-diff.mjs was hardened at the MENTION in v3.5.5 - every pattern that
+  // matched its own source was respelled - so it self-matches nothing today and
+  // its exemption is belt beside braces. Pinned so a pattern added plainly later
+  // reddens HERE as well as in the census, where a reader would have to know the
+  // exemption exists to read the silence correctly.
+  const body = readFileSync(join(HERE, 'lib', 'risk-diff.mjs'), 'utf8');
+  assert.deepEqual(scanDeclared([{ path: 'cadence-core/bin/lib/risk-diff.mjs', body }], ALL).matches, []);
+  assert.deepEqual(scanDeclared([{ path: 'vendor/copied.mjs', body }], ALL).matches, []);
+});
+
+test('scanDeclared: a null, a scalar and an absent body each report rather than throw', () => {
+  const bodies = [null, 7, undefined, true, {}, []];
+  for (const body of bodies) {
+    const r = scanDeclared([{ path: 'src/auth/session.rs', body }], ALL);
+    // The path still evidences; only the unreadable body contributes nothing.
+    assert.deepEqual(r.matches, [{ category: 'auth', signal: 'path segment auth' }],
+      `body ${JSON.stringify(body)}`);
+  }
+  // And the same at the OUTER shapes: a non-list, a list of junk, a junk
+  // vocabulary. Every one answers with the empty set it can prove.
+  for (const files of [null, 7, 'src/a.mjs', {}, [null, 7, {}, { path: 5 }, '']]) {
+    assert.deepEqual(scanDeclared(files, ALL).matches, [], JSON.stringify(files));
+  }
+  assert.deepEqual(scanDeclared([{ path: 'src/auth/session.rs' }], null),
+    { categories: [], matches: [] });
+  // A bare string entry is a path with no body - the shape a caller that read
+  // nothing at all hands over.
+  assert.deepEqual(scanDeclared(['src/auth/session.rs'], ALL).matches,
+    [{ category: 'auth', signal: 'path segment auth' }]);
+});
+
+test('scanDeclared: one signal ORDER serves both faces - path evidence wins over content', () => {
+  // The two faces must not answer the same question in two wordings, which is
+  // the whole reason the walk was extracted rather than copied. A file that
+  // evidences `secrets` by BOTH its extension and its body reports the path
+  // signal on either face.
+  // Assembled, like every other fixture here: spelled plainly this line is one
+  // the census below would match on a whole-file add of this very file.
+  const body = `-----BEGIN RSA PRIVATE ${'KEY'}-----\n`;
+  const declared = scanDeclared([{ path: 'deploy/host.pem', body }], ['secrets']);
+  const diffed = scanDiff(wholeFileAdd('deploy/host.pem', body), ['secrets']);
+  assert.deepEqual(declared.matches, [{ category: 'secrets', signal: '.pem file' }]);
+  assert.deepEqual(diffed.matches, declared.matches);
 });
