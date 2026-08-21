@@ -420,8 +420,14 @@ function riskFloor(ctx) {
     return null;
   };
 
-  // D-04's aggregation, in one predicate: a scope is DISCOUNTABLE only when it
-  // held at least one conforming plan and every one of them read clean.
+  // D-04's AGGREGATION RULE, in one predicate: a scope is discountable only when
+  // it held at least one conforming plan and every one of them read clean. Both
+  // halves matter. `clean === found` is the mixed-phase case - one unreadable
+  // member forces the configured stakes for the WHOLE scope, so a phase whose
+  // unreadable plan is the risky one can never resolve below today. `found > 0`
+  // is the same argument one step earlier: a phase directory holding no plan, or
+  // no directory at all, read nothing, and nothing read is not evidence of a
+  // clean phase.
   const read = scope.found > 0 && scope.clean === scope.found;
 
   let floor = baseline;
@@ -434,17 +440,32 @@ function riskFloor(ctx) {
     }
   }
 
+  // NO SURFACE AND NO EVIDENCE ARE NOT THE SAME SENTENCE, which is the whole of
+  // why this arm is three and not one. A scope that was read whole and matched
+  // nothing has EARNED the discount; a scope with nothing readable in it has
+  // proved nothing at all, and reporting the second as the first is how a phase
+  // whose risky plan is the unreadable one would resolve below today.
+  const plans = (n) => `${n} plan${n === 1 ? '' : 's'}`;
   if (!hit) {
-    if (floor === baseline) {
-      return hold(read
-        ? `phase ${phase} declares nothing touching [${surfaces.join(', ')}]`
-        : 'no plan in scope was read whole');
+    if (read) {
+      const clean = `phase ${phase}: ${plans(scope.found)} read clean, declaring `
+        + `nothing that touches [${surfaces.join(', ')}]`;
+      if (floor === baseline) return hold(clean);
+      reason.push(`risk floor: ${clean}; stakes is unset, so the level floors at `
+        + `"${floor}" rather than the "${baseline}" default`);
+      return floor;
     }
-    reason.push(`risk floor: phase ${phase} declares nothing touching `
-      + `[${surfaces.join(', ')}] and its ${scope.found} plan`
-      + `${scope.found === 1 ? '' : 's'} read clean; stakes is unset, so the `
-      + `level floors at "${floor}" rather than the "${baseline}" default`);
-    return floor;
+    // Withheld, and WHY - the per-plan warnings already name which file and what
+    // went wrong with it, so this says only what it cost.
+    const why = scope.found === 0
+      ? `phase ${phase} holds no plan file this could read`
+      : `${scope.found - scope.clean} of ${plans(scope.found)} in phase ${phase} `
+        + 'could not be read';
+    reason.push(`risk floor: ${why}, so no surface was computed and `
+      + (cfg.stakesSet
+        ? `the configured "${baseline}" stands`
+        : `the discount below the "${baseline}" default is withheld`));
+    return baseline;
   }
 
   const at = evidencedBy(hit.category, hit.signal);

@@ -1551,7 +1551,7 @@ test('floor: an explicit stakes=critical is never resolved below (AC1)', () => {
   assert.equal(r.model, 'opus');
   // It read the plan and found nothing, and SAYS so - the configured level
   // standing because nothing raised it is a different fact from no floor.
-  assert.ok(floorReasons(r).some((x) => /declares nothing touching/.test(x)),
+  assert.ok(floorReasons(r).some((x) => /declaring nothing that touches/.test(x)),
     JSON.stringify(r.reason));
 });
 
@@ -1639,7 +1639,7 @@ test('floor: a --file pointed at ANOTHER tree reads that tree\'s files, not this
   const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['cadence-core/bin/lib/config-merge.mjs'] });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.stakes, 'solo');
-  assert.deepEqual(floorReasons(r).filter((x) => /touches/.test(x)), []);
+  assert.deepEqual(floorReasons(r).filter((x) => /touches \w+ \(/.test(x)), []);
 });
 
 test('floor: a stakes_order that cannot place the levels keeps the baseline and warns', () => {
@@ -1657,4 +1657,93 @@ test('floor: a stakes_order that cannot place the levels keeps the baseline and 
   assert.ok((r.warnings || []).some((w) => /stakes_order cannot place/.test(w)),
     JSON.stringify(r.warnings));
   assert.deepEqual(floorReasons(r).filter((x) => /already at or above/.test(x)), []);
+});
+
+// --- the floor fails CLOSED (AC5) --------------------------------------------
+//
+// Every row here has `stakes` UNSET and asserts ok:true at the schema default.
+// The direction is the whole point: `ok:false` drops the caller to the base
+// agent at the host session default with no model override, which is BELOW every
+// floor - so a plan this cannot read may never refuse, and may never discount.
+
+/** A surfaceless plan, and the repo file it declares. */
+const CLEAN_PLAN = ['docs/README.md'];
+const CLEAN_FILES = { 'docs/README.md': '# Readme\n' };
+
+test('fail-closed: an absent phase directory holds the configured stakes', () => {
+  const fx = floorRoot({ ...ANSWERED }, {}, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /holds no plan file this could read/.test(x)),
+    JSON.stringify(r.reason));
+  assert.ok(floorReasons(r).some((x) => /discount below the "shipped" default is withheld/.test(x)));
+  // An absent phase directory is the ordinary pre-plan state, so it is said in
+  // `reason` and NOT warned about - warning would fire on every dispatch of
+  // every project that has not planned its next phase yet.
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+});
+
+test('fail-closed: a phase directory with no PLAN file is the same arm', () => {
+  const fx = floorRoot({ ...ANSWERED }, { '3/CONTEXT.md': '# Context\n' }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /holds no plan file this could read/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('fail-closed: a PLAN whose frontmatter is out of grammar holds the configured stakes', () => {
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': '---\nphase: 3\nplan: 1\nfiles:\n  - docs/README.md\n  not a key line\n---\n\n# Plan\n' },
+    CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  // The `files:` list PARSES here - the grammar rejects the plan, and the paths
+  // it did read are dropped with it rather than half-trusted.
+  assert.ok((r.warnings || []).some((w) => /^risk floor: .*out of grammar/.test(w)),
+    JSON.stringify(r.warnings));
+  assert.ok(floorReasons(r).some((x) => /1 of 1 plan in phase 3 could not be read/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('fail-closed: a PLAN whose file mode makes it unreadable holds the configured stakes', () => {
+  // A DIRECTORY at the plan's own name: `readFileSync` fails EISDIR for any uid,
+  // where a chmod is silently a no-op under a root test runner and would let this
+  // pass without proving anything (traceRoot's `breakTrace` states the same rule).
+  const fx = floorRoot({ ...ANSWERED }, {}, CLEAN_FILES);
+  mkdirSync(join(fx.planning, 'phases', '3', 'PLAN-1.md'), { recursive: true });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok((r.warnings || []).some((w) => /^risk floor: cannot read .*PLAN-1\.md \(EISDIR\)/.test(w)),
+    JSON.stringify(r.warnings));
+});
+
+test('fail-closed: ONE unreadable plan holds a whole two-plan scope up (the aggregation rule)', () => {
+  // The mixed phase, which is what the rule exists for: the clean plan touches
+  // nothing, and its silence is not evidence about the sibling nobody could read.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': CLEAN_PLAN }, CLEAN_FILES);
+  mkdirSync(join(fx.planning, 'phases', '3', 'PLAN-2.md'), { recursive: true });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.model, 'opus');
+  assert.ok(floorReasons(r).some((x) => /1 of 2 plans in phase 3 could not be read/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('fail-closed: the paired POSITIVE - both plans clean and surfaceless resolves solo', () => {
+  // Without this row the five above are satisfied by a floor that never
+  // discounts anything at all.
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': CLEAN_PLAN, '3/PLAN-2.md': ['docs/GUIDE.md'] },
+    { ...CLEAN_FILES, 'docs/GUIDE.md': '# Guide\n' });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.model, 'sonnet');
+  assert.ok(floorReasons(r).some((x) => /2 plans read clean/.test(x)), JSON.stringify(r.reason));
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
 });
