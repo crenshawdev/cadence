@@ -60,7 +60,11 @@ measurement close (AC6/AC7).
   `ok:false` - an `ok:false` drops the dispatch to the host session default,
   below every floor (`references/seams.md:190-191`). The unset->`solo`
   discount applies only when a plan was READ and showed no answered surface;
-  an unreadable plan never earns it. Evidence:
+  an unreadable plan never earns it. Aggregation over a multi-plan scope
+  (decision-review amendment): the discount requires EVERY `PLAN*.md` in the
+  scope read successfully and clean - one unreadable member forces the
+  configured stakes for the whole scope, so a mixed phase whose unreadable
+  plan is the risky one can never resolve below today. Evidence:
   `cadence-core/references/seams.md:190-191`, `cadence-core/bin/route.mjs:254-261`.
 
 - D-05 (Files source): the floor reads the frontmatter `files:` list alone,
@@ -70,11 +74,19 @@ measurement close (AC6/AC7).
   `declaredPhaseFiles` doc comment at `8063832^:cadence-core/bin/lib/phase-plans.mjs`,
   `cadence-core/bin/lib/planning-files.mjs:2186-2252`.
 
-- D-06 (Floor scope): the floor is computed per PHASE - the union of every
-  `PLAN*.md` in `.planning/phases/<N>/` - not per plan; `route.mjs resolve`
-  gains no `--plan` flag. A five-plan phase with one auth plan pays the floor
-  on all five; that budget is accepted (flagged below). Evidence:
-  `cadence-core/references/seams.md:233-239`,
+- D-06 (Floor scope, amended by /cad-decision-review): the floor is per PLAN
+  for executor dispatches and per PHASE for phase-scoped callers. Executors
+  already resolve once per dispatch with the plan number on the command line
+  (`execute.md`'s `--bracket-plan <k>` on each executor's own resolve), so the
+  resolve reads THAT plan's `files:` and a clean plan in a mixed phase routes
+  below its auth sibling. Phase-scoped roles (`cad-plan-checker`,
+  `cad-verifier`, reviewer resolution) floor on the union of every `PLAN*.md`
+  in `.planning/phases/<N>/`, subject to D-04's aggregation rule. The original
+  per-phase-only form rested on two contradicted premises: `seams.md:233-239`'s
+  resolve-once rule does not describe the executor caller, and a plan key
+  already exists at `arg-contract.mjs:930`. Evidence:
+  `cadence-core/workflows/execute.md:216-221`,
+  `cadence-core/bin/route.mjs:788-796`,
   `cadence-core/bin/lib/arg-contract.mjs:922-933`.
 
 ## Decisions
@@ -164,7 +176,7 @@ measurement close (AC6/AC7).
   `rung_order`, not `stakes_order`; AC1 rewords it as the level `critical` -
   Likely the intended reading; if wrong, the intent was a RUNG floor and AC1
   under-tests it (D-08's clamp is where rung flooring lives).
-- The per-phase floor budget (D-06) is acceptable: one auth plan floors all
-  five plans of its phase - Likely; if wrong, `--plan <k>` is added later,
-  bumping the `arg-contract.test.mjs:297` entries pin (the phase 1 deviation
-  shape).
+- Reading the existing `--bracket-plan` as the executor resolve's floor key
+  needs no new flag; if the planner instead adds a dedicated `--plan`, the
+  `arg-contract.test.mjs:297` entries pin bumps (the phase 1 deviation shape) -
+  Likely; planner's call which spelling to use.
