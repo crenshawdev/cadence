@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 3 (Blocking that blocks the land)
-Status: phase complete
-Next: /cad-context 3
-Updated: 2026-08-20
+Phase: 3 of 3 (Ceremony the change pays for)
+Status: context gathered
+Next: /cad-plan 3
+Updated: 2026-08-21
