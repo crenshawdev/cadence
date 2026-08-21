@@ -1,0 +1,49 @@
+{
+  "phase": "3",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "23fb76d",
+  "head": "1c2c45c",
+  "base_id": "23fb76d656b252a192d1b831758dccf58eea7027",
+  "head_id": "1c2c45cc1efe45d81d9aff9d7cd82b67f07c559b",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/route.mjs",
+      "line": 334,
+      "severity": "high",
+      "claim": "The body-size fast path silently drops content evidence for an existing declared file, while the discount predicate considers only whether PLAN files parsed cleanly. Thus a known oversized source file can let the risk floor resolve below the shipped default.",
+      "failure_scenario": "With stakes unset and the answered surface set including untrusted_input, make PLAN-1.md cleanly declare src/handler.mjs. Let that existing file be 513 KiB and contain JSON.parse(requestBody), without a path signal such as an auth directory. `statSync(abs).size > MAX_BODY_BYTES` returns `{ path: rel }`, so `scanDeclared` sees no body and no match; the clean PLAN makes `read` true and the resolver discounts to solo. The untrusted-input review gate is therefore silently routed lower despite the detector's content signal being present. Oversized existing files need a fail-closed/inconclusive path distinct from a not-yet-created declared file.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "da5bae4",
+      "base_id": "23fb76d656b252a192d1b831758dccf58eea7027",
+      "head_id": "1c2c45cc1efe45d81d9aff9d7cd82b67f07c559b"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/route.mjs",
+      "line": 334,
+      "severity": "high",
+      "claim": "The claimed outside-repository read guard can be bypassed through a symlink because `statSync` and `readFileSync` follow links after only lexical absolute/`..` checks on the declared path.",
+      "failure_scenario": "A repository state contains a tracked-looking declared path such as src/input.mjs that is a symlink to /dev/zero (or another external FIFO). A clean PLAN declares src/input.mjs; it is neither absolute nor contains a `..` segment, so it reaches `statSync(abs)` and then `readFileSync(abs, 'utf8')`. The target's reported size does not provide a safe bound, and reading /dev/zero never reaches EOF, hanging or exhausting the resolver. This lets untrusted PLAN input combined with repository state block routing despite the stated bounded-I/O guarantee.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "da5bae4",
+      "base_id": "23fb76d656b252a192d1b831758dccf58eea7027",
+      "head_id": "1c2c45cc1efe45d81d9aff9d7cd82b67f07c559b"
+    }
+  ]
+}
