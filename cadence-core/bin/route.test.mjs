@@ -1611,6 +1611,50 @@ test('floor: a declared file that does not exist yet still evidences by PATH', (
   assert.match(floorReasons(r)[0], /src\/auth\/session\.rs touches auth \(path segment auth\)/);
 });
 
+// --- the discount is a claim the scope was READ (risk_surface round 1) --------
+//
+// Both tests below pin findings a cross-model `risk_surface` review raised
+// against this phase's own first commit range and adjudication confirmed. The
+// shared defect: `read` measured PLAN readability only, so a plan that parsed
+// perfectly while declaring a source file nobody could open discounted the
+// whole scope on evidence that was never gathered.
+
+test('floor: an OVERSIZED declared body withholds the discount rather than reading as clean', () => {
+  // 513 KiB clears MAX_BODY_BYTES, so the body is skipped - and the construct
+  // inside it is therefore never seen. Before the fix that returned a bare
+  // path, indistinguishable from a file the plan had yet to write, and the
+  // scope discounted to solo on a file nobody had opened.
+  const body = `const x = ${'JSON'}.${'parse'}(input);\n` + 'y\n'.repeat(300 * 1024);
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['src/big.mjs'] }, { 'src/big.mjs': body });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  // NOT solo: the unset default stands because nothing was proved.
+  assert.equal(r.stakes, 'shipped');
+  assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3 declares src\/big\.mjs, unread \(body over \d+ bytes\)/.test(w)),
+    JSON.stringify(r.warnings));
+  assert.ok(floorReasons(r).some((x) => /1 declared file in phase 3 went unread/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('floor: a declared path that is not a REGULAR file is refused unopened and terminates', () => {
+  // The bounded-I/O escape: `statSync` follows a symlink, and a link to a
+  // character device reports size 0, so the byte bound passed and the read ran
+  // on a stream with no EOF. `lstatSync` + isFile() is the check on what the
+  // path RESOLVES to, which the lexical absolute/`..` check cannot make.
+  if (!existsSync('/dev/zero')) return; // not a Linux/BSD host
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['src/link.mjs'] });
+  mkdirSync(join(fx.repo, 'src'), { recursive: true });
+  symlinkSync('/dev/zero', join(fx.repo, 'src/link.mjs'));
+  // Reaching this assertion AT ALL is half the test: before the fix the
+  // resolve read /dev/zero to an EOF that never comes.
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3 declares src\/link\.mjs, unread \(not a regular file\)/.test(w)),
+    JSON.stringify(r.warnings));
+});
+
 test('floor: the two pre-plan roles are exempt and say they were not computed', () => {
   const fx = floorRoot({ ...ANSWERED },
     { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });

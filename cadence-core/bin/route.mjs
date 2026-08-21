@@ -113,7 +113,7 @@
 // because the cursor lags at both their call sites and a floor computed for them
 // would be computed off a DIFFERENT phase's file list.
 
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, lstatSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, isAbsolute } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
@@ -314,30 +314,68 @@ function providerModel(providers, name, tier) {
  * PARENT - which is what keeps a `--file` pointed at another tree from reading
  * this one's files.
  *
- * A body that cannot be read is not an error and not an inconclusive state:
+ * A body that DOES NOT EXIST is not an error and not an inconclusive state:
  * at plan time a declared file frequently does not exist yet because the plan
  * CREATES it, so the path still travels and only the body it does not have is
  * missing (lib/risk-diff.mjs states why at length).
+ *
+ * A body that EXISTS AND WAS SKIPPED is the opposite state and carries
+ * `unread` saying which arm skipped it. The two were one arm until a
+ * `risk_surface` review refuted it: a 600 KiB declared file full of
+ * `JSON.parse` calls returned a bare path exactly like a file the plan had yet
+ * to write, so its content evidence vanished and the caller's discount
+ * predicate - which reads PLAN readability and nothing below it - handed the
+ * scope a level BELOW the configured stakes on the strength of a file nobody
+ * opened. `unread` is what lets `riskFloor` apply D-04's own argument one level
+ * down: nothing read is not evidence of nothing there.
  *
  * WHAT IT REFUSES TO OPEN, and neither is tidiness. A path that is ABSOLUTE or
  * that climbs out of the repo root with `..` gets its path signals and no read
  * at all: the `files:` list is data from a file that can arrive with a clone,
  * no legitimate plan declares a path outside the repository, and a resolve is
- * not a place to open one. A file over `MAX_BODY_BYTES` is the same arm for the
- * bound's own reason. Every read sits in its own try - nothing here throws, and
- * a resolve that could not read a body still returns a whole bundle.
+ * not a place to open one. That check reads the SPELLING, so a second one reads
+ * what the path RESOLVES to: a non-regular file is refused unopened, because
+ * `statSync` follows a symlink and a link to a character device reports size 0,
+ * clearing the byte bound and then never reaching EOF. A file over
+ * `MAX_BODY_BYTES` is the same arm for the bound's own reason. Every read sits
+ * in its own try - nothing here throws, and a resolve that could not read a
+ * body still returns a whole bundle.
  * @param {string} repoRoot @param {string[]} files
  * @returns {Array<{path: string, body?: string}>}
  */
 function declaredBodies(repoRoot, files) {
   return files.map((rel) => {
-    if (isAbsolute(rel) || rel.split('/').includes('..')) return { path: rel };
+    // Refused by SPELLING. `unread` and not a bare path: a file this declined
+    // to open may hold the very evidence a discount would claim is absent.
+    if (isAbsolute(rel) || rel.split('/').includes('..')) {
+      return { path: rel, unread: 'path climbs out of the repository' };
+    }
     const abs = join(repoRoot, rel);
+    let st;
     try {
-      if (statSync(abs).size > MAX_BODY_BYTES) return { path: rel };
+      st = lstatSync(abs);
+    } catch {
+      // THE ONE ARM THAT IS NOT `unread`, and the distinction is the whole
+      // point: at plan time a declared file frequently does not exist yet
+      // because the plan CREATES it. Nothing was skipped, so the path travels
+      // with no body and the scope stays discountable.
+      return { path: rel };
+    }
+    // Refused by WHAT THE PATH RESOLVES TO, which the spelling check above
+    // cannot see. `statSync` FOLLOWS a symlink, so a link to a character
+    // device reports size 0, passes the byte bound below, and is then read to
+    // an EOF that never comes - the bounded-I/O guarantee this function claims,
+    // escaped by a link the repository itself carries. `lstatSync` + isFile()
+    // is that check, and it fails closed: a non-regular declared path is
+    // evidence nobody read, never evidence of nothing.
+    if (!st.isFile()) return { path: rel, unread: 'not a regular file' };
+    if (st.size > MAX_BODY_BYTES) {
+      return { path: rel, unread: `body over ${MAX_BODY_BYTES} bytes` };
+    }
+    try {
       return { path: rel, body: readFileSync(abs, 'utf8') };
     } catch {
-      return { path: rel };
+      return { path: rel, unread: 'body could not be read' };
     }
   });
 }
@@ -434,14 +472,25 @@ function riskFloor(ctx) {
   };
 
   // D-04's AGGREGATION RULE, in one predicate: a scope is discountable only when
-  // it held at least one conforming plan and every one of them read clean. Both
-  // halves matter. `clean === found` is the mixed-phase case - one unreadable
+  // it held at least one conforming plan, every one of them read clean, and
+  // every declared body that EXISTS was actually opened. All three halves
+  // matter. `clean === found` is the mixed-phase case - one unreadable
   // member forces the configured stakes for the WHOLE scope, so a phase whose
   // unreadable plan is the risky one can never resolve below today. `found > 0`
   // is the same argument one step earlier: a phase directory holding no plan, or
   // no directory at all, read nothing, and nothing read is not evidence of a
-  // clean phase.
-  const read = scope.found > 0 && scope.clean === scope.found;
+  // clean phase. `unread` is that argument one level DOWN, and it is the half a
+  // `risk_surface` review refuted: the first two read PLAN files only, so a
+  // plan that parsed perfectly while declaring an oversized, symlinked or
+  // unreadable SOURCE file discounted the whole scope on evidence nobody had
+  // opened. A discount is a claim that the scope was read; a skipped body makes
+  // that claim false whichever level it was skipped at.
+  const unread = entries.filter((e) => typeof e.unread === 'string');
+  for (const e of unread) {
+    warnings.push(`risk floor: ${scopeName} declares ${e.path}, unread `
+      + `(${e.unread}), so the discount below "${baseline}" is withheld`);
+  }
+  const read = scope.found > 0 && scope.clean === scope.found && unread.length === 0;
 
   let floor = baseline;
   if (!cfg.stakesSet && read) {
@@ -476,8 +525,13 @@ function riskFloor(ctx) {
       ? (scoped
         ? `${scopeName} names no plan file this could read`
         : `${scopeName} holds no plan file this could read`)
-      : `${scope.found - scope.clean} of ${plans(scope.found)} in ${scopeName} `
-        + 'could not be read';
+      : scope.clean !== scope.found
+        ? `${scope.found - scope.clean} of ${plans(scope.found)} in ${scopeName} `
+          + 'could not be read'
+        // The plans all read clean and a declared BODY did not. Named as its own
+        // cause: "2 of 3 plans could not be read" would be a false sentence here.
+        : `${unread.length} declared file${unread.length === 1 ? '' : 's'} in `
+          + `${scopeName} went unread`;
     reason.push(`risk floor: ${why}, so no surface was computed and `
       + (cfg.stakesSet
         ? `the configured "${baseline}" stands`
