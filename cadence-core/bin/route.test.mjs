@@ -2081,3 +2081,107 @@ test('replay: a bare --file is REFUSED, exactly as resolve\'s is', () => {
   assert.equal(r.reason, 'usage');
   assert.match(r.detail, /--file/);
 });
+
+// --- lowering below the computed floor takes a named waiver (AC4) ------------
+//
+// The ONE way to route below the floor, and it is a NEW key inside
+// `review.triggers.risk_surface` (D-03) - the eight `risk.override.<surface>`
+// keys v2.0.0 retired stay retired, pinned byte-for-byte by
+// retired-keys.test.mjs. It waives a LEVEL and never a REVIEW.
+
+const WAIVER_KEY = 'review.triggers.risk_surface.waive_routing_floor';
+
+/** The answered set, plus a waiver value written verbatim beside it. */
+const waiving = (value) => ({ review: { triggers: { risk_surface: {
+  surfaces: ['secrets', 'destructive', 'untrusted_input'],
+  waive_routing_floor: value } } } });
+
+// A destructive construct, assembled for the reason SECRET_BODY is: this file
+// is read by the same detector.
+const DESTRUCTIVE_BODY = `${'rm'} -${'rf'} ./build\n`;
+
+/** A repo whose phase 3 declares one file carrying the given body. */
+const waiverFx = (config, body = SECRET_BODY) => floorRoot(config,
+  { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': body });
+
+test('waiver: a waived surface holds at the CONFIGURED stakes, not the unset discount', () => {
+  // A scope that matched a surface it waived is not a scope that matched
+  // nothing: the waiver lowers from the computed floor to the level the project
+  // STATED, and no further.
+  const fx = waiverFx(waiving(['secrets']));
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the configured default, never solo');
+  const said = floorReasons(r);
+  assert.ok(said.some((x) => x.includes(WAIVER_KEY) && /secrets/.test(x)
+    && /src\/load\.mjs/.test(x)), JSON.stringify(r.reason));
+  assert.ok(said.some((x) => /every matched surface is waived/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('waiver: with stakes solo and the surface waived, the level IS solo', () => {
+  const fx = waiverFx({ stakes: 'solo', ...waiving(['secrets']) });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.model, 'sonnet');
+});
+
+test('waiver: without the key the lowering is REFUSED, and the reason says which key', () => {
+  // The paired arm. Never an ok:false - that drops the caller to the host
+  // session default, below every floor - so "refused" means the lowering did
+  // not take effect and the record says what would have made it.
+  const fx = waiverFx({ stakes: 'solo', ...ANSWERED });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  const refusal = floorReasons(r).find((x) => /refused/.test(x));
+  assert.ok(refusal, JSON.stringify(r.reason));
+  assert.match(refusal, /lowering to the configured "solo" is refused/);
+  assert.ok(refusal.includes(WAIVER_KEY), refusal);
+  assert.match(refusal, /name secrets in/);
+});
+
+test('waiver: naming a DIFFERENT surface than the one matched waives nothing', () => {
+  const fx = waiverFx({ stakes: 'solo', ...waiving(['destructive']) });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.match(floorReasons(r)[0], /touches secrets/);
+});
+
+test('waiver: when the top match is waived, the next UNWAIVED match still raises', () => {
+  const fx = waiverFx({ stakes: 'solo', ...waiving(['secrets']) },
+    SECRET_BODY + DESTRUCTIVE_BODY);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped', 'waiving one surface is not waiving the floor');
+  const said = floorReasons(r);
+  assert.ok(said.some((x) => /secrets/.test(x) && x.includes(WAIVER_KEY)),
+    JSON.stringify(r.reason));
+  assert.ok(said.some((x) => /touches destructive/.test(x) && /level solo -> shipped/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('waiver: a value outside the eight categories rides warnings and waives nothing', () => {
+  const bad = waiverFx({ stakes: 'solo', ...waiving(['not_a_surface']) });
+  const r = resolve('cad-executor', bad.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok((r.warnings || []).some((w) => w.includes(WAIVER_KEY) && /not_a_surface/.test(w)),
+    JSON.stringify(r.warnings));
+  // ...and a value that is not a list at all takes the same arm.
+  const scalar = waiverFx({ stakes: 'solo', ...waiving('secrets') });
+  const s = resolve('cad-executor', scalar.file, ['--phase', '3']);
+  assert.equal(s.stakes, 'shipped');
+  assert.ok((s.warnings || []).some((w) => w.includes(WAIVER_KEY) && /is not a list/.test(w)),
+    JSON.stringify(s.warnings));
+});
+
+test('waiver: the replay honours it too - one implementation, both faces', () => {
+  // The whole reason the scope-to-level half is one helper: a rule added on the
+  // resolve side that did not reach the replay would print raises this project
+  // has already declined to route on.
+  const fx = waiverFx(waiving(['secrets']));
+  const r = replay(fx.file);
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].raised, false);
+  assert.equal(r.rows[0].computed, 'shipped');
+  assert.deepEqual(r.regressions, []);
+});

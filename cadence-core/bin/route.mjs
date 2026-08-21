@@ -197,6 +197,15 @@ const higherLevel = (a, b) => {
   return ib > ia ? b : a;
 };
 
+// The ONE key that can route a dispatch below the computed floor, spelled once
+// so the schema, the reader, the reason and the refusal cannot drift apart. It
+// waives a LEVEL and never a REVIEW: the blocking commit-time `risk_surface`
+// gate still fires on the actual diff, which is why the name says `routing`.
+// D-03: the eight `risk.override.<surface>` keys v2.0.0 retired stay retired -
+// a key cannot live in the schema and the retired registry at once - so the
+// floor is given back through a NEW key rather than by reviving those.
+const WAIVER_KEY = 'review.triggers.risk_surface.waive_routing_floor';
+
 // The roles dispatched BEFORE a plan exists, exempt from the floor. Both read no
 // plan and resolve at the configured stakes: `workflows/context.md` dispatches
 // the analyzer while the cursor still names the PREVIOUS phase, and `plan.md`
@@ -262,6 +271,12 @@ function readConfig(file) {
     // "nobody has answered" stays a distinguishable state (D-12), and reading a
     // default here would erase it.
     triggerSurfaces: triggerFieldIn(c, 'surfaces'),
+    // `review.triggers.risk_surface.waive_routing_floor` - the surfaces whose
+    // RAISE this project waives, which is the ONE way to route below the
+    // computed floor. Read through the same generic reader for the fifth time
+    // and for the same reason: `null` is its schema default precisely so
+    // "waived nothing" and "never answered" stay one honest state.
+    triggerWaivers: triggerFieldIn(c, 'waive_routing_floor'),
     // The configured reviewer SET, or null when no layer named a usable one -
     // DEFAULTS.reviewers backstops it below, the way DEFAULTS backstops every
     // other unset key.
@@ -441,6 +456,40 @@ function declaredBodies(repoRoot, files) {
 }
 
 /**
+ * The categories this project waives the RAISE of (`WAIVER_KEY`), validated
+ * ONCE per command against the table's own vocabulary and never per phase - a
+ * malformed waiver is a fact about the run, and a replay would otherwise repeat
+ * it thirty times.
+ *
+ * A value outside the vocabulary is NAMED and waives nothing, which is how this
+ * file already treats a gate, a tier or an effort outside its own: name it, let
+ * the routed value stand. That is also the safe direction here, since the value
+ * that fails to parse fails toward RAISING. It is deliberately NOT the
+ * fails-safe-whole-list rule its `surfaces` sibling carries: there a bad entry
+ * widens the blocking gate's scope, and here dropping one entry is already the
+ * widening direction.
+ * @param {any} cfg @param {string[]} warnings @returns {string[]}
+ */
+function waivedSurfaces(cfg, warnings) {
+  const wrote = cfg.triggerWaivers.risk_surface;
+  if (wrote === undefined) return [];
+  const vocab = riskCategories();
+  if (!Array.isArray(wrote)) {
+    warnings.push(`${WAIVER_KEY}=${JSON.stringify(wrote)} is not a list; `
+      + 'no raise is waived');
+    return [];
+  }
+  const kept = wrote.filter((x) => typeof x === 'string' && vocab.includes(x));
+  const bad = wrote.filter((x) => !(typeof x === 'string' && vocab.includes(x)));
+  if (bad.length) {
+    warnings.push(`${WAIVER_KEY}: ${bad.map((x) => JSON.stringify(x)).join(', ')} `
+      + `${bad.length === 1 ? 'is' : 'are'} not one of [${vocab.join(', ')}]; `
+      + `${bad.length === 1 ? 'it waives' : 'they waive'} nothing`);
+  }
+  return kept;
+}
+
+/**
  * THE PLAN-TIME RISK FLOOR (CER-01). The configured `stakes` is the MINIMUM this
  * dispatch resolves at; the phase's own declared `files:`, scanned here, are
  * what raise it. Returns the level to route on, appends every move it made to
@@ -471,11 +520,11 @@ function declaredBodies(repoRoot, files) {
  * same scope addressed by directory instead.
  *
  * @param {{role: string, planningRoot: string, phase: any, planKey: any, cfg: any,
- *   surfaces: string[], reason: string[], warnings: string[]}} ctx
+ *   surfaces: string[], waived: string[], reason: string[], warnings: string[]}} ctx
  * @returns {string} the stakes level to route on
  */
 function riskFloor(ctx) {
-  const { role, planningRoot, phase, planKey, cfg, surfaces, reason, warnings } = ctx;
+  const { role, planningRoot, phase, planKey, cfg, surfaces, waived, reason, warnings } = ctx;
   const baseline = cfg.stakes;
   /**
    * The configured level stands because no floor was computed at all - a
@@ -510,6 +559,7 @@ function riskFloor(ctx) {
     repoRoot: dirname(planningRoot),
     cfg,
     surfaces,
+    waived,
     reason,
     warnings,
   }).level;
@@ -535,15 +585,16 @@ function riskFloor(ctx) {
  * the baseline: `RAISE_TARGET` is `shipped` and so is the schema default, so on
  * most projects a raise lands ON the configured level and a diff-triggered
  * evidence column would be empty for exactly the rows whose surface a reader
- * needs. It is false when nothing matched and false when `stakes_order` could
- * not place the comparison, which is the arm where the surface raised nothing.
+ * needs. It is false when nothing matched, false when every match was WAIVED,
+ * and false when `stakes_order` could not place the comparison, which is the arm
+ * where the surface raised nothing.
  * @param {{scope: any, scoped: boolean, scopeName: string, repoRoot: string, cfg: any,
- *   surfaces: string[], reason: string[], warnings: string[]}} ctx
+ *   surfaces: string[], waived: string[], reason: string[], warnings: string[]}} ctx
  * @returns {{level: string, raised: boolean, surface: string|null, signal: string|null,
  *   file: string|null}}
  */
 function levelFor(ctx) {
-  const { scope, scoped, scopeName, repoRoot, cfg, surfaces, reason, warnings } = ctx;
+  const { scope, scoped, scopeName, repoRoot, cfg, surfaces, waived, reason, warnings } = ctx;
   const baseline = cfg.stakes;
   const order = stakesOrder();
   /** A level nothing raised - the shape every non-raise arm returns. */
@@ -557,7 +608,13 @@ function levelFor(ctx) {
   for (const w of scope.warnings) warnings.push(w);
   const entries = declaredBodies(repoRoot, scope.files);
   const { matches } = scanDeclared(entries, surfaces);
-  const hit = matches[0];
+
+  // THE WAIVER, applied per MATCH and not to the scan: a project that waived
+  // `secrets` on a phase which also touches `destructive` still routes at the
+  // raise, because the next unwaived match is the hit. Waiving the top match is
+  // therefore never waiving the floor.
+  const waivedHits = matches.filter((m) => waived.includes(m.category));
+  const hit = matches.find((m) => !waived.includes(m.category));
 
   // Which declared file produced the winning signal, so the reason cites
   // EVIDENCE rather than asserting a category. Re-scanned per entry against the
@@ -612,6 +669,27 @@ function levelFor(ctx) {
         + `"${UNSET_FLOOR}", so an unset stakes cannot floor below the schema `
         + `default; "${baseline}" stands`);
     }
+  }
+
+  // A SILENT WAIVER is the shape this seam's every other arm exists to refuse,
+  // so each one applied is stated: the key, the surface, and the file it would
+  // have raised on.
+  for (const m of waivedHits) {
+    const wat = evidencedBy(m.category, m.signal);
+    reason.push(`risk floor: ${scopeName}: `
+      + `${wat ? `${wat} touches` : 'a declared file touches'} ${m.category} `
+      + `(${m.signal}); the raise is waived by ${WAIVER_KEY}`);
+  }
+  // EVERY match waived is NOT the same state as no match, and it holds at the
+  // CONFIGURED level rather than taking the unset-`solo` discount: the waiver
+  // lowers from the computed floor to the level the project stated and no
+  // further, because a scope that matched a surface it waived is not a scope
+  // that matched nothing.
+  if (!hit && waivedHits.length) {
+    reason.push(`risk floor: ${scopeName}: every matched surface is waived by `
+      + `${WAIVER_KEY}, so the configured "${baseline}" stands and no discount `
+      + 'below it is taken');
+    return none(baseline);
   }
 
   // NO SURFACE AND NO EVIDENCE ARE NOT THE SAME SENTENCE, which is the whole of
@@ -688,6 +766,17 @@ function levelFor(ctx) {
   }
   reason.push(`risk floor: ${scopeName}: ${where} ${hit.category} `
     + `(${hit.signal}); level ${floor} -> ${raised}`);
+  // THE PAIRED ARM of the waiver: the raise carried the level ABOVE what this
+  // project configured, and without the key naming this surface that lowering
+  // does not take effect. Said rather than left to be inferred, and never an
+  // `ok:false` - that drops the caller to the host session default, below every
+  // floor, so "refused" here means the lowering did not happen and the record
+  // says which key would have made it happen.
+  if (higherLevel(baseline, raised) === raised && baseline !== raised) {
+    reason.push(`risk floor: ${scopeName}: lowering to the configured `
+      + `"${baseline}" is refused - name ${hit.category} in ${WAIVER_KEY} to `
+      + 'waive this raise');
+  }
   return cite(raised);
 }
 
@@ -793,7 +882,7 @@ function resolve(opts) {
   // then come from the floored row through the one cell grid.
   const stakes = riskFloor({
     role: opts.role, planningRoot, phase: tracePhase, planKey: opts.plan,
-    cfg, surfaces, reason, warnings,
+    cfg, surfaces, waived: waivedSurfaces(cfg, warnings), reason, warnings,
   });
 
   // The three grids a torn LEVEL is fatal in (D-01). `model`, `effort` and
@@ -1234,6 +1323,10 @@ function replay(opts) {
   const warnings = [...cfg._warnings];
   const decided = answeredSurfaces(cfg.triggerSurfaces.risk_surface, riskCategories());
   const surfaces = decided.surfaces;
+  // Validated once for the whole run, never per row (`waivedSurfaces` states
+  // why), and applied to every row: a replay that ignored the waiver would
+  // print raises this project has already declined to route on.
+  const waived = waivedSurfaces(cfg, warnings);
   const today = cfg.stakes;
   // The repo root is the planning root's PARENT, on `riskFloor`'s own reasoning:
   // declared paths are repo-relative, and a `--file` pointed at another tree
@@ -1249,7 +1342,7 @@ function replay(opts) {
     const rowWarnings = [];
     const scope = declaredFilesIn(path);
     const r = levelFor({ scope, scoped: false, scopeName: label, repoRoot, cfg,
-      surfaces, reason, warnings: rowWarnings });
+      surfaces, waived, reason, warnings: rowWarnings });
     rows.push({
       label,
       today,
