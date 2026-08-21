@@ -1979,3 +1979,105 @@ test('--plan: it is NOT --bracket-plan, which still keys the trace alone', () =>
   const dispatch = traceLines(fx.planning).find((e) => e.family === 'lifecycle');
   assert.equal(dispatch.plan, '1');
 });
+
+// --- replay: what the floor does to a project's own phases (AC3) -------------
+//
+// The whole point is that AC3 is PRINTABLE rather than asserted, so these pin
+// the row shape a reader acts on - and that the computed column comes off the
+// same `levelFor` a resolve routes on rather than off a second arithmetic.
+
+/** `route.mjs replay`, on the same isolated-global rail `resolve` uses. */
+function replay(file, extra = [], opts = {}) {
+  const args = ['replay', ...(file ? ['--file', file] : []), ...extra];
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
+  try {
+    return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+/** An archived phase directory - where `milestone-prune --mode archive` puts a
+ * closed milestone's phases, and where 27 of this repository's 30 live. */
+function archivePhase(planning, label, name, files) {
+  const dir = join(planning, `_archive-${label}`, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'PLAN.md'), `---\nphase: 1\nplan: 1\nfiles:\n${
+    files.map((f) => `  - ${f}\n`).join('')}---\n\n# Plan\n`);
+}
+
+test('replay: one row per phase, and the RAISE carries the evidence even at today\'s level', () => {
+  const fx = floorRoot({ ...ANSWERED }, {
+    '3/PLAN-1.md': ['docs/README.md'],
+    '4/PLAN-1.md': ['src/load.mjs'],
+  }, { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
+  const r = replay(fx.file);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'today IS the configured stakes - the schema default here');
+  assert.deepEqual(r.rows.map((x) => x.label), ['phases/3', 'phases/4']);
+
+  const [clean, risky] = r.rows;
+  assert.equal(clean.today, 'shipped');
+  assert.equal(clean.computed, 'solo', 'the surfaceless phase computes BELOW today');
+  assert.equal(clean.raised, false);
+  assert.equal('surface' in clean, false, 'a row that did not raise cites nothing');
+  assert.equal(clean.plans_found, 1);
+  assert.equal(clean.plans_clean, 1);
+
+  // The raise that does not move the column, which is why evidence keys off the
+  // RAISE and never off the diff: `RAISE_TARGET` and the default are both
+  // `shipped`, so a diff-triggered evidence column would be blank for exactly
+  // the rows whose surface a reader needs.
+  assert.equal(risky.computed, 'shipped');
+  assert.equal(risky.computed, risky.today);
+  assert.equal(risky.raised, true);
+  assert.equal(risky.surface, 'secrets');
+  assert.equal(risky.file, 'src/load.mjs');
+  assert.ok(risky.signal, JSON.stringify(risky));
+  assert.deepEqual(r.regressions, [], 'always present, empty on a healthy tree');
+});
+
+test('replay: an ARCHIVED phase directory is measured in the same run', () => {
+  // 27 of this repository's own 30 phases are archived; a locator that joined
+  // `phases/<N>` and nothing else would answer AC3 off a tenth of the evidence.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['docs/README.md'] },
+    { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
+  archivePhase(fx.planning, 'v1.0.0', '1', ['src/load.mjs']);
+  const r = replay(fx.file);
+  assert.deepEqual(r.rows.map((x) => x.label), ['_archive-v1.0.0/1', 'phases/3']);
+  assert.equal(r.rows[0].raised, true);
+  assert.equal(r.rows[0].surface, 'secrets');
+  assert.equal(r.rows[1].computed, 'solo');
+  assert.deepEqual(r.regressions, []);
+});
+
+test('replay: a phase whose plan cannot be read prints today\'s level and says so', () => {
+  const fx = floorRoot({ ...ANSWERED }, {
+    '3/PLAN-1.md': '---\nphase: 3\nplan: 1\nfiles:\n  - src/a.mjs\n  not a key line\n---\n\n# Plan\n',
+  });
+  const r = replay(fx.file);
+  assert.equal(r.ok, true);
+  const [row] = r.rows;
+  assert.equal(row.computed, 'shipped', 'today\'s level, never the discount');
+  assert.equal(row.computed, row.today);
+  assert.equal(row.raised, false);
+  assert.equal(row.plans_found, 1);
+  assert.equal(row.plans_clean, 0);
+  assert.ok(row.reason.some((x) => /withheld/.test(x)), JSON.stringify(row.reason));
+  assert.ok((row.warnings || []).some((w) => /out of grammar/.test(w)), JSON.stringify(row));
+});
+
+test('replay: a planning root with no phase directory is an empty row list, not a refusal', () => {
+  const fx = floorRoot({ ...ANSWERED });
+  const r = replay(fx.file);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.rows, []);
+  assert.deepEqual(r.regressions, [], 'written whether or not anything matched');
+});
+
+test('replay: a bare --file is REFUSED, exactly as resolve\'s is', () => {
+  const r = replay(null, ['--file']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'usage');
+  assert.match(r.detail, /--file/);
+});

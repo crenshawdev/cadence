@@ -122,7 +122,8 @@ import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
-import { cursorPhase, declaredPhaseFiles, declaredPlanFiles } from './lib/phase-plans.mjs';
+import { cursorPhase, declaredFilesIn, declaredPhaseFiles, declaredPlanFiles,
+  phaseDirsIn } from './lib/phase-plans.mjs';
 import { scanDeclared } from './lib/risk-diff.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
@@ -175,6 +176,26 @@ const DEFAULT_EFFORT_NAMES = ['high', 'medium', 'low', 'minimal'];
 //                 is the raise-tax the deleted name-keyed floor died of.
 const UNSET_FLOOR = 'solo';
 const RAISE_TARGET = 'shipped';
+
+// The level ladder, read off TABLE at call time because the table is loaded
+// lazily inside the dispatch below. `higherLevel` returns null when
+// `stakes_order` cannot place BOTH levels - a torn or hand-edited table - and
+// every caller treats that as "the comparison could not be made" rather than as
+// an answer, because a floor asserted off an unplaceable level is a silently
+// wrong level, which is worse than none.
+const stakesOrder = () => (Array.isArray(TABLE.stakes_order) ? TABLE.stakes_order : []);
+// The table's own risk-surface vocabulary, which is what `answeredSurfaces`
+// scopes a project's answer against - a table naming fewer categories is
+// honoured. Read the same way by both faces that compute a floor.
+const riskCategories = () => (Array.isArray(TABLE.risk_surface_categories)
+  ? TABLE.risk_surface_categories.filter((c) => typeof c === 'string' && c) : []);
+const higherLevel = (a, b) => {
+  const order = stakesOrder();
+  const ia = order.indexOf(a);
+  const ib = order.indexOf(b);
+  if (ia < 0 || ib < 0) return null;
+  return ib > ia ? b : a;
+};
 
 // The roles dispatched BEFORE a plan exists, exempt from the floor. Both read no
 // plan and resolve at the configured stakes: `workflows/context.md` dispatches
@@ -445,6 +466,10 @@ function declaredBodies(repoRoot, files) {
  * arm, because a caller that asked about one plan and was silently answered
  * about six is the wrong answer in the wide direction.
  *
+ * THE ADDRESSING HALF ONLY. Which scope this dispatch is about is decided here;
+ * what that scope RESOLVES TO is `levelFor` below, which `replay` calls with the
+ * same scope addressed by directory instead.
+ *
  * @param {{role: string, planningRoot: string, phase: any, planKey: any, cfg: any,
  *   surfaces: string[], reason: string[], warnings: string[]}} ctx
  * @returns {string} the stakes level to route on
@@ -452,19 +477,6 @@ function declaredBodies(repoRoot, files) {
 function riskFloor(ctx) {
   const { role, planningRoot, phase, planKey, cfg, surfaces, reason, warnings } = ctx;
   const baseline = cfg.stakes;
-  const order = Array.isArray(TABLE.stakes_order) ? TABLE.stakes_order : [];
-  /** The higher of two levels, or null when `stakes_order` cannot place both. */
-  const higher = (a, b) => {
-    const ia = order.indexOf(a);
-    const ib = order.indexOf(b);
-    if (ia < 0 || ib < 0) return null;
-    return ib > ia ? b : a;
-  };
-  /** The configured level stands, for a stated cause the floor COMPUTED. */
-  const hold = (why) => {
-    reason.push(`risk floor: ${why}, so the configured "${baseline}" stands`);
-    return baseline;
-  };
   /**
    * The configured level stands because no floor was computed at all - a
    * DIFFERENT sentence, and deliberately not carrying the `risk floor: ` prefix
@@ -486,15 +498,64 @@ function riskFloor(ctx) {
   }
 
   const scoped = planKey !== undefined;
-  const scopeName = scoped ? `phase ${phase} plan ${planKey}` : `phase ${phase}`;
-  const scope = scoped
-    ? declaredPlanFiles(planningRoot, phase, planKey)
-    : declaredPhaseFiles(planningRoot, phase);
+  return levelFor({
+    scope: scoped
+      ? declaredPlanFiles(planningRoot, phase, planKey)
+      : declaredPhaseFiles(planningRoot, phase),
+    scoped,
+    scopeName: scoped ? `phase ${phase} plan ${planKey}` : `phase ${phase}`,
+    // The repo root is the planning root's PARENT: declared paths are
+    // repo-relative, and deriving the root this way is what keeps a `--file`
+    // pointed at another tree from reading THIS one's files.
+    repoRoot: dirname(planningRoot),
+    cfg,
+    surfaces,
+    reason,
+    warnings,
+  }).level;
+}
+
+/**
+ * THE SCOPE-TO-LEVEL HALF of the floor, and the ONE implementation of the level
+ * arithmetic: given a scope that has already been read off disk, decide the level
+ * to route on, whether a surface RAISED it, and what evidenced the raise.
+ *
+ * `riskFloor` above addresses the scope by phase and plan key, and `replay`
+ * addresses it by phase DIRECTORY - live or archived. Both land here, so a rule
+ * added on one side reaches the other by construction: a second copy of the
+ * discount predicate, the `stakes_order` comparison and the reason vocabulary is
+ * exactly how a replay would come to report a level no resolve would produce.
+ *
+ * `scoped` is a RENDERING fact and not a rule: it says whether the scope is ONE
+ * plan or a set of them, which is the difference between "plan 2 declared no
+ * files at all" and "1 of 3 plans in phase 3 declared no files at all". The
+ * arithmetic is identical either way.
+ *
+ * `raised` is the trigger for evidence and is NOT the diff between the level and
+ * the baseline: `RAISE_TARGET` is `shipped` and so is the schema default, so on
+ * most projects a raise lands ON the configured level and a diff-triggered
+ * evidence column would be empty for exactly the rows whose surface a reader
+ * needs. It is false when nothing matched and false when `stakes_order` could
+ * not place the comparison, which is the arm where the surface raised nothing.
+ * @param {{scope: any, scoped: boolean, scopeName: string, repoRoot: string, cfg: any,
+ *   surfaces: string[], reason: string[], warnings: string[]}} ctx
+ * @returns {{level: string, raised: boolean, surface: string|null, signal: string|null,
+ *   file: string|null}}
+ */
+function levelFor(ctx) {
+  const { scope, scoped, scopeName, repoRoot, cfg, surfaces, reason, warnings } = ctx;
+  const baseline = cfg.stakes;
+  const order = stakesOrder();
+  /** A level nothing raised - the shape every non-raise arm returns. */
+  const none = (level) => ({ level, raised: false, surface: null, signal: null, file: null });
+  /** The configured level stands, for a stated cause the floor COMPUTED. */
+  const hold = (why) => {
+    reason.push(`risk floor: ${why}, so the configured "${baseline}" stands`);
+    return none(baseline);
+  };
+
   for (const w of scope.warnings) warnings.push(w);
-  // The repo root is the planning root's PARENT: declared paths are
-  // repo-relative, and deriving the root this way is what keeps a `--file`
-  // pointed at another tree from reading THIS one's files.
-  const entries = declaredBodies(dirname(planningRoot), scope.files);
+  const entries = declaredBodies(repoRoot, scope.files);
   const { matches } = scanDeclared(entries, surfaces);
   const hit = matches[0];
 
@@ -568,7 +629,7 @@ function riskFloor(ctx) {
       if (floor === baseline) return hold(clean);
       reason.push(`risk floor: ${clean}; stakes is unset, so the level floors at `
         + `"${floor}" rather than the "${baseline}" default`);
-      return floor;
+      return none(floor);
     }
     // Withheld, and WHY - the per-plan warnings already name which file and what
     // went wrong with it, so this says only what it cost.
@@ -598,12 +659,16 @@ function riskFloor(ctx) {
       + (cfg.stakesSet
         ? `the configured "${baseline}" stands`
         : `the discount below the "${baseline}" default is withheld`));
-    return baseline;
+    return none(baseline);
   }
 
   const at = evidencedBy(hit.category, hit.signal);
   const where = at ? `${at} touches` : 'a declared file touches';
-  const raised = higher(floor, RAISE_TARGET);
+  /** The raise's own evidence, carried beside the level for a caller that
+   * prints it (`replay`) and for the rung clamp that fires only on a raise. */
+  const cite = (level) => ({ level, raised: true, surface: hit.category,
+    signal: hit.signal, file: at });
+  const raised = higherLevel(floor, RAISE_TARGET);
   if (raised === null) {
     // A reason claiming a baseline is "already at or above" a level nothing
     // could compare would be a flatly false sentence, so the comparison that
@@ -611,17 +676,19 @@ function riskFloor(ctx) {
     warnings.push(`risk floor: route-table.json's stakes_order cannot place `
       + `"${floor}" against "${RAISE_TARGET}", so the ${hit.category} surface `
       + `${scopeName} declares raised nothing; "${baseline}" stands`);
-    return baseline;
+    // NOT `cite`: nothing was raised, so a row that printed this surface as
+    // evidence would be citing a move that did not happen.
+    return none(baseline);
   }
   if (raised === floor) {
     reason.push(`risk floor: ${scopeName}: ${where} ${hit.category} `
       + `(${hit.signal}); "${floor}" is already at or above the `
       + `"${RAISE_TARGET}" that raises to`);
-    return floor;
+    return cite(floor);
   }
   reason.push(`risk floor: ${scopeName}: ${where} ${hit.category} `
     + `(${hit.signal}); level ${floor} -> ${raised}`);
-  return raised;
+  return cite(raised);
 }
 
 function resolve(opts) {
@@ -715,8 +782,7 @@ function resolve(opts) {
   // this set on the same terms the commit-time trigger already uses - a project
   // that answered the surface question narrowed what can raise its level, and an
   // unanswered one gets all eight, which is the safe direction on both.
-  const tableCategories = Array.isArray(TABLE.risk_surface_categories)
-    ? TABLE.risk_surface_categories.filter((c) => typeof c === 'string' && c) : [];
+  const tableCategories = riskCategories();
   const wroteSurfaces = cfg.triggerSurfaces.risk_surface;
   const decided = answeredSurfaces(wroteSurfaces, tableCategories);
   const surfaces = decided.surfaces;
@@ -1132,6 +1198,82 @@ function resolve(opts) {
   out({ ok: true, role: opts.role, agent, model, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
+/**
+ * WHAT THE FLOOR DOES TO THIS PROJECT'S OWN PHASES, printed rather than asserted
+ * (AC3). One row per phase directory the planning root holds - live under
+ * `phases/<N>/` and archived under `_archive-<label>/<N>/`, because a milestone
+ * close moves the evidence and 27 of this repository's 30 phases are already
+ * there - carrying today's level, the computed one, and the surface, signal and
+ * declared file behind any raise.
+ *
+ * TODAY'S LEVEL is the CONFIGURED `stakes` (the schema default `shipped` when no
+ * layer set it), and the row must not pretend a second code path ran: before
+ * CER-01 a resolve returned exactly that for every phase, so it IS the honest
+ * second resolver.
+ *
+ * THE RAISE IS WHAT CARRIES EVIDENCE, never the diff between the two columns.
+ * `RAISE_TARGET` and the schema default are both `shipped`, so most raises land
+ * ON today's level; keying the evidence off a difference would blank the column
+ * for exactly the rows whose surface a reader needs and would leave "matched an
+ * answered surface, already at target" and "touched nothing" spelled
+ * identically. A row that did not raise says `raised: false` and cites nothing.
+ *
+ * `regressions` is ALWAYS present, empty on a healthy tree - the record shape
+ * `risk-check` established, where the answer is written whether or not anything
+ * matched so that "nothing regressed" and "nothing looked" stay apart. A
+ * regression is a phase whose declared files touched an answered surface and
+ * whose computed level is nonetheless BELOW today's, which is the one thing AC3
+ * forbids.
+ *
+ * The computed column is `levelFor`'s, the same helper `resolve` routes on: this
+ * command re-addresses the scope and re-implements none of the arithmetic.
+ */
+function replay(opts) {
+  const planningRoot = dirname(opts.file);
+  const cfg = readConfig(opts.file);
+  const warnings = [...cfg._warnings];
+  const decided = answeredSurfaces(cfg.triggerSurfaces.risk_surface, riskCategories());
+  const surfaces = decided.surfaces;
+  const today = cfg.stakes;
+  // The repo root is the planning root's PARENT, on `riskFloor`'s own reasoning:
+  // declared paths are repo-relative, and a `--file` pointed at another tree
+  // reads that tree's files rather than this one's.
+  const repoRoot = dirname(planningRoot);
+  const rows = [];
+  const regressions = [];
+  for (const { label, path } of phaseDirsIn(planningRoot)) {
+    // Per row, so one phase's diagnostics never read as another's. The
+    // envelope's own `warnings` stays the CONFIG's, which is a fact about the
+    // run and not about any phase.
+    const reason = [];
+    const rowWarnings = [];
+    const scope = declaredFilesIn(path);
+    const r = levelFor({ scope, scoped: false, scopeName: label, repoRoot, cfg,
+      surfaces, reason, warnings: rowWarnings });
+    rows.push({
+      label,
+      today,
+      computed: r.level,
+      raised: r.raised,
+      ...(r.raised ? { surface: r.surface, signal: r.signal, file: r.file } : {}),
+      // The counts the discount predicate read, so a row that held at today's
+      // level is diagnosable without re-running the read.
+      plans_found: scope.found,
+      plans_clean: scope.clean,
+      reason,
+      ...(rowWarnings.length ? { warnings: rowWarnings } : {}),
+    });
+    const higher = higherLevel(r.level, today);
+    if (r.raised && higher === today && r.level !== today) {
+      regressions.push({ label, today, computed: r.level, surface: r.surface, file: r.file });
+    }
+  }
+  // A planning root holding no phase directory answers with an empty row list,
+  // never a refusal: "this project has no phases yet" is an answer.
+  out({ ok: true, stakes: today, surfaces, surfaces_answered: decided.answered,
+    rows, regressions, ...(warnings.length ? { warnings } : {}) });
+}
+
 // --- arg parsing -------------------------------------------------------------
 
 // The whole synopsis, printed when `--role` is ABSENT rather than merely
@@ -1140,7 +1282,8 @@ function resolve(opts) {
 // in the table below instead - the caller who wrote `--role "$R"` against an
 // unset variable knows what a role is and needs to be told which token vanished.
 const SYNOPSIS = 'resolve --role <name> [--attempt N] [--file <config>] [--phase N]'
-  + ' [--plan <key>] [--bracket-read <csv> [--bracket-plan <key>]]';
+  + ' [--plan <key>] [--bracket-read <csv> [--bracket-plan <key>]]'
+  + ' | replay [--file <config>]';
 
 // The five value-carrying flags of `resolve`, each read through its DECLARED
 // row in lib/arg-contract.mjs (ARG-06). The rows own the RULE - required-ness,
@@ -1216,6 +1359,19 @@ function parseArgs(a) {
   return o;
 }
 
+// `replay` takes ONE flag and it is `--file`, declared exactly as `resolve`'s is
+// so the same spelling is refused at both doors. There is deliberately no
+// `--role`: the floor differs by role only through the pre-plan exemption, and a
+// replay is a question about phases. No `--phase` either - the whole answer is
+// every phase directory the project holds.
+function parseReplayArgs(a) {
+  const o = { file: '.planning/config.json' };
+  const parsed = evaluateFlag(a, '--file', CONTRACTS['route.mjs'].replay['--file']);
+  if (!parsed.ok) o.usage = 'replay --file needs a path after it: --file <config file>';
+  else if (parsed.value !== undefined) o.file = parsed.value;
+  return o;
+}
+
 try {
   try {
     TABLE = JSON.parse(readFileSync(TABLE_PATH, 'utf8'));
@@ -1233,10 +1389,14 @@ try {
     const o = parseArgs(argv.slice(1));
     if (o.usage) out({ ok: false, reason: 'usage', detail: o.usage });
     else resolve(o);
+  } else if (cmd === 'replay') {
+    const o = parseReplayArgs(argv.slice(1));
+    if (o.usage) out({ ok: false, reason: 'usage', detail: o.usage });
+    else replay(o);
   } else if (cmd === 'table') {
     out({ ok: true, table: TABLE });
   } else {
-    out({ ok: false, reason: 'usage', detail: 'subcommand: resolve | table' });
+    out({ ok: false, reason: 'usage', detail: 'subcommand: resolve | replay | table' });
   }
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
