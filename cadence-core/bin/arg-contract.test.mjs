@@ -295,7 +295,7 @@ test('every flag in every row declares a complete grammar', () => {
     }
   }
   // The walk reached the whole table, so no arm above is vacuous.
-  assert.equal(entries, 166, `the table declares ${entries} flag entries`);
+  assert.equal(entries, 167, `the table declares ${entries} flag entries`);
   assert.equal(Object.keys(CONTRACTS).length, 16, 'one row per top-level bin script');
 });
 
@@ -310,6 +310,8 @@ test('the declarations the CONTEXT decisions bind are the ones in the table', ()
       'the same rail on the linter that reports about a tree'],
     ['route.mjs', 'resolve', '--phase', { value: 'warn', bare: 'warn' },
       'D-04: a usage refusal here routes the phase LOWER than its own risk baseline'],
+    ['route.mjs', 'resolve', '--plan', { value: 'refuse', bare: 'refuse' },
+      'CER-01 D-06: a valueless plan flag silently takes the phase UNION for a caller that asked about one plan'],
     ['issue-check.mjs', 'check', '--timeout-ms', { value: 'fallback', bare: 'fallback' },
       "D-04: this seam's whole contract is that it never fails a land"],
     ['land-cleanup.mjs', 'cleanup', '--merged', { value: 'fallback', bare: 'fallback' },

@@ -16,7 +16,7 @@
 //
 // Subcommands (one JSON line on stdout):
 //   resolve --role <name> [--attempt N] [--file <config>] [--phase N]
-//           [--bracket-read <csv> [--bracket-plan <key>]]
+//           [--plan <key>] [--bracket-read <csv> [--bracket-plan <key>]]
 //     With --bracket-read, resolve also writes the worker's lifecycle DISPATCH
 //     event (family lifecycle, event dispatch, plan/role/read) before resolving,
 //     so a dispatch site pays one seam call instead of two. The CLOSE half
@@ -358,12 +358,21 @@ function declaredBodies(repoRoot, files) {
  * point is the mixed phase: one unreadable member holds the whole scope up, so a
  * phase whose unreadable plan is the risky one can never resolve below today.
  *
- * @param {{role: string, planningRoot: string, phase: any, cfg: any,
+ * PER PLAN FOR AN EXECUTOR, PER PHASE FOR EVERYONE ELSE (D-06). `planKey` names
+ * ONE plan of the phase and is what an executor dispatch carries, so a clean
+ * plan in a mixed phase routes below its risky sibling; without it the scope is
+ * the union of every conforming plan in the phase, which is what a phase-scoped
+ * role - `cad-plan-checker`, `cad-verifier`, reviewer resolution - is answering
+ * about. A key naming no plan file is NOT the union: it takes the fail-closed
+ * arm, because a caller that asked about one plan and was silently answered
+ * about six is the wrong answer in the wide direction.
+ *
+ * @param {{role: string, planningRoot: string, phase: any, planKey: any, cfg: any,
  *   surfaces: string[], reason: string[], warnings: string[]}} ctx
  * @returns {string} the stakes level to route on
  */
 function riskFloor(ctx) {
-  const { role, planningRoot, phase, cfg, surfaces, reason, warnings } = ctx;
+  const { role, planningRoot, phase, planKey, cfg, surfaces, reason, warnings } = ctx;
   const baseline = cfg.stakes;
   const order = Array.isArray(TABLE.stakes_order) ? TABLE.stakes_order : [];
   /** The higher of two levels, or null when `stakes_order` cannot place both. */
@@ -398,7 +407,11 @@ function riskFloor(ctx) {
     return notComputed('no --phase and no readable cursor, so no plan was named');
   }
 
-  const scope = declaredPhaseFiles(planningRoot, phase);
+  const scoped = planKey !== undefined;
+  const scopeName = scoped ? `phase ${phase} plan ${planKey}` : `phase ${phase}`;
+  const scope = scoped
+    ? declaredPlanFiles(planningRoot, phase, planKey)
+    : declaredPhaseFiles(planningRoot, phase);
   for (const w of scope.warnings) warnings.push(w);
   // The repo root is the planning root's PARENT: declared paths are
   // repo-relative, and deriving the root this way is what keeps a `--file`
@@ -448,7 +461,9 @@ function riskFloor(ctx) {
   const plans = (n) => `${n} plan${n === 1 ? '' : 's'}`;
   if (!hit) {
     if (read) {
-      const clean = `phase ${phase}: ${plans(scope.found)} read clean, declaring `
+      const clean = (scoped
+        ? `${scopeName} read clean, declaring `
+        : `${scopeName}: ${plans(scope.found)} read clean, declaring `)
         + `nothing that touches [${surfaces.join(', ')}]`;
       if (floor === baseline) return hold(clean);
       reason.push(`risk floor: ${clean}; stakes is unset, so the level floors at `
@@ -458,8 +473,10 @@ function riskFloor(ctx) {
     // Withheld, and WHY - the per-plan warnings already name which file and what
     // went wrong with it, so this says only what it cost.
     const why = scope.found === 0
-      ? `phase ${phase} holds no plan file this could read`
-      : `${scope.found - scope.clean} of ${plans(scope.found)} in phase ${phase} `
+      ? (scoped
+        ? `${scopeName} names no plan file this could read`
+        : `${scopeName} holds no plan file this could read`)
+      : `${scope.found - scope.clean} of ${plans(scope.found)} in ${scopeName} `
         + 'could not be read';
     reason.push(`risk floor: ${why}, so no surface was computed and `
       + (cfg.stakesSet
@@ -477,16 +494,16 @@ function riskFloor(ctx) {
     // failed is what gets said.
     warnings.push(`risk floor: route-table.json's stakes_order cannot place `
       + `"${floor}" against "${RAISE_TARGET}", so the ${hit.category} surface `
-      + `phase ${phase} declares raised nothing; "${baseline}" stands`);
+      + `${scopeName} declares raised nothing; "${baseline}" stands`);
     return baseline;
   }
   if (raised === floor) {
-    reason.push(`risk floor: phase ${phase}: ${where} ${hit.category} `
+    reason.push(`risk floor: ${scopeName}: ${where} ${hit.category} `
       + `(${hit.signal}); "${floor}" is already at or above the `
       + `"${RAISE_TARGET}" that raises to`);
     return floor;
   }
-  reason.push(`risk floor: phase ${phase}: ${where} ${hit.category} `
+  reason.push(`risk floor: ${scopeName}: ${where} ${hit.category} `
     + `(${hit.signal}); level ${floor} -> ${raised}`);
   return raised;
 }
@@ -598,7 +615,8 @@ function resolve(opts) {
   // by what the phase's own declared `files:` touch (CER-01). All four knobs
   // then come from the floored row through the one cell grid.
   const stakes = riskFloor({
-    role: opts.role, planningRoot, phase: tracePhase, cfg, surfaces, reason, warnings,
+    role: opts.role, planningRoot, phase: tracePhase, planKey: opts.plan,
+    cfg, surfaces, reason, warnings,
   });
 
   // The three grids a torn LEVEL is fatal in (D-01). `model`, `effort` and
@@ -1011,7 +1029,7 @@ function resolve(opts) {
 // in the table below instead - the caller who wrote `--role "$R"` against an
 // unset variable knows what a role is and needs to be told which token vanished.
 const SYNOPSIS = 'resolve --role <name> [--attempt N] [--file <config>] [--phase N]'
-  + ' [--bracket-read <csv> [--bracket-plan <key>]]';
+  + ' [--plan <key>] [--bracket-read <csv> [--bracket-plan <key>]]';
 
 // The five value-carrying flags of `resolve`, each read through its DECLARED
 // row in lib/arg-contract.mjs (ARG-06). The rows own the RULE - required-ness,
@@ -1053,6 +1071,11 @@ const RESOLVE_FLAGS = {
   // went missing.
   '--bracket-read': ['bracketRead', 'resolve --bracket-read needs a comma-separated path list after it'],
   '--bracket-plan': ['bracketPlan', 'resolve --bracket-plan needs a worker key after it'],
+  // The risk floor's SCOPE: with it the floor reads that one plan's declared
+  // files, without it the phase's union. Refused on both axes, unlike
+  // `--bracket-plan` above, because a valueless one would silently widen a
+  // caller that asked about one plan to the whole phase.
+  '--plan': ['plan', 'resolve --plan needs a plan key after it: --plan <k>'],
 };
 
 function parseArgs(a) {

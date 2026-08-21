@@ -928,6 +928,20 @@ export const CONTRACTS = {
       '--phase': { required: false, type: 'phase', value: 'warn', bare: 'warn' },
       '--bracket-read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--bracket-plan': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // `--plan` narrows the risk FLOOR's scope from the phase's union to one
+      // plan, which is what an executor dispatch floors on (CER-01 D-06). It is
+      // `plan-key` for the reason `risk-check`'s two faces are - one predicate,
+      // lib/plan-key.mjs's, judges every value a `--plan` may carry - and it
+      // REFUSES on both axes, unlike its `--bracket-plan` neighbour: a valueless
+      // plan flag would silently take the phase UNION for a caller that asked
+      // about one plan, which is the wrong arm and a wider one.
+      //
+      // A SEPARATE FLAG from `--bracket-plan`, deliberately. That value is the
+      // trace WORKER key and is the ROLE NAME for every non-executor dispatch,
+      // so reading it as a floor key would make a phase-scoped role
+      // indistinguishable from a plan key naming no file - and those two take
+      // opposite arms, the union versus fail-closed.
+      '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
     },
     table: {},
   },

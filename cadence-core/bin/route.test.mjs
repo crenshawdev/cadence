@@ -1747,3 +1747,71 @@ test('fail-closed: the paired POSITIVE - both plans clean and surfaceless resolv
   assert.ok(floorReasons(r).some((x) => /2 plans read clean/.test(x)), JSON.stringify(r.reason));
   assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
 });
+
+// --- --plan: an executor floors on the plan it was handed (D-06) -------------
+
+/** A mixed phase: PLAN-1 surfaceless, PLAN-2 on an answered surface. */
+const mixedPhase = () => floorRoot({ ...ANSWERED },
+  { '3/PLAN-1.md': ['docs/README.md'], '3/PLAN-2.md': ['src/load.mjs'] },
+  { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
+
+test('--plan: a clean plan in a mixed phase routes BELOW its risky sibling', () => {
+  const fx = mixedPhase();
+  const clean = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '1']);
+  assert.equal(clean.ok, true);
+  assert.equal(clean.stakes, 'solo');
+  assert.equal(clean.model, 'sonnet');
+  assert.ok(floorReasons(clean).some((x) => /phase 3 plan 1 read clean/.test(x)),
+    JSON.stringify(clean.reason));
+});
+
+test('--plan: the risky plan of the same phase, and the phase UNION, both raise', () => {
+  const fx = mixedPhase();
+  const risky = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '2']);
+  assert.equal(risky.stakes, 'shipped');
+  assert.match(floorReasons(risky)[0], /^risk floor: phase 3 plan 2: src\/load\.mjs touches secrets/);
+  // No --plan is the PHASE union, which is what a phase-scoped role resolves on:
+  // one risky member raises the whole phase.
+  const union = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(union.stakes, 'shipped');
+  assert.match(floorReasons(union)[0], /^risk floor: phase 3: src\/load\.mjs touches secrets/);
+});
+
+test('--plan: a key naming no plan file fails CLOSED, never widening to the union', () => {
+  // The wrong answer here is the WIDE one: silently answering about six plans a
+  // caller did not ask about. It holds the configured stakes and says so.
+  const fx = mixedPhase();
+  const r = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /phase 3 plan 9 names no plan file/.test(x)),
+    JSON.stringify(r.reason));
+  assert.ok((r.warnings || []).some((w) => /^risk floor: plan 9 names no plan file/.test(w)),
+    JSON.stringify(r.warnings));
+});
+
+test('--plan: a bare flag and a bad value are both REFUSED', () => {
+  // A valueless plan flag reading as absent would silently take the phase UNION
+  // for a caller that asked about one plan - the wrong arm, and a wider one.
+  const fx = mixedPhase();
+  for (const extra of [['--phase', '3', '--plan'], ['--plan'],
+    ['--phase', '3', '--plan', ''], ['--phase', '3', '--plan', ' 1']]) {
+    const r = resolve('cad-executor', fx.file, extra);
+    assert.equal(r.ok, false, extra.join(' '));
+    assert.equal(r.reason, 'usage', `${extra.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--plan/);
+  }
+});
+
+test('--plan: it is NOT --bracket-plan, which still keys the trace alone', () => {
+  // `--bracket-plan` is the trace WORKER key and is the ROLE NAME for every
+  // non-executor dispatch, so reading it as a floor key would make a
+  // phase-scoped role indistinguishable from a plan key naming no file.
+  const fx = mixedPhase();
+  const r = resolve('cad-executor', fx.file,
+    ['--phase', '3', '--bracket-read', 'PLAN-1.md', '--bracket-plan', '1']);
+  // The floor still took the phase UNION, so the risky sibling raised it.
+  assert.equal(r.stakes, 'shipped');
+  const dispatch = traceLines(fx.planning).find((e) => e.family === 'lifecycle');
+  assert.equal(dispatch.plan, '1');
+});
