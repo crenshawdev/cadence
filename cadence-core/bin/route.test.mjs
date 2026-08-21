@@ -1493,3 +1493,168 @@ test('no stakes level fires `deferred` - the review grid holds it in no cell', (
     'gate-deferred-pin.json');
   assert.equal(resolve('cad-reviewer', pinned).review.diff, 'deferred');
 });
+
+// --- the plan-time risk floor (CER-01) ---------------------------------------
+//
+// `stakes` is the MINIMUM a project accepts, and the phase's own declared
+// `files:` are what raise it. Every fixture here is a whole repo root - the
+// declared paths are repo-relative and are read against the planning root's
+// PARENT, so a fixture that wrote only a `.planning/` would be testing the
+// unreadable-body arm by accident.
+
+/**
+ * A repo root with a `.planning/config.json`, plan files under
+ * `.planning/phases/<N>/`, and whatever repo files the plans declare.
+ * `plans` is keyed `<phase>/<filename>`; a string value is written verbatim and
+ * an array is rendered as that plan's frontmatter `files:` list.
+ */
+let floorN = 0;
+function floorRoot(config, plans = {}, repoFiles = {}) {
+  const repo = mkdtempSync(join(tmpdir(), `cad-route-floor-${++floorN}-`));
+  const planning = join(repo, '.planning');
+  mkdirSync(planning, { recursive: true });
+  writeFileSync(join(planning, 'config.json'), JSON.stringify(config));
+  for (const [rel, spec] of Object.entries(plans)) {
+    const file = join(planning, 'phases', rel);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, typeof spec === 'string' ? spec
+      : `---\nphase: 3\nplan: 1\nrequirements:\n  - CER-01\nfiles:\n${
+        spec.map((f) => `  - ${f}\n`).join('')}---\n\n# Plan\n`);
+  }
+  for (const [rel, body] of Object.entries(repoFiles)) {
+    const file = join(repo, rel);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, body);
+  }
+  return { repo, planning, file: join(planning, 'config.json') };
+}
+
+/** The `risk floor:` entries of a bundle's reason list - the moves it MADE. */
+const floorReasons = (r) => (r.reason || []).filter((x) => x.startsWith('risk floor: '));
+
+// The surface set this repository itself answers, so the fixtures below are
+// scoped exactly as a real project's are (D-10).
+const ANSWERED = { review: { triggers: { risk_surface: {
+  surfaces: ['secrets', 'destructive', 'untrusted_input'] } } } };
+
+// A body carrying ONE anchored construct in an answered category. Assembled
+// rather than spelled: this file is read by the same detector, and a plainly
+// written credential assignment here would be a line it matches.
+const SECRET_BODY = `export const FIXTURE_${'API'}_${'KEY'} = read();\n`;
+
+test('floor: an explicit stakes=critical is never resolved below (AC1)', () => {
+  const fx = floorRoot({ stakes: 'critical', ...ANSWERED },
+    { '3/PLAN-1.md': ['docs/README.md'] }, { 'docs/README.md': '# Readme\n' });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.model, 'opus');
+  // It read the plan and found nothing, and SAYS so - the configured level
+  // standing because nothing raised it is a different fact from no floor.
+  assert.ok(floorReasons(r).some((x) => /declares nothing touching/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('floor: with stakes UNSET a surfaceless phase resolves solo, where today it is shipped (AC2)', () => {
+  const plans = { '3/PLAN-1.md': ['docs/README.md'] };
+  const files = { 'docs/README.md': '# Readme\n' };
+  const computed = floorRoot({ ...ANSWERED }, plans, files);
+  const r = resolve('cad-executor', computed.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.model, 'sonnet');
+  assert.ok(floorReasons(r).some((x) => /floors at "solo"/.test(x)), JSON.stringify(r.reason));
+  // The BOTH-OUTPUTS half of the criterion: the same config with no phase in
+  // hand at all is the pre-CER-01 answer, and it is the schema default.
+  const today = resolve('cad-executor', computed.file);
+  assert.equal(today.stakes, 'shipped');
+  assert.equal(today.model, 'opus');
+});
+
+test('floor: a declared file on an answered surface raises to shipped and cites it', () => {
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['docs/README.md', 'src/load.mjs'] },
+    { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  const cited = floorReasons(r);
+  assert.equal(cited.length, 1, JSON.stringify(r.reason));
+  assert.match(cited[0], /src\/load\.mjs touches secrets/);
+  assert.match(cited[0], /level solo -> shipped/);
+});
+
+test('floor: stakes=solo is a FLOOR, so the same phase still raises to shipped', () => {
+  const fx = floorRoot({ stakes: 'solo', ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.match(floorReasons(r)[0], /level solo -> shipped/);
+});
+
+test('floor: an UNANSWERED category cannot raise - the scope is the answered set (D-10)', () => {
+  // The identical bytes under a config that answered only `destructive`: the
+  // secrets construct is not looked for, so it is not reported and not raised.
+  const fx = floorRoot(
+    { review: { triggers: { risk_surface: { surfaces: ['destructive'] } } } },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(r.surfaces, ['destructive']);
+});
+
+test('floor: a declared file that does not exist yet still evidences by PATH', () => {
+  // The create-a-file plan: no body to read, and the path is still a
+  // declaration. `src/auth/session.rs` is written by nothing here.
+  const fx = floorRoot({ review: { triggers: { risk_surface: { surfaces: ['auth'] } } } },
+    { '3/PLAN-1.md': ['src/auth/session.rs'] });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.match(floorReasons(r)[0], /src\/auth\/session\.rs touches auth \(path segment auth\)/);
+});
+
+test('floor: the two pre-plan roles are exempt and say they were not computed', () => {
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  // The same phase raises an executor to shipped...
+  assert.equal(resolve('cad-executor', fx.file, ['--phase', '3']).stakes, 'shipped');
+  // ...and moves neither role dispatched before a plan exists. The cursor lags
+  // at both their call sites, so a floor computed for them is computed off
+  // another phase's file list.
+  for (const role of ['cad-planner', 'cad-assumptions-analyzer']) {
+    const r = resolve(role, fx.file, ['--phase', '3']);
+    assert.equal(r.ok, true, role);
+    assert.equal(r.stakes, 'shipped', role);
+    assert.deepEqual(floorReasons(r), [], `${role}: ${JSON.stringify(r.reason)}`);
+    assert.ok(r.reason.some((x) => x.startsWith(`no risk-floor computation: ${role}`)),
+      `${role}: ${JSON.stringify(r.reason)}`);
+  }
+});
+
+test('floor: a --file pointed at ANOTHER tree reads that tree\'s files, not this one\'s', () => {
+  // The repo root is the planning root's PARENT, which is the whole of what
+  // scopes the content pass. The fixture declares a path this repository really
+  // does carry on a risk surface; under the fixture's own root it does not
+  // exist, so nothing is read and nothing raises.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['cadence-core/bin/lib/config-merge.mjs'] });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(floorReasons(r).filter((x) => /touches/.test(x)), []);
+});
+
+test('floor: a stakes_order that cannot place the levels keeps the baseline and warns', () => {
+  // A reason claiming a baseline is "already at or above" a floor nothing could
+  // compare is a flatly false sentence this seam has emitted before.
+  const t = join(dir, 'torn-stakes-order.json');
+  const shipped = JSON.parse(readFileSync(join(dirname(ROUTE), '..', 'route-table.json'), 'utf8'));
+  shipped.stakes_order = ['low', 'high'];
+  writeFileSync(t, JSON.stringify(shipped));
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3'], { table: t });
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the configured baseline, not a level nothing could compare');
+  assert.ok((r.warnings || []).some((w) => /stakes_order cannot place/.test(w)),
+    JSON.stringify(r.warnings));
+  assert.deepEqual(floorReasons(r).filter((x) => /already at or above/.test(x)), []);
+});

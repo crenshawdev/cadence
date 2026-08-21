@@ -27,7 +27,12 @@
 // the per-repo --file (default .planning/config.json) overrides it, and the
 // built-in DEFAULTS backstop both. Precedence: repo > global > defaults.
 // Config keys read:
-//   stakes                     solo | shipped | critical
+//   stakes                     solo | shipped | critical - the FLOOR a dispatch
+//                              resolves at or above, never the level every
+//                              phase pays. Unset floors at "solo" when the
+//                              phase's plans were all read clean, and at the
+//                              schema default "shipped" when any of them could
+//                              not be
 //   model.escalate_on_failure  re-dispatch a failed attempt at the retry rung
 //                              its own cell names (bool, every stakes level)
 //   model.overrides.<role>     pin one role to a model alias, bypassing the cell
@@ -60,41 +65,64 @@
 //                              `warnings`
 //   review.triggers.risk_surface.surfaces
 //                              the categories the risk_surface fire is scoped
-//                              to, returned as `surfaces`. Absent from both
-//                              layers means ALL of the table's
+//                              to, returned as `surfaces` - and the same set
+//                              the plan-time floor below is scoped by, so a
+//                              project that narrowed the surface question
+//                              narrowed what can raise its level too. Absent
+//                              from both layers means ALL of the table's
 //                              `risk_surface_categories`, and
 //                              `surfaces_answered` says which of the two it is,
 //                              so "chose everything" and "never answered" stay
 //                              apart (D-12)
 //
-// THERE IS NO RISK FLOOR, and this is not the file that computes one. The
-// stakes level a config layer set is the baseline and the whole of it: nothing
-// here reads a plan's `files:` list, `route-table.json` carries no `surfaces`
-// block for one to be matched against, and the `risk.override.<surface>` waiver
-// family is retired (lib/retired-keys.mjs) along with the dispatch-time floor
-// that gave it something to lower. That floor judged a file by its NAME and
-// raised a whole phase on one path token - `tests/ingest_concurrency.rs` took
-// six roles to their top rung - which is what it cost, and why the record of it
-// outlives it here.
+// THE CONFIGURED LEVEL IS A FLOOR, NOT THE ANSWER (CER-01). `stakes` states the
+// MINIMUM a project will accept; the phase's own declared `files:`, read here at
+// resolve time, are what raise it. So a phase touching nothing on a risk surface
+// resolves BELOW what the project default produces today, and a phase touching
+// one never resolves lower than it does now. An unset `stakes` floors at `solo`
+// and the raise does the work; an EXPLICIT `stakes` is never resolved below, at
+// any level.
 //
-// So the `risk_surface_categories` block in route-table.json and the
-// `review.triggers.risk_surface.surfaces` key this file now reads are NOT that
-// floor returning under a new name. They scope ONE review trigger's fire, which
-// is read off the DIFF at the fire site (references/review-triggers.md), and
-// they move no role's model and no role's rung. `--phase` is likewise not a
-// floor input: it names the phase a resolve's routing event is recorded under,
-// and a resolve with no usable phase still returns the whole bundle with
-// ok:true.
+// AND IT FAILS CLOSED, which is the direction that matters. A plan this cannot
+// read holds the CONFIGURED stakes and never `ok:false`: an `ok:false` drops the
+// caller to the base agent at the host session default with no model override
+// (references/seams.md), which is below every floor, so a hard refusal here
+// would route a risky phase LOWER than its own baseline. The discount below the
+// configured level is earned only by a scope every conforming plan of which was
+// found and read clean, so one unreadable member holds the whole scope up.
+//
+// THIS IS NOT THE DELETED NAME-KEYED FLOOR RETURNING. That one judged a file by
+// its NAME and raised a whole phase on one path token - `tests/ingest_concurrency.rs`
+// took six roles to their top rung, 15 of 16 resolves floored on opus - and its
+// waiver family (`risk.override.<surface>`) stays retired in
+// lib/retired-keys.mjs. What runs here is lib/risk-diff.mjs's `scanDeclared`:
+// the same anchored construct patterns and whole-path segments the commit-time
+// `risk_surface` gate fires on, over the same signal ordering, scoped to the
+// categories the project ANSWERED. And the raise target is `shipped`, never
+// `critical` - the criterion is that a matched phase resolve no lower than
+// today's default, and a `critical` target would put most of a repo's plans on
+// the top row and rebuild exactly that raise-tax.
+//
+// WHICH PHASE, AND WHICH PLAN. `--phase` decides the floor when it is passed and
+// the STATE cursor decides it otherwise, so a malformed `--phase` is REFUSED
+// rather than answered about another phase's plans. `--plan` narrows the scope
+// from the phase's union to ONE plan, which is what an executor dispatch floors
+// on: a clean plan in a mixed phase routes below its risky sibling. The two
+// roles dispatched BEFORE a plan exists - `cad-planner` and
+// `cad-assumptions-analyzer` - are exempt and resolve at the configured stakes,
+// because the cursor lags at both their call sites and a floor computed for them
+// would be computed off a DIFFERENT phase's file list.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, isAbsolute } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
-import { cursorPhase } from './lib/phase-plans.mjs';
+import { cursorPhase, declaredPhaseFiles, declaredPlanFiles } from './lib/phase-plans.mjs';
+import { scanDeclared } from './lib/risk-diff.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { answeredSurfaces } from './lib/surface-scan.mjs';
@@ -130,6 +158,40 @@ const DEFAULT_GATES = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated']
 // injected through CADENCE_ROUTE_TABLE, that carries no usable list.
 const DEFAULT_TIER_NAMES = ['flagship', 'balanced', 'cheap'];
 const DEFAULT_EFFORT_NAMES = ['high', 'medium', 'low', 'minimal'];
+
+// The two levels the plan-time floor names, spelled out rather than derived
+// from `stakes_order`'s ends. D-07 locks the level vocabulary and the five
+// grids, so these are members of a fixed set and not positions in an array a
+// hand-edited table could reorder - and each is a decision with its own reason:
+//
+//   UNSET_FLOOR   what an unset `stakes` floors at once the phase's plans have
+//                 been read clean. It is the whole of CER-01's first half: the
+//                 schema default `shipped` is what every phase pays today, and
+//                 it is what criterion 2's demonstration has to resolve below.
+//   RAISE_TARGET  where a matched surface raises to, and deliberately NOT
+//                 `critical`. The criterion is that a matched phase resolve no
+//                 lower than today's default; raising every match to the top row
+//                 is the raise-tax the deleted name-keyed floor died of.
+const UNSET_FLOOR = 'solo';
+const RAISE_TARGET = 'shipped';
+
+// The roles dispatched BEFORE a plan exists, exempt from the floor. Both read no
+// plan and resolve at the configured stakes: `workflows/context.md` dispatches
+// the analyzer while the cursor still names the PREVIOUS phase, and `plan.md`
+// dispatches the planner to write the plan the floor would read. A floor
+// computed for either is computed off a different phase's file list, which is
+// not a safe-direction superset and which no reason string would reveal as
+// wrong - a silently-wrong level being strictly worse than no level at all.
+const PRE_PLAN_ROLES = Object.freeze(['cad-planner', 'cad-assumptions-analyzer']);
+
+// The bytes the content pass will read from ONE declared file. A `files:` list
+// arrives in a PLAN that can arrive with a clone, exactly as a repo config layer
+// does (lib/config-merge.mjs states that threat model), and this seam may never
+// block the spine: an unbounded read of a path a data file names is how a
+// resolve comes to hang on a device node or a multi-gigabyte artifact. A file
+// over the cap contributes its PATH signals and no content signals - the same
+// arm an absent body already takes.
+const MAX_BODY_BYTES = 512 * 1024;
 
 // The `--phase` shape rule lives in ONE place (`lib/require-int.mjs`'s
 // `requirePhaseArg`), not in a local regex per script: three independent copies
@@ -246,6 +308,168 @@ function providerModel(providers, name, tier) {
   return typeof id === 'string' && id.trim() ? id : '';
 }
 
+/**
+ * The declared paths with whatever body each currently HAS, for
+ * `scanDeclared`. Repo-relative, so they are read against the planning root's
+ * PARENT - which is what keeps a `--file` pointed at another tree from reading
+ * this one's files.
+ *
+ * A body that cannot be read is not an error and not an inconclusive state:
+ * at plan time a declared file frequently does not exist yet because the plan
+ * CREATES it, so the path still travels and only the body it does not have is
+ * missing (lib/risk-diff.mjs states why at length).
+ *
+ * WHAT IT REFUSES TO OPEN, and neither is tidiness. A path that is ABSOLUTE or
+ * that climbs out of the repo root with `..` gets its path signals and no read
+ * at all: the `files:` list is data from a file that can arrive with a clone,
+ * no legitimate plan declares a path outside the repository, and a resolve is
+ * not a place to open one. A file over `MAX_BODY_BYTES` is the same arm for the
+ * bound's own reason. Every read sits in its own try - nothing here throws, and
+ * a resolve that could not read a body still returns a whole bundle.
+ * @param {string} repoRoot @param {string[]} files
+ * @returns {Array<{path: string, body?: string}>}
+ */
+function declaredBodies(repoRoot, files) {
+  return files.map((rel) => {
+    if (isAbsolute(rel) || rel.split('/').includes('..')) return { path: rel };
+    const abs = join(repoRoot, rel);
+    try {
+      if (statSync(abs).size > MAX_BODY_BYTES) return { path: rel };
+      return { path: rel, body: readFileSync(abs, 'utf8') };
+    } catch {
+      return { path: rel };
+    }
+  });
+}
+
+/**
+ * THE PLAN-TIME RISK FLOOR (CER-01). The configured `stakes` is the MINIMUM this
+ * dispatch resolves at; the phase's own declared `files:`, scanned here, are
+ * what raise it. Returns the level to route on, appends every move it made to
+ * `reason` and every input it could not read to `warnings` - both arrays are the
+ * caller's own, already built by the time this runs, because a floor that moved
+ * a level silently would be indistinguishable from a config that set it.
+ *
+ * NEVER BELOW THE CONFIGURED LEVEL, and never `ok:false`. Three arms hold the
+ * configured level and say so: a role dispatched before a plan exists, no phase
+ * in hand at all, and a scope this could not read whole. That last is D-04's
+ * aggregation rule - every conforming plan in scope must have been FOUND and
+ * read CLEAN before the level may resolve below the configured stakes - and its
+ * point is the mixed phase: one unreadable member holds the whole scope up, so a
+ * phase whose unreadable plan is the risky one can never resolve below today.
+ *
+ * @param {{role: string, planningRoot: string, phase: any, cfg: any,
+ *   surfaces: string[], reason: string[], warnings: string[]}} ctx
+ * @returns {string} the stakes level to route on
+ */
+function riskFloor(ctx) {
+  const { role, planningRoot, phase, cfg, surfaces, reason, warnings } = ctx;
+  const baseline = cfg.stakes;
+  const order = Array.isArray(TABLE.stakes_order) ? TABLE.stakes_order : [];
+  /** The higher of two levels, or null when `stakes_order` cannot place both. */
+  const higher = (a, b) => {
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    if (ia < 0 || ib < 0) return null;
+    return ib > ia ? b : a;
+  };
+  /** The configured level stands, for a stated cause the floor COMPUTED. */
+  const hold = (why) => {
+    reason.push(`risk floor: ${why}, so the configured "${baseline}" stands`);
+    return baseline;
+  };
+  /**
+   * The configured level stands because no floor was computed at all - a
+   * DIFFERENT sentence, and deliberately not carrying the `risk floor: ` prefix
+   * that marks an entry the floor's own read produced. "Nothing raised it" and
+   * "nothing looked" are the two states this seam exists to keep apart, and
+   * spelling both with one prefix is how they would collapse again.
+   */
+  const notComputed = (why) => {
+    reason.push(`no risk-floor computation: ${why}; the configured `
+      + `"${baseline}" stands`);
+    return baseline;
+  };
+
+  if (PRE_PLAN_ROLES.includes(role)) {
+    return notComputed(`${role} is dispatched before a plan exists and reads none`);
+  }
+  if (phase === null || phase === undefined) {
+    return notComputed('no --phase and no readable cursor, so no plan was named');
+  }
+
+  const scope = declaredPhaseFiles(planningRoot, phase);
+  for (const w of scope.warnings) warnings.push(w);
+  // The repo root is the planning root's PARENT: declared paths are
+  // repo-relative, and deriving the root this way is what keeps a `--file`
+  // pointed at another tree from reading THIS one's files.
+  const entries = declaredBodies(dirname(planningRoot), scope.files);
+  const { matches } = scanDeclared(entries, surfaces);
+  const hit = matches[0];
+
+  // Which declared file produced the winning signal, so the reason cites
+  // EVIDENCE rather than asserting a category. Re-scanned per entry against the
+  // one matched category and compared on the signal STRING, because a category
+  // can be evidenced by several files and only one of them produced the sentence
+  // the user is about to read.
+  const evidencedBy = (category, signal) => {
+    for (const e of entries) {
+      const m = scanDeclared([e], [category]).matches[0];
+      if (m && m.signal === signal) return e.path;
+    }
+    return null;
+  };
+
+  // D-04's aggregation, in one predicate: a scope is DISCOUNTABLE only when it
+  // held at least one conforming plan and every one of them read clean.
+  const read = scope.found > 0 && scope.clean === scope.found;
+
+  let floor = baseline;
+  if (!cfg.stakesSet && read) {
+    if (order.includes(UNSET_FLOOR)) floor = UNSET_FLOOR;
+    else {
+      warnings.push(`risk floor: route-table.json's stakes_order does not name `
+        + `"${UNSET_FLOOR}", so an unset stakes cannot floor below the schema `
+        + `default; "${baseline}" stands`);
+    }
+  }
+
+  if (!hit) {
+    if (floor === baseline) {
+      return hold(read
+        ? `phase ${phase} declares nothing touching [${surfaces.join(', ')}]`
+        : 'no plan in scope was read whole');
+    }
+    reason.push(`risk floor: phase ${phase} declares nothing touching `
+      + `[${surfaces.join(', ')}] and its ${scope.found} plan`
+      + `${scope.found === 1 ? '' : 's'} read clean; stakes is unset, so the `
+      + `level floors at "${floor}" rather than the "${baseline}" default`);
+    return floor;
+  }
+
+  const at = evidencedBy(hit.category, hit.signal);
+  const where = at ? `${at} touches` : 'a declared file touches';
+  const raised = higher(floor, RAISE_TARGET);
+  if (raised === null) {
+    // A reason claiming a baseline is "already at or above" a level nothing
+    // could compare would be a flatly false sentence, so the comparison that
+    // failed is what gets said.
+    warnings.push(`risk floor: route-table.json's stakes_order cannot place `
+      + `"${floor}" against "${RAISE_TARGET}", so the ${hit.category} surface `
+      + `phase ${phase} declares raised nothing; "${baseline}" stands`);
+    return baseline;
+  }
+  if (raised === floor) {
+    reason.push(`risk floor: phase ${phase}: ${where} ${hit.category} `
+      + `(${hit.signal}); "${floor}" is already at or above the `
+      + `"${RAISE_TARGET}" that raises to`);
+    return floor;
+  }
+  reason.push(`risk floor: phase ${phase}: ${where} ${hit.category} `
+    + `(${hit.signal}); level ${floor} -> ${raised}`);
+  return raised;
+}
+
 function resolve(opts) {
   // The planning root and the trace phase, derived ONCE for both events this
   // resolve may write: `--phase` when it parses, the cursor otherwise, and with
@@ -333,9 +557,28 @@ function resolve(opts) {
   // malformed `--phase` is said out loud on the ok:true arm too.
   const warnings = [...argWarnings, ...cfg._warnings];
 
-  // The stakes LEVEL for this dispatch: the configured baseline, full stop.
-  // All four knobs come from the floored row through the one cell grid.
-  const stakes = cfg.stakes;
+  // THE ANSWERED SURFACE SET, decided here rather than at its warning block
+  // below, because the plan-time floor is scoped by it (D-10) and the floor runs
+  // before the cell lookup. The DECISION is hoisted and the DIAGNOSTICS are not:
+  // `answeredSurfaces` is pure, so reading it twice would be free and reading it
+  // once is honest, while moving the warning block would reorder `warnings[]`
+  // for every caller that reads it positionally. `resolve` narrows the floor to
+  // this set on the same terms the commit-time trigger already uses - a project
+  // that answered the surface question narrowed what can raise its level, and an
+  // unanswered one gets all eight, which is the safe direction on both.
+  const tableCategories = Array.isArray(TABLE.risk_surface_categories)
+    ? TABLE.risk_surface_categories.filter((c) => typeof c === 'string' && c) : [];
+  const wroteSurfaces = cfg.triggerSurfaces.risk_surface;
+  const decided = answeredSurfaces(wroteSurfaces, tableCategories);
+  const surfaces = decided.surfaces;
+  const surfacesAnswered = decided.answered;
+
+  // THE STAKES LEVEL for this dispatch: the configured level as a FLOOR, raised
+  // by what the phase's own declared `files:` touch (CER-01). All four knobs
+  // then come from the floored row through the one cell grid.
+  const stakes = riskFloor({
+    role: opts.role, planningRoot, phase: tracePhase, cfg, surfaces, reason, warnings,
+  });
 
   // The three grids a torn LEVEL is fatal in (D-01). `model`, `effort` and
   // `retry` come from ONE cell keyed on (level, role); `review` keys on
@@ -644,17 +887,12 @@ function resolve(opts) {
   // Failing toward all eight is the only safe direction here (D-14): the
   // alternative narrows the only blocking review trigger on evidence nobody
   // supplied.
-  const tableCategories = Array.isArray(TABLE.risk_surface_categories)
-    ? TABLE.risk_surface_categories.filter((c) => typeof c === 'string' && c) : [];
-  const wroteSurfaces = cfg.triggerSurfaces.risk_surface;
   // The predicate itself lives in lib/surface-scan.mjs, because
-  // `planning.mjs risk-check run` REFUSES on the same answer this line
+  // `planning.mjs risk-check run` REFUSES on the same answer this block
   // REPORTS: two copies would let the seam that enforces the one-time question
-  // disagree with the resolve that names it. The wording of the warnings below
-  // stays here - the diagnostics are this face's, the rule is not.
-  const decided = answeredSurfaces(wroteSurfaces, tableCategories);
-  let surfaces = decided.surfaces;
-  let surfacesAnswered = decided.answered;
+  // disagree with the resolve that names it. The wording of the warnings here
+  // stays in this file - the diagnostics are this face's, the rule is not, and
+  // the ANSWER itself was decided above the floor that is scoped by it.
   if (wroteSurfaces !== undefined) {
     const { kept, bad } = decided;
     if (!Array.isArray(wroteSurfaces)) {
