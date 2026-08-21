@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 5 (The number nobody can spend)
-Status: ready to plan
-Next: /cad-plan 4
+Phase: 3 of 3 (Ceremony the change pays for)
+Status: phase complete
+Next: /cad-spike - RDX-01 and BCH-01 are held unplanned pending spike verdicts (ROADMAP Overview)
 Updated: 2026-08-21
