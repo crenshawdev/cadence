@@ -1798,8 +1798,13 @@ test('fail-closed: a PLAN whose file mode makes it unreadable holds the configur
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
   assert.equal(r.stakes, 'shipped');
-  assert.ok((r.warnings || []).some((w) => /^risk floor: cannot read .*PLAN-1\.md \(EISDIR\)/.test(w)),
-    JSON.stringify(r.warnings));
+  // EITHER spelling, because the CONTRACT is the arm and not the errno: the
+  // pre-read `lstatSync` guard refuses a directory as a non-regular entry before
+  // `readFileSync` ever reaches EISDIR. Both land the same plan on the same
+  // unread arm, which is what holds the configured stakes.
+  assert.ok((r.warnings || []).some(
+    (w) => /^risk floor: cannot read .*PLAN-1\.md \((EISDIR|not a regular file)\)/.test(w)),
+  JSON.stringify(r.warnings));
 });
 
 test('fail-closed: ONE unreadable plan holds a whole two-plan scope up (the aggregation rule)', () => {

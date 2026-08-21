@@ -25,9 +25,14 @@
 // override (references/seams.md), which is BELOW every floor.
 'use strict';
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseCursor, readFrontmatterList } from './planning-files.mjs';
+
+// The byte bound a PLAN file is read under, matching `route.mjs`'s
+// `MAX_BODY_BYTES` for the declared bodies one level down - one number for one
+// question, so a plan and a file it declares are refused at the same size.
+const MAX_PLAN_BYTES = 512 * 1024;
 
 // A split phase carries PLAN-1.md and PLAN-2.md and BOTH declare files; an
 // unsplit one carries PLAN.md. Nothing else in `phases/<N>/` is a plan.
@@ -86,6 +91,34 @@ export function cursorPhase(planningRoot) {
 function readOnePlan(file, acc, seen) {
   acc.found += 1;
   let text;
+  // BOUNDED BEFORE OPENED, on route.mjs's `declaredBodies` reasoning and for the
+  // same reason: `PLAN_FILE` admits a name, and a name says nothing about what
+  // the entry IS. A plan path that is a symlink to a character device or a FIFO
+  // reports size 0 through a following stat, passes any byte bound, and is then
+  // read to an EOF that never arrives - so the resolve hangs where its whole
+  // contract is to fail closed at the configured stakes. `lstatSync` does not
+  // follow, and a non-regular entry is an unread plan rather than a clean one:
+  // it takes the SAME arm an unreadable plan takes, which withholds the discount
+  // instead of earning it. This reader is the floor's first input, so leaving it
+  // unguarded while the bodies one level down are guarded is the asymmetry the
+  // `risk_surface` review named.
+  try {
+    const st = lstatSync(file);
+    if (!st.isFile()) {
+      acc.warnings.push(`${W}cannot read ${file} (not a regular file); `
+        + 'no risk surface was computed from it');
+      return;
+    }
+    if (st.size > MAX_PLAN_BYTES) {
+      acc.warnings.push(`${W}cannot read ${file} (over ${MAX_PLAN_BYTES} bytes); `
+        + 'no risk surface was computed from it');
+      return;
+    }
+  } catch (e) {
+    acc.warnings.push(`${W}cannot read ${file} (${e.code || e.message}); `
+      + 'no risk surface was computed from it');
+    return;
+  }
   try {
     text = readFileSync(file, 'utf8');
   } catch (e) {
