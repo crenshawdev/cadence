@@ -8,7 +8,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { cursorPhase, declaredPhaseFiles, declaredPlanFiles } from './lib/phase-plans.mjs';
+import {
+  cursorPhase, declaredFilesIn, declaredPhaseFiles, declaredPlanFiles, phaseDirsIn,
+} from './lib/phase-plans.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
 
 /** A fresh planning root. `plans` is keyed `<phase>/<filename>`. */
@@ -250,4 +252,94 @@ test('the named face carries the same two failure arms as the union', () => {
   assert.equal(bad.found, 1);
   assert.equal(bad.clean, 0);
   assert.match(bad.warnings[0], /out of grammar/);
+});
+
+// --- declaredFilesIn: the same reader, addressed by PATH ---------------------
+
+test('the by-path reader answers exactly what the phase-keyed face does', () => {
+  // The point of the split: `phases/<N>/` is one address this reader can be
+  // given, and an archived `_archive-<label>/<N>/` is another. If these two ever
+  // disagree there are two readers again, which is what the split removed.
+  const root = planningRoot({
+    '7/PLAN-1.md': plan('README.md', 'src/a.mjs'),
+    '7/PLAN-2.md': plan('src/b.mjs'),
+    '7/PLAN-3.md': plan(),
+  });
+  const byPhase = declaredPhaseFiles(root, 7);
+  const byPath = declaredFilesIn(join(root, 'phases', '7'));
+  assert.deepEqual(byPath, byPhase);
+  assert.deepEqual(byPath.files, ['README.md', 'src/a.mjs', 'src/b.mjs']);
+  assert.equal(byPath.found, 3);
+  assert.equal(byPath.clean, 3);
+  // ...and with a key, the named-plan face.
+  assert.deepEqual(declaredFilesIn(join(root, 'phases', '7'), '2'), declaredPlanFiles(root, 7, '2'));
+});
+
+test('the by-path reader carries the out-of-grammar and unreadable arms too', () => {
+  const root = planningRoot({
+    '7/PLAN-1.md': '---\nphase: 7\nplan: 1\nfiles:\n  - src/a.mjs\n  not a key line\n---\n\n# Plan\n',
+    '7/PLAN-2.md': plan('src/b.mjs'),
+  });
+  chmodSync(join(root, 'phases', '7', 'PLAN-2.md'), 0o000);
+  const byPath = declaredFilesIn(join(root, 'phases', '7'));
+  assert.deepEqual(byPath, declaredPhaseFiles(root, 7));
+  assert.deepEqual(byPath.files, []);
+  assert.equal(byPath.found, 2);
+  assert.equal(byPath.clean, 0, 'one out of grammar, one unreadable: neither is clean');
+  assert.equal(byPath.warnings.length, 2, JSON.stringify(byPath.warnings));
+  chmodSync(join(root, 'phases', '7', 'PLAN-2.md'), 0o644);
+});
+
+test('an unreadable directory is silent for the union face and warns for a named plan', () => {
+  const gone = join(tmpdir(), 'cad-no-such-dir-24680');
+  assert.deepEqual(declaredFilesIn(gone),
+    { files: [], warnings: [], found: 0, clean: 0, undeclared: [] });
+  const named = declaredFilesIn(gone, '1');
+  assert.equal(named.found, 0);
+  assert.equal(named.warnings.length, 1, JSON.stringify(named.warnings));
+  assert.match(named.warnings[0], /^risk floor: .*is not a readable plan directory/);
+});
+
+// --- phaseDirsIn: the locator ------------------------------------------------
+
+test('the locator finds live and archived phase directories, in a stable order', () => {
+  // `_archive-<label>/<N>/` is where `milestone-prune --mode archive` moves a
+  // closed milestone's phases, and those are 27 of this repository's own 30 -
+  // unreachable to a reader that joins `phases/<N>` and nothing else.
+  const root = planningRoot({
+    '1/PLAN.md': plan('README.md'),
+    '2/PLAN-1.md': plan('src/a.mjs'),
+    'notes/NOTES.md': '# not a phase\n',
+  });
+  for (const rel of ['1', '2']) {
+    mkdirSync(join(root, '_archive-v1.0.0', rel), { recursive: true });
+    writeFileSync(join(root, '_archive-v1.0.0', rel, 'PLAN.md'), plan('old.mjs'));
+  }
+  const found = phaseDirsIn(root);
+  assert.deepEqual(found.map((e) => e.label),
+    ['_archive-v1.0.0/1', '_archive-v1.0.0/2', 'phases/1', 'phases/2'],
+    'a directory holding no conforming plan file - `phases/notes` - is not a phase');
+  assert.deepEqual(found.map((e) => e.path), [
+    join(root, '_archive-v1.0.0', '1'),
+    join(root, '_archive-v1.0.0', '2'),
+    join(root, 'phases', '1'),
+    join(root, 'phases', '2'),
+  ]);
+  // The path is one a reader takes: the union face answers off it directly.
+  assert.deepEqual(declaredFilesIn(found[0].path).files, ['old.mjs']);
+});
+
+test('an unreadable archive directory is skipped, never a throw', () => {
+  const root = planningRoot({ '1/PLAN.md': plan('README.md') });
+  mkdirSync(join(root, '_archive-v1.0.0', '1'), { recursive: true });
+  writeFileSync(join(root, '_archive-v1.0.0', '1', 'PLAN.md'), plan('old.mjs'));
+  chmodSync(join(root, '_archive-v1.0.0'), 0o000);
+  assert.deepEqual(phaseDirsIn(root).map((e) => e.label), ['phases/1'],
+    'fails OPEN: what could not be read contributes nothing and nothing throws');
+  chmodSync(join(root, '_archive-v1.0.0'), 0o755);
+});
+
+test('an absent planning root is an empty list - the ordinary pre-project state', () => {
+  assert.deepEqual(phaseDirsIn(join(tmpdir(), 'cad-no-such-root-97531')), []);
+  assert.deepEqual(phaseDirsIn(planningRoot({})), []);
 });

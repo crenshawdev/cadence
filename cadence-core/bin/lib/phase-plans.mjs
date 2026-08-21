@@ -13,7 +13,11 @@
 // It adds NO grammar of its own: `parseCursor` and `readFrontmatterList` come
 // from ./planning-files.mjs, the one place a `.planning` grammar lives, and the
 // conforming plan-file set is `listPlanFiles`'s (`PLAN.md`, `PLAN-<k>.md`) with
-// `PLAN.md` reading as plan 1 spelled bare.
+// `PLAN.md` reading as plan 1 spelled bare. That set is also the LOCATOR's test
+// for what a phase directory is (`phaseDirsIn`), which is what reaches the
+// phases a milestone close archived: locating and reading are separate here, so
+// `route.mjs replay` can ask the same reader about `_archive-<label>/<N>/` that
+// a resolve asks about `phases/<N>/`.
 //
 // Every path here fails OPEN, and the caller closes: nothing throws, an
 // unreadable input yields no paths plus one warning, and the COUNTS (`found`,
@@ -37,6 +41,13 @@ const MAX_PLAN_BYTES = 512 * 1024;
 // A split phase carries PLAN-1.md and PLAN-2.md and BOTH declare files; an
 // unsplit one carries PLAN.md. Nothing else in `phases/<N>/` is a plan.
 const PLAN_FILE = /^PLAN(-\d+)?\.md$/;
+
+// The directories `milestone-prune --mode archive` moves a closed milestone's
+// phases into, beside `phases/` under the same planning root. Matched by PREFIX
+// and not by a label grammar: the label is whatever version string the close
+// carried, and a phase that has been archived still declares the files a floor
+// would read.
+const ARCHIVE_DIR = /^_archive-/;
 
 // The `risk floor: ` prefix every warning here carries. route.mjs relays these
 // strings VERBATIM onto its own `warnings[]`, so the prefix is what tells a
@@ -146,22 +157,91 @@ function readOnePlan(file, acc, seen) {
   }
 }
 
-/** The conforming plan files in `phases/<phase>/`, sorted, or null when the
- * directory could not be read at all - the ordinary pre-plan state. */
-function planFilesIn(planningRoot, phase) {
-  const dir = join(planningRoot, 'phases', String(phase));
+/** The conforming plan files in one directory, sorted, or null when the
+ * directory could not be read at all - the ordinary pre-plan state. A directory
+ * that reads but holds no plan is `[]`, which is a different answer: nothing was
+ * there, rather than nothing could be looked at. */
+function planFilesIn(dir) {
   try {
-    return { dir, names: readdirSync(dir, { encoding: 'utf8' }).filter((e) => PLAN_FILE.test(e)).sort() };
+    return readdirSync(dir, { encoding: 'utf8' }).filter((e) => PLAN_FILE.test(e)).sort();
   } catch {
-    return { dir, names: null };
+    return null;
   }
 }
 
+/** Whatever a directory holds, or nothing at all when it could not be read.
+ * Every walk below fails OPEN through this: an unreadable planning root, an
+ * unreadable archive directory and an unreadable phase directory each contribute
+ * no entries and no throw. */
+function entriesIn(dir) {
+  try {
+    return readdirSync(dir, { encoding: 'utf8' });
+  } catch {
+    return [];
+  }
+}
+
+/** `phases/<phase>` under a planning root - the ONE place the live layout is
+ * spelled, so the two phase-keyed faces below cannot drift from each other. */
+const phaseDir = (planningRoot, phase) => join(planningRoot, 'phases', String(phase));
+
 /**
- * The file paths a phase's PLAN files declare in their frontmatter `files:`
- * list, unioned across every conforming plan file in `phases/<phase>/` (read in
+ * Every directory under the planning root that HOLDS a conforming plan file -
+ * `phases/<name>` for a live phase and `_archive-<label>/<name>` for one a
+ * milestone close moved - each with the `path` a reader takes and a `label` a
+ * report can print, sorted by label so two runs print the same order.
+ *
+ * WHAT MAKES A DIRECTORY A PHASE HERE is that it holds a file matching
+ * `PLAN_FILE`, never that its name matches a phase-name grammar. That grammar
+ * (`PHASE_DIR_NAME`) lives in `bin/planning.mjs`, a top-level script this lib
+ * may not import, and restating it here would be the second copy this file's
+ * header refuses to carry. It also answers a question this caller does not have:
+ * a directory holding no plan declares no files, so it contributes nothing to a
+ * floor whatever it is named.
+ *
+ * An ABSENT planning root is the ordinary pre-project state and yields an empty
+ * list with no warning, on the same argument `cursorPhase` is silent for.
+ * @param {string} planningRoot
+ * @returns {Array<{label: string, path: string}>}
+ */
+export function phaseDirsIn(planningRoot) {
+  const groups = ['phases', ...entriesIn(planningRoot).filter((e) => ARCHIVE_DIR.test(e))];
+  const found = [];
+  for (const group of groups) {
+    const dir = join(planningRoot, group);
+    for (const name of entriesIn(dir)) {
+      const names = planFilesIn(join(dir, name));
+      if (!names || !names.length) continue;
+      found.push({ label: `${group}/${name}`, path: join(dir, name) });
+    }
+  }
+  // Label order, not directory order: `readdirSync` makes no ordering promise
+  // and a replay row list that reshuffles between runs is unreadable as a diff.
+  return found.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+}
+
+/**
+ * The file paths the PLAN files in ONE directory declare in their frontmatter
+ * `files:` list, unioned across every conforming plan file there (read in
  * lexicographic order, first occurrence kept), plus one warning per PLAN this
  * could not read cleanly and the two counts the caller's aggregation needs.
+ *
+ * BY PATH, so the same rules reach a phase wherever the project keeps it - a
+ * live `phases/<N>/` and an archived `_archive-<label>/<N>/` alike, which is what
+ * lets the replay measure the 27 phases this repository has already closed. The
+ * two phase-keyed faces below are this function with the path joined for them,
+ * so there is exactly ONE reader and one set of failure rules.
+ *
+ * `planKey` narrows the scope from the directory's union to the one plan it
+ * names, which is what an executor dispatch floors on (D-06). `PLAN-<key>.md` is
+ * the file, and `PLAN.md` is plan 1 spelled bare (the equivalence `listPlanFiles`
+ * and planning.mjs's own plan-file lookup already carry), preferring `PLAN-1.md`
+ * when a directory somehow holds both. A key that names NO plan file returns
+ * `found: 0`, which is the caller's fail-closed arm verbatim: the resolve holds
+ * the configured stakes rather than discounting a plan it never read. It is
+ * deliberately not a warning-free silence like an absent directory - a caller
+ * that NAMED a plan and got nothing is a wrong dispatch, not a pre-plan state -
+ * so it says so, and an unreadable directory says so too for the same reason.
  *
  * The FRONTMATTER list only - never `parsePlanFiles`'s union with the
  * `- **Files:**` task lines (D-05). Under that union a PLAN whose frontmatter
@@ -181,46 +261,29 @@ function planFilesIn(planningRoot, phase) {
  * no path at all - the same argument one step further in, since a plan that
  * named no file scanned no file. An absent planning root or an absent phase
  * directory is the ordinary pre-plan state and carries NO warning - warning
- * there would fire on every `/cad-context` dispatch of every project.
- * @param {string} planningRoot
- * @param {string|number} phase
+ * there would fire on every `/cad-context` dispatch of every project. A caller
+ * that named a `planKey` is the one exception, above.
+ * @param {string} dir
+ * @param {string|number} [planKey]
  * @returns {{files: string[], warnings: string[], found: number, clean: number,
  *   undeclared: string[]}}
  */
-export function declaredPhaseFiles(planningRoot, phase) {
+export function declaredFilesIn(dir, planKey) {
   const acc = { files: [], warnings: [], found: 0, clean: 0, undeclared: [] };
-  const { dir, names } = planFilesIn(planningRoot, phase);
-  if (!names) return acc; // no phase directory: the pre-plan state
-  const seen = new Set();
-  for (const name of names) readOnePlan(join(dir, name), acc, seen);
-  return acc;
-}
-
-/**
- * The same answer for ONE plan of a phase, named by its plan KEY - the face an
- * executor dispatch floors on, so a clean plan in a mixed phase routes below its
- * risky sibling (D-06). `PLAN-<key>.md` is the file, and `PLAN.md` is plan 1
- * spelled bare (the equivalence `listPlanFiles` and planning.mjs's own plan-file
- * lookup already carry), preferring `PLAN-1.md` when a phase somehow holds both.
- *
- * A key that names NO plan file returns `found: 0`, which is the caller's
- * fail-closed arm verbatim: the resolve holds the configured stakes rather than
- * discounting a plan it never read. It is deliberately not a warning-free
- * silence like an absent phase directory - a caller that NAMED a plan and got
- * nothing is a wrong dispatch, not a pre-plan state - so it says so.
- * @param {string} planningRoot
- * @param {string|number} phase
- * @param {string} planKey
- * @returns {{files: string[], warnings: string[], found: number, clean: number,
- *   undeclared: string[]}}
- */
-export function declaredPlanFiles(planningRoot, phase, planKey) {
-  const acc = { files: [], warnings: [], found: 0, clean: 0, undeclared: [] };
-  const { dir, names } = planFilesIn(planningRoot, phase);
-  const key = String(planKey);
+  const names = planFilesIn(dir);
+  const key = planKey === undefined ? undefined : String(planKey);
   if (!names) {
-    acc.warnings.push(`${W}phase ${phase} has no readable plan directory, so plan `
-      + `${key} could not be read; no risk surface was computed from it`);
+    // The pre-plan state for the union face and a wrong dispatch for the named
+    // one, which is why only the second warns.
+    if (key !== undefined) {
+      acc.warnings.push(`${W}${dir} is not a readable plan directory, so plan `
+        + `${key} could not be read; no risk surface was computed from it`);
+    }
+    return acc;
+  }
+  if (key === undefined) {
+    const seen = new Set();
+    for (const name of names) readOnePlan(join(dir, name), acc, seen);
     return acc;
   }
   const name = names.find((f) => f === `PLAN-${key}.md`)
@@ -233,4 +296,31 @@ export function declaredPlanFiles(planningRoot, phase, planKey) {
   }
   readOnePlan(join(dir, name), acc, new Set());
   return acc;
+}
+
+/**
+ * The union face for a LIVE phase, named by its number - `declaredFilesIn` with
+ * `phases/<phase>` joined for it. What a phase-scoped role (`cad-plan-checker`,
+ * `cad-verifier`, reviewer resolution) floors on.
+ * @param {string} planningRoot
+ * @param {string|number} phase
+ * @returns {{files: string[], warnings: string[], found: number, clean: number,
+ *   undeclared: string[]}}
+ */
+export function declaredPhaseFiles(planningRoot, phase) {
+  return declaredFilesIn(phaseDir(planningRoot, phase));
+}
+
+/**
+ * The named-plan face for a LIVE phase - `declaredFilesIn` with the same path
+ * joined and the key passed through, so a clean plan in a mixed phase routes
+ * below its risky sibling (D-06).
+ * @param {string} planningRoot
+ * @param {string|number} phase
+ * @param {string} planKey
+ * @returns {{files: string[], warnings: string[], found: number, clean: number,
+ *   undeclared: string[]}}
+ */
+export function declaredPlanFiles(planningRoot, phase, planKey) {
+  return declaredFilesIn(phaseDir(planningRoot, phase), planKey);
 }
