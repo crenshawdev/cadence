@@ -1,0 +1,48 @@
+{
+  "phase": "3",
+  "trigger": "risk_surface",
+  "discriminator": "plan-3",
+  "round": 1,
+  "base": "7ae1489",
+  "head": "1c4d7c1",
+  "base_id": "7ae1489b3ce4e3c2794951fbe00a4d69ce10fb86",
+  "head_id": "1c4d7c18b2eb7a08fbe1904071421d15d8b27475",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/phase-plans.mjs",
+      "line": 218,
+      "severity": "high",
+      "claim": "`phaseDirsIn` follows symlinks for both `_archive-*` groups and their phase entries, so the new replay locator is not confined to the planning root.",
+      "failure_scenario": "An untrusted project can create `.planning/_archive-x` as a symlink to an arbitrary readable directory, or `.planning/phases/1` as such a symlink. `entriesIn(dir)` and then `planFilesIn(join(dir, name))` follow it; replay subsequently calls `declaredFilesIn` on the external directory and scans the files its PLAN declares. Thus `route.mjs replay --file <project>/.planning/config.json` can be induced to read and process PLAN data outside the selected project rather than only `phases/` and archive directories beneath its planning root. Reject symlinks/non-directories with `lstat` and enforce that resolved paths remain below `planningRoot`.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "70bd22a",
+      "base_id": "7ae1489b3ce4e3c2794951fbe00a4d69ce10fb86",
+      "head_id": "1c4d7c18b2eb7a08fbe1904071421d15d8b27475"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/phase-plans.mjs",
+      "line": 213,
+      "severity": "medium",
+      "claim": "The archive-aware locator has no bound on directory entries, archive groups, phase directories, or conforming plans, allowing an untrusted planning tree to cause unbounded synchronous reads and memory use.",
+      "failure_scenario": "A repository can contain thousands of `_archive-*` directories, each with thousands of child names containing `PLAN.md`. `phaseDirsIn` materializes every root/group directory with `readdirSync`, probes every child, and replay then reads every discovered plan and its declared files. There is a per-plan byte limit, but no limit on the number of directories or plans, so one replay can consume arbitrarily large CPU, memory, and I/O and hang the routing command. Apply explicit traversal/result limits (and report truncation) before walking all archive and phase entries.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "base_id": "7ae1489b3ce4e3c2794951fbe00a4d69ce10fb86",
+      "head_id": "1c4d7c18b2eb7a08fbe1904071421d15d8b27475"
+    }
+  ]
+}
