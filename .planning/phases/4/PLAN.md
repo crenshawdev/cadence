@@ -14,6 +14,7 @@ files:
   - cadence-core/workflows/report.md
   - cadence-core/workflows/suggest.md
   - cadence-core/bin/weight-budgets.json
+  - cadence-core/bin/prose-agreement.test.mjs
   - .planning/spikes/read-set-redundancy/measure.mjs
   - .planning/spikes/read-set-redundancy/measure2.mjs
 ---
@@ -40,11 +41,16 @@ it.
 - The threshold is per role: `cad-executor` and `cad-verifier` can produce the
   entry and `cad-planner`, `cad-assumptions-analyzer` and `cad-reviewer` cannot,
   whatever ratio the record shows for them (SC2).
-- A record with no file-carrying reads produces no entry at all, and no surface
-  renders a null ratio as `0` (SC4).
-- The entry states what it does not cover: the file-carrying share of the reads
-  it was computed over, and the count of `coordinator` reads it excluded with the
-  reason those cannot be attributed (SC5, SC6).
+- A record with no file-carrying reads produces no entry at all, and NEITHER
+  surface renders a null ratio as `0`: `trace suggest` emits nothing, and
+  `/cad-report`'s reading rule is given the live `calls > 0` case with a null
+  in-dispatch ratio and told to say nothing about it (SC4).
+- The entry states what it does not cover, in its own evidence string and not
+  only in workflow prose: the file-carrying share of the reads it was computed
+  over, the SCOPE those reads span - nothing prunes `.planning/reads.jsonl` at a
+  close, so an unscoped run reaches every milestone in the file - and the count of
+  `coordinator` reads it excluded with the reason those cannot be attributed
+  (SC5, SC6).
 - `/cad-report`'s reading line and `trace suggest`'s entry come from ONE
   implementation - the same per-role figure is on the `reads --join` envelope and
   neither prose surface recomputes it (SC8).
@@ -154,10 +160,17 @@ it.
   This follows R6's precedent exactly, which is `action: null` because no schema
   key governs coordinator spend. The evidence string carries, in one line: the
   role and its in-dispatch ratio; the worst offender as "read `<path>` N times"
-  inside one dispatch, naming that dispatch's phase and plan; the coverage share
-  the ratio was computed over; the count of `coordinator` reads excluded and the
-  reason they cannot be attributed; and the explicit statement that no config key
-  governs this, with the discipline remedy named. All of it rides the evidence
+  inside one dispatch, naming that dispatch's phase and plan; the DIRECTION the
+  figure should move, in words - down - because SC1 asks for one and the
+  `Suggestion` vocabulary below stays closed to a `direction` field; the coverage
+  share the ratio was computed over; the SCOPE those reads span, that nothing
+  prunes `.planning/reads.jsonl` at a close so an unscoped run reaches every
+  milestone in the file; the count of `coordinator` reads excluded and the reason
+  they cannot be attributed; and the explicit statement that no config key governs
+  this, with the discipline remedy named. The direction and the scope ride the
+  evidence string for the same reason every other element does, and they are not
+  optional: SC1 names the direction and SC5 names the scope, and prose in
+  `suggest.md` cannot satisfy either for a reader who runs the seam directly. All of it rides the evidence
   string because `cadence-core/workflows/suggest.md` relays evidence unchanged
   and adds no flag - the same reason R5 rides `SPEND_EXCLUDES` in its evidence
   rather than on the envelope. The rule emits nothing at all - not an entry
@@ -170,7 +183,10 @@ it.
   an entry carrying either without a key would offer a token nobody can type.
 - **Verify:** `node --test cadence-core/bin/trace-suggest.test.mjs` passes with
   new cases proving each of: `cad-executor` at 3.64 emits exactly one entry whose
-  evidence contains the worst file and its count; `cad-planner` at 1.88 emits
+  evidence contains the worst file and its count, the direction `down`, the
+  coverage share and the scope sentence naming `.planning/reads.jsonl` as unpruned
+  - four separate assertions over the one string, so dropping any one of them
+  reddens on its own; `cad-planner` at 1.88 emits
   nothing AND `cad-planner` at 5.0 still emits nothing, so the map rather than
   the number is the gate; a role at exactly its floor emits; a `null` ratio emits
   nothing and no emitted evidence anywhere contains a zero ratio; a
@@ -195,10 +211,22 @@ it.
   in `r`; join the parsed records against `r.brackets`, fold them with the
   function task 1 added, and pass the result to `suggestFromRender` as its third
   argument. Reuse the render already computed - a second `renderTrace` call
-  re-reads the trace for nothing. An absent or unreadable `.planning/reads.jsonl`
-  yields no rows and therefore no entry, never an error and never a zero, which is
-  the posture `cmdReads`'s own ENOENT arm already states for a project that has
-  not run since the hook was installed. The `--phase N` scope needs no new flag
+  re-reads the trace for nothing. The helper REPORTS what it hit and decides
+  nothing: it distinguishes absent from unreadable and hands both back, so each
+  caller keeps the posture it has today rather than inheriting one. `cmdReads`
+  keeps its `fail('read-failed', 'cannot read <file>')` arm at
+  `planning.mjs:3121` intact - that is the single production site and it has zero
+  tests, so a helper that swallowed EACCES would change `reads`'s contract with
+  nothing red, and `/cad-report`'s Reading line would go quiet as though the
+  project had opened no files. The `suggest` arm takes the other posture and
+  states it: an ABSENT file yields no rows and therefore no entry, never an error
+  and never a zero, which is the posture `cmdReads`'s own ENOENT arm already
+  states for a project that has not run since the hook was installed - while an
+  UNREADABLE file yields no entry AND a `warnings` entry naming the file, through
+  the warnings channel the suggest envelope already carries for exactly this class
+  of partial read (`planning.mjs:3727-3731`, D-13). A permissions error loud on
+  one face and invisible on the other is the outcome this paragraph exists to
+  prevent. The `--phase N` scope needs no new flag
   and gets none: the brackets come from the phase-scoped render, so only reads
   inside that phase's dispatches join, and `trace suggest`'s row in
   `cadence-core/bin/lib/arg-contract.mjs` fixes its flag set while
@@ -218,8 +246,13 @@ it.
   `files` arrays removed returns no such entry; `node
   cadence-core/bin/planning.mjs trace suggest` run in this repository returns a
   `cad-executor` entry whose ratio is at or above 3.00 and whose worst-file count
-  is at least 3; `node --test cadence-core/bin/trace-suggest.test.mjs` passes;
-  `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an empty
+  is at least 3; with the fixture's `reads.jsonl` made unreadable, `reads --join`
+  still returns `ok:false` `read-failed` and `trace suggest` returns no
+  in-dispatch entry together WITH a `warnings` entry naming the file - one test
+  asserting both faces, since neither has one today and the whole risk of lifting
+  the parse is that they diverge; `node --test
+  cadence-core/bin/trace-suggest.test.mjs` passes; `node
+  cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an empty
   `problems` array.
 
 ### Task 4: `reads --join` carries the same figure, so both faces read one seam
@@ -247,7 +280,7 @@ it.
 ### Task 5: Both prose faces state the figure, its coverage and its exclusions
 
 - **Files:** cadence-core/workflows/report.md, cadence-core/workflows/suggest.md,
-  cadence-core/bin/weight-budgets.json
+  cadence-core/bin/weight-budgets.json, cadence-core/bin/prose-agreement.test.mjs
 - **Action:** In `report.md`, the `Reading` line of the compose shape gains the
   per-role in-dispatch figure off the SAME `reads --join` return it already reads
   `fileCalls`, `fileRedundancy` and `topFiles` from, and the rule block below it
@@ -256,25 +289,61 @@ it.
   rules already there - that the line prices the WHOLE `.planning/reads.jsonl`
   rather than the phase, and that a `calls: 0` or `no reads recorded yet` return
   means saying nothing about reading at all, because a per-role block over an
-  absent record reads as a run that opened no files. Recompute nothing in prose,
-  which is that file's stated rule already. In `suggest.md`, `read_record` names
+  absent record reads as a run that opened no files. Add the THIRD rule neither of
+  those covers, which is the live case: `calls > 0` with a NULL in-dispatch ratio.
+  Every record written before the `files` field existed is that shape, and so is
+  the committed `fixtures/join.reads.jsonl` at 8 calls with no `files` array. Say
+  nothing about in-dispatch re-reading for a role whose ratio came back null, and
+  never narrate it as `0` - that is the reading which says the worker opened each
+  file once. Without the rule, the file's own standing instruction to report every
+  figure as returned hands the composing model a null with no disposition.
+  Recompute nothing in prose, which is that file's stated rule already. Re-measure
+  the `reads --join` response and correct the byte figure in report.md's transport
+  paragraph, which states "`reads --join` measures 1,507 B" as the basis for
+  keeping that call inline under `references/conventions.md`'s 10,000-byte gate:
+  task 4 grows that response, so the commit that grows it fixes the measurement.
+  The transport decision does not flip - state the new figure, do not re-argue the
+  gate. In `suggest.md`, `read_record` names
   the second file the seam now opens, so its "Do not open
   `.planning/trace.jsonl`" instruction stays true of everything a reader might
   reach for; and the `scope` step's existing sentence about nothing pruning
   `.planning/trace.jsonl` at a close gains its counterpart for
   `.planning/reads.jsonl`, plus the fact that that file carries no phase scoping
   of its own so a `--phase N` run reaches its reads only through that phase's
-  dispatch brackets. Add no flag and no second seam call to either file - the one
-  call each already makes returns all of this. Re-pin both files in
+  dispatch brackets. Then the `present` step, which is where this phase's whole
+  deliverable is otherwise buried. `info` is defined as "a receipt worth seeing
+  that asks for nothing" and every one renders as a single line under heading two,
+  while heading one prints exactly "the record supports no tweak in this scope"
+  whenever the return carries `info` entries and no `suggest` entry. On an
+  ordinary project with no other firing rule, `/cad-suggest` therefore prints that
+  line directly above a receipt reporting a 3.64 in-dispatch re-read ratio and a
+  file opened 29 times inside one dispatch. Do NOT fix that by widening the
+  entry's `kind` or the `Suggestion` vocabulary - task 2 forbids both and
+  `workflows/suggest.md`'s ask step depends on them. Fix the PROSE: heading one's
+  no-tweak line states that it speaks about CONFIG KEYS specifically, and points
+  at the receipts when an in-dispatch entry is present; and heading two's "An
+  `info` asks for nothing" gains its one stated exception - an in-dispatch entry
+  names a remedy that is not a key, and the reader is told what that remedy is
+  rather than left with a ratio. Add no flag and no second seam call to either
+  file - the one call each already makes returns all of this. Re-pin both files in
   `cadence-core/bin/weight-budgets.json` in the SAME commit: `self-verify`'s
   budget check reports `budget-overrun` when a surface exceeds its entry, so an
   unpinned edit fails this phase's own closing check.
-- **Verify:** `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true`
-  with an empty `problems` array, which is the re-pin's proof; `grep -n
-  "coordinator" cadence-core/workflows/report.md` shows the exclusion and its
-  reason on the reading rule; `grep -n "reads.jsonl"
-  cadence-core/workflows/suggest.md` shows the scope statement in the `scope`
-  step.
+- **Verify:** `node --test cadence-core/bin/prose-agreement.test.mjs` passes with
+  a new arm modelled on that file's MSR-02, which is this repo's one mechanism for
+  pinning a workflow's prose to a seam: it slices report.md's Reading LINE and its
+  rule block and asserts the `coordinator` exclusion, its reason, the coverage and
+  the null-ratio rule all appear inside that block, then slices suggest.md's
+  `present` step and asserts the no-tweak line's config-key qualifier is inside
+  IT. A whole-file grep cannot serve here and must not be used: `grep -c
+  coordinator cadence-core/workflows/report.md` already returns 12 on the
+  pre-change tree, so it passes whether the clause is ever written or not.
+  Falsify the new arm in both directions before moving on - delete each clause and
+  watch it redden, restore it and watch it green - because an arm that was never
+  seen to fail is the same unfalsifiable check one layer up. Then `node
+  cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an empty
+  `problems` array, which is the re-pin's proof, and the `reads --join` response
+  measured on disk agrees to the byte with the figure report.md now states.
 
 ### Task 6: Retire the spike's throwaway measurement code
 
@@ -294,7 +363,9 @@ it.
 
 **The open question, decided here with its evidence: no existing config key
 expresses the remedy, and no new one is invented.** The falsifying check was run
-over all 77 keys in `cadence-core/config.schema.json` before taking the position.
+over all 78 keys in `cadence-core/config.schema.json` before taking the position -
+78 counted as `Object.keys(schema.keys).length`, so the denominator a later reader
+re-runs is the one that was actually checked.
 The three closest candidates and why each is the "unrelated key" SC7 forbids
 pointing at:
 
@@ -320,10 +391,13 @@ forbids in as many words.
 
 **How that decision meets SC1 and SC7 together.** SC7 is the conditional arm SC1
 is written against, and this phase takes it: the entry carries the role, the
-measured ratio in force, the direction (down) and the target (the named file and
-its count) in the evidence the user reads, and states in words that no config key
-governs it rather than naming one. Task 2's Verify makes which arm shipped a test
-rather than a claim.
+measured ratio in force, the direction IN WORDS - down, carried in the evidence
+string rather than in a `direction` field, which the closed `Suggestion`
+vocabulary has no room for - and the target (the named file and its count), and
+states in words that no config key governs it rather than naming one. Task 2's
+evidence enumeration names the direction and its Verify pins it, so every element
+this paragraph claims is a test rather than an assertion, and so is which arm
+shipped.
 
 **Coverage, and which denominator is stated.** The seam states the file-carrying
 share of the JOINED reads in scope - the denominator the in-dispatch ratio is
@@ -336,6 +410,24 @@ and `/cad-report` already prints. Both are computed, neither is hardcoded.
 this phase). One plan, not split: tasks 3 and 4 both write
 `cadence-core/bin/planning.mjs` and tasks 1-4 share the two test files, so no
 independent slice exists.
+
+**What the `plan` review changed, and why the record says `downgraded`.** The
+blocking `plan` trigger fired on 2026-08-21 and PASSED - 8 findings raised, none
+`blocker` or `high` - and its rulings are at
+`.planning/phases/4/ADJUDICATION-plan-cad-plan-51be1408.json`, where all 8 read
+`downgraded`: at the gate none reached the halt bar and none was fixed, and the
+record's vocabulary has no fourth value for "grounded but not halting". All 8
+were then folded into this plan on the user's instruction, after that settle.
+They are: task 5's Verify replaced, because its `grep -n "coordinator"` already
+matched 12 times on the pre-change tree and could not fail; the scope half of SC5
+and the direction element of SC1 moved INTO the evidence string, where a reader
+running the seam directly can see them; the null-ratio rule added to report.md's
+reading block for the live `calls > 0` case; `cmdReads`'s `read-failed` arm
+pinned against the lifted parse; `suggest.md`'s `present` step brought into task
+5 so the deliverable is not printed under "the record supports no tweak in this
+scope"; the schema key count corrected from 77 to 78; and report.md's stale
+`reads --join` byte figure folded into task 5. The record is not re-written for
+them - a second record is a second FIRE, and no reviewer ran again.
 
 **Task 6 is instructed by a source artifact, not added scope.** It closes
 `SPIKE.md`'s own "delete when `RDX-01` ships" instruction and matches no ROADMAP
