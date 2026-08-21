@@ -89,7 +89,8 @@
 // (references/seams.md), which is below every floor, so a hard refusal here
 // would route a risky phase LOWER than its own baseline. The discount below the
 // configured level is earned only by a scope every conforming plan of which was
-// found and read clean, so one unreadable member holds the whole scope up.
+// found, read clean and declared something to scan, so one member that was not
+// read holds the whole scope up.
 //
 // THIS IS NOT THE DELETED NAME-KEYED FLOOR RETURNING. That one judged a file by
 // its NAME and raised a whole phase on one path token - `tests/ingest_concurrency.rs`
@@ -391,10 +392,11 @@ function declaredBodies(repoRoot, files) {
  * NEVER BELOW THE CONFIGURED LEVEL, and never `ok:false`. Three arms hold the
  * configured level and say so: a role dispatched before a plan exists, no phase
  * in hand at all, and a scope this could not read whole. That last is D-04's
- * aggregation rule - every conforming plan in scope must have been FOUND and
- * read CLEAN before the level may resolve below the configured stakes - and its
- * point is the mixed phase: one unreadable member holds the whole scope up, so a
- * phase whose unreadable plan is the risky one can never resolve below today.
+ * aggregation rule - every conforming plan in scope must have been FOUND, read
+ * CLEAN and have declared a path to scan before the level may resolve below the
+ * configured stakes - and its point is the mixed phase: one member that was not
+ * read holds the whole scope up, so a phase whose unreadable plan is the risky
+ * one can never resolve below today.
  *
  * PER PLAN FOR AN EXECUTOR, PER PHASE FOR EVERYONE ELSE (D-06). `planKey` names
  * ONE plan of the phase and is what an executor dispatch carries, so a clean
@@ -472,25 +474,36 @@ function riskFloor(ctx) {
   };
 
   // D-04's AGGREGATION RULE, in one predicate: a scope is discountable only when
-  // it held at least one conforming plan, every one of them read clean, and
-  // every declared body that EXISTS was actually opened. All three halves
-  // matter. `clean === found` is the mixed-phase case - one unreadable
-  // member forces the configured stakes for the WHOLE scope, so a phase whose
-  // unreadable plan is the risky one can never resolve below today. `found > 0`
-  // is the same argument one step earlier: a phase directory holding no plan, or
-  // no directory at all, read nothing, and nothing read is not evidence of a
-  // clean phase. `unread` is that argument one level DOWN, and it is the half a
-  // `risk_surface` review refuted: the first two read PLAN files only, so a
-  // plan that parsed perfectly while declaring an oversized, symlinked or
-  // unreadable SOURCE file discounted the whole scope on evidence nobody had
-  // opened. A discount is a claim that the scope was read; a skipped body makes
-  // that claim false whichever level it was skipped at.
+  // it held at least one conforming plan, every one of them read clean, every
+  // one of them declared at least one path, and every declared body that EXISTS
+  // was actually opened. All four halves are the SAME argument at four depths,
+  // and each one was learned separately. `clean === found` is the mixed-phase
+  // case - one unreadable member forces the configured stakes for the WHOLE
+  // scope, so a phase whose unreadable plan is the risky one can never resolve
+  // below today. `found > 0` is that argument one step earlier: a phase
+  // directory holding no plan, or no directory at all, read nothing, and nothing
+  // read is not evidence of a clean phase. `undeclared` is it one step further
+  // in and is the half the UAT refuted: the shipped templates/PLAN.md ships
+  // `files:` with no items, so a plan copied from it parsed perfectly, scanned
+  // ZERO files, and took the discount on a scope where nothing was ever looked
+  // at - absence of evidence reported as absence of surface. `unread` is the
+  // same at the level BELOW the plan, and it is the half a `risk_surface` review
+  // refuted: a plan that parsed perfectly while declaring an oversized,
+  // symlinked or unreadable SOURCE file discounted the whole scope on evidence
+  // nobody had opened. A discount is a claim that the scope was READ; every one
+  // of these makes that claim false at its own depth.
+  const undeclared = Array.isArray(scope.undeclared) ? scope.undeclared : [];
+  for (const f of undeclared) {
+    warnings.push(`risk floor: ${scopeName}: ${f} declares no files at all, `
+      + `so the discount below "${baseline}" is withheld`);
+  }
   const unread = entries.filter((e) => typeof e.unread === 'string');
   for (const e of unread) {
     warnings.push(`risk floor: ${scopeName} declares ${e.path}, unread `
       + `(${e.unread}), so the discount below "${baseline}" is withheld`);
   }
-  const read = scope.found > 0 && scope.clean === scope.found && unread.length === 0;
+  const read = scope.found > 0 && scope.clean === scope.found
+    && undeclared.length === 0 && unread.length === 0;
 
   let floor = baseline;
   if (!cfg.stakesSet && read) {
@@ -528,10 +541,21 @@ function riskFloor(ctx) {
       : scope.clean !== scope.found
         ? `${scope.found - scope.clean} of ${plans(scope.found)} in ${scopeName} `
           + 'could not be read'
-        // The plans all read clean and a declared BODY did not. Named as its own
-        // cause: "2 of 3 plans could not be read" would be a false sentence here.
-        : `${unread.length} declared file${unread.length === 1 ? '' : 's'} in `
-          + `${scopeName} went unread`;
+        // The plans read clean and named nothing to scan. Its OWN sentence, and
+        // this is the one arm where the wording is the whole fix: "declaring
+        // nothing that touches [...]" is the discount's sentence and would say
+        // that a scope nobody looked at was found clean. "No surface" and
+        // "nothing was declared" are the two states this seam exists to keep
+        // apart, and the second may never be spelled as the first.
+        : undeclared.length
+          ? (scoped
+            ? `${scopeName} declared no files at all`
+            : `${undeclared.length} of ${plans(scope.found)} in ${scopeName} `
+              + 'declared no files at all')
+          // The plans all read clean and a declared BODY did not. Named as its
+          // own cause: "2 of 3 plans could not be read" is false here.
+          : `${unread.length} declared file${unread.length === 1 ? '' : 's'} in `
+            + `${scopeName} went unread`;
     reason.push(`risk floor: ${why}, so no surface was computed and `
       + (cfg.stakesSet
         ? `the configured "${baseline}" stands`

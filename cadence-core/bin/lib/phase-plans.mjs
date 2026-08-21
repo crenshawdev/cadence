@@ -70,8 +70,18 @@ export function cursorPhase(planningRoot) {
  *     that parsed is a third behaviour nothing here allows: it would floor a
  *     phase off a path list the grammar already rejected, and a half-parsed
  *     `files:` list is an unresolvable input, not a shorter one.
+ *
+ * A plan that read CLEAN and declared NO path at all is neither of those arms
+ * and is not a failure here: it is a fact the caller needs, so it is reported
+ * rather than judged. `undeclared` names those files. What zero declared paths
+ * MEAN belongs to route.mjs's floor - it is the difference between "the scope
+ * was read and touches no surface" and "the scope proved nothing" - and it is
+ * deliberately not decided in ./planning-files.mjs either: `items: []` is a
+ * correct answer there for a missing block, a missing key and an empty list
+ * alike, and minting an issue for one caller's question would change every
+ * consumer of that grammar.
  * @param {string} file @param {{files: string[], warnings: string[], found: number,
- *   clean: number}} acc @param {Set<string>} seen
+ *   clean: number, undeclared: string[]}} acc @param {Set<string>} seen
  */
 function readOnePlan(file, acc, seen) {
   acc.found += 1;
@@ -91,8 +101,13 @@ function readOnePlan(file, acc, seen) {
     return;
   }
   acc.clean += 1;
-  for (const f of items) {
-    if (typeof f !== 'string' || !f || seen.has(f)) continue;
+  // Judged before the `seen` dedup, deliberately: a path a SIBLING plan already
+  // contributed is still a declaration by this one, and counting it as
+  // undeclared would report a plan that named a file as having named none.
+  const declared = items.filter((f) => typeof f === 'string' && f);
+  if (!declared.length) acc.undeclared.push(file);
+  for (const f of declared) {
+    if (seen.has(f)) continue;
     seen.add(f);
     acc.files.push(f);
   }
@@ -129,15 +144,18 @@ function planFilesIn(planningRoot, phase) {
  * read and parsed. `clean < found` is exactly the state D-04's aggregation rule
  * refuses to discount, and `found === 0` (no phase directory, or a directory
  * holding no plan) is the same arm for the same reason: nothing was read, so
- * nothing is evidence. An absent planning root or an absent phase directory is
- * the ordinary pre-plan state and carries NO warning - warning there would fire
- * on every `/cad-context` dispatch of every project.
+ * nothing is evidence. `undeclared` names the plans that read clean and declared
+ * no path at all - the same argument one step further in, since a plan that
+ * named no file scanned no file. An absent planning root or an absent phase
+ * directory is the ordinary pre-plan state and carries NO warning - warning
+ * there would fire on every `/cad-context` dispatch of every project.
  * @param {string} planningRoot
  * @param {string|number} phase
- * @returns {{files: string[], warnings: string[], found: number, clean: number}}
+ * @returns {{files: string[], warnings: string[], found: number, clean: number,
+ *   undeclared: string[]}}
  */
 export function declaredPhaseFiles(planningRoot, phase) {
-  const acc = { files: [], warnings: [], found: 0, clean: 0 };
+  const acc = { files: [], warnings: [], found: 0, clean: 0, undeclared: [] };
   const { dir, names } = planFilesIn(planningRoot, phase);
   if (!names) return acc; // no phase directory: the pre-plan state
   const seen = new Set();
@@ -160,10 +178,11 @@ export function declaredPhaseFiles(planningRoot, phase) {
  * @param {string} planningRoot
  * @param {string|number} phase
  * @param {string} planKey
- * @returns {{files: string[], warnings: string[], found: number, clean: number}}
+ * @returns {{files: string[], warnings: string[], found: number, clean: number,
+ *   undeclared: string[]}}
  */
 export function declaredPlanFiles(planningRoot, phase, planKey) {
-  const acc = { files: [], warnings: [], found: 0, clean: 0 };
+  const acc = { files: [], warnings: [], found: 0, clean: 0, undeclared: [] };
   const { dir, names } = planFilesIn(planningRoot, phase);
   const key = String(planKey);
   if (!names) {

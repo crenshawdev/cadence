@@ -107,9 +107,9 @@ test('an unreadable plan does the same: no path, one warning, clean below found'
 test('an absent phase directory is zero found and NO warning - the pre-plan state', () => {
   // Warning here would fire on every /cad-context dispatch of every project.
   const empty = declaredPhaseFiles(planningRoot({}), 7);
-  assert.deepEqual(empty, { files: [], warnings: [], found: 0, clean: 0 });
+  assert.deepEqual(empty, { files: [], warnings: [], found: 0, clean: 0, undeclared: [] });
   const noRoot = declaredPhaseFiles(join(tmpdir(), 'cad-no-such-root-13579'), 7);
-  assert.deepEqual(noRoot, { files: [], warnings: [], found: 0, clean: 0 });
+  assert.deepEqual(noRoot, { files: [], warnings: [], found: 0, clean: 0, undeclared: [] });
 });
 
 test('a phase directory holding no PLAN file is zero found, no warning, no throw', () => {
@@ -117,7 +117,77 @@ test('a phase directory holding no PLAN file is zero found, no warning, no throw
   const r = declaredPhaseFiles(root, 7);
   // `PLAN-gaps.md` is NON-CONFORMING and is invisible here exactly as it is to
   // listPlanFiles, status, audit and executor dispatch.
-  assert.deepEqual(r, { files: [], warnings: [], found: 0, clean: 0 });
+  assert.deepEqual(r, { files: [], warnings: [], found: 0, clean: 0, undeclared: [] });
+});
+
+// --- a plan that declared NOTHING --------------------------------------------
+
+test('a plan whose `files:` list is empty counts found and clean, and is named undeclared', () => {
+  // The shipped cadence-core/templates/PLAN.md ships `files:` with no items, so
+  // this is the state a plan copied from the template is in until someone fills
+  // it - and it parsed perfectly, which is why the counts alone cannot see it.
+  const root = planningRoot({ '7/PLAN-1.md': plan() });
+  const r = declaredPhaseFiles(root, 7);
+  assert.deepEqual(r.files, []);
+  assert.equal(r.found, 1);
+  assert.equal(r.clean, 1);
+  assert.deepEqual(r.undeclared, [join(root, 'phases', '7', 'PLAN-1.md')]);
+  assert.deepEqual(r.warnings, [], 'the judgement is the floor\'s, not this reader\'s');
+});
+
+test('a plan with no `files:` key at all takes the same arm as an empty list', () => {
+  // ./planning-files.mjs answers `items: []` for a missing block, a missing key
+  // and an empty list alike, and all three mean the same thing here: nothing was
+  // named, so nothing was scanned.
+  const root = planningRoot({
+    '7/PLAN-1.md': '---\nphase: 7\nplan: 1\n---\n\n# Plan\n',
+    '7/PLAN-2.md': '# Plan\n\nno frontmatter at all\n',
+  });
+  const r = declaredPhaseFiles(root, 7);
+  assert.equal(r.found, 2);
+  assert.equal(r.clean, 2);
+  assert.deepEqual(r.undeclared, [
+    join(root, 'phases', '7', 'PLAN-1.md'),
+    join(root, 'phases', '7', 'PLAN-2.md'),
+  ]);
+});
+
+test('a plan declaring one path is NOT undeclared, even when a sibling declared it first', () => {
+  // Judged before the dedup: a path PLAN-1 already contributed is still a
+  // declaration by PLAN-2, and reading `files` after `seen` would report the
+  // second plan as having named nothing.
+  const root = planningRoot({
+    '7/PLAN-1.md': plan('README.md'),
+    '7/PLAN-2.md': plan('README.md'),
+    '7/PLAN-3.md': plan(),
+  });
+  const r = declaredPhaseFiles(root, 7);
+  assert.deepEqual(r.files, ['README.md']);
+  assert.equal(r.clean, 3);
+  assert.deepEqual(r.undeclared, [join(root, 'phases', '7', 'PLAN-3.md')]);
+});
+
+test('the named-plan face reports undeclared for the plan its key names', () => {
+  const root = planningRoot({ '7/PLAN-1.md': plan(), '7/PLAN-2.md': plan('src/a.mjs') });
+  const one = declaredPlanFiles(root, 7, '1');
+  assert.equal(one.found, 1);
+  assert.equal(one.clean, 1);
+  assert.deepEqual(one.undeclared, [join(root, 'phases', '7', 'PLAN-1.md')]);
+  // The sibling that DID declare is untouched by its neighbour's silence.
+  assert.deepEqual(declaredPlanFiles(root, 7, '2').undeclared, []);
+});
+
+test('a plan that could not be read is NOT undeclared - it is unclean', () => {
+  // The two states stay apart at this level too: an out-of-grammar plan
+  // contributes no path and is not clean, so counting it as "declared nothing"
+  // would let a later reader report an unreadable plan as an empty one.
+  const root = planningRoot({
+    '7/PLAN-1.md': '---\nphase: 7\nplan: 1\nfiles:\n  - src/a.mjs\n  not a key line\n---\n\n# Plan\n',
+  });
+  const r = declaredPhaseFiles(root, 7);
+  assert.equal(r.found, 1);
+  assert.equal(r.clean, 0);
+  assert.deepEqual(r.undeclared, []);
 });
 
 test('a `- **Files:**` task line contributes nothing to either face (D-05)', () => {

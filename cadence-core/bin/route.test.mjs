@@ -1790,6 +1790,84 @@ test('fail-closed: the paired POSITIVE - both plans clean and surfaceless resolv
   assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
 });
 
+// --- a scope that declared NOTHING proves nothing (UAT item 11) --------------
+//
+// The same argument as the rows above, one step further in: `found` and `clean`
+// are satisfied by a plan that parsed perfectly and named no file at all, so the
+// floor scanned zero bytes and reported it as a clean read. Absence of evidence
+// reported as absence of surface.
+
+test('declared-nothing: a plan with an EMPTY files: list is not discounted', () => {
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': [] }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.model, 'opus');
+  // The warning names the plan file, on the `risk floor: ` vocabulary route.mjs
+  // relays verbatim, so a reader can see WHICH plan declared nothing.
+  assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3: .*PLAN-1\.md declares no files at all/.test(w)),
+    JSON.stringify(r.warnings));
+  // ...and the reason says which of the two sentences this is. "Declaring
+  // nothing that touches [...]" is the DISCOUNT's sentence and would claim a
+  // scope nobody looked at had been found clean.
+  const said = floorReasons(r);
+  assert.ok(said.some((x) => /1 of 1 plan in phase 3 declared no files at all/.test(x)),
+    JSON.stringify(r.reason));
+  assert.equal(said.some((x) => /declaring nothing that touches/.test(x)), false,
+    JSON.stringify(r.reason));
+});
+
+test('declared-nothing: a plan with NO files: key at all takes the same arm', () => {
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': '---\nphase: 3\nplan: 1\n---\n\n# Plan\n' }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /declared no files at all/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('declared-nothing: the UAT probe verbatim - the SHIPPED template plus a task Files: line', () => {
+  // Reproduced from the template this project actually ships, read here rather
+  // than retyped: `files:` arrives with no items, and D-05 keeps the task prose
+  // out of the floor, so the probe scans nothing while LOOKING fully declared.
+  // It returned solo/sonnet - verify off, the plan gate down to advisory - on a
+  // plan whose one task names a secrets file.
+  const template = readFileSync(join(dirname(ROUTE), '..', 'templates', 'PLAN.md'), 'utf8');
+  const body = `${template}\n### Task 1\n\n- **Files:** src/load.mjs\n`;
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': body },
+    { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.model, 'opus');
+  assert.equal(floorReasons(r).some((x) => /read clean, declaring nothing/.test(x)), false,
+    JSON.stringify(r.reason));
+});
+
+test('declared-nothing: ONE silent plan holds a two-plan scope up, like an unreadable one', () => {
+  // The mixed phase again. PLAN-1 declares a real surfaceless file and PLAN-2
+  // declares none, and the scope is not discountable - a plan that named nothing
+  // is not evidence about the phase, exactly as an unreadable one is not.
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': CLEAN_PLAN, '3/PLAN-2.md': [] }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /1 of 2 plans in phase 3 declared no files at all/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('declared-nothing: an EXPLICIT stakes is untouched - this arm withholds a discount', () => {
+  // It never raises anything: `critical` stays `critical` and `solo` stays
+  // `solo`, because the configured level is a floor and this arm only refuses to
+  // go below it.
+  for (const [stakes, model] of [['critical', 'opus'], ['solo', 'sonnet']]) {
+    const fx = floorRoot({ stakes, ...ANSWERED }, { '3/PLAN-1.md': [] }, CLEAN_FILES);
+    const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+    assert.equal(r.stakes, stakes, JSON.stringify(r.reason));
+    assert.equal(r.model, model);
+  }
+});
+
 // --- --plan: an executor floors on the plan it was handed (D-06) -------------
 
 /** A mixed phase: PLAN-1 surfaceless, PLAN-2 on an answered surface. */
