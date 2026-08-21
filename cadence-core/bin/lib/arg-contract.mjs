@@ -79,9 +79,15 @@
 //
 //   refuse    the seam answers ok:false naming the flag. lib/seam-input.mjs's
 //             `flagValue` is this disposition written out by hand.
-//   warn      the value is kept RAW and the caller records a warning.
-//             route.mjs's `--phase` is the case: a `usage` refusal there would
-//             route the phase LOWER than its own risk baseline.
+//   warn      the value is kept RAW and the caller records a warning. NO row
+//             declares it today: route.mjs's `--phase` did until it became an
+//             input to the risk FLOOR and flipped to `refuse` (CER-01 D-09).
+//             The word stays in the vocabulary and the evaluator keeps the arm,
+//             pinned by arg-contract.test.mjs's synthetic rows, because the
+//             disposition is a reasoned position and not a dead branch - a
+//             value a seam must SEE rather than lose is the shape it answers,
+//             and deleting it would make the next such flag a `refuse` by
+//             default rather than by decision.
 //   fallback  the flag reads as absent so the caller's own `|| default` or
 //             key-omission answers. issue-check.mjs's `--timeout-ms` is the
 //             case on the value axis - that seam's whole contract is that it
@@ -202,7 +208,8 @@ const CLASSIFIERS = {
 function dispose(disposition, flag, raw) {
   if (disposition === 'refuse') return { ok: false, value: undefined, detail: flag };
   // The value survives so the caller can name it in the warning and still
-  // resolve; route.mjs's `--phase` is stored RAW for exactly this reason.
+  // resolve. No shipped row declares this today (see the vocabulary above); the
+  // arm is what makes `warn` a choice a later flag can be given.
   if (disposition === 'warn') return { ok: true, value: raw, detail: flag };
   // fallback: the flag reads as absent and the caller's own default answers.
   return { ok: true, value: undefined, detail: '' };
@@ -305,7 +312,8 @@ export function evaluateFlag(argv, flag, spec) {
  * flag was read through the permissive reader (D-12). A `warn` row would return
  * its raw value here and drop the diagnostic, which is why no bin using this
  * entry point declares one: `warn` belongs to the returning form, where the
- * caller can word the warning (route.mjs's `--phase`).
+ * caller can word the warning. No shipped row declares it at all since
+ * route.mjs's `--phase` flipped to `refuse` (CER-01 D-09).
  *
  * @param {string[]} argv @param {string} flag @param {{required: boolean, type: string, value: string, bare: string}} spec
  * @returns {any} the accepted value, or `undefined` for an absent or
@@ -434,9 +442,11 @@ export function evaluateRow(argv, table, key) {
 //     issue-check.mjs falls back to its constant because that seam's whole
 //     contract is that it never fails a land, and an unbounded call is the one
 //     thing it may never do instead.
-//   `route.mjs`'s `--phase` declares `warn` on both axes, never a `usage`
-//     refusal, which would route the phase LOWER than its own risk baseline.
-//     The value is kept raw so the floor computation still sees the spelling.
+//   `route.mjs`'s `--phase` declares `refuse` on both axes, reversing the `warn`
+//     it shipped with. It stopped being a trace-keying flag and became an input
+//     to the risk FLOOR (CER-01), and warn-and-continue there answers a typo
+//     with a floor computed off a DIFFERENT phase's declared files - a wrong
+//     level nothing in the resolved bundle reveals as wrong.
 //   On `trace append|close`, `--plan`, `--sha`, `--base` and `--detail` declare
 //     `fallback` on both axes - the drop the shared body already performs
 //     (`typeof opts.plan === 'string' && opts.plan`), so every shipped
@@ -925,7 +935,14 @@ export const CONTRACTS = {
       '--role': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--attempt': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      '--phase': { required: false, type: 'phase', value: 'warn', bare: 'warn' },
+      // REFUSE on both axes, reversed from `warn` when this flag became a FLOOR
+      // input (CER-01 D-09). The old disposition answered a typo by computing a
+      // floor from the CURSOR's phase - a different phase's declared files -
+      // and the resolved bundle gave the caller nothing to notice it by.
+      // Refusing is loud at the call site and is the only disposition that
+      // cannot silently route a phase off another phase's plans. An ABSENT
+      // flag still falls to the cursor, unchanged: this is a VALUE door.
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--bracket-read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--bracket-plan': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       // `--plan` narrows the risk FLOOR's scope from the phase's union to one

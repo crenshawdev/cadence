@@ -517,24 +517,20 @@ function resolve(opts) {
   let tracePhase = null;
   try {
     // `opts.phase` is set ONLY when it parsed clean: `parseArgs` already judged
-    // it against its declared row, so a malformed spelling arrives here as an
-    // absent phase carrying `opts.phaseWarning` beside it.
+    // it against its declared row, and that row REFUSES now, so a malformed
+    // spelling never reaches this function at all.
     tracePhase = opts.phase !== undefined ? opts.phase : cursorPhase(planningRoot);
   } catch { /* a record of a decision may never change the decision */ }
 
-  // The ARGUMENT-level diagnostics, seeded ahead of the config layer's own so
-  // they ride every arm below (DOC-01: `warnings[]` rides every result shape,
-  // ok:false included). Today `--phase` is the only flag that produces one,
-  // because it is the only one declaring `warn`.
-  //
-  // Before this it produced NOTHING: `requirePhaseArg(opts.phase)` sat inside
-  // the try above and its `!parsed.ok` arm fell silently through to the cursor,
-  // so measured 2026-08-19 `resolve --role cad-planner --phase 1.10.3` returned
-  // ok:true with no mention of `--phase` at all - the routing event keyed to a
-  // different phase than the caller named, silently. The comment that used to
-  // sit here said the shape check belonged where the risk FLOOR was computed;
-  // that floor is retired (see this file's header), so nothing carried it.
-  const argWarnings = opts.phaseWarning ? [opts.phaseWarning] : [];
+  // NO ARGUMENT-LEVEL DIAGNOSTICS RIDE HERE ANY MORE, and the history is the
+  // point. `--phase` used to warn and continue, and before THAT it produced
+  // nothing at all: `requirePhaseArg(opts.phase)` sat inside the try above and
+  // its `!parsed.ok` arm fell silently through to the cursor, so measured
+  // 2026-08-19 `resolve --role cad-planner --phase 1.10.3` returned ok:true with
+  // no mention of `--phase` - the routing event keyed to a phase the caller never
+  // named. The warning closed that. What the warning could NOT close is a floor
+  // computed off the cursor's phase, so the flag now REFUSES at `parseArgs` and
+  // never reaches this function malformed (CER-01 D-09).
 
   // The dispatch half of the worker's lifecycle bracket (`--bracket-read` is
   // the switch; `--bracket-plan` the worker key, defaulting to the role). It is
@@ -573,7 +569,7 @@ function resolve(opts) {
   // the question to be asked of.
   const roles = Array.isArray(TABLE.roles) ? TABLE.roles : [];
   if (!roles.includes(opts.role)) {
-    const degraded = [...argWarnings, ...cfg._warnings];
+    const degraded = [...cfg._warnings];
     out({ ok: false, reason: 'unknown-role', role: opts.role,
       detail: `known roles: ${roles.join(', ')}`,
       ...(degraded.length ? { warnings: degraded } : {}) });
@@ -591,9 +587,8 @@ function resolve(opts) {
   // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
   // retired key, an unreadable PLAN, a gate disagreement and an unknown pin
   // alias can all be true at once. Built before the floor so the floor's own
-  // diagnostics ride on it, and seeded with the argument-level ones so a
-  // malformed `--phase` is said out loud on the ok:true arm too.
-  const warnings = [...argWarnings, ...cfg._warnings];
+  // diagnostics ride on it.
+  const warnings = [...cfg._warnings];
 
   // THE ANSWERED SURFACE SET, decided here rather than at its warning block
   // below, because the plan-time floor is scoped by it (D-10) and the floor runs
@@ -1050,10 +1045,15 @@ const SYNOPSIS = 'resolve --role <name> [--attempt N] [--file <config>] [--phase
 // the order the five `else if` arms ran in, so a call malformed in two places
 // still reports the same one it reported before.
 //
-// `--phase` is deliberately NOT here. It declares the `warn` disposition (D-04)
-// and stays RAW - a `usage` refusal on a bad phase would route the phase LOWER
-// than its own risk baseline - so it is read positionally below and its
-// diagnostic rides `warnings[]` at the resolve envelope.
+// `--phase` IS here now, and that is a reversal worth naming. It declared `warn`
+// and was read separately, on the reasoning that a `usage` refusal would route
+// the phase lower than its own risk baseline - which was true while it named
+// only the phase a trace event is keyed to. It is a FLOOR input since CER-01, so
+// warn-and-continue answers a typo by computing a floor from the CURSOR's phase:
+// a different phase's declared files, at a level the resolved bundle gives the
+// caller no way to notice is wrong. Refusing is loud at the call site, and the
+// lower-than-baseline objection does not survive the change - an ok:false there
+// is a caller that must FIX its argument, not a caller that silently proceeds.
 const RESOLVE_FLAGS = {
   '--role': ['role', 'resolve --role needs a role name after it: --role <name>'],
   '--attempt': ['attempt', 'resolve --attempt must be an integer'],
@@ -1076,6 +1076,9 @@ const RESOLVE_FLAGS = {
   // `--bracket-plan` above, because a valueless one would silently widen a
   // caller that asked about one plan to the whole phase.
   '--plan': ['plan', 'resolve --plan needs a plan key after it: --plan <k>'],
+  // Last, so the four flags that were already refused keep naming the refusal
+  // first on a call malformed in two places (see ORDER IS LOAD-BEARING above).
+  '--phase': ['phase', 'resolve --phase must be a phase number: --phase <N|N.M>'],
 };
 
 function parseArgs(a) {
@@ -1092,22 +1095,8 @@ function parseArgs(a) {
     // carrying a diagnostic.
     if (parsed.value !== undefined) o[key] = parsed.value;
   }
-  // `--phase` is the one flag here declaring the WARN disposition (D-04), and
-  // the only place this bin reads `evaluateFlag`'s third answer: ok:true with a
-  // NON-EMPTY `detail`. A `usage` refusal on a bad phase would route the phase
-  // LOWER than its own risk baseline, so a bad shape costs a diagnostic and the
-  // resolution stands. `o.phase` is set only when the spelling parsed clean -
-  // the caller falls back to the cursor otherwise, exactly as it always did -
-  // and `o.phaseWarning` is what the resolve envelope says about it.
-  const phase = evaluateFlag(a, '--phase', rows['--phase']);
-  if (!phase.detail) { if (phase.value !== undefined) o.phase = phase.value; }
-  else {
-    o.phaseWarning = `--phase ${phase.value === undefined
-      ? 'has no value after it'
-      : `${JSON.stringify(phase.value)} is not a phase number (N or N.M)`}`
-      + '; the routing event is keyed to the cursor phase instead, and the '
-      + 'resolved bundle is unaffected';
-  }
+  // An ABSENT `--phase` still falls to the STATE cursor, unchanged: the loop
+  // above is a VALUE door and a flag nobody passed reaches no row.
   return o;
 }
 

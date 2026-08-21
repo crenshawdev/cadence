@@ -1343,16 +1343,14 @@ test('the cursor supplies the phase when --phase is absent', () => {
   assert.equal(traceLines(planning)[0].phase, 2);
 });
 
-test('ARG-06: a malformed --phase WARNS and still resolves, and still keys the cursor', () => {
-  // The `warn` disposition (D-04), which is the whole reason the contract has
-  // three words and not one: a `usage` refusal here would route the phase LOWER
-  // than its own risk baseline, so a bad shape may never refuse. But it produced
-  // NOTHING before this - `requirePhaseArg` sat inside the trace derivation's
-  // try/catch and its `!parsed.ok` arm fell silently through to the cursor, so
-  // measured 2026-08-19 `--phase 1.10.3` returned ok:true with no mention of
-  // `--phase` at all and the routing event keyed to a phase the caller never
-  // named. The comment there said the check belonged where the risk FLOOR was
-  // computed; that floor is retired, so nothing carried it.
+test('CER-01: a malformed --phase is REFUSED and routes nothing, reversing the warn arm', () => {
+  // THE REVERSAL, and why. This flag declared `warn` on the reasoning that a
+  // `usage` refusal would route the phase LOWER than its own risk baseline -
+  // true while it named only the phase a trace event is keyed to. It is a FLOOR
+  // input now, so warn-and-continue answers a typo by computing a floor from the
+  // CURSOR's phase: a DIFFERENT phase's declared files, at a level nothing in
+  // the resolved bundle reveals as wrong. Refusing is the only disposition that
+  // cannot silently route a phase off another phase's plans.
   const planning = traceRoot('trace-badphase', false);
   writeFileSync(join(planning, 'STATE.md'), renderCursor({
     phase: 2, total: 5, name: 'Fixture', status: 'planned',
@@ -1361,23 +1359,23 @@ test('ARG-06: a malformed --phase WARNS and still resolves, and still keys the c
   const cfgPath = join(planning, 'config.json');
   for (const bad of [['--phase', '1.10.3'], ['--phase', 'abc'], ['--phase', ''], ['--phase']]) {
     const r = resolve('cad-executor', cfgPath, bad);
-    assert.equal(r.ok, true, bad.join(' '));
-    assert.ok(Array.isArray(r.warnings), `${bad.join(' ')}: ${JSON.stringify(r)}`);
-    assert.equal(r.warnings.filter((w) => w.includes('--phase')).length, 1, bad.join(' '));
+    assert.equal(r.ok, false, bad.join(' '));
+    assert.equal(r.reason, 'usage', `${bad.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--phase/, bad.join(' '));
   }
-  // The resolution is UNCHANGED and the event still keys to the cursor, never
-  // to the malformed spelling: four warned resolves, four lines under phase 2.
-  assert.deepEqual(traceLines(planning).map((e) => e.phase), [2, 2, 2, 2]);
+  // Routes NOTHING: four refusals, and not one line in the trace. A refusal at
+  // argument shape happens before any phase is in hand to key an event to.
+  assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
 
-  // The control on both sides: a well-formed --phase says nothing at all...
+  // The control on both sides: a well-formed --phase resolves clean and silent...
   const good = resolve('cad-executor', cfgPath, ['--phase', '3']);
+  assert.equal(good.ok, true);
   assert.equal('warnings' in good, false, JSON.stringify(good));
-  // ...and the bundle a warned resolve returns is the bundle with no --phase at
-  // all, warnings aside - the diagnostic changes what is SAID, never what is
-  // resolved.
-  const { warnings, ...warned } = resolve('cad-executor', cfgPath, ['--phase', '1.10.3']);
+  // ...and an ABSENT --phase still falls to the STATE cursor, unchanged. The
+  // declared row is a VALUE door: a flag nobody passed reaches no rule.
   const plain = resolve('cad-executor', cfgPath);
-  assert.deepEqual(warned, plain);
+  assert.equal(plain.ok, true);
+  assert.equal(traceLines(planning).filter((e) => e.family === 'routing').pop().phase, 2);
 });
 
 // --- the dispatch bracket riding resolve (--bracket-read / --bracket-plan) ----

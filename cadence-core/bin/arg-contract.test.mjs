@@ -28,9 +28,14 @@ const ROWS = [
   ['value/refuse', ['--attempt', 'x'], '--attempt', spec({ type: 'int', value: 'refuse' }),
     { ok: false, value: undefined, detail: '--attempt' },
     'route.mjs refuses a non-integer --attempt with usage; a NaN reaching a routing decision is the #45 defect'],
+  // A SYNTHETIC row: no shipped declaration says `warn` since route.mjs's
+  // `--phase` flipped to `refuse` (CER-01 D-09). The arm is pinned here anyway -
+  // the word stays in the vocabulary because it is a reasoned position, and an
+  // unexercised branch is how the next flag that needs it would get `refuse` by
+  // default instead of by decision.
   ['value/warn', ['--phase', '1.x'], '--phase', spec({ type: 'phase', value: 'warn' }),
     { ok: true, value: '1.x', detail: '--phase' },
-    "route.mjs stores --phase RAW and warns: a usage refusal would route the phase LOWER than its own risk baseline"],
+    'the warn arm keeps the raw value and names the flag, so the caller can word the diagnostic and still resolve'],
   ['value/fallback', ['--timeout-ms', 'abc'], '--timeout-ms', spec({ type: 'int', value: 'fallback' }),
     { ok: true, value: undefined, detail: '' },
     "issue-check.mjs falls back to its constant: that seam's whole contract is that it never fails a land"],
@@ -308,8 +313,11 @@ test('the declarations the CONTEXT decisions bind are the ones in the table', ()
       'AC1: --dir "" answered ok:true about a tree the caller never named'],
     ['self-verify.mjs', '*', '--root', { value: 'refuse', bare: 'refuse' },
       'the same rail on the linter that reports about a tree'],
-    ['route.mjs', 'resolve', '--phase', { value: 'warn', bare: 'warn' },
-      'D-04: a usage refusal here routes the phase LOWER than its own risk baseline'],
+    // REVERSED by CER-01 D-09, and pinned in its new direction for the same
+    // reason it was pinned in the old one: the declaration IS the contract, so a
+    // flip back would be a silently different refusal at route.mjs's door.
+    ['route.mjs', 'resolve', '--phase', { value: 'refuse', bare: 'refuse' },
+      'CER-01 D-09: --phase decides a risk FLOOR, and warn-and-continue answers a typo with a floor computed off another phase\'s declared files'],
     ['route.mjs', 'resolve', '--plan', { value: 'refuse', bare: 'refuse' },
       'CER-01 D-06: a valueless plan flag silently takes the phase UNION for a caller that asked about one plan'],
     ['issue-check.mjs', 'check', '--timeout-ms', { value: 'fallback', bare: 'fallback' },
