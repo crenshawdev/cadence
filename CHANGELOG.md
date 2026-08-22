@@ -6,6 +6,150 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.7] - 2026-08-22
+
+Cadence has been measuring its own cost for several releases and then handing you
+nothing to spend the measurement with. That is the whole theme here. Four phases,
+83 commits off `v3.5.6`, four requirement ids seeded at the open and all four
+traced to a verified phase: `RDX-01`, `CER-01`, `IVW-01` and `HLT-01`. A fifth,
+`BCH-01`, was killed by its own spike before a line of it was written.
+
+Two spikes ran before any phase was planned, which is why this cycle is one phase
+shorter than it was scoped to be.
+
+### Added
+
+- **`stakes` is now the minimum a project accepts, not the level every phase
+  pays.** `route.mjs resolve` reads the phase's own declared `files:` at plan
+  time, scans them against the surfaces the project answered, and raises from the
+  configured floor: per plan for an executor, per phase for everyone else. A
+  phase touching nothing on an answered surface routes BELOW the old project
+  default. Every move is stated in `reason` (the phase, the surface, the file
+  that evidenced it) and every unreadable input lands in `warnings`.
+
+  `node cadence-core/bin/route.mjs replay` shows what it does to this repository's
+  own history: 30 phases, 27 of them raise back to `shipped` on real evidence, 2
+  take the discount to `solo`, and 1 has its discount withheld because a declared
+  path was not a readable file. It fails closed, so one unreadable plan holds the
+  whole scope at the configured level rather than quietly discounting it.
+
+  `review.triggers.risk_surface.waive_routing_floor` is the one way to route below
+  the computed floor. It waives the LEVEL for the surfaces you name in it and
+  never the blocking review, and every waiver applied is named in `reason`.
+
+- **A fifth gate mode, `deferred`, one ladder position between `advisory` and
+  `blocking`.** It runs its reviewer, stores what it found VERBATIM as a
+  committed `DEFERRED-*.json`, and lets the phase finish. Blocking used to block
+  the RUN, which is the thing that stops Cadence working while nobody is watching.
+  Now the guarantee moves to the land: `/cad-land` refuses on BOTH publish arms
+  while any queue member is unadjudicated, at the top of step 3, ahead of both
+  arms and independent of `git.auto_close`.
+
+  `planning.mjs deferred record` writes the queue and `deferred list` reads it as
+  one derivation over two homes, so a queue carried out of a pruned phase is still
+  one list. An unreadable directory is reported rather than counted as empty. The
+  count rides the `planning.mjs status` envelope always, so a caller can tell
+  "nothing deferred" from "this seam does not know about deferrals". `deferred
+  carry` moves the queue out of `.planning/phases/<N>/` before `/cad-milestone`
+  prunes the directory, and it stays adjudicable and re-armable from its carried
+  home.
+
+- **`/cad-config --surfaces`, a way back to the one question Cadence asks on its
+  own.** The risk-surface interview had exactly one entry point, at first fire,
+  and no way to reach it again after the repository changed shape. It now opens on
+  demand against a fresh scan and shows the answered set beside what the scan
+  evidences today, writing only on an explicit pick.
+
+- **`trace suggest` reads `.planning/reads.jsonl`.** It never opened the reads
+  record at all, so the one seam that turns the record into a retune could not see
+  the read redundancy the record was measuring. A role over its floor now produces
+  an entry naming the worst single file inside one dispatch, in the form "read
+  `<path>` N times". On this repository that is `cad-executor` at 3.64 opens per
+  distinct file inside one dispatch, worst case `cadence-core/bin/planning.mjs`
+  read 29 times inside one bracket.
+
+  The floors are per role and the MAP is the gate, not the number:
+  `IN_DISPATCH_FLOORS` names `cad-executor` at 3.00 and `cad-verifier` at 2.00,
+  and a role the map does not name stays silent at any ratio. `cad-planner` at
+  1.88, `cad-assumptions-analyzer` at 1.78 and `cad-reviewer` at 1.74 sit in a
+  band where a suggestion would be noise, and a single global ratio would have
+  fired on all five to save nothing.
+
+  The entry states what it does not cover, in its own evidence string rather than
+  only in workflow prose: the file-carrying share of the joined reads it was
+  computed over, the fact that nothing prunes `reads.jsonl` at a milestone close
+  so an unscoped run spans every milestone in the file, and the count of
+  `coordinator` reads it excluded because the main thread has no dispatch bracket
+  by construction and its re-reading cannot be attributed to one.
+
+  It names NO config key, and a test fails if it ever points at one. No key in
+  `config.schema.json` expresses the remedy, so the entry says so and names the
+  discipline instead: symbol or line anchors on a plan's `files:` entries, and
+  targeted reads over whole-file ones.
+
+- **`route.mjs replay`** reports what the computed floor does to every phase this
+  project has ever run, live and archived, off `levelFor`, the single
+  scope-to-level implementation `resolve` shares. `.planning/phases/3/MEASUREMENT.md`
+  carries the run, the before/after distribution, the token baseline and a
+  falsifiable prediction.
+
+### Changed
+
+- **The risk-surface interview's options come out of `lib/surface-scan.mjs`
+  now, not out of model-composed prose.** `interviewOptions()` builds the ordered
+  choices and the ask RENDERS them. On the demo tree from #206 the old menu put
+  all eight categories in two slots and offered the same set twice; the two
+  recommendation arms are collapsed into one and it renders two distinct sets.
+  Pinned by two `prose-agreement.test.mjs` arms, both falsified live in both
+  directions.
+
+- **A declared DOCUMENT contributes its path and not its prose to the risk
+  scan.** Documentation that merely MENTIONS a construct stopped raising the
+  phase that declared it. Plan-time reasons read `body line:` where no diff
+  exists; `scanDiff` keeps `changed line:`.
+
+- **`/cad-report` and `trace suggest` read the same fold.** The per-role
+  in-dispatch figure lives on the `reads --join` envelope as `inDispatch` and
+  neither prose surface recomputes it.
+
+### Fixed
+
+- **A scope that declared NO files is no longer discounted.** "Nothing was
+  declared" and "nothing touches a surface" were the same sentence and are now
+  two, so an empty scope cannot buy a level discount it never evidenced.
+
+- **A malformed `--phase` is refused, not answered about another phase.** It used
+  to fall back to the cursor's phase, which means the answer was about a phase you
+  did not ask about.
+
+- **Declared bodies and the phase locator stay inside the repository.** Both are
+  contained by `realpathSync`, and a PLAN file is bounded before it is opened.
+
+- **`deferred carry` checks the parent it creates, not only the leaf**, and a
+  carried queue member stays adjudicable and re-armable from its new home.
+
+- **The evidenced choice states its evidence when nothing was answered.**
+
+### Deferred
+
+- **`BCH-01` (#174) left this cycle on an invalidating spike**, before the
+  fidelity question it was really about was ever tested. Batching N security
+  reviews into one process saves **1.91%** of reviewer spend: a 1,676-token fixed
+  prefix against six observed dispatches totalling 438,080 tokens. It does not
+  flip at the 61 invocations the issue cites, because both sides of the ratio
+  scale with N, and 61 gets you 2.09%. The bill is PAYLOAD, and those six
+  dispatches span 25,753 to 125,100 tokens, a 4.9x spread around a fixed cost of
+  1,676. Two limits are recorded rather than assumed: the 61 figure is not
+  reproducible from `trace.jsonl`, and the verdict excludes the host harness
+  prefix, which batching would also collapse. It flips only if that prefix exceeds
+  roughly 7,100 tokens, and the spike names the one measurement that would settle
+  it. `.planning/spikes/batched-review-fidelity/SPIKE.md`
+
+- The **7.0x** read redundancy #167 carries is historical. It was measured over
+  DECLARED read-sets in `trace.jsonl`; the observed in-dispatch figure for the
+  heaviest role is 3.64, about half it, and nowhere near the 1.0 that would have
+  closed the issue with a note. `.planning/spikes/read-set-redundancy/SPIKE.md`
+
 ## [3.5.6] - 2026-08-20
 
 Last release fixed readers that accepted input they had a rule against. This one
@@ -3227,6 +3371,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.7]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.7
 [3.5.6]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.6
 [3.5.5]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.5
 [3.5.4]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.4
