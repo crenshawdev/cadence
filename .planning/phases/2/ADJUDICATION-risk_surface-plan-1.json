@@ -1,0 +1,52 @@
+{
+  "phase": "2",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "5dd8cdca7f277183796eb87d1e6f4836ff37173e",
+  "head": "776c1d8e8b3ad6eba15f60ed1f00c47a89b670c3",
+  "base_id": "5dd8cdca7f277183796eb87d1e6f4836ff37173e",
+  "head_id": "776c1d8e8b3ad6eba15f60ed1f00c47a89b670c3",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning.mjs",
+      "line": 701,
+      "severity": "high",
+      "claim": "The three-state REQUIREMENTS.md check does not actually distinguish an absent path from a present-but-unreadable dangling symlink.",
+      "failure_scenario": "Create a valid ROADMAP.md and make REQUIREMENTS.md a dangling symlink (for example, `ln -s /nonexistent REQUIREMENTS.md`). `existsSync(reqFile)` follows the link and returns false, so `reqPresent` is false and the command treats the requirements document as absent. It then writes ROADMAP.md and returns success with `reqs: []`/`wrote:[\"ROADMAP.md\"]`, silently leaving the phase's requirement rows pending. This recreates the boxed-roadmap-with-unwritten-traceability outcome the preflight is intended to prevent, but as an ok:true result rather than a refusal.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/planning.mjs",
+        "line": 700,
+        "note": "A dangling symlink names no file, so it IS the absent state under D-03's three-state contract, not a fourth one: the comment at 685-698 defines ABSENT as \"no REQUIREMENTS step, reqs: [], ok:true\" precisely so a project that keeps no requirements document can still close a phase, and a link resolving to nothing is that case. The behaviour is also unchanged by this plan - read() answered null for a dangling link before the change and existsSync answers false after it - so the finding names no regression and no claim the code makes falsely."
+      },
+      "base_id": "5dd8cdca7f277183796eb87d1e6f4836ff37173e",
+      "head_id": "776c1d8e8b3ad6eba15f60ed1f00c47a89b670c3"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning.mjs",
+      "line": 702,
+      "severity": "medium",
+      "claim": "A non-regular but readable REQUIREMENTS.md can make phase-done hang before its refusal protocol or write transition runs.",
+      "failure_scenario": "Replace REQUIREMENTS.md with a FIFO and invoke `phase-done` while no process opens the FIFO for writing. `existsSync` succeeds and `read(reqFile)` proceeds to synchronously open/read the FIFO, which blocks indefinitely. The CLI never returns a handled unreadable-requirements failure and cannot complete the requested transition. The stated preflight condition says the path must be a readable file, but the implementation accepts any existing filesystem object until synchronous reading has already occurred.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "base_id": "5dd8cdca7f277183796eb87d1e6f4836ff37173e",
+      "head_id": "776c1d8e8b3ad6eba15f60ed1f00c47a89b670c3"
+    }
+  ]
+}
