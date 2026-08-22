@@ -158,8 +158,37 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**No cycle open.** `v3.5.8` closed on 2026-08-22 and no next theme is scoped yet.
-`/cad-phase add` opens the next cycle's first phase entry.
+**`v3.5.9 - the defects that were filed and never read`, opened 2026-08-22.**
+Scoped from the tracker, which holds #231 and #232: ten defects, every one
+reproduced by execution against the current tree, filed between 2026-08-05 and
+2026-08-08, archived unread in `.planning/CAPTURE.md`, and re-verified live on
+2026-08-22 by the archive triage.
+
+**The theme is one sentence: the release seam and the frontmatter reader both
+return a clean answer over a case they did not actually handle.** Six of the ten
+are in the release/changelog seam - the seam `v3.5.8` rewrote. Item 6 of #231 and
+the open item `v3.5.8` phase 2 filed against `release-decision.mjs`'s JSDoc code
+set are the same defect class in the same subsystem, filed two weeks apart,
+neither aware of the other. The other four are `sectionEnd` reading a `## ` inside
+a fenced block as a section boundary, `releaseSectionEmpty` counting a bare
+`### Added` as content, an absent `CHANGELOG.md` reported as a clean run, and a
+`skip`/`no-version-field` no-op that none of `workflows/milestone.md`'s four halts
+covers.
+
+The remaining two are #232, and they are the same failure one layer down:
+`readFrontmatterList` returns the whole-document issues array whatever key was
+asked for, and decoration other than a boundary backtick is not caught at all, so
+`**src/shared.rs**` parses clean. `plan-overlap` compares exact strings, which
+means a decorated path in one plan will not match a sibling's plain one and two
+plans that DO collide are cleared to run in parallel worktrees.
+
+**What this cycle is not.** It is not the read-back gate (#190), the fast path
+(#191) or `/cad-why` (#192). Those three still carry no milestone and are product-
+surface proposals about reading the corpus back, a cycle of their own rather than
+filler; they are deliberately not folded in here to keep this one falsifiable.
+
+This cycle seeds ids up front - `REL-01`, `REL-02`, `REL-03`, `FRM-01`, `FRM-02` -
+so every one is either traced to a phase or visibly `unpicked` in `/cad-audit`.
 
 `v3.5.8 - the transition that claims to be one` closed on 2026-08-22: two phases,
 33 commits off `v3.5.7`, the manifest at `3.5.8`, and `/cad-audit` PASS on both
@@ -169,8 +198,7 @@ with zero breaks. Its narrative is in `CHANGELOG.md`, its shipped rows in
 `REQUIREMENTS.md`'s `## Shipped`, its per-phase residue in `.planning/ARCHIVE.md`
 at 41 new rows, and its phase record in git history at the pruning commit; this
 close ran `--mode delete`, so there is no `_archive-v3.5.8/`. The merge and the
-release tag are still outstanding: `/cad-land` cuts `v3.5.8` on the pulled base
-after the merge confirms.
+release tag both landed: `v3.5.8` is tagged and `main` carries it.
 
 What it delivered: one home for a multi-file write, and the two operations that
 claimed atomicity without having it moved onto it.
@@ -191,34 +219,36 @@ protocol, which needs no on-disk state, no resume path and no `/cad-health`
 reader. The plan took the second arm and pinned it, the same way `v3.5.7` phase 4
 pinned its no-config-key arm.
 
-The honest line on this cycle: the `partial-flip` and `partial-bump` arms ship
+The honest line on that cycle: the `partial-flip` and `partial-bump` arms ship
 probe-proven only, with no committed regression test. Every uid-independent way
 to force a write to fail past the pre-flight was converted into a pre-write
 refusal by the work itself, and D-02 forbids `chmodSync`, so the two envelopes
-that report a torn write are the two this cycle cannot demonstrate in CI. Both
+that report a torn write are the two `v3.5.8` cannot demonstrate in CI. Both
 executors recorded the exact envelopes they observed.
 
-Still unassigned, carried out of `v3.5.8` unscoped: the previous cycle's note
-about two blocker/high `risk_surface` findings persisted in
-`.planning/REVIEW-risk_surface-v3.5.7.md` is now moot - that file is gone, and
-this close carried `v3.5.8`'s own two survivors (both `low`, both open items) to
-`.planning/REVIEW-risk_surface-v3.5.8.md` for the pending `/cad-land`. The medium
-survivors from `v3.5.4`, `v3.5.5` and `v3.5.6` are still unassigned, and so are
-#190, #191 and #192, which PROJECT has called a cycle of their own rather than
-filler. The deferred ids `PRS-01`, `EVD-01`, `RCL-06` and `CTX-02` were not
-promoted and their 2026-08-18 caveats stand: `CTX-02`'s stated basis no longer
-holds and `RCL-06` carries no promotion trigger, so both want a decision before
-either is scoped. The capture queue holds 197 live items - 196 under `## Todos`
-and one seed - beside the 185-item block `v2.6.0` phase 1 archived on 2026-08-08,
-which sits outside the recall walk. Count the live sections, not the file's 382
-open checkboxes.
+Still unassigned, carried into `v3.5.9` unscoped: the medium `risk_surface`
+survivors from `v3.5.4`, `v3.5.5` and `v3.5.6`, and #190, #191 and #192, which
+PROJECT has called a cycle of their own rather than filler. `v3.5.8`'s own two
+`low` survivors are in `.planning/REVIEW-risk_surface-v3.5.8.md`. The deferred ids
+`PRS-01`, `EVD-01`, `RCL-06` and `CTX-02` were not promoted and their 2026-08-18
+caveats stand: `CTX-02`'s stated basis no longer holds and `RCL-06` carries no
+promotion trigger, so both want a decision before either is scoped. Two open
+items from `v3.5.8` also want one: the `partial-flip`/`partial-bump` regression
+gap above, and `planning.mjs`'s `read(reqFile)` accepting any existing filesystem
+object, so a FIFO at `.planning/REQUIREMENTS.md` hangs `phase-done` before its
+refusal can run.
+
+The capture queue holds 197 live items - 196 under `## Todos` and one seed -
+beside the 185-item block `v2.6.0` phase 1 archived on 2026-08-08, which sits
+outside the recall walk. Count the live sections, not the file's 382 open
+checkboxes.
 
 That archive was triaged on 2026-08-22 for the first time since it was written.
 Of its 30 severity-marked items, **19 were already fixed, 10 were still live, 1
 was moot** - the fixes had shipped across later cycles with nothing closing the
-capture. The 10 live are now tracker issues #231 (six defects in the
-release/changelog seam), #232 (plan frontmatter defeats `plan-overlap`) and #233
-(two stale self-description claims). The other 155 are unverified.
+capture. The 10 live are now tracker issues #231, #232 and #233, and this cycle
+takes the first two. #233 (two stale self-description claims, both `low`) is left
+unscoped. The other 155 archive items are unverified.
 
 The tracker is the home for this now: `issue-check.mjs` surfaces referenced
 issues at every `/cad-land`, which is the come-back-on-its-own property
