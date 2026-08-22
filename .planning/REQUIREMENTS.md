@@ -13,9 +13,6 @@ theme untouched. Ids are seeded here at the open, the practice `v3.5.7`
 established and `v3.5.6` did not have. `/cad-plan` seeds each Traceability row as
 its phase is planned; rows are never hand-populated here.
 
-- **JRN-01**: a multi-file state transition is either complete or recoverable, through one shared primitive rather than four hand-written approximations of one (#145)
-- **JRN-02**: `phase-done` stops claiming all-or-nothing over two independent renames, and reports what it actually guarantees across ROADMAP.md and REQUIREMENTS.md (#140)
-- **JRN-03**: `release-bump` reads and validates every manifest it will write before it writes the first, so a malformed sibling cannot leave a partially bumped tree inside an `ok:true` envelope (#139)
 
 The five deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02`, `BCH-01` - keep
 their deferral reasons and none is promoted into this cycle. `BCH-01` joined them
@@ -226,6 +223,9 @@ parses only the Traceability table).
 | HLT-01 (a blocking finding defers to the land instead of stopping the run, so unreviewed work cannot reach base but a phase can finish with nobody watching (#193)) | 2 | Complete | v3.5.7 |
 | CER-01 (ceremony is chosen per change rather than per project, so a README phase and an auth phase stop buying the same model, effort rung and gate set (#189)) | 3 | Complete | v3.5.7 |
 | RDX-01 (the read-set redundancy the read trace already measures reaches a consumer that acts on it, rather than being a number nothing reads (#167)) | 4 | Complete | v3.5.7 |
+| JRN-01 (a multi-file state transition is either complete or recoverable, through one shared primitive rather than four hand-written approximations of one (#145)) | 1 | Complete | v3.5.8 |
+| JRN-02 (`phase-done` stops claiming all-or-nothing over two independent renames, and reports what it actually guarantees across ROADMAP.md and REQUIREMENTS.md (#140)) | 2 | Complete | v3.5.8 |
+| JRN-03 (`release-bump` reads and validates every manifest it will write before it writes the first, so a malformed sibling cannot leave a partially bumped tree inside an `ok:true` envelope (#139)) | 2 | Complete | v3.5.8 |
 
 ## Deferred
 
@@ -268,9 +268,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| JRN-01 | Phase 1 | Complete |
-| JRN-02 | Phase 2 | Complete |
-| JRN-03 | Phase 2 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
