@@ -62,16 +62,24 @@ Then YOU author bullet prose only for what the promotion did NOT already move -
 re-authoring what it moved lists one change twice. The seam owns the
 deterministic scaffold, prose owns the judgment.
 
-Three halts, each before the bump commit:
+Four halts, each before the bump commit:
 
-- `ok:false` (exit 1). The seam wrote NOTHING and named a `reason`:
-  `no-target-version`, `unparseable-version`, `unreadable-manifest`,
-  `downgrade`, `not-an-upgrade` or `bad-date`. Report it and STOP. A close
-  continued past a refused bump ships a manifest still carrying the previous
-  version.
-- a `siblings[]` entry with `action:"refuse"`. Top-level `ok` stays true (the
-  primary manifest already wrote), but that sibling still ships the old
-  version - name the file and STOP.
+- `ok:false` with `action:"refuse"` (exit 1). The seam wrote NOTHING and named a
+  `reason`: `no-target-version`, `unparseable-version`, `unreadable-manifest`,
+  `unreadable-sibling-manifest`, `unreadable-changelog`, `downgrade`,
+  `not-an-upgrade` or `bad-date`. Report it and STOP. A close continued past a
+  refused bump ships a manifest still carrying the previous version.
+- `ok:false` with `action:"partial"` and `reason:"partial-bump"` (exit 1). The
+  write set was decided and a step failed part way, so the seam DID write:
+  `manifest.bumped`, each `siblings[]` row's `bumped` and `changelog.changed`
+  name what actually landed. Read those three fields, repair the tree and STOP -
+  it is the one halt where re-running the bump is not a clean retry.
+- a `siblings[]` entry with `action:"refuse"`. Top-level `ok` stays true: that
+  sibling was READABLE and simply not upgradeable - a downgrade, a non-upgrade,
+  an unparseable version in the sibling itself - so the rest of the set landed
+  and it still ships the old version. Name the file and STOP. A sibling that
+  cannot be READ is not this case: it refuses the whole run under
+  `unreadable-sibling-manifest` above, with nothing written.
 - `changelog.section_empty: true`. The dated heading has no body at all;
   author the release notes into it before the bump commit rather than shipping
   a heading over silence.

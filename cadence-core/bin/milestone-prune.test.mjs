@@ -781,6 +781,14 @@ test('seam: a phase whose directory move fails is refused, and keeps its docs', 
   assert.deepEqual(r.phases, [2.1], 'only the phase that cleared is reported applied');
   assert.deepEqual(r.dirs.archived, [2.1]);
   assert.ok(r.warnings.some((w) => /phase 1: directory archive failed/.test(w)));
+  // Byte-exact: ROADMAP phase 1 SC2 asks for the hint text to be pinned by a
+  // test that reddens on a paraphrase, and this file carried no hint assertion
+  // at all. All three lines, including the re-run advice that is SAFE here and
+  // deliberately absent from renumber, whose half-applied tree a re-run can
+  // destroy (planning.test.mjs, the #49.2 case).
+  assert.equal(r.hint, `phases 1 still have directories under ${join(dir, "phases")};`
+    + " they were left in ROADMAP.md and REQUIREMENTS.md. Fix what blocked them and re-run -"
+    + " the phases that did clear are already pruned, so a re-run only picks up the rest.");
 
   // The tree and the documents agree: phase 1 is still on disk AND still in
   // both documents; phase 2.1 left both.

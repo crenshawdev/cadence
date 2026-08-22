@@ -6,6 +6,100 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.8] - 2026-08-22
+
+Four operations in this codebase wrote several files and reported the result as
+if they had written one. An atomic rename protects a single file from torn bytes
+and cannot make a transaction across two, so each of them could leave a
+half-applied tree inside an `ok:true` envelope with nothing saying so. Two phases,
+33 commits off `v3.5.7`, three requirement ids seeded at the open and all three
+traced to a verified phase: `JRN-01`, `JRN-02` and `JRN-03`. `/cad-audit` PASS on
+both arms, thirteen of thirteen acceptance criteria covered.
+
+The shape of the fix was decided on evidence rather than on the issue text.
+`renumber` and `milestone-prune` already refused whole and reported what had
+completed, by hand, because someone remembered to. That is a refusal protocol,
+not a journal: it needs no on-disk state, no resume path and no reader in
+`/cad-health`. Generalizing the two implementations that already worked was the
+work, and the two operations that claimed atomicity without having it were moved
+onto the result.
+
+### Added
+
+- **`cadence-core/bin/lib/file-transition.mjs`, one home for an ordered
+  multi-file write.** `runTransition({steps, discipline, preflight})` returns
+  `{ok, refused, completed, failures}` and owns the idiom four call sites were
+  each spelling for themselves. Two disciplines, both drawn from behaviour that
+  already shipped: `stop-at-first-failure` for `renumber` and
+  `continue-past-failure` for `milestone-prune`. A lazy pre-flight stage returns
+  on its first unsatisfied condition before any thunk runs, so a refusal writes
+  nothing.
+
+  A ninth `HELPERS` census row reddens if the module's body is copied under any
+  name, which is what makes "one, not four" mechanical instead of asserted. The
+  probe run confirming it exits 1 naming both copies.
+
+- **`phase-done`'s success envelope names which documents it wrote.** A `wrote`
+  field beside the unchanged `roadmap.{line,now}` and `reqs[]`, so a caller can
+  tell a two-document flip from the roadmap-only write that an absent
+  REQUIREMENTS.md still produces.
+
+- **Three refusal codes with their own identities**, where the failure used to
+  arrive as an undifferentiated `internal`: `unreadable-sibling-manifest`,
+  `unreadable-changelog` and `unreadable-requirements`, plus `partial-bump` and
+  `partial-flip` for a write that fails past the pre-flight and needs to report
+  what landed.
+
+### Changed
+
+- **`cmdPhaseDone` is one ordered transition, and its comment is gone rather than
+  qualified.** It carried "Both edits validated before either write -
+  all-or-nothing" directly above two separate renames of ROADMAP.md and
+  REQUIREMENTS.md. Every edit is now validated before the first write, and
+  REQUIREMENTS.md is read as a three-state fact: absent keeps the roadmap-only
+  `ok:true` write, present-but-unreadable refuses before ROADMAP.md is touched.
+  `grep -c "all-or-nothing"` inside the function prints `0`.
+
+- **`release-bump` reads and decides its whole write set before the first write.**
+  It used to write the primary manifest before the sibling had been read or
+  validated, so a malformed sibling shipped a partially bumped release tree under
+  a success envelope. The first `atomicWrite(` now sits at line 361 against the
+  last `readManifest(` at 280 and the changelog read at 329, which makes the
+  ordering structural rather than conventional. The existing `siblings[]` refusal
+  arm still works for a sibling that is readable but not upgradeable, so two
+  different outcomes are not collapsed into one refusal.
+
+- **`renumber` and `milestone-prune` run their partial-state refusals through the
+  primitive** instead of each keeping its own try/catch loop. Neither observable
+  envelope moved: `partial-apply` and `partial-prune` keep their reason strings,
+  their `completed`/`failed` lists and their hint text, pinned by tests that
+  redden on a paraphrase.
+
+### Fixed
+
+- **A non-regular `CHANGELOG.md` refuses instead of hanging or scaffolding over
+  history.** `readChangelog` promised a readable regular file and checked only
+  that reading did not throw. A FIFO there would block the CLI forever, and
+  `/dev/null` would read as an empty changelog and scaffold a release heading over
+  the file's entire history. Now a `statSync().isFile()` check routes both to
+  `unreadable-changelog`, with a symlink-to-`/dev/null` regression test. Raised by
+  the blocking `risk_surface` review on the phase-2 range and fixed before the
+  phase closed.
+
+### Known gaps
+
+- The `partial-flip` and `partial-bump` arms ship probe-proven only, with no
+  committed regression test. Every uid-independent way to force a write to fail
+  past the pre-flight was converted into a pre-write refusal by the work above,
+  and the phase's own decisions forbid `chmodSync`. Both executors recorded the
+  exact envelopes they observed; treat those two arms as untested in CI rather
+  than as verified behaviour.
+
+- `planning.mjs`'s `read(reqFile)` still accepts any existing filesystem object,
+  so a FIFO at `.planning/REQUIREMENTS.md` hangs `phase-done` before its refusal
+  can run. Same class as the `CHANGELOG.md` blocker above, one seam over, raised
+  medium and downgraded at adjudication.
+
 ## [3.5.7] - 2026-08-22
 
 Cadence has been measuring its own cost for several releases and then handing you
@@ -3371,6 +3465,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.8]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.8
 [3.5.7]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.7
 [3.5.6]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.6
 [3.5.5]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.5

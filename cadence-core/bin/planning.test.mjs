@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyAcceptanceCriteria } from './lib/planning-files.mjs';
@@ -893,6 +894,100 @@ test('phase-done: --n 02 still boxes phase 2', () => {
   const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
   assert.match(roadmap, /- \[x\] \*\*Phase 2: Two\*\*/);
   assert.match(roadmap, /- \[ \] \*\*Phase 1: One\*\*/);
+});
+
+// `read()` answered null for BOTH "no REQUIREMENTS.md" and "a directory at that
+// path", so an unreadable one closed the phase with its traceability rows
+// silently unwritten (measured 2026-08-22: ok:true, reqs:[], the box flipped).
+// The refusal has to land BEFORE the first write, so ROADMAP.md's bytes are the
+// assertion - "refused" and "flipped, then reported as an error" are different
+// trees. No chmodSync anywhere: it is a silent no-op under a root test runner,
+// and a directory at the path is uid-independent.
+test('phase-done: an unreadable REQUIREMENTS.md refuses whole; ROADMAP.md is byte-identical', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  rmSync(join(dir, 'REQUIREMENTS.md'));
+  mkdirSync(join(dir, 'REQUIREMENTS.md'));
+  const sha = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
+  const before = sha(join(dir, 'ROADMAP.md'));
+  const r = run(['phase-done', '--n', '1'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unreadable-requirements');
+  assert.equal(r._exit, 1);
+  assert.match(r.detail, /REQUIREMENTS\.md/); // names the file to repair
+  assert.equal(sha(join(dir, 'ROADMAP.md')), before);
+});
+
+// The other half of the same distinction: absence is legitimate data, not a
+// refusal - verify.md's phase-done step is a hard step, so a project that never
+// kept a REQUIREMENTS.md must still be able to close a phase.
+test('phase-done: an ABSENT REQUIREMENTS.md still boxes the phase, ok:true', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }] });
+  assert.equal(existsSync(join(dir, 'REQUIREMENTS.md')), false);
+  const r = run(['phase-done', '--n', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r._exit, 0);
+  assert.equal(r.roadmap.now, '[x]');
+  assert.deepEqual(r.reqs, []);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(roadmap, /- \[x\] \*\*Phase 1: One\*\*/);
+  assert.match(roadmap, /- \[ \] \*\*Phase 2: Two\*\*/);
+});
+
+// The case the DIRECTORY fixture above cannot reach. A directory throws EISDIR,
+// so `read()`'s catch arm alone answers it; a character device does not throw at
+// all - readFileSync on /dev/null returns '', a SUCCESSFUL read of a path that
+// is not a requirements document. Deciding "unreadable" from whether reading
+// threw let that '' through as genuine content: the run boxed the phase, wrote
+// a 0-byte regular file over the symlink and reported REQUIREMENTS.md in
+// `wrote`. A FIFO is the same class and worse - it blocks the seam forever
+// before any envelope - which is why the check is on the file's SHAPE, and why
+// no FIFO case is driven here: a regression would hang this suite rather than
+// redden it. Same defect and same fix as the CHANGELOG arm one seam over
+// (`release-bump.test.mjs`, 'a NON-REGULAR CHANGELOG that reads CLEANLY').
+test('phase-done: a non-regular REQUIREMENTS.md that reads CLEANLY still refuses', () => {
+  if (!existsSync('/dev/null')) return;
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  rmSync(join(dir, 'REQUIREMENTS.md'));
+  symlinkSync('/dev/null', join(dir, 'REQUIREMENTS.md'));
+  const sha = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
+  const before = sha(join(dir, 'ROADMAP.md'));
+
+  const r = run(['phase-done', '--n', '1'], dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unreadable-requirements',
+    'a path that is not a regular file is unreadable, whatever readFileSync answered');
+  assert.equal(r._exit, 1);
+  assert.equal(sha(join(dir, 'ROADMAP.md')), before,
+    'the refusal lands before the first write - the box never flipped');
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), '',
+    'and the symlink target was never overwritten by a scaffolded document');
+});
+
+// The success envelope has to SAY which documents moved, on both shapes - the
+// one-document run is not a failure and must not be reported by mutating
+// `reqs`, so the roadmap-only arm pins `reqs` and the box in the same block: a
+// future change that expresses "not written" through `reqs` reddens here.
+test('phase-done: `wrote` names the documents that moved, on both shapes', () => {
+  const both = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  const r = run(['phase-done', '--n', '1'], both);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.wrote, ['ROADMAP.md', 'REQUIREMENTS.md']);
+
+  const roadmapOnly = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const o = run(['phase-done', '--n', '1'], roadmapOnly);
+  assert.equal(o.ok, true);
+  assert.deepEqual(o.wrote, ['ROADMAP.md']);
+  assert.deepEqual(o.reqs, []);
+  assert.equal(o.roadmap.now, '[x]');
 });
 
 // --- uat -----------------------------------------------------------------------
@@ -4182,6 +4277,13 @@ test('renumber remove: a partial apply reports which ops completed (#49.2)', {
   // re-running, but only to warn against it.
   assert.doesNotMatch(r.hint, /by hand,\s*then re-run/);
   assert.match(r.hint, /destroy/);
+  // Byte-exact, not just the keywords above: ROADMAP phase 1 SC2 asks for the
+  // hint text to be pinned by a test that reddens on a PARAPHRASE, and every
+  // keyword assertion here survives one. This is the only copy of the sentence
+  // outside planning.mjs.
+  assert.equal(r.hint, "the tree is partly renumbered and no longer matches ROADMAP"
+    + " - reconcile the completed ops by hand before any further renumber;"
+    + " re-running this command against the half-applied tree can destroy a phase directory");
 });
 
 test('renumber remove: a failure before ANY step says so, rather than claiming a half-renumbered tree', {
@@ -4204,6 +4306,9 @@ test('renumber remove: a failure before ANY step says so, rather than claiming a
   assert.deepEqual(r.completed, []);
   assert.match(r.hint, /nothing was written/);
   assert.doesNotMatch(r.hint, /partly renumbered/);
+  // Byte-exact for the same reason as the partial arm above (SC2).
+  assert.equal(r.hint, "nothing was written - the first step failed, so the tree"
+    + " is unchanged and safe to re-run once the cause is fixed");
 });
 
 // WATCHED FAILING AT ae73dd6, the same unpatched tip the falsifier above was
@@ -5773,11 +5878,11 @@ test('lease-check: the no-staged-set detail names the failure without a credenti
 
 test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () => {
   // The census, so a site added later fails here rather than shipping a
-  // credential. planning.mjs carries FIVE other caught-error details this
-  // requirement does not cover - partial-apply, write-failed, the
-  // dispatch-level internal catch, `capture --text-file`'s read failure,
-  // `capture-sections`' unreadable-capture and `uat record --fields-file`'s
-  // JSON parse failure - so the pin is by COUNT: eleven uses of the idiom,
+  // credential. planning.mjs carries SEVEN other caught-error details this
+  // requirement does not cover - partial-apply, phase-done's partial-flip,
+  // write-failed, the dispatch-level internal catch, `capture --text-file`'s
+  // read failure, `capture-sections`' unreadable-capture and `uat record
+  // --fields-file`'s JSON parse failure - so the pin is by COUNT: twelve uses
   // exactly five of them wrapped. Adding a site moves the first number whether
   // or not the author remembered the helper.
   //
@@ -5800,9 +5905,12 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // covers all three arms rather than the parse arm alone, because splitting
   // them would leave the next arm added there to guess which class it is in.
   //
-  // Why `capture --text-file` and `capture-sections` are NOT wrapped: each
+  // Why `capture --text-file`, `capture-sections` and phase-done's
+  // partial-flip are NOT wrapped: each
   // detail is an `fs` error over a path the CALLER just named, so the only
-  // string it can echo is one the caller already holds. `redactUrl` targets a
+  // string it can echo is one the caller already holds - partial-flip's is
+  // whatever atomicWrite threw over `--dir`'s own ROADMAP.md or
+  // REQUIREMENTS.md, and this seam makes no network call at all. `redactUrl` targets a
   // credential arriving from a remote the user never typed, which a local path
   // read cannot be. `uat record --fields-file`'s parse failure is the same
   // class one step further in: a JSON syntax error over the caller's own file.
@@ -5812,7 +5920,7 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 11, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(IDIOM) || []).length, 12, 'planning.mjs gained or lost a detail site');
   assert.equal((src.match(WRAPPED) || []).length, 5,
     'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch or '
     + 'groundCitations\' probe) or readQueue\'s provider-authored parse detail is unredacted');

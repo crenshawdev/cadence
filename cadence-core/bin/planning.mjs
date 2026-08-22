@@ -145,7 +145,7 @@
 //                                   .gitignore lives)
 'use strict';
 
-import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, lstatSync, statSync } from 'node:fs';
 import { join, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -192,6 +192,7 @@ import { isReportName } from './lib/report-rotation.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
+import { runTransition } from './lib/file-transition.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces, interviewOptions } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
 import { buildEntries, deriveCounts, recordName } from './lib/adjudication-record.mjs';
@@ -681,8 +682,38 @@ function cmdPhaseDone(dir, opts) {
   const boxed = setPhaseBox(roadmapText, n, !undo);
   if (!boxed) return fail('unknown-phase', `no "**Phase ${n}:**" line under ## Phases`);
 
+  // REQUIREMENTS.md as a THREE-state fact - absent, present-but-unreadable,
+  // present-and-read - because `read()` answers `null` for the first two alike
+  // and that collapse is the defect: measured 2026-08-22, `phase-done --n 1`
+  // against a tree where REQUIREMENTS.md was a DIRECTORY returned
+  // `{"ok":true,...,"reqs":[]}` at exit 0 with the roadmap boxed and the
+  // traceability rows silently unwritten. `read()` itself is not touched - its
+  // callers throughout this file legitimately treat absence as data - and the
+  // shape is `readManifest`'s in release-bump.mjs, which already separates
+  // "no manifest" from "a manifest I cannot parse" for the same reason.
+  //
+  // ABSENT keeps today's path exactly: no REQUIREMENTS step, `reqs: []`,
+  // ok:true. verify.md's phase-done step is a hard step, so a project that
+  // never kept a REQUIREMENTS.md must still be able to close a phase (D-03).
+  // UNREADABLE refuses the whole transition below.
+  //
+  // UNREADABLE is decided from the file's SHAPE, not from whether reading it
+  // threw. `read()` wraps readFileSync, which does not throw on a FIFO (it
+  // blocks forever with no writer) nor on a character device (/dev/null reads
+  // as ''), so neither shape would ever reach the refusal the pre-flight below
+  // advertises: one hangs before any envelope, the other reads '' as a genuine
+  // requirements document and reports REQUIREMENTS.md as written. That is the
+  // same defect the blocking review found at readChangelog, fixed there with
+  // this check (`cadence-core/bin/release-bump.mjs`); the bar belongs on both
+  // members of the write set, not one.
   const reqFile = join(dir, 'REQUIREMENTS.md');
-  const reqText = read(reqFile);
+  const reqPresent = existsSync(reqFile);
+  let reqRegular = false;
+  if (reqPresent) {
+    try { reqRegular = statSync(reqFile).isFile(); } catch { reqRegular = false; }
+  }
+  const reqText = reqRegular ? read(reqFile) : null;
+  const reqUnreadable = reqPresent && reqText === null;
   let reqs = [];
   let newReqText = null;
   if (reqText !== null) {
@@ -694,10 +725,66 @@ function cmdPhaseDone(dir, opts) {
     newReqText = res.text;
   }
 
-  // Both edits validated before either write - all-or-nothing.
-  atomicWrite(roadmapFile, boxed.text);
-  if (newReqText !== null) atomicWrite(reqFile, newReqText);
-  ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs });
+  // ONE ordered step list, stopped at the first failure: ROADMAP.md, then
+  // REQUIREMENTS.md when there is one to write. The key on each step is the
+  // DOCUMENT NAME rather than the joined path, because that key is what the
+  // envelope reports and a caller reading it wants the document, not the
+  // fixture's temp directory. The order is load-bearing and is the one this
+  // seam has always used.
+  //
+  // The PRE-FLIGHT is what makes "nothing was written" true, and it is the only
+  // form of that promise this seam can keep: an atomic rename protects ONE file
+  // from torn bytes and cannot make two files change together, and the
+  // primitive underneath is a refusal protocol with no undo (D-01), so once
+  // ROADMAP.md has landed there is nothing to roll back to. The refusal
+  // therefore has to happen BEFORE the first thunk runs - which is what makes
+  // an unreadable REQUIREMENTS.md leave ROADMAP.md byte-identical instead of
+  // boxed-and-then-reported-as-an-error. `satisfied` answers from a value
+  // already in hand and performs no I/O of its own (D-12), so it cannot throw
+  // past runTransition, which has no arm for that.
+  /** @type {Array<[string, () => void]>} */
+  const steps = [['ROADMAP.md', () => atomicWrite(roadmapFile, boxed.text)]];
+  if (newReqText !== null) steps.push(['REQUIREMENTS.md', () => atomicWrite(reqFile, newReqText)]);
+  const applied = runTransition({
+    steps,
+    discipline: 'stop-at-first-failure',
+    preflight: [{
+      condition: `${reqFile} must be a readable file, or absent`,
+      satisfied: () => !reqUnreadable,
+    }],
+  });
+  if (applied.refused !== null) return fail('unreadable-requirements', applied.refused);
+  if (!applied.ok) {
+    // The shapes that reach here are the ones NO readability check can see - an
+    // EACCES on `.planning` itself, a symlink planted at atomicWrite's derived
+    // temp path, ENOSPC - which is why the pre-flight above deliberately does
+    // not pretend to cover them: a refusal advertised for failures it cannot
+    // deliver would talk callers out of checking the tree by hand.
+    //
+    // Emitted directly rather than through fail(), for the reason cmdRenumber
+    // records for its own partial arm: fail() carries reason/detail/hint only,
+    // and this arm has to carry the write record too. Letting it reach the
+    // dispatch-level catch instead would flatten it to
+    // `{"ok":false,"reason":"internal"}` with no record of which document moved
+    // - the undifferentiated envelope this whole change exists to remove.
+    const e = applied.failures[0].error;
+    return emit({
+      ok: false, reason: 'partial-flip', wrote: applied.completed,
+      detail: e && e.message ? e.message : String(e),
+      hint: applied.completed.length
+        ? `${applied.completed.join(' and ')} was written and the rest was not - the phase box and its traceability rows now disagree; re-run this command once the cause is fixed, which is the repair and is safe to repeat, because both writes set the same value on a second pass`
+        : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
+    });
+  }
+  // `wrote` is the transition's own completed record rendered into the
+  // envelope: the document names, in write order, so a caller can tell "both
+  // documents moved" from "only the roadmap did" without re-deriving it from
+  // `reqs`. It is a NEW field precisely so nothing existing has to carry that
+  // meaning (D-04): `roadmap.{line,now}` and `reqs` keep the shape and contents
+  // they have always had - `reqs` stays the ids setReqStatus reported changed
+  // and never becomes `null` to mean "not written", because /cad-verify and
+  // /cad-undo read it and planning.test.mjs deep-equals it across nine cases.
+  ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs, wrote: applied.completed });
 }
 
 // ---------------------------------------------------------------------------
@@ -6014,26 +6101,28 @@ function cmdRenumber(dir, sub, opts) {
   if (newReqText !== null) steps.push([{ edit: 'REQUIREMENTS.md' }, () => atomicWrite(reqFile, newReqText)]);
   if (newCursor) steps.push([{ edit: 'STATE.md' }, () => atomicWrite(stateFile, renderCursor(newCursor))]);
 
-  const completed = [];
-  for (const [op, runStep] of steps) {
-    try { runStep(); }
-    catch (e) {
-      // Bypasses the dispatch-level catch (which flattens to `internal`) and
-      // fail()'s reason/detail/hint-only shape - a completed-ops list needs
-      // its own emit (D-11).
-      return emit({
-        ok: false, reason: 'partial-apply', completed, failed: op,
-        detail: e && e.message ? e.message : String(e),
-        // Deliberately does NOT say "re-run". The half-applied tree no longer
-        // matches ROADMAP, and a re-run recomputes its plan FROM ROADMAP: on
-        // a remove it would rm phases/<at>, which now holds the NEXT phase's
-        // work, and exit ok:true having destroyed it. Verified live.
-        hint: completed.length
-          ? 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory'
-          : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
-      });
-    }
-    completed.push(op);
+  // Stop at the FIRST throw: once a step fails the tree no longer matches the
+  // plan every later step was computed from, so running them on would compound
+  // the disagreement rather than salvage anything. lib/file-transition.mjs
+  // keeps the ordering and the completed/failed record; the envelope below is
+  // this seam's own, because prune's is a different shape entirely (D-02).
+  const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });
+  if (!applied.ok) {
+    const { key: op, error: e } = applied.failures[0];
+    // Bypasses the dispatch-level catch (which flattens to `internal`) and
+    // fail()'s reason/detail/hint-only shape - a completed-ops list needs
+    // its own emit (D-11).
+    return emit({
+      ok: false, reason: 'partial-apply', completed: applied.completed, failed: op,
+      detail: e && e.message ? e.message : String(e),
+      // Deliberately does NOT say "re-run". The half-applied tree no longer
+      // matches ROADMAP, and a re-run recomputes its plan FROM ROADMAP: on
+      // a remove it would rm phases/<at>, which now holds the NEXT phase's
+      // work, and exit ok:true having destroyed it. Verified live.
+      hint: applied.completed.length
+        ? 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory'
+        : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
+    });
   }
 
   // Sanity recount: every ROADMAP phase maps to at most one dir, none stray.
@@ -6465,30 +6554,37 @@ function cmdMilestonePrune(dir, opts) {
   // gone from the live tree. `missing` counts as gone (it already was, which is
   // what makes a re-run idempotent); `failed` does not.
   const dirs = { archived: [], deleted: [], missing: [] };
-  const failed = [];
-  for (const n of completed) {
+  // One step per completed phase, keyed by the phase NUMBER - the value the
+  // envelope's `failed` array carries. CONTINUE past a failure, which is this
+  // seam's own discipline and not renumber's: a phase whose directory would not
+  // move keeps its documents, and the phases that did clear are still pruned
+  // (D-03). lib/file-transition.mjs owns the ordering and the record; the
+  // envelope below stays here.
+  /** @type {Array<[number, () => void]>} */
+  const steps = completed.map((n) => [n, () => {
     const src = join(dir, 'phases', String(n));
-    if (!existsSync(src)) { dirs.missing.push(n); continue; }
-    try {
-      if (mode === 'delete') { rmSync(src, { recursive: true }); dirs.deleted.push(n); }
-      else {
-        mkdirSync(archiveRoot, { recursive: true });
-        const dest = join(archiveRoot, String(n));
-        // Refuse a destination that already exists rather than let renameSync
-        // decide: onto an empty directory it silently succeeds, onto a
-        // non-empty one it throws ENOTEMPTY, and onto a symlink it follows.
-        // A pre-existing destination means a previous close half-ran, and
-        // clobbering it would destroy that evidence.
-        if (lstatSync(dest, { throwIfNoEntry: false })) {
-          throw new Error(`${dest} already exists - a previous close left it there`);
-        }
-        renameSync(src, dest);
-        dirs.archived.push(n);
-      }
-    } catch (e) {
-      failed.push(n);
-      warnings.push(`phase ${n}: directory ${mode} failed: ${e && e.message ? e.message : e}`);
+    if (!existsSync(src)) { dirs.missing.push(n); return; }
+    if (mode === 'delete') { rmSync(src, { recursive: true }); dirs.deleted.push(n); return; }
+    mkdirSync(archiveRoot, { recursive: true });
+    const dest = join(archiveRoot, String(n));
+    // Refuse a destination that already exists rather than let renameSync
+    // decide: onto an empty directory it silently succeeds, onto a
+    // non-empty one it throws ENOTEMPTY, and onto a symlink it follows.
+    // A pre-existing destination means a previous close half-ran, and
+    // clobbering it would destroy that evidence.
+    if (lstatSync(dest, { throwIfNoEntry: false })) {
+      throw new Error(`${dest} already exists - a previous close left it there`);
     }
+    renameSync(src, dest);
+    dirs.archived.push(n);
+  }]);
+  const pass = runTransition({ steps, discipline: 'continue-past-failure' });
+  const failed = pass.failures.map((f) => f.key);
+  // Appended HERE rather than inside the thunks so warning ORDER is unchanged:
+  // the REQUIREMENTS.md-missing warning still precedes them and the
+  // missingSections warnings below still follow.
+  for (const { key: n, error: e } of pass.failures) {
+    warnings.push(`phase ${n}: directory ${mode} failed: ${e && e.message ? e.message : e}`);
   }
 
   // The pruned set: completed phases whose directory is no longer in the live

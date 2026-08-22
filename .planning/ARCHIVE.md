@@ -498,3 +498,47 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/4/UAT.md`: reads --join carries inDispatch without disturbing its other arms `planning.mjs reads --join` returns an `inDispatch` key; the no-flag envelope and the `no reads recorded yet` arm are unchanged, asserted by test.
 - `phases/4/UAT.md`: The spike's throwaway measurement code is retired `.planning/spikes/read-set-redundancy/` holds `SPIKE.md` alone - both `measure*.mjs` deleted - and nothing in the tree references them.
 - `phases/4/UAT.md`: self-verify is clean `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an empty `problems` array.
+
+## v3.5.8
+
+- `phases/1/SUMMARY.md`: `runTransition` does not catch a throw from a caller's pre-flight `satisfied()` thunk; a throw propagates, matching `withPlanningFileLock`'s precedent with `fn`. Stated in the module header rather than branched on. Give it a result arm if a phase-2 caller declares a condition that can genuinely throw while answering.
+- `phases/1/SUMMARY.md`: The JSDoc at `cadence-core/bin/lib/file-transition.mjs:124` reads "no thunk runs, nothing is written", but only the first clause is enforceable - `satisfied` is arbitrary caller code. Adjudicated down to `low` from the `risk_surface` review (medium raised): both live call sites omit `preflight` entirely, and the same block already bounds its scope at line 141 ("this classifies a transition, it does not police its caller"). Reword the sentence to describe what `runTransition` does rather than to promise a guarantee over caller predicates. Record: `.planning/phases/1/ADJUDICATION-risk_surface-plan-1.json`.
+- `phases/1/SUMMARY.md`: The pre-flight stage has no production caller yet: `planning.mjs:6023` and `planning.mjs:6495` both omit `preflight`, so it is exercised only by `file-transition.test.mjs`. Phase 2's two callers are what justify it; if they land without using it, it is dead flexibility to delete.
+- `phases/1/UAT.md`: renumber's #49.2 partial-apply envelope is unchanged `node --test cadence-core/bin/planning.test.mjs` passes with planning.test.mjs unmodified: renumber against the 0o555 .planning root returns reason:"partial-apply", completed deep-equal to [{rm:'phases/1'},{git_mv:[...]},{git_mv:[...]}], failed deep-equal to {edit:'ROADMAP.md'}, and the doesNotMatch(/by hand,\s*then re-run/) assertion at :4172-4185 still holds.
+- `phases/1/UAT.md`: partial-prune's envelope and three-line hint are unchanged `node --test cadence-core/bin/milestone-prune.test.mjs` passes with milestone-prune.test.mjs unmodified: a partial-prune run returns the same reason, action, failed array, residue_rows, warnings and three-line hint it returned before the refactor (:769-795 and :1049-1075 green).
+- `phases/1/UAT.md`: A pre-flight refusal names the condition and writes nothing A case in cadence-core/bin/file-transition.test.mjs drives runTransition with one pre-checkable condition failing and asserts BOTH that the result is a refusal naming that condition AND that every file in the planned write set is byte-identical on disk afterwards. The test run is green.
+- `phases/1/UAT.md`: A refusal creates no new file under .planning/ A case in cadence-core/bin/file-transition.test.mjs takes a full recursive listing of .planning/ before and after a primitive refusal and asserts they are equal - no new file anywhere. The test run is green.
+- `phases/1/UAT.md`: The census makes 'one, not four' mechanical `node cadence-core/bin/helper-census.test.mjs` passes with a HELPERS row for the transition primitive present, AND fails (non-zero exit, naming both copies) when the primitive's body is pasted back under a different name anywhere in cadence-core/bin/**/*.mjs.
+- `phases/1/UAT.md`: self-verify is clean `node cadence-core/bin/self-verify.mjs --root .` returns ok:true with an empty problems array.
+- `phases/1/UAT.md`: Neither operation's hint text is pinned by a test that reddens on a paraphrase (ROADMAP phase 1 SC2) behavior wrong - the envelope IS unchanged today (verified byte-exact against the pre-phase tree), but the durable guard SC2 names does not exist, so the refactored call sites carry no regression protection on the one field the roadmap singled out
+- `phases/1/CONTEXT.md`: D-01 (Journal or refusal): The primitive is a REFUSAL PROTOCOL, not a journal
+- `phases/1/CONTEXT.md`: D-02 (Primitive boundary): The primitive owns step ordering, pre-flight
+- `phases/1/CONTEXT.md`: D-03 (Loop discipline): Both callers keep the loop discipline they ship with.
+- `phases/1/CONTEXT.md`: D-04 (Pre-flight scope): AC3's "refuses whole, nothing written" is a NEW
+- `phases/1/CONTEXT.md`: D-05 (Enforcement): A `HELPERS` census row is added for the primitive in this
+- `phases/2/SUMMARY.md`: (plan 1) PLAN-1's `Must be true when done` asserts zero removed
+- `phases/2/SUMMARY.md`: (plan 1) The worktree carries no `node_modules`, so the literal
+- `phases/2/SUMMARY.md`: (plan 2) Task 5's Verify asserts the full
+- `phases/2/SUMMARY.md`: (gate) The blocking `risk_surface` review on plan 2's range raised
+- `phases/2/SUMMARY.md`: `.planning/REQUIREMENTS.md:16` - wrap the `JRN-01` Active bullet across lines,
+- `phases/2/SUMMARY.md`: `cadence-core/bin/planning.mjs:701` - `read(reqFile)` accepts any existing
+- `phases/2/SUMMARY.md`: `cadence-core/bin/lib/release-decision.mjs` - its JSDoc code set was already
+- `phases/2/SUMMARY.md`: `planning.mjs`'s `partial-flip` envelope carries `wrote` but not `cmdRenumber`'s
+- `phases/2/SUMMARY.md`: `unreadable-requirements` refuses with no `hint`; the condition's own
+- `phases/2/SUMMARY.md`: `cadence-core/bin/release-bump.test.mjs:424-428` still names the retired
+- `phases/2/UAT.md`: phase-done refuses on an unreadable REQUIREMENTS.md, leaving ROADMAP.md byte-identical Against a fixture whose REQUIREMENTS.md is a directory, `planning.mjs phase-done --n <N>` prints {"ok":false} with a machine reason naming the unreadable requirements file and exits 1; ROADMAP.md's sha256 is identical before and after.
+- `phases/2/UAT.md`: phase-done still succeeds when REQUIREMENTS.md is absent entirely Against a fixture with no REQUIREMENTS.md, `planning.mjs phase-done --n <N>` prints {"ok":true} at exit 0 with the roadmap line boxed - absent and unreadable produce different envelopes.
+- `phases/2/UAT.md`: phase-done's success envelope names which documents were written The success envelope carries a field stating whether both documents were written or only the roadmap, and `node --test cadence-core/bin/planning.test.mjs` passes with every pre-existing phase-done case unedited.
+- `phases/2/UAT.md`: release-bump refuses an unparseable sibling manifest with nothing written Against a fixture whose .claude-plugin/marketplace.json is present but unparseable, `release-bump.mjs bump --version <v>` prints {"ok":false} at exit 1, plugin.json still reads the OLD version, and CHANGELOG.md's sha256 is unchanged.
+- `phases/2/UAT.md`: A readable-but-not-upgradeable sibling stays an ok:true siblings[] refusal row `release-bump.mjs bump --version <v>` against a fixture whose sibling parses but is not upgradeable returns {"ok":true} with a siblings[] row action:"refuse" carrying that verdict's own code, and release-bump.test.mjs:251-266 passes unmodified.
+- `phases/2/UAT.md`: The all-or-nothing claim in cmdPhaseDone matches the behaviour `grep -n "all-or-nothing" cadence-core/bin/planning.mjs` either returns no hit inside cmdPhaseDone, or the hit sits below a pre-flight refusal.
+- `phases/2/UAT.md`: self-verify is clean `node cadence-core/bin/self-verify.mjs --root .` returns ok:true with an empty problems array.
+- `phases/2/UAT.md`: A non-regular CHANGELOG.md refuses instead of hanging or scaffolding over history With CHANGELOG.md a FIFO or a symlink to /dev/null, the bump refuses under `unreadable-changelog` rather than blocking the CLI or writing a fresh changelog over the release history.
+- `phases/2/UAT.md`: milestone.md's halt prose, its weight budget and the DOCS-CLAIMS row moved with the behaviour milestone.md's halt list names the new reason codes, weight-budgets.json carries the re-pinned ceiling for it, and the MILESTONE-06 DOCS-CLAIMS row reflects the changed sibling-refusal behaviour.
+- `phases/2/UAT.md`: phase-done accepts a non-regular REQUIREMENTS.md - the regular-file bar the gate set for CHANGELOG.md never reached the sibling seam behavior wrong - cadence-core/bin/planning.mjs:700-702 decides 'unreadable' from `read()` returning null, i.e. from whether reading THREW, which is the exact defect the blocking risk_surface review found in readChangelog and gate commit a90d8b12 fixed one seam over with `statSync(file).isFile()`. A path that is not a regular file is either never classified (it reads cleanly) or never reached (it blocks).
+- `phases/2/CONTEXT.md`: D-01 (phase-done guarantee): The honest guarantee for `phase-done` is a
+- `phases/2/CONTEXT.md`: D-03 (absent vs unreadable): A present-but-UNREADABLE `REQUIREMENTS.md`
+- `phases/2/CONTEXT.md`: D-04 (envelope shape): The two documents' disposition is reported through a
+- `phases/2/CONTEXT.md`: D-05 (phase-done failure arm): `phase-done` takes the
+- `phases/2/CONTEXT.md`: D-07 (D-08 splits, it does not die): An UNREADABLE sibling manifest becomes a
+- `phases/2/CONTEXT.md`: D-12 (no new arm on the primitive): Both callers' pre-flight conditions are

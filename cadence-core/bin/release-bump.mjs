@@ -42,19 +42,46 @@
 // Refusal envelope (D-01, one shape for every cause): `ok:false`,
 // `action:"refuse"`, a named machine `reason` code, the human sentence in
 // `detail`, exit 1 (emit mirrors `ok` into the exit code - no process.exit,
-// which can truncate stdout on a pipe), and NOTHING written. There is no
-// `ok:true` refusal shape anywhere in this seam, so a scripted caller reading
-// `ok` can never read a refusal as success. `reason` carries a machine code on
+// which can truncate stdout on a pipe), and NOTHING written. That is the
+// REFUSAL shape, and it is one of TWO `ok:false` shapes: a transition that
+// threw part way emits `action:"partial"` with `reason:"partial-bump"`, where
+// files DID land and `manifest.bumped`, each `siblings[]` row's `bumped` and
+// `changelog.changed` name which ones. So `ok:false` alone means "do not
+// ship", never "nothing was written" - `action` is what carries that. There is
+// no `ok:true` refusal shape anywhere in this seam, so a scripted caller
+// reading `ok` can never read a refusal as success. `reason` carries a machine code on
 // EVERY path, refusal or not, so a caller branching on it never gets a token
-// one run and a sentence the next. ONE deliberate exception (D-08): a SIBLING
-// manifest's refusal leaves top-level `ok` true, because the primary write
-// already landed - it is recorded as a `siblings[]` entry with
-// `action:"refuse"`, and milestone.md halts the close on that too.
+// one run and a sentence the next. ONE deliberate exception (D-08, narrowed by
+// phase 2 D-07): a sibling manifest that PARSES and is simply not upgradeable -
+// a downgrade, a non-upgrade, an unparseable version IN the sibling - leaves
+// top-level `ok` true and is recorded as a `siblings[]` entry with
+// `action:"refuse"`, which milestone.md halts the close on too. A sibling that
+// cannot be READ is no longer that case: it refuses the whole run under its own
+// code, because the write set is now decided before the first write lands.
 //
 // Two code vocabularies, one owner each. The SEAM-level codes, owned here:
 //   no-plugin-manifest  - no .claude-plugin/plugin.json: not a plugin project,
 //                         an ok:true skip rather than a refusal (D-04 gating).
 //   unreadable-manifest - plugin.json present but not parseable JSON.
+//   unreadable-sibling-manifest
+//                       - a DECLARED sibling manifest (.claude-plugin/
+//                         marketplace.json) present but not parseable JSON.
+//                         Its OWN code, never the primary's
+//                         `unreadable-manifest` (phase 2 D-08): milestone.md's
+//                         halt list enumerates codes by name, and one token for
+//                         two files leaves the operator opening both to find
+//                         which one to repair.
+//   unreadable-changelog
+//                       - CHANGELOG.md present but not readable (a directory at
+//                         that path, a permission wall). Its own code for the
+//                         same operator reason. Validation is presence,
+//                         readability and regular-file shape only, never a
+//                         content grammar check: the transform pass over it is
+//                         pure and cannot fail (D-09).
+//   partial-bump        - the decided write set began and a step threw anyway:
+//                         ok:false with action:"partial", and the disposition
+//                         fields naming what landed. The one non-refusal
+//                         ok:false code here.
 //   bad-date            - a PRESENT --date that is not YYYY-MM-DD, or one
 //                         carrying a newline. Refused at the dispatch, so it
 //                         fires on a non-plugin project too, where the
@@ -76,18 +103,26 @@
 // and emitted verbatim as `reason`.
 'use strict';
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { emit } from './lib/seam-io.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
+// The multi-file transition primitive (JRN-01): the ONE place under
+// cadence-core/bin/ where an ordered step list runs and a record is kept of
+// which steps completed. Imported, never copied - helper-census.test.mjs pins
+// that module's body as a single definition.
+import { runTransition } from './lib/file-transition.mjs';
 import {
   normalizeTargetVersion, decideManifestBump, prependChangelogEntry, promoteUnreleased,
 } from './lib/release-decision.mjs';
-// The file reader this file used to define for itself; its ''-on-failure
-// contract lives in lib/seam-input.mjs. `readFileSync` stays imported above for
-// the manifest parse below, which must tell an unreadable manifest from an
-// empty one.
-import { readText } from './lib/seam-input.mjs';
+// No lib/seam-input.mjs `readText` here any more, and that is deliberate rather
+// than an omission: its ''-on-failure contract is right for a surface whose
+// absence is not fatal, and wrong for every file THIS seam reads. A manifest
+// read as empty is a manifest with no `version` field, and a CHANGELOG read as
+// empty gets a fresh one scaffolded over a real release history. Both are read
+// through `readFileSync` below in three-state readers that tell absent from
+// unreadable. That is a caller-side choice; the shared helper is unchanged and
+// its other callers keep the contract they depend on.
 // The argument contract (ARG-06). This file states no flag rule of its own any
 // more: what each flag may be, and what it costs when it is not, are DECLARED
 // rows in lib/arg-contract.mjs. BOTH mechanisms are used here, picked per flag
@@ -137,9 +172,52 @@ function readManifest(file) {
   } catch { return { state: 'unreadable', manifest: null }; }
 }
 
+/**
+ * The write set, as repo-relative paths. Each is also its own transition step
+ * KEY, so what the envelope reports about a file and what the step list calls
+ * it can never drift apart.
+ *
+ * The sibling set is a DECLARED list and never a discovery scan (D-10): a
+ * second sibling is one more entry here, and the seam still never reads - or
+ * refuses over - a file nobody declared.
+ */
+const PRIMARY_MANIFEST = '.claude-plugin/plugin.json';
+const SIBLING_MANIFESTS = ['.claude-plugin/marketplace.json'];
+const CHANGELOG_FILE = 'CHANGELOG.md';
+
+/**
+ * Read the CHANGELOG as a THREE-state result, to exactly the bar D-09 sets:
+ * present, readable and a regular file - never a content grammar check, because
+ * the transform pass over it (`prependChangelogEntry` then `promoteUnreleased`)
+ * is pure and cannot fail on any text.
+ *
+ * ABSENT is a real state with real behaviour: a project that keeps no changelog
+ * still bumps its manifest. UNREADABLE is the one this exists for - a directory
+ * at that path, a permission wall - because reading it as `''` scaffolds a
+ * fresh changelog over a release history the seam cannot see, and it did so
+ * AFTER the manifest had already been bumped.
+ * @param {string} file
+ * @returns {{ state:'absent'|'unreadable'|'ok', text: string|null }}
+ */
+function readChangelog(file) {
+  if (!existsSync(file)) return { state: 'absent', text: null };
+  // REGULAR FILE, checked rather than assumed. `existsSync` accepts a FIFO, a
+  // character device and a directory alike, and `readFileSync` does not fail on
+  // the first two - it BLOCKS forever on a FIFO nobody writes to, and streams
+  // without end from a device such as /dev/zero. Neither reaches the
+  // `unreadable-changelog` refusal this function advertises, so the halt the
+  // doc above promises never arrives and the run hangs instead. The doc says
+  // the path must be a regular file; this is the line that makes that true
+  // rather than a claim, which is the same defect this phase exists to remove.
+  try { if (!statSync(file).isFile()) return { state: 'unreadable', text: null }; }
+  catch { return { state: 'unreadable', text: null }; }
+  try { return { state: 'ok', text: readFileSync(file, 'utf8') }; }
+  catch { return { state: 'unreadable', text: null }; }
+}
+
 function bump(dir, versionArg, dateArg) {
   const date = dateArg || new Date().toISOString().slice(0, 10);
-  const pluginPath = join(dir, '.claude-plugin', 'plugin.json');
+  const pluginPath = join(dir, PRIMARY_MANIFEST);
 
   // The shipping target is the explicit --version and nothing else: this seam
   // reads no planning prose at all (D-03). Normalized before the manifest is
@@ -173,38 +251,62 @@ function bump(dir, versionArg, dateArg) {
     return;
   }
 
-  // Primary manifest: write only on a real bump (preserve field order).
-  if (primary.action === 'bump') {
-    manifest.version = target;
-    atomicWrite(pluginPath, JSON.stringify(manifest, null, 2) + '\n');
-  }
+  // --- READ AND DECIDE (nothing below this line touches disk) ---------------
+  //
+  // The WHOLE write set - primary manifest, every declared sibling, the
+  // changelog - is read and turned into a planned write before the first one
+  // lands (D-06). The order this replaces is the JRN-03 defect itself: write
+  // the primary, THEN read the sibling, THEN read the changelog. Measured
+  // 2026-08-22 against that order, an unwritable CHANGELOG.md emitted
+  // {"ok":false,"reason":"internal","detail":"EISDIR: ... rename
+  // 'CHANGELOG.md.<pid>.1.tmp' -> 'CHANGELOG.md'"} while plugin.json on disk
+  // already read the new version - a partially bumped tree in an envelope
+  // carrying no `manifest`, `siblings` or `changelog` field at all.
+  //
+  // Hoisting the reads changes no result: decideManifestBump,
+  // prependChangelogEntry and promoteUnreleased are pure and only compute.
+
+  // Primary manifest: a real bump mutates the in-memory manifest here and the
+  // bytes reach disk in the write half below (preserve field order).
+  if (primary.action === 'bump') manifest.version = target;
 
   // Sibling manifests: write `version` only where it exists. marketplace.json
   // carries none, so decideManifestBump returns skip and it is left untouched.
   const siblings = [];
-  const siblingPath = join(dir, '.claude-plugin', 'marketplace.json');
-  const siblingRead = readManifest(siblingPath);
-  if (siblingRead.state === 'unreadable') {
-    // The primary write already landed, so this records rather than aborts
-    // (D-08) - but it is recorded, never dropped: a sibling manifest this seam
-    // cannot read is a sibling that ships the previous version.
-    siblings.push({ file: '.claude-plugin/marketplace.json', action: 'refuse', bumped: false,
-      reason: 'unreadable-manifest' });
-  } else if (siblingRead.state === 'ok') {
+  /** @type {Array<{ rel: string, path: string, manifest: Record<string, any> }>} */
+  const siblingWrites = [];
+  for (const rel of SIBLING_MANIFESTS) {
+    const siblingPath = join(dir, rel);
+    const siblingRead = readManifest(siblingPath);
+    if (siblingRead.state === 'unreadable') {
+      // D-07: this is the half of D-08 that SPLIT rather than died. A sibling
+      // this seam cannot read used to be a recorded `siblings[]` row on an
+      // ok:true run, because the primary write had already landed and unwinding
+      // it would have needed a transaction this seam did not have. It has one
+      // now - nothing is written until the whole set is decided - so the
+      // unreadable sibling refuses the run outright and the tree is left
+      // untouched. The arm that KEEPS its ok:true row is the one below: a
+      // sibling that parses and is simply not upgradeable.
+      emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', target,
+        manifest: { from: primary.from, to: primary.to, bumped: false },
+        siblings: [], changelog: { changed: false },
+        detail: `${rel} is present but not parseable JSON: refusing to ship a release whose sibling manifest this seam cannot read, wrote nothing. Repair ${rel} and re-run the bump.` });
+      return;
+    }
+    if (siblingRead.state !== 'ok') continue;
     const sibling = siblingRead.manifest;
     const d = decideManifestBump(sibling.version, target);
     if (d.action === 'bump') {
       sibling.version = target;
-      atomicWrite(siblingPath, JSON.stringify(sibling, null, 2) + '\n');
+      siblingWrites.push({ rel, path: siblingPath, manifest: sibling });
     }
     // A sibling inherits the same guard through the same function. Its refusal
-    // is RECORDED, not raised: the primary write has already landed and
-    // unwinding it would need a transaction this seam does not have (D-08). It
-    // never becomes a silent partial ship - milestone.md halts the close on a
-    // `siblings[]` refusal exactly as it does on a top-level one.
+    // is RECORDED, not raised: it never becomes a silent partial ship -
+    // milestone.md halts the close on a `siblings[]` refusal exactly as it does
+    // on a top-level one.
     siblings.push(d.action === 'refuse'
-      ? { file: '.claude-plugin/marketplace.json', action: 'refuse', bumped: false, reason: d.code }
-      : { file: '.claude-plugin/marketplace.json', action: d.action, bumped: d.bumped });
+      ? { file: rel, action: 'refuse', bumped: false, reason: d.code }
+      : { file: rel, action: d.action, bumped: d.bumped });
   }
 
   // Changelog: scaffold the dated heading, then promote whatever is staged
@@ -217,18 +319,78 @@ function bump(dir, versionArg, dateArg) {
   // that release would have the changelog claim a release that never happened
   // while the emit said `skip`.
   let changelog = { changed: false };
-  const clPath = join(dir, 'CHANGELOG.md');
-  if (existsSync(clPath) && target && (primary.action === 'bump' || primary.action === 'noop')) {
-    const url = changelogUrl(manifest, target);
-    const scaffold = prependChangelogEntry(readText(clPath), { version: target, date, url });
-    const promo = promoteUnreleased(scaffold.text, target);
-    const changed = scaffold.changed || promo.changed;
-    if (changed) atomicWrite(clPath, promo.text);
-    // section_empty: the dated section ended up with no body at all - nothing
-    // promoted and nothing already there. milestone.md turns that into "author
-    // the notes before the bump commit", so no close ships an empty section
-    // with nothing said.
-    changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty };
+  /** @type {string|null} the composed bytes to write, null when nothing changed */
+  let changelogText = null;
+  const clPath = join(dir, CHANGELOG_FILE);
+  if (target && (primary.action === 'bump' || primary.action === 'noop')) {
+    // Validated only when it is a MEMBER of this run's write set: the gate
+    // above is what decides that, so a run that would never touch the changelog
+    // is never refused over it.
+    const clRead = readChangelog(clPath);
+    if (clRead.state === 'unreadable') {
+      emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', target,
+        manifest: { from: primary.from, to: primary.to, bumped: false },
+        siblings: [], changelog: { changed: false },
+        detail: `${CHANGELOG_FILE} is present but cannot be read: refusing to scaffold a fresh changelog over a release history this seam cannot see, wrote nothing. Repair ${CHANGELOG_FILE} and re-run the bump.` });
+      return;
+    }
+    // ABSENT keeps its own behaviour: no changelog step, changed:false, ok:true.
+    if (clRead.state === 'ok') {
+      const url = changelogUrl(manifest, target);
+      const scaffold = prependChangelogEntry(clRead.text, { version: target, date, url });
+      const promo = promoteUnreleased(scaffold.text, target);
+      const changed = scaffold.changed || promo.changed;
+      if (changed) changelogText = promo.text;
+      // section_empty: the dated section ended up with no body at all - nothing
+      // promoted and nothing already there. milestone.md turns that into
+      // "author the notes before the bump commit", so no close ships an empty
+      // section with nothing said.
+      changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty };
+    }
+  }
+
+  // --- WRITE ----------------------------------------------------------------
+  // One transition, in the same order the writes have always run, under
+  // stop-at-first-failure: a half-applied release tree makes every later step's
+  // plan wrong, so the first throw ends the run. Each step is keyed by its
+  // repo-relative path, which is what lets a failure report WHICH files landed.
+  /** @type {Array<[string, () => void]>} */
+  const steps = [];
+  if (primary.action === 'bump') {
+    steps.push([PRIMARY_MANIFEST,
+      () => atomicWrite(pluginPath, JSON.stringify(manifest, null, 2) + '\n')]);
+  }
+  for (const { rel, path, manifest: sibling } of siblingWrites) {
+    steps.push([rel, () => atomicWrite(path, JSON.stringify(sibling, null, 2) + '\n')]);
+  }
+  if (changelogText !== null) {
+    const text = changelogText;
+    steps.push([CHANGELOG_FILE, () => atomicWrite(clPath, text)]);
+  }
+
+  const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });
+  if (!applied.ok) {
+    // A step threw anyway. Everything a read could have caught was caught
+    // above, so what reaches here is what no pre-flight can see: an EACCES on
+    // the tree, an ENOSPC, a symlink planted at atomicWrite's temp path. The
+    // dispatch's catch would flatten it to {"ok":false,"reason":"internal"}
+    // with no `manifest`, no `siblings` and no `changelog` field at all, which
+    // leaves an operator unable to tell a bumped tree from an untouched one.
+    //
+    // So it gets its own shape, in the vocabulary cmdMilestonePrune already
+    // uses for this state: `action:"partial"`, `reason:"partial-bump"`, and
+    // every disposition field filled from what the transition COMPLETED rather
+    // than from what was decided. It is the one halt where re-running is not a
+    // clean retry - the operator reads these three fields, repairs the tree and
+    // stops.
+    const landed = (key) => applied.completed.includes(key);
+    const { error } = applied.failures[0];
+    emit({ ok: false, action: 'partial', reason: 'partial-bump', target,
+      manifest: { from: primary.from, to: primary.to, bumped: landed(PRIMARY_MANIFEST) },
+      siblings: siblings.map((s) => ({ ...s, bumped: landed(s.file) })),
+      changelog: { ...changelog, changed: landed(CHANGELOG_FILE) },
+      detail: error && error.message ? error.message : String(error) });
+    return;
   }
 
   const action = primary.action === 'bump' ? 'bumped' : primary.action; // bump|noop|skip
