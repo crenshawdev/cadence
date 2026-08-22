@@ -59,6 +59,19 @@
 // cannot be READ is no longer that case: it refuses the whole run under its own
 // code, because the write set is now decided before the first write lands.
 //
+// ONE verdict is RE-CLASSIFIED rather than passed through (phase 1 D-01/D-02),
+// and it is the only place this seam overrides the code vocabulary below. A
+// PRIMARY .claude-plugin/plugin.json whose verdict is `skip`/`no-version-field`
+// becomes a REFUSAL here - ok:false, action:"refuse", reason:"no-version-field",
+// exit 1, nothing written - because a manifest with no `version` field cannot be
+// bumped at all, and returning ok:true/skip over it let the close continue and
+// ship the release unbumped. The verdict itself is unchanged in
+// lib/release-decision.mjs and SIBLING manifests keep skipping on it (D-02):
+// .claude-plugin/marketplace.json carries no `version` BY DESIGN, so refusing on
+// the verdict rather than on the primary would halt Cadence's own close every
+// cycle. The refusal also gets its OWN `detail` sentence rather than the
+// verdict's "leave it untouched", which reads as benign on a halt.
+//
 // Two code vocabularies, one owner each. The SEAM-level codes, owned here:
 //   no-plugin-manifest  - no .claude-plugin/plugin.json: not a plugin project,
 //                         an ok:true skip rather than a refusal (D-04 gating).
@@ -98,9 +111,16 @@
 //                         `bad-date` is what a caller branches on, so it is
 //                         read in the returning form and named below (D-07).
 //   usage | internal    - bad subcommand / an unexpected throw.
-// The VERDICT codes (`no-target-version`, `no-version-field`,
-// `already-at-target`, `bump`) are owned by lib/release-decision.mjs's JSDoc
-// and emitted verbatim as `reason`.
+// The VERDICT codes (`no-target-version`, `unparseable-version`,
+// `no-version-field`, `already-at-target`, `downgrade`, `not-an-upgrade`,
+// `bump`) are owned by lib/release-decision.mjs's JSDoc and emitted verbatim
+// as `reason` - with the ONE exception stated above: a PRIMARY
+// `no-version-field` is a `skip` verdict this seam re-classifies as an
+// `ok:false` refusal, emitting the code unchanged under `action:"refuse"`
+// (phase 1 D-01). This list named four of the seven for two release cycles;
+// prose-agreement.test.mjs now derives the set from decideManifestBump's own
+// executable `code:` literals and reddens until a new one is named BOTH here
+// and in that function's JSDoc.
 'use strict';
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
@@ -224,7 +244,25 @@ function bump(dir, versionArg, dateArg) {
   // read so a manifest refusal can still name the number the run was asked to
   // ship; the absent-manifest gate below still emits FIRST, because a
   // non-plugin project has nothing to bump whether or not a version was given.
-  const target = normalizeTargetVersion(versionArg);
+  let target = normalizeTargetVersion(versionArg);
+  // KEEP THE RAW ARGUMENT when normalization is left with nothing usable
+  // (phase 1 D-06). `--version v` trims to `v`, the leading-`v` strip empties
+  // it, and the run used to refuse as `no-target-version` over `target:""` -
+  // which is false (a version WAS given) and names nothing the operator can
+  // fix. Handing the raw trimmed value to decideManifestBump instead reaches
+  // that function's own `unparseable-version`, whose sentence already quotes
+  // the offending value, so no verdict code is minted here: the code set has
+  // one owner and it is lib/release-decision.mjs.
+  //
+  // normalizeTargetVersion is deliberately NOT changed. planning.mjs calls it
+  // for v-stripping inside the audit's `version_drift` signal, so its contract
+  // is not local to this seam - and a null-returning variant would still land
+  // on `no-target-version`, which is the sentence that does not name `v`.
+  // An ABSENT --version is untouched by this: it has no raw value, so it still
+  // refuses as `no-target-version`, and a BLANK one still refuses earlier at
+  // its declared lib/arg-contract.mjs row as `missing-flag-value`.
+  const rawVersion = typeof versionArg === 'string' ? versionArg.trim() : '';
+  if (!target && rawVersion) target = rawVersion;
 
   // Auto-detect gating (D-04): no plugin manifest -> skip, write nothing.
   const read = readManifest(pluginPath);
@@ -235,7 +273,7 @@ function bump(dir, versionArg, dateArg) {
   }
   if (read.state === 'unreadable') {
     emit({ ok: false, action: 'refuse', reason: 'unreadable-manifest', target,
-      manifest: { from: null, to: target, bumped: false }, siblings: [], changelog: { changed: false },
+      manifest: { from: null, to: target, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
       detail: '.claude-plugin/plugin.json is present but not parseable JSON: refusing to bump a manifest this seam cannot read, wrote nothing' });
     return;
   }
@@ -246,8 +284,24 @@ function bump(dir, versionArg, dateArg) {
   const primary = decideManifestBump(manifest.version, target);
   if (primary.action === 'refuse') {
     emit({ ok: false, action: 'refuse', reason: primary.code, target,
-      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false },
+      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
       detail: primary.reason });
+    return;
+  }
+
+  // The one PRIMARY verdict this seam re-classifies (phase 1 D-01), stated in
+  // the header's refusal section. `no-version-field` is a `skip` in the pure
+  // core and stays one - measured 2026-08-22, this arm's absence returned
+  // {"ok":true,"action":"skip"} at exit 0 over a plugin.json carrying no
+  // `version`, so milestone.md read success and the close continued over a
+  // manifest nobody bumped. At the SEAM it is a halt: the file that names the
+  // shipping version cannot name it. Only the PRIMARY manifest reaches here;
+  // the sibling loop below keeps recording the same verdict as a `skip` row
+  // (D-02), because marketplace.json carries no `version` by design.
+  if (primary.code === 'no-version-field') {
+    emit({ ok: false, action: 'refuse', reason: 'no-version-field', target,
+      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
+      detail: `the primary manifest ${PRIMARY_MANIFEST} carries no \`version\` field, so this release would ship unbumped: repair the manifest or close without a version bump. Wrote nothing.` });
     return;
   }
 
@@ -289,7 +343,7 @@ function bump(dir, versionArg, dateArg) {
       // sibling that parses and is simply not upgradeable.
       emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', target,
         manifest: { from: primary.from, to: primary.to, bumped: false },
-        siblings: [], changelog: { changed: false },
+        siblings: [], changelog: { changed: false, state: 'not-examined' },
         detail: `${rel} is present but not parseable JSON: refusing to ship a release whose sibling manifest this seam cannot read, wrote nothing. Repair ${rel} and re-run the bump.` });
       return;
     }
@@ -317,8 +371,21 @@ function bump(dir, versionArg, dateArg) {
   // Gated on the primary verdict being `bump` or `noop` and NEVER on `skip`: a
   // manifest with no `version` field bumped nothing, so dating a heading for
   // that release would have the changelog claim a release that never happened
-  // while the emit said `skip`.
-  let changelog = { changed: false };
+  // while the emit said `skip`. The primary can no longer BE `skip` here - the
+  // re-classification arm above refuses it - so the gate is a whitelist, kept
+  // as one because it is what a new verdict action has to be added to before it
+  // can reach the changelog.
+  // `changelog.state` is set on EVERY path that emits a `changelog` object
+  // (phase 1 D-10), because the three outcomes used to differ only by key
+  // PRESENCE: `section_empty` was absent when CHANGELOG.md was absent and
+  // false/true when it had been read, and both absent and false are falsy, so
+  // milestone.md's halt read a project with NO changelog exactly as it read a
+  // clean one and closed as if the notes were fine. The vocabulary is
+  // readChangelog's own - `absent` | `unreadable` | `ok` - plus `not-examined`
+  // for the refusals that returned before the gate below was entered. It is a
+  // separate field rather than a re-used one: `section_empty` still means what
+  // it always meant, and it is still what the empty-section halt reads.
+  let changelog = { changed: false, state: 'not-examined' };
   /** @type {string|null} the composed bytes to write, null when nothing changed */
   let changelogText = null;
   const clPath = join(dir, CHANGELOG_FILE);
@@ -330,11 +397,14 @@ function bump(dir, versionArg, dateArg) {
     if (clRead.state === 'unreadable') {
       emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', target,
         manifest: { from: primary.from, to: primary.to, bumped: false },
-        siblings: [], changelog: { changed: false },
+        siblings: [], changelog: { changed: false, state: 'unreadable' },
         detail: `${CHANGELOG_FILE} is present but cannot be read: refusing to scaffold a fresh changelog over a release history this seam cannot see, wrote nothing. Repair ${CHANGELOG_FILE} and re-run the bump.` });
       return;
     }
-    // ABSENT keeps its own behaviour: no changelog step, changed:false, ok:true.
+    // ABSENT keeps its own behaviour: no changelog step, changed:false, ok:true
+    // - and now SAYS so, `state:"absent"`, instead of being told apart from a
+    // clean run by a missing key.
+    changelog = { changed: false, state: clRead.state };
     if (clRead.state === 'ok') {
       const url = changelogUrl(manifest, target);
       const scaffold = prependChangelogEntry(clRead.text, { version: target, date, url });
@@ -345,7 +415,7 @@ function bump(dir, versionArg, dateArg) {
       // promoted and nothing already there. milestone.md turns that into
       // "author the notes before the bump commit", so no close ships an empty
       // section with nothing said.
-      changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty };
+      changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty, state: 'ok' };
     }
   }
 
@@ -393,7 +463,7 @@ function bump(dir, versionArg, dateArg) {
     return;
   }
 
-  const action = primary.action === 'bump' ? 'bumped' : primary.action; // bump|noop|skip
+  const action = primary.action === 'bump' ? 'bumped' : primary.action; // bump|noop
   emit({ ok: true, action, target, reason: primary.code, detail: primary.reason,
     manifest: { from: primary.from, to: primary.to, bumped: primary.bumped },
     siblings, changelog });
