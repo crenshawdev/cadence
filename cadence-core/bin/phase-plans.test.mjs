@@ -91,7 +91,9 @@ test('a plan out of grammar contributes NO path, warns, and leaves clean below f
   assert.match(r.warnings[0], /line 6: unknown-line/);
 });
 
-test('an unreadable plan does the same: no path, one warning, clean below found', () => {
+test('an unreadable plan does the same: no path, one warning, clean below found', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
   const root = planningRoot({
     '7/PLAN-1.md': plan('README.md'),
     '7/PLAN-2.md': plan('src/b.mjs'),
@@ -275,7 +277,9 @@ test('the by-path reader answers exactly what the phase-keyed face does', () => 
   assert.deepEqual(declaredFilesIn(join(root, 'phases', '7'), '2'), declaredPlanFiles(root, 7, '2'));
 });
 
-test('the by-path reader carries the out-of-grammar and unreadable arms too', () => {
+test('the by-path reader carries the out-of-grammar and unreadable arms too', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
   const root = planningRoot({
     '7/PLAN-1.md': '---\nphase: 7\nplan: 1\nfiles:\n  - src/a.mjs\n  not a key line\n---\n\n# Plan\n',
     '7/PLAN-2.md': plan('src/b.mjs'),
@@ -329,7 +333,9 @@ test('the locator finds live and archived phase directories, in a stable order',
   assert.deepEqual(declaredFilesIn(found[0].path).files, ['old.mjs']);
 });
 
-test('an unreadable archive directory is skipped, never a throw', () => {
+test('an unreadable archive directory is skipped, never a throw', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
   const root = planningRoot({ '1/PLAN.md': plan('README.md') });
   mkdirSync(join(root, '_archive-v1.0.0', '1'), { recursive: true });
   writeFileSync(join(root, '_archive-v1.0.0', '1', 'PLAN.md'), plan('old.mjs'));
