@@ -237,7 +237,25 @@ function bump(dir, versionArg, dateArg) {
   // read so a manifest refusal can still name the number the run was asked to
   // ship; the absent-manifest gate below still emits FIRST, because a
   // non-plugin project has nothing to bump whether or not a version was given.
-  const target = normalizeTargetVersion(versionArg);
+  let target = normalizeTargetVersion(versionArg);
+  // KEEP THE RAW ARGUMENT when normalization is left with nothing usable
+  // (phase 1 D-06). `--version v` trims to `v`, the leading-`v` strip empties
+  // it, and the run used to refuse as `no-target-version` over `target:""` -
+  // which is false (a version WAS given) and names nothing the operator can
+  // fix. Handing the raw trimmed value to decideManifestBump instead reaches
+  // that function's own `unparseable-version`, whose sentence already quotes
+  // the offending value, so no verdict code is minted here: the code set has
+  // one owner and it is lib/release-decision.mjs.
+  //
+  // normalizeTargetVersion is deliberately NOT changed. planning.mjs calls it
+  // for v-stripping inside the audit's `version_drift` signal, so its contract
+  // is not local to this seam - and a null-returning variant would still land
+  // on `no-target-version`, which is the sentence that does not name `v`.
+  // An ABSENT --version is untouched by this: it has no raw value, so it still
+  // refuses as `no-target-version`, and a BLANK one still refuses earlier at
+  // its declared lib/arg-contract.mjs row as `missing-flag-value`.
+  const rawVersion = typeof versionArg === 'string' ? versionArg.trim() : '';
+  if (!target && rawVersion) target = rawVersion;
 
   // Auto-detect gating (D-04): no plugin manifest -> skip, write nothing.
   const read = readManifest(pluginPath);

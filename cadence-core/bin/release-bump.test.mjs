@@ -483,6 +483,44 @@ test('bump: changelog.state tells the three states apart by VALUE, not by key pr
   }
 });
 
+test('bump: --version v refuses by NAMING the raw argument, not as no-target-version (D-06)', () => {
+  // Measured before the fix: `--version v` returned
+  // {"ok":false,"reason":"no-target-version","target":""} - the leading `v` was
+  // stripped, the empty remainder discarded the raw argument, and the seam then
+  // reported that no version was given. That is false, and it names nothing the
+  // operator can repair.
+  for (const arg of ['v', '  v  ']) {
+    const dir = fixture();
+    const pluginBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+    const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+    const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', arg, '--date', '2026-08-03']);
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.action, 'refuse');
+    assert.equal(r.reason, 'unparseable-version', `--version ${JSON.stringify(arg)}: ${JSON.stringify(r)}`);
+    assert.equal(r.target, 'v', 'the RAW trimmed argument survives into the envelope');
+    assert.match(r.detail, /"v"/, 'the sentence names what it was given');
+    assert.equal(status, 1);
+    assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore);
+    assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore);
+  }
+});
+
+test('bump: the three neighbouring --version spellings keep their own refusals', () => {
+  // The guard on the arm above: only a value that normalization EMPTIES takes
+  // the raw-argument path. `vv` still normalizes to something, an ABSENT
+  // --version has no raw value at all, and a blank one never reaches bump().
+  const doubled = seam(['bump', '--dir', fixture(), '--version', 'vv', '--date', '2026-08-03']);
+  assert.equal(doubled.reason, 'unparseable-version', JSON.stringify(doubled));
+
+  const absent = seam(['bump', '--dir', fixture(), '--date', '2026-08-03']);
+  assert.equal(absent.ok, false);
+  assert.equal(absent.reason, 'no-target-version', JSON.stringify(absent));
+
+  const blank = seam(['bump', '--dir', fixture(), '--version', '   ', '--date', '2026-08-03']);
+  assert.equal(blank.ok, false);
+  assert.equal(blank.reason, 'missing-flag-value', JSON.stringify(blank));
+});
+
 test('unknown subcommand: usage, ok false', () => {
   const r = seam(['frobnicate']);
   assert.equal(r.ok, false);
