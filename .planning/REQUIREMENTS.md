@@ -1,42 +1,41 @@
-# Requirements: Cadence (v3.5.7 open)
+# Requirements: Cadence (v3.5.8 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-Committed scope for **`v3.5.7 - measured, and no lever to change it`**, opened
-2026-08-20 from the tracker milestone holding #167, #174, #189, #193 and #206.
-#193 was folded in on 2026-08-20: "blocking blocks the land, not the run" is the
-same theme as #189 and #174, and it was carrying no milestone at all, which is
-the state #139, #140 and #145 were in when they were dropped. Ids are
-seeded here at the open, deliberately: `v3.5.6` seeded none, so its `/cad-audit`
-traced zero requirements and returned PASS on an empty set while the coverage arm
-carried the entire proof. `/cad-plan` seeds each Traceability row as its phase is
-planned; rows are never hand-populated here.
+Committed scope for **`v3.5.8 - the transition that claims to be one`**, opened
+2026-08-22 from the tracker milestone holding #145, #139 and #140. These three
+are one piece of work: #145 is the shared primitive and the other two are its
+first consumers, which is why `v3.5.6` dropping all three left its own stated
+theme untouched. Ids are seeded here at the open, the practice `v3.5.7`
+established and `v3.5.6` did not have. `/cad-plan` seeds each Traceability row as
+its phase is planned; rows are never hand-populated here.
 
-
-`BCH-01` left this cycle on 2026-08-21, moved to `## Deferred` carrying the
-spike verdict that invalidated it rather than dropped - the exit ROADMAP.md's
-Overview committed to for a spike that comes back invalidated.
+- **JRN-01**: a multi-file state transition is either complete or recoverable, through one shared primitive rather than four hand-written approximations of one (#145)
+- **JRN-02**: `phase-done` stops claiming all-or-nothing over two independent renames, and reports what it actually guarantees across ROADMAP.md and REQUIREMENTS.md (#140)
+- **JRN-03**: `release-bump` reads and validates every manifest it will write before it writes the first, so a malformed sibling cannot leave a partially bumped tree inside an `ok:true` envelope (#139)
 
 The five deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02`, `BCH-01` - keep
-their deferral reasons and none is promoted into this cycle. Their 2026-08-18 caveats
-are still undecided: `CTX-02`'s stated basis no longer holds, since both its
-issues (#69, #29) are closed and #29's ask shipped as `/cad-minimalism-review`;
-and `RCL-06` carries no deferral reason and no promotion trigger, so nothing can
-ever re-ask it. Both want a decision before either is scoped.
+their deferral reasons and none is promoted into this cycle. `BCH-01` joined them
+on 2026-08-21, moved to `## Deferred` carrying the spike verdict that invalidated
+it rather than dropped, which is the exit ROADMAP.md's Overview committed to for
+a spike that comes back invalidated. The 2026-08-18 caveats on the other four are
+still undecided: `CTX-02`'s stated basis no longer holds, since both its issues
+(#69, #29) are closed and #29's ask shipped as `/cad-minimalism-review`; and
+`RCL-06` carries no deferral reason and no promotion trigger, so nothing can ever
+re-ask it. Both want a decision before either is scoped.
 
-Not in this cycle: #139, #140 and #145, which were scoped to `v3.5.6`, never
-planned into a phase, and re-milestoned to `v3.5.8` on 2026-08-20 so the unit
-stops floating - #145 is the journal primitive and #139 and #140 are its first
-two consumers, so they are one piece of work rather than three. Issues #190,
-#191 and #192 still carry no milestone: they are product-surface proposals about
-reading the corpus back, which is a cycle of their own rather than filler for
-this one. The open items filed at
-the `v3.5.1` close, the proposals filed at the `v3.5.2` close, and the medium
-`risk_surface` survivors carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6`
-closes are all still unassigned.
+Not in this cycle: #190, #191 and #192, which still carry no milestone and are
+product-surface proposals about reading the corpus back, a cycle of their own
+rather than filler for this one. The open items filed at the `v3.5.1` close, the
+proposals filed at the `v3.5.2` close, and the medium `risk_surface` survivors
+carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6` closes are all still
+unassigned. Two blocker/high `risk_surface` findings from `v3.5.7` phase 3 are
+persisted in `.planning/REVIEW-risk_surface-v3.5.7.md` although their
+adjudication records show both fixed (`7ae1489`, `70bd22a`); that file wants a
+look before a later close reads it as live.
 
 ## Shipped
 
