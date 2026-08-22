@@ -1,38 +1,42 @@
-# Requirements: Cadence (v3.5.8 open)
+# Requirements: Cadence (no cycle open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-Committed scope for **`v3.5.8 - the transition that claims to be one`**, opened
-2026-08-22 from the tracker milestone holding #145, #139 and #140. These three
-are one piece of work: #145 is the shared primitive and the other two are its
-first consumers, which is why `v3.5.6` dropping all three left its own stated
-theme untouched. Ids are seeded here at the open, the practice `v3.5.7`
-established and `v3.5.6` did not have. `/cad-plan` seeds each Traceability row as
-its phase is planned; rows are never hand-populated here.
-
+**No cycle open.** `v3.5.8` closed on 2026-08-22. Its three ids - `JRN-01`,
+`JRN-02`, `JRN-03` - are in `## Shipped` below with their milestone, and nothing
+is promoted here to fill the section. `/cad-phase add` opens the next cycle's
+first phase entry; `/cad-plan` seeds each Traceability row as its phase is
+planned, and rows are never hand-populated here.
 
 The five deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02`, `BCH-01` - keep
-their deferral reasons and none is promoted into this cycle. `BCH-01` joined them
-on 2026-08-21, moved to `## Deferred` carrying the spike verdict that invalidated
-it rather than dropped, which is the exit ROADMAP.md's Overview committed to for
-a spike that comes back invalidated. The 2026-08-18 caveats on the other four are
-still undecided: `CTX-02`'s stated basis no longer holds, since both its issues
-(#69, #29) are closed and #29's ask shipped as `/cad-minimalism-review`; and
-`RCL-06` carries no deferral reason and no promotion trigger, so nothing can ever
-re-ask it. Both want a decision before either is scoped.
+their deferral reasons and none was promoted. `BCH-01` moved to `## Deferred` on
+2026-08-21 carrying the spike verdict that invalidated it rather than dropped,
+which is the exit ROADMAP.md's Overview committed to for a spike that comes back
+invalidated. The 2026-08-18 caveats on the other four are still undecided:
+`CTX-02`'s stated basis no longer holds, since both its issues (#69, #29) are
+closed and #29's ask shipped as `/cad-minimalism-review`; and `RCL-06` carries no
+deferral reason and no promotion trigger, so nothing can ever re-ask it. Both
+want a decision before either is scoped.
 
-Not in this cycle: #190, #191 and #192, which still carry no milestone and are
-product-surface proposals about reading the corpus back, a cycle of their own
-rather than filler for this one. The open items filed at the `v3.5.1` close, the
-proposals filed at the `v3.5.2` close, and the medium `risk_surface` survivors
-carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6` closes are all still
-unassigned. Two blocker/high `risk_surface` findings from `v3.5.7` phase 3 are
-persisted in `.planning/REVIEW-risk_surface-v3.5.7.md` although their
-adjudication records show both fixed (`7ae1489`, `70bd22a`); that file wants a
-look before a later close reads it as live.
+Unassigned and waiting for a cycle to be scoped around them: #190, #191 and #192,
+which still carry no milestone and are product-surface proposals about reading
+the corpus back, a cycle of their own rather than filler. The open items filed at
+the `v3.5.1` close, the proposals filed at the `v3.5.2` close, and the medium
+`risk_surface` survivors carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6`
+closes are all still unassigned. The `v3.5.7` note that stood here - two
+blocker/high findings persisted in `.planning/REVIEW-risk_surface-v3.5.7.md` -
+is resolved: that file is gone, and the `v3.5.8` close carried its own two
+survivors, both `low` and both already open items, to
+`.planning/REVIEW-risk_surface-v3.5.8.md` for the pending `/cad-land`.
+
+`v3.5.8`'s two open items worth a decision before the next cycle is scoped: the
+`partial-flip` and `partial-bump` envelopes ship with no committed regression
+test, and `planning.mjs`'s `read(reqFile)` still accepts any existing filesystem
+object, so a FIFO at `.planning/REQUIREMENTS.md` hangs `phase-done` before its
+refusal can run.
 
 ## Shipped
 

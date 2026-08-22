@@ -5,11 +5,15 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v3.5.6` is the current release: the machinery that records what a
-run did. Executor reports rotate instead of overwriting, a re-run of an executed
-phase is refused, and every gate fire writes an adjudication record carrying each
-finding's verbatim claim, its ruling and a head SHA you can check out, so a
-survivor count is recounted rather than asserted. `v3.5.5` before it was readers
+subsystem. `v3.5.8` is the current release: four operations wrote several files
+and reported the result as if they had written one, and now one primitive owns
+the ordered multi-file write while `phase-done` and `release-bump` stop claiming
+an atomicity they never had. `v3.5.7` before it was measurement with no lever to
+spend it: `stakes` became a floor a phase raises from, a fifth gate mode moved
+the blocking refusal to the land, and read redundancy reached `trace suggest`.
+`v3.5.6` was the machinery that records what a run did - rotating executor
+reports, a refused re-run, and an adjudication record carrying each finding's
+verbatim claim, its ruling and a head SHA. `v3.5.5` before it was readers
 that accept input they have a rule against, closed by replacing nine hand-rolled
 argument parsers with one declarative table. `v3.5.4` was three checks that
 reported a verdict they had not earned; `v3.5.3` bounds not stated and costs not
@@ -141,82 +145,70 @@ context-gathering, and debugging — without any external memory system.
   the worst offender in one dispatch, with no config key behind it because none
   exists (RDX-01) - v3.5.7
 
+- ✓ `v3.5.8 - the transition that claims to be one`: one primitive owns the
+  ordered multi-file write - a lazy pre-flight, two disciplines, and a census row
+  that reddens if its body is copied under any name - with `renumber` and
+  `milestone-prune` routing their existing partial-state refusals through it and
+  neither envelope moving (JRN-01); `cmdPhaseDone` validates every edit before
+  the first write and names which documents landed, its "all-or-nothing" comment
+  gone rather than qualified (JRN-02); and `release-bump` reads and decides its
+  whole write set before the first `atomicWrite`, so a malformed sibling leaves
+  the primary manifest at the old version under `ok:false` instead of shipping a
+  half-bumped tree as success (JRN-03) - v3.5.8
+
 ### Active
 
-**`v3.5.8 - the transition that claims to be one`, opened 2026-08-22.** Scoped
-from the tracker milestone `v3.5.8`, which holds #145, #139 and #140. These are
-one piece of work, not three: #145 is the shared primitive and the other two are
-its first two consumers, which is why the previous cycle dropping all three left
-its own stated theme untouched.
+**No cycle open.** `v3.5.8` closed on 2026-08-22 and no next theme is scoped yet.
+`/cad-phase add` opens the next cycle's first phase entry.
 
-The theme is one sentence: four operations in this codebase write several files
-and report the result as if they wrote one. Phase completion writes ROADMAP.md
-and REQUIREMENTS.md, the release bump writes the primary manifest, a sibling and
-the changelog, the milestone prune writes phase directories and both documents,
-and renumbering writes deletions, moves and three documents. An atomic rename
-protects one file from torn bytes and cannot create a transaction across files,
-so every one of these can leave a half-applied tree inside an `ok:true`
-envelope. #140 names that gap at `cmdPhaseDone`, whose own comment says
-"all-or-nothing" over two separate renames. #139 names it at
-`release-bump.mjs:138-141`, which writes the primary manifest before it has read
-or validated the sibling, so a malformed sibling leaves a partially bumped
-release tree and reports success. #145 is the primitive both want: a journal or
-recovery step that makes a multi-file transition either complete or recoverable,
-rather than reported honestly only where someone remembered to report it -
-renumbering already does report partial application (`planning.mjs:3227-3273`),
-which is the existing behaviour to generalize rather than replace.
+`v3.5.8 - the transition that claims to be one` closed on 2026-08-22: two phases,
+33 commits off `v3.5.7`, the manifest at `3.5.8`, and `/cad-audit` PASS on both
+arms - three of three requirements traced requirement to phase to plan to
+verified (`JRN-01`, `JRN-02`, `JRN-03`), and 13 of 13 acceptance criteria covered
+with zero breaks. Its narrative is in `CHANGELOG.md`, its shipped rows in
+`REQUIREMENTS.md`'s `## Shipped`, its per-phase residue in `.planning/ARCHIVE.md`
+at 41 new rows, and its phase record in git history at the pruning commit; this
+close ran `--mode delete`, so there is no `_archive-v3.5.8/`. The merge and the
+release tag are still outstanding: `/cad-land` cuts `v3.5.8` on the pulled base
+after the merge confirms.
 
-Requirement ids are seeded at the open, in `REQUIREMENTS.md`'s `## Active`, the
-practice `v3.5.7` established and `v3.5.6` did not have. Phases are not yet
-added.
+What it delivered: one home for a multi-file write, and the two operations that
+claimed atomicity without having it moved onto it.
+`cadence-core/bin/lib/file-transition.mjs` owns the ordered-step-list idiom with
+a lazy pre-flight and two disciplines, and a `HELPERS` census row reddens if its
+body is copied under any name. `cmdPhaseDone`'s "all-or-nothing" comment is gone
+rather than qualified - every edit is validated before the first write, and its
+envelope now names which documents moved. `release-bump` reads and decides its
+whole write set before the first `atomicWrite`, so a malformed sibling leaves the
+primary manifest at the old version under an `ok:false` envelope instead of
+shipping a half-bumped tree as a success. `renumber` and `milestone-prune` route
+their existing partial-state refusals through the primitive with their envelopes
+unmoved.
 
-`v3.5.7` closed on 2026-08-22: four phases, 83 commits off `v3.5.6`, the manifest
-at `3.5.7`, and `/cad-audit` PASS on both arms - four of four requirements traced
-requirement to phase to plan to verified, and 14 of 14 acceptance criteria
-covered with zero breaks. Its narrative is in `CHANGELOG.md`, its per-phase
-residue in `.planning/ARCHIVE.md` at 89 new rows, and its phase record in git
-history at the pruning commit; this close ran `--mode delete`, so there is no
-`_archive-v3.5.7/`. The merge and the release tag are still outstanding:
-`/cad-land` cuts `v3.5.7` on the pulled base after the merge confirms.
+The shape was decided on evidence rather than on the issue text. #145 asked for a
+journal; the two operations that already refused honestly were a refusal
+protocol, which needs no on-disk state, no resume path and no `/cad-health`
+reader. The plan took the second arm and pinned it, the same way `v3.5.7` phase 4
+pinned its no-config-key arm.
 
-What it delivered: the controls to spend what Cadence had only been measuring.
-`stakes` became the minimum a project accepts rather than the level every phase
-pays, with the phase's own declared `files:` scanned at plan time to raise from
-that floor - `route.mjs replay` shows 27 of this repository's 30 phases raising
-back to `shipped` on real evidence, 2 taking the discount and 1 withheld because
-a declared path was not readable, which is the fail-closed direction. A fifth
-gate mode `deferred` runs its reviewer, queues what it found as a committed
-`DEFERRED-*.json` and lets the phase finish, moving the guarantee to the land
-where `/cad-land` refuses on both publish arms while any member is
-unadjudicated. `/cad-config --surfaces` gives the risk-surface interview a way
-back in against a fresh scan. And `trace suggest` finally opens
-`.planning/reads.jsonl`, so the in-dispatch read redundancy the record had been
-carrying reaches a consumer: `cad-executor` at 3.64 opens per distinct file
-inside one dispatch, worst case `planning.mjs` read 29 times in one bracket, with
-the coverage, the scope and the excluded coordinator reads stated in the entry's
-own evidence string rather than only in prose.
+The honest line on this cycle: the `partial-flip` and `partial-bump` arms ship
+probe-proven only, with no committed regression test. Every uid-independent way
+to force a write to fail past the pre-flight was converted into a pre-write
+refusal by the work itself, and D-02 forbids `chmodSync`, so the two envelopes
+that report a torn write are the two this cycle cannot demonstrate in CI. Both
+executors recorded the exact envelopes they observed.
 
-The honest line on this cycle: it shipped four of the five issues it was scoped
-for, and the fifth was killed rather than dropped. `BCH-01` (#174) went to
-`## Deferred` on a spike that invalidated it - batching N security reviews into
-one process saves 1.91%, a 1,676-token fixed prefix against six dispatches
-totalling 438,080 tokens, and it does not flip at the 61 invocations the issue
-cites because both sides of the ratio scale with N. The other spike narrowed
-#167 before it was planned: the 7.0x read redundancy the issue carries was
-measured over declared read-sets, and the observed in-dispatch figure is 3.64.
-Two spikes cost this cycle one phase and saved it from building a lever worth a
-rounding error.
-
-Still unassigned, carried into `v3.5.8` unscoped: two blocker/high `risk_surface`
-findings from phase 3 are persisted in the carried
-`.planning/REVIEW-risk_surface-v3.5.7.md` although the adjudication records show
-both fixed (`7ae1489`, `70bd22a`), so that file needs a look before the next
-close treats it as live. The medium survivors from `v3.5.4`, `v3.5.5` and
-`v3.5.6` are still unassigned, and so are #190, #191 and #192, which PROJECT has
-called a cycle of their own rather than filler. The deferred ids `PRS-01`,
-`EVD-01`, `RCL-06` and `CTX-02` were not promoted and their 2026-08-18 caveats
-stand: `CTX-02`'s stated basis no longer holds and `RCL-06` carries no promotion
-trigger, so both want a decision before either is scoped.
+Still unassigned, carried out of `v3.5.8` unscoped: the previous cycle's note
+about two blocker/high `risk_surface` findings persisted in
+`.planning/REVIEW-risk_surface-v3.5.7.md` is now moot - that file is gone, and
+this close carried `v3.5.8`'s own two survivors (both `low`, both open items) to
+`.planning/REVIEW-risk_surface-v3.5.8.md` for the pending `/cad-land`. The medium
+survivors from `v3.5.4`, `v3.5.5` and `v3.5.6` are still unassigned, and so are
+#190, #191 and #192, which PROJECT has called a cycle of their own rather than
+filler. The deferred ids `PRS-01`, `EVD-01`, `RCL-06` and `CTX-02` were not
+promoted and their 2026-08-18 caveats stand: `CTX-02`'s stated basis no longer
+holds and `RCL-06` carries no promotion trigger, so both want a decision before
+either is scoped. The capture queue stands at 530 open items.
 
 ## Key Decisions
 
