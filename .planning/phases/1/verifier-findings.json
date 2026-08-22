@@ -1,0 +1,111 @@
+{
+  "status": "gaps",
+  "score": "8/9",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "One exported primitive under cadence-core/bin/lib/ owns the ordered-step-list-with-a-completed/failed-record idiom, with real logic rather than a stub",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/bin/lib/file-transition.mjs:147-171 - runTransition({steps, discipline, preflight}) runs a real loop, pushes keys by identity into completed, collects {key,error} into failures, and breaks unless discipline==='continue-past-failure'. 84 lines of header record D-01/D-02/D-03/D-04. `node --test cadence-core/bin/file-transition.test.mjs` = 12 tests / 12 pass / 0 fail."
+    },
+    {
+      "n": 2,
+      "truth": "cmdRenumber and cmdMilestonePrune both route their partial-state refusals through the primitive, and neither still carries its own hand-written step loop",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/bin/planning.mjs:195 imports runTransition; :6023 `runTransition({steps, discipline:'stop-at-first-failure'})`; :6495 `runTransition({steps, discipline:'continue-past-failure'})`. `grep -n \"for (const [op, runStep] of steps)\" cadence-core/bin/planning.mjs` and `grep -n \"for (const n of completed) {\" cadence-core/bin/planning.mjs` both print nothing; `git diff 61460139^..HEAD -- cadence-core/bin/planning.mjs` shows both try/catch loops deleted, and the residue loop `for (const n of [...completed].sort(...))` still present at :6426."
+    },
+    {
+      "n": 3,
+      "truth": "renumber's #49.2 partial-apply envelope is unchanged, with the caller's op OBJECT flowing by identity through the primitive into completed and failed",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "`node --test cadence-core/bin/planning.test.mjs` = 452 tests / 452 pass / 0 fail. Named run of 'renumber remove: a partial apply reports which ops completed (#49.2)' passes: planning.test.mjs:4172-4185 deep-equals completed to [{rm:'phases/1'},{git_mv:[...]},{git_mv:[...]}], failed to {edit:'ROADMAP.md'}, and holds doesNotMatch(/by hand,\\s*then re-run/). End-to-end trace of one value: the op object literal built at planning.mjs:6013 -> steps -> runTransition -> applied.completed / applied.failures[0].key -> emit at :6027-6028, observed as those exact objects in a live CLI run inside the test. `git diff --stat 61460139^..HEAD -- cadence-core/bin/planning.test.mjs` is empty (file unmodified across the whole phase)."
+    },
+    {
+      "n": 4,
+      "truth": "partial-prune's reason, action, failed array, dirs, residue_rows, warning order and three-line hint are unchanged",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "`node --test cadence-core/bin/milestone-prune.test.mjs` = 46 tests / 45 pass / 1 skip (the 'corpus:' case, the plan's expected skip) / 0 fail, including 'seam: a phase whose directory move fails is refused, and keeps its docs' (:769-795) and 'seam: an interrupted close keeps its rows...' (:1049-1075). File unmodified across the phase (empty `git diff --stat 61460139^..HEAD -- cadence-core/bin/milestone-prune.test.mjs`). The phase diff of planning.mjs touches only :6468-6504; the envelope object, the partial-prune emit and all three hint lines at :6534-6548 are byte-untouched. Warning order preserved because no thunk pushes to warnings - the failure warnings are appended in loop order immediately after the call (planning.mjs:6500-6502)."
+    },
+    {
+      "n": 5,
+      "truth": "A pre-flight refusal names the failing condition, runs no thunk, evaluates no later condition, and leaves every file in the planned write set byte-identical",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/file-transition.test.mjs:149-179 'pre-flight: the first unsatisfied condition refuses, and no thunk runs' builds a real .planning-shaped tree of three documents, declares three conditions with the SECOND false, and asserts refused==='the archive root is writable', completed===[], failures===[], ran===[], evaluated stops at the refusing condition, and readFileSync of all three files deep-equals the pre-call contents. Enforced at file-transition.mjs:148-152 by an early return before the step loop. Case passes in the green 12/12 run."
+    },
+    {
+      "n": 6,
+      "truth": "A primitive refusal creates no new file anywhere under the .planning root - the D-01 no-journal arm is pinned in code, not prose",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "cadence-core/bin/file-transition.test.mjs:181-195 takes a full recursive sorted relative listing of the fixture root (helper at :126-135) before and after a refused call and asserts deepEqual, so a journal, marker, lock or temp path under it reddens the case. Fixture root is literally named '.planning' (:115). Case passes in the green 12/12 run. Module-side: file-transition.mjs imports nothing and performs no fs call on any path."
+    },
+    {
+      "n": 7,
+      "truth": "The HELPERS census row makes 'one, not four' mechanical: the pattern is live, and a paste-back of the primitive's body under a different name reddens naming both copies",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/bin/helper-census.test.mjs:186-211 adds the ninth row, home 'lib/file-transition.mjs', re built from an escaped body idiom (failures.push({key,error}) ... discipline !== 'continue-past-failure' break) rather than an export name or call site; :221 adds the module to the walk's named-file list. `node --test cadence-core/bin/helper-census.test.mjs` = 10 tests / 10 pass. Falsifiability proven without mutating the repo: the whole cadence-core/bin tree was copied to scratchpad, the copy ran 10/10, then lib/census-probe.mjs (a copy of the module) was added and the copy ran 9 pass / 1 FAIL with the message naming both 'lib/census-probe.mjs (x1)' and 'lib/file-transition.mjs (x1)'. Repo working tree left clean (`git status --porcelain` shows only the seam's untracked UAT.md)."
+    },
+    {
+      "n": 8,
+      "truth": "self-verify is clean at the phase's last commit",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "`node cadence-core/bin/self-verify.mjs --root .` prints {\"ok\":true,\"checked\":\"config-keys, ... scratch-path\",\"problems\":[]}. Corroborating: `node --test 'cadence-core/bin/*.test.mjs'` = 2638 tests / 2637 pass / 1 skip / 0 fail, and `./node_modules/.bin/tsc -p tsconfig.ci.json` exits 0."
+    },
+    {
+      "n": 9,
+      "truth": "ROADMAP success criterion 2's second clause: the two operations' hint text is pinned by a test that reddens on a paraphrase",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "No test in the repo pins either hint. `grep -rlF 'partly renumbered and no longer matches ROADMAP' .` and `grep -rlF 'the phases that did clear are already pruned' .` each return cadence-core/bin/planning.mjs and nothing else. renumber's hint is only keyword-guarded (planning.test.mjs:4183-4184 match(/destroy/) + doesNotMatch(/by hand,\\s*then re-run/), :4205-4206 match(/nothing was written/) + doesNotMatch(/partly renumbered/)) - a paraphrase keeping those keywords passes. prune's three-line hint has NO assertion at all: `grep -n \"hint\" cadence-core/bin/milestone-prune.test.mjs` returns nothing. PLAN.md task 3 substituted two `grep -c -F` commands run at execution time for the missing test pin (both still print 1 today, re-verified), but a grep in a plan document guards nothing after the phase closes."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "renumber's #49.2 partial-apply envelope is unchanged",
+      "evidence": "planning.test.mjs 452/452 pass with the file unmodified across 61460139^..HEAD; the #49.2 case passes by name with completed deep-equal to the three op objects, failed deep-equal to {edit:'ROADMAP.md'}, and the doesNotMatch(/by hand,\\s*then re-run/) assertion at :4183 holding. Op objects reach the envelope by identity via planning.mjs:6023-6028."
+    },
+    {
+      "k": 2,
+      "name": "partial-prune's envelope and three-line hint are unchanged",
+      "evidence": "milestone-prune.test.mjs 46 tests / 45 pass / 1 expected skip / 0 fail with the file unmodified; :769-795 and :1049-1075 both green. The phase diff of planning.mjs stops at :6504 - the envelope, the partial-prune emit and all three hint lines are byte-untouched, and warning order is preserved by appending the failure warnings immediately after the runTransition call."
+    },
+    {
+      "k": 3,
+      "name": "A pre-flight refusal names the condition and writes nothing",
+      "evidence": "file-transition.test.mjs:149-179 asserts refused==='the archive root is writable', no thunk entered, the third condition never evaluated, and all three planned-write files byte-identical to their pre-call contents. Green in the 12/12 run."
+    },
+    {
+      "k": 4,
+      "name": "A refusal creates no new file under .planning/",
+      "evidence": "file-transition.test.mjs:181-195 deep-equals a full recursive sorted listing of the fixture '.planning' root taken before and after a refusal. Green in the 12/12 run; the module performs no fs call on any path."
+    },
+    {
+      "k": 5,
+      "name": "The census makes 'one, not four' mechanical",
+      "evidence": "helper-census.test.mjs 10/10 pass with the ninth row at :186-211 keyed on the body idiom; an isolated copy of the bin tree with lib/census-probe.mjs added fails 1 case naming both 'lib/census-probe.mjs (x1)' and 'lib/file-transition.mjs (x1)'. The repo tree was not mutated."
+    },
+    {
+      "k": 6,
+      "name": "self-verify is clean",
+      "evidence": "`node cadence-core/bin/self-verify.mjs --root .` returns ok:true with problems: []. Full bin suite 2638 tests / 0 fail; tsc -p tsconfig.ci.json exits 0."
+    }
+  ],
+  "gaps": [
+    {
+      "name": "Neither operation's hint text is pinned by a test that reddens on a paraphrase (ROADMAP phase 1 SC2)",
+      "reason": "behavior wrong - the envelope IS unchanged today (verified byte-exact against the pre-phase tree), but the durable guard SC2 names does not exist, so the refactored call sites carry no regression protection on the one field the roadmap singled out",
+      "evidence": "cadence-core/bin/planning.mjs is the ONLY file in the repo containing either hint sentence (grep -rlF on 'partly renumbered and no longer matches ROADMAP' and on 'the phases that did clear are already pruned'). cadence-core/bin/planning.test.mjs:4183-4184 and :4205-4206 guard renumber's two arms by keyword only (/destroy/, /nothing was written/, plus two doesNotMatch), all of which a paraphrase satisfies. cadence-core/bin/milestone-prune.test.mjs contains no 'hint' assertion at all, so the three-line partial-prune hint at planning.mjs:6535-6537 is entirely unpinned. .planning/phases/1/PLAN.md task 3 acknowledges this and substitutes two execution-time `grep -c -F` invocations, which are not a test and do not run again.",
+      "severity": "minor",
+      "missing": "One byte-exact assertion per hint arm. Note the phase's own lease deliberately excluded planning.test.mjs and milestone-prune.test.mjs (AC1/AC2 require them unmodified), so this belongs in a follow-up with its own lease rather than as a phase-1 fix - or as a new assertion in a file inside a future lease that runs the two commands and compares the emitted hint strings verbatim."
+    }
+  ],
+  "human_checks": []
+}

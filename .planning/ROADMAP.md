@@ -38,7 +38,7 @@ to a phase or visibly `unpicked` in `/cad-audit`.
 
 ## Phases
 
-- [ ] **Phase 1: The transaction that was never there** - one journal primitive that makes a multi-file write either complete or resumable, built against the two operations that already refuse honestly
+- [x] **Phase 1: The transaction that was never there** - one journal primitive that makes a multi-file write either complete or resumable, built against the two operations that already refuse honestly
 - [ ] **Phase 2: Both callers on the journal** - `phase-done` and `release-bump` stop claiming an atomicity they do not have, each through the primitive rather than its own approximation of one
 
 ## Phase Details
