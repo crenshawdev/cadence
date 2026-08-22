@@ -208,7 +208,11 @@ survivors from `v3.5.4`, `v3.5.5` and `v3.5.6` are still unassigned, and so are
 filler. The deferred ids `PRS-01`, `EVD-01`, `RCL-06` and `CTX-02` were not
 promoted and their 2026-08-18 caveats stand: `CTX-02`'s stated basis no longer
 holds and `RCL-06` carries no promotion trigger, so both want a decision before
-either is scoped. The capture queue stands at 530 open items.
+either is scoped. The capture queue stands at 197 live items - 196 under
+`## Todos` and one seed. `CAPTURE.md` carries 382 open checkboxes in all, but 185
+of them are the block `v2.6.0` phase 1 retired on 2026-08-08 and they are not
+work: they stay open only because nothing rewrites an archived line. Count the
+live sections, not the file.
 
 ## Key Decisions
 
