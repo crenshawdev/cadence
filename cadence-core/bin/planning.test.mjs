@@ -4182,6 +4182,13 @@ test('renumber remove: a partial apply reports which ops completed (#49.2)', {
   // re-running, but only to warn against it.
   assert.doesNotMatch(r.hint, /by hand,\s*then re-run/);
   assert.match(r.hint, /destroy/);
+  // Byte-exact, not just the keywords above: ROADMAP phase 1 SC2 asks for the
+  // hint text to be pinned by a test that reddens on a PARAPHRASE, and every
+  // keyword assertion here survives one. This is the only copy of the sentence
+  // outside planning.mjs.
+  assert.equal(r.hint, "the tree is partly renumbered and no longer matches ROADMAP"
+    + " - reconcile the completed ops by hand before any further renumber;"
+    + " re-running this command against the half-applied tree can destroy a phase directory");
 });
 
 test('renumber remove: a failure before ANY step says so, rather than claiming a half-renumbered tree', {
@@ -4204,6 +4211,9 @@ test('renumber remove: a failure before ANY step says so, rather than claiming a
   assert.deepEqual(r.completed, []);
   assert.match(r.hint, /nothing was written/);
   assert.doesNotMatch(r.hint, /partly renumbered/);
+  // Byte-exact for the same reason as the partial arm above (SC2).
+  assert.equal(r.hint, "nothing was written - the first step failed, so the tree"
+    + " is unchanged and safe to re-run once the cause is fixed");
 });
 
 // WATCHED FAILING AT ae73dd6, the same unpatched tip the falsifier above was
