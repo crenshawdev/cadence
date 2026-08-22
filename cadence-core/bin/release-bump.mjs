@@ -46,15 +46,26 @@
 // `ok:true` refusal shape anywhere in this seam, so a scripted caller reading
 // `ok` can never read a refusal as success. `reason` carries a machine code on
 // EVERY path, refusal or not, so a caller branching on it never gets a token
-// one run and a sentence the next. ONE deliberate exception (D-08): a SIBLING
-// manifest's refusal leaves top-level `ok` true, because the primary write
-// already landed - it is recorded as a `siblings[]` entry with
-// `action:"refuse"`, and milestone.md halts the close on that too.
+// one run and a sentence the next. ONE deliberate exception (D-08, narrowed by
+// phase 2 D-07): a sibling manifest that PARSES and is simply not upgradeable -
+// a downgrade, a non-upgrade, an unparseable version IN the sibling - leaves
+// top-level `ok` true and is recorded as a `siblings[]` entry with
+// `action:"refuse"`, which milestone.md halts the close on too. A sibling that
+// cannot be READ is no longer that case: it refuses the whole run under its own
+// code, because the write set is now decided before the first write lands.
 //
 // Two code vocabularies, one owner each. The SEAM-level codes, owned here:
 //   no-plugin-manifest  - no .claude-plugin/plugin.json: not a plugin project,
 //                         an ok:true skip rather than a refusal (D-04 gating).
 //   unreadable-manifest - plugin.json present but not parseable JSON.
+//   unreadable-sibling-manifest
+//                       - a DECLARED sibling manifest (.claude-plugin/
+//                         marketplace.json) present but not parseable JSON.
+//                         Its OWN code, never the primary's
+//                         `unreadable-manifest` (phase 2 D-08): milestone.md's
+//                         halt list enumerates codes by name, and one token for
+//                         two files leaves the operator opening both to find
+//                         which one to repair.
 //   bad-date            - a PRESENT --date that is not YYYY-MM-DD, or one
 //                         carrying a newline. Refused at the dispatch, so it
 //                         fires on a non-plugin project too, where the
@@ -219,10 +230,19 @@ function bump(dir, versionArg, dateArg) {
     const siblingPath = join(dir, rel);
     const siblingRead = readManifest(siblingPath);
     if (siblingRead.state === 'unreadable') {
-      // Recorded, never dropped (D-08): a sibling manifest this seam cannot
-      // read is a sibling that ships the previous version.
-      siblings.push({ file: rel, action: 'refuse', bumped: false, reason: 'unreadable-manifest' });
-      continue;
+      // D-07: this is the half of D-08 that SPLIT rather than died. A sibling
+      // this seam cannot read used to be a recorded `siblings[]` row on an
+      // ok:true run, because the primary write had already landed and unwinding
+      // it would have needed a transaction this seam did not have. It has one
+      // now - nothing is written until the whole set is decided - so the
+      // unreadable sibling refuses the run outright and the tree is left
+      // untouched. The arm that KEEPS its ok:true row is the one below: a
+      // sibling that parses and is simply not upgradeable.
+      emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', target,
+        manifest: { from: primary.from, to: primary.to, bumped: false },
+        siblings: [], changelog: { changed: false },
+        detail: `${rel} is present but not parseable JSON: refusing to ship a release whose sibling manifest this seam cannot read, wrote nothing. Repair ${rel} and re-run the bump.` });
+      return;
     }
     if (siblingRead.state !== 'ok') continue;
     const sibling = siblingRead.manifest;
