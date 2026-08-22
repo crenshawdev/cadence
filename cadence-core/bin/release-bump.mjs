@@ -103,7 +103,7 @@
 // and emitted verbatim as `reason`.
 'use strict';
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { emit } from './lib/seam-io.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
@@ -201,6 +201,16 @@ const CHANGELOG_FILE = 'CHANGELOG.md';
  */
 function readChangelog(file) {
   if (!existsSync(file)) return { state: 'absent', text: null };
+  // REGULAR FILE, checked rather than assumed. `existsSync` accepts a FIFO, a
+  // character device and a directory alike, and `readFileSync` does not fail on
+  // the first two - it BLOCKS forever on a FIFO nobody writes to, and streams
+  // without end from a device such as /dev/zero. Neither reaches the
+  // `unreadable-changelog` refusal this function advertises, so the halt the
+  // doc above promises never arrives and the run hangs instead. The doc says
+  // the path must be a regular file; this is the line that makes that true
+  // rather than a claim, which is the same defect this phase exists to remove.
+  try { if (!statSync(file).isFile()) return { state: 'unreadable', text: null }; }
+  catch { return { state: 'unreadable', text: null }; }
   try { return { state: 'ok', text: readFileSync(file, 'utf8') }; }
   catch { return { state: 'unreadable', text: null }; }
 }

@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -310,6 +310,29 @@ test('bump: a present-but-UNREADABLE CHANGELOG refuses, nothing written (D-09)',
   assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore,
     'the manifest never landed - the changelog is validated before the first write');
   assert.equal(readJson(join(dir, '.claude-plugin', 'plugin.json')).version, '1.0.0');
+});
+
+test('bump: a NON-REGULAR CHANGELOG that reads CLEANLY still refuses, nothing written', () => {
+  // The case the DIRECTORY fixture above cannot reach. A directory throws
+  // EISDIR, so the catch arm alone answers it; a character device does not
+  // throw at all - readFileSync on /dev/null returns '', which is exactly the
+  // ''-on-failure value whose removal that arm exists to prove, arriving this
+  // time through a SUCCESSFUL read. A FIFO is the same class and worse (it
+  // blocks forever with no writer), which is why the check is on the file's
+  // SHAPE and not on whether reading it threw.
+  if (!existsSync('/dev/null')) return;
+  const dir = fixture({ changelog: null });
+  symlinkSync('/dev/null', join(dir, 'CHANGELOG.md'));
+  const pluginBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+
+  const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', '2.0.0', '--date', '2026-07-17']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.reason, 'unreadable-changelog',
+    'a path that is not a regular file is unreadable, whatever readFileSync answered');
+  assert.equal(status, 1);
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore,
+    'the manifest never landed: the whole write set is decided before the first write');
 });
 
 // --- promotion through the seam ---------------------------------------------
