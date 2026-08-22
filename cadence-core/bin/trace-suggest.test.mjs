@@ -885,3 +885,134 @@ test('MSR-02: the spend receipt names all three excluded sources, from the one e
   assert.equal(s.kind, 'info');
   assert.equal(s.action, null);
 });
+
+// --- R7: in-dispatch re-reading, per role (RDX-01) ---------------------------
+//
+// The figure `.planning/reads.jsonl` has carried for four cycles, reaching a
+// consumer that acts on it. Two things this section pins that no other rule
+// needs: the gate is the ROLE MAP rather than the number, and the entry's
+// `action` is null BY DECISION - no key in `config.schema.json` governs
+// in-dispatch re-reading, so the entry names a discipline remedy instead of
+// pointing at an unrelated key.
+
+import { IN_DISPATCH_FLOORS } from './lib/trace-suggest.mjs';
+
+/** The fold shape `lib/read-trace.mjs`'s `inDispatchReads` returns. */
+const inDispatch = (roles, extra = {}) => ({
+  roles, joined: 10114, fileCarrying: 6423, coverage: 0.63, coordinatorFiles: 4395, ...extra,
+});
+/** One per-role row, defaulting to the spike's measured `cad-executor` figures. */
+const roleRow = (role, ratio, extra = {}) => ({
+  role, brackets: 78, touches: 4985, distinct: 1371, ratio,
+  worst: { path: 'cadence-core/bin/planning.mjs', count: 29, phase: '4', plan: '1' },
+  ...extra,
+});
+
+test('R7: cad-executor at 3.64 emits one entry carrying the worst file, the direction, the coverage and the scope', () => {
+  const out = suggestFromRender(render([]), undefined,
+    inDispatch([roleRow('cad-executor', 3.64)]));
+  assert.equal(out.length, 1, JSON.stringify(out));
+  const e = out[0];
+  assert.equal(e.kind, 'info');
+  assert.equal(e.subject, 'cad-executor');
+  // Four assertions over the ONE string, separately, so dropping any single
+  // element reddens on its own rather than hiding behind the other three.
+  assert.ok(e.evidence.includes('3.64'), `the ratio is missing: ${e.evidence}`);
+  assert.ok(e.evidence.includes('read `cadence-core/bin/planning.mjs` 29 times'),
+    `the named target is missing - a role-wide ratio is not actionable: ${e.evidence}`);
+  assert.match(e.evidence, /\bDOWN\b/,
+    `the direction is missing - SC1 asks which way the figure should move: ${e.evidence}`);
+  assert.ok(e.evidence.includes('63%'),
+    `the coverage share is missing - the figure reads as a total: ${e.evidence}`);
+  assert.ok(e.evidence.includes('nothing prunes `.planning/reads.jsonl` at a milestone close'),
+    `the scope is missing - a reader cannot tell which milestones it spans: ${e.evidence}`);
+  // The exclusion and its reason, which no prose surface can supply for a
+  // reader running the seam directly.
+  assert.ok(e.evidence.includes('4,395 coordinator read(s) carrying files'), e.evidence);
+  assert.ok(e.evidence.includes('no dispatch bracket'), e.evidence);
+  // The dispatch that held the worst case.
+  assert.ok(e.evidence.includes('(phase 4, plan 1)'), e.evidence);
+});
+
+test('SC7 pin: the in-dispatch entry names NO config key - `action` is null and it says so in words', () => {
+  // A later edit pointing this entry at `workflow.max_plan_tasks` or
+  // `workflow.max_dispatch_tokens.<role>` reddens HERE. Neither governs
+  // in-dispatch re-reading: the first counts tasks and lowering it moves the
+  // same opens into more dispatches, the second is report-only by its own
+  // purpose text.
+  const [e] = suggestFromRender(render([]), undefined,
+    inDispatch([roleRow('cad-executor', 3.64)]));
+  assert.equal(e.action, null);
+  assert.ok(e.evidence.includes('No key in `config.schema.json` governs in-dispatch re-reading'),
+    `the entry does not state that no key governs this: ${e.evidence}`);
+  assert.ok(e.evidence.includes('the remedy is discipline, not configuration'),
+    `the entry states no remedy, leaving a reader with a ratio: ${e.evidence}`);
+  // The `Suggestion` vocabulary stays closed - `suggest.md`'s ask step builds
+  // `/cad-config <key>=<value>` out of `action` plus `proposed`.
+  for (const key of ['direction', 'current', 'proposed']) {
+    assert.equal(key in e, false, `an info receipt carries \`${key}\`: ${JSON.stringify(e)}`);
+  }
+});
+
+test('R7: the MAP is the gate, not the number - an unnamed role stays silent at any ratio', () => {
+  assert.deepEqual(Object.keys(IN_DISPATCH_FLOORS).sort(), ['cad-executor', 'cad-verifier']);
+  for (const role of ['cad-planner', 'cad-assumptions-analyzer', 'cad-reviewer']) {
+    // Its measured band, and then a ratio far above every floor in the map.
+    for (const ratio of [1.88, 5.0]) {
+      assert.deepEqual(
+        suggestFromRender(render([]), undefined, inDispatch([roleRow(role, ratio)])), [],
+        `${role} at ${ratio} spoke - the noise band fires on the number rather than the map`);
+    }
+  }
+});
+
+test('R7: a role exactly AT its floor emits; a hair under it does not', () => {
+  const at = suggestFromRender(render([]), undefined,
+    inDispatch([roleRow('cad-verifier', IN_DISPATCH_FLOORS['cad-verifier'])]));
+  assert.equal(at.length, 1, JSON.stringify(at));
+  assert.equal(at[0].subject, 'cad-verifier');
+  const under = suggestFromRender(render([]), undefined,
+    inDispatch([roleRow('cad-verifier', 1.99)]));
+  assert.deepEqual(under, []);
+});
+
+test('R7: a null ratio emits NOTHING, and no evidence anywhere renders it as a zero', () => {
+  // Every record written before the `files` field existed folds to this shape.
+  const nulled = roleRow('cad-executor', null,
+    { brackets: 0, touches: 0, distinct: 0, worst: null });
+  assert.deepEqual(
+    suggestFromRender(render([]), undefined, inDispatch([nulled], { coverage: 0, fileCarrying: 0 })),
+    []);
+  // ...and with a firing role beside it, the null one still contributes no
+  // sentence: a `0` here is the reading that says each file was opened once.
+  const mixed = suggestFromRender(render([]), undefined,
+    inDispatch([nulled, roleRow('cad-verifier', 2.05)]));
+  assert.equal(mixed.length, 1);
+  assert.equal(mixed[0].subject, 'cad-verifier');
+  assert.ok(!JSON.stringify(mixed).includes('0 opens per distinct file'),
+    `a null ratio was rendered as a zero: ${JSON.stringify(mixed)}`);
+});
+
+test('R7: a one- and two-argument call return exactly what they returned before', () => {
+  const events = [
+    ...twoEmptyFires('plan'),
+    rearm('risk_surface'),
+    ...Array.from({ length: MIN_ESCALATIONS_FOR_RUNG_SUGGESTION }, () => resolve('cad-planner', { escalated: true })),
+    checkpoint('cad-executor'), checkpoint('cad-executor'),
+  ];
+  const r = render(events, { 'cad-executor': { dispatches: 4, tokens: 300000 } });
+  const res = { values: { 'workflow.max_plan_tasks': 8 }, gates: GATES, stakes: 'shipped' };
+  const one = suggestFromRender(r);
+  const two = suggestFromRender(r, res);
+  // An absent third argument is silent - not an entry saying nothing.
+  assert.deepEqual(two, suggestFromRender(r, res, undefined));
+  assert.deepEqual(one, suggestFromRender(r, undefined, undefined));
+  for (const s of [...one, ...two]) {
+    assert.ok(!s.evidence.includes('in-dispatch'),
+      `an in-dispatch entry rode a call that passed no reads: ${JSON.stringify(s)}`);
+  }
+  // A malformed third argument is the same silence, never a throw.
+  for (const bad of [null, {}, { roles: null }, { roles: [null, 'x'] }]) {
+    assert.deepEqual(suggestFromRender(r, res, /** @type {any} */ (bad)), two);
+  }
+});
