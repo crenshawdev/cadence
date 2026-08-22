@@ -1,0 +1,149 @@
+{
+  "status": "delivered",
+  "score": "12/12",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "`trace suggest` actually opens `.planning/reads.jsonl` and produces an over-threshold entry on this repository's own record, sourced from the reads record rather than trace.jsonl alone",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Live: `node cadence-core/bin/planning.mjs trace suggest` returns info entry subject `cad-executor`, evidence 'in-dispatch re-reading: 3.64 opens per distinct file inside one dispatch over 79 dispatch(es)' plus a sibling `cad-verifier` entry at 2.05. Wiring end to end: planning.mjs:3784 `inDispatchReads(joinReads(readRecord.records, r.brackets).rows)` fed as the third argument to `suggestFromRender` via the lifted `readReadsRecords(dir)` helper (planning.mjs:3115-3142). Negative arm pinned: cadence-core/bin/trace-suggest.test.mjs 'seam: reads carrying no `files`, and no reads file at all, both yield NO entry and no error' passes. Phase-scoped run also works without a new flag: `trace suggest --phase 4` returns 3.67 over 14 dispatches, scoped through the render's brackets."
+    },
+    {
+      "n": 2,
+      "truth": "The floor is per role through a frozen map, and the MAP rather than the number is the gate",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/lib/trace-suggest.mjs exports `IN_DISPATCH_FLOORS = Object.freeze({'cad-executor': 3.00, 'cad-verifier': 2.00})`; the R7 loop skips any role the map does not name (`if (floor === undefined) continue`). Live confirmation of both arms on this repo: `reads --join` returns rows for cad-assumptions-analyzer 1.78, cad-planner 1.86, cad-reviewer 1.66 and none of the three produces an entry, while cad-executor 3.64 and cad-verifier 2.05 both do. Tests passing: 'R7: the MAP is the gate, not the number - an unnamed role stays silent at any ratio' (asserts cad-planner / cad-assumptions-analyzer / cad-reviewer are silent at 1.88 AND at 5.0) and 'R7: a role exactly AT its floor emits; a hair under it does not'."
+    },
+    {
+      "n": 3,
+      "truth": "The entry names the worst single FILE and its count inside one dispatch, in the form \"read `<path>` N times\", not just a ratio",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Live evidence string: 'worst inside one dispatch: read `cadence-core/bin/planning.mjs` 29 times (phase 5, plan 2)' for cad-executor, and `cadence-core/bin/route.mjs` 16 times for cad-verifier. The worst pair is computed per bracket in `inDispatchReads` (cadence-core/bin/lib/read-trace.mjs:557+, worst tracked while walking each bracket's file map). Pinned by 'R7: cad-executor at 3.64 emits one entry carrying the worst file, the direction, the coverage and the scope' and by the fixture seam test asserting 'read `cadence-core/bin/planning.mjs` 7 times (phase 4, plan 1)'."
+    },
+    {
+      "n": 4,
+      "truth": "A null ratio yields no entry on the seam and no narration on the report face, and is never rendered as 0",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "read-trace.mjs returns `ratio: a.distinct ? Number(...) : null` and `coverage: joined ? ... : null`; R7 skips a null ratio before building any string. Tests passing: 'R7: a null ratio emits NOTHING, and no evidence anywhere renders it as a zero' (mixed null+firing role, asserts no '0 opens per distinct file' anywhere in the payload), 'in-dispatch: a role whose joined reads carry no `files` reports a NULL ratio, never 0', and 'seam: the join fixtures carry no `files`, so the new key holds NO measurement, never a zero'. The report face's third disposition (the live `calls > 0` with a null ratio case) is written into cadence-core/workflows/report.md's reading rule and pinned by prose-agreement.test.mjs assertions on /NULL `ratio`/ and /never narrate the null as `0`/."
+    },
+    {
+      "n": 5,
+      "truth": "The entry states its own coverage and its own scope inside the evidence string, not only in workflow prose",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "Live evidence carries 'Computed over 64% of the joined reads in scope, the share that recorded file paths.' and 'SCOPE: nothing prunes `.planning/reads.jsonl` at a milestone close, so an unscoped run reaches every milestone still in that file.' Coverage is computed (`fileCarrying / joined`, 6544/10299 = 0.64 on today's record via `reads --join`), not hardcoded. Both clauses asserted separately in 'R7: cad-executor at 3.64 emits one entry carrying the worst file, the direction, the coverage and the scope'."
+    },
+    {
+      "n": 6,
+      "truth": "coordinator reads are excluded with the count and the reason stated in the output",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Live evidence: 'Excludes 4,503 coordinator read(s) carrying files: the main thread has no dispatch bracket by construction, so its re-reading cannot be attributed to one and cannot be measured here.' The count comes from `coordinatorFiles` in `inDispatchReads` (rows with status 'coordinator' counted, never attributed), matching `reads --join`'s `inDispatch.coordinatorFiles` of 4503. Pinned by 'in-dispatch: a coordinator read carrying files is EXCLUDED and counted, never attributed' and the seam fixture test asserting 'Excludes 1 coordinator read(s)'."
+    },
+    {
+      "n": 7,
+      "truth": "The entry names NO config key, says so explicitly, and names the discipline remedy - and a test fails if it ever points at a key",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "Live entry has `action: null` and the sentence 'No key in `config.schema.json` governs in-dispatch re-reading - the remedy is discipline, not configuration: symbol or line anchors on a plan's `files:` entries, and targeted reads over whole-file ones.' Test 'SC7 pin: the in-dispatch entry names NO config key - `action` is null and it says so in words' passes and also asserts `direction`/`current`/`proposed` are absent, keeping the Suggestion vocabulary closed for suggest.md's ask step. The pre-existing arm 'config keys named in actions exist in config.schema.json' still passes unchanged."
+    },
+    {
+      "n": 8,
+      "truth": "One implementation stands behind both prose faces - the per-role figure rides `reads --join` and neither report.md nor suggest.md recomputes it",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "`inDispatchReads` is defined once (cadence-core/bin/lib/read-trace.mjs:557) and called from exactly two production sites, both in planning.mjs: :3195 on the `--join` envelope and :3784 in the `trace suggest` arm; grep finds no other non-test caller. report.md's Reading line now reads `inDispatch.roles` / `inDispatch.coverage` / `inDispatch.coordinatorFiles` off the same `reads --join` return it already read fileCalls/fileRedundancy/topFiles from, with 'recomputed nowhere' kept as a rule; suggest.md's read_record step states the one seam call reads two records and to open neither. prose-agreement.test.mjs's new RDX-01 arms slice the Reading LINE, the reading rule block and suggest.md's `present` step by named anchors (not whole-file grep) and pass. Note, not a defect: report.md's transport paragraph states '`reads --join` measures 2,494 B' while the live response is now 2,512 B - the record grows between runs and the paragraph carries that caveat explicitly; the prose-agreement arm pins the literal string rather than re-measuring, so a future re-measure must update both."
+    },
+    {
+      "n": 9,
+      "truth": "`reads --join` carries an `inDispatch` key while the no-flag envelope and the `no reads recorded yet` arm stay byte-identical",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "Live: `reads --join` keys include `inDispatch` with {roles, joined, fileCarrying, coverage, coordinatorFiles}; `reads` without the flag returns no `inDispatch` key at all. cmdReads returns the ENOENT envelope before the join (planning.mjs:3147). Tests passing: 'seam: `reads` WITHOUT the flag still carries no in-dispatch key at all' (asserts both the plain envelope and the `no reads recorded yet` arm lack the key) and 'seam: `reads --join` carries the per-role in-dispatch rows the fixtures fix exactly' (ratio 3.33, worst pair, coverage 1, coordinatorFiles 1). The lifted parse did not soften the failure arm: 'seam: an UNREADABLE reads.jsonl fails `reads --join` and WARNS on `trace suggest` - both faces, one test' passes, and it genuinely exercised here (uid 1000, so its root-escape early return did not fire)."
+    },
+    {
+      "n": 10,
+      "truth": "The spike's throwaway measurement code is gone and nothing in the tree imports it",
+      "status": "VERIFIED",
+      "uat_item": 10,
+      "evidence": "`ls .planning/spikes/read-set-redundancy/` lists SPIKE.md alone (measure.mjs and measure2.mjs deleted in 7910e7ed, -79 and -81 lines). Repo-wide grep for `measure.mjs`/`measure2.mjs` finds only prose references in SPIKE.md's own Throwaway section, PLAN.md and SUMMARY.md - no import, require or exec anywhere. SPIKE.md was deliberately left unedited per the plan (it is the phase's evidence record and its verdict cites measure.mjs)."
+    },
+    {
+      "n": 11,
+      "truth": "self-verify is clean",
+      "status": "VERIFIED",
+      "uat_item": 11,
+      "evidence": "`node cadence-core/bin/self-verify.mjs --root .` returns {\"ok\":true, ... ,\"problems\":[]} across 24 checks including `budgets`, which is the proof the weight-budgets re-pin (report.md 19249, suggest.md 9398 in cadence-core/bin/weight-budgets.json) landed in the same commit as the prose growth."
+    },
+    {
+      "n": 12,
+      "truth": "The phase introduced no test regression",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "One full-suite run: `node --test cadence-core/bin/*.test.mjs` = 2625 tests, 2624 pass, 1 fail. The single failure is milestone-prune.test.mjs:575 'IVW-01 must be a wrapped bullet for this corpus to bite', which SUMMARY.md declares pre-existing; the phase range 5e223b2a..7910e7ed touches neither milestone-prune.mjs nor REQUIREMENTS.md (13 files, none of them either). Anti-pattern scan over the touched files found no TODO/FIXME/XXX/HACK/placeholder markers in the added lines; the `return null` paths in read-trace.mjs are the deliberate absent-is-not-a-measurement posture, documented in the function header."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "trace suggest opens .planning/reads.jsonl and produces an over-threshold entry on this repo's own record",
+      "evidence": "Live `trace suggest` returns the cad-executor info entry at 3.64 over 79 dispatches, fed by readReadsRecords -> joinReads -> inDispatchReads at planning.mjs:3784; the no-reads and stripped-files fixtures yield no entry, so the record is genuinely the source."
+    },
+    {
+      "k": 2,
+      "name": "The threshold is per role, not one global ratio",
+      "evidence": "Frozen IN_DISPATCH_FLOORS (cad-executor 3.00, cad-verifier 2.00) gates by role; live run is silent for cad-planner 1.86, cad-assumptions-analyzer 1.78, cad-reviewer 1.66, and the test pins silence for those roles even at ratio 5.0."
+    },
+    {
+      "k": 3,
+      "name": "The entry names the worst FILE and its count, not just the ratio",
+      "evidence": "Live: 'read `cadence-core/bin/planning.mjs` 29 times (phase 5, plan 2)'; fixture test pins the same form at 7 times."
+    },
+    {
+      "k": 4,
+      "name": "A null ratio produces no entry and is never rendered as zero",
+      "evidence": "ratio is null (never 0) when summed distinct is 0; R7 skips it; tests assert no '0 opens per distinct file' anywhere, and report.md's third disposition for `calls > 0` with a null ratio is pinned by prose-agreement.test.mjs."
+    },
+    {
+      "k": 5,
+      "name": "The entry states its own coverage and scope",
+      "evidence": "'Computed over 64% of the joined reads in scope, the share that recorded file paths' plus the unpruned-record SCOPE sentence, both inside the evidence string and both separately asserted."
+    },
+    {
+      "k": 6,
+      "name": "coordinator reads are excluded with the reason stated in the output",
+      "evidence": "'Excludes 4,503 coordinator read(s) carrying files: the main thread has no dispatch bracket by construction...' matching inDispatch.coordinatorFiles on `reads --join`."
+    },
+    {
+      "k": 7,
+      "name": "The entry names NO config key and says so explicitly",
+      "evidence": "action: null plus the 'No key in `config.schema.json` governs in-dispatch re-reading' sentence and the discipline remedy; SC7 pin test fails if a key is ever named."
+    },
+    {
+      "k": 8,
+      "name": "One implementation behind both prose faces",
+      "evidence": "inDispatchReads has exactly two production callers (planning.mjs:3195 and :3784); report.md reads the inDispatch keys off `reads --join` and suggest.md relays the seam, both pinned by anchor-sliced prose-agreement arms."
+    },
+    {
+      "k": 9,
+      "name": "reads --join carries inDispatch without disturbing its other arms",
+      "evidence": "Live envelopes differ only by the inDispatch key; tests assert its absence from the no-flag envelope and from the 'no reads recorded yet' arm, and the unreadable-file arm still returns ok:false read-failed while trace suggest warns."
+    },
+    {
+      "k": 10,
+      "name": "The spike's throwaway measurement code is retired",
+      "evidence": ".planning/spikes/read-set-redundancy/ holds SPIKE.md alone; no code reference to measure.mjs or measure2.mjs remains anywhere in the tree."
+    },
+    {
+      "k": 11,
+      "name": "self-verify is clean",
+      "evidence": "ok:true with problems:[] over 24 checks, budgets included."
+    }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
