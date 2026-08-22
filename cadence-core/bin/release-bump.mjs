@@ -248,7 +248,7 @@ function bump(dir, versionArg, dateArg) {
   }
   if (read.state === 'unreadable') {
     emit({ ok: false, action: 'refuse', reason: 'unreadable-manifest', target,
-      manifest: { from: null, to: target, bumped: false }, siblings: [], changelog: { changed: false },
+      manifest: { from: null, to: target, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
       detail: '.claude-plugin/plugin.json is present but not parseable JSON: refusing to bump a manifest this seam cannot read, wrote nothing' });
     return;
   }
@@ -259,7 +259,7 @@ function bump(dir, versionArg, dateArg) {
   const primary = decideManifestBump(manifest.version, target);
   if (primary.action === 'refuse') {
     emit({ ok: false, action: 'refuse', reason: primary.code, target,
-      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false },
+      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
       detail: primary.reason });
     return;
   }
@@ -275,7 +275,7 @@ function bump(dir, versionArg, dateArg) {
   // (D-02), because marketplace.json carries no `version` by design.
   if (primary.code === 'no-version-field') {
     emit({ ok: false, action: 'refuse', reason: 'no-version-field', target,
-      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false },
+      manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
       detail: `the primary manifest ${PRIMARY_MANIFEST} carries no \`version\` field, so this release would ship unbumped: repair the manifest or close without a version bump. Wrote nothing.` });
     return;
   }
@@ -318,7 +318,7 @@ function bump(dir, versionArg, dateArg) {
       // sibling that parses and is simply not upgradeable.
       emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', target,
         manifest: { from: primary.from, to: primary.to, bumped: false },
-        siblings: [], changelog: { changed: false },
+        siblings: [], changelog: { changed: false, state: 'not-examined' },
         detail: `${rel} is present but not parseable JSON: refusing to ship a release whose sibling manifest this seam cannot read, wrote nothing. Repair ${rel} and re-run the bump.` });
       return;
     }
@@ -350,7 +350,17 @@ function bump(dir, versionArg, dateArg) {
   // re-classification arm above refuses it - so the gate is a whitelist, kept
   // as one because it is what a new verdict action has to be added to before it
   // can reach the changelog.
-  let changelog = { changed: false };
+  // `changelog.state` is set on EVERY path that emits a `changelog` object
+  // (phase 1 D-10), because the three outcomes used to differ only by key
+  // PRESENCE: `section_empty` was absent when CHANGELOG.md was absent and
+  // false/true when it had been read, and both absent and false are falsy, so
+  // milestone.md's halt read a project with NO changelog exactly as it read a
+  // clean one and closed as if the notes were fine. The vocabulary is
+  // readChangelog's own - `absent` | `unreadable` | `ok` - plus `not-examined`
+  // for the refusals that returned before the gate below was entered. It is a
+  // separate field rather than a re-used one: `section_empty` still means what
+  // it always meant, and it is still what the empty-section halt reads.
+  let changelog = { changed: false, state: 'not-examined' };
   /** @type {string|null} the composed bytes to write, null when nothing changed */
   let changelogText = null;
   const clPath = join(dir, CHANGELOG_FILE);
@@ -362,11 +372,14 @@ function bump(dir, versionArg, dateArg) {
     if (clRead.state === 'unreadable') {
       emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', target,
         manifest: { from: primary.from, to: primary.to, bumped: false },
-        siblings: [], changelog: { changed: false },
+        siblings: [], changelog: { changed: false, state: 'unreadable' },
         detail: `${CHANGELOG_FILE} is present but cannot be read: refusing to scaffold a fresh changelog over a release history this seam cannot see, wrote nothing. Repair ${CHANGELOG_FILE} and re-run the bump.` });
       return;
     }
-    // ABSENT keeps its own behaviour: no changelog step, changed:false, ok:true.
+    // ABSENT keeps its own behaviour: no changelog step, changed:false, ok:true
+    // - and now SAYS so, `state:"absent"`, instead of being told apart from a
+    // clean run by a missing key.
+    changelog = { changed: false, state: clRead.state };
     if (clRead.state === 'ok') {
       const url = changelogUrl(manifest, target);
       const scaffold = prependChangelogEntry(clRead.text, { version: target, date, url });
@@ -377,7 +390,7 @@ function bump(dir, versionArg, dateArg) {
       // promoted and nothing already there. milestone.md turns that into
       // "author the notes before the bump commit", so no close ships an empty
       // section with nothing said.
-      changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty };
+      changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty, state: 'ok' };
     }
   }
 

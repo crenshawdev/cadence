@@ -455,6 +455,34 @@ test("bump: THIS repo's own manifest pair still bumps, marketplace.json recorded
     'left byte-untouched');
 });
 
+test('bump: changelog.state tells the three states apart by VALUE, not by key presence (D-10)', () => {
+  // The defect this pins: the three outcomes used to differ only by whether
+  // `section_empty` was there at all - absent when CHANGELOG.md was absent,
+  // false when it had been read and was fine - and both read falsy, so
+  // milestone.md's halt could not tell a project with NO changelog from a clean
+  // one and closed as if the notes were fine. All three in one place so the
+  // distinguishing is the assertion, not three separate hopes.
+  const absent = seam(['bump', '--dir', fixture({ changelog: null }), '--version', '2.0.0', '--date', '2026-08-03']);
+  // Present, read, and nothing left to do: the target IS the manifest version,
+  // so the heading already exists and nothing is staged under Unreleased.
+  const clean = seam(['bump', '--dir', fixture(), '--version', '1.0.0', '--date', '2026-08-03']);
+  const { version, ...noVersion } = PLUGIN_1_0_0;
+  const refused = seam(['bump', '--dir', fixture({ plugin: noVersion }), '--version', '2.0.0', '--date', '2026-08-03']);
+
+  assert.equal(absent.ok, true, JSON.stringify(absent));
+  assert.equal(clean.ok, true, JSON.stringify(clean));
+  assert.equal(refused.ok, false, JSON.stringify(refused));
+  assert.equal(absent.changelog.state, 'absent');
+  assert.equal(clean.changelog.state, 'ok');
+  assert.equal(clean.changelog.changed, false, 'read and needed nothing');
+  assert.equal(refused.changelog.state, 'not-examined', 'refused before the gate was entered');
+  const states = [absent, clean, refused].map((r) => r.changelog.state);
+  assert.equal(new Set(states).size, 3, `three states, three values: ${JSON.stringify(states)}`);
+  for (const [label, r] of [['absent', absent], ['clean', clean], ['refused', refused]]) {
+    assert.ok('state' in r.changelog, `${label}: the key is PRESENT on every path`);
+  }
+});
+
 test('unknown subcommand: usage, ok false', () => {
   const r = seam(['frobnicate']);
   assert.equal(r.ok, false);
