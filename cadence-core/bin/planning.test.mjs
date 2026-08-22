@@ -5845,11 +5845,11 @@ test('lease-check: the no-staged-set detail names the failure without a credenti
 
 test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () => {
   // The census, so a site added later fails here rather than shipping a
-  // credential. planning.mjs carries FIVE other caught-error details this
-  // requirement does not cover - partial-apply, write-failed, the
-  // dispatch-level internal catch, `capture --text-file`'s read failure,
-  // `capture-sections`' unreadable-capture and `uat record --fields-file`'s
-  // JSON parse failure - so the pin is by COUNT: eleven uses of the idiom,
+  // credential. planning.mjs carries SEVEN other caught-error details this
+  // requirement does not cover - partial-apply, phase-done's partial-flip,
+  // write-failed, the dispatch-level internal catch, `capture --text-file`'s
+  // read failure, `capture-sections`' unreadable-capture and `uat record
+  // --fields-file`'s JSON parse failure - so the pin is by COUNT: twelve uses
   // exactly five of them wrapped. Adding a site moves the first number whether
   // or not the author remembered the helper.
   //
@@ -5872,9 +5872,12 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // covers all three arms rather than the parse arm alone, because splitting
   // them would leave the next arm added there to guess which class it is in.
   //
-  // Why `capture --text-file` and `capture-sections` are NOT wrapped: each
+  // Why `capture --text-file`, `capture-sections` and phase-done's
+  // partial-flip are NOT wrapped: each
   // detail is an `fs` error over a path the CALLER just named, so the only
-  // string it can echo is one the caller already holds. `redactUrl` targets a
+  // string it can echo is one the caller already holds - partial-flip's is
+  // whatever atomicWrite threw over `--dir`'s own ROADMAP.md or
+  // REQUIREMENTS.md, and this seam makes no network call at all. `redactUrl` targets a
   // credential arriving from a remote the user never typed, which a local path
   // read cannot be. `uat record --fields-file`'s parse failure is the same
   // class one step further in: a JSON syntax error over the caller's own file.
@@ -5884,7 +5887,7 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 11, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(IDIOM) || []).length, 12, 'planning.mjs gained or lost a detail site');
   assert.equal((src.match(WRAPPED) || []).length, 5,
     'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch or '
     + 'groundCitations\' probe) or readQueue\'s provider-authored parse detail is unredacted');

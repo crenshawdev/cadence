@@ -740,6 +740,28 @@ function cmdPhaseDone(dir, opts) {
     }],
   });
   if (applied.refused !== null) return fail('unreadable-requirements', applied.refused);
+  if (!applied.ok) {
+    // The shapes that reach here are the ones NO readability check can see - an
+    // EACCES on `.planning` itself, a symlink planted at atomicWrite's derived
+    // temp path, ENOSPC - which is why the pre-flight above deliberately does
+    // not pretend to cover them: a refusal advertised for failures it cannot
+    // deliver would talk callers out of checking the tree by hand.
+    //
+    // Emitted directly rather than through fail(), for the reason cmdRenumber
+    // records for its own partial arm: fail() carries reason/detail/hint only,
+    // and this arm has to carry the write record too. Letting it reach the
+    // dispatch-level catch instead would flatten it to
+    // `{"ok":false,"reason":"internal"}` with no record of which document moved
+    // - the undifferentiated envelope this whole change exists to remove.
+    const e = applied.failures[0].error;
+    return emit({
+      ok: false, reason: 'partial-flip', wrote: applied.completed,
+      detail: e && e.message ? e.message : String(e),
+      hint: applied.completed.length
+        ? `${applied.completed.join(' and ')} was written and the rest was not - the phase box and its traceability rows now disagree; re-run this command once the cause is fixed, which is the repair and is safe to repeat, because both writes set the same value on a second pass`
+        : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
+    });
+  }
   // `wrote` is the transition's own completed record rendered into the
   // envelope: the document names, in write order, so a caller can tell "both
   // documents moved" from "only the roadmap did" without re-deriving it from
