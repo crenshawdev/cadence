@@ -208,11 +208,24 @@ survivors from `v3.5.4`, `v3.5.5` and `v3.5.6` are still unassigned, and so are
 filler. The deferred ids `PRS-01`, `EVD-01`, `RCL-06` and `CTX-02` were not
 promoted and their 2026-08-18 caveats stand: `CTX-02`'s stated basis no longer
 holds and `RCL-06` carries no promotion trigger, so both want a decision before
-either is scoped. The capture queue stands at 197 live items - 196 under
-`## Todos` and one seed. `CAPTURE.md` carries 382 open checkboxes in all, but 185
-of them are the block `v2.6.0` phase 1 retired on 2026-08-08 and they are not
-work: they stay open only because nothing rewrites an archived line. Count the
-live sections, not the file.
+either is scoped. The capture queue holds 197 live items - 196 under `## Todos`
+and one seed - beside the 185-item block `v2.6.0` phase 1 archived on 2026-08-08,
+which sits outside the recall walk. Count the live sections, not the file's 382
+open checkboxes.
+
+That archive was triaged on 2026-08-22 for the first time since it was written.
+Of its 30 severity-marked items, **19 were already fixed, 10 were still live, 1
+was moot** - the fixes had shipped across later cycles with nothing closing the
+capture. The 10 live are now tracker issues #231 (six defects in the
+release/changelog seam), #232 (plan frontmatter defeats `plan-overlap`) and #233
+(two stale self-description claims). The other 155 are unverified.
+
+The tracker is the home for this now: `issue-check.mjs` surfaces referenced
+issues at every `/cad-land`, which is the come-back-on-its-own property
+`CAPTURE.md` stopped providing the moment anything went below `## Archive`. Two
+findings that argue for it - #231 duplicates a defect class `v3.5.8` phase 2
+filed independently against the same seam, and `CAPTURE.md` is gitignored, so it
+is the one planning document with no history behind it.
 
 ## Key Decisions
 
