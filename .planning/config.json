@@ -17,5 +17,8 @@
       "cad-plan-checker": "high",
       "cad-verifier": "high"
     }
+  },
+  "git": {
+    "auto_close": true
   }
 }
