@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 2 (The transaction that was never there)
-Status: phase complete
-Next: /cad-context 2 - gather context for phase 2 (cmdPhaseDone and release-bump.mjs adopt the primitive)
+Phase: 2 of 2 (Both callers on the journal)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-08-22
