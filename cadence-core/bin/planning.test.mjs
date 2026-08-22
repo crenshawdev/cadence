@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyAcceptanceCriteria } from './lib/planning-files.mjs';
@@ -893,6 +894,46 @@ test('phase-done: --n 02 still boxes phase 2', () => {
   const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
   assert.match(roadmap, /- \[x\] \*\*Phase 2: Two\*\*/);
   assert.match(roadmap, /- \[ \] \*\*Phase 1: One\*\*/);
+});
+
+// `read()` answered null for BOTH "no REQUIREMENTS.md" and "a directory at that
+// path", so an unreadable one closed the phase with its traceability rows
+// silently unwritten (measured 2026-08-22: ok:true, reqs:[], the box flipped).
+// The refusal has to land BEFORE the first write, so ROADMAP.md's bytes are the
+// assertion - "refused" and "flipped, then reported as an error" are different
+// trees. No chmodSync anywhere: it is a silent no-op under a root test runner,
+// and a directory at the path is uid-independent.
+test('phase-done: an unreadable REQUIREMENTS.md refuses whole; ROADMAP.md is byte-identical', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  rmSync(join(dir, 'REQUIREMENTS.md'));
+  mkdirSync(join(dir, 'REQUIREMENTS.md'));
+  const sha = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
+  const before = sha(join(dir, 'ROADMAP.md'));
+  const r = run(['phase-done', '--n', '1'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unreadable-requirements');
+  assert.equal(r._exit, 1);
+  assert.match(r.detail, /REQUIREMENTS\.md/); // names the file to repair
+  assert.equal(sha(join(dir, 'ROADMAP.md')), before);
+});
+
+// The other half of the same distinction: absence is legitimate data, not a
+// refusal - verify.md's phase-done step is a hard step, so a project that never
+// kept a REQUIREMENTS.md must still be able to close a phase.
+test('phase-done: an ABSENT REQUIREMENTS.md still boxes the phase, ok:true', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }] });
+  assert.equal(existsSync(join(dir, 'REQUIREMENTS.md')), false);
+  const r = run(['phase-done', '--n', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r._exit, 0);
+  assert.equal(r.roadmap.now, '[x]');
+  assert.deepEqual(r.reqs, []);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(roadmap, /- \[x\] \*\*Phase 1: One\*\*/);
+  assert.match(roadmap, /- \[ \] \*\*Phase 2: Two\*\*/);
 });
 
 // --- uat -----------------------------------------------------------------------

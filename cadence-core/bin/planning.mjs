@@ -682,8 +682,24 @@ function cmdPhaseDone(dir, opts) {
   const boxed = setPhaseBox(roadmapText, n, !undo);
   if (!boxed) return fail('unknown-phase', `no "**Phase ${n}:**" line under ## Phases`);
 
+  // REQUIREMENTS.md as a THREE-state fact - absent, present-but-unreadable,
+  // present-and-read - because `read()` answers `null` for the first two alike
+  // and that collapse is the defect: measured 2026-08-22, `phase-done --n 1`
+  // against a tree where REQUIREMENTS.md was a DIRECTORY returned
+  // `{"ok":true,...,"reqs":[]}` at exit 0 with the roadmap boxed and the
+  // traceability rows silently unwritten. `read()` itself is not touched - its
+  // callers throughout this file legitimately treat absence as data - and the
+  // shape is `readManifest`'s in release-bump.mjs, which already separates
+  // "no manifest" from "a manifest I cannot parse" for the same reason.
+  //
+  // ABSENT keeps today's path exactly: no REQUIREMENTS step, `reqs: []`,
+  // ok:true. verify.md's phase-done step is a hard step, so a project that
+  // never kept a REQUIREMENTS.md must still be able to close a phase (D-03).
+  // UNREADABLE refuses the whole transition below.
   const reqFile = join(dir, 'REQUIREMENTS.md');
-  const reqText = read(reqFile);
+  const reqPresent = existsSync(reqFile);
+  const reqText = reqPresent ? read(reqFile) : null;
+  const reqUnreadable = reqPresent && reqText === null;
   let reqs = [];
   let newReqText = null;
   if (reqText !== null) {
@@ -702,13 +718,28 @@ function cmdPhaseDone(dir, opts) {
   // fixture's temp directory. The order is load-bearing and is the one this
   // seam has always used.
   //
-  // What is NOT claimed here: an atomic rename protects ONE file from torn
-  // bytes and cannot make two files change together, so no guarantee of a
-  // single indivisible edit is stated - and none is given at this commit.
+  // The PRE-FLIGHT is what makes "nothing was written" true, and it is the only
+  // form of that promise this seam can keep: an atomic rename protects ONE file
+  // from torn bytes and cannot make two files change together, and the
+  // primitive underneath is a refusal protocol with no undo (D-01), so once
+  // ROADMAP.md has landed there is nothing to roll back to. The refusal
+  // therefore has to happen BEFORE the first thunk runs - which is what makes
+  // an unreadable REQUIREMENTS.md leave ROADMAP.md byte-identical instead of
+  // boxed-and-then-reported-as-an-error. `satisfied` answers from a value
+  // already in hand and performs no I/O of its own (D-12), so it cannot throw
+  // past runTransition, which has no arm for that.
   /** @type {Array<[string, () => void]>} */
   const steps = [['ROADMAP.md', () => atomicWrite(roadmapFile, boxed.text)]];
   if (newReqText !== null) steps.push(['REQUIREMENTS.md', () => atomicWrite(reqFile, newReqText)]);
-  runTransition({ steps, discipline: 'stop-at-first-failure' });
+  const applied = runTransition({
+    steps,
+    discipline: 'stop-at-first-failure',
+    preflight: [{
+      condition: `${reqFile} must be a readable file, or absent`,
+      satisfied: () => !reqUnreadable,
+    }],
+  });
+  if (applied.refused !== null) return fail('unreadable-requirements', applied.refused);
   ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs });
 }
 
