@@ -6468,30 +6468,37 @@ function cmdMilestonePrune(dir, opts) {
   // gone from the live tree. `missing` counts as gone (it already was, which is
   // what makes a re-run idempotent); `failed` does not.
   const dirs = { archived: [], deleted: [], missing: [] };
-  const failed = [];
-  for (const n of completed) {
+  // One step per completed phase, keyed by the phase NUMBER - the value the
+  // envelope's `failed` array carries. CONTINUE past a failure, which is this
+  // seam's own discipline and not renumber's: a phase whose directory would not
+  // move keeps its documents, and the phases that did clear are still pruned
+  // (D-03). lib/file-transition.mjs owns the ordering and the record; the
+  // envelope below stays here.
+  /** @type {Array<[number, () => void]>} */
+  const steps = completed.map((n) => [n, () => {
     const src = join(dir, 'phases', String(n));
-    if (!existsSync(src)) { dirs.missing.push(n); continue; }
-    try {
-      if (mode === 'delete') { rmSync(src, { recursive: true }); dirs.deleted.push(n); }
-      else {
-        mkdirSync(archiveRoot, { recursive: true });
-        const dest = join(archiveRoot, String(n));
-        // Refuse a destination that already exists rather than let renameSync
-        // decide: onto an empty directory it silently succeeds, onto a
-        // non-empty one it throws ENOTEMPTY, and onto a symlink it follows.
-        // A pre-existing destination means a previous close half-ran, and
-        // clobbering it would destroy that evidence.
-        if (lstatSync(dest, { throwIfNoEntry: false })) {
-          throw new Error(`${dest} already exists - a previous close left it there`);
-        }
-        renameSync(src, dest);
-        dirs.archived.push(n);
-      }
-    } catch (e) {
-      failed.push(n);
-      warnings.push(`phase ${n}: directory ${mode} failed: ${e && e.message ? e.message : e}`);
+    if (!existsSync(src)) { dirs.missing.push(n); return; }
+    if (mode === 'delete') { rmSync(src, { recursive: true }); dirs.deleted.push(n); return; }
+    mkdirSync(archiveRoot, { recursive: true });
+    const dest = join(archiveRoot, String(n));
+    // Refuse a destination that already exists rather than let renameSync
+    // decide: onto an empty directory it silently succeeds, onto a
+    // non-empty one it throws ENOTEMPTY, and onto a symlink it follows.
+    // A pre-existing destination means a previous close half-ran, and
+    // clobbering it would destroy that evidence.
+    if (lstatSync(dest, { throwIfNoEntry: false })) {
+      throw new Error(`${dest} already exists - a previous close left it there`);
     }
+    renameSync(src, dest);
+    dirs.archived.push(n);
+  }]);
+  const pass = runTransition({ steps, discipline: 'continue-past-failure' });
+  const failed = pass.failures.map((f) => f.key);
+  // Appended HERE rather than inside the thunks so warning ORDER is unchanged:
+  // the REQUIREMENTS.md-missing warning still precedes them and the
+  // missingSections warnings below still follow.
+  for (const { key: n, error: e } of pass.failures) {
+    warnings.push(`phase ${n}: directory ${mode} failed: ${e && e.message ? e.message : e}`);
   }
 
   // The pruned set: completed phases whose directory is no longer in the live
