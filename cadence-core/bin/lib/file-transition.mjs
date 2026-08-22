@@ -37,6 +37,25 @@
 // pre-checked before the first step runs, refuse the transition WHOLE when a
 // condition does not hold, and otherwise report exactly how far it got.
 //
+// THE PRE-FLIGHT STAGE, AND WHAT IT DELIBERATELY DOES NOT KNOW. Conditions are
+// the CALLER's, in the caller's order, and this module declares none of its own
+// and probes no filesystem. That is the phase's flagged assumption made
+// structural rather than an omission: a "planned write" here means something
+// the caller can genuinely pre-check, and a primitive that advertised a
+// whole-transaction refusal it could only deliver for the failures it happened
+// to be able to see would talk callers out of hand-checking the tree - the
+// exact failure mode `cmdRenumber`'s own comment names. What actually produced
+// `partial-apply` and `partial-prune` in the shipped fixtures is an EACCES and
+// an ENOTEMPTY that no pre-flight can see, and two of `renumber`'s steps are
+// `git rm` and `git mv` spawns with no dry-run to validate at all.
+//
+// It is a NEW stage, never a retrofit of either existing caller (D-04).
+// `milestone-prune`'s `partial-prune` deliberately DOES write for the phases
+// that cleared - the tree and the documents agreeing is what that ordering was
+// built to fix - and `renumber`'s collision and `uncommitted-work` gates stay
+// above its dry-run return. Moving either is a different change with its own
+// blast radius.
+//
 // THE ENVELOPE STAYS WITH THE CALLER (D-02). The result carries no `reason`, no
 // `hint`, no `emit` and no exit code, because the two shipped callers' envelopes
 // are structurally incompatible - `renumber` emits `{reason:'partial-apply',
@@ -89,7 +108,27 @@
  */
 
 /**
- * Run `steps` in order under `discipline`.
+ * One pre-flight condition: something the caller can check BEFORE the first
+ * thunk runs, paired with the description that names it in a refusal.
+ * @typedef {object} PreflightCondition
+ * @property {string} condition what must hold, as the refusal will report it
+ * @property {() => boolean} satisfied evaluated lazily, and only until one
+ *   answers false
+ */
+
+/**
+ * Run `steps` in order under `discipline`, once every `preflight` condition
+ * holds.
+ *
+ * Conditions are evaluated in the order given and the FIRST unsatisfied one
+ * ends the call: no thunk runs, nothing is written, and the result names that
+ * condition in `refused`. Ordering is the guarantee this stage exists to give -
+ * a caller that puts a cheap readability check ahead of an expensive one gets
+ * that order - so the conditions after the refusing one are never evaluated.
+ * A refusal is distinguishable from a step failure at the RESULT level
+ * (`refused` is a string rather than `null`), because the caller has to be able
+ * to tell "nothing was attempted" from "step one failed" without re-deriving
+ * it, which is the same distinction `renumber`'s two-armed hint already makes.
  *
  * `discipline` is D-03's two arms, and both callers keep the one they ship
  * with. `'stop-at-first-failure'` halts on the first throw, leaves the
@@ -102,10 +141,16 @@
  * that is not callable - propagates, the way a throw from `withPlanningFileLock`'s
  * `fn` propagates: this classifies a transition, it does not police its caller.
  * @template K
- * @param {{steps: Array<TransitionStep<K>>, discipline: 'stop-at-first-failure' | 'continue-past-failure'}} plan
+ * @param {{steps: Array<TransitionStep<K>>, discipline: 'stop-at-first-failure' | 'continue-past-failure', preflight?: PreflightCondition[]}} plan
  * @returns {TransitionResult<K>}
  */
-export function runTransition({ steps, discipline }) {
+export function runTransition({ steps, discipline, preflight = [] }) {
+  for (const { condition, satisfied } of preflight) {
+    // Early RETURN rather than a collected verdict: evaluating the rest would
+    // break the ordering promise, and a caller with a cheap check ahead of an
+    // expensive one declared that order for a reason.
+    if (!satisfied()) return { ok: false, refused: condition, completed: [], failures: [] };
+  }
   /** @type {K[]} */
   const completed = [];
   /** @type {Array<{key: K, error: any}>} */

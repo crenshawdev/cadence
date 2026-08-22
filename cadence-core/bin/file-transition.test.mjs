@@ -7,10 +7,15 @@
 // reports nothing also RAN nothing, which is the whole content of the
 // stop-at-first-failure arm.
 //
-// The module touches no filesystem, so the cases here need none either.
+// The module touches no filesystem of its own. The pre-flight cases at the
+// bottom still build a real tree, because "a refusal writes nothing" is only
+// falsifiable against one.
 // Only node: builtins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, relative } from 'node:path';
 import { runTransition } from './lib/file-transition.mjs';
 
 /**
@@ -98,4 +103,132 @@ test('an object key comes back by IDENTITY, never as a clone', () => {
   });
   assert.strictEqual(r.completed[0], rm);
   assert.strictEqual(r.failures[0].key, move);
+});
+
+// --- the pre-flight stage: the refusal that writes nothing -----------------
+// These cases DO touch a filesystem, and deliberately so: the claim under test
+// is that a refused transition leaves the tree exactly as it found it, which
+// only a real tree can falsify. The module still opens nothing itself - every
+// write below is inside a caller thunk that must never be entered.
+
+/** A `.planning/`-shaped tree of three documents, each with known contents. */
+function planningFixture() {
+  const root = join(mkdtempSync(join(tmpdir(), 'cad-transition-')), '.planning');
+  mkdirSync(join(root, 'phases', '1'), { recursive: true });
+  writeFileSync(join(root, 'ROADMAP.md'), '# Roadmap\n\n- [x] **Phase 1: Store**\n');
+  writeFileSync(join(root, 'REQUIREMENTS.md'), '# Requirements\n\n| STOR-01 | 1 |\n');
+  writeFileSync(join(root, 'phases', '1', 'SUMMARY.md'), '# Phase 1\n\nDone.\n');
+  return root;
+}
+
+const FIXTURE_FILES = ['ROADMAP.md', 'REQUIREMENTS.md', join('phases', '1', 'SUMMARY.md')];
+
+/** Every path under `dir`, recursively, relative and sorted. */
+function listing(dir, base = dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    out.push(relative(base, full));
+    if (entry.isDirectory()) out.push(...listing(full, base));
+  }
+  return out.sort();
+}
+
+/**
+ * The three-document rewrite this phase's callers actually perform, as a step
+ * list. Every thunk records itself in `ran` before it writes, so a thunk that
+ * was entered cannot hide behind a write that failed.
+ */
+function rewriteAll(root, ran) {
+  return FIXTURE_FILES.map((f) => [{ edit: f }, () => {
+    ran.push(f);
+    writeFileSync(join(root, f), 'REWRITTEN');
+  }]);
+}
+
+test('pre-flight: the first unsatisfied condition refuses, and no thunk runs', () => {
+  const root = planningFixture();
+  const before = FIXTURE_FILES.map((f) => readFileSync(join(root, f), 'utf8'));
+  const ran = [];
+  const evaluated = [];
+  const condition = (name, answer) => ({
+    condition: name,
+    satisfied: () => { evaluated.push(name); return answer; },
+  });
+
+  const r = runTransition({
+    preflight: [
+      condition('the roadmap is readable', true),
+      condition('the archive root is writable', false),
+      condition('git reports a clean tree', true),
+    ],
+    steps: rewriteAll(root, ran),
+    discipline: 'stop-at-first-failure',
+  });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.refused, 'the archive root is writable',
+    'the refusal names the condition that did not hold');
+  assert.deepEqual(r.completed, []);
+  assert.deepEqual(r.failures, [], 'a refusal is not a step failure');
+  assert.deepEqual(ran, [], 'not one step thunk may be entered');
+  assert.deepEqual(evaluated, ['the roadmap is readable', 'the archive root is writable'],
+    'the condition after the refusing one is never evaluated');
+  assert.deepEqual(FIXTURE_FILES.map((f) => readFileSync(join(root, f), 'utf8')), before,
+    'every file in the planned write set is byte-identical');
+});
+
+test('pre-flight: a refusal creates no file anywhere under the planning root', () => {
+  // The listing is what pins D-01 in code rather than in prose: a journal, a
+  // marker, a lock or a temp path written anywhere below the root reddens this
+  // case, whatever it is named.
+  const root = planningFixture();
+  const before = listing(root);
+
+  const r = runTransition({
+    preflight: [{ condition: 'the archive root is writable', satisfied: () => false }],
+    steps: rewriteAll(root, []),
+    discipline: 'continue-past-failure',
+  });
+
+  assert.equal(r.refused, 'the archive root is writable');
+  assert.deepEqual(listing(root), before, 'the tree is identical, file for file');
+});
+
+for (const discipline of ['stop-at-first-failure', 'continue-past-failure']) {
+  test(`pre-flight: every condition satisfied runs the steps normally (${discipline})`, () => {
+    const root = planningFixture();
+    const ran = [];
+    const r = runTransition({
+      preflight: [
+        { condition: 'the roadmap is readable', satisfied: () => true },
+        { condition: 'git reports a clean tree', satisfied: () => true },
+      ],
+      steps: rewriteAll(root, ran),
+      discipline,
+    });
+
+    assert.equal(r.ok, true);
+    assert.equal(r.refused, null);
+    assert.deepEqual(r.completed.map((k) => k.edit), FIXTURE_FILES);
+    assert.deepEqual(ran, FIXTURE_FILES);
+    for (const f of FIXTURE_FILES) assert.equal(readFileSync(join(root, f), 'utf8'), 'REWRITTEN');
+  });
+}
+
+test('pre-flight: an empty condition list behaves exactly as no pre-flight at all', () => {
+  const ranEmpty = [];
+  const ranAbsent = [];
+  const withEmpty = runTransition({
+    preflight: [], steps: threeSteps(ranEmpty, 'b'), discipline: 'continue-past-failure',
+  });
+  const withNone = runTransition({
+    steps: threeSteps(ranAbsent, 'b'), discipline: 'continue-past-failure',
+  });
+
+  assert.deepEqual(withEmpty.completed, withNone.completed);
+  assert.deepEqual(withEmpty.failures.map((f) => f.key), withNone.failures.map((f) => f.key));
+  assert.equal(withEmpty.ok, withNone.ok);
+  assert.equal(withEmpty.refused, withNone.refused);
+  assert.deepEqual(ranEmpty, ranAbsent);
 });
