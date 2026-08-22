@@ -35,7 +35,7 @@ so every one is either traced to a phase or visibly `unpicked` in `/cad-audit`.
 
 ## Phases
 
-- [ ] **Phase 1: The close that continues over a manifest nobody bumped** - the six release/changelog defects, every one a clean envelope over a case the seam did not handle
+- [x] **Phase 1: The close that continues over a manifest nobody bumped** - the six release/changelog defects, every one a clean envelope over a case the seam did not handle
 - [ ] **Phase 2: The collision plan-overlap was built to catch** - frontmatter issues stop leaking across keys, and a decorated path stops parsing clean
 
 ## Phase Details

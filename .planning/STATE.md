@@ -1,6 +1,6 @@
 # State
 
 Phase: 1 of 2 (The close that continues over a manifest nobody bumped)
-Status: executed
-Next: /cad-verify 1
+Status: phase complete
+Next: /cad-context 2
 Updated: 2026-08-22
