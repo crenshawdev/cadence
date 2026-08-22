@@ -42,9 +42,14 @@
 // Refusal envelope (D-01, one shape for every cause): `ok:false`,
 // `action:"refuse"`, a named machine `reason` code, the human sentence in
 // `detail`, exit 1 (emit mirrors `ok` into the exit code - no process.exit,
-// which can truncate stdout on a pipe), and NOTHING written. There is no
-// `ok:true` refusal shape anywhere in this seam, so a scripted caller reading
-// `ok` can never read a refusal as success. `reason` carries a machine code on
+// which can truncate stdout on a pipe), and NOTHING written. That is the
+// REFUSAL shape, and it is one of TWO `ok:false` shapes: a transition that
+// threw part way emits `action:"partial"` with `reason:"partial-bump"`, where
+// files DID land and `manifest.bumped`, each `siblings[]` row's `bumped` and
+// `changelog.changed` name which ones. So `ok:false` alone means "do not
+// ship", never "nothing was written" - `action` is what carries that. There is
+// no `ok:true` refusal shape anywhere in this seam, so a scripted caller
+// reading `ok` can never read a refusal as success. `reason` carries a machine code on
 // EVERY path, refusal or not, so a caller branching on it never gets a token
 // one run and a sentence the next. ONE deliberate exception (D-08, narrowed by
 // phase 2 D-07): a sibling manifest that PARSES and is simply not upgradeable -
@@ -73,6 +78,10 @@
 //                         readability and regular-file shape only, never a
 //                         content grammar check: the transform pass over it is
 //                         pure and cannot fail (D-09).
+//   partial-bump        - the decided write set began and a step threw anyway:
+//                         ok:false with action:"partial", and the disposition
+//                         fields naming what landed. The one non-refusal
+//                         ok:false code here.
 //   bad-date            - a PRESENT --date that is not YYYY-MM-DD, or one
 //                         carrying a newline. Refused at the dispatch, so it
 //                         fires on a non-plugin project too, where the
@@ -350,10 +359,29 @@ function bump(dir, versionArg, dateArg) {
   }
 
   const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });
-  // A step that threw is re-raised so the dispatch's catch renders it exactly
-  // as it does today; no pre-flight condition is declared, so `refused` is
-  // never set here.
-  if (!applied.ok) throw applied.failures[0].error;
+  if (!applied.ok) {
+    // A step threw anyway. Everything a read could have caught was caught
+    // above, so what reaches here is what no pre-flight can see: an EACCES on
+    // the tree, an ENOSPC, a symlink planted at atomicWrite's temp path. The
+    // dispatch's catch would flatten it to {"ok":false,"reason":"internal"}
+    // with no `manifest`, no `siblings` and no `changelog` field at all, which
+    // leaves an operator unable to tell a bumped tree from an untouched one.
+    //
+    // So it gets its own shape, in the vocabulary cmdMilestonePrune already
+    // uses for this state: `action:"partial"`, `reason:"partial-bump"`, and
+    // every disposition field filled from what the transition COMPLETED rather
+    // than from what was decided. It is the one halt where re-running is not a
+    // clean retry - the operator reads these three fields, repairs the tree and
+    // stops.
+    const landed = (key) => applied.completed.includes(key);
+    const { error } = applied.failures[0];
+    emit({ ok: false, action: 'partial', reason: 'partial-bump', target,
+      manifest: { from: primary.from, to: primary.to, bumped: landed(PRIMARY_MANIFEST) },
+      siblings: siblings.map((s) => ({ ...s, bumped: landed(s.file) })),
+      changelog: { ...changelog, changed: landed(CHANGELOG_FILE) },
+      detail: error && error.message ? error.message : String(error) });
+    return;
+  }
 
   const action = primary.action === 'bump' ? 'bumped' : primary.action; // bump|noop|skip
   emit({ ok: true, action, target, reason: primary.code, detail: primary.reason,
