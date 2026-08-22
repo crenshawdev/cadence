@@ -130,63 +130,93 @@ context-gathering, and debugging — without any external memory system.
   per-issue resolve loop runs under one wall-clock budget rather than a per-call
   timeout its own exit condition could not detect (RVW-03, REL-01, ISS-01) - v3.5.4
 
+- ✓ `v3.5.7 - measured, and no lever to change it`: `stakes` became the floor a
+  phase raises from rather than the level every phase pays, resolved off the
+  phase's own declared `files:` at plan time and replayable over this repo's 30
+  phases (CER-01); a fifth gate mode `deferred` queues its findings as a
+  committed `DEFERRED-*.json` and moves the refusal to `/cad-land`, so blocking
+  stops blocking the run (HLT-01); the risk-surface interview got a deliberate
+  entry point and stopped offering the same set twice (IVW-01); and the
+  in-dispatch read redundancy reached `trace suggest` as a per-file entry naming
+  the worst offender in one dispatch, with no config key behind it because none
+  exists (RDX-01) - v3.5.7
+
 ### Active
 
-**`v3.5.7 - measured, and no lever to change it`, opened 2026-08-20.** Scoped
-from the tracker milestone `v3.5.7`, which holds four issues: #167, #174, #189
-and #206. The theme is one sentence: Cadence measures its own cost and then
-gives you nothing to spend it with. #167 has a read trace that measures read-set
-redundancy and nothing that acts on the number. #174 pays a cold prefix per
-security-review invocation, 61 of them, where one process reviewing N diffs pays
-one. #189 has `stakes` as a project-level dial, so a README phase and an auth
-phase buy the same model, the same effort rung and the same gates. #206 asks the
-one question Cadence asks on its own, the risk-surface interview, exactly once
-and offers no way back to it. Three of the four are a control at the wrong
-granularity or missing outright; #174 is the bill that granularity runs up.
-Phases are not yet added.
+**`v3.5.8 - the transition that claims to be one`, opened 2026-08-22.** Scoped
+from the tracker milestone `v3.5.8`, which holds #145, #139 and #140. These are
+one piece of work, not three: #145 is the shared primitive and the other two are
+its first two consumers, which is why the previous cycle dropping all three left
+its own stated theme untouched.
 
-Requirement ids ARE seeded this cycle - `RDX-01`, `BCH-01`, `CER-01`, `IVW-01`
-in `REQUIREMENTS.md`'s `## Active` - which `v3.5.6` did not do, and the close
-below records what that cost.
+The theme is one sentence: four operations in this codebase write several files
+and report the result as if they wrote one. Phase completion writes ROADMAP.md
+and REQUIREMENTS.md, the release bump writes the primary manifest, a sibling and
+the changelog, the milestone prune writes phase directories and both documents,
+and renumbering writes deletions, moves and three documents. An atomic rename
+protects one file from torn bytes and cannot create a transaction across files,
+so every one of these can leave a half-applied tree inside an `ok:true`
+envelope. #140 names that gap at `cmdPhaseDone`, whose own comment says
+"all-or-nothing" over two separate renames. #139 names it at
+`release-bump.mjs:138-141`, which writes the primary manifest before it has read
+or validated the sibling, so a malformed sibling leaves a partially bumped
+release tree and reports success. #145 is the primitive both want: a journal or
+recovery step that makes a multi-file transition either complete or recoverable,
+rather than reported honestly only where someone remembered to report it -
+renumbering already does report partial application (`planning.mjs:3227-3273`),
+which is the existing behaviour to generalize rather than replace.
 
-`v3.5.6` closed on 2026-08-20: three phases, 45 commits off `v3.5.5`, the
-manifest at `3.5.6`, the audit green on the arm that could run. Its narrative is
-in `CHANGELOG.md`, its per-phase residue in `.planning/ARCHIVE.md` at 61 new
-rows, and its phase record in git history at the pruning commit - this close ran
-`--mode delete`, so there is no `_archive-v3.5.6/`. The merge and the release tag
-are still outstanding: `/cad-land` cuts `v3.5.6` on the pulled base after the
-merge confirms.
+Requirement ids are seeded at the open, in `REQUIREMENTS.md`'s `## Active`, the
+practice `v3.5.7` established and `v3.5.6` did not have. Phases are not yet
+added.
 
-What it delivered: the machinery that records what a run did. Executor reports
-rotate to `plan-<k>.<n>.md` instead of overwriting, so a re-run no longer
-destroys the previous run's only per-task record, and `/cad-execute` now refuses
-a phase whose derived status is `executed` rather than dispatching it again from
-task 1. A gate fire writes `ADJUDICATION-<trigger>-<discriminator>.json` with one
-entry per finding raised per voice, the claim and failure scenario byte-for-byte,
-full 40-character `base_id`/`head_id` and citations grounded at the head commit,
-and `trace append` recounts the survivor figure from those rulings before letting
-a receipt onto the trace. The risk gate stopped deadlocking on an empty committed
-range, and it now reads that range with `--no-ext-diff --no-textconv` after its
-own gate caught that a `diff` driver in the reader's git config could present a
-risky range as empty.
+`v3.5.7` closed on 2026-08-22: four phases, 83 commits off `v3.5.6`, the manifest
+at `3.5.7`, and `/cad-audit` PASS on both arms - four of four requirements traced
+requirement to phase to plan to verified, and 14 of 14 acceptance criteria
+covered with zero breaks. Its narrative is in `CHANGELOG.md`, its per-phase
+residue in `.planning/ARCHIVE.md` at 89 new rows, and its phase record in git
+history at the pruning commit; this close ran `--mode delete`, so there is no
+`_archive-v3.5.7/`. The merge and the release tag are still outstanding:
+`/cad-land` cuts `v3.5.7` on the pulled base after the merge confirms.
 
-What is NOT closed, and it is the important line here: `v3.5.6` was scoped as
-four issues and shipped one. #195 was phase 1; phases 2 and 3 were both found by
-running phase 1's own acceptance and map to no tracker issue. #139, #140 and
-#145 - the multi-file transition reported as all-or-nothing, and the shared
-journal primitive that was to express it - were never planned into a phase, so
-the milestone's stated theme went untouched and its three issues stay open and
-unassigned. `/cad-audit` could not catch this: the cycle seeded no requirement
-ids, so its trace arm ran over zero requirements and returned PASS on an empty
-set while the coverage arm carried the whole proof at 20/20 criteria. That is the
-gap the seeded ids above are meant to close next cycle.
+What it delivered: the controls to spend what Cadence had only been measuring.
+`stakes` became the minimum a project accepts rather than the level every phase
+pays, with the phase's own declared `files:` scanned at plan time to raise from
+that floor - `route.mjs replay` shows 27 of this repository's 30 phases raising
+back to `shipped` on real evidence, 2 taking the discount and 1 withheld because
+a declared path was not readable, which is the fail-closed direction. A fifth
+gate mode `deferred` runs its reviewer, queues what it found as a committed
+`DEFERRED-*.json` and lets the phase finish, moving the guarantee to the land
+where `/cad-land` refuses on both publish arms while any member is
+unadjudicated. `/cad-config --surfaces` gives the risk-surface interview a way
+back in against a fresh scan. And `trace suggest` finally opens
+`.planning/reads.jsonl`, so the in-dispatch read redundancy the record had been
+carrying reaches a consumer: `cad-executor` at 3.64 opens per distinct file
+inside one dispatch, worst case `planning.mjs` read 29 times in one bracket, with
+the coverage, the scope and the excluded coordinator reads stated in the entry's
+own evidence string rather than only in prose.
 
-Also unassigned: two medium `risk_surface` findings carried out of this cycle
-(`adjudication-record.mjs:95`, raised high and downgraded, genuinely open;
-`planning.mjs:4654`, ruled survived and already fixed at `9d10919`), plus the
-eight from `v3.5.4` and the three from `v3.5.5`. The four deferred ids `PRS-01`,
+The honest line on this cycle: it shipped four of the five issues it was scoped
+for, and the fifth was killed rather than dropped. `BCH-01` (#174) went to
+`## Deferred` on a spike that invalidated it - batching N security reviews into
+one process saves 1.91%, a 1,676-token fixed prefix against six dispatches
+totalling 438,080 tokens, and it does not flip at the 61 invocations the issue
+cites because both sides of the ratio scale with N. The other spike narrowed
+#167 before it was planned: the 7.0x read redundancy the issue carries was
+measured over declared read-sets, and the observed in-dispatch figure is 3.64.
+Two spikes cost this cycle one phase and saved it from building a lever worth a
+rounding error.
+
+Still unassigned, carried into `v3.5.8` unscoped: two blocker/high `risk_surface`
+findings from phase 3 are persisted in the carried
+`.planning/REVIEW-risk_surface-v3.5.7.md` although the adjudication records show
+both fixed (`7ae1489`, `70bd22a`), so that file needs a look before the next
+close treats it as live. The medium survivors from `v3.5.4`, `v3.5.5` and
+`v3.5.6` are still unassigned, and so are #190, #191 and #192, which PROJECT has
+called a cycle of their own rather than filler. The deferred ids `PRS-01`,
 `EVD-01`, `RCL-06` and `CTX-02` were not promoted and their 2026-08-18 caveats
-still stand undecided.
+stand: `CTX-02`'s stated basis no longer holds and `RCL-06` carries no promotion
+trigger, so both want a decision before either is scoped.
 
 ## Key Decisions
 

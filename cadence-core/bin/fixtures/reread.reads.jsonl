@@ -1,0 +1,17 @@
+{"ts":"2026-08-21T09:00:30.000Z","tool":"Bash","agent":"coordinator","target":"cat","files":["README.md","CHANGELOG.md"]}
+{"ts":"2026-08-21T09:02:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-1","target":"sed","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T09:04:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-1","target":"grep","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T09:06:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-1","target":"sed","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T09:08:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-1","target":"sed","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T09:10:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-1","target":"grep","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T09:12:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-1","target":"sed","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T09:14:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-1","target":"sed","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T09:20:00.000Z","tool":"Read","agent":"cadence:cad-executor","agent_id":"ag-exec-1","target":"cadence-core/bin/lib/trace.mjs","files":["cadence-core/bin/lib/trace.mjs"]}
+{"ts":"2026-08-21T09:42:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-2","target":"sed","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T09:44:00.000Z","tool":"Bash","agent":"cadence:cad-executor","agent_id":"ag-exec-2","target":"grep","files":["cadence-core/bin/planning.mjs"]}
+{"ts":"2026-08-21T10:02:00.000Z","tool":"Bash","agent":"cadence:cad-planner","agent_id":"ag-plan-1","target":"sed","files":[".planning/PROJECT.md"]}
+{"ts":"2026-08-21T10:03:00.000Z","tool":"Bash","agent":"cadence:cad-planner","agent_id":"ag-plan-1","target":"sed","files":[".planning/PROJECT.md"]}
+{"ts":"2026-08-21T10:04:00.000Z","tool":"Bash","agent":"cadence:cad-planner","agent_id":"ag-plan-1","target":"sed","files":[".planning/PROJECT.md"]}
+{"ts":"2026-08-21T10:05:00.000Z","tool":"Bash","agent":"cadence:cad-planner","agent_id":"ag-plan-1","target":"sed","files":[".planning/PROJECT.md"]}
+{"ts":"2026-08-21T10:06:00.000Z","tool":"Bash","agent":"cadence:cad-planner","agent_id":"ag-plan-1","target":"grep","files":[".planning/ROADMAP.md"]}
+{"ts":"2026-08-21T10:07:00.000Z","tool":"Bash","agent":"cadence:cad-planner","agent_id":"ag-plan-1","target":"grep","files":[".planning/ROADMAP.md"]}

@@ -245,3 +245,124 @@ export function scanTree(tree = {}) {
 
   return { evidenced, silent, unspeakable: [...UNSPEAKABLE], inconclusive, recommended };
 }
+
+/**
+ * The most options one ask-user question may carry, per
+ * `cadence-core/references/seams.md` (Seam: ask-user, "at most four options per
+ * question"). It lives here as a number because this file BUILDS the option
+ * list and a builder that can overrun the seam's cap is the same class of
+ * defect as the duplicate option below - `prose-agreement.test.mjs` reads the
+ * cap out of seams.md and holds this constant to it, so raising the seam moves
+ * the requirement rather than leaving two numbers to drift.
+ */
+export const OPTION_CAP = 4;
+
+/**
+ * The ORDERED choices the one-time surface question offers, built here rather
+ * than composed by a model at the ask site.
+ *
+ * WHY THIS IS A FUNCTION AT ALL (#206). The option list used to be three prose
+ * bullets a model followed per run: recommend `recommended`, then "fill the
+ * remaining slots with ... the evidenced categories alone, and all eight". The
+ * last slot restated the first, so the question arrived offering the same eight
+ * categories twice, and nothing could catch it because there was no list for a
+ * test to read. A composed list is unprovable; this one is a value.
+ *
+ * THE ORDER, and every rule in it:
+ *   1. `recommended` - all eight, whatever the scan found and whatever was
+ *      already answered. The recommendation NEVER narrows on what a scan failed
+ *      to evidence (D-14): silence is not absence, framework built-in auth
+ *      ships no dependency, and a narrowed recommendation persists a scope that
+ *      skips the only blocking review the project has. `inconclusive` changes
+ *      the REASON stated beside this choice and nothing else about it.
+ *   2. the answered set PLUS every category now evidenced that it does not
+ *      already cover - the re-run this arm exists for, where a project added
+ *      Stripe six months after answering.
+ *   3. the answered set unchanged - keeping the current answer is an answer.
+ *   4. the evidenced categories alone - the narrowest set the evidence
+ *      supports, which is the user's to pick and never the recommendation.
+ * Then any choice whose set is empty is dropped, and any whose set repeats an
+ * earlier choice's: with nothing answered, 2 collapses onto 4 and 3 is empty,
+ * so an unanswered project sees exactly two choices (or one, when the scan
+ * evidenced nothing). Every set is built in `CATEGORIES` order, so two
+ * spellings of one set compare equal rather than reading as two choices.
+ *
+ * Pure, like everything else in this file: it takes a `scanTree` result and the
+ * set a config layer already answered, and returns a value. It reads no config
+ * and no tree of its own.
+ *
+ * @param {ReturnType<typeof scanTree> | any} scan a `scanTree` result
+ * @param {readonly string[]} [answered] the categories a config layer already
+ *   answered - empty or absent means nobody has answered
+ * @returns {Array<{surfaces: string[], reason: string}>} at most `OPTION_CAP`
+ *   choices, the recommended one FIRST; `surfaces` is what picking it writes
+ *   and `reason` is what the ask states beside it
+ */
+export function interviewOptions(scan, answered = []) {
+  const s = scan && typeof scan === 'object' ? scan : {};
+  const known = (/** @type {any} */ c) => typeof c === 'string' && CATEGORIES.includes(c);
+  /** One set, in CATEGORIES order and de-duplicated. @param {any[]} cats */
+  const order = (cats) => CATEGORIES.filter((c) => cats.includes(c));
+
+  const evidence = (Array.isArray(s.evidenced) ? s.evidenced : [])
+    .filter((e) => e && typeof e === 'object' && known(e.category));
+  /** @type {Map<string, string>} category -> the ONE signal that evidenced it */
+  const signals = new Map(evidence.map((e) =>
+    [e.category, typeof e.signal === 'string' ? e.signal : '']));
+  const evidenced = order(evidence.map((e) => e.category));
+  const held = order(strs(answered).filter(known));
+  const recommended = order(
+    (Array.isArray(s.recommended) ? s.recommended : CATEGORIES).filter(known));
+  // Derived, never read off the scan: `inconclusive` IS "nothing was
+  // evidenced", and taking it from a field lets a doctored envelope state one
+  // arm while carrying the other's evidence.
+  const inconclusive = evidenced.length === 0;
+
+  /** `auth (dependency passport), billing (dependency stripe)` */
+  const naming = (/** @type {string[]} */ cats) => cats
+    .map((c) => (signals.get(c) ? `${c} (${signals.get(c)})` : c)).join(', ');
+
+  const gap = evidenced.filter((c) => !held.includes(c));
+  /** @type {Array<{surfaces: string[], reason: string}>} */
+  const candidates = [
+    {
+      surfaces: recommended,
+      reason: inconclusive
+        ? 'the structure evidences nothing either way - no dependency manifest and no '
+          + 'category directory matched - and silence is never absence, so every category stays in scope'
+        : `the structure evidences ${naming(evidenced)}; the rest are silent rather `
+          + 'than absent, so every category stays in scope',
+    },
+    // Only when there IS an answered set AND the scan evidences something it
+    // does not already cover. Both halves are load-bearing against the same
+    // failure - a reason that names a set the user never chose:
+    //   - empty gap: this set IS the answered set, and the dedup below would
+    //     keep it under a reason ("plus what it evidences") naming nothing.
+    //     Two choices reading as one is exactly the #206 shape.
+    //   - empty `held`: this set IS `evidenced`, and because the dedup keeps
+    //     the FIRST occurrence it would win over choice 4 and present the
+    //     evidenced categories as "the answered set plus ..." to a project
+    //     that has answered nothing. That is the first-fire path, so it is the
+    //     sentence most users read. Dropping the choice here is what the ORDER
+    //     comment above means by "with nothing answered, 2 collapses onto 4".
+    ...(held.length && gap.length ? [{
+      surfaces: order([...held, ...evidenced]),
+      reason: `the answered set plus what the scan now evidences beyond it: ${naming(gap)}`,
+    }] : []),
+    { surfaces: held, reason: 'the set already answered, left unchanged' },
+    { surfaces: evidenced, reason: `only what the structure evidences: ${naming(evidenced)}` },
+  ];
+
+  /** @type {Array<{surfaces: string[], reason: string}>} */
+  const options = [];
+  const seen = new Set();
+  for (const choice of candidates) {
+    if (!choice.surfaces.length) continue;
+    const key = choice.surfaces.join(',');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    options.push(choice);
+    if (options.length === OPTION_CAP) break;
+  }
+  return options;
+}

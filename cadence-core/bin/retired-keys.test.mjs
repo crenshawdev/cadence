@@ -7,7 +7,46 @@
 // Only node: builtins, no subprocess - the lib is pure.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { RETIRED_KEYS, retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
+
+// --- the retired rail, pinned byte for byte (CER-01 AC4, D-03) ---------------
+
+const RETIRED_KEYS_FILE = fileURLToPath(new URL('./lib/retired-keys.mjs', import.meta.url));
+// sha256 of lib/retired-keys.mjs as CER-01 found it. Every assertion above reads
+// message CONTENT, so the eight `risk.override.*` rows could be edited, reworded
+// or un-retired with the whole suite still green - which is exactly what AC4's
+// "that rail is byte-identical" claims nothing checks.
+const RETIRED_KEYS_SHA256 = 'a9b330531fb0ce70a51879c0ca39a582de9616c9004ffa4085d8efeb49429c8a';
+
+test('lib/retired-keys.mjs is byte-identical - the eight risk.override.* keys stay retired', () => {
+  // WHAT THIS PROTECTS. D-03 keeps the retired family retired because a key
+  // cannot live in config.schema.json and the retired registry at once, so
+  // CER-01 gives the floor back through a NEW key - `waive_routing_floor` inside
+  // `review.triggers.risk_surface` - rather than by reviving these. Un-retiring
+  // one would put the same name in both places and make the write face refuse a
+  // key the schema advertises.
+  //
+  // WHAT TO DO WHEN THIS GOES RED: re-read D-03 before re-pinning. A deliberate
+  // edit to that file is a DECISION, not a refresh, and updating the constant to
+  // whatever the file now hashes to is how the decision gets reversed by
+  // somebody who never read it.
+  //
+  // AND ONE THING THE PIN DELIBERATELY FREEZES IN A FALSE STATE: the eight
+  // `detail` strings still say "there is no floor for a waiver to lower". That
+  // stopped being true when the plan-time floor landed, and this milestone's
+  // waiver key makes it false twice over. D-03 locks the file anyway; the
+  // sentence stands, and the fix is a decision to take, not a byte to change
+  // under this test.
+  const sha = createHash('sha256').update(readFileSync(RETIRED_KEYS_FILE)).digest('hex');
+  assert.equal(sha, RETIRED_KEYS_SHA256,
+    'cadence-core/bin/lib/retired-keys.mjs changed. CER-01 D-03 locks this file: '
+    + 'the eight risk.override.* keys stay retired and the floor is waived '
+    + 'through review.triggers.risk_surface.waive_routing_floor instead. '
+    + 'Re-read D-03 before re-pinning this digest.');
+});
 
 // --- retiredKeyError: the write face ------------------------------------------
 

@@ -15,7 +15,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
+import { scanTree, CATEGORIES, interviewOptions, OPTION_CAP } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
@@ -91,6 +91,103 @@ test('a malformed tree description reports rather than throwing', () => {
   }
 });
 
+// --- the interview's option list (#206) ---------------------------------------
+//
+// The defect these rows exist for: the option list used to be composed by a
+// model from three prose bullets, the last of which said "fill the remaining
+// slots with ... the evidenced categories alone, and all eight" - so slot 1 and
+// the last slot were the same eight categories, and no test could see it
+// because there was no list to read. Distinctness is now a property of a value.
+
+/** The sets a choice list offers, as joined keys. */
+const sets = (options) => options.map((o) => o.surfaces.join(','));
+const ALL_EIGHT = [...CATEGORIES].join(',');
+
+test('an inconclusive scan and an evidenced one both lead with all eight', () => {
+  // D-14 on the option list itself: `inconclusive` changes the REASON beside
+  // the recommendation, never its set. Narrowing the first choice on a scan
+  // that found nothing is the absence-from-silence conclusion again.
+  const blind = interviewOptions(scanTree({}));
+  const seen = interviewOptions(scanTree({ dirs: ['migrations'] }));
+  assert.equal(sets(blind)[0], ALL_EIGHT);
+  assert.equal(sets(seen)[0], ALL_EIGHT);
+  assert.notEqual(blind[0].reason, seen[0].reason,
+    'the two scan arms state the same reason, so the evidence is not being reported');
+  assert.match(seen[0].reason, /migrations\//, 'the evidenced arm drops the scan signal');
+});
+
+test('the evidenced-only choice is absent when nothing was evidenced', () => {
+  // An empty set is not an option: offering "review nothing" is not a narrower
+  // scope, it is turning the only blocking trigger off by accident.
+  const blind = interviewOptions(scanTree({}));
+  assert.deepEqual(sets(blind), [ALL_EIGHT], JSON.stringify(blind));
+  const seen = interviewOptions(scanTree({ dirs: ['migrations'] }));
+  assert.deepEqual(sets(seen), [ALL_EIGHT, 'migrations'], JSON.stringify(seen));
+});
+
+test('an answered set gains the newly evidenced category as the SECOND choice', () => {
+  // The whole reason the arm is re-enterable: a project answered `secrets` and
+  // added Stripe six months later. The recommendation is still all eight, and
+  // the union sits where a user who wants the minimum change will find it.
+  const options = interviewOptions(scanTree({ dependencies: ['stripe'] }), ['secrets']);
+  assert.equal(sets(options)[0], ALL_EIGHT);
+  assert.deepEqual(options[1].surfaces, ['billing', 'secrets']);
+  assert.match(options[1].reason, /stripe/, 'the union choice does not name what it added');
+});
+
+test('with nothing answered the evidenced choice states the EVIDENCE, not a phantom answer', () => {
+  // The first-fire path, and so the sentence most users ever read. The union
+  // choice and the evidenced-only choice carry the same set when `held` is
+  // empty, and the dedup keeps whichever came first - so the guard has to drop
+  // the union choice, or the six evidenced categories get presented as "the
+  // answered set plus what the scan now evidences beyond it" to a project that
+  // has answered nothing.
+  const options = interviewOptions(scanTree({
+    dirs: ['auth', 'migrations', 'api', 'workers'],
+    dependencies: ['stripe', 'express'],
+  }));
+  assert.equal(sets(options)[0], ALL_EIGHT);
+  assert.deepEqual(options[1].surfaces,
+    ['auth', 'migrations', 'billing', 'concurrency', 'api_contract', 'untrusted_input']);
+  assert.match(options[1].reason, /^only what the structure evidences: /,
+    `the evidenced choice reads as an answered set that does not exist: ${options[1].reason}`);
+  assert.doesNotMatch(options[1].reason, /answered set/,
+    `nothing was answered, yet the choice names an answered set: ${options[1].reason}`);
+});
+
+test('an answered set equal to all eight still leads with all eight and repeats nothing', () => {
+  const options = interviewOptions(scanTree({ dependencies: ['stripe'] }), [...CATEGORIES]);
+  assert.equal(sets(options)[0], ALL_EIGHT);
+  assert.equal(new Set(sets(options)).size, options.length,
+    `two choices carry the same set: ${JSON.stringify(sets(options))}`);
+});
+
+test('no call returns more than the ask-user seam option cap', () => {
+  for (const [tree, answered] of [
+    [{}, undefined],
+    [{ dirs: ['migrations'] }, undefined],
+    [{ dependencies: ['stripe'] }, ['secrets']],
+    [{ dirs: ['auth', 'migrations', 'api', 'workers'], dependencies: ['stripe', 'dotenv'] }, ['secrets']],
+    [{ dirs: ['migrations'] }, [...CATEGORIES]],
+  ]) {
+    const options = interviewOptions(scanTree(tree), answered);
+    assert.ok(options.length <= OPTION_CAP, JSON.stringify(sets(options)));
+    assert.equal(new Set(sets(options)).size, options.length, JSON.stringify(sets(options)));
+    for (const o of options) assert.ok(o.reason, 'a choice arrived with no reason');
+  }
+});
+
+test('a malformed scan or answered set reports rather than throwing', () => {
+  for (const bad of [null, 'nope', 7, { evidenced: 'migrations', recommended: 3 }]) {
+    assert.doesNotThrow(() => interviewOptions(bad), JSON.stringify(bad));
+  }
+  // An unrecognised answered token is dropped, never written into a choice:
+  // `answeredSurfaces` already reads such a list as UNANSWERED, and offering a
+  // typo back as a set would persist it.
+  const options = interviewOptions(scanTree({}), ['secret', 'secrets']);
+  for (const o of options) assert.ok(!o.surfaces.includes('secret'), JSON.stringify(o));
+});
+
 // --- the disk half ------------------------------------------------------------
 
 /** `planning.mjs detect-surfaces ...`, parsed off stdout on either exit code. */
@@ -140,6 +237,71 @@ test('detect-surfaces refuses a --root with nothing usable after it', () => {
   const r = run('--root');
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-args');
+});
+
+/**
+ * The #206 demo tree: the project the duplicate-option report was filed from.
+ * Express + Stripe + Prisma + Passport, with the four category directories, a
+ * `.sql` file and an `openapi.yaml` - six of the eight evidenced, `destructive`
+ * and `secrets` silent.
+ */
+function demoTree() {
+  const root = mkdtempSync(join(tmpdir(), 'cad-206-'));
+  for (const d of ['auth', 'migrations', 'api', 'workers']) mkdirSync(join(root, d));
+  writeFileSync(join(root, 'package.json'), JSON.stringify({
+    dependencies: { express: '^4', stripe: '^14', prisma: '^5', passport: '^0.7' },
+  }));
+  writeFileSync(join(root, 'migrations', '001_init.sql'), 'select 1;\n');
+  writeFileSync(join(root, 'openapi.yaml'), 'openapi: 3.0.0\n');
+  return root;
+}
+
+const EVIDENCED_SIX = ['api_contract', 'auth', 'billing', 'concurrency',
+  'migrations', 'untrusted_input'];
+
+test('the #206 demo tree evidences six categories and offers two distinct options', () => {
+  // The defect itself: this question used to arrive with all eight in slot 1
+  // and all eight again in the last slot, because the prose told a model to
+  // "fill the remaining slots with ... the evidenced categories alone, and all
+  // eight". Two options, two different sets.
+  const r = run('--root', demoTree());
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.evidenced.map((e) => e.category).sort(), EVIDENCED_SIX,
+    JSON.stringify(r.evidenced));
+  const sets = r.options.map((o) => o.surfaces.join(','));
+  assert.equal(new Set(sets).size, sets.length, `a repeated option set: ${JSON.stringify(sets)}`);
+  assert.deepEqual(r.options[0].surfaces, [...CATEGORIES]);
+  assert.deepEqual([...r.options[1].surfaces].sort(), EVIDENCED_SIX, JSON.stringify(sets));
+});
+
+test('--answered on the demo tree keeps all eight first and puts the union second', () => {
+  // A project that answered `secrets` and then added the rest. The
+  // recommendation does not narrow (D-14); the union is the second choice, and
+  // it is NOT all eight - `destructive` is evidenced by nothing and was never
+  // answered, so it is absent from it.
+  const r = run('--root', demoTree(), '--answered', 'secrets');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.options[0].surfaces, [...CATEGORIES]);
+  assert.deepEqual([...r.options[1].surfaces].sort(), [...EVIDENCED_SIX, 'secrets'].sort(),
+    JSON.stringify(r.options[1]));
+  assert.ok(!r.options[1].surfaces.includes('destructive'), JSON.stringify(r.options[1]));
+});
+
+test('detect-surfaces refuses an --answered with nothing usable after it', () => {
+  const r = run('--root', demoTree(), '--answered');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /--answered/);
+});
+
+test('detect-surfaces refuses an --answered token outside the eight', () => {
+  // Narrowing to the tokens that parsed would build an option list from an
+  // answer nobody gave, which is how `["auth","secret"]` stops reviewing
+  // secrets forever.
+  const r = run('--root', demoTree(), '--answered', 'nope');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /nope/);
 });
 
 test('a bare PEP 621 pyproject evidences its dependencies, not an empty manifest', () => {

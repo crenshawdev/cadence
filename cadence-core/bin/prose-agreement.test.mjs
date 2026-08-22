@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { activeVersion } from './lib/branch-decision.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { DEFERRED_READS, regionLabels } from './lib/deferred-reads.mjs';
+import { CATEGORIES, scanTree, interviewOptions } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -1033,6 +1034,125 @@ test('cad-land 3(b): the GitLab arm consults the authorization seam BEFORE it cr
     'step 3(b) never says what the GitLab arm does when the seam refuses');
 });
 
+test('cad-land step 3: the deferred queue refuses ahead of BOTH publish arms', () => {
+  // The falsifier for "an unadjudicated deferred finding stops the land":
+  // deleting the invocation has to redden something, or the guarantee is prose
+  // nobody checks. ORDER and REGION, not presence - a call that sits inside
+  // 3(a) never runs on the unattended arm, which is the one path nobody
+  // watches, and a call placed after either arm has already published.
+  const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const labelOf = regionLabels(skill);
+  const lines = skill.split('\n');
+  const at = (needle) => lines.findIndex((l) => l.includes(needle));
+
+  const call = at('planning.mjs" deferred list');
+  assert.ok(call > -1, 'cad-land step 3 no longer asks the queue what is still deferred');
+  assert.equal(labelOf(call), '3',
+    'the deferred-queue refusal moved inside a publish arm; it governs both, so it '
+    + 'belongs to step 3 itself');
+  const armA = at('**(a) `git.auto_close` false');
+  const armB = at('**(b) `git.auto_close` true');
+  assert.ok(armA > -1 && armB > -1, 'step 3 no longer spells its two publish arms');
+  assert.ok(call < armA && call < armB,
+    'the queue is read AFTER a publish arm begins, so the land it must stop has already started');
+
+  // It is a NEW arm, never land-cleanup.mjs gate (D-06): that gate halts only
+  // under git.auto_close and reads only risk_surface survivors, so folding this
+  // into it would publish straight over a deferred plan/diff/phase_diff finding
+  // on the default configuration.
+  const step3 = lines.filter((l, i) => labelOf(i) === '3').join('\n');
+  assert.match(step3, /NOT `land-cleanup\.mjs gate`/,
+    'step 3 no longer says the deferred refusal is not the auto_close survivor gate');
+  assert.match(step3, /STOP the land here/, 'step 3 no longer says what a member does');
+  // An unprovable queue refuses exactly as a member does - the gate never
+  // reports "nothing deferred" about input it could not read.
+  assert.match(step3, /unreadable/,
+    'step 3 no longer states that a queue it could not read refuses too');
+  assert.match(step3, /references\/triage-gate\.md/,
+    'step 3 no longer routes the reader to the arm that says how to clear a member');
+
+  const guardrails = /<guardrails>([\s\S]*?)<\/guardrails>/.exec(skill);
+  assert.ok(guardrails, 'cad-land lost its guardrails block');
+  assert.match(guardrails[1], /deferred finding is the one thing that stops it/,
+    'the guardrails no longer name the one thing that stops a land');
+});
+
+test('progress.md: the deferred count is read off the envelope at both its sites', () => {
+  // D-05's enforcement. The COUNT comes from `status`, never parsed back out of
+  // the cursor's `Next:` free text - the substitution this repository already
+  // condemned for trigger names, where one trigger was spelled four different
+  // ways across 35 shipped events. A workflow that named the queue only in its
+  // report would leave the figure to be derived by hand.
+  const wf = doc('cadence-core', 'workflows', 'progress.md');
+  const labelOf = regionLabels(wf);
+  const lines = wf.split('\n');
+  const region = (name) => lines.filter((l, i) => labelOf(i) === name).join('\n');
+
+  const derive = region('derive');
+  assert.match(derive, /`deferred`/,
+    'the derive step no longer names the `deferred` key the one status line carries');
+  assert.match(derive, /ALWAYS present/,
+    'the derive step no longer says the key is always present, so an absent one reads as empty');
+  assert.match(derive, /never from\s+the cursor's `Next:` text/,
+    'the derive step no longer forbids taking the count off the cursor');
+
+  const report = region('report');
+  assert.match(report, /deferred\.findings/,
+    'the report step no longer prints the count, or no longer takes it from the envelope');
+  assert.match(report, /never taken off the\s+cursor/,
+    'the report step no longer forbids taking the count off the cursor');
+
+  // The ROUTE row, and where it sits. Every row below it ends a cycle and each
+  // of those leads to a land - /cad-milestone chains /cad-land after its prune.
+  const route = region('route');
+  const routeLines = route.split('\n');
+  const at = (needle) => routeLines.findIndex((l) => l.includes(needle));
+  const queued = at('`deferred.findings` non-zero');
+  assert.ok(queued > -1, 'the route table no longer has a row for a non-zero deferred count');
+  assert.match(routeLines[queued], /never \/cad-land/,
+    'the deferred route row no longer says a queued finding does not route to a land');
+  for (const later of ['Drift kind `phase-dir`', '`cycle` is `none`', '`current` is null']) {
+    assert.ok(at(later) > queued, `the deferred row sits below "${later}", which routes toward a land`);
+  }
+  for (const earlier of ['Paused cursor', 'Lowest **planned** phase']) {
+    assert.ok(at(earlier) > -1 && at(earlier) < queued,
+      `the deferred row displaced "${earlier}", which is a recovery state and takes precedence`);
+  }
+
+  // And no new cursor status value (D-05): one outside planning.mjs's AGREE map
+  // is reported as `cursor` drift and rewritten by the very next /cad-progress,
+  // so the cursor would stop naming the queue one command after it was written.
+  assert.doesNotMatch(region('reconcile'), /deferred/,
+    'the reconcile step gained a deferred status mapping; the cursor carries a POINTER, not a state');
+});
+
+test('execute.md state: a deferring run points the cursor at its queue and commits it', () => {
+  // Both halves of what makes a deferred finding survive the session that
+  // deferred it: a resume pointer that says the queue is there, and the member
+  // itself in git. `.planning/trace.jsonl` is gitignored and the sibling REVIEW
+  // file is committed by nothing, so an untracked member is gone on a fresh
+  // clone - and the land it was written to stop publishes over it.
+  const wf = doc('cadence-core', 'workflows', 'execute.md');
+  const labelOf = regionLabels(wf);
+  const state = wf.split('\n').filter((l, i) => labelOf(i) === 'state').join('\n');
+
+  assert.match(state, /cursor set --phase <N> --status executed --next-file <path>/,
+    'the deferring branch no longer takes the --next-file transport');
+  assert.match(state, /DEFERRED a fire/,
+    'the state step no longer branches on whether this run deferred anything');
+  // The transport is the POINT: the pointer is composed from what the run did,
+  // which is caller-derived text, and conventions.md binds that to a path.
+  assert.match(state, /caller-derived text rides a path/,
+    'the state step no longer says WHY the deferring branch uses a file');
+  // And NO new cursor status (D-05): one outside planning.mjs's AGREE map is
+  // reported as `cursor` drift and rewritten by the very next /cad-progress.
+  assert.match(state, /Keep `--status executed` exactly as it\s+is/,
+    'the state step no longer pins --status executed on the deferring branch');
+
+  assert.match(state, /\.planning\/phases\/<N>\/DEFERRED-\*\.json/,
+    'the commit list no longer stages the queue member, so it is untracked on a fresh clone');
+});
+
 test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check status refuses', () => {
   // Detection without enforcement is precisely the outcome RSK-02 exists to
   // prevent, and it passes every other check in this phase. A tree carrying
@@ -1196,11 +1316,14 @@ test('GAT-04: every fenced outcome receipt names its trigger, plan and both rang
       }
     }
   }
-  // All four settle points, so a receipt block DELETED fails here too rather
-  // than passing vacuously: adjudication (review-triggers.md) plus the three
-  // in triage-gate.md.
-  assert.deepEqual(seen.sort(), ['adjudication', 'gate_pass', 'override', 'rearm'],
-    'the four blocking settle points no longer print one fenced receipt command each');
+  // All five settle points, so a receipt block DELETED fails here too rather
+  // than passing vacuously: adjudication (review-triggers.md) plus the four
+  // in triage-gate.md - `gate_pass`, `override`, `rearm` and the `deferred`
+  // arm's `deferral`, which settles by QUEUING rather than by ruling and needs
+  // the same joinable receipt to keep `risk-check status` from reading its
+  // range as unfired forever.
+  assert.deepEqual(seen.sort(), ['adjudication', 'deferral', 'gate_pass', 'override', 'rearm'],
+    'the five settle points no longer print one fenced receipt command each');
 });
 
 // --- MSR-01: the close-half turn rule is stated ONCE, in seams.md ------------
@@ -1723,4 +1846,368 @@ test('AC6: report.md renders its Gates line from the record, states the unrecord
   assert.doesNotMatch(refuted, /ADJUDICATION|survivors/,
     `${where}: the Refuted line acquired gate findings - it consumes SUMMARY deviations that `
     + `corrected a D-NN and nothing else (D-10): ${refuted}`);
+});
+
+// --- IVW-01: what `recommended` CONTAINS, read off the prose and off the lib --
+//
+// CST-02 above verifies the category LIST across three surfaces, and has never
+// once verified what the scan RECOMMENDS out of that list. That is the gap
+// #206 lived in: `scanTree` returned all eight while review-triggers.md still
+// described a recommendation narrowed to the evidenced categories, and the
+// disagreement survived a release because no check read the recommendation at
+// all. This reads it, on BOTH scan arms, because the collapse is the fact -
+// an inconclusive tree and one evidencing a category recommend the SAME set,
+// and only the reason the option states beside it differs.
+//
+// The figure is read as a WORD, which is how that section spells it. Nothing
+// here parses the section's bullet or table shape: self-verify.mjs:927 records
+// a standing decision that this surface has no stated grammar, so a shape check
+// would redden on a reformat that changed no fact.
+
+/**
+ * Assert one prose section and one set of scan arms state the same
+ * `recommended`. A function OVER its inputs, not a straight-line body, so the
+ * test can re-run it against doctored ones and prove it fails from either side
+ * - a one-sided assertion is exactly how this drifted for a release.
+ *
+ * @param {string} section - the `## risk_surface detection` section's text.
+ * @param {Record<string, string[]>} arms - `recommended`, keyed by scan arm.
+ */
+function pinRecommended(section, arms) {
+  const where = 'review-triggers.md `## risk_surface detection`';
+  // Flattened first: the sentence wraps, and a regex over raw lines would read
+  // a rewrap as a deleted claim.
+  const stated = flat(section).match(/`recommended` array, which is all (\w+) categories/);
+  assert.ok(stated,
+    `${where}: no sentence states what the recommended array contains`);
+  const count = countWord(stated[1], where);
+
+  const entries = Object.entries(arms);
+  for (const [arm, recommended] of entries) {
+    assert.equal(recommended.length, count,
+      `${where} says the recommendation is all ${count} categories; the ${arm} scan `
+      + `recommends ${recommended.length}: [${recommended}]`);
+  }
+  const [firstArm, firstSet] = entries[0];
+  for (const [arm, recommended] of entries.slice(1)) {
+    assert.deepEqual(recommended, firstSet,
+      `the ${arm} scan recommends [${recommended}] and the ${firstArm} scan [${firstSet}] - `
+      + 'the two arms differ by more than the reason, so the recommendation narrowed on '
+      + 'evidence (D-14)');
+  }
+}
+
+test('IVW-01: the prose and scanTree state one `recommended`, and only the reason moves', () => {
+  const section = doc('cadence-core', 'references', 'review-triggers.md')
+    .split('## risk_surface detection')[1];
+  assert.ok(section, 'review-triggers.md has no risk_surface detection section');
+
+  const blind = scanTree({});
+  const seeing = scanTree({ dependencies: ['stripe'] });
+  assert.equal(blind.inconclusive, true, 'scanTree({}) is no longer the inconclusive arm');
+  assert.equal(seeing.inconclusive, false,
+    'a stripe dependency no longer evidences a category, so this is not the evidenced arm');
+
+  const arms = { inconclusive: blind.recommended, evidenced: seeing.recommended };
+  pinRecommended(section, arms);
+
+  // The same sentence claims the FIRST option carries that array, which is the
+  // half a count comparison cannot see: an option builder that leads with a
+  // narrower set states a narrower recommendation whatever `recommended` holds.
+  for (const [arm, scan] of [['inconclusive', blind], ['evidenced', seeing]]) {
+    assert.deepEqual(interviewOptions(scan)[0].surfaces, scan.recommended,
+      `${arm}: the first option's set is not the scan's recommended array`);
+  }
+
+  // ...and the reason is the ONLY thing that moves between the arms.
+  assert.notEqual(interviewOptions(blind)[0].reason, interviewOptions(seeing)[0].reason,
+    'both arms state the same reason, so the inconclusive arm stopped saying the structure '
+    + 'evidences nothing');
+
+  // Falsified from the PROSE side.
+  const doctoredWord = section.replace(/(`recommended` array, which is all\s+)(\w+)(\s+categories)/,
+    '$1seven$3');
+  assert.notEqual(doctoredWord, section, 'the count word could not be doctored');
+  assert.throws(() => pinRecommended(doctoredWord, arms), /says the recommendation is all 7/,
+    'a prose count that disagrees with the scan passes this check');
+
+  // ...and from the CODE side, one category short of all eight.
+  assert.throws(() => pinRecommended(section, { ...arms, evidenced: arms.evidenced.slice(1) }),
+    /the evidenced scan recommends 7/,
+    'a recommendation missing a category passes this check');
+});
+
+// --- IVW-01: the ask-user rendering contract, at BOTH interview sites ---------
+//
+// Nothing structural enforces how a model renders a question. The seam states
+// three binding rules for a structured choice - the option cap per question,
+// the recommended option first and labelled, and that the label is a display
+// convention and never a pre-selection - and the two sites that ask the
+// risk-surface question restate them, because a workflow that pointed at
+// seams.md and stopped would leave the rules a step away at the moment the
+// question is put. Restatement is what makes them droppable one site at a
+// time, silently, so THIS check is the enforcement.
+//
+// The cap is read off seams.md rather than written here, so raising the seam's
+// cap moves both sites' requirement and the builder's ceiling together instead
+// of leaving three numbers to drift.
+
+test('IVW-01: both risk-surface interview sites carry the ask-user rules, and the builder holds the cap', () => {
+  const section = (text, heading, where) => {
+    const after = text.split(heading)[1];
+    assert.ok(after, `${where}: no ${heading} section`);
+    return after.split(/\n## /)[0];
+  };
+
+  const askUser = section(doc('cadence-core', 'references', 'seams.md'),
+    '## Seam: ask-user', 'references/seams.md');
+
+  const CAP = /at most (\w+) options per question/;
+  // Flattened: every one of these sentences wraps, and a regex over raw lines
+  // would read a rewrap as a deleted rule.
+  const capStated = flat(askUser).match(CAP);
+  assert.ok(capStated, 'references/seams.md `## Seam: ask-user`: no option cap per question');
+  const cap = countWord(capStated[1], 'references/seams.md `## Seam: ask-user`');
+
+  // Each rule as the CLAIM it makes, never the sentence shape around it: these
+  // are three prose surfaces with no stated grammar, and a rewrap that changed
+  // no fact must stay green (self-verify.mjs:927).
+  const RULES = [
+    { id: 'the option cap per question', re: CAP, cap: true },
+    { id: 'the recommended option FIRST and labelled `(recommended)`',
+      re: /\bfirst\b[^.]*`\(recommended\)`/i },
+    { id: 'the clause that the label is a display convention, never a pre-selection',
+      re: /never a pre-selection/i },
+    { id: 'the clause that the seam still blocks', re: /the seam still blocks/i },
+  ];
+
+  const SITES = [
+    { where: 'references/seams.md `## Seam: ask-user`', text: askUser },
+    {
+      where: 'references/review-triggers.md `## risk_surface detection`',
+      text: section(doc('cadence-core', 'references', 'review-triggers.md'),
+        '## risk_surface detection', 'references/review-triggers.md'),
+    },
+    {
+      where: 'workflows/config.md `## Risk surfaces (`--surfaces`)`',
+      text: section(doc('cadence-core', 'workflows', 'config.md'),
+        '## Risk surfaces', 'workflows/config.md'),
+    },
+  ];
+
+  for (const site of SITES) {
+    const flatText = flat(site.text);
+    for (const rule of RULES) {
+      const found = flatText.match(rule.re);
+      assert.ok(found, `${site.where}: dropped ${rule.id}`);
+      if (rule.cap) {
+        assert.equal(countWord(found[1], site.where), cap,
+          `${site.where} states a cap of ${found[1]} options per question, seams.md states ${cap}`);
+      }
+    }
+  }
+
+  // Scoped to the `--surfaces` arm alone, which is why it cannot join RULES
+  // above: RULES runs against all three sites, and neither seams.md nor
+  // review-triggers.md states this. The arm's whole reason for existing is
+  // that a project which added Stripe six months after answering has no other
+  // way to see it, and nothing else holds the sentence - /code/cadence returns
+  // `inconclusive: true` with `evidenced: []`, so the callout cannot fire on
+  // the only tree the human check runs against.
+  const surfacesSite = SITES.find((s) => s.where.startsWith('workflows/config.md'));
+  assert.ok(surfacesSite, 'the `--surfaces` site left the SITES list');
+  const surfaces = flat(surfacesSite.text);
+  assert.match(surfaces, /call(?:s|ing)? out every evidenced category the answered set does not contain/i,
+    'workflows/config.md `## Risk surfaces`: dropped the clause that every evidenced '
+    + 'category the answered set does not cover is called out');
+
+  // The code side of the same cap. A site can render at most what the builder
+  // hands it, so a candidate list that grew past the cap would break the rule
+  // above at a site that obeyed it word for word.
+  const ALL_SIGNALS = {
+    dependencies: ['express', 'stripe', 'prisma', 'passport'],
+    dirs: ['auth', 'migrations', 'api', 'workers'],
+    extensions: ['.sql'],
+    files: ['openapi.yaml'],
+  };
+  const CASES = [
+    ['an inconclusive scan, nobody answered', scanTree({}), []],
+    ['an evidenced scan, nobody answered', scanTree(ALL_SIGNALS), []],
+    ['an inconclusive scan, already answered', scanTree({}), ['secrets', 'destructive']],
+    ['an evidenced scan, already answered', scanTree(ALL_SIGNALS), ['secrets', 'destructive']],
+    ['an evidenced scan, everything already answered', scanTree(ALL_SIGNALS), [...CATEGORIES]],
+  ];
+  for (const [label, scan, answered] of CASES) {
+    const options = interviewOptions(scan, answered);
+    assert.ok(options.length >= 1 && options.length <= cap,
+      `${label}: the builder returned ${options.length} options against the seam's cap of ${cap}`);
+  }
+});
+
+// --- Two caps, two different reads, and neither one unified away ------------
+//
+// `references/triage-gate.md` now states the one-round re-arm cap TWICE, on
+// purpose (CONTEXT D-02): the blocking arm counts `rearm` outcome events under
+// the current run's `corr`, and the deferred arm reads the highest round on
+// disk for the fire. They look like duplication, and the obvious tidy - one
+// cap, one read - silently re-opens the loop criterion 6 forbids, because a
+// deferred fire's triage runs in a session whose `corr` matches no `rearm` the
+// deferring run wrote, so the corr-keyed count reads as unspent every single
+// time it is asked.
+//
+// Nothing else notices. The weight budget counts bytes, self-verify's
+// invocation lint reads flags against CONTRACTS rows, and the GAT-04 arm above
+// scans only fenced `trace append` lines - the read-back is a `node -e`, so
+// deleting it or re-pointing it at the queue is green everywhere. This arm is
+// the one place that fails.
+
+test('triage-gate.md: the corr-keyed re-arm read-back survives the deferred arm beside it', () => {
+  const text = doc('cadence-core', 'references', 'triage-gate.md');
+
+  // 1. The blocking cap, at the bytes that MAKE it corr-keyed: the filter is
+  //    quoted whole rather than matched loosely, because every word in it is
+  //    load-bearing - the event name, the trigger FIELD (never its detail
+  //    text) and the run's own id.
+  const corrFilter = 'o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr';
+  assert.equal(text.split(corrFilter).length - 1, 1,
+    'triage-gate.md no longer counts the blocking re-arm under this run\'s own corr. '
+    + 'The deferred arm reads its cap off the queue instead; that is a SECOND rule '
+    + 'beside this one, never a replacement for it (D-02).');
+  // The FENCED BLOCK, not the line: the read-back is `&&`-chained across three
+  // physical lines, and the chaining is exactly what makes the count this run's
+  // own - a render that failed never reaches the reader.
+  const readBack = text.split('```').find((b) => b.includes(corrFilter)) || '';
+  assert.match(readBack, /mktemp -d "\$\{TMPDIR:-\/tmp\}\/cad-rearm-XXXXXX"/,
+    'the blocking read-back no longer renders into a directory made for this run');
+  assert.match(readBack, /trace render --phase <N> > "\$D\/render\.json"/,
+    'the blocking read-back no longer chains the render to that directory');
+
+  // 2. The deferred cap, read off its own named anchor so a rewrap that
+  //    changed no fact stays green. It runs to the `adjudicated` bullet.
+  const anchor = '**The DEFERRED queue is triaged later, and its cap rides the QUEUE.**';
+  const start = text.indexOf(anchor);
+  assert.ok(start > -1, 'triage-gate.md states no deferred triage arm - a queue nothing '
+    + 'says how to clear is a land that never unblocks');
+  assert.ok(start > text.indexOf(corrFilter),
+    'the deferred arm is stated ABOVE the blocking re-arm it defers to; it says "the '
+    + 'blocking re-arm above already states", which is then false');
+  const end = text.indexOf('- **adjudicated**', start);
+  assert.ok(end > start, 'the deferred triage arm runs past the adjudicated bullet');
+  const block = text.slice(start, end).replace(/\s+/g, ' ');
+
+  assert.match(block, /highest round on disk for THAT fire/,
+    'the deferred cap no longer says the round count is read off the queue');
+  assert.match(block, /never by counting `rearm` outcome events under this run's `corr`/,
+    'the deferred cap no longer refuses the corr-keyed count - the one substitution '
+    + 'that makes the gate loop forever');
+  assert.match(block, /SUPERSEDED/,
+    'the deferred cap no longer says a settled round still counts, so a triage that '
+    + 'clears round two hands the round back at the moment it spends it');
+  assert.match(block, /`deferred record` call above with `--round 2`/,
+    'the deferred re-arm no longer records itself as a queue member, so the next '
+    + 'session reads the cap off a fire that left no trace of its second round');
+  assert.match(block, /surviving round two is the terminal STOP-and-ask, never a round three/,
+    'the deferred arm no longer terminates - a cap with no terminal arm is the loop '
+    + 'with an extra step');
+});
+
+// --- RDX-01: the in-dispatch figure, its coverage and its exclusions, in prose
+//
+// Modelled on MSR-02 above, which is this repo's one mechanism for pinning a
+// workflow's prose to a seam: `workflows/report.md` and `workflows/suggest.md`
+// have no executor, so a claim written into them is a claim no check reads
+// unless a check like this one reads it.
+//
+// A WHOLE-FILE grep cannot serve here and is deliberately not used:
+// `grep -c coordinator cadence-core/workflows/report.md` already returns 12 on
+// the pre-change tree, so a file-wide search passes whether the clause below is
+// ever written or not. Both sites are sliced by their NAMED anchors - the shape
+// block's Reading line and the reading RULE that follows it, and suggest.md's
+// `present` step - so a rewrap that changed no fact stays green while a deleted
+// clause reddens.
+//
+// FALSIFIED IN BOTH DIRECTIONS before it shipped: each asserted clause was
+// deleted from its file in turn, this test watched to fail naming that clause,
+// and the clause restored and watched to pass. An arm never seen to fail is the
+// same unfalsifiable check one layer up.
+
+test('RDX-01: report.md prints the in-dispatch figure with its coverage, its exclusion and the null rule', () => {
+  const text = doc('cadence-core', 'workflows', 'report.md');
+
+  // 1. The shape block's Reading LINE - the point at which the figure is
+  //    PRINTED. A rule further down is a rule a reader can compose the line
+  //    without.
+  const lineStart = text.indexOf('Reading (whole `.planning/reads.jsonl`');
+  assert.ok(lineStart >= 0, 'report.md has no Reading line');
+  const readingLine = text.slice(lineStart, text.indexOf('\n', lineStart));
+  for (const token of ['inDispatch.roles', 'inDispatch.coverage', 'inDispatch.coordinatorFiles']) {
+    assert.ok(readingLine.includes(token),
+      `report.md's Reading line does not print \`${token}\`, so the per-role figure `
+      + `either never reaches the report or reaches it without its limits. Got: ${readingLine}`);
+  }
+
+  // 2. The rule block, read from its named anchor to the next TOP-LEVEL bullet,
+  //    so the sub-bullets under it are inside the slice and the next rule is
+  //    not.
+  const ruleStart = text.indexOf('- The reading line prices `.planning/reads.jsonl`');
+  assert.ok(ruleStart >= 0, 'report.md has no reading-line rule');
+  const next = text.indexOf('\n- ', ruleStart + 1);
+  // Whitespace-FLATTENED before matching, so a rewrap that changed no fact
+  // stays green while a deleted clause reddens - the only distinction this
+  // arm exists to make.
+  const rule = text.slice(ruleStart, next > ruleStart ? next : text.length).replace(/\s+/g, ' ');
+
+  // The `coordinator` exclusion, and its REASON - the two are separate claims
+  // and the reason is the half that stops it reading as an arbitrary filter.
+  assert.ok(rule.includes('coordinatorFiles'),
+    'the reading rule never names the coordinator reads the figure excluded');
+  assert.ok(/no worker bracket by construction/.test(rule),
+    'the reading rule states the coordinator exclusion without its reason, so it reads as '
+    + 'an arbitrary filter rather than a limit of the measurement');
+  // The COVERAGE the ratio was computed over, without which the figure reads as
+  // a total over the whole record.
+  assert.ok(rule.includes('inDispatch.coverage'),
+    'the reading rule never names the coverage the in-dispatch ratio was computed over');
+  assert.ok(/denominator the ratio was actually computed over/.test(rule),
+    'the reading rule names `coverage` without saying what it is the denominator of');
+  // The NULL rule, which is the live case: every record written before the
+  // `files` field existed folds to a null ratio.
+  assert.ok(/NULL `ratio`/.test(rule),
+    'the reading rule has no disposition for a `calls > 0` return with a null in-dispatch ratio');
+  assert.ok(/never narrate the null as `0`/.test(rule),
+    'the reading rule does not forbid rendering a null ratio as 0 - the reading that says '
+    + 'the worker opened each file exactly once');
+
+  // 3. The transport figure the growth of that response invalidated. It is a
+  //    MEASUREMENT, so it carries the date it was taken.
+  const measured = text.indexOf('`reads --join` measures');
+  const transport = measured >= 0 ? text.slice(measured, measured + 120) : '(the sentence is gone)';
+  assert.ok(/`reads --join` measures 2,494 B/.test(text),
+    `report.md still states a stale \`reads --join\` size. Got: ${transport}`);
+});
+
+test('RDX-01: suggest.md qualifies its no-tweak line to CONFIG KEYS and states the info exception', () => {
+  const text = doc('cadence-core', 'workflows', 'suggest.md');
+  const present = stepBody(text, 'present', 'suggest.md').replace(/\s+/g, ' ');
+
+  // Heading one's no-tweak line. Without the qualifier, `/cad-suggest` prints
+  // "the record supports no tweak in this scope" directly above a receipt
+  // reporting a file opened 29 times inside one dispatch.
+  assert.ok(present.includes('the record supports no tweak in this scope'),
+    'suggest.md no longer carries the no-tweak line this rule qualifies');
+  assert.ok(/no CONFIG KEY this record prices/.test(present),
+    'suggest.md\'s no-tweak line makes an unqualified claim about the run rather than a '
+    + 'claim about config keys, so it contradicts the receipt printed below it');
+  assert.ok(/points at the receipts/.test(present),
+    'suggest.md\'s no-tweak line does not send the reader to the receipts when one names '
+    + 'a remedy that is not a key');
+
+  // Heading two's stated exception to "an `info` asks for nothing".
+  assert.ok(present.includes('An `info` asks for nothing'),
+    'suggest.md no longer carries the info-asks-for-nothing line this exception attaches to');
+  assert.ok(/ONE stated exception/.test(present),
+    'suggest.md states no exception, so an in-dispatch receipt reaches the user as a ratio '
+    + 'with no remedy beside it');
+  assert.ok(/relay the remedy its `evidence` names/.test(present),
+    'suggest.md does not tell the composer to relay the remedy the evidence names');
 });

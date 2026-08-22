@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { gateAgreementIssues, gateTriggers } from './lib/gate-agreement.mjs';
 
 const LEVELS = ['solo', 'shipped', 'critical'];
-const GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const GATES = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
 const VOCAB = { levels: LEVELS, gates: GATES };
 
 /** The `review` grid as cadence-core/route-table.json shipped it on 2026-08-15. */

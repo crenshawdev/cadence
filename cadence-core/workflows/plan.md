@@ -265,7 +265,11 @@ makes exactly.
 Skip when workflow.plan_check is false or `--skip-check` was passed.
 
 Dispatch cad-plan-checker via the spawn-agent seam, the bracket on its resolve:
-`--bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"`.
+`--phase {N} --bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"`.
+`--phase {N}` is EXPLICIT here and not left to the cursor: this resolve runs
+while the cursor still names phase N-1, so without it the checker is routed off
+the wrong phase's plans (references/seams.md's Routing block). No `--plan` - the
+checker reviews every plan of the phase, so it floors on their union.
 Prompt:
 
 ```markdown

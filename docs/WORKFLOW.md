@@ -152,12 +152,20 @@ not a convenience.*
 | `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff, once per plan on the committed range | blocking | blocking | blocking |
 | `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | off | adjudicated |
 
-> **One risk detector, and it reads the diff**
+> **Two risk detectors, reading different things**
 >
-> **At plan completion**, the model reads the plan's whole committed range and
-> fires `risk_surface` on what it sees - once, never per commit mid-plan. A dispatch-time path match against the phase's declared
-> `files:` list was a second detector until v2.7.0: it judged a file by its
-> NAME, so one token floored a whole phase to `critical`, and it is gone.
+> **At plan time**, before any code is written, a floor reads the phase's own
+> declared `files:` - their paths and their current bodies, scanned for the
+> same anchored constructs the commit-time gate below fires on - and moves the
+> resolved LEVEL a dispatch runs at. **At plan completion**, the model reads
+> the plan's whole committed range and fires `risk_surface` on what it sees -
+> once, never per commit mid-plan - deciding whether the blocking review runs.
+> One moves what a dispatch buys, the other decides whether a review runs, and
+> neither substitutes for the other. A dispatch-time path match that judged a
+> file by its NAME - one token floored a whole phase to `critical` - was cut in
+> v2.7.0; what reads the declared files now is a different detector matching
+> constructs in their current bodies, with a document contributing its path
+> alone.
 >
 > The commit-time filter drops exactly two things, and only on evidence: a
 > destructive target proven ephemeral by both `git check-ignore` and an empty

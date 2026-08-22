@@ -1343,16 +1343,14 @@ test('the cursor supplies the phase when --phase is absent', () => {
   assert.equal(traceLines(planning)[0].phase, 2);
 });
 
-test('ARG-06: a malformed --phase WARNS and still resolves, and still keys the cursor', () => {
-  // The `warn` disposition (D-04), which is the whole reason the contract has
-  // three words and not one: a `usage` refusal here would route the phase LOWER
-  // than its own risk baseline, so a bad shape may never refuse. But it produced
-  // NOTHING before this - `requirePhaseArg` sat inside the trace derivation's
-  // try/catch and its `!parsed.ok` arm fell silently through to the cursor, so
-  // measured 2026-08-19 `--phase 1.10.3` returned ok:true with no mention of
-  // `--phase` at all and the routing event keyed to a phase the caller never
-  // named. The comment there said the check belonged where the risk FLOOR was
-  // computed; that floor is retired, so nothing carried it.
+test('CER-01: a malformed --phase is REFUSED and routes nothing, reversing the warn arm', () => {
+  // THE REVERSAL, and why. This flag declared `warn` on the reasoning that a
+  // `usage` refusal would route the phase LOWER than its own risk baseline -
+  // true while it named only the phase a trace event is keyed to. It is a FLOOR
+  // input now, so warn-and-continue answers a typo by computing a floor from the
+  // CURSOR's phase: a DIFFERENT phase's declared files, at a level nothing in
+  // the resolved bundle reveals as wrong. Refusing is the only disposition that
+  // cannot silently route a phase off another phase's plans.
   const planning = traceRoot('trace-badphase', false);
   writeFileSync(join(planning, 'STATE.md'), renderCursor({
     phase: 2, total: 5, name: 'Fixture', status: 'planned',
@@ -1361,23 +1359,23 @@ test('ARG-06: a malformed --phase WARNS and still resolves, and still keys the c
   const cfgPath = join(planning, 'config.json');
   for (const bad of [['--phase', '1.10.3'], ['--phase', 'abc'], ['--phase', ''], ['--phase']]) {
     const r = resolve('cad-executor', cfgPath, bad);
-    assert.equal(r.ok, true, bad.join(' '));
-    assert.ok(Array.isArray(r.warnings), `${bad.join(' ')}: ${JSON.stringify(r)}`);
-    assert.equal(r.warnings.filter((w) => w.includes('--phase')).length, 1, bad.join(' '));
+    assert.equal(r.ok, false, bad.join(' '));
+    assert.equal(r.reason, 'usage', `${bad.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--phase/, bad.join(' '));
   }
-  // The resolution is UNCHANGED and the event still keys to the cursor, never
-  // to the malformed spelling: four warned resolves, four lines under phase 2.
-  assert.deepEqual(traceLines(planning).map((e) => e.phase), [2, 2, 2, 2]);
+  // Routes NOTHING: four refusals, and not one line in the trace. A refusal at
+  // argument shape happens before any phase is in hand to key an event to.
+  assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
 
-  // The control on both sides: a well-formed --phase says nothing at all...
+  // The control on both sides: a well-formed --phase resolves clean and silent...
   const good = resolve('cad-executor', cfgPath, ['--phase', '3']);
+  assert.equal(good.ok, true);
   assert.equal('warnings' in good, false, JSON.stringify(good));
-  // ...and the bundle a warned resolve returns is the bundle with no --phase at
-  // all, warnings aside - the diagnostic changes what is SAID, never what is
-  // resolved.
-  const { warnings, ...warned } = resolve('cad-executor', cfgPath, ['--phase', '1.10.3']);
+  // ...and an ABSENT --phase still falls to the STATE cursor, unchanged. The
+  // declared row is a VALUE door: a flag nobody passed reaches no rule.
   const plain = resolve('cad-executor', cfgPath);
-  assert.deepEqual(warned, plain);
+  assert.equal(plain.ok, true);
+  assert.equal(traceLines(planning).filter((e) => e.family === 'routing').pop().phase, 2);
 });
 
 // --- the dispatch bracket riding resolve (--bracket-read / --bracket-plan) ----
@@ -1445,4 +1443,818 @@ test('a valueless --bracket-read is refused, not recorded as an empty read-set',
   assert.equal(r.reason, 'usage');
   assert.match(r.detail, /--bracket-read/);
   assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
+});
+
+// --- D-03: `deferred` is reachable by a CONFIG-SET gate only, this cycle ----
+//
+// Phase 2 admits `deferred` to the gate vocabulary and builds everything that
+// answers one - the queue, the land refusal, the progress count - but moves no
+// `review` cell onto it. That is a decision, not an omission: phase 3 (CER-01)
+// changes what a stakes LEVEL decides about gates and depends on this phase, so
+// moving the rows now means editing them twice, and the grid is quoted by four
+// documents plus the claims ledger, every one of which would then be stale
+// twice over.
+//
+// A HOLD, not a prohibition. This arm reddens the day a cell is moved onto
+// `deferred` - which is the phase-3 author being told to bring the quoting
+// surfaces with them, not being told no.
+
+test('no stakes level fires `deferred` - the review grid holds it in no cell', () => {
+  // 1. The shipped table, read directly: every cell of the grid, so a level or
+  //    a trigger ADDED to it is censused too rather than silently exempt.
+  for (const [level, row] of Object.entries(SHIPPED_TABLE.review)) {
+    for (const [trigger, gate] of Object.entries(row)) {
+      assert.notEqual(gate, 'deferred',
+        `route-table.json's review grid fires deferred at ${level}/${trigger}. No level `
+        + 'fires it this cycle (D-03): it is reachable by a config-set '
+        + 'review.triggers.<t>.gate alone. Moving a cell is phase 3\'s work and carries '
+        + 'README.md, METHOD.md, docs/WORKFLOW.md and .planning/DOCS-CLAIMS.md with it.');
+    }
+  }
+
+  // 2. What a resolve actually RETURNS with no config layer pinning a gate -
+  //    the same question asked of the resolver rather than of its data, so a
+  //    default injected anywhere between the table and the envelope is caught
+  //    by the half that never reads the table.
+  for (const stakes of ['solo', 'shipped', 'critical']) {
+    const r = resolve('cad-reviewer', cfg({ stakes }, `deferred-hold-${stakes}.json`));
+    assert.equal(r.ok, true, `${stakes}: ${r.reason}`);
+    for (const [trigger, gate] of Object.entries(r.review)) {
+      assert.notEqual(gate, 'deferred',
+        `stakes ${stakes} resolves ${trigger} to deferred with nothing configured`);
+    }
+  }
+
+  // 3. And the door it IS reachable through still opens, or this arm would be
+  //    pinning a dead value rather than holding a live one.
+  const pinned = rawCfg({ stakes: 'solo', review: { triggers: { diff: { gate: 'deferred' } } } },
+    'gate-deferred-pin.json');
+  assert.equal(resolve('cad-reviewer', pinned).review.diff, 'deferred');
+});
+
+// --- the plan-time risk floor (CER-01) ---------------------------------------
+//
+// `stakes` is the MINIMUM a project accepts, and the phase's own declared
+// `files:` are what raise it. Every fixture here is a whole repo root - the
+// declared paths are repo-relative and are read against the planning root's
+// PARENT, so a fixture that wrote only a `.planning/` would be testing the
+// unreadable-body arm by accident.
+
+/**
+ * A repo root with a `.planning/config.json`, plan files under
+ * `.planning/phases/<N>/`, and whatever repo files the plans declare.
+ * `plans` is keyed `<phase>/<filename>`; a string value is written verbatim and
+ * an array is rendered as that plan's frontmatter `files:` list.
+ */
+let floorN = 0;
+function floorRoot(config, plans = {}, repoFiles = {}) {
+  const repo = mkdtempSync(join(tmpdir(), `cad-route-floor-${++floorN}-`));
+  const planning = join(repo, '.planning');
+  mkdirSync(planning, { recursive: true });
+  writeFileSync(join(planning, 'config.json'), JSON.stringify(config));
+  for (const [rel, spec] of Object.entries(plans)) {
+    const file = join(planning, 'phases', rel);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, typeof spec === 'string' ? spec
+      : `---\nphase: 3\nplan: 1\nrequirements:\n  - CER-01\nfiles:\n${
+        spec.map((f) => `  - ${f}\n`).join('')}---\n\n# Plan\n`);
+  }
+  for (const [rel, body] of Object.entries(repoFiles)) {
+    const file = join(repo, rel);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, body);
+  }
+  return { repo, planning, file: join(planning, 'config.json') };
+}
+
+/** The `risk floor:` entries of a bundle's reason list - the moves it MADE. */
+const floorReasons = (r) => (r.reason || []).filter((x) => x.startsWith('risk floor: '));
+
+// The surface set this repository itself answers, so the fixtures below are
+// scoped exactly as a real project's are (D-10).
+const ANSWERED = { review: { triggers: { risk_surface: {
+  surfaces: ['secrets', 'destructive', 'untrusted_input'] } } } };
+
+// A body carrying ONE anchored construct in an answered category. Assembled
+// rather than spelled: this file is read by the same detector, and a plainly
+// written credential assignment here would be a line it matches.
+const SECRET_BODY = `export const FIXTURE_${'API'}_${'KEY'} = read();\n`;
+
+test('floor: an explicit stakes=critical is never resolved below (AC1)', () => {
+  const fx = floorRoot({ stakes: 'critical', ...ANSWERED },
+    { '3/PLAN-1.md': ['docs/README.md'] }, { 'docs/README.md': '# Readme\n' });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.model, 'opus');
+  // It read the plan and found nothing, and SAYS so - the configured level
+  // standing because nothing raised it is a different fact from no floor.
+  assert.ok(floorReasons(r).some((x) => /declaring nothing that touches/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('floor: with stakes UNSET a surfaceless phase resolves solo, where today it is shipped (AC2)', () => {
+  const plans = { '3/PLAN-1.md': ['docs/README.md'] };
+  const files = { 'docs/README.md': '# Readme\n' };
+  const computed = floorRoot({ ...ANSWERED }, plans, files);
+  const r = resolve('cad-executor', computed.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.model, 'sonnet');
+  assert.ok(floorReasons(r).some((x) => /floors at "solo"/.test(x)), JSON.stringify(r.reason));
+  // The BOTH-OUTPUTS half of the criterion: the same config with no phase in
+  // hand at all is the pre-CER-01 answer, and it is the schema default.
+  const today = resolve('cad-executor', computed.file);
+  assert.equal(today.stakes, 'shipped');
+  assert.equal(today.model, 'opus');
+});
+
+test('floor: a declared file on an answered surface raises to shipped and cites it', () => {
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['docs/README.md', 'src/load.mjs'] },
+    { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  const cited = floorReasons(r);
+  assert.equal(cited.length, 1, JSON.stringify(r.reason));
+  assert.match(cited[0], /src\/load\.mjs touches secrets/);
+  assert.match(cited[0], /level solo -> shipped/);
+});
+
+test('floor: stakes=solo is a FLOOR, so the same phase still raises to shipped', () => {
+  const fx = floorRoot({ stakes: 'solo', ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.match(floorReasons(r)[0], /level solo -> shipped/);
+});
+
+test('floor: an UNANSWERED category cannot raise - the scope is the answered set (D-10)', () => {
+  // The identical bytes under a config that answered only `destructive`: the
+  // secrets construct is not looked for, so it is not reported and not raised.
+  const fx = floorRoot(
+    { review: { triggers: { risk_surface: { surfaces: ['destructive'] } } } },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(r.surfaces, ['destructive']);
+});
+
+test('floor: a declared file that does not exist yet still evidences by PATH', () => {
+  // The create-a-file plan: no body to read, and the path is still a
+  // declaration. `src/auth/session.rs` is written by nothing here.
+  const fx = floorRoot({ review: { triggers: { risk_surface: { surfaces: ['auth'] } } } },
+    { '3/PLAN-1.md': ['src/auth/session.rs'] });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.match(floorReasons(r)[0], /src\/auth\/session\.rs touches auth \(path segment auth\)/);
+});
+
+// --- the discount is a claim the scope was READ (risk_surface round 1) --------
+//
+// Both tests below pin findings a cross-model `risk_surface` review raised
+// against this phase's own first commit range and adjudication confirmed. The
+// shared defect: `read` measured PLAN readability only, so a plan that parsed
+// perfectly while declaring a source file nobody could open discounted the
+// whole scope on evidence that was never gathered.
+
+test('floor: an OVERSIZED declared body withholds the discount rather than reading as clean', () => {
+  // 513 KiB clears MAX_BODY_BYTES, so the body is skipped - and the construct
+  // inside it is therefore never seen. Before the fix that returned a bare
+  // path, indistinguishable from a file the plan had yet to write, and the
+  // scope discounted to solo on a file nobody had opened.
+  const body = `const x = ${'JSON'}.${'parse'}(input);\n` + 'y\n'.repeat(300 * 1024);
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['src/big.mjs'] }, { 'src/big.mjs': body });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  // NOT solo: the unset default stands because nothing was proved.
+  assert.equal(r.stakes, 'shipped');
+  assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3 declares src\/big\.mjs, unread \(body over \d+ bytes\)/.test(w)),
+    JSON.stringify(r.warnings));
+  assert.ok(floorReasons(r).some((x) => /1 declared file in phase 3 went unread/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('floor: a declared path that is not a REGULAR file is refused unopened and terminates', () => {
+  // The bounded-I/O escape: `statSync` follows a symlink, and a link to a
+  // character device reports size 0, so the byte bound passed and the read ran
+  // on a stream with no EOF. `lstatSync` + isFile() is the check on what the
+  // path RESOLVES to, which the lexical absolute/`..` check cannot make.
+  if (!existsSync('/dev/zero')) return; // not a Linux/BSD host
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['src/link.mjs'] });
+  mkdirSync(join(fx.repo, 'src'), { recursive: true });
+  symlinkSync('/dev/zero', join(fx.repo, 'src/link.mjs'));
+  // Reaching this assertion AT ALL is half the test: before the fix the
+  // resolve read /dev/zero to an EOF that never comes.
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3 declares src\/link\.mjs, unread \(not a regular file\)/.test(w)),
+    JSON.stringify(r.warnings));
+});
+
+test('floor: a declared path through a symlinked PARENT is refused at the repository boundary', () => {
+  // `lstatSync` declines to follow only the FINAL component, so a symlinked
+  // DIRECTORY put the read in another tree while the declared spelling stayed
+  // repo-relative and clean - and this function's own claim, that a `--file`
+  // pointed elsewhere cannot read this tree's files, was untrue for any
+  // repository whose layout carries such a link.
+  const outside = mkdtempSync(join(tmpdir(), 'cad-route-outside-'));
+  // Given a body on an ANSWERED surface on purpose: if these bytes were read,
+  // the resolve would raise and cite them, so the silence below is a proof.
+  writeFileSync(join(outside, 'load.mjs'), SECRET_BODY);
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['vendor/linked/load.mjs'] });
+  mkdirSync(join(fx.repo, 'vendor'), { recursive: true });
+  symlinkSync(outside, join(fx.repo, 'vendor', 'linked'));
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the discount was taken on a body outside the tree');
+  assert.equal(r.model, 'opus');
+  assert.ok((r.warnings || []).some((w) =>
+    /^risk floor: phase 3 declares vendor\/linked\/load\.mjs, unread \(path resolves outside the repository\)/.test(w)),
+  JSON.stringify(r.warnings));
+  assert.ok(floorReasons(r).some((x) => /1 declared file in phase 3 went unread/.test(x)),
+    JSON.stringify(r.reason));
+  // Nothing was raised from the outside file's contents - the body never
+  // reached the content pass at all.
+  assert.deepEqual(floorReasons(r).filter((x) => /touches \w+ \(/.test(x)), []);
+});
+
+test('floor: an ordinary NESTED path is still read and still raises', () => {
+  // The paired positive. Without it the boundary check above is satisfied by one
+  // that refuses every declared body in the tree.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['src/deep/nest/load.mjs'] },
+    { 'src/deep/nest/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.match(floorReasons(r)[0], /src\/deep\/nest\/load\.mjs touches secrets/);
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+});
+
+test('floor: the two pre-plan roles are exempt and say they were not computed', () => {
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  // The same phase raises an executor to shipped...
+  assert.equal(resolve('cad-executor', fx.file, ['--phase', '3']).stakes, 'shipped');
+  // ...and moves neither role dispatched before a plan exists. The cursor lags
+  // at both their call sites, so a floor computed for them is computed off
+  // another phase's file list.
+  for (const role of ['cad-planner', 'cad-assumptions-analyzer']) {
+    const r = resolve(role, fx.file, ['--phase', '3']);
+    assert.equal(r.ok, true, role);
+    assert.equal(r.stakes, 'shipped', role);
+    assert.deepEqual(floorReasons(r), [], `${role}: ${JSON.stringify(r.reason)}`);
+    assert.ok(r.reason.some((x) => x.startsWith(`no risk-floor computation: ${role}`)),
+      `${role}: ${JSON.stringify(r.reason)}`);
+  }
+});
+
+test('floor: a --file pointed at ANOTHER tree reads that tree\'s files, not this one\'s', () => {
+  // The repo root is the planning root's PARENT, which is the whole of what
+  // scopes the content pass. The fixture declares a path this repository really
+  // does carry on a risk surface; under the fixture's own root it does not
+  // exist, so nothing is read and nothing raises.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['cadence-core/bin/lib/config-merge.mjs'] });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(floorReasons(r).filter((x) => /touches \w+ \(/.test(x)), []);
+});
+
+test('floor: a stakes_order that cannot place the levels keeps the baseline and warns', () => {
+  // A reason claiming a baseline is "already at or above" a floor nothing could
+  // compare is a flatly false sentence this seam has emitted before.
+  const t = join(dir, 'torn-stakes-order.json');
+  const shipped = JSON.parse(readFileSync(join(dirname(ROUTE), '..', 'route-table.json'), 'utf8'));
+  shipped.stakes_order = ['low', 'high'];
+  writeFileSync(t, JSON.stringify(shipped));
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3'], { table: t });
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the configured baseline, not a level nothing could compare');
+  assert.ok((r.warnings || []).some((w) => /stakes_order cannot place/.test(w)),
+    JSON.stringify(r.warnings));
+  assert.deepEqual(floorReasons(r).filter((x) => /already at or above/.test(x)), []);
+});
+
+// --- the floor fails CLOSED (AC5) --------------------------------------------
+//
+// Every row here has `stakes` UNSET and asserts ok:true at the schema default.
+// The direction is the whole point: `ok:false` drops the caller to the base
+// agent at the host session default with no model override, which is BELOW every
+// floor - so a plan this cannot read may never refuse, and may never discount.
+
+/** A surfaceless plan, and the repo file it declares. */
+const CLEAN_PLAN = ['docs/README.md'];
+const CLEAN_FILES = { 'docs/README.md': '# Readme\n' };
+
+test('fail-closed: an absent phase directory holds the configured stakes', () => {
+  const fx = floorRoot({ ...ANSWERED }, {}, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /holds no plan file this could read/.test(x)),
+    JSON.stringify(r.reason));
+  assert.ok(floorReasons(r).some((x) => /discount below the "shipped" default is withheld/.test(x)));
+  // An absent phase directory is the ordinary pre-plan state, so it is said in
+  // `reason` and NOT warned about - warning would fire on every dispatch of
+  // every project that has not planned its next phase yet.
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+});
+
+test('fail-closed: a phase directory with no PLAN file is the same arm', () => {
+  const fx = floorRoot({ ...ANSWERED }, { '3/CONTEXT.md': '# Context\n' }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /holds no plan file this could read/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('fail-closed: a PLAN whose frontmatter is out of grammar holds the configured stakes', () => {
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': '---\nphase: 3\nplan: 1\nfiles:\n  - docs/README.md\n  not a key line\n---\n\n# Plan\n' },
+    CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  // The `files:` list PARSES here - the grammar rejects the plan, and the paths
+  // it did read are dropped with it rather than half-trusted.
+  assert.ok((r.warnings || []).some((w) => /^risk floor: .*out of grammar/.test(w)),
+    JSON.stringify(r.warnings));
+  assert.ok(floorReasons(r).some((x) => /1 of 1 plan in phase 3 could not be read/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('fail-closed: a PLAN whose file mode makes it unreadable holds the configured stakes', () => {
+  // A DIRECTORY at the plan's own name: `readFileSync` fails EISDIR for any uid,
+  // where a chmod is silently a no-op under a root test runner and would let this
+  // pass without proving anything (traceRoot's `breakTrace` states the same rule).
+  const fx = floorRoot({ ...ANSWERED }, {}, CLEAN_FILES);
+  mkdirSync(join(fx.planning, 'phases', '3', 'PLAN-1.md'), { recursive: true });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  // EITHER spelling, because the CONTRACT is the arm and not the errno: the
+  // pre-read `lstatSync` guard refuses a directory as a non-regular entry before
+  // `readFileSync` ever reaches EISDIR. Both land the same plan on the same
+  // unread arm, which is what holds the configured stakes.
+  assert.ok((r.warnings || []).some(
+    (w) => /^risk floor: cannot read .*PLAN-1\.md \((EISDIR|not a regular file)\)/.test(w)),
+  JSON.stringify(r.warnings));
+});
+
+test('fail-closed: ONE unreadable plan holds a whole two-plan scope up (the aggregation rule)', () => {
+  // The mixed phase, which is what the rule exists for: the clean plan touches
+  // nothing, and its silence is not evidence about the sibling nobody could read.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': CLEAN_PLAN }, CLEAN_FILES);
+  mkdirSync(join(fx.planning, 'phases', '3', 'PLAN-2.md'), { recursive: true });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.model, 'opus');
+  assert.ok(floorReasons(r).some((x) => /1 of 2 plans in phase 3 could not be read/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('fail-closed: the paired POSITIVE - both plans clean and surfaceless resolves solo', () => {
+  // Without this row the five above are satisfied by a floor that never
+  // discounts anything at all.
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': CLEAN_PLAN, '3/PLAN-2.md': ['docs/GUIDE.md'] },
+    { ...CLEAN_FILES, 'docs/GUIDE.md': '# Guide\n' });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.model, 'sonnet');
+  assert.ok(floorReasons(r).some((x) => /2 plans read clean/.test(x)), JSON.stringify(r.reason));
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+});
+
+// --- a scope that declared NOTHING proves nothing (UAT item 11) --------------
+//
+// The same argument as the rows above, one step further in: `found` and `clean`
+// are satisfied by a plan that parsed perfectly and named no file at all, so the
+// floor scanned zero bytes and reported it as a clean read. Absence of evidence
+// reported as absence of surface.
+
+test('declared-nothing: a plan with an EMPTY files: list is not discounted', () => {
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': [] }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.model, 'opus');
+  // The warning names the plan file, on the `risk floor: ` vocabulary route.mjs
+  // relays verbatim, so a reader can see WHICH plan declared nothing.
+  assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3: .*PLAN-1\.md declares no files at all/.test(w)),
+    JSON.stringify(r.warnings));
+  // ...and the reason says which of the two sentences this is. "Declaring
+  // nothing that touches [...]" is the DISCOUNT's sentence and would claim a
+  // scope nobody looked at had been found clean.
+  const said = floorReasons(r);
+  assert.ok(said.some((x) => /1 of 1 plan in phase 3 declared no files at all/.test(x)),
+    JSON.stringify(r.reason));
+  assert.equal(said.some((x) => /declaring nothing that touches/.test(x)), false,
+    JSON.stringify(r.reason));
+});
+
+test('declared-nothing: a plan with NO files: key at all takes the same arm', () => {
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': '---\nphase: 3\nplan: 1\n---\n\n# Plan\n' }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /declared no files at all/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('declared-nothing: the UAT probe verbatim - the SHIPPED template plus a task Files: line', () => {
+  // Reproduced from the template this project actually ships, read here rather
+  // than retyped: `files:` arrives with no items, and D-05 keeps the task prose
+  // out of the floor, so the probe scans nothing while LOOKING fully declared.
+  // It returned solo/sonnet - verify off, the plan gate down to advisory - on a
+  // plan whose one task names a secrets file.
+  const template = readFileSync(join(dirname(ROUTE), '..', 'templates', 'PLAN.md'), 'utf8');
+  const body = `${template}\n### Task 1\n\n- **Files:** src/load.mjs\n`;
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': body },
+    { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.model, 'opus');
+  assert.equal(floorReasons(r).some((x) => /read clean, declaring nothing/.test(x)), false,
+    JSON.stringify(r.reason));
+});
+
+test('declared-nothing: ONE silent plan holds a two-plan scope up, like an unreadable one', () => {
+  // The mixed phase again. PLAN-1 declares a real surfaceless file and PLAN-2
+  // declares none, and the scope is not discountable - a plan that named nothing
+  // is not evidence about the phase, exactly as an unreadable one is not.
+  const fx = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': CLEAN_PLAN, '3/PLAN-2.md': [] }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /1 of 2 plans in phase 3 declared no files at all/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('declared-nothing: an EXPLICIT stakes is untouched - this arm withholds a discount', () => {
+  // It never raises anything: `critical` stays `critical` and `solo` stays
+  // `solo`, because the configured level is a floor and this arm only refuses to
+  // go below it.
+  for (const [stakes, model] of [['critical', 'opus'], ['solo', 'sonnet']]) {
+    const fx = floorRoot({ stakes, ...ANSWERED }, { '3/PLAN-1.md': [] }, CLEAN_FILES);
+    const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+    assert.equal(r.stakes, stakes, JSON.stringify(r.reason));
+    assert.equal(r.model, model);
+  }
+});
+
+// --- --plan: an executor floors on the plan it was handed (D-06) -------------
+
+/** A mixed phase: PLAN-1 surfaceless, PLAN-2 on an answered surface. */
+const mixedPhase = () => floorRoot({ ...ANSWERED },
+  { '3/PLAN-1.md': ['docs/README.md'], '3/PLAN-2.md': ['src/load.mjs'] },
+  { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
+
+test('--plan: a clean plan in a mixed phase routes BELOW its risky sibling', () => {
+  const fx = mixedPhase();
+  const clean = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '1']);
+  assert.equal(clean.ok, true);
+  assert.equal(clean.stakes, 'solo');
+  assert.equal(clean.model, 'sonnet');
+  assert.ok(floorReasons(clean).some((x) => /phase 3 plan 1 read clean/.test(x)),
+    JSON.stringify(clean.reason));
+});
+
+test('--plan: the risky plan of the same phase, and the phase UNION, both raise', () => {
+  const fx = mixedPhase();
+  const risky = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '2']);
+  assert.equal(risky.stakes, 'shipped');
+  assert.match(floorReasons(risky)[0], /^risk floor: phase 3 plan 2: src\/load\.mjs touches secrets/);
+  // No --plan is the PHASE union, which is what a phase-scoped role resolves on:
+  // one risky member raises the whole phase.
+  const union = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(union.stakes, 'shipped');
+  assert.match(floorReasons(union)[0], /^risk floor: phase 3: src\/load\.mjs touches secrets/);
+});
+
+test('--plan: a key naming no plan file fails CLOSED, never widening to the union', () => {
+  // The wrong answer here is the WIDE one: silently answering about six plans a
+  // caller did not ask about. It holds the configured stakes and says so.
+  const fx = mixedPhase();
+  const r = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok(floorReasons(r).some((x) => /phase 3 plan 9 names no plan file/.test(x)),
+    JSON.stringify(r.reason));
+  assert.ok((r.warnings || []).some((w) => /^risk floor: plan 9 names no plan file/.test(w)),
+    JSON.stringify(r.warnings));
+});
+
+test('--plan: a bare flag and a bad value are both REFUSED', () => {
+  // A valueless plan flag reading as absent would silently take the phase UNION
+  // for a caller that asked about one plan - the wrong arm, and a wider one.
+  const fx = mixedPhase();
+  for (const extra of [['--phase', '3', '--plan'], ['--plan'],
+    ['--phase', '3', '--plan', ''], ['--phase', '3', '--plan', ' 1']]) {
+    const r = resolve('cad-executor', fx.file, extra);
+    assert.equal(r.ok, false, extra.join(' '));
+    assert.equal(r.reason, 'usage', `${extra.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--plan/);
+  }
+});
+
+test('--plan: it is NOT --bracket-plan, which still keys the trace alone', () => {
+  // `--bracket-plan` is the trace WORKER key and is the ROLE NAME for every
+  // non-executor dispatch, so reading it as a floor key would make a
+  // phase-scoped role indistinguishable from a plan key naming no file.
+  const fx = mixedPhase();
+  const r = resolve('cad-executor', fx.file,
+    ['--phase', '3', '--bracket-read', 'PLAN-1.md', '--bracket-plan', '1']);
+  // The floor still took the phase UNION, so the risky sibling raised it.
+  assert.equal(r.stakes, 'shipped');
+  const dispatch = traceLines(fx.planning).find((e) => e.family === 'lifecycle');
+  assert.equal(dispatch.plan, '1');
+});
+
+// --- replay: what the floor does to a project's own phases (AC3) -------------
+//
+// The whole point is that AC3 is PRINTABLE rather than asserted, so these pin
+// the row shape a reader acts on - and that the computed column comes off the
+// same `levelFor` a resolve routes on rather than off a second arithmetic.
+
+/** `route.mjs replay`, on the same isolated-global rail `resolve` uses. */
+function replay(file, extra = [], opts = {}) {
+  const args = ['replay', ...(file ? ['--file', file] : []), ...extra];
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
+  try {
+    return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+/** An archived phase directory - where `milestone-prune --mode archive` puts a
+ * closed milestone's phases, and where 27 of this repository's 30 live. */
+function archivePhase(planning, label, name, files) {
+  const dir = join(planning, `_archive-${label}`, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'PLAN.md'), `---\nphase: 1\nplan: 1\nfiles:\n${
+    files.map((f) => `  - ${f}\n`).join('')}---\n\n# Plan\n`);
+}
+
+test('replay: one row per phase, and the RAISE carries the evidence even at today\'s level', () => {
+  const fx = floorRoot({ ...ANSWERED }, {
+    '3/PLAN-1.md': ['docs/README.md'],
+    '4/PLAN-1.md': ['src/load.mjs'],
+  }, { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
+  const r = replay(fx.file);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'today IS the configured stakes - the schema default here');
+  assert.deepEqual(r.rows.map((x) => x.label), ['phases/3', 'phases/4']);
+
+  const [clean, risky] = r.rows;
+  assert.equal(clean.today, 'shipped');
+  assert.equal(clean.computed, 'solo', 'the surfaceless phase computes BELOW today');
+  assert.equal(clean.raised, false);
+  assert.equal('surface' in clean, false, 'a row that did not raise cites nothing');
+  assert.equal(clean.plans_found, 1);
+  assert.equal(clean.plans_clean, 1);
+
+  // The raise that does not move the column, which is why evidence keys off the
+  // RAISE and never off the diff: `RAISE_TARGET` and the default are both
+  // `shipped`, so a diff-triggered evidence column would be blank for exactly
+  // the rows whose surface a reader needs.
+  assert.equal(risky.computed, 'shipped');
+  assert.equal(risky.computed, risky.today);
+  assert.equal(risky.raised, true);
+  assert.equal(risky.surface, 'secrets');
+  assert.equal(risky.file, 'src/load.mjs');
+  assert.ok(risky.signal, JSON.stringify(risky));
+  assert.deepEqual(r.regressions, [], 'always present, empty on a healthy tree');
+});
+
+test('replay: an ARCHIVED phase directory is measured in the same run', () => {
+  // 27 of this repository's own 30 phases are archived; a locator that joined
+  // `phases/<N>` and nothing else would answer AC3 off a tenth of the evidence.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['docs/README.md'] },
+    { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
+  archivePhase(fx.planning, 'v1.0.0', '1', ['src/load.mjs']);
+  const r = replay(fx.file);
+  assert.deepEqual(r.rows.map((x) => x.label), ['_archive-v1.0.0/1', 'phases/3']);
+  assert.equal(r.rows[0].raised, true);
+  assert.equal(r.rows[0].surface, 'secrets');
+  assert.equal(r.rows[1].computed, 'solo');
+  assert.deepEqual(r.regressions, []);
+});
+
+test('replay: a phase whose plan cannot be read prints today\'s level and says so', () => {
+  const fx = floorRoot({ ...ANSWERED }, {
+    '3/PLAN-1.md': '---\nphase: 3\nplan: 1\nfiles:\n  - src/a.mjs\n  not a key line\n---\n\n# Plan\n',
+  });
+  const r = replay(fx.file);
+  assert.equal(r.ok, true);
+  const [row] = r.rows;
+  assert.equal(row.computed, 'shipped', 'today\'s level, never the discount');
+  assert.equal(row.computed, row.today);
+  assert.equal(row.raised, false);
+  assert.equal(row.plans_found, 1);
+  assert.equal(row.plans_clean, 0);
+  assert.ok(row.reason.some((x) => /withheld/.test(x)), JSON.stringify(row.reason));
+  assert.ok((row.warnings || []).some((w) => /out of grammar/.test(w)), JSON.stringify(row));
+});
+
+test('replay: a planning root with no phase directory is an empty row list, not a refusal', () => {
+  const fx = floorRoot({ ...ANSWERED });
+  const r = replay(fx.file);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.rows, []);
+  assert.deepEqual(r.regressions, [], 'written whether or not anything matched');
+});
+
+test('replay: a bare --file is REFUSED, exactly as resolve\'s is', () => {
+  const r = replay(null, ['--file']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'usage');
+  assert.match(r.detail, /--file/);
+});
+
+// --- lowering below the computed floor takes a named waiver (AC4) ------------
+//
+// The ONE way to route below the floor, and it is a NEW key inside
+// `review.triggers.risk_surface` (D-03) - the eight `risk.override.<surface>`
+// keys v2.0.0 retired stay retired, pinned byte-for-byte by
+// retired-keys.test.mjs. It waives a LEVEL and never a REVIEW.
+
+const WAIVER_KEY = 'review.triggers.risk_surface.waive_routing_floor';
+
+/** The answered set, plus a waiver value written verbatim beside it. */
+const waiving = (value) => ({ review: { triggers: { risk_surface: {
+  surfaces: ['secrets', 'destructive', 'untrusted_input'],
+  waive_routing_floor: value } } } });
+
+// A destructive construct, assembled for the reason SECRET_BODY is: this file
+// is read by the same detector.
+const DESTRUCTIVE_BODY = `${'rm'} -${'rf'} ./build\n`;
+
+/** A repo whose phase 3 declares one file carrying the given body. */
+const waiverFx = (config, body = SECRET_BODY) => floorRoot(config,
+  { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': body });
+
+test('waiver: a waived surface holds at the CONFIGURED stakes, not the unset discount', () => {
+  // A scope that matched a surface it waived is not a scope that matched
+  // nothing: the waiver lowers from the computed floor to the level the project
+  // STATED, and no further.
+  const fx = waiverFx(waiving(['secrets']));
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the configured default, never solo');
+  const said = floorReasons(r);
+  assert.ok(said.some((x) => x.includes(WAIVER_KEY) && /secrets/.test(x)
+    && /src\/load\.mjs/.test(x)), JSON.stringify(r.reason));
+  assert.ok(said.some((x) => /every matched surface is waived/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('waiver: with stakes solo and the surface waived, the level IS solo', () => {
+  const fx = waiverFx({ stakes: 'solo', ...waiving(['secrets']) });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.model, 'sonnet');
+});
+
+test('waiver: without the key the lowering is REFUSED, and the reason says which key', () => {
+  // The paired arm. Never an ok:false - that drops the caller to the host
+  // session default, below every floor - so "refused" means the lowering did
+  // not take effect and the record says what would have made it.
+  const fx = waiverFx({ stakes: 'solo', ...ANSWERED });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  const refusal = floorReasons(r).find((x) => /refused/.test(x));
+  assert.ok(refusal, JSON.stringify(r.reason));
+  assert.match(refusal, /lowering to the configured "solo" is refused/);
+  assert.ok(refusal.includes(WAIVER_KEY), refusal);
+  assert.match(refusal, /name secrets in/);
+});
+
+test('waiver: naming a DIFFERENT surface than the one matched waives nothing', () => {
+  const fx = waiverFx({ stakes: 'solo', ...waiving(['destructive']) });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.match(floorReasons(r)[0], /touches secrets/);
+});
+
+test('waiver: when the top match is waived, the next UNWAIVED match still raises', () => {
+  const fx = waiverFx({ stakes: 'solo', ...waiving(['secrets']) },
+    SECRET_BODY + DESTRUCTIVE_BODY);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped', 'waiving one surface is not waiving the floor');
+  const said = floorReasons(r);
+  assert.ok(said.some((x) => /secrets/.test(x) && x.includes(WAIVER_KEY)),
+    JSON.stringify(r.reason));
+  assert.ok(said.some((x) => /touches destructive/.test(x) && /level solo -> shipped/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('waiver: a value outside the eight categories rides warnings and waives nothing', () => {
+  const bad = waiverFx({ stakes: 'solo', ...waiving(['not_a_surface']) });
+  const r = resolve('cad-executor', bad.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.ok((r.warnings || []).some((w) => w.includes(WAIVER_KEY) && /not_a_surface/.test(w)),
+    JSON.stringify(r.warnings));
+  // ...and a value that is not a list at all takes the same arm.
+  const scalar = waiverFx({ stakes: 'solo', ...waiving('secrets') });
+  const s = resolve('cad-executor', scalar.file, ['--phase', '3']);
+  assert.equal(s.stakes, 'shipped');
+  assert.ok((s.warnings || []).some((w) => w.includes(WAIVER_KEY) && /is not a list/.test(w)),
+    JSON.stringify(s.warnings));
+});
+
+// --- a detected surface floors the configured rung too (D-08) ---------------
+//
+// `model.effort.<role>` still wins over the cell, but a DETECTED surface floors
+// it, for post-plan roles only. Until this landed the configured rung won
+// unconditionally, so a project that pinned a cheap rung kept it on the one
+// phase the floor had just raised - and `references/config-reach.md` has claimed
+// the clamp exists since the v2.7.0 deletion.
+
+/** A repo whose phase 3 declares a secrets-carrying file, plus a pinned rung. */
+const clampFx = (extra, plan = ['src/load.mjs']) => floorRoot(
+  { model: { effort: { 'cad-plan-checker': 'low' } }, ...ANSWERED, ...extra },
+  { '3/PLAN-1.md': plan },
+  { 'src/load.mjs': SECRET_BODY, 'docs/README.md': '# Readme\n' });
+
+test('clamp: a raised level floors the configured rung, and the reason names the surface', () => {
+  const fx = clampFx({});
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.effort, 'medium', 'the shipped/cad-plan-checker cell\'s rung, not the pinned low');
+  const held = r.reason.find((x) => /does not apply/.test(x));
+  assert.ok(held, JSON.stringify(r.reason));
+  assert.match(held, /model\.effort\.cad-plan-checker="low"/);
+  assert.match(held, /touches secrets/);
+  assert.match(held, /"medium" rung is the floor/);
+});
+
+test('clamp: a surfaceless phase took a DISCOUNT, so the configured rung stands', () => {
+  // Clamping against a discounted cell would take the dial away in exactly the
+  // cheap case CER-01 buys.
+  const fx = clampFx({}, ['docs/README.md']);
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.effort, 'low');
+  assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
+});
+
+test('clamp: a WAIVED surface raised nothing, so it clamps nothing', () => {
+  const fx = clampFx(waiving(['secrets']));
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped', 'the waiver holds at the configured level');
+  assert.equal(r.effort, 'low', 'and the rung dial is untouched');
+  assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
+});
+
+test('clamp: a pre-plan role is exempt for free - no floor is computed for it', () => {
+  const fx = floorRoot(
+    { stakes: 'critical', model: { effort: { 'cad-planner': 'high' } }, ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-planner', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'critical');
+  // The critical/cad-planner cell names xhigh and the config names the rung
+  // below it; nothing raised, so nothing clamps.
+  assert.equal(r.effort, 'high');
+  assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
+});
+
+test('clamp: a rung_order that cannot place the two rungs keeps the configured one and warns', () => {
+  // The precedent is the retry block, which holds a configured start rung for
+  // exactly this reason: clamping on a comparison nothing made would take a
+  // user's dial away on the strength of a torn table.
+  const t = join(dir, 'torn-rung-order.json');
+  const shipped = JSON.parse(readFileSync(join(dirname(ROUTE), '..', 'route-table.json'), 'utf8'));
+  shipped.rung_order = ['first', 'second'];
+  writeFileSync(t, JSON.stringify(shipped));
+  const fx = clampFx({});
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3'], { table: t });
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.effort, 'low', 'the configured rung stands');
+  assert.ok((r.warnings || []).some((w) => /rung_order cannot compare/.test(w)),
+    JSON.stringify(r.warnings));
+});
+
+test('waiver: the replay honours it too - one implementation, both faces', () => {
+  // The whole reason the scope-to-level half is one helper: a rule added on the
+  // resolve side that did not reach the replay would print raises this project
+  // has already declined to route on.
+  const fx = waiverFx(waiving(['secrets']));
+  const r = replay(fx.file);
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].raised, false);
+  assert.equal(r.rows[0].computed, 'shipped');
+  assert.deepEqual(r.regressions, []);
 });

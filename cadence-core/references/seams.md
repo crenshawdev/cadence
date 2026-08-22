@@ -138,7 +138,7 @@ the session default when the project has stated its stakes:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_name> \
-  [--attempt <N>] [--phase <N>] --bracket-read "<csv>" [--bracket-plan <key>]
+  [--attempt <N>] [--phase <N>] [--plan <k>] --bracket-read "<csv>" [--bracket-plan <key>]
 ```
 
 **The bracket rides the resolve.** `--bracket-read` (the read-set this SITE
@@ -174,9 +174,43 @@ dispatch, `review` (the whole trigger -> gate map for the level, which
 deep-verify pass runs, which `workflows/verify.md` reads). Quality is not one
 dial, and effort alone cannot express "fire a blocking cross-model review".
 
-The stakes level a config layer set is the level, full stop. A `--phase <N>`
-or, when the flag is absent, the `.planning/STATE.md` cursor names the phase a
-resolve records against; neither changes the level.
+**The stakes level a config layer set is the FLOOR, not the level.** A dispatch
+resolves at or above it, never below, and the phase's own declared PLAN `files:`
+- read at resolve time, scanned against the surfaces the project answered - are
+what raise it. A phase touching no risk surface resolves BELOW the project
+default; a phase touching one never resolves lower than it did. An unset
+`stakes` floors at `solo`. `reason` names every move: the phase, the surface,
+the file that evidenced it, and the level it came from.
+
+It fails CLOSED and never `ok:false`. The discount below the configured level is
+earned only by a scope every plan of which was found and read clean, so one
+unreadable plan holds the whole scope at the configured level, named in
+`warnings[]`.
+
+Lowering below the computed floor takes a named waiver:
+`review.triggers.risk_surface.waive_routing_floor` lists the surfaces whose
+raise this project waives, and without it the raise stands with `reason` naming
+the key and the surface to name in it. It lowers to the configured `stakes` and
+no further, a surface it does not name still raises, and every waiver applied is
+named in `reason`. It waives the ROUTING floor alone - the blocking
+`risk_surface` review still fires on the diff.
+
+A raise floors the RUNG too: a configured `model.effort` rung below the floored
+cell's rung does not apply and `reason` says so, for post-plan roles only. A
+scope that took the discount keeps its configured rung.
+
+`route.mjs replay` answers what the floor does to this project's own phases -
+one row per phase directory, live and archived, today's level against the
+computed one and the evidence behind any raise, regression list always present.
+
+`--phase <N>` decides which phase the floor reads, the `.planning/STATE.md`
+cursor decides it when the flag is absent, and a MALFORMED `--phase` is refused
+- the alternative is a floor off another phase's files. `--plan <k>` narrows the
+scope to ONE plan, which is what an executor floors on, so a clean plan in a
+mixed phase routes below its risky sibling; a key naming no plan file holds the
+configured level rather than widening back to the union. `cad-planner` and
+`cad-assumptions-analyzer` are exempt - dispatched before a plan exists, they
+would be floored off the previous phase's files.
 
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
   run failed: with `model.escalate_on_failure: true` (an opt-in - the default
@@ -237,6 +271,11 @@ max-concurrent-agents. Resolve the route ONCE per (role, attempt) and reuse it
 across the batch - the payloads differ, the routing does not, so calling
 `route.mjs resolve` again per dispatch is wasted. Serialize dispatches only when
 one consumes another's returned artifact.
+
+The EXECUTOR is the stated exception, and not because payloads differ: the plan
+scope is a routing INPUT once the risk floor reads it, so the per-plan executors
+of a parallel phase can resolve DIFFERENT levels off one (role, attempt). Each
+resolves its own, carrying its `--plan <k>`; every other role keeps the rule.
 
 **Prompt shape (cache discipline).** Order every dispatch prompt stable-first:
 context that repeats across dispatches of the same role (phase/goal, shared

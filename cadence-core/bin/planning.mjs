@@ -56,7 +56,8 @@
 //                                   in warnings[], never a fall-through to a
 //                                   lower one (NOT --dir: --root is the
 //                                   PROJECT root, one level deep only)
-//   detect-surfaces [--root <path>]  which of the eight risk-surface categories
+//   detect-surfaces [--root <path>] [--answered <a,b,c>]
+//                                   which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
 //                                   manifests, file types, never source text
 //                                   (NOT --dir: --root is the PROJECT root,
@@ -178,7 +179,7 @@ import { activeVersion, titleVersion, tagCarrying } from './lib/branch-decision.
 import { normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
-import { READS_FILE, summarizeReads, joinReads } from './lib/read-trace.mjs';
+import { READS_FILE, summarizeReads, joinReads, inDispatchReads } from './lib/read-trace.mjs';
 import { suggestFromRender, parseAdjudication } from './lib/trace-suggest.mjs';
 import { windowBudget } from './lib/window-budget.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -191,9 +192,10 @@ import { isReportName } from './lib/report-rotation.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
-import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
+import { scanTree, CATEGORIES, answeredSurfaces, interviewOptions } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
-import { buildEntries, deriveCounts } from './lib/adjudication-record.mjs';
+import { buildEntries, deriveCounts, recordName } from './lib/adjudication-record.mjs';
+import { buildQueue, isQueueName, queueIdentity, queueName } from './lib/deferred-queue.mjs';
 import { evaluateFlag, evaluateRow, subcommandKey, CONTRACTS } from './lib/arg-contract.mjs';
 
 // The raw argument list, kept beside the envelope helpers because the flags
@@ -491,8 +493,24 @@ function cmdStatus(dir) {
     }
   }
 
+  // THE DEFERRED QUEUE, off the one derivation `deferred list` answers from, so
+  // /cad-progress and /cad-land cannot disagree about what is queued.
+  //
+  // ALWAYS PRESENT, unlike `cycle` and `drift` beside it, which appear only in
+  // their own states. This key is read by a REFUSAL surface: a caller has to be
+  // able to tell "nothing is deferred" from "this seam predates the queue", and
+  // a key that is absent in the empty state collapses those two into one answer
+  // - the fail-open one, on the gate whose whole job is to refuse.
+  //
+  // NOT a cursor status and NOT a drift kind (D-05). A `Status:` value outside
+  // `AGREE` above is reported as `cursor` drift and rewritten by the very next
+  // /cad-progress, so a queue recorded there would stop being recorded one
+  // command after it was written.
+  const queue = readQueue(dir, null);
+
   ok({
     current, total: derived.length,
+    deferred: queue,
     // Additive, and present ONLY in the closed state: a caller branching on
     // `current === null` alone would otherwise read a closed milestone as
     // "all phases complete" and route back to /cad-milestone.
@@ -2811,7 +2829,37 @@ function manifestDeps(name, text) {
   return out;
 }
 
-function cmdDetectSurfaces(root) {
+/**
+ * @param {string} root
+ * @param {string | true | undefined} answeredArg the `--answered` value: the
+ *   set a config layer already holds, comma-separated, or absent when nobody
+ *   has answered
+ */
+function cmdDetectSurfaces(root, answeredArg) {
+  // The ALREADY-ANSWERED set, read exactly the way `risk-check run` reads
+  // `--surfaces`: split, trim, drop empties, then refuse. It arrives as a flag
+  // and is never read from config HERE, so `/cad-config`'s re-entrant arm hands
+  // over the effective value it already resolved through the read face and this
+  // seam stays the pure map from a tree to an answer. A token outside the eight
+  // is a malformed CALL - refused rather than dropped, because a caller who
+  // mistyped the set they hold would otherwise be offered a narrower option
+  // list built from an answer nobody gave.
+  /** @type {string[]} */
+  let answered = [];
+  if (answeredArg !== undefined) {
+    const raw = typeof answeredArg === 'string' ? answeredArg : '';
+    const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
+    if (!tokens.length) {
+      return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>');
+    }
+    const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
+    if (unknown.length) {
+      return fail('bad-args',
+        `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
+    }
+    answered = tokens;
+  }
+
   /** @type {string[]} */
   const warnings = [];
   /** @type {string[]} */
@@ -2887,6 +2935,13 @@ function cmdDetectSurfaces(root) {
     unspeakable: scan.unspeakable,
     inconclusive: scan.inconclusive,
     recommended: scan.recommended,
+    // The QUESTION itself, built here rather than composed by a model at the
+    // ask site. Always present, like every field above it: an empty tree still
+    // gets its one all-eight choice, so "the structure evidences nothing" and
+    // "nobody built a list" stay distinguishable. #206 is what a composed list
+    // cost - the same eight categories in slot 1 and in the last slot, with no
+    // value for any check to read.
+    options: interviewOptions(scan, answered),
     ...(warnings.length ? { warnings } : {}),
   });
 }
@@ -3050,20 +3105,30 @@ function cmdTraceIgnore(root, opts) {
   return ok({ ...common, written: true });
 }
 
-// reads - the in-dispatch companion to `trace render`. `trace.jsonl` records
-// what a dispatch was HANDED; `reads.jsonl` records what it went and opened
-// afterwards, which measured ~88% of a run's tokens on this repo and had no
-// reader at all. Absent file is ok:true with zeroes - a project that has not
-// run since the hook was installed has nothing to report, and that is not an
-// error.
-function cmdReads(dir, opts) {
+/**
+ * The ONE `.planning/reads.jsonl` line parse in this file. Two arms read that
+ * record now - `cmdReads` and the `trace suggest` arm below - and a second copy
+ * of the partial-tail rule would be a second place for it to drift.
+ *
+ * It REPORTS what it hit and decides nothing. `absent` and `unreadable` are
+ * handed back separately rather than collapsed, because the two callers take
+ * deliberately different postures on them and a helper that picked one would
+ * impose it on both: `reads` fails loudly on an unreadable file (it is the face
+ * `/cad-report`'s Reading line is composed from, and a silent empty there reads
+ * as a project that opened nothing), while `trace suggest` returns no entry and
+ * names the file in `warnings[]`. A permissions error loud on one face and
+ * invisible on the other is exactly what this split prevents.
+ *
+ * @param {string} dir the planning directory
+ * @returns {{status: 'ok'|'absent'|'unreadable', records: any[], file: string}}
+ */
+function readReadsRecords(dir) {
   const file = join(dir, READS_FILE);
-  let text = '';
+  let text;
   try {
     text = readFileSync(file, 'utf8');
   } catch (e) {
-    if (e && e.code === 'ENOENT') return ok({ calls: 0, distinct: 0, redundancy: null, fileCalls: 0, distinctFiles: 0, fileTouches: 0, fileRedundancy: null, byAgent: [], byTool: [], topTargets: [], topFiles: [], note: 'no reads recorded yet' });
-    return fail('read-failed', `cannot read ${file}`);
+    return { status: e && e.code === 'ENOENT' ? 'absent' : 'unreadable', records: [], file };
   }
   const records = [];
   for (const line of text.split('\n')) {
@@ -3074,6 +3139,23 @@ function cmdReads(dir, opts) {
     // the caller every complete record ahead of it.
     try { records.push(JSON.parse(t)); } catch { /* partial line */ }
   }
+  return { status: 'ok', records, file };
+}
+
+// reads - the in-dispatch companion to `trace render`. `trace.jsonl` records
+// what a dispatch was HANDED; `reads.jsonl` records what it went and opened
+// afterwards, which measured ~88% of a run's tokens on this repo and had no
+// reader at all. Absent file is ok:true with zeroes - a project that has not
+// run since the hook was installed has nothing to report, and that is not an
+// error.
+function cmdReads(dir, opts) {
+  const { status, records, file } = readReadsRecords(dir);
+  if (status === 'absent') return ok({ calls: 0, distinct: 0, redundancy: null, fileCalls: 0, distinctFiles: 0, fileTouches: 0, fileRedundancy: null, byAgent: [], byTool: [], topTargets: [], topFiles: [], note: 'no reads recorded yet' });
+  // UNREADABLE stays a failure, unchanged. This is the single production site
+  // of that arm: swallowing an EACCES here would change `reads`'s contract with
+  // nothing red, and `/cad-report`'s Reading line would go quiet as though the
+  // project had opened no files at all.
+  if (status === 'unreadable') return fail('read-failed', `cannot read ${file}`);
   const summary = summarizeReads(records);
   // Without `--join` the envelope is what it has always been, including the
   // `no reads recorded yet` arm above, which returns before this line: a
@@ -3101,6 +3183,16 @@ function cmdReads(dir, opts) {
     floor: j.floor,
     coordinator: j.coordinator,
     unresolved: j.unresolved,
+    // The per-role IN-DISPATCH figures, off the same fold `trace suggest`
+    // calls, so `/cad-report` and `/cad-suggest` price re-reading off ONE
+    // implementation and neither recomputes it in prose (RDX-01).
+    //
+    // Its own key rather than folded into `topFiles`: that one is whole-corpus
+    // and per-file, these are per-dispatch and per-role, and pooling two
+    // different denominators under one heading is the category error
+    // `summarizeReads`'s own header warns about for `redundancy` versus
+    // `fileRedundancy`.
+    inDispatch: inDispatchReads(j.rows),
   });
 }
 
@@ -3675,14 +3767,33 @@ function cmdTrace(dir, sub, opts) {
     // `current` and a project that deliberately pinned one would be told to
     // move a value the read never saw.
     const { config: suggestConfig, warnings } = mergeLayers(join(dir, 'config.json'));
-    const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig));
+    // The SECOND record this arm opens (RDX-01): `.planning/reads.jsonl`, folded
+    // to the per-role in-dispatch figures R7 reads. The brackets are the render
+    // ALREADY computed above - a second `renderTrace` call would re-read the
+    // trace for nothing - so a `--phase N` run scopes itself without a new flag:
+    // only reads landing inside that phase's dispatches join at all.
+    //
+    // An ABSENT file yields no rows and therefore no entry, never an error and
+    // never a zero, which is the posture `cmdReads`'s own ENOENT arm already
+    // states for a project that has not run since the hook was installed. An
+    // UNREADABLE one yields no entry AND names the file in `warnings[]`, the
+    // channel this envelope already carries for exactly this class of partial
+    // read (D-13).
+    const readRecord = readReadsRecords(dir);
+    const inDispatch = readRecord.status === 'ok'
+      ? inDispatchReads(joinReads(readRecord.records, r.brackets).rows)
+      : undefined;
+    const suggestWarnings = readRecord.status === 'unreadable'
+      ? [...warnings, `cannot read ${readRecord.file}; in-dispatch re-reading was not measured`]
+      : warnings;
+    const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig), inDispatch);
     return ok({
       scope: phase === undefined ? 'all' : String(phase),
       events_read: r.events.length,
       ...(r.capped ? { capped: true } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       suggestions,
-      ...(warnings.length ? { warnings } : {}),
+      ...(suggestWarnings.length ? { warnings: suggestWarnings } : {}),
     });
   }
   if (sub === 'render') {
@@ -4084,21 +4195,34 @@ const planKey = (v) => (v === undefined || v === null ? '' : String(v));
 const RISK_TRIGGER = 'risk_surface';
 
 /**
- * The four `outcome` event names a blocking `risk_surface` fire can settle at,
- * and the whole vocabulary `risk-check status` accepts as proof the fire
- * HAPPENED (GAT-04):
+ * The five `outcome` event names a `risk_surface` fire can settle at, and the
+ * whole vocabulary `risk-check status` accepts as proof the fire HAPPENED
+ * (GAT-04):
  *   - `adjudication` - the adjudicated arm reported its survivors
  *   - `rearm`        - the one-round re-arm fired a narrowed second round
  *   - `gate_pass`    - the fire came back with nothing blocker/high
  *   - `override`     - the user cleared a FAIL deliberately, reason on file
+ *   - `deferral`     - a gate resolved `deferred` queued what it found
  * `gate_pass` is here because the roadmap's stated acceptance set has no arm
  * for a clean pass and a blocking PASS wrote nothing: without it, every matched
  * range whose fire found no blocker would be permanently unclearable, and this
  * tree has already stated its verdict on that shape - an unclearable gate is
- * one that gets bypassed. A FIFTH name would be a state nothing produces; the
- * producers are references/triage-gate.md and references/review-triggers.md.
+ * one that gets bypassed.
+ *
+ * `deferral` is the FIFTH name this list once said nothing produces, and what
+ * produces it is the `deferred` gate mode: that arm runs the reviewer, persists
+ * the findings and writes a queue member, then lets the run continue - it
+ * settles by QUEUING rather than by adjudicating, so none of the four names
+ * above describes it. It cannot borrow one either: `gate_pass` reads as a clean
+ * gate in every downstream recount, and `override` is the coordinator's own
+ * say-so, which is the manufactured clear the receipt machinery exists to
+ * refuse. Without an accepted receipt of its own, `cmdRiskCheckStatus` reports
+ * the matched range `unfired` forever and the run halts at exactly the step
+ * deferring it was meant to let through.
+ *
+ * The producers are references/triage-gate.md and references/review-triggers.md.
  */
-const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override'];
+const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override', 'deferral'];
 
 function cmdRiskCheckStatus(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -4398,11 +4522,13 @@ function cmdRiskCheckStatus(dir, opts) {
    * unskippable. "The detector ran" and "the fire happened" are two different
    * claims, so they are two different receipts and this reader demands both.
    *
-   * Four event names, because those are the four outcomes a blocking fire can
-   * reach: the adjudicated arm's `adjudication`, the capped re-arm's `rearm`,
-   * and references/triage-gate.md's two settle points - `gate_pass` when
-   * nothing blocker/high survived, `override` when the user cleared a FAIL
-   * deliberately. A fifth name would be a state nothing produces.
+   * Five event names, because those are the five outcomes a fire can reach: the
+   * adjudicated arm's `adjudication`, the capped re-arm's `rearm`,
+   * references/triage-gate.md's two settle points - `gate_pass` when nothing
+   * blocker/high survived, `override` when the user cleared a FAIL deliberately
+   * - and `deferral`, which the `deferred` gate mode writes when it queues what
+   * it found instead of halting. The list itself is FIRE_RECEIPTS, one
+   * consultation, and its block comment states why each name is on it.
    *
    * The trigger is read off the STRUCTURED `trigger` field and never parsed out
    * of `detail` (D-12): measured on this repository's 35 `outcome/adjudication`
@@ -4638,22 +4764,6 @@ function cmdRiskCheck(dir, sub, opts) {
 const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /**
- * The record's filename, as ONE rule both sides resolve by.
- *
- * The writer below and the receipt recount in `cmdTrace` have to name the same
- * file or the cross-check reads a different fire's rulings than the one being
- * settled - and the failure of that is SILENT, since a recount against round
- * one's record passes whenever the two rounds' counts happen to coincide. Round
- * 1 keeps the sibling `REVIEW-<trigger>-<discriminator>.md`'s exact name; every
- * round above it carries its round, so a re-arm lands beside round one rather
- * than on top of it.
- *
- * @param {string} trigger @param {string} discriminator @param {number} round
- */
-const recordName = (trigger, discriminator, round) =>
-  `ADJUDICATION-${trigger}-${discriminator}${round > 1 ? `-r${round}` : ''}.json`;
-
-/**
  * The record a receipt SETTLES, as an absolute path, or '' when this fire has
  * none that can be resolved.
  *
@@ -4846,49 +4956,126 @@ function groundCitations(top, headId, entries) {
   return { checked: true, missing, reason: '' };
 }
 
-function cmdAdjudication(dir, opts) {
+/**
+ * The identity a fire's artifact is filed under, validated ONCE for both faces
+ * that write one: the phase as the caller spells it, the two filename tokens,
+ * the re-arm round, and the two refs.
+ *
+ * Shared rather than restated, because `adjudication` and `deferred record`
+ * name the SAME fire and the two files land in one directory: two copies of
+ * this preamble is two chances for the record and the queue member to disagree
+ * about which fire they belong to, and the rails here - a token that reaches a
+ * FILENAME, a round that keeps a re-arm off round one's file - are exactly the
+ * ones where a divergence is silent.
+ *
+ * It EMITS its own refusal and answers `null`, the shape `readJsonPayload`
+ * already takes: the caller's arm is `if (!id) return;`.
+ *
+ * @param {string} face the subcommand's spelling, for every refusal's wording
+ * @param {any} opts
+ * @returns {{n: string, trigger: string, discriminator: string, round: number,
+ *            base: string, head: string} | null}
+ */
+function fireIdentity(face, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'adjudication needs --phase <N>');
+  if (!parsedPhase.ok) { fail('bad-args', `${face} needs --phase <N>`); return null; }
   // The caller's OWN spelling, the way `uatFile` addresses a phase: every use
-  // of it here is a path or a label, never arithmetic.
+  // of it is a path or a label, never arithmetic.
   const n = parsedPhase.raw;
 
   const trigger = opts.trigger;
   const discriminator = opts.discriminator;
   for (const [flag, raw] of [['--trigger', trigger], ['--discriminator', discriminator]]) {
     if (typeof raw !== 'string' || !RECORD_TOKEN.test(raw)) {
-      return fail('bad-args',
-        `adjudication ${flag} reaches a FILENAME, so it takes letters, digits, _ and - `
+      fail('bad-args',
+        `${face} ${flag} reaches a FILENAME, so it takes letters, digits, _ and - `
         + 'only, opening with a letter or a digit and at most 64 characters - got '
         + `${typeof raw === 'string' ? JSON.stringify(raw) : 'nothing'}`);
+      return null;
     }
   }
 
   // THE RE-ARM'S ROUND. A blocking re-arm (references/triage-gate.md caps it at
   // ONE) is a SECOND fire of the same trigger on the same plan, so it resolves
-  // to the same discriminator: without this flag round two's record would
-  // replace round one's rulings, and round one is exactly the record an auditor
-  // reads to see the finding a fix was claimed to close.
+  // to the same discriminator: without this flag round two's artifact would
+  // replace round one's, and round one is exactly the record an auditor reads
+  // to see the finding a fix was claimed to close.
   let round = 1;
   if ('round' in opts) {
     const parsedRound = requireInt(opts.round);
     if (!parsedRound.ok || parsedRound.value < 1) {
-      return fail('bad-args',
-        'adjudication --round needs the re-arm round after it, a whole number of at '
+      fail('bad-args',
+        `${face} --round needs the re-arm round after it, a whole number of at `
         + 'least 1: --round 2');
+      return null;
     }
     round = parsedRound.value;
   }
 
   // BOTH required and neither defaulted, the rule `risk-check run` already
-  // states: a defaulted head is a range the caller never stated, and this
-  // record IS the evidence of what was judged.
+  // states: a defaulted head is a range the caller never stated, and these
+  // artifacts ARE the evidence of what was reviewed.
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   if (!base || !head) {
-    return fail('bad-args',
-      'adjudication needs --base <ref> and --head <ref>, neither opening with `-`');
+    fail('bad-args', `${face} needs --base <ref> and --head <ref>, neither opening with \`-\``);
+    return null;
   }
+
+  return { n, trigger, discriminator, round, base, head };
+}
+
+/**
+ * The directory a fire's artifact is written into, or `null` once the refusal
+ * has been emitted.
+ *
+ * BESIDE THE SIBLING REVIEW FILE (D-06), and never inside `<plandir>/reports/`:
+ * `cmdLeaseCheck` exempts exactly one path under that directory by byte
+ * equality, so anything else staged from there answers `undeclared-files`. The
+ * directory has to already exist - these seams record a fire that HAPPENED, and
+ * minting one for a mistyped flag would leave a directory nothing else in the
+ * tree accounts for. `lstatSync` on whichever home is chosen, so a SYMLINK
+ * sitting where it should be is refused rather than followed out of the tree,
+ * the disposition the read side of this file already takes.
+ *
+ * TWO HOMES, IN ORDER: `phases/<N>/` while the phase is live, else
+ * `.planning/deferred/<N>/` once `deferred carry` has moved that phase's queue
+ * out ahead of `milestone-prune`. Without the second, a carried queue member is
+ * PERMANENTLY unclearable - `adjudication` refuses on the deleted phase
+ * directory, so the finding that stops the land can never be ruled on, and an
+ * unclearable gate is one that gets bypassed. `deferred record` resolves the
+ * same way and in the same order, because a triage that rules a `blocker`/
+ * `high` survived has to re-arm, and a re-arm with nowhere to write its round-2
+ * member leaves the cap reading unspent off a queue that could never gain one.
+ *
+ * `recordForFire` deliberately does NOT widen with them. It resolves the
+ * receipt RECOUNT, whose own contract already states that an unresolvable
+ * record OMITS the check rather than failing the append - so a carried fire
+ * degrades to no cross-check instead of to a wrong one, and that is the safe
+ * direction there while it is the unsafe one here.
+ *
+ * @param {string} dir @param {string} n the phase as the caller spelled it
+ * @param {string} what the artifact, for the refusal's wording
+ * @returns {string|null}
+ */
+function fireHome(dir, n, what) {
+  for (const home of QUEUE_HOMES) {
+    const hdir = join(dir, home, String(n));
+    let hstat = null;
+    try { hstat = lstatSync(hdir); } catch { /* absent is the answer, never a throw */ }
+    if (hstat && hstat.isDirectory()) return hdir;
+  }
+  fail('no-phase-dir',
+    `neither phases/${n}/ nor deferred/${n}/ is a directory under ${dir} - the ${what} is `
+    + 'written BESIDE the sibling REVIEW file, or beside the queue member a milestone close '
+    + 'carried out of that phase, so one of the two has to exist already');
+  return null;
+}
+
+function cmdAdjudication(dir, opts) {
+  const id = fireIdentity('adjudication', opts);
+  if (!id) return;
+  const { n, trigger, discriminator, round, base, head } = id;
 
   // Absent `--payload` is refused rather than fed to stdin: the declared row
   // says required, `evaluateRow` is a VALUE door and not a presence one, and
@@ -4917,28 +5104,17 @@ function cmdAdjudication(dir, opts) {
     });
   }
 
-  // BESIDE THE SIBLING REVIEW FILE (D-06), and never inside `<plandir>/
-  // reports/`: `cmdLeaseCheck` exempts exactly one path under that directory by
-  // byte equality, so anything else staged from there answers `undeclared-files`.
-  // The phase directory has to already exist - this seam records a fire that
-  // happened, and minting `phases/<N>/` for a mistyped flag would leave a
-  // directory nothing else in the tree accounts for. `lstatSync`, so a SYMLINK
-  // sitting where the phase directory should be is refused rather than followed
-  // out of the tree, the disposition the read side of this file already takes.
-  const pdir = join(dir, 'phases', String(n));
-  let pdirStat = null;
-  try { pdirStat = lstatSync(pdir); } catch { /* absent is the answer, never a throw */ }
-  if (!pdirStat || !pdirStat.isDirectory()) {
-    return fail('no-phase-dir',
-      `phases/${n}/ is not a directory under ${dir} - the record is written BESIDE the `
-      + 'sibling REVIEW file, so the phase directory of the fire has to exist already');
-  }
+  const pdir = fireHome(dir, n, 'record');
+  if (!pdir) return;
 
   // The ONE filename rule, shared with the receipt recount in `cmdTrace`: two
   // spellings of it is two files, and the recount would read the wrong fire.
   const name = recordName(trigger, discriminator, round);
-  const rel = `phases/${n}/${name}`;
   const file = join(pdir, name);
+  // DERIVED from the home that was chosen, never the literal `phases/<N>/`: a
+  // carried fire is adjudicated in `deferred/<N>/`, and an envelope naming a
+  // path the record is not at is a path an auditor cannot open.
+  const rel = relative(dir, file);
   // REFUSED, never overwritten. A caller that forgot `--round` on a re-arm is
   // the failure the flag exists FOR, and replacing the file there lands in
   // exactly the state it was added to prevent: the first round's rulings gone,
@@ -5016,6 +5192,440 @@ function cmdAdjudication(dir, opts) {
     citations: cites.checked
       ? { checked: true, missing: cites.missing.size }
       : { checked: false, reason: cites.reason },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// deferred record - the QUEUE MEMBER a gate resolved `deferred` leaves behind.
+//
+// The sibling of the record above, and its opposite: that file says a fire was
+// judged, this one says it was not yet. A `deferred` gate runs its reviewer,
+// persists what came back and lets the run continue, so the finding stops the
+// LAND rather than the RUN - and the only thing that makes that true is this
+// artifact still being there, in the tree, at land time.
+//
+// COMMITTED, unlike the REVIEW file it sits beside (CONTEXT D-01).
+// `.planning/trace.jsonl` is gitignored and `renderTrace` drops a phase's
+// events at its `uat_verdict complete`, so a trace-resident queue evaporates on
+// a fresh clone and again at sign-off while every in-session test stays green.
+// Membership is this file EXISTING with no superseding `ADJUDICATION-*.json`
+// beside it, never absence-of-record alone: every advisory fire also leaves a
+// REVIEW file with no record.
+//
+// THE FINDINGS ARE STORED VERBATIM, not counted (lib/deferred-queue.mjs states
+// why): `/cad-milestone` deletes the sibling REVIEW file, and a queue member
+// whose bodies lived only there names a number nobody can triage.
+//
+// IT WRITES NO ADJUDICATION RECORD AND ADDS NO FOURTH RULING (D-09). `RULINGS`
+// is frozen at three and a finding with no ruling is a refusal, so a record at
+// fire time is impossible by construction rather than by convention.
+// ---------------------------------------------------------------------------
+function cmdDeferredRecord(dir, opts) {
+  const id = fireIdentity('deferred record', opts);
+  if (!id) return;
+  const { n, trigger, discriminator, round, base, head } = id;
+
+  // The payload is a FILE for the reason the adjudication record's is: it is
+  // verbatim reviewer text with arbitrary quoting, and one unescaped quote in a
+  // heredoc makes it unparseable after the fire is over. It is the SAME file
+  // the fire wrote to the sibling REVIEW-<trigger>-<discriminator>.md.
+  if (opts.payload === undefined) {
+    return fail('bad-args',
+      'deferred record needs --payload <file> - the reviewer\'s returned object is a '
+      + 'FILE, never inline JSON and never stdin');
+  }
+  const payload = readJsonPayload(opts.payload);
+  if (!payload.ok) return;
+  const queued = buildQueue(payload.value);
+  if (!queued.ok) return fail('bad-payload', queued.detail);
+
+  // RESOLVED, never the caller's spelling (D-08): a queue member is read at
+  // land time, in another session, and `HEAD` will name a different commit by
+  // then. An unresolvable range is a refusal rather than a member with null
+  // ids - a queue entry whose head cannot be checked out cannot be triaged.
+  const range = resolveRange(base, head);
+  if (!range.ok) {
+    return emit({
+      ok: false,
+      reason: 'unresolved-range',
+      phase: n,
+      base,
+      head,
+      detail: range.error,
+      hint: 'name a --base and --head this repository can resolve, then re-run this record',
+    });
+  }
+
+  const pdir = fireHome(dir, n, 'queue member');
+  if (!pdir) return;
+
+  const name = queueName(trigger, discriminator, round);
+  const file = join(pdir, name);
+  // Same derivation as the record's, and the same reason: a capped re-arm's
+  // round-2 member is written into whichever home the round-1 member is in.
+  const rel = relative(dir, file);
+  // REFUSED, never overwritten, exactly as the record beside it is: a caller
+  // that forgot `--round` on a re-arm would otherwise drop the round the land
+  // refusal is still holding, silently, with ok:true. `lstatSync` - a symlink
+  // at the target is something already there, whatever it points at.
+  let existing = null;
+  try { existing = lstatSync(file); } catch { /* the ordinary case */ }
+  if (existing) {
+    return fail('record-exists',
+      `${rel} already exists and holds round ${round}'s deferred findings - this seam `
+      + 'never overwrites a queue member',
+      'a re-arm is a SECOND fire of the same trigger on the same plan: pass --round '
+      + `${round + 1} so it lands beside round ${round} instead of replacing it`);
+  }
+
+  const record = {
+    phase: n,
+    trigger,
+    discriminator,
+    round,
+    // Both spellings AND both ids, the shape the adjudication record and
+    // `risk-check run` both use: the spelling is what the caller recognises,
+    // the id is the range's identity.
+    base,
+    head,
+    base_id: range.base,
+    head_id: range.head,
+    // VERBATIM, and no count beside them: a stored count is a second place for
+    // the member to disagree with itself, and every reader of this file
+    // recounts the array the way `deriveCounts` recounts an entry list.
+    findings: queued.findings,
+  };
+  atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
+
+  return ok({
+    phase: n,
+    trigger,
+    discriminator,
+    round,
+    record: rel,
+    base,
+    head,
+    base_id: range.base,
+    head_id: range.head,
+    findings: queued.findings.length,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// deferred list - WHAT IS STILL QUEUED, and the one derivation every reader of
+// that question runs.
+//
+// MEMBERSHIP IS A FILE EXISTING (CONTEXT D-01), never absence-of-record: a
+// `DEFERRED-<trigger>-<discriminator>[-r<round>].json` whose `ADJUDICATION`
+// sibling - the name `recordName` resolves for the SAME trigger, discriminator
+// and round - is not beside it. Absence alone cannot be the test because every
+// advisory fire also leaves a REVIEW file with no record beside it, so "no
+// record here" describes the whole advisory arm as well as the queue.
+//
+// TWO HOMES AND NO THIRD. `.planning/phases/<N>/` is where a fire writes, and
+// `.planning/deferred/<N>/` is where `deferred carry` moves what a milestone
+// close is about to prune. An `_archive-<label>/` tree is deliberately out of
+// reach: `milestone-prune --mode archive` puts it at the planning ROOT rather
+// than under either home, and what it holds is a closed milestone's copy of
+// work that was already carried - counting it would refuse every land after a
+// close over findings that are no longer in the live tree.
+//
+// AN UNPROVABLE QUEUE IS NOT AN EMPTY ONE. A directory this cannot read, a
+// member whose bytes do not parse, a symlink wearing a member's name: each
+// lands on `unreadable` and the envelope answers `ok:false`, because the one
+// caller that matters is a REFUSAL and reporting "nothing deferred" about input
+// it could not read is the fail-open arm `decideGateHalt` already names for an
+// unreadable findings payload. The counts still ride the refusal, so the
+// operator sees what WAS provable beside what was not.
+//
+// NO FINDING BODIES CROSS THIS SEAM, only counts and identities - so the land
+// refusal and the progress line print the answer directly instead of routing
+// bulk reviewer text through a scratch file (RES-03). A triage reads the bodies
+// out of the member file itself, whose path this names.
+// ---------------------------------------------------------------------------
+
+/** The two directories under `.planning/` a queue member may live in. */
+const QUEUE_HOMES = ['phases', 'deferred'];
+
+/**
+ * Every unadjudicated queue member under `dir`, and everything in the two homes
+ * that could not be proven to hold none.
+ *
+ * ONE derivation with TWO callers - `deferred list` and the `status` envelope -
+ * so `/cad-land` and `/cad-progress` cannot disagree about what is queued.
+ *
+ * @param {string} dir the planning directory
+ * @param {string|null} wantPhase a phase as the caller spelled it, or null for
+ *   the whole tree
+ * @returns {{members: {phase: string, trigger: string, discriminator: string,
+ *            round: number, path: string, findings: number}[],
+ *            findings: number, unreadable: {path: string, detail: string}[]}}
+ */
+function readQueue(dir, wantPhase) {
+  /** @type {{phase: string, trigger: string, discriminator: string, round: number, path: string, findings: number}[]} */
+  const members = [];
+  /** @type {{path: string, detail: string}[]} */
+  const unreadable = [];
+  // redactUrl on every message, the EXP-01 rail: these strings are printed by
+  // a land refusal and can carry a path a caller would rather not publish.
+  const why = (/** @type {any} */ e) => redactUrl(e && e.message ? e.message : String(e));
+
+  for (const home of QUEUE_HOMES) {
+    let entries;
+    try { entries = readdirSync(join(dir, home), { withFileTypes: true }); } catch (e) {
+      // ENOENT is ABSENCE and absence is data: `.planning/deferred/` exists only
+      // once a close has carried something, and a project with no `phases/` at
+      // all has no fires. Every OTHER error is a home that might hold a queue.
+      if (e && /** @type {any} */ (e).code === 'ENOENT') continue;
+      unreadable.push({ path: `${home}/`, detail: why(e) });
+      continue;
+    }
+    for (const ent of entries) {
+      if (wantPhase !== null && ent.name !== wantPhase) continue;
+      const rel = `${home}/${ent.name}`;
+      // `withFileTypes` classifies the LINK, never its target, the disposition
+      // `fireHome` takes at the write face: a symlink where a phase
+      // directory should be is refused rather than followed out of the tree.
+      if (ent.isSymbolicLink()) {
+        unreadable.push({ path: rel, detail: 'a symlink where a phase directory should be - not followed' });
+        continue;
+      }
+      // A regular file under `phases/` holds no queue member and is some other
+      // reader's business; only a directory can.
+      if (!ent.isDirectory()) continue;
+      const pdir = join(dir, home, ent.name);
+      /** @type {string[]} */
+      let names;
+      try { names = readdirSync(pdir); } catch (e) {
+        unreadable.push({ path: rel, detail: why(e) });
+        continue;
+      }
+      const present = new Set(names);
+      for (const name of names) {
+        if (!isQueueName(name)) continue;
+        const path = `${rel}/${name}`;
+        const file = join(pdir, name);
+        let stat = null;
+        try { stat = lstatSync(file); } catch (e) {
+          unreadable.push({ path, detail: why(e) });
+          continue;
+        }
+        if (!stat.isFile()) {
+          unreadable.push({ path, detail: 'not a regular file - a symlink wearing a queue member\'s name is not a queue member' });
+          continue;
+        }
+        let parsed;
+        try { parsed = JSON.parse(readFileSync(file, 'utf8')); } catch (e) {
+          unreadable.push({ path, detail: why(e) });
+          continue;
+        }
+        const id = queueIdentity(name, parsed);
+        if (!id.ok) {
+          unreadable.push({ path, detail: id.detail });
+          continue;
+        }
+        // The member's own `phase` against the directory holding it. They are
+        // written together - the write face resolves `phases/<N>/` from the
+        // same `--phase` it stores, and `deferred carry` preserves both - so a
+        // disagreement means the file was moved by hand, and `--phase` would
+        // then narrow to a phase the member does not claim.
+        if (id.phase !== ent.name) {
+          unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${rel}/` });
+          continue;
+        }
+        // THE SUPERSESSION TEST, as one filename comparison (D-01). A REGULAR
+        // FILE only, the disposition `recordForFire` already states: a symlink
+        // is not a record, and accepting one here would let a queue be cleared
+        // by a link to anything at all.
+        const record = recordName(id.trigger, id.discriminator, id.round);
+        if (present.has(record)) {
+          let rstat = null;
+          try { rstat = lstatSync(join(pdir, record)); } catch { /* unreadable is not superseded */ }
+          if (rstat && rstat.isFile()) continue;
+        }
+        members.push({
+          phase: id.phase,
+          trigger: id.trigger,
+          discriminator: id.discriminator,
+          round: id.round,
+          path,
+          findings: id.findings,
+        });
+      }
+    }
+  }
+  // Stable and derivation-owned rather than readdir's order, so a refusal
+  // prints the same list twice running and two homes interleave by phase.
+  members.sort((a, b) => a.path.localeCompare(b.path));
+  unreadable.sort((a, b) => a.path.localeCompare(b.path));
+  return { members, findings: members.reduce((n, m) => n + m.findings, 0), unreadable };
+}
+
+function cmdDeferredList(dir, opts) {
+  let wantPhase = null;
+  if ('phase' in opts) {
+    const parsed = requirePhaseArg(opts.phase);
+    if (!parsed.ok) {
+      return fail('bad-args', 'deferred list --phase needs a phase number (N or N.M)');
+    }
+    // The caller's OWN spelling, the way every other phase-addressed read in
+    // this file works: the value is a directory component before it is
+    // anything arithmetic, and `String(Number('08'))` names a different phase.
+    wantPhase = parsed.raw;
+  }
+  if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
+
+  const q = readQueue(dir, wantPhase);
+  const answer = {
+    ...(wantPhase !== null ? { phase: wantPhase } : {}),
+    members: q.members,
+    findings: q.findings,
+    unreadable: q.unreadable,
+  };
+  if (q.unreadable.length) {
+    // ok:false, carrying the counts anyway. The question this seam answers is
+    // "is anything still queued", and it could not answer it - so it says so
+    // rather than handing a refusal surface a number that is only a floor.
+    return emit({
+      ok: false,
+      reason: 'unprovable-queue',
+      detail: `${q.unreadable.length} path(s) under ${dir} could not be read, so the queue `
+        + `cannot be proven empty: ${q.unreadable.map((u) => u.path).join(', ')}`,
+      hint: 'make them readable and re-run - an unreadable queue refuses a land exactly as a member does',
+      ...answer,
+    });
+  }
+  return ok(answer);
+}
+
+// ---------------------------------------------------------------------------
+// deferred carry - the queue OUT of the phase directory a close is about to
+// delete, so the refusal it feeds still has something to read.
+//
+// WHY A SEAM AND NOT A PROSE INSTRUCTION (D-10). The `risk_surface` union
+// beside it in `workflows/milestone.md` is prose because it composes a
+// TRANSIENT file the same close deletes at step 7. This one MOVES committed
+// artifacts during a close that runs completely unattended - `/cad-milestone`
+// chains `/cad-land` after the prune - and a prose step that half-ran there
+// leaves the only thing stopping that land in a directory `milestone-prune` is
+// about to remove.
+//
+// A MOVE AND NOT A COPY. `milestone-prune --mode archive` puts the phase
+// directory under `_archive-<label>/`, which no reader here walks; a COPY would
+// leave a second member inside it and, if that tree were ever read, one fire
+// would be counted twice. A move also means the carried member is the only
+// copy, which is what makes it clear when it is adjudicated.
+//
+// THE PHASE STAYS A DIRECTORY LEVEL, never folded into the filename: two phases
+// routinely defer the same trigger on the same `plan-<k>` discriminator, so a
+// flat carry would collide, and the collision would be one queue member
+// silently replacing another's.
+//
+// A SETTLED MEMBER IS LEFT BEHIND to be pruned with its phase. It has its
+// `ADJUDICATION` sibling, so it is not in the queue at all - carrying it would
+// put a cleared finding in front of every later land.
+// ---------------------------------------------------------------------------
+function cmdDeferredCarry(dir, opts) {
+  const parsed = requirePhaseArg(opts.phase);
+  if (!parsed.ok) return fail('bad-args', 'deferred carry needs --phase <N>');
+  const n = parsed.raw;
+  if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
+
+  // THE DESTINATION FIRST, before this seam has read a single member.
+  // `lstatSync` and `isDirectory`, the rail `milestone-prune --mode archive`
+  // states for its own archive root: a symlink or a regular file squatting the
+  // destination is FOLLOWED by `renameSync`, which would deposit committed
+  // artifacts wherever it points. Asked ahead of the queue read deliberately -
+  // it is a fact about where things go, not about what is queued, and its
+  // refusal is the actionable one. Absent is the ordinary case; the mkdir
+  // below creates it.
+  // EVERY component this seam creates, not only the last one. `lstatSync` does
+  // not follow the FINAL component and follows every one before it, so a check
+  // aimed at `deferred/<N>` alone answers "absent, go ahead" while the parent
+  // is already a link out of the tree - and the `mkdirSync(recursive)` below
+  // then builds `<wherever>/<N>` and `renameSync` fills it. `milestone-prune`'s
+  // archive root escapes this because it sits ONE level under the planning root
+  // and its single lstat therefore IS the intermediate check; this destination
+  // sits two levels down, so it takes two.
+  const carryRoot = join(dir, 'deferred');
+  const rootStat = lstatSync(carryRoot, { throwIfNoEntry: false });
+  if (rootStat && !rootStat.isDirectory()) {
+    return fail('carry-dest-unusable',
+      'deferred/ exists and is not a real directory'
+      + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
+      + ' - move or remove it, then re-run');
+  }
+
+  const dest = join(dir, 'deferred', n);
+  const destStat = lstatSync(dest, { throwIfNoEntry: false });
+  if (destStat && !destStat.isDirectory()) {
+    return fail('carry-dest-unusable',
+      `deferred/${n} exists and is not a real directory`
+      + `${destStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
+      + ' - move or remove it, then re-run');
+  }
+
+  const q = readQueue(dir, n);
+  // REFUSED before anything moves, and for a sharper reason than the reader
+  // has: this call is the last thing that runs before `milestone-prune`
+  // DELETES the directory. Carrying what was provable and saying nothing about
+  // the rest would destroy exactly the members it could not read.
+  if (q.unreadable.length) {
+    return emit({
+      ok: false,
+      reason: 'unprovable-queue',
+      phase: n,
+      moved: [],
+      unreadable: q.unreadable,
+      detail: `${q.unreadable.length} path(s) under ${dir} could not be read, so this carry `
+        + `cannot prove what phase ${n} has queued: ${q.unreadable.map((u) => u.path).join(', ')}`,
+      hint: 'make them readable and re-run BEFORE milestone-prune, which deletes the directory',
+    });
+  }
+
+  // Only what is still in the phase directory. A member already under
+  // `deferred/<N>/` is where this face puts things, so a re-run after a partial
+  // carry finishes the job instead of refusing it.
+  const src = join(dir, 'phases', n);
+  const moving = q.members.filter((m) => m.path.startsWith(`phases/${n}/`));
+  if (!moving.length) {
+    return ok({ phase: n, moved: [], carried: 0, findings: 0 });
+  }
+
+  // ALL destinations checked BEFORE the first rename, so a collision refuses
+  // the whole carry rather than leaving half the queue in each home. Never
+  // overwritten: a destination already holding this name is a member from an
+  // earlier carry, and it is another fire's only copy.
+  for (const m of moving) {
+    const name = queueName(m.trigger, m.discriminator, m.round);
+    if (lstatSync(join(dest, name), { throwIfNoEntry: false })) {
+      return fail('carry-exists',
+        `deferred/${n}/${name} already exists - this seam never overwrites a carried queue member`,
+        'adjudicate or move it first; it is another fire\'s only copy of what was deferred');
+    }
+  }
+
+  mkdirSync(dest, { recursive: true });
+  const moved = [];
+  for (const m of moving) {
+    const name = queueName(m.trigger, m.discriminator, m.round);
+    // The BASENAME is preserved so `deferred list` reads a carried member by
+    // exactly the rule it reads a fresh one - the name is part of the identity.
+    renameSync(join(src, name), join(dest, name));
+    moved.push({
+      trigger: m.trigger,
+      discriminator: m.discriminator,
+      round: m.round,
+      from: m.path,
+      to: `deferred/${n}/${name}`,
+      findings: m.findings,
+    });
+  }
+  return ok({
+    phase: n,
+    moved,
+    carried: moved.length,
+    findings: moved.reduce((t, m) => t + m.findings, 0),
   });
 }
 
@@ -6083,15 +6693,28 @@ const COMMANDS = {
   // ENOENT, one refusal vocabulary answering in two.
   'detect-commands': (_dir, _sub, opts) =>
     cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd()),
-  // Same --root row, same refusal, same door.
+  // Same --root row, same refusal, same door. `--answered` carries the set a
+  // config layer already holds, so the re-entrant ask reaches the same option
+  // rule the first fire does; absent means nobody has answered.
   'detect-surfaces': (_dir, _sub, opts) =>
-    cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd()),
+    cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd(),
+      'answered' in opts ? opts.answered : undefined),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   'risk-check': (dir, sub, opts) => cmdRiskCheck(dir, sub, opts),
   // The gate fire's per-finding rulings, beside the sibling REVIEW file. ONE
   // word, never a two-word spelling: `subcommandKey` consumes a second word only
   // for the `TWO_WORD` families, and one operation does not earn widening it.
   adjudication: (dir, _sub, opts) => cmdAdjudication(dir, opts),
+  // The DEFERRED gate's queue member, beside that same REVIEW file. TWO words,
+  // unlike `adjudication` above: this is one of three operations on the queue,
+  // which is the `risk-check run|status` precedent for widening `TWO_WORD`
+  // rather than the single-operation `adjudication` one.
+  deferred: (dir, sub, opts) => {
+    if (sub === 'record') return cmdDeferredRecord(dir, opts);
+    if (sub === 'list') return cmdDeferredList(dir, opts);
+    if (sub === 'carry') return cmdDeferredCarry(dir, opts);
+    return fail('usage', 'deferred record|list|carry');
+  },
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.
   capture: (dir, _sub, opts) => cmdCapture(dir, opts),

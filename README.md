@@ -82,6 +82,8 @@ Cadence used to ask how much you wanted a dispatch to cost. It now asks what hap
 
 `solo` means nobody else runs this and a break costs you an afternoon. `shipped` means other people run it and a break comes back as a bug report. `critical` means a break is not a bug report.
 
+The level you set is a MINIMUM a phase pays, not a fixed price: a phase whose declared files touch a risk surface routes ABOVE it, and leaving `stakes` unset is what lets a phase touching none of them route below the old default. [`INTERNALS.md`](./INTERNALS.md) has the mechanism.
+
 That one word lands in a grid of 18 cells, one per level and role pair, and the cell hands a dispatch its model, the effort rung it starts on, and the rung a failed attempt climbs to. At `solo` the planner runs Sonnet at `high`. At `shipped` it runs Opus. At `critical` it runs Opus at `xhigh` and a retry goes to `max`. The whole thing is [`cadence-core/route-table.json`](./cadence-core/route-table.json) and you can read it in one screen.
 
 The rungs are `low`, `medium`, `high`, `xhigh`, `max`. Effort is fixed in an agent file's frontmatter rather than passed per dispatch, which makes a rung a real file on disk, and self-verify fails in both directions, on a cell naming a rung with no file and on a rung file no cell reaches.

@@ -79,9 +79,15 @@
 //
 //   refuse    the seam answers ok:false naming the flag. lib/seam-input.mjs's
 //             `flagValue` is this disposition written out by hand.
-//   warn      the value is kept RAW and the caller records a warning.
-//             route.mjs's `--phase` is the case: a `usage` refusal there would
-//             route the phase LOWER than its own risk baseline.
+//   warn      the value is kept RAW and the caller records a warning. NO row
+//             declares it today: route.mjs's `--phase` did until it became an
+//             input to the risk FLOOR and flipped to `refuse` (CER-01 D-09).
+//             The word stays in the vocabulary and the evaluator keeps the arm,
+//             pinned by arg-contract.test.mjs's synthetic rows, because the
+//             disposition is a reasoned position and not a dead branch - a
+//             value a seam must SEE rather than lose is the shape it answers,
+//             and deleting it would make the next such flag a `refuse` by
+//             default rather than by decision.
 //   fallback  the flag reads as absent so the caller's own `|| default` or
 //             key-omission answers. issue-check.mjs's `--timeout-ms` is the
 //             case on the value axis - that seam's whole contract is that it
@@ -202,7 +208,8 @@ const CLASSIFIERS = {
 function dispose(disposition, flag, raw) {
   if (disposition === 'refuse') return { ok: false, value: undefined, detail: flag };
   // The value survives so the caller can name it in the warning and still
-  // resolve; route.mjs's `--phase` is stored RAW for exactly this reason.
+  // resolve. No shipped row declares this today (see the vocabulary above); the
+  // arm is what makes `warn` a choice a later flag can be given.
   if (disposition === 'warn') return { ok: true, value: raw, detail: flag };
   // fallback: the flag reads as absent and the caller's own default answers.
   return { ok: true, value: undefined, detail: '' };
@@ -305,7 +312,8 @@ export function evaluateFlag(argv, flag, spec) {
  * flag was read through the permissive reader (D-12). A `warn` row would return
  * its raw value here and drop the diagnostic, which is why no bin using this
  * entry point declares one: `warn` belongs to the returning form, where the
- * caller can word the warning (route.mjs's `--phase`).
+ * caller can word the warning. No shipped row declares it at all since
+ * route.mjs's `--phase` flipped to `refuse` (CER-01 D-09).
  *
  * @param {string[]} argv @param {string} flag @param {{required: boolean, type: string, value: string, bare: string}} spec
  * @returns {any} the accepted value, or `undefined` for an absent or
@@ -322,7 +330,7 @@ export function requireFlag(argv, flag, spec) {
 // that resolves a spelling it finds in a workflow; they live HERE because an
 // adopting dispatch has to resolve the SAME key to find its row, and two
 // spellings of one rule is the drift ARG-06 exists to end (D-06).
-const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check']);
+const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check', 'deferred']);
 
 /**
  * Resolve a script's leading positional WORDS to the subcommand KEY its table
@@ -331,7 +339,7 @@ const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check']);
  * The BARE form - no words at all, or a first word that is really a flag -
  * resolves to the `''` key, which is what stops a reader taking a first flag
  * for a subcommand: `weight.mjs --root <path>` reported `unknown-subcommand`
- * until that arm existed. A second word is consumed ONLY for the five
+ * until that arm existed. A second word is consumed ONLY for the six
  * two-word families, so `status --dir` keeps resolving to `status` and leaves
  * `--dir` to be read as a flag.
  *
@@ -434,9 +442,11 @@ export function evaluateRow(argv, table, key) {
 //     issue-check.mjs falls back to its constant because that seam's whole
 //     contract is that it never fails a land, and an unbounded call is the one
 //     thing it may never do instead.
-//   `route.mjs`'s `--phase` declares `warn` on both axes, never a `usage`
-//     refusal, which would route the phase LOWER than its own risk baseline.
-//     The value is kept raw so the floor computation still sees the spelling.
+//   `route.mjs`'s `--phase` declares `refuse` on both axes, reversing the `warn`
+//     it shipped with. It stopped being a trace-keying flag and became an input
+//     to the risk FLOOR (CER-01), and warn-and-continue there answers a typo
+//     with a floor computed off a DIFFERENT phase's declared files - a wrong
+//     level nothing in the resolved bundle reveals as wrong.
 //   On `trace append|close`, `--plan`, `--sha`, `--base` and `--detail` declare
 //     `fallback` on both axes - the drop the shared body already performs
 //     (`typeof opts.plan === 'string' && opts.plan`), so every shipped
@@ -574,8 +584,15 @@ export const CONTRACTS = {
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // `--answered` carries the set a config layer ALREADY holds, so the
+    // re-entrant ask (`/cad-config --surfaces`) reaches the same option rule
+    // the first fire does instead of merging the current answer itself. Same
+    // shape as `risk-check run`'s `--surfaces` row below and for the same
+    // reason: a comma-separated scope whose tokens are refused when they fall
+    // outside the eight, never narrowed to the ones that parsed.
     'detect-surfaces': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--answered': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     recall: {
       '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
@@ -658,6 +675,45 @@ export const CONTRACTS = {
       '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+    // THE QUEUE MEMBER a gate resolved `deferred` leaves beside that same
+    // REVIEW file: the reviewer ran, the findings are on disk, and nothing has
+    // ruled on them yet. Same flags as `adjudication` above and for the same
+    // reasons, because both name the same fire - `--payload` is the reviewer's
+    // own returned object as a FILE rather than inline JSON, `--base`/`--head`
+    // are both required so the stored ids are a range an auditor can check out,
+    // and `--round` keeps a re-arm's member off round one's file.
+    //
+    // TWO WORDS, unlike `adjudication`: the queue takes three operations
+    // (`record`, then `list` and `carry`), which is the `risk-check run|status`
+    // precedent for widening `TWO_WORD` rather than the single-operation one.
+    'deferred record': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--discriminator': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+    // THE QUEUE AS A WHOLE: every member with no `ADJUDICATION` sibling, across
+    // both homes. `--phase` is OPTIONAL here and required on every sibling row
+    // above, and the asymmetry is the point - the writers name ONE fire, while
+    // the reader answers the question `/cad-land` asks, which is about the tree
+    // and not about a phase. Absent means the whole tree; present narrows to
+    // one phase, and it takes the `phase` type its siblings take so `--phase 2`
+    // and `--phase 2.1` address the directory the caller spelled.
+    'deferred list': {
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
+    // THE CARRY a milestone close runs before `milestone-prune` deletes the
+    // phase directory (D-10). `--phase` is REQUIRED and there is no whole-tree
+    // form: this face MOVES committed artifacts, and a mistyped or absent flag
+    // that carried every phase at once would be indistinguishable from the one
+    // the caller meant. It takes no other flag - the SET it moves is exactly
+    // what `deferred list --phase` returns, derived rather than named.
+    'deferred carry': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
     // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
     // derived: the inline form puts that text in a double-quoted shell word,
@@ -879,9 +935,40 @@ export const CONTRACTS = {
       '--role': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--attempt': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      '--phase': { required: false, type: 'phase', value: 'warn', bare: 'warn' },
+      // REFUSE on both axes, reversed from `warn` when this flag became a FLOOR
+      // input (CER-01 D-09). The old disposition answered a typo by computing a
+      // floor from the CURSOR's phase - a different phase's declared files -
+      // and the resolved bundle gave the caller nothing to notice it by.
+      // Refusing is loud at the call site and is the only disposition that
+      // cannot silently route a phase off another phase's plans. An ABSENT
+      // flag still falls to the cursor, unchanged: this is a VALUE door.
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--bracket-read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--bracket-plan': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // `--plan` narrows the risk FLOOR's scope from the phase's union to one
+      // plan, which is what an executor dispatch floors on (CER-01 D-06). It is
+      // `plan-key` for the reason `risk-check`'s two faces are - one predicate,
+      // lib/plan-key.mjs's, judges every value a `--plan` may carry - and it
+      // REFUSES on both axes, unlike its `--bracket-plan` neighbour: a valueless
+      // plan flag would silently take the phase UNION for a caller that asked
+      // about one plan, which is the wrong arm and a wider one.
+      //
+      // A SEPARATE FLAG from `--bracket-plan`, deliberately. That value is the
+      // trace WORKER key and is the ROLE NAME for every non-executor dispatch,
+      // so reading it as a floor key would make a phase-scoped role
+      // indistinguishable from a plan key naming no file - and those two take
+      // opposite arms, the union versus fail-closed.
+      '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
+    },
+    // `replay` answers what the floor does to a project's own phases, live and
+    // archived. ONE flag, spelled exactly as `resolve`'s `--file` is, for the
+    // same reason: it reaches `dirname()` on the way to the layer read, and
+    // defaulting a valueless one to `.planning/config.json` would answer about a
+    // tree the caller never named. No `--role` and no `--phase` - the floor
+    // differs by role only through the pre-plan exemption, and the answer is
+    // every phase directory there is.
+    replay: {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     table: {},
   },

@@ -30,7 +30,7 @@ cross-model half's model tier and reasoning effort from that line's
 `reviewer_tiers` and `reviewer_efforts` maps, keyed the same way again (step
 4). If
 the gate is `off`, return immediately (no-op). Else it is one of
-`advisory | blocking | adjudicated` (step 6). The stakes level sets it, so the
+`advisory | deferred | blocking | adjudicated` (step 6). The stakes level sets it, so the
 same trigger gates differently on a solo project and a critical one.
 
 The seam has ALREADY applied config-wins precedence: a
@@ -461,9 +461,9 @@ CLEAN rather than erroring:
 
 ### 6. Consequence (gate)
 RE-READ `references/triage-gate.md` before acting on ANY gate - `blocking`
-included, not only `adjudicated`. It holds this step whole: all three arms
-(`advisory` / `blocking` / `adjudicated`), the ONE-round cap on a blocking
-re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
+included, not only `adjudicated`. It holds this step whole: all four arms
+(`advisory` / `deferred` / `blocking` / `adjudicated`), the ONE-round cap on a
+blocking re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
 carve-out inside `/cad-land`, and the `cad-verify`
 fix-list rule. It is a separate file because the fire sites re-read it at their
 gate step without loading this one - and a `blocking` site that treats the read
@@ -559,20 +559,27 @@ asking the user to supply it:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" detect-surfaces --root .
 ```
 
-Then ask through the ask-user seam (seams.md): at most four options, the
-recommended one first and labelled `(recommended)`, its REASON taken from the
-scan's own output - which costs no research pass, because the scan already ran.
+Then ask through the ask-user seam (seams.md), whose conventions bind here: at
+most four options per question, the recommended one FIRST and labelled
+`(recommended)`, and that label is a display convention and never a
+pre-selection - the user still chooses and the seam still blocks.
 
-- When the scan reports `inconclusive: true`, recommend its `recommended` array
-  (all eight) and say why in the reason: it found no dependency manifest and no
-  category directory, so the structure evidences nothing either way. Never
-  present a narrower set as the recommendation on evidence that does not exist
-  (D-14) - the scan reports what it can SEE, and silence is never absence.
-- Otherwise recommend its `recommended` array - what it evidenced, plus the
-  categories no structure can ever evidence (`unspeakable`) - and name the
-  `signal` string behind each evidenced one in the reason.
-- Fill the remaining slots with the narrower sets a user plausibly wants: the
-  evidenced categories alone, and all eight. Four options is the cap.
+Do NOT compose the options at this site. The `detect-surfaces` envelope returns
+them as `options`, already ordered and already de-duplicated: each entry's
+`surfaces` is the set that picking it writes, and each entry's `reason` is what
+the option states beside it, built from the scan's own `evidenced` signals and
+its `unspeakable` categories - which costs no research pass, because the scan
+already ran. Render that array in the order it arrives and add nothing to it.
+Composing the list from prose here is what put the same categories in the first
+slot and again in the last one (#206): a list a model assembles per run is a
+list no check can read.
+
+The first entry is always the scan's `recommended` array, which is all eight
+categories, and it is the same set on both scan arms. An `inconclusive: true`
+scan changes only the REASON that entry states - no dependency manifest and no
+category directory matched, so the structure evidences nothing either way.
+Never present a narrower set as the recommendation on evidence that does not
+exist (D-14) - the scan reports what it can SEE, and silence is never absence.
 
 Persist the answer at the repo layer, which is what makes it a one-time ask:
 

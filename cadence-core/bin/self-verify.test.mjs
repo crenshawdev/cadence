@@ -316,7 +316,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
   // trigger keys as inert - <t> expands to all triggers.
   const root = fixture(
     '`review.triggers.<t>.gate` `review.triggers.<t>.tier` `review.triggers.<t>.effort`\n' +
-    '`review.triggers.<t>.surfaces`\n' +
+    '`review.triggers.<t>.surfaces` `review.triggers.<t>.waive_routing_floor`\n' +
     '`review.providers.<name>.tiers` `review.mode` `review.reviewers` `review.key_file`\n' +
     '`review.request_timeout_ms` `review.max_prompt_tokens`\n' +
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
@@ -1131,7 +1131,7 @@ test('a minimal (non-full-tree) fixture omitting optional inputs stays free of m
 function vocabTable() {
   const t = cellTable('cad-verifier');
   t.stakes_order = ['solo', 'shipped', 'critical'];
-  t.gates = ['off', 'advisory', 'blocking', 'adjudicated'];
+  t.gates = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
   return t;
 }
 
@@ -2069,7 +2069,7 @@ function gateRoot(triggers, review = FIXTURE_GRID) {
   };
   for (const [t, row] of Object.entries(triggers)) {
     keys[`review.triggers.${t}.gate`] = {
-      type: 'enum', values: ['off', 'advisory', 'blocking', 'adjudicated'],
+      type: 'enum', values: ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'],
       default: 'default' in row ? row.default : null,
       src: 'repo',
       purpose: 'purpose' in row ? row.purpose : fixturePurpose(t),

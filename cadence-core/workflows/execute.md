@@ -217,11 +217,14 @@ merged its report lives in the worktree, not here: `git worktree list
 is bracketed in the joined run record, so a phase's trace attributes what
 happened to the worker that caused it. The DISPATCH half rides each executor's
 own resolve on the spawn-agent seam's routing step:
-`--bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
+`--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
 - the worker key is the plan NUMBER here, not the role name, and `--read` is
 what this site causes the executor to read: the shared set every plan in the
-phase re-reads, plus that plan's own file. Once that executor comes back,
-append the CLOSE:
+phase re-reads, plus that plan's own file. `--plan <k>` beside it is a different
+quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
+declared files, so an executor is routed for the plan it is being handed
+(references/seams.md's Routing block states the rule). Once that executor comes
+back, append the CLOSE:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --detail-file <path>
@@ -468,11 +471,34 @@ Update the cursor through the seam:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status executed --next "/cad-verify <N>"
 ```
 
+**When this run DEFERRED a fire**, the resume pointer stops being a literal -
+it is composed from what the run did - so it rides the file transport instead:
+write the pointer to a scratch file and pass its PATH.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status executed --next-file <path>
+```
+
+The pointer names the queue and its count beside the next action
+(`/cad-verify <N> - 2 deferred findings queued, triage before landing`). A file
+and not the inline flag because caller-derived text rides a path at every seam
+flag that carries it (`references/conventions.md`), which is the reason
+`cursor set --next-file` exists at all. Keep `--status executed` exactly as it
+is: a new status value would land outside `planning.mjs`'s `AGREE` map, be
+reported as `cursor` drift and be rewritten by the very next `/cad-progress`.
+The pointer is a HINT; the count `/cad-progress` prints comes from the `status`
+envelope's `deferred` block and never from this string.
+
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
 `<plandir>/reports/` DIRECTORY, `.planning/phases/<N>/CONTEXT.md` if the
 summary step annotated a corrected decision, and `.planning/CAPTURE.md` if the
 summary step appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
-those paths. The DIRECTORY, never one report by name: an executor rotates a
+those paths. Stage `.planning/phases/<N>/DEFERRED-*.json` alongside them, and
+stage it whatever that key says: a queue member is the only durable evidence a
+fire was deferred - `.planning/trace.jsonl` is gitignored and the sibling
+REVIEW file is committed by nothing - so an untracked member is gone on a fresh
+clone, and it also leaves the tree dirty at `/cad-land` step 2. It is not a
+planning doc the key is the standing answer for; it is what stops the land. The DIRECTORY, never one report by name: an executor rotates a
 previous run's report aside to a suffixed sibling, which a by-name stage leaves
 untracked. It takes everything in there, so the flagged diffs
 (`plan-<k>-risk.diff`, `plan-<k>-risk-task-<n>.diff`) go out by PATHSPEC, not a

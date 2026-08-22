@@ -320,6 +320,7 @@ function planFiles(fx, phase, files) {
 }
 
 /** The `risk floor:` entries of a route bundle's reason list. */
+const floorReasons = (r) => (r.reason || []).filter((x) => String(x).startsWith('risk floor: '));
 
 // --- route.mjs: the stakes level a layer set --------------------------------
 
@@ -637,22 +638,37 @@ test('git-publish: the protected list it refuses on IS the merged one get report
 
 test('route: a retired risk.override is named by both faces, and routes nothing', () => {
   // The eight `risk.override.*` keys were retired with the dispatch-time floor
-  // in v2.7.0. An existing config carrying one must WARN, not break, and must
-  // not move a single knob.
-  const fx = layers({
-    global: {},
-    repo: { stakes: 'solo', risk: { override: { auth: true } } },
-  });
+  // in v2.7.0. CER-01 gives the floor back WITHOUT giving them back: an existing
+  // config carrying one must WARN, not break, and must not move a single knob.
+  const spec = { stakes: 'solo', risk: { override: { auth: true } } };
+  const fx = layers({ global: {}, repo: spec });
   planFiles(fx, 9, ['README.md', 'src/auth/session.rs']);
   const r = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', fx.repoFile, '--phase', '9'], fx);
   assert.equal(r.ok, true);
-  // The configured level stands: an auth path in the plan raises nothing now.
-  assert.equal(r.stakes, 'solo');
-  assert.equal(r.model, 'sonnet');
+  // `stakes: solo` is a FLOOR, and the declared `src/auth/session.rs` raises off
+  // it - this is the plan-time floor, not the waiver, and the level here is what
+  // the floor alone yields.
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.model, 'opus');
+  assert.ok(r.reason.some((x) => /^risk floor: .*touches auth/.test(x)), JSON.stringify(r.reason));
   const named = (r.warnings || []).filter((w) => w.includes('risk.override.auth'));
   assert.ok(named.length >= 1, JSON.stringify(r.warnings));
   assert.match(named[0], /retired in v2\.7\.0/);
+
+  // THE CONTROL, which is what makes this a test of the retired key rather than
+  // of the floor: the identical fixture with the key REMOVED routes byte-for-byte
+  // the same bundle, warnings aside. A waiver that lowered anything would show
+  // here as a difference.
+  const { risk, ...clean } = spec;
+  const noKey = layers({ global: {}, repo: clean });
+  planFiles(noKey, 9, ['README.md', 'src/auth/session.rs']);
+  const c = seam('route.mjs',
+    ['resolve', '--role', 'cad-executor', '--file', noKey.repoFile, '--phase', '9'], noKey);
+  const { warnings: _w1, ...withKey } = r;
+  const { warnings: _w2, ...without } = c;
+  assert.deepEqual(withKey, without);
+  assert.equal('warnings' in c, false, JSON.stringify(c.warnings));
 });
 
 // --- the last two seams -----------------------------------------------------

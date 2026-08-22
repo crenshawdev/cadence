@@ -16,7 +16,7 @@
   },
   "rung_order": ["low", "medium", "high", "xhigh", "max"],
   "stakes_order": ["solo", "shipped", "critical"],
-  "gates": ["off", "advisory", "blocking", "adjudicated"],
+  "gates": ["off", "advisory", "deferred", "blocking", "adjudicated"],
   "model_aliases": ["opus", "sonnet", "haiku", "fable"],
   "tier_names": ["flagship", "balanced", "cheap"],
   "effort_names": ["high", "medium", "low", "minimal"],

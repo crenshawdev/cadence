@@ -304,7 +304,7 @@ test('R4: executor checkpoints at the floor suggest workflow.max_plan_tasks; oth
 // pure-render discipline intact.
 
 /** The resolution shape `planning.mjs`'s suggest arm passes in. */
-const GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const GATES = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
 const RUNGS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const twoEmptyFires = (trigger, extra = {}) => Array.from(
   { length: MIN_FIRES_FOR_GATE_SUGGESTION },
@@ -321,7 +321,7 @@ test('SGT-01: R1s gate arm moves DOWN, prints the value a layer set, and propose
   assert.ok(s, JSON.stringify(out));
   assert.equal(s.direction, 'lower');
   assert.equal(s.current, 'blocking');
-  assert.equal(s.proposed, 'advisory', 'the target is one step down the ladder the caller passed');
+  assert.equal(s.proposed, 'deferred', 'the target is one step down the ladder the caller passed');
 });
 
 test('SGT-01: an unset gate names the level that decides it and carries NO proposed', () => {
@@ -845,7 +845,12 @@ test('SGT-01: `trace suggest` returns a direction, a current, and a proposed whe
     assert.ok(gate, JSON.stringify(keyed));
     assert.equal(gate.direction, 'lower');
     assert.equal(gate.current, 'blocking');
-    assert.equal(gate.proposed, 'advisory',
+    // `deferred`, not `advisory`: this arm reads the SHIPPED ladder in
+    // route-table.json, so it is the row that reddens if the gate this phase
+    // inserted is moved. Its position is the decision - a `blocking` gate whose
+    // fires keep coming back empty is proposed down to a mode that still stops
+    // the LAND, never to `advisory`, which stops nothing.
+    assert.equal(gate.proposed, 'deferred',
       'the gate arm prices its target one step down the ladder route-table.json states');
 
     const effort = keyed.find((s) => s.action === 'model.effort.cad-planner');
@@ -879,4 +884,246 @@ test('MSR-02: the spend receipt names all three excluded sources, from the one e
   // growing a flag, an envelope key or anything to act on.
   assert.equal(s.kind, 'info');
   assert.equal(s.action, null);
+});
+
+// --- R7: in-dispatch re-reading, per role (RDX-01) ---------------------------
+//
+// The figure `.planning/reads.jsonl` has carried for four cycles, reaching a
+// consumer that acts on it. Two things this section pins that no other rule
+// needs: the gate is the ROLE MAP rather than the number, and the entry's
+// `action` is null BY DECISION - no key in `config.schema.json` governs
+// in-dispatch re-reading, so the entry names a discipline remedy instead of
+// pointing at an unrelated key.
+
+import { IN_DISPATCH_FLOORS } from './lib/trace-suggest.mjs';
+
+/** The fold shape `lib/read-trace.mjs`'s `inDispatchReads` returns. */
+const inDispatch = (roles, extra = {}) => ({
+  roles, joined: 10114, fileCarrying: 6423, coverage: 0.63, coordinatorFiles: 4395, ...extra,
+});
+/** One per-role row, defaulting to the spike's measured `cad-executor` figures. */
+const roleRow = (role, ratio, extra = {}) => ({
+  role, brackets: 78, touches: 4985, distinct: 1371, ratio,
+  worst: { path: 'cadence-core/bin/planning.mjs', count: 29, phase: '4', plan: '1' },
+  ...extra,
+});
+
+test('R7: cad-executor at 3.64 emits one entry carrying the worst file, the direction, the coverage and the scope', () => {
+  const out = suggestFromRender(render([]), undefined,
+    inDispatch([roleRow('cad-executor', 3.64)]));
+  assert.equal(out.length, 1, JSON.stringify(out));
+  const e = out[0];
+  assert.equal(e.kind, 'info');
+  assert.equal(e.subject, 'cad-executor');
+  // Four assertions over the ONE string, separately, so dropping any single
+  // element reddens on its own rather than hiding behind the other three.
+  assert.ok(e.evidence.includes('3.64'), `the ratio is missing: ${e.evidence}`);
+  assert.ok(e.evidence.includes('read `cadence-core/bin/planning.mjs` 29 times'),
+    `the named target is missing - a role-wide ratio is not actionable: ${e.evidence}`);
+  assert.match(e.evidence, /\bDOWN\b/,
+    `the direction is missing - SC1 asks which way the figure should move: ${e.evidence}`);
+  assert.ok(e.evidence.includes('63%'),
+    `the coverage share is missing - the figure reads as a total: ${e.evidence}`);
+  assert.ok(e.evidence.includes('nothing prunes `.planning/reads.jsonl` at a milestone close'),
+    `the scope is missing - a reader cannot tell which milestones it spans: ${e.evidence}`);
+  // The exclusion and its reason, which no prose surface can supply for a
+  // reader running the seam directly.
+  assert.ok(e.evidence.includes('4,395 coordinator read(s) carrying files'), e.evidence);
+  assert.ok(e.evidence.includes('no dispatch bracket'), e.evidence);
+  // The dispatch that held the worst case.
+  assert.ok(e.evidence.includes('(phase 4, plan 1)'), e.evidence);
+});
+
+test('SC7 pin: the in-dispatch entry names NO config key - `action` is null and it says so in words', () => {
+  // A later edit pointing this entry at `workflow.max_plan_tasks` or
+  // `workflow.max_dispatch_tokens.<role>` reddens HERE. Neither governs
+  // in-dispatch re-reading: the first counts tasks and lowering it moves the
+  // same opens into more dispatches, the second is report-only by its own
+  // purpose text.
+  const [e] = suggestFromRender(render([]), undefined,
+    inDispatch([roleRow('cad-executor', 3.64)]));
+  assert.equal(e.action, null);
+  assert.ok(e.evidence.includes('No key in `config.schema.json` governs in-dispatch re-reading'),
+    `the entry does not state that no key governs this: ${e.evidence}`);
+  assert.ok(e.evidence.includes('the remedy is discipline, not configuration'),
+    `the entry states no remedy, leaving a reader with a ratio: ${e.evidence}`);
+  // The `Suggestion` vocabulary stays closed - `suggest.md`'s ask step builds
+  // `/cad-config <key>=<value>` out of `action` plus `proposed`.
+  for (const key of ['direction', 'current', 'proposed']) {
+    assert.equal(key in e, false, `an info receipt carries \`${key}\`: ${JSON.stringify(e)}`);
+  }
+});
+
+test('R7: the MAP is the gate, not the number - an unnamed role stays silent at any ratio', () => {
+  assert.deepEqual(Object.keys(IN_DISPATCH_FLOORS).sort(), ['cad-executor', 'cad-verifier']);
+  for (const role of ['cad-planner', 'cad-assumptions-analyzer', 'cad-reviewer']) {
+    // Its measured band, and then a ratio far above every floor in the map.
+    for (const ratio of [1.88, 5.0]) {
+      assert.deepEqual(
+        suggestFromRender(render([]), undefined, inDispatch([roleRow(role, ratio)])), [],
+        `${role} at ${ratio} spoke - the noise band fires on the number rather than the map`);
+    }
+  }
+});
+
+test('R7: a role exactly AT its floor emits; a hair under it does not', () => {
+  const at = suggestFromRender(render([]), undefined,
+    inDispatch([roleRow('cad-verifier', IN_DISPATCH_FLOORS['cad-verifier'])]));
+  assert.equal(at.length, 1, JSON.stringify(at));
+  assert.equal(at[0].subject, 'cad-verifier');
+  const under = suggestFromRender(render([]), undefined,
+    inDispatch([roleRow('cad-verifier', 1.99)]));
+  assert.deepEqual(under, []);
+});
+
+test('R7: a null ratio emits NOTHING, and no evidence anywhere renders it as a zero', () => {
+  // Every record written before the `files` field existed folds to this shape.
+  const nulled = roleRow('cad-executor', null,
+    { brackets: 0, touches: 0, distinct: 0, worst: null });
+  assert.deepEqual(
+    suggestFromRender(render([]), undefined, inDispatch([nulled], { coverage: 0, fileCarrying: 0 })),
+    []);
+  // ...and with a firing role beside it, the null one still contributes no
+  // sentence: a `0` here is the reading that says each file was opened once.
+  const mixed = suggestFromRender(render([]), undefined,
+    inDispatch([nulled, roleRow('cad-verifier', 2.05)]));
+  assert.equal(mixed.length, 1);
+  assert.equal(mixed[0].subject, 'cad-verifier');
+  assert.ok(!JSON.stringify(mixed).includes('0 opens per distinct file'),
+    `a null ratio was rendered as a zero: ${JSON.stringify(mixed)}`);
+});
+
+test('R7: a one- and two-argument call return exactly what they returned before', () => {
+  const events = [
+    ...twoEmptyFires('plan'),
+    rearm('risk_surface'),
+    ...Array.from({ length: MIN_ESCALATIONS_FOR_RUNG_SUGGESTION }, () => resolve('cad-planner', { escalated: true })),
+    checkpoint('cad-executor'), checkpoint('cad-executor'),
+  ];
+  const r = render(events, { 'cad-executor': { dispatches: 4, tokens: 300000 } });
+  const res = { values: { 'workflow.max_plan_tasks': 8 }, gates: GATES, stakes: 'shipped' };
+  const one = suggestFromRender(r);
+  const two = suggestFromRender(r, res);
+  // An absent third argument is silent - not an entry saying nothing.
+  assert.deepEqual(two, suggestFromRender(r, res, undefined));
+  assert.deepEqual(one, suggestFromRender(r, undefined, undefined));
+  for (const s of [...one, ...two]) {
+    assert.ok(!s.evidence.includes('in-dispatch'),
+      `an in-dispatch entry rode a call that passed no reads: ${JSON.stringify(s)}`);
+  }
+  // A malformed third argument is the same silence, never a throw.
+  for (const bad of [null, {}, { roles: null }, { roles: [null, 'x'] }]) {
+    assert.deepEqual(suggestFromRender(r, res, /** @type {any} */ (bad)), two);
+  }
+});
+
+// --- R7 through the seam, on COMMITTED fixtures (RDX-01) ---------------------
+//
+// A pair of its own rather than an extension of `fixtures/join.*`: those are
+// fixed exactly by `read-trace.test.mjs`'s partition assertion over 8 calls,
+// none of their reads carries a `files` array, and their two `cad-executor`
+// brackets deliberately OVERLAP so a read between them is ambiguous rather than
+// joined. This pair needs the opposite of all three.
+//
+// What the pair fixes, arithmetic first so a re-pin has to carry it:
+//   - `cad-executor` plan 1 (09:01-09:30) touches `planning.mjs` 7 times and
+//     `lib/trace.mjs` once: 8 touches over 2 distinct.
+//   - `cad-executor` plan 2 (09:40-09:50), non-overlapping, touches
+//     `planning.mjs` twice: 2 touches over 1 distinct.
+//   - Per role that is 10 touches over 3 summed distinct = 3.33, clear of the
+//     3.00 floor, with `planning.mjs` at 7 inside plan 1 as the worst pair.
+//   - `cad-planner` (10:00-10:10) touches `PROJECT.md` 4 times and `ROADMAP.md`
+//     twice: 6 over 2 = 3.00. Higher than `cad-executor`'s floor and it still
+//     says nothing, because the MAP is the gate.
+//   - One `coordinator` read carries two files and reaches no role.
+
+import { writeFileSync, readFileSync, chmodSync, accessSync, constants } from 'node:fs';
+
+const REREAD = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
+
+/** A planning root holding the reread pair, optionally with `files` stripped. */
+function rereadRoot({ stripFiles = false, noReads = false } = {}) {
+  const dir = join(mkdtempSync(join(tmpdir(), 'cad-reread-')), '.planning');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'trace.jsonl'), readFileSync(join(REREAD, 'reread.trace.jsonl'), 'utf8'));
+  if (noReads) return dir;
+  let reads = readFileSync(join(REREAD, 'reread.reads.jsonl'), 'utf8');
+  if (stripFiles) {
+    reads = reads.split('\n').filter(Boolean)
+      .map((l) => { const r = JSON.parse(l); delete r.files; return JSON.stringify(r); })
+      .join('\n') + '\n';
+  }
+  writeFileSync(join(dir, 'reads.jsonl'), reads);
+  return dir;
+}
+
+/** Run the seam and parse its one JSON line, `ok:false` included. */
+function rereadSeam(dir, args) {
+  try {
+    return JSON.parse(execFileSync('node', [BIN, '--dir', dir, ...args], { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+/** The in-dispatch entry, or undefined. */
+const inDispatchEntry = (out) => (out.suggestions || [])
+  .find((s) => typeof s.evidence === 'string' && s.evidence.includes('in-dispatch re-reading'));
+
+test('seam: `trace suggest` opens reads.jsonl and names the fixture worst file, with no config key', () => {
+  const out = rereadSeam(rereadRoot(), ['trace', 'suggest']);
+  assert.equal(out.ok, true);
+  const e = inDispatchEntry(out);
+  assert.ok(e, `no in-dispatch entry: ${JSON.stringify(out.suggestions)}`);
+  assert.equal(e.subject, 'cad-executor');
+  assert.equal(e.action, null);
+  assert.ok(e.evidence.includes('3.33'), e.evidence);
+  assert.ok(e.evidence.includes('read `cadence-core/bin/planning.mjs` 7 times (phase 4, plan 1)'), e.evidence);
+  assert.ok(e.evidence.includes('Excludes 1 coordinator read(s)'), e.evidence);
+  // The noise-band role clears `cad-executor`'s floor at 3.00 and still says
+  // nothing: it is not in `IN_DISPATCH_FLOORS`.
+  assert.ok(!out.suggestions.some((s) => s.subject === 'cad-planner'
+    && s.evidence.includes('in-dispatch re-reading')),
+    `cad-planner spoke: ${JSON.stringify(out.suggestions)}`);
+  assert.equal('warnings' in out, false, JSON.stringify(out.warnings));
+});
+
+test('seam: reads carrying no `files`, and no reads file at all, both yield NO entry and no error', () => {
+  // The same 17 records with `files` removed - the shape every record written
+  // before that field existed has - and then the file absent outright.
+  for (const dir of [rereadRoot({ stripFiles: true }), rereadRoot({ noReads: true })]) {
+    const out = rereadSeam(dir, ['trace', 'suggest']);
+    assert.equal(out.ok, true);
+    assert.equal(inDispatchEntry(out), undefined, JSON.stringify(out.suggestions));
+    // Never a zero, and never a warning: an absent record is a project that has
+    // not run since the hook was installed, not a fault.
+    assert.ok(!JSON.stringify(out).includes('0 opens per distinct file'), JSON.stringify(out));
+    assert.equal('warnings' in out, false, JSON.stringify(out.warnings));
+  }
+});
+
+test('seam: an UNREADABLE reads.jsonl fails `reads --join` and WARNS on `trace suggest` - both faces, one test', () => {
+  // The whole risk of lifting the parse into one helper is that these two
+  // diverge: a permissions error loud on one face and invisible on the other.
+  // Neither face had a test before this one.
+  const dir = rereadRoot();
+  const file = join(dir, 'reads.jsonl');
+  chmodSync(file, 0o000);
+  try {
+    // Running as root defeats the mode bits, so the row would assert nothing.
+    try { accessSync(file, constants.R_OK); return; } catch { /* genuinely unreadable */ }
+    const reads = rereadSeam(dir, ['reads', '--join']);
+    assert.equal(reads.ok, false, JSON.stringify(reads));
+    assert.equal(reads.reason, 'read-failed');
+    assert.ok(String(reads.detail || '').includes('reads.jsonl'), JSON.stringify(reads));
+
+    const out = rereadSeam(dir, ['trace', 'suggest']);
+    assert.equal(out.ok, true, 'trace suggest must still answer about the trace it CAN read');
+    assert.equal(inDispatchEntry(out), undefined, JSON.stringify(out.suggestions));
+    assert.ok(Array.isArray(out.warnings), `no warnings channel: ${JSON.stringify(out)}`);
+    assert.ok(out.warnings.some((w) => String(w).includes('reads.jsonl')),
+      `the unreadable file is not named: ${JSON.stringify(out.warnings)}`);
+  } finally {
+    chmodSync(file, 0o600);
+  }
 });

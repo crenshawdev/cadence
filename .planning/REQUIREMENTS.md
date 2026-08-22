@@ -1,35 +1,41 @@
-# Requirements: Cadence (v3.5.7 open)
+# Requirements: Cadence (v3.5.8 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-Committed scope for **`v3.5.7 - measured, and no lever to change it`**, opened
-2026-08-20 from the tracker milestone holding #167, #174, #189 and #206. Ids are
-seeded here at the open, deliberately: `v3.5.6` seeded none, so its `/cad-audit`
-traced zero requirements and returned PASS on an empty set while the coverage arm
-carried the entire proof. `/cad-plan` seeds each Traceability row as its phase is
-planned; rows are never hand-populated here.
+Committed scope for **`v3.5.8 - the transition that claims to be one`**, opened
+2026-08-22 from the tracker milestone holding #145, #139 and #140. These three
+are one piece of work: #145 is the shared primitive and the other two are its
+first consumers, which is why `v3.5.6` dropping all three left its own stated
+theme untouched. Ids are seeded here at the open, the practice `v3.5.7`
+established and `v3.5.6` did not have. `/cad-plan` seeds each Traceability row as
+its phase is planned; rows are never hand-populated here.
 
-- **RDX-01**: the read-set redundancy the read trace already measures reaches a consumer that acts on it, rather than being a number nothing reads (#167)
-- **BCH-01**: N security reviews run in one process paying one cold prefix, not N invocations paying N (#174)
-- **CER-01**: ceremony is chosen per change rather than per project, so a README phase and an auth phase stop buying the same model, effort rung and gate set (#189)
-- **IVW-01**: the risk-surface interview has a user-triggerable entry point and its menu stops offering the same set twice (#206)
+- **JRN-01**: a multi-file state transition is either complete or recoverable, through one shared primitive rather than four hand-written approximations of one (#145)
+- **JRN-02**: `phase-done` stops claiming all-or-nothing over two independent renames, and reports what it actually guarantees across ROADMAP.md and REQUIREMENTS.md (#140)
+- **JRN-03**: `release-bump` reads and validates every manifest it will write before it writes the first, so a malformed sibling cannot leave a partially bumped tree inside an `ok:true` envelope (#139)
 
-The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted into this cycle. Their 2026-08-18 caveats
-are still undecided: `CTX-02`'s stated basis no longer holds, since both its
-issues (#69, #29) are closed and #29's ask shipped as `/cad-minimalism-review`;
-and `RCL-06` carries no deferral reason and no promotion trigger, so nothing can
-ever re-ask it. Both want a decision before either is scoped.
+The five deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02`, `BCH-01` - keep
+their deferral reasons and none is promoted into this cycle. `BCH-01` joined them
+on 2026-08-21, moved to `## Deferred` carrying the spike verdict that invalidated
+it rather than dropped, which is the exit ROADMAP.md's Overview committed to for
+a spike that comes back invalidated. The 2026-08-18 caveats on the other four are
+still undecided: `CTX-02`'s stated basis no longer holds, since both its issues
+(#69, #29) are closed and #29's ask shipped as `/cad-minimalism-review`; and
+`RCL-06` carries no deferral reason and no promotion trigger, so nothing can ever
+re-ask it. Both want a decision before either is scoped.
 
-Not in this cycle and unassigned: #139, #140 and #145, which were scoped to
-`v3.5.6` and never planned into a phase, so that milestone's stated theme went
-untouched. Issues #190 through #193 carry no milestone. The open items filed at
-the `v3.5.1` close, the proposals filed at the `v3.5.2` close, and the medium
-`risk_surface` survivors carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6`
-closes are all still unassigned.
+Not in this cycle: #190, #191 and #192, which still carry no milestone and are
+product-surface proposals about reading the corpus back, a cycle of their own
+rather than filler for this one. The open items filed at the `v3.5.1` close, the
+proposals filed at the `v3.5.2` close, and the medium `risk_surface` survivors
+carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6` closes are all still
+unassigned. Two blocker/high `risk_surface` findings from `v3.5.7` phase 3 are
+persisted in `.planning/REVIEW-risk_surface-v3.5.7.md` although their
+adjudication records show both fixed (`7ae1489`, `70bd22a`); that file wants a
+look before a later close reads it as live.
 
 ## Shipped
 
@@ -216,6 +222,10 @@ parses only the Traceability table).
 | SHP-01 (#183: `## Shipped` is located fence-aware, by the same `sectionSpan` its own function already uses for `## Active`.) | 3 | Complete | v3.5.5 |
 | ARG-06 (#147: the per-seam refusals are expressed once as a declarative argument contract the seam CLIs share.) | 4 | Complete | v3.5.5 |
 | RME-01 (`README.md` is a decision document, not a reference manual - the cost-to-run section and the worked example move to `docs/`, the command list is cut in favour of a pointer at `/cad-help` and `cadence-core/references/COMMANDS.md`, the audience material states the DEMAND rather than a label and sits ABOVE Install, and every claim that survives the move is verified rather than carried over. Promoted from the 2026-08-18 capture decision; the command-list clause revised 2026-08-19 at `/cad-context 5` (phase 5 CONTEXT D-03); the audience clause revised 2026-08-19 at `/cad-verify 5` from "section" to "material", because the register review that produced commit `47d7214` dissolved the section into the opening paragraphs while keeping both the placement and the load-bearing sentence.) | 5 | Complete | v3.5.5 |
+| IVW-01 (the risk-surface interview has a user-triggerable entry point and its menu stops offering the same set twice (#206)) | 1 | Complete | v3.5.7 |
+| HLT-01 (a blocking finding defers to the land instead of stopping the run, so unreviewed work cannot reach base but a phase can finish with nobody watching (#193)) | 2 | Complete | v3.5.7 |
+| CER-01 (ceremony is chosen per change rather than per project, so a README phase and an auth phase stop buying the same model, effort rung and gate set (#189)) | 3 | Complete | v3.5.7 |
+| RDX-01 (the read-set redundancy the read trace already measures reaches a consumer that acts on it, rather than being a number nothing reads (#167)) | 4 | Complete | v3.5.7 |
 
 ## Deferred
 
@@ -232,6 +242,7 @@ queue triage alone.
 
 - **PRS-01**: `planning-files.mjs`' frontmatter reads stop dropping and fabricating: a block item with no active `currentKey` yields an `unknown-line` issue rather than vanishing, `unwrap` cannot mint a value from a quote followed by text, and `readFrontmatterList` handles a comment that is the whole remainder of a key line as well as a CRLF-checked-out file. Carries `PRS-02`'s deferred half: `promoteUnreleased`'s fence-aware bounding and `unseeded` firing on a populated Traceability table missing the milestone's ids. Deferred 2026-08-08 out of `v2.6.0` on field evidence: running this parser over every plan file in five live projects (`burnrate`, `hindsight`, `assistant`, `jcrenshaw.dev`, `placer`) produced ZERO frontmatter or undeclared issues. The defects are real in the code and have never given anyone a wrong answer - they were found by reading the parser, not by the parser failing. Real, unhit, and correctly behind work that is breaking someone today. Promote on the first field occurrence
 - **EVD-01**: A phase's joined run record has a publishable form. `planning.mjs trace export` reads `.planning/trace.jsonl` and emits a redacted artifact under a STATED rule - what is dropped, what is preserved, and why the raw file stays out of the repo - where a field the rule does not name is dropped rather than emitted, so a future event family cannot leak by default. Publication is an export, never a lifting of the ignore, on the same reasoning D-01 applied to the capture queue in phase 1. Deferred 2026-08-08 with the demotion of `EVD-02`: this machinery exists to PUBLISH a trace, which is an audit-facing want rather than a live defect, and the live defect in the same area - a run record no project keeps out of git at all - is `FLD-02` in phase 3. Promote when a trace is actually going to be shared
+- **BCH-01**: N security reviews run in one process paying one cold prefix, not N invocations paying N (#174). Deferred 2026-08-21 out of `v3.5.7` on a spike that INVALIDATED it before the fidelity question was ever tested: `.planning/spikes/batched-review-fidelity/SPIKE.md`. Batching saves **1.91%** of reviewer spend - a 1,676-token fixed prefix (`skills/cad-reviewer-contract/SKILL.md` 6,240 B + `agents/cad-reviewer.md` 465 B, the definition `CAPTURE.md:271` already used for the executor) against six observed dispatches totalling 438,080 tokens. It does not flip at the "61 invocations" the issue cites: that is 2.09%, because both sides of the ratio scale with N. The bill is PAYLOAD - those six dispatches span 25,753 to 125,100 tokens, a 4.9x spread around a fixed cost of 1,676 - which reproduces `CAPTURE.md:271`'s finding that reviewer cost tracks diff and plan size, not review count. The per-commit scoping #174 correctly names as a real cost would have been traded for a rounding error. Two limits recorded rather than assumed: the 61 figure is not reproducible from `trace.jsonl` (8 reviewer brackets, 6 with tokens), and the verdict excludes the host harness prefix, which batching would also collapse - it flips only if that prefix exceeds ~7,100 tokens, and the spike names the one measurement that would settle it. Promote on that measurement, or if reviewer payloads ever shrink enough that a fixed prefix dominates. The real lever is already filed at `CAPTURE.md:271` (`workflow.max_plan_tokens`, symbol anchors in `files:`, targeted reads over whole-file)
 - **RCL-06**: External memory backends (mem-*/claude-mem/MCP) behind the same `recall(query) → snippets` contract
 - **CTX-02**: Prose that rides every dispatch is stated once rather than restated per file: a writing contract (issue #69) preloaded and asserted to resolve for every agent, and a review minimalism lens (issue #29) reporting what could be deleted, separately from the correctness pass. Deferred out of `v2.5.0` on 2026-08-08 at phase-2 context: both halves ADD resident bytes in the phase that exists to cut them, and the writing contract's premise is false in this tree — nothing restates a writing contract per agent today (grep of `skills/`, `agents/`, `cadence-core/` returns zero), so it is net-new prose on all 19 agent files rather than a deduplication. The minimalism lens as a new review trigger needs coordinated edits across at least six mutually self-verified surfaces, every one of which adds bytes. Neither issue has a statement in this tree to plan against. See `phases/2/CONTEXT.md` D-06
 

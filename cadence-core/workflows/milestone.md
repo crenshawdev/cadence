@@ -100,6 +100,25 @@ held blocker. Union every `.planning/phases/*/REVIEW-risk_surface*.md` into one
 it and a survivor rides onto base, where every later autonomous land unions it
 again and halts on a finding answered a milestone ago.
 
+**Then carry the DEFERRED queue out of each pruned phase, per phase, before the
+seam call below.** Same reason one paragraph up and a different artifact: a
+queue member is what `/cad-land`'s deferred refusal reads, and the prune deletes
+the directory holding it.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred carry --phase <N>
+```
+
+Run it for every phase this close prunes. It MOVES that phase's unadjudicated
+members to `.planning/deferred/<N>/`, leaves the settled ones behind to be
+pruned with the phase, and refuses rather than overwriting - relay any
+`ok:false` and stop, because the next step deletes what it could not carry.
+
+The difference from the `risk_surface` union above, stated once: that union is
+TRANSIENT and step 7 deletes it, while the carried queue is COMMITTED and stays
+until it is adjudicated. Deleting it at step 7 would delete the only thing
+stopping the chained land.
+
 One seam call does the mechanical half of the close - checked phases leave
 ROADMAP.md (their `- [x]` line AND their `### Phase N:` detail section, since
 a surviving detail section is the signature of an INTERRUPTED close per

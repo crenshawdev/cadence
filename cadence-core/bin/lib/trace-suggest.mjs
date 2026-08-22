@@ -39,6 +39,11 @@
  *            events: any[],
  *            coordinator?: {wall_ms: number, bracket_ms: number, residue_ms: number,
  *                           steps: {phase: any, step: any, ts: any, residue_ms: number}[]}}} RenderLike
+ * @typedef {{roles: {role: string, brackets: number, touches: number, distinct: number,
+ *                    ratio: number|null,
+ *                    worst: {path: string, count: number, phase: any, plan: any}|null}[],
+ *            joined: number, fileCarrying: number, coverage: number|null,
+ *            coordinatorFiles: number}} InDispatchReads
  */
 
 // Evidence floors. Below these a rule stays silent rather than extrapolating.
@@ -61,6 +66,33 @@ export const MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION = 2;
  * marker can carry a whole afternoon and a hundred can carry nothing.
  */
 export const MIN_RESIDUE_MS_FOR_COORDINATOR_INFO = 600000;
+
+/**
+ * R7's floor, PER ROLE, and the map is the gate rather than the number: a role
+ * this object does not name never produces an in-dispatch entry whatever its
+ * ratio.
+ *
+ * Only two roles are named because only two showed signal.
+ * `.planning/spikes/read-set-redundancy/SPIKE.md` measured, in-dispatch:
+ * `cad-executor` 3.64 over 78 dispatches, `cad-verifier` 2.05 over 31,
+ * `cad-planner` 1.88, `cad-assumptions-analyzer` 1.78, `cad-reviewer` 1.74.
+ * The last three sit in a band the spike calls noise - a rule firing on them
+ * spends the user's attention to save nothing - so a global threshold picked
+ * low enough to keep `cad-verifier` would speak on all five.
+ *
+ * The two numbers, derived rather than chosen:
+ *   - `cad-verifier` sits at the spike's own C2 bar of 2.0, the level at which
+ *     it declared the redundancy real, and clears it at 2.05.
+ *   - `cad-executor` sits ABOVE that bar because that role legitimately returns
+ *     to a file once per task across up to `workflow.max_plan_tasks` tasks in
+ *     one dispatch, so the same 2.0 would report ordinary per-task work as
+ *     repetition. 3.00 leaves it speaking on today's 3.64 and goes quiet on a
+ *     real improvement, which is the whole test of a floor.
+ */
+export const IN_DISPATCH_FLOORS = Object.freeze({
+  'cad-executor': 3.00,
+  'cad-verifier': 2.00,
+});
 
 /**
  * The three sources the recorded token total DOES NOT include, in the words
@@ -254,9 +286,14 @@ export function parseAdjudication(input) {
  * @param {Resolution} [resolution] the values the caller read off disk for the
  *   keys these rules name - absent, every keyed suggestion still carries a
  *   direction and reports its `current` as unset.
+ * @param {InDispatchReads} [reads] the per-role in-dispatch file figures
+ *   `lib/read-trace.mjs`'s `inDispatchReads` folded off `.planning/reads.jsonl`,
+ *   for the same reason `resolution` is a parameter and not a read: the rules
+ *   stay pure and the caller owns every open. Absent - which is every one- and
+ *   two-argument call - R7 stays silent and nothing else changes.
  * @returns {Suggestion[]}
  */
-export function suggestFromRender(render, resolution) {
+export function suggestFromRender(render, resolution, reads) {
   /** @type {Suggestion[]} */
   const out = [];
   const events = Array.isArray(render.events) ? render.events : [];
@@ -553,6 +590,89 @@ export function suggestFromRender(render, resolution) {
       kind: 'info',
       subject: 'coordinator',
       evidence: `coordinator time between worker brackets: ${minutes(residue)}${share}${named}`,
+      action: null,
+    });
+  }
+
+  // R7: in-dispatch re-reading, per role. `.planning/reads.jsonl` has recorded
+  // what a worker actually OPENED for four cycles and nothing has ever acted on
+  // the number; this is the rule that does.
+  //
+  // `action` is null, and that is this phase's ANSWER rather than an omission:
+  // no key in `cadence-core/config.schema.json` governs in-dispatch re-reading.
+  // The falsifying check was run over all 78 keys - counted as
+  // `Object.keys(schema.keys).length`, so the denominator is re-runnable - and
+  // the three closest candidates all fail:
+  //   - `workflow.max_dispatch_tokens.<role>` is report-only by its own purpose
+  //     text; moving it changes when `trace window` complains, never what a
+  //     worker opens.
+  //   - `workflow.max_plan_tasks` counts TASKS. It was re-decided at 8 in
+  //     `v3.5.3` under PLN-01 against cold-prefix cost and context risk,
+  //     neither of which is in-dispatch re-reading, and lowering it moves the
+  //     same file opens into MORE dispatches rather than removing them -
+  //     improving this ratio while raising the bill. R4 above already moves
+  //     that key on checkpoint evidence, so a second rule moving it on
+  //     unrelated evidence would put two entries for one key in the same list.
+  //   - `model.effort.*` and `model.overrides.*` choose a rung and a model.
+  // The remedy that does exist is DISCIPLINE rather than configuration -
+  // symbol or line anchors on a plan's `files:` entries, and targeted reads
+  // over whole-file ones - filed at `.planning/CAPTURE.md:271` as parts 2 and 3
+  // of a three-part fix whose part 1 is the unshipped `workflow.max_plan_tokens`.
+  // Minting a key here to have somewhere to point would ship a key nothing
+  // reads. So the entry names the remedy in WORDS, exactly the precedent R6
+  // sets with its own null action.
+  //
+  // Everything the entry has to state rides the EVIDENCE string - the
+  // direction, the coverage, the scope and the exclusion - because
+  // `cadence-core/workflows/suggest.md` relays evidence unchanged and adds no
+  // flag, the same reason R5 carries `SPEND_EXCLUDES` there rather than on the
+  // envelope. The `Suggestion` vocabulary stays closed: an info entry gains no
+  // `direction`, `current` or `proposed`, which this file's own D-12 test pins
+  // and which `suggest.md`'s ask step depends on, since it builds
+  // `/cad-config <key>=<value>` tokens out of `action` plus `proposed`.
+  //
+  // SILENT - nothing at all, never an entry saying nothing - when the argument
+  // is absent, the role is not in `IN_DISPATCH_FLOORS`, the ratio is null, or
+  // the ratio is under the role's floor. A null ratio is never rendered as `0`:
+  // that is the reading which says the worker opened each file once.
+  const inDispatch = reads && Array.isArray(reads.roles) ? reads.roles : [];
+  for (const row of inDispatch) {
+    if (!row || typeof row !== 'object') continue;
+    const floor = Object.prototype.hasOwnProperty.call(IN_DISPATCH_FLOORS, row.role)
+      ? IN_DISPATCH_FLOORS[/** @type {keyof typeof IN_DISPATCH_FLOORS} */ (row.role)]
+      : undefined;
+    if (floor === undefined) continue;
+    const ratio = typeof row.ratio === 'number' && Number.isFinite(row.ratio) ? row.ratio : null;
+    if (ratio === null || ratio < floor) continue;
+    const worst = row.worst;
+    // A non-null ratio has at least one counted file behind it, so this guard
+    // is unreachable - it is here so the sentence below can never name a file
+    // nothing measured.
+    if (!worst || typeof worst.path !== 'string') continue;
+    const where = worst.phase == null && worst.plan == null
+      ? ''
+      : ` (phase ${worst.phase ?? '?'}, plan ${worst.plan ?? '?'})`;
+    const coverage = typeof reads.coverage === 'number' && Number.isFinite(reads.coverage)
+      ? `${Math.round(reads.coverage * 100)}% of the joined reads in scope, the share that recorded file paths`
+      : 'an unmeasured share of the joined reads in scope';
+    const excluded = typeof reads.coordinatorFiles === 'number' && Number.isFinite(reads.coordinatorFiles)
+      ? reads.coordinatorFiles
+      : 0;
+    out.push({
+      kind: 'info',
+      subject: row.role,
+      evidence: `in-dispatch re-reading: ${ratio} opens per distinct file inside one dispatch`
+        + ` over ${row.brackets} dispatch(es), and DOWN is the direction that helps`
+        + ` - worst inside one dispatch: read \`${worst.path}\` ${worst.count} times${where}.`
+        + ` Computed over ${coverage}.`
+        + ' SCOPE: nothing prunes `.planning/reads.jsonl` at a milestone close, so an unscoped run'
+        + ' reaches every milestone still in that file.'
+        + ` Excludes ${excluded.toLocaleString('en-US')} coordinator read(s) carrying files:`
+        + ' the main thread has no dispatch bracket by construction, so its re-reading cannot be'
+        + ' attributed to one and cannot be measured here.'
+        + ' No key in `config.schema.json` governs in-dispatch re-reading - the remedy is discipline, not'
+        + " configuration: symbol or line anchors on a plan's `files:` entries, and targeted reads"
+        + ' over whole-file ones.',
       action: null,
     });
   }

@@ -19,7 +19,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanDiff } from './lib/risk-diff.mjs';
+import { scanDiff, scanDeclared } from './lib/risk-diff.mjs';
 import { CATEGORIES } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1420,4 +1420,182 @@ test('the census: neither this file nor the detector matches the detector', () =
     }
   }
   assert.equal(ran, 4, 'the census skipped a file or a scope');
+});
+
+// --- scanDeclared: the plan-time face over a DECLARED file set ----------------
+//
+// Same table, same ordering, no diff: the input is what a plan says it will
+// touch plus whatever body each of those files currently has. Fixtures keep the
+// assembly device the rest of this file uses, for the reason stated at the top -
+// the census below feeds a whole-file add of THIS file to the detector.
+const PARSE_CALL = 'JSON.' + 'parse';
+/** A body whose one line reads a request payload. */
+const PARSE_BODY = `export const read = (s) => ${PARSE_CALL}(s);\n`;
+/** One body carrying every assembled construct this file already keeps, so the
+ * CONTENT pass has to answer for four categories at once rather than one. */
+const SIGNAL_CORPUS = [AUTH_MODULE, MIGRATION_SQL, DESTRUCTIVE_LINE, PARSE_BODY].join('\n');
+
+test('scanDeclared: a declared path with NO body still matches by path segment', () => {
+  // The create-a-file case: at plan time the file frequently does not exist, so
+  // an absent body may never be the raise-tax arm - the path is still evidence.
+  const r = scanDeclared([{ path: 'src/auth/session.rs' }], ALL);
+  assert.deepEqual(r.matches, [{ category: 'auth', signal: 'path segment auth' }]);
+  assert.deepEqual(r.categories, ALL);
+});
+
+test('scanDeclared: a body matches only when its category is in the vocabulary', () => {
+  const files = [{ path: 'src/read.mjs', body: PARSE_BODY }];
+  const inScope = scanDeclared(files, ['untrusted_input']);
+  assert.deepEqual(inScope.matches,
+    [{ category: 'untrusted_input', signal: 'body line: a ' + PARSE_CALL + ' call' }]);
+  // The same bytes, scoped to the surfaces a project actually answered: not
+  // looked for, so not reported. This is D-10 in one row.
+  const outOfScope = scanDeclared(files, ['secrets', 'destructive']);
+  assert.deepEqual(outOfScope.matches, []);
+  assert.deepEqual(outOfScope.categories, ['secrets', 'destructive']);
+});
+
+test('scanDeclared: a signal-table file is exempt from the CONTENT pass, by path', () => {
+  // lib/surface-scan.mjs is the file that PROVES the exemption: its own table
+  // matches three of the eight categories by construction. Under its own path
+  // that is self-reference and reports nothing; under any other path the
+  // identical bytes are ordinary evidence and report.
+  const rel = 'cadence-core/bin/lib/surface-scan.mjs';
+  const body = readFileSync(join(HERE, 'lib', 'surface-scan.mjs'), 'utf8');
+  assert.deepEqual(scanDeclared([{ path: rel, body }], ALL).matches, []);
+  const elsewhere = scanDeclared([{ path: 'vendor/copied.mjs', body }], ALL).matches;
+  assert.ok(elsewhere.length >= 1,
+    `the exemption is only meaningful if these bytes DO match elsewhere: ${JSON.stringify(elsewhere)}`);
+  // ...and a checkout nested under another tree keeps the exemption, since the
+  // match is on the path SUFFIX rather than on an exact repo-relative string.
+  assert.deepEqual(scanDeclared([{ path: `vendor/cadence/${rel}`, body }], ALL).matches, []);
+});
+
+test('scanDeclared: the OTHER signal-table file matches nothing under either path', () => {
+  // lib/risk-diff.mjs was hardened at the MENTION in v3.5.5 - every pattern that
+  // matched its own source was respelled - so it self-matches nothing today and
+  // its exemption is belt beside braces. Pinned so a pattern added plainly later
+  // reddens HERE as well as in the census, where a reader would have to know the
+  // exemption exists to read the silence correctly.
+  const body = readFileSync(join(HERE, 'lib', 'risk-diff.mjs'), 'utf8');
+  assert.deepEqual(scanDeclared([{ path: 'cadence-core/bin/lib/risk-diff.mjs', body }], ALL).matches, []);
+  assert.deepEqual(scanDeclared([{ path: 'vendor/copied.mjs', body }], ALL).matches, []);
+});
+
+test('scanDeclared: a content match says `body line`, and never that a line CHANGED', () => {
+  // At plan time no diff exists: the whole current body was scanned, so the
+  // diff-time vocabulary would be a claim about an edit nobody made.
+  const declared = scanDeclared([{ path: 'src/read.mjs', body: PARSE_BODY }],
+    ['untrusted_input']).matches[0].signal;
+  const diffed = scanDiff(diffOf('src/read.mjs', [PARSE_BODY.trim()]),
+    ['untrusted_input']).matches[0].signal;
+  assert.equal(declared, 'body line: a ' + PARSE_CALL + ' call');
+  assert.equal(diffed, 'changed line: a ' + PARSE_CALL + ' call');
+  // The LABEL bytes after the prefix are byte-identical, which is the whole
+  // reason the walk is one function: a reader comparing a plan-time reason with
+  // a commit-time finding has to see the same construct named the same way.
+  assert.equal(declared.slice('body line: '.length),
+    diffed.slice('changed line: '.length));
+});
+
+test('scanDeclared: no signal this face returns anywhere contains "changed line"', () => {
+  // The census for the vocabulary. Every content pattern of every category is
+  // driven through the declared face, and the diff-time prefix may appear on
+  // none of them - a prefix left behind on one alternative is exactly the drift
+  // a single spot-check would miss.
+  let content = 0;
+  for (const category of ALL) {
+    // A path that evidences NOTHING by segment, base name or extension, so the
+    // content pass is what has to answer.
+    const r = scanDeclared([{ path: 'zz/plain.mjs', body: SIGNAL_CORPUS }], [category]);
+    for (const m of r.matches) {
+      assert.ok(!m.signal.includes('changed line'),
+        `${category} returned a diff-time signal at plan time: ${m.signal}`);
+      if (m.signal.startsWith('body line: ')) content++;
+    }
+  }
+  assert.equal(content, 4,
+    `the corpus stopped exercising the content pass (${content} content matches)`);
+});
+
+test('scanDeclared: a DOCUMENT body is prose - the same bytes are code under a source path', () => {
+  // The mention-level raise, in one row. This body carries two real constructs;
+  // under a documentation extension it is a file DESCRIBING them, which is what
+  // METHOD.md does and what raised five of this repository's phases.
+  const body = `${DESTRUCTIVE_LINE}\nconst read = (s) => ${PARSE_CALL}(s);\n`;
+  const scope = ['destructive', 'untrusted_input'];
+  for (const doc of ['METHOD.md', 'docs/guide.markdown', 'notes.mdx',
+    'CHANGELOG.txt', 'docs/index.rst', 'docs/index.adoc', 'DOCS/UPPER.MD']) {
+    assert.deepEqual(scanDeclared([{ path: doc, body }], scope).matches, [], doc);
+  }
+  // The identical bytes under a source extension are ordinary evidence: the rule
+  // is about what the declared file IS, never about what the text says.
+  for (const src of ['cadence-core/bin/lib/run.mjs', 'scripts/deploy.sh']) {
+    assert.deepEqual(scanDeclared([{ path: src, body }], scope).matches
+      .map((m) => m.category), ['destructive', 'untrusted_input'], src);
+  }
+});
+
+test('scanDeclared: a document still evidences by PATH, and no extension is not a document', () => {
+  // The body is skipped, never the declaration: a document under a signalling
+  // path segment reports exactly as it did before, with no body at all.
+  assert.deepEqual(scanDeclared([{ path: 'docs/auth/note.md' }], ALL).matches,
+    [{ category: 'auth', signal: 'path segment auth' }]);
+  // ...and a body it does have changes nothing about that path signal.
+  assert.deepEqual(scanDeclared([{ path: 'docs/auth/note.md', body: PARSE_BODY }],
+    ['auth', 'untrusted_input']).matches,
+    [{ category: 'auth', signal: 'path segment auth' }]);
+  // An extensionless path is NOT a document. A `Makefile` or a shebang script
+  // is exactly that shape, so this arm fails toward raising - the safe way.
+  assert.deepEqual(scanDeclared([{ path: 'scripts/deploy', body: PARSE_BODY }],
+    ['untrusted_input']).matches.map((m) => m.category), ['untrusted_input']);
+  assert.deepEqual(scanDeclared([{ path: 'Makefile', body: PARSE_BODY }],
+    ['untrusted_input']).matches.map((m) => m.category), ['untrusted_input']);
+});
+
+test('scanDeclared: the document rule is scoped to THIS face - scanDiff still reads a .md hunk', () => {
+  // A line ADDED to a document is a change someone actually made in the range,
+  // so the commit-time face keeps matching it and its header's rule - fix at the
+  // MENTION, never a path exemption - stays in force. The two faces are given
+  // the same construct in the same file, and only the plan-time one is silent.
+  const scope = ['destructive'];
+  assert.deepEqual(scanDiff(diffOf('METHOD.md', [DESTRUCTIVE_LINE]), scope).matches
+    .map((m) => m.category), ['destructive']);
+  assert.deepEqual(scanDeclared([{ path: 'METHOD.md', body: `${DESTRUCTIVE_LINE}\n` }],
+    scope).matches, []);
+});
+
+test('scanDeclared: a null, a scalar and an absent body each report rather than throw', () => {
+  const bodies = [null, 7, undefined, true, {}, []];
+  for (const body of bodies) {
+    const r = scanDeclared([{ path: 'src/auth/session.rs', body }], ALL);
+    // The path still evidences; only the unreadable body contributes nothing.
+    assert.deepEqual(r.matches, [{ category: 'auth', signal: 'path segment auth' }],
+      `body ${JSON.stringify(body)}`);
+  }
+  // And the same at the OUTER shapes: a non-list, a list of junk, a junk
+  // vocabulary. Every one answers with the empty set it can prove.
+  for (const files of [null, 7, 'src/a.mjs', {}, [null, 7, {}, { path: 5 }, '']]) {
+    assert.deepEqual(scanDeclared(files, ALL).matches, [], JSON.stringify(files));
+  }
+  assert.deepEqual(scanDeclared([{ path: 'src/auth/session.rs' }], null),
+    { categories: [], matches: [] });
+  // A bare string entry is a path with no body - the shape a caller that read
+  // nothing at all hands over.
+  assert.deepEqual(scanDeclared(['src/auth/session.rs'], ALL).matches,
+    [{ category: 'auth', signal: 'path segment auth' }]);
+});
+
+test('scanDeclared: one signal ORDER serves both faces - path evidence wins over content', () => {
+  // The two faces must not answer the same question in two wordings, which is
+  // the whole reason the walk was extracted rather than copied. A file that
+  // evidences `secrets` by BOTH its extension and its body reports the path
+  // signal on either face.
+  // Assembled, like every other fixture here: spelled plainly this line is one
+  // the census below would match on a whole-file add of this very file.
+  const body = `-----BEGIN RSA PRIVATE ${'KEY'}-----\n`;
+  const declared = scanDeclared([{ path: 'deploy/host.pem', body }], ['secrets']);
+  const diffed = scanDiff(wholeFileAdd('deploy/host.pem', body), ['secrets']);
+  assert.deepEqual(declared.matches, [{ category: 'secrets', signal: '.pem file' }]);
+  assert.deepEqual(diffed.matches, declared.matches);
 });

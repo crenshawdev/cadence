@@ -2,35 +2,41 @@
 
 ## Overview
 
-**`v3.5.7 - measured, and no lever to change it`, opened 2026-08-20.** Scoped
-from the tracker milestone `v3.5.7`, which holds four issues: #167, #174, #189
-and #206.
+**`v3.5.8 - the transition that claims to be one`, opened 2026-08-22.** Scoped
+from the tracker milestone `v3.5.8`, which holds three issues: #145, #139 and
+#140.
 
-**The theme is one sentence: Cadence measures its own cost and gives you nothing
-to spend it with.** `v3.5.6` closed the machinery that records what a run did.
-This cycle takes the controls over what a run costs. A read trace that measures
-read-set redundancy and no consumer that acts on the number (#167). A security
-review invoked 61 times, paying 61 cold prefixes where one process reviewing N
-diffs pays one (#174). `stakes` as a single project-level dial, so a README phase
-and an auth phase buy the same model, the same effort rung and the same gates
-(#189). And the one question Cadence asks on its own, the risk-surface interview,
-asked exactly once with no way back to it and a menu that offers the same set
-twice (#206).
+**The theme is one sentence: four operations write several files and report the
+result as if they wrote one.** Phase completion writes ROADMAP.md and
+REQUIREMENTS.md. The release bump writes the primary manifest, a sibling and the
+changelog. The milestone prune writes phase directories and both documents.
+Renumbering writes deletions, moves and three documents. An atomic rename
+protects one file from torn bytes and cannot create a transaction across files,
+so any of these can leave a half-applied tree inside an `ok:true` envelope, and
+the caller has no way to tell.
 
-Three of the four are a control at the wrong granularity or missing outright;
-#174 is the bill that granularity runs up, which is why it is scoped here rather
-than filed as a cost note.
+#140 names the gap at `cmdPhaseDone`, whose own comment reads "all-or-nothing"
+directly above two separate renames. #139 names it at `release-bump.mjs:138-141`,
+which writes the primary manifest before the sibling has been read or validated,
+so a malformed sibling ships a partially bumped release tree and reports success.
+#145 is the primitive both want: a journal or recovery step that makes a
+multi-file transition either complete or recoverable.
 
-No phases yet. `/cad-phase add` opens the first, and `/cad-plan` seeds each
-requirement's Traceability row as its phase is planned. This cycle seeds
-requirement ids up front - `RDX-01`, `BCH-01`, `CER-01`, `IVW-01` - because
-`v3.5.6` seeded none and its audit consequently traced zero requirements and
-returned PASS on an empty set.
+**The existing behaviour to generalize, not replace.** Renumbering already
+reports partial application honestly at `planning.mjs:3227-3273`. That is one
+operation of four doing the right thing because someone remembered to, which is
+exactly the shape a shared primitive exists to fix - and it is the working
+reference the primitive should be measured against rather than a gap to close.
+
+`v3.5.6` was scoped as four issues, shipped one, and left these three never
+planned into a phase and never recorded as dropped, so nothing re-asked them.
+They were re-milestoned here on 2026-08-20 rather than left floating. This cycle
+seeds ids up front - `JRN-01`, `JRN-02`, `JRN-03` - so every one is either traced
+to a phase or visibly `unpicked` in `/cad-audit`.
+
+`/cad-plan` seeds each requirement's Traceability row as its phase is planned.
 
 ## Phases
 
-_None yet._
 
 ## Phase Details
-
-_None yet._

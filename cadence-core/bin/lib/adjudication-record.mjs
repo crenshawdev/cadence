@@ -78,6 +78,27 @@ export const RAISED_SEVERITIES = Object.freeze(['blocker', 'high', 'medium', 'lo
  */
 export const RULINGS = Object.freeze(['survived', 'downgraded', 'refuted']);
 
+/**
+ * A gate fire's record filename, as ONE rule every side resolves by.
+ *
+ * The writer (`planning.mjs`'s `adjudication` seam), the receipt recount in
+ * `cmdTrace` and the deferred queue's supersession test have to name the same
+ * file, or a cross-check reads a different fire's rulings than the one being
+ * settled - and the failure of that is SILENT, since a recount against round
+ * one's record passes whenever the two rounds' counts happen to coincide. Round
+ * 1 keeps the sibling `REVIEW-<trigger>-<discriminator>.md`'s exact name; every
+ * round above it carries its round, so a re-arm lands beside round one rather
+ * than on top of it.
+ *
+ * It lives HERE rather than in the seam that writes it for the reason the rest
+ * of this module does: the name is part of what a record IS, and a second
+ * spelling of it in a second file is two files with one meaning.
+ *
+ * @param {string} trigger @param {string} discriminator @param {number} round
+ */
+export const recordName = (trigger, discriminator, round) =>
+  `ADJUDICATION-${trigger}-${discriminator}${round > 1 ? `-r${round}` : ''}.json`;
+
 /** `FINDING_SCHEMA`'s own bound on a cited path. */
 const MAX_FILE_CHARS = 1024;
 /** `FINDING_SCHEMA`'s own bound on claim and failure_scenario. */
@@ -166,6 +187,46 @@ export function deriveCounts(entries) {
 }
 
 /**
+ * One RAISED finding against the bounds `FINDING_SCHEMA` states: '' when it
+ * passes, or the detail naming the rule it broke, prefixed with `at`.
+ *
+ * Exported because the adjudication record is not the only artifact that stores
+ * a raised finding verbatim - the deferred queue stores the same bytes, and a
+ * queue member is triaged later against the record that supersedes it. Two
+ * copies of these bounds is two answers to "is this a finding", and the queue
+ * would then hold a shape the record refuses, discovered only at adjudication
+ * time when the reviewer's return is long gone.
+ *
+ * Validated at all because only the cross-model arm has a schema between the
+ * reviewer and here: references/review-triggers.md has a `claude-subagent`
+ * voice's return parsed by the model, so on that arm this is the only
+ * validation a raised finding ever gets.
+ *
+ * @param {unknown} f @param {string} at the payload path, for the detail
+ * @returns {string}
+ */
+export function findingIssue(f, at) {
+  if (!isPlainObject(f)) return `${at} is not an object`;
+  const badFindingKey = unknownKey(f, FINDING_KEYS);
+  if (badFindingKey) return `${at} carries an unknown key: ${badFindingKey}`;
+  if (!isText(f.file) || f.file.length > MAX_FILE_CHARS) {
+    return `${at}.file must be a non-blank path of at most ${MAX_FILE_CHARS} characters`;
+  }
+  if (!Number.isSafeInteger(f.line) || f.line < 1) {
+    return `${at}.line must be an integer of at least 1`;
+  }
+  if (!RAISED_SEVERITIES.includes(f.severity)) {
+    return `${at}.severity must be one of ${RAISED_SEVERITIES.join(' | ')}`;
+  }
+  for (const key of ['claim', 'failure_scenario']) {
+    if (!isText(f[key]) || f[key].length > MAX_TEXT_CHARS) {
+      return `${at}.${key} must be non-blank and at most ${MAX_TEXT_CHARS} characters`;
+    }
+  }
+  return '';
+}
+
+/**
  * The convergence key: `file`, `line` and `claim` - the same triple
  * references/review-triggers.md's panel arm already dedupes an exact repeat on.
  * NUL-joined, so no field's own content can spell another field's boundary.
@@ -238,31 +299,11 @@ export function buildEntries(payload) {
     const rulings = block.rulings;
     if (!Array.isArray(rulings)) return no(`${at}.rulings must be an array`);
 
-    // Every finding validated against the same bounds FINDING_SCHEMA states,
-    // because only the cross-model arm has a schema between the reviewer and
-    // here: references/review-triggers.md has a `claude-subagent` voice's
-    // return parsed by the model, so on that arm this is the only validation
-    // the raised finding ever gets.
+    // Every finding validated through `findingIssue` above - the same bounds,
+    // in the same words, that the deferred queue stores a finding against.
     for (let i = 0; i < findings.length; i += 1) {
-      const f = findings[i];
-      const fat = `${at}.returned.findings[${i}]`;
-      if (!isPlainObject(f)) return no(`${fat} is not an object`);
-      const badFindingKey = unknownKey(f, FINDING_KEYS);
-      if (badFindingKey) return no(`${fat} carries an unknown key: ${badFindingKey}`);
-      if (!isText(f.file) || f.file.length > MAX_FILE_CHARS) {
-        return no(`${fat}.file must be a non-blank path of at most ${MAX_FILE_CHARS} characters`);
-      }
-      if (!Number.isSafeInteger(f.line) || f.line < 1) {
-        return no(`${fat}.line must be an integer of at least 1`);
-      }
-      if (!RAISED_SEVERITIES.includes(f.severity)) {
-        return no(`${fat}.severity must be one of ${RAISED_SEVERITIES.join(' | ')}`);
-      }
-      for (const key of ['claim', 'failure_scenario']) {
-        if (!isText(f[key]) || f[key].length > MAX_TEXT_CHARS) {
-          return no(`${fat}.${key} must be non-blank and at most ${MAX_TEXT_CHARS} characters`);
-        }
-      }
+      const issue = findingIssue(findings[i], `${at}.returned.findings[${i}]`);
+      if (issue) return no(issue);
     }
 
     // The pairing, by INDEX: a ruling names the finding it rules. Both

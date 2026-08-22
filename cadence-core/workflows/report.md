@@ -22,8 +22,10 @@ prescribes - measured 2026-08-17 at 68,044 B unscoped and 14,857 B at
 so it rides THIS RUN's own scratch directory
 (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the rule;
 the file is the model's own scratch, never a phase artifact). The other two stay
-inline, under the threshold: `reads --join` measures 1,507 B and `trace window`
-5,378 B.
+inline, under the threshold: `reads --join` measures 2,494 B - re-measured
+2026-08-22 on this repository, when the per-role `inDispatch` rows joined that
+response, and it grows slowly with the record the same way the render figure
+above does - and `trace window` 5,378 B.
 
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-record-XXXXXX")" && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
@@ -58,7 +60,10 @@ returns `ceilings`, `problems` (each `{kind, file, detail}`), `compared`,
 whatever the render got. The second is the in-dispatch read ledger
 over `.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and
 `--join` ties each record to the dispatch bracket that caused it: `joined`,
-`ambiguous`, `unjoined`, `floor`, `coordinator`, `unresolved`.
+`ambiguous`, `unjoined`, `floor`, `coordinator`, `unresolved`, and `inDispatch`
+(per-role `roles[]` with `ratio`, `worst` and their bracket counts, plus
+`coverage` and `coordinatorFiles`) - the SAME fold `/cad-suggest` reads, so
+neither surface recomputes it.
 Then open the scoped
 phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/SUMMARY.md` (deviations, gate-fix commits),
@@ -107,7 +112,7 @@ Tokens on subagent returns (the host's own per-dispatch figure, not the run's co
 Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
 Window budget (from `trace window`): <only when `problems` is non-empty: one line per crossing - the role, the dispatch it belongs to, its figure and the ceiling it crossed, both as given; then `unbudgeted` roles and `unrecorded` when either is non-zero>
 Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue (one RUN's, joined on `corr`, not the phase's) - each named, never silently dropped>
-Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; omit the whole line when the record is empty>
+Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; then per role from `inDispatch.roles`, each row whose `ratio` is non-null - the ratio as opens per distinct file inside ONE dispatch, its `worst` file with that file's count, and beside them `inDispatch.coverage` and the `inDispatch.coordinatorFiles` it excluded; omit the whole line when the record is empty>
 ```
 
 Rules, all load-bearing:
@@ -188,10 +193,29 @@ Rules, all load-bearing:
   scoping: `fileCalls`, `fileRedundancy` and `topFiles` span every dispatch the
   project ever recorded, so the line says so even when the report is scoped to
   one phase - it does not price the phase. Report every figure as returned,
-  recomputed nowhere. When the return carries `calls: 0` or its `no reads
-  recorded yet` note, say nothing about reading at all - the same silence the
-  `coordinator` block gets, because zeros from an absent record read as a run
-  that opened no files.
+  recomputed nowhere. `inDispatch` is that same file read PER ROLE and PER
+  DISPATCH - `roles[].ratio` is opens per distinct file INSIDE one bracket and
+  `roles[].worst` names the file that bracket opened most - so it answers a
+  different question from `fileRedundancy` and the two are never averaged,
+  compared or presented as one figure. Three dispositions, and the third is the
+  live one:
+  - `calls: 0`, or the `no reads recorded yet` note: say nothing about reading
+    at all - the same silence the `coordinator` block gets, because zeros from
+    an absent record read as a run that opened no files.
+  - `calls > 0` with a NULL `ratio` on a role: say nothing about in-dispatch
+    re-reading for that role, and never narrate the null as `0`. Every record
+    written before the `files` field existed folds to a null, so this is the
+    ordinary live case rather than a broken one, and `0` is the reading that
+    says the worker opened each file exactly once.
+  - a ratio present: state it with BOTH limits the seam returns beside it,
+    because either one missing lets the figure read as a total.
+    `inDispatch.coverage` is the share of the joined reads in scope that
+    recorded file paths, which is the denominator the ratio was actually
+    computed over; `inDispatch.coordinatorFiles` is the count of file-carrying
+    `coordinator` reads it EXCLUDED, and they are excluded because a coordinator
+    read has no worker bracket by construction - the main thread's own
+    re-reading cannot be attributed to a dispatch and is outside what this
+    figure can measure or cut.
 - What the join attributes, and what it never will. `joined` is a read tied to
   the bracket that caused it; `ambiguous` is a read inside two overlapping
   same-role brackets, which the seam refuses to guess between rather than
