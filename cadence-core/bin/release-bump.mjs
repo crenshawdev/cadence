@@ -80,6 +80,11 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { emit } from './lib/seam-io.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
+// The multi-file transition primitive (JRN-01): the ONE place under
+// cadence-core/bin/ where an ordered step list runs and a record is kept of
+// which steps completed. Imported, never copied - helper-census.test.mjs pins
+// that module's body as a single definition.
+import { runTransition } from './lib/file-transition.mjs';
 import {
   normalizeTargetVersion, decideManifestBump, prependChangelogEntry, promoteUnreleased,
 } from './lib/release-decision.mjs';
@@ -137,9 +142,22 @@ function readManifest(file) {
   } catch { return { state: 'unreadable', manifest: null }; }
 }
 
+/**
+ * The write set, as repo-relative paths. Each is also its own transition step
+ * KEY, so what the envelope reports about a file and what the step list calls
+ * it can never drift apart.
+ *
+ * The sibling set is a DECLARED list and never a discovery scan (D-10): a
+ * second sibling is one more entry here, and the seam still never reads - or
+ * refuses over - a file nobody declared.
+ */
+const PRIMARY_MANIFEST = '.claude-plugin/plugin.json';
+const SIBLING_MANIFESTS = ['.claude-plugin/marketplace.json'];
+const CHANGELOG_FILE = 'CHANGELOG.md';
+
 function bump(dir, versionArg, dateArg) {
   const date = dateArg || new Date().toISOString().slice(0, 10);
-  const pluginPath = join(dir, '.claude-plugin', 'plugin.json');
+  const pluginPath = join(dir, PRIMARY_MANIFEST);
 
   // The shipping target is the explicit --version and nothing else: this seam
   // reads no planning prose at all (D-03). Normalized before the manifest is
@@ -173,38 +191,53 @@ function bump(dir, versionArg, dateArg) {
     return;
   }
 
-  // Primary manifest: write only on a real bump (preserve field order).
-  if (primary.action === 'bump') {
-    manifest.version = target;
-    atomicWrite(pluginPath, JSON.stringify(manifest, null, 2) + '\n');
-  }
+  // --- READ AND DECIDE (nothing below this line touches disk) ---------------
+  //
+  // The WHOLE write set - primary manifest, every declared sibling, the
+  // changelog - is read and turned into a planned write before the first one
+  // lands (D-06). The order this replaces is the JRN-03 defect itself: write
+  // the primary, THEN read the sibling, THEN read the changelog. Measured
+  // 2026-08-22 against that order, an unwritable CHANGELOG.md emitted
+  // {"ok":false,"reason":"internal","detail":"EISDIR: ... rename
+  // 'CHANGELOG.md.<pid>.1.tmp' -> 'CHANGELOG.md'"} while plugin.json on disk
+  // already read the new version - a partially bumped tree in an envelope
+  // carrying no `manifest`, `siblings` or `changelog` field at all.
+  //
+  // Hoisting the reads changes no result: decideManifestBump,
+  // prependChangelogEntry and promoteUnreleased are pure and only compute.
+
+  // Primary manifest: a real bump mutates the in-memory manifest here and the
+  // bytes reach disk in the write half below (preserve field order).
+  if (primary.action === 'bump') manifest.version = target;
 
   // Sibling manifests: write `version` only where it exists. marketplace.json
   // carries none, so decideManifestBump returns skip and it is left untouched.
   const siblings = [];
-  const siblingPath = join(dir, '.claude-plugin', 'marketplace.json');
-  const siblingRead = readManifest(siblingPath);
-  if (siblingRead.state === 'unreadable') {
-    // The primary write already landed, so this records rather than aborts
-    // (D-08) - but it is recorded, never dropped: a sibling manifest this seam
-    // cannot read is a sibling that ships the previous version.
-    siblings.push({ file: '.claude-plugin/marketplace.json', action: 'refuse', bumped: false,
-      reason: 'unreadable-manifest' });
-  } else if (siblingRead.state === 'ok') {
+  /** @type {Array<{ rel: string, path: string, manifest: Record<string, any> }>} */
+  const siblingWrites = [];
+  for (const rel of SIBLING_MANIFESTS) {
+    const siblingPath = join(dir, rel);
+    const siblingRead = readManifest(siblingPath);
+    if (siblingRead.state === 'unreadable') {
+      // Recorded, never dropped (D-08): a sibling manifest this seam cannot
+      // read is a sibling that ships the previous version.
+      siblings.push({ file: rel, action: 'refuse', bumped: false, reason: 'unreadable-manifest' });
+      continue;
+    }
+    if (siblingRead.state !== 'ok') continue;
     const sibling = siblingRead.manifest;
     const d = decideManifestBump(sibling.version, target);
     if (d.action === 'bump') {
       sibling.version = target;
-      atomicWrite(siblingPath, JSON.stringify(sibling, null, 2) + '\n');
+      siblingWrites.push({ rel, path: siblingPath, manifest: sibling });
     }
     // A sibling inherits the same guard through the same function. Its refusal
-    // is RECORDED, not raised: the primary write has already landed and
-    // unwinding it would need a transaction this seam does not have (D-08). It
-    // never becomes a silent partial ship - milestone.md halts the close on a
-    // `siblings[]` refusal exactly as it does on a top-level one.
+    // is RECORDED, not raised: it never becomes a silent partial ship -
+    // milestone.md halts the close on a `siblings[]` refusal exactly as it does
+    // on a top-level one.
     siblings.push(d.action === 'refuse'
-      ? { file: '.claude-plugin/marketplace.json', action: 'refuse', bumped: false, reason: d.code }
-      : { file: '.claude-plugin/marketplace.json', action: d.action, bumped: d.bumped });
+      ? { file: rel, action: 'refuse', bumped: false, reason: d.code }
+      : { file: rel, action: d.action, bumped: d.bumped });
   }
 
   // Changelog: scaffold the dated heading, then promote whatever is staged
@@ -217,19 +250,46 @@ function bump(dir, versionArg, dateArg) {
   // that release would have the changelog claim a release that never happened
   // while the emit said `skip`.
   let changelog = { changed: false };
-  const clPath = join(dir, 'CHANGELOG.md');
+  /** @type {string|null} the composed bytes to write, null when nothing changed */
+  let changelogText = null;
+  const clPath = join(dir, CHANGELOG_FILE);
   if (existsSync(clPath) && target && (primary.action === 'bump' || primary.action === 'noop')) {
     const url = changelogUrl(manifest, target);
     const scaffold = prependChangelogEntry(readText(clPath), { version: target, date, url });
     const promo = promoteUnreleased(scaffold.text, target);
     const changed = scaffold.changed || promo.changed;
-    if (changed) atomicWrite(clPath, promo.text);
+    if (changed) changelogText = promo.text;
     // section_empty: the dated section ended up with no body at all - nothing
     // promoted and nothing already there. milestone.md turns that into "author
     // the notes before the bump commit", so no close ships an empty section
     // with nothing said.
     changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty };
   }
+
+  // --- WRITE ----------------------------------------------------------------
+  // One transition, in the same order the writes have always run, under
+  // stop-at-first-failure: a half-applied release tree makes every later step's
+  // plan wrong, so the first throw ends the run. Each step is keyed by its
+  // repo-relative path, which is what lets a failure report WHICH files landed.
+  /** @type {Array<[string, () => void]>} */
+  const steps = [];
+  if (primary.action === 'bump') {
+    steps.push([PRIMARY_MANIFEST,
+      () => atomicWrite(pluginPath, JSON.stringify(manifest, null, 2) + '\n')]);
+  }
+  for (const { rel, path, manifest: sibling } of siblingWrites) {
+    steps.push([rel, () => atomicWrite(path, JSON.stringify(sibling, null, 2) + '\n')]);
+  }
+  if (changelogText !== null) {
+    const text = changelogText;
+    steps.push([CHANGELOG_FILE, () => atomicWrite(clPath, text)]);
+  }
+
+  const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });
+  // A step that threw is re-raised so the dispatch's catch renders it exactly
+  // as it does today; no pre-flight condition is declared, so `refused` is
+  // never set here.
+  if (!applied.ok) throw applied.failures[0].error;
 
   const action = primary.action === 'bump' ? 'bumped' : primary.action; // bump|noop|skip
   emit({ ok: true, action, target, reason: primary.code, detail: primary.reason,
