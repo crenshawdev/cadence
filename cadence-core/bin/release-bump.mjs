@@ -66,6 +66,13 @@
 //                         halt list enumerates codes by name, and one token for
 //                         two files leaves the operator opening both to find
 //                         which one to repair.
+//   unreadable-changelog
+//                       - CHANGELOG.md present but not readable (a directory at
+//                         that path, a permission wall). Its own code for the
+//                         same operator reason. Validation is presence,
+//                         readability and regular-file shape only, never a
+//                         content grammar check: the transform pass over it is
+//                         pure and cannot fail (D-09).
 //   bad-date            - a PRESENT --date that is not YYYY-MM-DD, or one
 //                         carrying a newline. Refused at the dispatch, so it
 //                         fires on a non-plugin project too, where the
@@ -99,11 +106,14 @@ import { runTransition } from './lib/file-transition.mjs';
 import {
   normalizeTargetVersion, decideManifestBump, prependChangelogEntry, promoteUnreleased,
 } from './lib/release-decision.mjs';
-// The file reader this file used to define for itself; its ''-on-failure
-// contract lives in lib/seam-input.mjs. `readFileSync` stays imported above for
-// the manifest parse below, which must tell an unreadable manifest from an
-// empty one.
-import { readText } from './lib/seam-input.mjs';
+// No lib/seam-input.mjs `readText` here any more, and that is deliberate rather
+// than an omission: its ''-on-failure contract is right for a surface whose
+// absence is not fatal, and wrong for every file THIS seam reads. A manifest
+// read as empty is a manifest with no `version` field, and a CHANGELOG read as
+// empty gets a fresh one scaffolded over a real release history. Both are read
+// through `readFileSync` below in three-state readers that tell absent from
+// unreadable. That is a caller-side choice; the shared helper is unchanged and
+// its other callers keep the contract they depend on.
 // The argument contract (ARG-06). This file states no flag rule of its own any
 // more: what each flag may be, and what it costs when it is not, are DECLARED
 // rows in lib/arg-contract.mjs. BOTH mechanisms are used here, picked per flag
@@ -165,6 +175,26 @@ function readManifest(file) {
 const PRIMARY_MANIFEST = '.claude-plugin/plugin.json';
 const SIBLING_MANIFESTS = ['.claude-plugin/marketplace.json'];
 const CHANGELOG_FILE = 'CHANGELOG.md';
+
+/**
+ * Read the CHANGELOG as a THREE-state result, to exactly the bar D-09 sets:
+ * present, readable and a regular file - never a content grammar check, because
+ * the transform pass over it (`prependChangelogEntry` then `promoteUnreleased`)
+ * is pure and cannot fail on any text.
+ *
+ * ABSENT is a real state with real behaviour: a project that keeps no changelog
+ * still bumps its manifest. UNREADABLE is the one this exists for - a directory
+ * at that path, a permission wall - because reading it as `''` scaffolds a
+ * fresh changelog over a release history the seam cannot see, and it did so
+ * AFTER the manifest had already been bumped.
+ * @param {string} file
+ * @returns {{ state:'absent'|'unreadable'|'ok', text: string|null }}
+ */
+function readChangelog(file) {
+  if (!existsSync(file)) return { state: 'absent', text: null };
+  try { return { state: 'ok', text: readFileSync(file, 'utf8') }; }
+  catch { return { state: 'unreadable', text: null }; }
+}
 
 function bump(dir, versionArg, dateArg) {
   const date = dateArg || new Date().toISOString().slice(0, 10);
@@ -273,17 +303,31 @@ function bump(dir, versionArg, dateArg) {
   /** @type {string|null} the composed bytes to write, null when nothing changed */
   let changelogText = null;
   const clPath = join(dir, CHANGELOG_FILE);
-  if (existsSync(clPath) && target && (primary.action === 'bump' || primary.action === 'noop')) {
-    const url = changelogUrl(manifest, target);
-    const scaffold = prependChangelogEntry(readText(clPath), { version: target, date, url });
-    const promo = promoteUnreleased(scaffold.text, target);
-    const changed = scaffold.changed || promo.changed;
-    if (changed) changelogText = promo.text;
-    // section_empty: the dated section ended up with no body at all - nothing
-    // promoted and nothing already there. milestone.md turns that into "author
-    // the notes before the bump commit", so no close ships an empty section
-    // with nothing said.
-    changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty };
+  if (target && (primary.action === 'bump' || primary.action === 'noop')) {
+    // Validated only when it is a MEMBER of this run's write set: the gate
+    // above is what decides that, so a run that would never touch the changelog
+    // is never refused over it.
+    const clRead = readChangelog(clPath);
+    if (clRead.state === 'unreadable') {
+      emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', target,
+        manifest: { from: primary.from, to: primary.to, bumped: false },
+        siblings: [], changelog: { changed: false },
+        detail: `${CHANGELOG_FILE} is present but cannot be read: refusing to scaffold a fresh changelog over a release history this seam cannot see, wrote nothing. Repair ${CHANGELOG_FILE} and re-run the bump.` });
+      return;
+    }
+    // ABSENT keeps its own behaviour: no changelog step, changed:false, ok:true.
+    if (clRead.state === 'ok') {
+      const url = changelogUrl(manifest, target);
+      const scaffold = prependChangelogEntry(clRead.text, { version: target, date, url });
+      const promo = promoteUnreleased(scaffold.text, target);
+      const changed = scaffold.changed || promo.changed;
+      if (changed) changelogText = promo.text;
+      // section_empty: the dated section ended up with no body at all - nothing
+      // promoted and nothing already there. milestone.md turns that into
+      // "author the notes before the bump commit", so no close ships an empty
+      // section with nothing said.
+      changelog = { changed, promoted: promo.changed, section_empty: promo.sectionEmpty };
+    }
   }
 
   // --- WRITE ----------------------------------------------------------------

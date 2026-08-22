@@ -290,6 +290,28 @@ test('bump: an UNPARSEABLE sibling refuses the whole run, nothing written (D-07)
   assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore);
 });
 
+test('bump: a present-but-UNREADABLE CHANGELOG refuses, nothing written (D-09)', () => {
+  // A DIRECTORY at CHANGELOG.md - filesystem-shaped and uid-independent, so no
+  // chmodSync, which is a silent no-op under a root test runner (D-02). Built
+  // by omitting the fixture's changelog and putting a directory in its place.
+  // Before this arm, readText's ''-on-failure contract read that as an EMPTY
+  // changelog and scaffolded a fresh one over the release history - after the
+  // manifest had already been bumped.
+  const dir = fixture({ changelog: null });
+  mkdirSync(join(dir, 'CHANGELOG.md'));
+  const pluginBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+
+  const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', '2.0.0', '--date', '2026-07-17']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.reason, 'unreadable-changelog',
+    'its own code: the halt names WHICH member of the write set to repair');
+  assert.equal(status, 1);
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore,
+    'the manifest never landed - the changelog is validated before the first write');
+  assert.equal(readJson(join(dir, '.claude-plugin', 'plugin.json')).version, '1.0.0');
+});
+
 // --- promotion through the seam ---------------------------------------------
 
 const STAGED_CHANGELOG = [
