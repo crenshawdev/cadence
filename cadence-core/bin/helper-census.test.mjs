@@ -183,6 +183,32 @@ const HELPERS = [
       + '`1-fix` left a blocking gate no argv could satisfy. lease-check --plan '
       + 'is NOT a caller: it names a plan FILE on disk and stays numeric.',
   },
+  {
+    name: 'the multi-file transition step loop (runTransition)',
+    home: 'lib/file-transition.mjs',
+    // The two halves of the loop's contract, in the order a copy would carry
+    // them: record the failure under the CALLER's own key, then honour the
+    // caller's discipline. Never an export name and never a call site -
+    // cmdRenumber and cmdMilestonePrune both legitimately CALL this module, so
+    // a call-site census would redden on every correct use, while a paste-back
+    // under a new name is still a copy of this body. The bounded gap between
+    // the anchors is the readText row's device, and it is what keeps the
+    // module's own explanatory comment from having to sit somewhere else.
+    re: new RegExp("failures\\.push\\(\\{ key, error \\}\\);"
+      + "[\\s\\S]{0,400}?if \\(discipline !== 'continue-past-failure'\\) break;", 'g'),
+    note: 'Import { runTransition } from ./lib/file-transition.mjs. A second '
+      + 'copy of this loop IS the JRN-01 defect rather than a symptom of it: '
+      + 'four operations in this tree change several files to move .planning '
+      + 'from one consistent state to another, and each one that writes its '
+      + 'own ordered step loop with its own completed/failed bookkeeping is '
+      + 'another place a half-applied tree can be reported as ok:true. Without '
+      + 'this row a fifth hand-written approximation lands in a sixth file and '
+      + 'no test can see it. The discipline arm is part of the body on '
+      + 'purpose: renumber stops at the first throw because the tree no longer '
+      + 'matches the plan its later steps were computed from, prune continues '
+      + 'so the phases that cleared still get pruned, and a copy that picked '
+      + 'one arm for both callers would change what completed and failed mean.',
+  },
 ];
 
 const MODULES = everyModule(BIN);
@@ -192,7 +218,8 @@ test('the census walks the whole bin tree, lib/ and test files included', () => 
   // A walk that silently reached nothing would make every arm below vacuous.
   assert.ok(MODULES.length > 60, `only ${MODULES.length} .mjs files found`);
   for (const expected of ['lib/seam-input.mjs', 'lib/arg-contract.mjs', 'lib/git-head.mjs',
-    'git-guard.mjs', 'lib/lease-grammar.mjs', 'helper-census.test.mjs']) {
+    'git-guard.mjs', 'lib/lease-grammar.mjs', 'lib/file-transition.mjs',
+    'helper-census.test.mjs']) {
     assert.ok(MODULES.includes(expected), `${expected} missing from the walk`);
   }
 });
