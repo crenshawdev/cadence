@@ -183,9 +183,10 @@ export function compareVersions(a, b) {
  * Every verdict carries a `code`: a stable machine token the seam emits as its
  * `reason`, while the human sentence in `reason` becomes the seam's `detail`.
  * The codes are a CLOSED set, owned HERE - the seam owns its own disjoint set
- * (`no-plugin-manifest`, `unreadable-manifest`, `usage`, `internal`) in
- * release-bump.mjs's header, so one list has one owner and the two can never
- * disagree:
+ * (`no-plugin-manifest`, `unreadable-manifest`, `unreadable-sibling-manifest`,
+ * `unreadable-changelog`, `partial-bump`, `bad-date`, `missing-flag-value`,
+ * `usage`, `internal`) in release-bump.mjs's header, so one list has one
+ * owner and the two can never disagree:
  *
  *   no-target-version | unparseable-version | no-version-field |
  *   already-at-target | downgrade | not-an-upgrade | bump
