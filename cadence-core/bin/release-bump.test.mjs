@@ -406,18 +406,53 @@ test('bump: an empty Unreleased body reports section_empty so the close authors 
   assert.equal(r.changelog.section_empty, true);
 });
 
-test('bump: a version-less manifest skips - no dated heading for a release that never happened', () => {
+test('bump: a version-less PRIMARY manifest refuses, exit 1, nothing written (phase 1 D-01)', () => {
   const { version, ...noVersion } = PLUGIN_1_0_0;
   assert.equal(version, '1.0.0'); // the field really was there to remove
   const dir = fixture({ plugin: noVersion, changelog: STAGED_CHANGELOG });
   const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+  const pluginBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
 
-  const r = seam(['bump', '--dir', dir, '--version', '2.2.0', '--date', '2026-08-03']);
-  assert.equal(r.ok, true);
-  assert.equal(r.action, 'skip');
-  assert.equal(r.changelog.changed, false);
+  // This used to be {"ok":true,"action":"skip"} at exit 0, which milestone.md
+  // read as success and closed over: the release shipped with an unbumped
+  // manifest. The verdict is still `skip` in the pure core; the SEAM refuses.
+  const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', '2.2.0', '--date', '2026-08-03']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.reason, 'no-version-field');
+  assert.equal(status, 1, 'ok:false mirrors into exit 1 so the close halts');
+  assert.match(r.detail, /version/, 'the seam names the missing field, not "leave it untouched"');
   assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore,
     'no ## [2.2.0] heading over a manifest that bumped nothing');
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore,
+    'the manifest it refused over is byte-identical');
+});
+
+test("bump: THIS repo's own manifest pair still bumps, marketplace.json recorded as skip (D-02)", () => {
+  // The regression the seam-level refusal must not cause: Cadence's own
+  // .claude-plugin/marketplace.json carries no `version` BY DESIGN, so a
+  // verdict-level refusal would halt this project's close every cycle. Copied
+  // from the real files rather than restated, so a change to either is seen.
+  const repoRoot = join(dirname(SEAM), '..', '..');
+  const realPlugin = readJson(join(repoRoot, '.claude-plugin', 'plugin.json'));
+  const realMarket = readJson(join(repoRoot, '.claude-plugin', 'marketplace.json'));
+  assert.equal(typeof realPlugin.version, 'string', 'the primary manifest carries a version');
+  assert.equal('version' in realMarket, false, 'marketplace.json carries none - the D-02 premise');
+  const above = `${Number(String(realPlugin.version).split('.')[0]) + 1}.0.0`;
+
+  const dir = fixture({ plugin: realPlugin, marketplace: realMarket });
+  const marketBefore = readRaw(join(dir, '.claude-plugin', 'marketplace.json'));
+  const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', above, '--date', '2026-08-03']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(status, 0);
+  assert.equal(r.action, 'bumped');
+  assert.equal(readJson(join(dir, '.claude-plugin', 'plugin.json')).version, above);
+  const row = r.siblings.find((x) => x.file === '.claude-plugin/marketplace.json');
+  assert.ok(row, `no siblings[] row for marketplace.json: ${JSON.stringify(r.siblings)}`);
+  assert.equal(row.action, 'skip', 'the sibling still SKIPS - it never becomes a refusal');
+  assert.equal(row.bumped, false);
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'marketplace.json')), marketBefore,
+    'left byte-untouched');
 });
 
 test('unknown subcommand: usage, ok false', () => {
