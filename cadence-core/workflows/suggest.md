@@ -26,6 +26,13 @@ The scope is REPORTED, never narrowed. Say which record was read and what it
 spans: nothing prunes `.planning/trace.jsonl` at a close, so an unscoped run
 spans every milestone still in the file, and a `--phase <N>` run admits an older
 cycle's phase `N` beside this one's. The user reading a suggestion needs that.
+
+The same is true of the SECOND record the seam reads, `.planning/reads.jsonl`,
+and it has one more caveat of its own: nothing prunes it at a close either, and
+it carries NO phase scoping at all - it is one file per project. A `--phase <N>`
+run therefore reaches its reads only through that phase's dispatch BRACKETS,
+which is the join doing the scoping rather than the flag. Say that where an
+in-dispatch figure is presented.
 </step>
 
 <step name="read_record">
@@ -39,8 +46,13 @@ Everything below reads off its return: `scope`, `events_read`, `suggestions`,
 and `capped` / `malformed` / `warnings` when any of the three is present - a
 `warnings` entry is a config layer the merge could not read whole, so a `current`
 below may be reading less than the project set, and it is relayed rather than
-swallowed. Do not open `.planning/trace.jsonl` - the seam is the reader, and
-prose that re-reads it is prose that can disagree with it.
+swallowed. A `warnings` entry naming `.planning/reads.jsonl` is that file being
+unreadable, so no in-dispatch figure was measured this run - relay it the same
+way rather than reporting an absence as a low number.
+
+That one call reads TWO records - `.planning/trace.jsonl` and
+`.planning/reads.jsonl` - and open NEITHER. The seam is the reader, and prose
+that re-reads either is prose that can disagree with it.
 </step>
 
 <step name="present">
@@ -68,12 +80,24 @@ states five things, in this order:
 
 When the return carries `info` entries but no `suggest` entry, that heading
 still appears and carries exactly one line: the record supports no tweak in this
-scope. Nothing is attached to that line - an offer with nothing behind it is the
-same mute output pointed the other way.
+scope, meaning no CONFIG KEY this record prices - which is a claim about keys
+specifically and not about the run. Where a receipt below names a remedy that is
+not a key, that line points at the receipts rather than standing alone; the
+in-dispatch re-reading receipt is the case this exists for, and printing "no
+tweak" directly above a file opened 29 times inside one dispatch is the reading
+it prevents. Nothing else is attached to that line - an offer with nothing
+behind it is the same mute output pointed the other way.
 
 **Heading two - the receipts, below the tweak block.** Every `kind: "info"`
 entry is one line under it. An `info` asks for nothing; it is there because the
 record earned it a mention, and it is never lifted into the block above.
+
+That has ONE stated exception, and it is one of presentation rather than of
+kind. An in-dispatch re-reading receipt names a remedy that is not a config key
+- there is none, which is why its `action` is null - so relay the remedy its
+`evidence` names, in its own words, rather than leaving the reader holding a
+ratio with nothing to do about it. It stays a receipt, it is still not numbered,
+and it still generates no `/cad-config` token: there is no key to put in one.
 `capped` or `malformed` gets one line each here, named rather than swallowed: a
 capped file was read to a limit, a malformed count is lines the reader could not
 parse.

@@ -2110,3 +2110,104 @@ test('triage-gate.md: the corr-keyed re-arm read-back survives the deferred arm 
     'the deferred arm no longer terminates - a cap with no terminal arm is the loop '
     + 'with an extra step');
 });
+
+// --- RDX-01: the in-dispatch figure, its coverage and its exclusions, in prose
+//
+// Modelled on MSR-02 above, which is this repo's one mechanism for pinning a
+// workflow's prose to a seam: `workflows/report.md` and `workflows/suggest.md`
+// have no executor, so a claim written into them is a claim no check reads
+// unless a check like this one reads it.
+//
+// A WHOLE-FILE grep cannot serve here and is deliberately not used:
+// `grep -c coordinator cadence-core/workflows/report.md` already returns 12 on
+// the pre-change tree, so a file-wide search passes whether the clause below is
+// ever written or not. Both sites are sliced by their NAMED anchors - the shape
+// block's Reading line and the reading RULE that follows it, and suggest.md's
+// `present` step - so a rewrap that changed no fact stays green while a deleted
+// clause reddens.
+//
+// FALSIFIED IN BOTH DIRECTIONS before it shipped: each asserted clause was
+// deleted from its file in turn, this test watched to fail naming that clause,
+// and the clause restored and watched to pass. An arm never seen to fail is the
+// same unfalsifiable check one layer up.
+
+test('RDX-01: report.md prints the in-dispatch figure with its coverage, its exclusion and the null rule', () => {
+  const text = doc('cadence-core', 'workflows', 'report.md');
+
+  // 1. The shape block's Reading LINE - the point at which the figure is
+  //    PRINTED. A rule further down is a rule a reader can compose the line
+  //    without.
+  const lineStart = text.indexOf('Reading (whole `.planning/reads.jsonl`');
+  assert.ok(lineStart >= 0, 'report.md has no Reading line');
+  const readingLine = text.slice(lineStart, text.indexOf('\n', lineStart));
+  for (const token of ['inDispatch.roles', 'inDispatch.coverage', 'inDispatch.coordinatorFiles']) {
+    assert.ok(readingLine.includes(token),
+      `report.md's Reading line does not print \`${token}\`, so the per-role figure `
+      + `either never reaches the report or reaches it without its limits. Got: ${readingLine}`);
+  }
+
+  // 2. The rule block, read from its named anchor to the next TOP-LEVEL bullet,
+  //    so the sub-bullets under it are inside the slice and the next rule is
+  //    not.
+  const ruleStart = text.indexOf('- The reading line prices `.planning/reads.jsonl`');
+  assert.ok(ruleStart >= 0, 'report.md has no reading-line rule');
+  const next = text.indexOf('\n- ', ruleStart + 1);
+  // Whitespace-FLATTENED before matching, so a rewrap that changed no fact
+  // stays green while a deleted clause reddens - the only distinction this
+  // arm exists to make.
+  const rule = text.slice(ruleStart, next > ruleStart ? next : text.length).replace(/\s+/g, ' ');
+
+  // The `coordinator` exclusion, and its REASON - the two are separate claims
+  // and the reason is the half that stops it reading as an arbitrary filter.
+  assert.ok(rule.includes('coordinatorFiles'),
+    'the reading rule never names the coordinator reads the figure excluded');
+  assert.ok(/no worker bracket by construction/.test(rule),
+    'the reading rule states the coordinator exclusion without its reason, so it reads as '
+    + 'an arbitrary filter rather than a limit of the measurement');
+  // The COVERAGE the ratio was computed over, without which the figure reads as
+  // a total over the whole record.
+  assert.ok(rule.includes('inDispatch.coverage'),
+    'the reading rule never names the coverage the in-dispatch ratio was computed over');
+  assert.ok(/denominator the ratio was actually computed over/.test(rule),
+    'the reading rule names `coverage` without saying what it is the denominator of');
+  // The NULL rule, which is the live case: every record written before the
+  // `files` field existed folds to a null ratio.
+  assert.ok(/NULL `ratio`/.test(rule),
+    'the reading rule has no disposition for a `calls > 0` return with a null in-dispatch ratio');
+  assert.ok(/never narrate the null as `0`/.test(rule),
+    'the reading rule does not forbid rendering a null ratio as 0 - the reading that says '
+    + 'the worker opened each file exactly once');
+
+  // 3. The transport figure the growth of that response invalidated. It is a
+  //    MEASUREMENT, so it carries the date it was taken.
+  const measured = text.indexOf('`reads --join` measures');
+  const transport = measured >= 0 ? text.slice(measured, measured + 120) : '(the sentence is gone)';
+  assert.ok(/`reads --join` measures 2,494 B/.test(text),
+    `report.md still states a stale \`reads --join\` size. Got: ${transport}`);
+});
+
+test('RDX-01: suggest.md qualifies its no-tweak line to CONFIG KEYS and states the info exception', () => {
+  const text = doc('cadence-core', 'workflows', 'suggest.md');
+  const present = stepBody(text, 'present', 'suggest.md').replace(/\s+/g, ' ');
+
+  // Heading one's no-tweak line. Without the qualifier, `/cad-suggest` prints
+  // "the record supports no tweak in this scope" directly above a receipt
+  // reporting a file opened 29 times inside one dispatch.
+  assert.ok(present.includes('the record supports no tweak in this scope'),
+    'suggest.md no longer carries the no-tweak line this rule qualifies');
+  assert.ok(/no CONFIG KEY this record prices/.test(present),
+    'suggest.md\'s no-tweak line makes an unqualified claim about the run rather than a '
+    + 'claim about config keys, so it contradicts the receipt printed below it');
+  assert.ok(/points at the receipts/.test(present),
+    'suggest.md\'s no-tweak line does not send the reader to the receipts when one names '
+    + 'a remedy that is not a key');
+
+  // Heading two's stated exception to "an `info` asks for nothing".
+  assert.ok(present.includes('An `info` asks for nothing'),
+    'suggest.md no longer carries the info-asks-for-nothing line this exception attaches to');
+  assert.ok(/ONE stated exception/.test(present),
+    'suggest.md states no exception, so an in-dispatch receipt reaches the user as a ratio '
+    + 'with no remedy beside it');
+  assert.ok(/relay the remedy its `evidence` names/.test(present),
+    'suggest.md does not tell the composer to relay the remedy the evidence names');
+});
