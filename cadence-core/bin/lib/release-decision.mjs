@@ -432,9 +432,13 @@ function sectionEnd(lines, from) {
 }
 
 /**
- * Does the `## [<version>]` section hold nothing but blank lines? An absent
- * heading (or no version at all) counts as empty - there is nothing in a
- * section that does not exist.
+ * Does the `## [<version>]` section hold nothing but blank lines and
+ * `###`/`####` subheadings? An absent heading (or no version at all) counts
+ * as empty - there is nothing in a section that does not exist. Any OTHER
+ * non-blank line is content, including a prose paragraph with no bullets
+ * (D-03): every released section in this repo's own CHANGELOG.md opens with
+ * prose before any bullet, so a bullet-only rule would report real authored
+ * sections as empty and fire the close's halt on every close.
  * @param {string} text @param {string} version
  */
 function releaseSectionEmpty(text, version) {
@@ -446,7 +450,10 @@ function releaseSectionEmpty(text, version) {
   if (at < 0) return true;
   const stop = sectionEnd(lines, at);
   for (let i = at + 1; i < stop; i++) {
-    if (lines[i].trim() !== '') return false;
+    const l = lines[i];
+    if (l.trim() === '') continue;
+    if (/^#{3,4}\s/.test(l)) continue;
+    return false;
   }
   return true;
 }

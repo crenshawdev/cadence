@@ -484,6 +484,48 @@ test('changelog+promote: scaffolding then promoting puts the dated heading above
   assert.ok(iTrailingBullet < iOld, 'and the whole body sits above the old release');
 });
 
+const HEADING_ONLY_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [Unreleased]',
+  '',
+  '### Added',
+  '',
+  '### Fixed',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+test('promote: a body of only ###/#### subheadings reports sectionEmpty:true (D-03)', () => {
+  const r = scaffoldThenPromote(HEADING_ONLY_FIXTURE, '2.0.0');
+  assert.equal(r.sectionEmpty, true);
+});
+
+const PROSE_ONLY_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [Unreleased]',
+  '',
+  'A prose paragraph describing the change, with no bullet.',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+test('promote: a prose-only body with no bullets reports sectionEmpty:false (D-03)', () => {
+  const r = scaffoldThenPromote(PROSE_ONLY_FIXTURE, '2.0.0');
+  assert.equal(r.sectionEmpty, false);
+});
+
 test('promote: total on junk input - a non-string text and a falsy version never throw', () => {
   const r = promoteUnreleased(/** @type {any} */ (null), '2.0.0');
   assert.equal(r.changed, false);
