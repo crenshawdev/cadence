@@ -739,3 +739,68 @@ test('in-dispatch: a read joined to no bracket contributes to nothing at all', (
   assert.equal(d.coverage, null);
   assert.equal(d.coordinatorFiles, 0);
 });
+
+// --- the in-dispatch figures through the seam (RDX-01) -----------------------
+//
+// `reads --join` carries the same fold `trace suggest` reads, so `/cad-report`
+// and `/cad-suggest` price re-reading off one implementation and neither
+// recomputes it in prose.
+
+/** A planning root holding the committed reread pair under their real names. */
+function rereadRoot() {
+  const dir = join(tmp(), '.planning');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'trace.jsonl'), readFileSync(join(FIXTURES, 'reread.trace.jsonl'), 'utf8'));
+  writeFileSync(join(dir, 'reads.jsonl'), readFileSync(join(FIXTURES, 'reread.reads.jsonl'), 'utf8'));
+  return dir;
+}
+
+test('seam: `reads --join` carries the per-role in-dispatch rows the fixtures fix exactly', () => {
+  const r = seam(rereadRoot(), ['reads', '--join']);
+  assert.equal(r.ok, true);
+  assert.equal(r.calls, 17);
+  // 10 touches over 3 summed distinct across two non-overlapping brackets.
+  const exec = r.inDispatch.roles.find((x) => x.role === 'cad-executor');
+  assert.ok(exec, JSON.stringify(r.inDispatch));
+  assert.equal(exec.brackets, 2);
+  assert.equal(exec.touches, 10);
+  assert.equal(exec.distinct, 3);
+  assert.equal(exec.ratio, 3.33);
+  assert.deepEqual(exec.worst,
+    { path: 'cadence-core/bin/planning.mjs', count: 7, phase: '4', plan: '1' });
+  // The noise-band role is REPORTED here even though R7 will not speak on it:
+  // this face is a measurement, and the floor lives in the rule.
+  const planner = r.inDispatch.roles.find((x) => x.role === 'cad-planner');
+  assert.equal(planner.ratio, 3);
+  assert.deepEqual(planner.worst,
+    { path: '.planning/PROJECT.md', count: 4, phase: '4', plan: 'cad-planner' });
+  // The two limits the prose faces have to STATE rather than assume.
+  assert.equal(r.inDispatch.coverage, 1);
+  assert.equal(r.inDispatch.joined, 16);
+  assert.equal(r.inDispatch.fileCarrying, 16);
+  assert.equal(r.inDispatch.coordinatorFiles, 1);
+});
+
+test('seam: the join fixtures carry no `files`, so the new key holds NO measurement, never a zero', () => {
+  const r = seam(joinRoot(), ['reads', '--join']);
+  assert.equal(r.ok, true);
+  for (const row of r.inDispatch.roles) {
+    assert.equal(row.ratio, null, `a ratio was invented for ${row.role}: ${JSON.stringify(row)}`);
+    assert.equal(row.worst, null, JSON.stringify(row));
+    assert.equal(row.brackets, 0);
+  }
+  assert.ok(!JSON.stringify(r.inDispatch).includes('"ratio":0'),
+    `a null ratio was rendered as 0: ${JSON.stringify(r.inDispatch)}`);
+  assert.equal(r.inDispatch.fileCarrying, 0);
+});
+
+test('seam: `reads` WITHOUT the flag still carries no in-dispatch key at all', () => {
+  const plain = seam(rereadRoot(), ['reads']);
+  assert.equal('inDispatch' in plain, false, 'the in-dispatch fold rode an unasked-for envelope');
+  // ...and the absent-file arm returns before the join, as it always has.
+  const empty = join(tmp(), '.planning');
+  mkdirSync(empty, { recursive: true });
+  const none = seam(empty, ['reads', '--join']);
+  assert.equal(none.note, 'no reads recorded yet');
+  assert.equal('inDispatch' in none, false);
+});

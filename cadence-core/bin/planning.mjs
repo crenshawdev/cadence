@@ -3183,6 +3183,16 @@ function cmdReads(dir, opts) {
     floor: j.floor,
     coordinator: j.coordinator,
     unresolved: j.unresolved,
+    // The per-role IN-DISPATCH figures, off the same fold `trace suggest`
+    // calls, so `/cad-report` and `/cad-suggest` price re-reading off ONE
+    // implementation and neither recomputes it in prose (RDX-01).
+    //
+    // Its own key rather than folded into `topFiles`: that one is whole-corpus
+    // and per-file, these are per-dispatch and per-role, and pooling two
+    // different denominators under one heading is the category error
+    // `summarizeReads`'s own header warns about for `redundancy` versus
+    // `fileRedundancy`.
+    inDispatch: inDispatchReads(j.rows),
   });
 }
 
