@@ -637,3 +637,105 @@ test('seam: an empty record still says `no reads recorded yet` under the flag', 
   // would read as a join that found nothing.
   assert.ok(!('joined' in r));
 });
+
+// --- the in-dispatch fold: per role, WITHIN one bracket (RDX-01) -------------
+//
+// The distinction this section exists to pin is the one
+// `.planning/spikes/read-set-redundancy/SPIKE.md` records its first pass
+// getting wrong: distinct summed PER BRACKET measures re-reading inside one
+// dispatch, while one distinct count over a role's whole corpus measures the
+// opposite thing and cannot tell "20 times in one dispatch" from "once in each
+// of 20 dispatches".
+
+import { inDispatchReads } from './lib/read-trace.mjs';
+
+/** One file-carrying read by `agent` at `ts`. */
+const fileRead = (agent, ts, ...files) => read(agent, ts, { files });
+
+test('in-dispatch: distinct is summed PER BRACKET, so the ratio is in-dispatch and not corpus-wide', () => {
+  const b1 = span('cad-executor', '1', T(0), T(10));
+  const b2 = span('cad-executor', '2', T(20), T(30));
+  const exec = 'cadence:cad-executor';
+  const j = joinReads([
+    // Bracket 1: `a.mjs` six times, `b.mjs` once.
+    fileRead(exec, T(1), 'a.mjs'), fileRead(exec, T(2), 'a.mjs'), fileRead(exec, T(3), 'a.mjs'),
+    fileRead(exec, T(4), 'a.mjs'), fileRead(exec, T(5), 'a.mjs'), fileRead(exec, T(6), 'a.mjs'),
+    fileRead(exec, T(7), 'b.mjs'),
+    // Bracket 2: `a.mjs` five times.
+    fileRead(exec, T(21), 'a.mjs'), fileRead(exec, T(22), 'a.mjs'), fileRead(exec, T(23), 'a.mjs'),
+    fileRead(exec, T(24), 'a.mjs'), fileRead(exec, T(25), 'a.mjs'),
+  ], [b1, b2]);
+  const d = inDispatchReads(j.rows);
+  assert.equal(d.roles.length, 1);
+  const row = d.roles[0];
+  assert.equal(row.role, 'cad-executor');
+  assert.equal(row.brackets, 2);
+  assert.equal(row.touches, 12);
+  // 2 distinct inside bracket 1 plus 1 inside bracket 2. A corpus-wide distinct
+  // count would be 2 here and report 6.0 - the number that cannot be acted on.
+  assert.equal(row.distinct, 3);
+  assert.equal(row.ratio, 4);
+  // The named target, and the dispatch that held it: a per-file count is what a
+  // reader can act on where a role-wide ratio is not.
+  assert.deepEqual(row.worst, { path: 'a.mjs', count: 6, phase: '4', plan: '1' });
+  assert.equal(d.joined, 12);
+  assert.equal(d.fileCarrying, 12);
+  assert.equal(d.coverage, 1);
+  assert.equal(d.coordinatorFiles, 0);
+});
+
+test('in-dispatch: a role whose joined reads carry no `files` reports a NULL ratio, never 0', () => {
+  // Every record written before the `files` field existed is exactly this
+  // shape, so a zero here would tell a reader the worker opened each file once.
+  const j = joinReads([read('cadence:cad-verifier-medium', T(5))],
+    [span('cad-verifier', 'cad-verifier', T(0), T(10))]);
+  const d = inDispatchReads(j.rows);
+  assert.equal(d.roles.length, 1);
+  assert.deepEqual(d.roles[0],
+    { role: 'cad-verifier', brackets: 0, touches: 0, distinct: 0, worst: null, ratio: null });
+  assert.equal(d.joined, 1);
+  assert.equal(d.fileCarrying, 0);
+  // Coverage is a share of the joined reads, so it reads 0 here honestly - the
+  // reads happened and carried nothing - while the RATIO stays absent.
+  assert.equal(d.coverage, 0);
+  // Nothing joined at all is no coverage measurement rather than a coverage of
+  // nothing, the same posture the ratio takes.
+  assert.equal(inDispatchReads([]).coverage, null);
+  assert.deepEqual(inDispatchReads(null).roles, []);
+});
+
+test('in-dispatch: a coordinator read carrying files is EXCLUDED and counted, never attributed', () => {
+  // The main thread has no dispatch bracket by construction, so its re-reading
+  // is outside anything this figure can measure. Stated as a count rather than
+  // silently dropped.
+  const j = joinReads([
+    read('coordinator', T(5), { files: ['a.mjs', 'b.mjs'] }),
+    read('coordinator', T(6), { files: ['a.mjs'] }),
+    read('coordinator', T(7)),
+    fileRead('cadence:cad-executor', T(5), 'a.mjs'),
+  ], [span('cad-executor', '1', T(0), T(10))]);
+  const d = inDispatchReads(j.rows);
+  assert.equal(d.coordinatorFiles, 2);
+  assert.equal(d.roles.length, 1);
+  // The coordinator's three touches of `a.mjs`/`b.mjs` reach no role's figures.
+  assert.equal(d.roles[0].touches, 1);
+  assert.equal(d.roles[0].distinct, 1);
+  assert.equal(d.joined, 1);
+});
+
+test('in-dispatch: a read joined to no bracket contributes to nothing at all', () => {
+  const brackets = [span('cad-executor', '1', T(0), T(10)), span('cad-executor', '2', T(1), T(11))];
+  const j = joinReads([
+    fileRead('cadence:cad-executor', T(5), 'a.mjs'),   // ambiguous: inside both
+    fileRead('cadence:cad-executor', T(50), 'a.mjs'),  // unjoined: inside neither
+    fileRead('fork', T(5), 'a.mjs'),                   // floor: a host agent type
+    fileRead('unknown-agent', T(5), 'a.mjs'),          // unresolved: no role
+  ], brackets);
+  assert.equal(j.joined, 0);
+  const d = inDispatchReads(j.rows);
+  assert.deepEqual(d.roles, []);
+  assert.equal(d.joined, 0);
+  assert.equal(d.fileCarrying, 0);
+  assert.equal(d.coverage, null);
+  assert.equal(d.coordinatorFiles, 0);
+});

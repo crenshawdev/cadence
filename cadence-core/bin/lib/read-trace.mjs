@@ -464,17 +464,28 @@ export function joinReads(records, brackets) {
   }
 
   const counts = { joined: 0, ambiguous: 0, unjoined: 0, floor: 0, coordinator: 0, unresolved: 0 };
-  /** @type {{ts: any, agent: string|null, agent_id: string|null, role: string|null, status: string, bracket: any}[]} */
+  /** @type {{ts: any, agent: string|null, agent_id: string|null, role: string|null, status: string, bracket: any, files: string[]}[]} */
   const rows = [];
 
   for (const r of Array.isArray(records) ? records : []) {
     if (!r || typeof r !== 'object') continue;
     const agent = typeof r.agent === 'string' && r.agent ? r.agent : null;
     const agentId = typeof r.agent_id === 'string' && r.agent_id ? r.agent_id : null;
+    // The record's own `files` rides the ROW, normalized once here. The
+    // in-dispatch fold below needs both halves - which bracket contained the
+    // read, and which paths it opened - and the only two other ways to pair
+    // them are worse: re-implementing the containment test in the fold is a
+    // second statement of the join, and zipping `rows` to `records` by array
+    // position is green today and silently wrong the first time either side
+    // filters a record the other keeps (this function already drops a
+    // non-object record without pushing a row).
+    const files = Array.isArray(r.files)
+      ? r.files.filter((f) => typeof f === 'string' && f)
+      : [];
     /** @param {string} status @param {any} [bracket] */
     const push = (status, bracket = null) => {
       counts[status]++;
-      rows.push({ ts: r.ts ?? null, agent, agent_id: agentId, role: roleOfAgent(agent), status, bracket });
+      rows.push({ ts: r.ts ?? null, agent, agent_id: agentId, role: roleOfAgent(agent), status, bracket, files });
     };
 
     if (agent === null) { push('unresolved'); continue; }
@@ -496,4 +507,125 @@ export function joinReads(records, brackets) {
   }
 
   return { ...counts, rows };
+}
+
+/**
+ * Per-ROLE IN-DISPATCH file figures, folded off the rows `joinReads` returned.
+ *
+ * The arithmetic is `.planning/spikes/read-set-redundancy/SPIKE.md`'s corrected
+ * pass, and the correction is the whole point. Group every `joined` row by the
+ * ONE bracket it joined to, count how many times each path was touched inside
+ * that bracket, then per role sum the touches over the SUM of the per-bracket
+ * distinct counts. Summing distinct PER BRACKET is what makes the ratio
+ * in-dispatch: one distinct-file count across a role's whole corpus measures
+ * the opposite thing and cannot tell "re-read 20 times inside one dispatch"
+ * from "read once in each of 20 dispatches", which is exactly the error
+ * SPIKE.md records its first pass making. Only that second form says anything a
+ * per-dispatch lever could act on.
+ *
+ * Distinct from `summarizeReads`'s `fileRedundancy`, deliberately, and both
+ * stay: that one is whole-corpus over distinct FILES and every record on disk
+ * is already read through it; this one is per role, per dispatch, and answers
+ * whether one worker kept re-opening one file while it worked.
+ *
+ * TWO limits ride the return because the callers have to STATE them rather
+ * than assume them (SPIKE.md's C1 and its scope-limit recommendation):
+ *   - `coverage` - the share of the joined reads in scope that carried a
+ *     `files` array at all, which is the denominator the ratio was really
+ *     computed over. Every record written before `files` existed carries none,
+ *     so a corpus at 0.62 is normal rather than broken, and a figure printed
+ *     without its coverage reads as a total.
+ *   - `coordinatorFiles` - file-carrying reads on the main thread. Those have
+ *     no dispatch bracket BY CONSTRUCTION, so the coordinator's own re-reading
+ *     is outside anything this figure can measure or cut. Stated, never
+ *     discovered.
+ *
+ * A `null` ratio and never a `0`: no summed distinct is no measurement, the
+ * same posture `summarizeReads` states for both of its own ratios. Rounded
+ * through `Number(x.toFixed(2))` so all three print alike.
+ *
+ * Pure, and does no I/O: the caller supplies the rows, the way it already
+ * supplies `joinReads`'s records and brackets.
+ *
+ * @param {any[]} rows `joinReads(...).rows`
+ * @returns {{roles: {role: string, brackets: number, touches: number,
+ *            distinct: number, ratio: number|null,
+ *            worst: {path: string, count: number, phase: any, plan: any}|null}[],
+ *           joined: number, fileCarrying: number, coverage: number|null,
+ *           coordinatorFiles: number}}
+ */
+export function inDispatchReads(rows) {
+  // Keyed on the bracket OBJECT `joinReads` handed back, which is the caller's
+  // own row: two dispatches are two objects, and no key grammar has to be
+  // invented to tell them apart.
+  /** @type {Map<any, {role: string, bracket: any, files: Map<string, number>}>} */
+  const perBracket = new Map();
+  /** @type {Map<string, any>} */
+  const byRole = new Map();
+  let joined = 0;
+  let fileCarrying = 0;
+  let coordinatorFiles = 0;
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row || typeof row !== 'object') continue;
+    const files = Array.isArray(row.files) ? row.files : [];
+    if (row.status === 'coordinator') {
+      if (files.length) coordinatorFiles++;
+      continue;
+    }
+    // Anything that did not join contributes to nothing at all - not to the
+    // ratio and not to its coverage. `ambiguous`, `floor`, `unjoined` and
+    // `unresolved` all name a read this figure cannot attribute to a dispatch,
+    // and counting them in the denominator would report a coverage the ratio
+    // was never computed over.
+    if (row.status !== 'joined' || !row.bracket) continue;
+    joined++;
+    if (files.length) fileCarrying++;
+    const role = typeof row.role === 'string' && row.role ? row.role : null;
+    if (!role) continue;
+    // The role gets a row as soon as it has a joined read, BEFORE any file
+    // question: a role that read all through a dispatch and recorded no path
+    // has a ratio of `null` - no measurement - and dropping it here instead
+    // would make that indistinguishable from a role that never ran.
+    if (!byRole.has(role)) byRole.set(role, { role, brackets: 0, touches: 0, distinct: 0, worst: null });
+    if (!files.length) continue;
+    let cell = perBracket.get(row.bracket);
+    if (!cell) {
+      cell = { role, bracket: row.bracket, files: new Map() };
+      perBracket.set(row.bracket, cell);
+    }
+    for (const f of files) cell.files.set(f, (cell.files.get(f) || 0) + 1);
+  }
+
+  for (const { role, bracket, files } of perBracket.values()) {
+    if (!files.size) continue;
+    const acc = byRole.get(role);
+    if (!acc) continue;
+    acc.brackets++;
+    acc.distinct += files.size;
+    for (const [path, count] of files) {
+      acc.touches += count;
+      // The worst SINGLE file/bracket pair, which is the suggestion's named
+      // target: "read `<path>` N times" inside one dispatch is actionable
+      // where a role-wide ratio is not. Ties keep the first seen, so the
+      // answer is stable for a given input.
+      if (!acc.worst || count > acc.worst.count) {
+        acc.worst = { path, count, phase: bracket.phase ?? null, plan: bracket.plan ?? null };
+      }
+    }
+  }
+
+  const roles = [...byRole.values()]
+    .map((a) => ({ ...a, ratio: a.distinct ? Number((a.touches / a.distinct).toFixed(2)) : null }))
+    .sort((x, y) => (x.role < y.role ? -1 : x.role > y.role ? 1 : 0));
+
+  return {
+    roles,
+    joined,
+    fileCarrying,
+    // Null rather than 0 over an empty scope, for the reason the ratio is: no
+    // joined reads is no coverage measurement, not a coverage of nothing.
+    coverage: joined ? Number((fileCarrying / joined).toFixed(2)) : null,
+    coordinatorFiles,
+  };
 }
