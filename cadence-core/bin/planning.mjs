@@ -179,7 +179,7 @@ import { activeVersion, titleVersion, tagCarrying } from './lib/branch-decision.
 import { normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
-import { READS_FILE, summarizeReads, joinReads } from './lib/read-trace.mjs';
+import { READS_FILE, summarizeReads, joinReads, inDispatchReads } from './lib/read-trace.mjs';
 import { suggestFromRender, parseAdjudication } from './lib/trace-suggest.mjs';
 import { windowBudget } from './lib/window-budget.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -3105,20 +3105,30 @@ function cmdTraceIgnore(root, opts) {
   return ok({ ...common, written: true });
 }
 
-// reads - the in-dispatch companion to `trace render`. `trace.jsonl` records
-// what a dispatch was HANDED; `reads.jsonl` records what it went and opened
-// afterwards, which measured ~88% of a run's tokens on this repo and had no
-// reader at all. Absent file is ok:true with zeroes - a project that has not
-// run since the hook was installed has nothing to report, and that is not an
-// error.
-function cmdReads(dir, opts) {
+/**
+ * The ONE `.planning/reads.jsonl` line parse in this file. Two arms read that
+ * record now - `cmdReads` and the `trace suggest` arm below - and a second copy
+ * of the partial-tail rule would be a second place for it to drift.
+ *
+ * It REPORTS what it hit and decides nothing. `absent` and `unreadable` are
+ * handed back separately rather than collapsed, because the two callers take
+ * deliberately different postures on them and a helper that picked one would
+ * impose it on both: `reads` fails loudly on an unreadable file (it is the face
+ * `/cad-report`'s Reading line is composed from, and a silent empty there reads
+ * as a project that opened nothing), while `trace suggest` returns no entry and
+ * names the file in `warnings[]`. A permissions error loud on one face and
+ * invisible on the other is exactly what this split prevents.
+ *
+ * @param {string} dir the planning directory
+ * @returns {{status: 'ok'|'absent'|'unreadable', records: any[], file: string}}
+ */
+function readReadsRecords(dir) {
   const file = join(dir, READS_FILE);
-  let text = '';
+  let text;
   try {
     text = readFileSync(file, 'utf8');
   } catch (e) {
-    if (e && e.code === 'ENOENT') return ok({ calls: 0, distinct: 0, redundancy: null, fileCalls: 0, distinctFiles: 0, fileTouches: 0, fileRedundancy: null, byAgent: [], byTool: [], topTargets: [], topFiles: [], note: 'no reads recorded yet' });
-    return fail('read-failed', `cannot read ${file}`);
+    return { status: e && e.code === 'ENOENT' ? 'absent' : 'unreadable', records: [], file };
   }
   const records = [];
   for (const line of text.split('\n')) {
@@ -3129,6 +3139,23 @@ function cmdReads(dir, opts) {
     // the caller every complete record ahead of it.
     try { records.push(JSON.parse(t)); } catch { /* partial line */ }
   }
+  return { status: 'ok', records, file };
+}
+
+// reads - the in-dispatch companion to `trace render`. `trace.jsonl` records
+// what a dispatch was HANDED; `reads.jsonl` records what it went and opened
+// afterwards, which measured ~88% of a run's tokens on this repo and had no
+// reader at all. Absent file is ok:true with zeroes - a project that has not
+// run since the hook was installed has nothing to report, and that is not an
+// error.
+function cmdReads(dir, opts) {
+  const { status, records, file } = readReadsRecords(dir);
+  if (status === 'absent') return ok({ calls: 0, distinct: 0, redundancy: null, fileCalls: 0, distinctFiles: 0, fileTouches: 0, fileRedundancy: null, byAgent: [], byTool: [], topTargets: [], topFiles: [], note: 'no reads recorded yet' });
+  // UNREADABLE stays a failure, unchanged. This is the single production site
+  // of that arm: swallowing an EACCES here would change `reads`'s contract with
+  // nothing red, and `/cad-report`'s Reading line would go quiet as though the
+  // project had opened no files at all.
+  if (status === 'unreadable') return fail('read-failed', `cannot read ${file}`);
   const summary = summarizeReads(records);
   // Without `--join` the envelope is what it has always been, including the
   // `no reads recorded yet` arm above, which returns before this line: a
@@ -3730,14 +3757,33 @@ function cmdTrace(dir, sub, opts) {
     // `current` and a project that deliberately pinned one would be told to
     // move a value the read never saw.
     const { config: suggestConfig, warnings } = mergeLayers(join(dir, 'config.json'));
-    const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig));
+    // The SECOND record this arm opens (RDX-01): `.planning/reads.jsonl`, folded
+    // to the per-role in-dispatch figures R7 reads. The brackets are the render
+    // ALREADY computed above - a second `renderTrace` call would re-read the
+    // trace for nothing - so a `--phase N` run scopes itself without a new flag:
+    // only reads landing inside that phase's dispatches join at all.
+    //
+    // An ABSENT file yields no rows and therefore no entry, never an error and
+    // never a zero, which is the posture `cmdReads`'s own ENOENT arm already
+    // states for a project that has not run since the hook was installed. An
+    // UNREADABLE one yields no entry AND names the file in `warnings[]`, the
+    // channel this envelope already carries for exactly this class of partial
+    // read (D-13).
+    const readRecord = readReadsRecords(dir);
+    const inDispatch = readRecord.status === 'ok'
+      ? inDispatchReads(joinReads(readRecord.records, r.brackets).rows)
+      : undefined;
+    const suggestWarnings = readRecord.status === 'unreadable'
+      ? [...warnings, `cannot read ${readRecord.file}; in-dispatch re-reading was not measured`]
+      : warnings;
+    const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig), inDispatch);
     return ok({
       scope: phase === undefined ? 'all' : String(phase),
       events_read: r.events.length,
       ...(r.capped ? { capped: true } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       suggestions,
-      ...(warnings.length ? { warnings } : {}),
+      ...(suggestWarnings.length ? { warnings: suggestWarnings } : {}),
     });
   }
   if (sub === 'render') {

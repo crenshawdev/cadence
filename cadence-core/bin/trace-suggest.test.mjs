@@ -1016,3 +1016,114 @@ test('R7: a one- and two-argument call return exactly what they returned before'
     assert.deepEqual(suggestFromRender(r, res, /** @type {any} */ (bad)), two);
   }
 });
+
+// --- R7 through the seam, on COMMITTED fixtures (RDX-01) ---------------------
+//
+// A pair of its own rather than an extension of `fixtures/join.*`: those are
+// fixed exactly by `read-trace.test.mjs`'s partition assertion over 8 calls,
+// none of their reads carries a `files` array, and their two `cad-executor`
+// brackets deliberately OVERLAP so a read between them is ambiguous rather than
+// joined. This pair needs the opposite of all three.
+//
+// What the pair fixes, arithmetic first so a re-pin has to carry it:
+//   - `cad-executor` plan 1 (09:01-09:30) touches `planning.mjs` 7 times and
+//     `lib/trace.mjs` once: 8 touches over 2 distinct.
+//   - `cad-executor` plan 2 (09:40-09:50), non-overlapping, touches
+//     `planning.mjs` twice: 2 touches over 1 distinct.
+//   - Per role that is 10 touches over 3 summed distinct = 3.33, clear of the
+//     3.00 floor, with `planning.mjs` at 7 inside plan 1 as the worst pair.
+//   - `cad-planner` (10:00-10:10) touches `PROJECT.md` 4 times and `ROADMAP.md`
+//     twice: 6 over 2 = 3.00. Higher than `cad-executor`'s floor and it still
+//     says nothing, because the MAP is the gate.
+//   - One `coordinator` read carries two files and reaches no role.
+
+import { writeFileSync, readFileSync, chmodSync, accessSync, constants } from 'node:fs';
+
+const REREAD = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
+
+/** A planning root holding the reread pair, optionally with `files` stripped. */
+function rereadRoot({ stripFiles = false, noReads = false } = {}) {
+  const dir = join(mkdtempSync(join(tmpdir(), 'cad-reread-')), '.planning');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'trace.jsonl'), readFileSync(join(REREAD, 'reread.trace.jsonl'), 'utf8'));
+  if (noReads) return dir;
+  let reads = readFileSync(join(REREAD, 'reread.reads.jsonl'), 'utf8');
+  if (stripFiles) {
+    reads = reads.split('\n').filter(Boolean)
+      .map((l) => { const r = JSON.parse(l); delete r.files; return JSON.stringify(r); })
+      .join('\n') + '\n';
+  }
+  writeFileSync(join(dir, 'reads.jsonl'), reads);
+  return dir;
+}
+
+/** Run the seam and parse its one JSON line, `ok:false` included. */
+function rereadSeam(dir, args) {
+  try {
+    return JSON.parse(execFileSync('node', [BIN, '--dir', dir, ...args], { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+/** The in-dispatch entry, or undefined. */
+const inDispatchEntry = (out) => (out.suggestions || [])
+  .find((s) => typeof s.evidence === 'string' && s.evidence.includes('in-dispatch re-reading'));
+
+test('seam: `trace suggest` opens reads.jsonl and names the fixture worst file, with no config key', () => {
+  const out = rereadSeam(rereadRoot(), ['trace', 'suggest']);
+  assert.equal(out.ok, true);
+  const e = inDispatchEntry(out);
+  assert.ok(e, `no in-dispatch entry: ${JSON.stringify(out.suggestions)}`);
+  assert.equal(e.subject, 'cad-executor');
+  assert.equal(e.action, null);
+  assert.ok(e.evidence.includes('3.33'), e.evidence);
+  assert.ok(e.evidence.includes('read `cadence-core/bin/planning.mjs` 7 times (phase 4, plan 1)'), e.evidence);
+  assert.ok(e.evidence.includes('Excludes 1 coordinator read(s)'), e.evidence);
+  // The noise-band role clears `cad-executor`'s floor at 3.00 and still says
+  // nothing: it is not in `IN_DISPATCH_FLOORS`.
+  assert.ok(!out.suggestions.some((s) => s.subject === 'cad-planner'
+    && s.evidence.includes('in-dispatch re-reading')),
+    `cad-planner spoke: ${JSON.stringify(out.suggestions)}`);
+  assert.equal('warnings' in out, false, JSON.stringify(out.warnings));
+});
+
+test('seam: reads carrying no `files`, and no reads file at all, both yield NO entry and no error', () => {
+  // The same 17 records with `files` removed - the shape every record written
+  // before that field existed has - and then the file absent outright.
+  for (const dir of [rereadRoot({ stripFiles: true }), rereadRoot({ noReads: true })]) {
+    const out = rereadSeam(dir, ['trace', 'suggest']);
+    assert.equal(out.ok, true);
+    assert.equal(inDispatchEntry(out), undefined, JSON.stringify(out.suggestions));
+    // Never a zero, and never a warning: an absent record is a project that has
+    // not run since the hook was installed, not a fault.
+    assert.ok(!JSON.stringify(out).includes('0 opens per distinct file'), JSON.stringify(out));
+    assert.equal('warnings' in out, false, JSON.stringify(out.warnings));
+  }
+});
+
+test('seam: an UNREADABLE reads.jsonl fails `reads --join` and WARNS on `trace suggest` - both faces, one test', () => {
+  // The whole risk of lifting the parse into one helper is that these two
+  // diverge: a permissions error loud on one face and invisible on the other.
+  // Neither face had a test before this one.
+  const dir = rereadRoot();
+  const file = join(dir, 'reads.jsonl');
+  chmodSync(file, 0o000);
+  try {
+    // Running as root defeats the mode bits, so the row would assert nothing.
+    try { accessSync(file, constants.R_OK); return; } catch { /* genuinely unreadable */ }
+    const reads = rereadSeam(dir, ['reads', '--join']);
+    assert.equal(reads.ok, false, JSON.stringify(reads));
+    assert.equal(reads.reason, 'read-failed');
+    assert.ok(String(reads.detail || '').includes('reads.jsonl'), JSON.stringify(reads));
+
+    const out = rereadSeam(dir, ['trace', 'suggest']);
+    assert.equal(out.ok, true, 'trace suggest must still answer about the trace it CAN read');
+    assert.equal(inDispatchEntry(out), undefined, JSON.stringify(out.suggestions));
+    assert.ok(Array.isArray(out.warnings), `no warnings channel: ${JSON.stringify(out)}`);
+    assert.ok(out.warnings.some((w) => String(w).includes('reads.jsonl')),
+      `the unreadable file is not named: ${JSON.stringify(out.warnings)}`);
+  } finally {
+    chmodSync(file, 0o600);
+  }
+});
