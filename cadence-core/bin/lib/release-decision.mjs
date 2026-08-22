@@ -426,8 +426,24 @@ function sectionEnd(lines, from) {
   if (next >= 0) return next;
   let end = lines.length;
   while (end > 0 && lines[end - 1].trim() === '') end--;
+  // D-05: the trailing link-reference block is the run of `[key]: url`
+  // definitions at EOF whose keys name an existing `## [key]` heading in the
+  // document. Walking up from the last non-blank line, the block ends at the
+  // first definition whose key names no such heading - that definition and
+  // everything above it (down to `from`) is body content that promotes with
+  // its section, not a trailing reference. Accepted cost, stated rather than
+  // patched: a file-final definition naming no heading pulls the WHOLE run at
+  // EOF into the body, even a ref line above it whose own key does name a
+  // heading - the rule's stated edge, not a regression to repair with a
+  // second exclusion.
   let refs = end;
-  while (refs > from + 1 && /^\[[^\]]+\]:\s/.test(lines[refs - 1])) refs--;
+  while (refs > from + 1) {
+    const m = lines[refs - 1].match(/^\[([^\]]+)\]:\s/);
+    if (!m) break;
+    const headingRe = new RegExp(`^## \\[${escapeRe(m[1])}\\]`);
+    if (!lines.some((l, i) => !fenced[i] && headingRe.test(l))) break;
+    refs--;
+  }
   return refs < end ? refs : lines.length;
 }
 

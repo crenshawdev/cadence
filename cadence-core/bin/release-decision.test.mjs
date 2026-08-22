@@ -526,6 +526,58 @@ test('promote: a prose-only body with no bullets reports sectionEmpty:false (D-0
   assert.equal(r.sectionEmpty, false);
 });
 
+const INNER_REF_LAST_SECTION_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [2.0.0] - 2026-08-03',
+  '',
+  '## [Unreleased]',
+  '',
+  '- closes [#87]',
+  '[#87]: https://git.example/issues/87',
+  '',
+].join('\n');
+
+test('promote: a last-section body ending in a bare-key ref promotes BOTH the bullet and the definition (D-05)', () => {
+  const r = promoteUnreleased(INNER_REF_LAST_SECTION_FIXTURE, '2.0.0');
+  assert.equal(r.changed, true);
+  const iNew = r.text.indexOf('## [2.0.0]');
+  const iBullet = r.text.indexOf('- closes [#87]');
+  const iRef = r.text.indexOf('[#87]: https://git.example/issues/87');
+  assert.ok(iNew < iBullet, 'the bullet is inside the dated section');
+  assert.ok(iBullet < iRef, 'the #87 definition follows its bullet');
+  const lines = r.text.split('\n');
+  const unrelAt = lines.findIndex((l) => /^## \[Unreleased\]/.test(l));
+  assert.ok(unrelAt > lines.indexOf('[#87]: https://git.example/issues/87'),
+    'the Unreleased stub now sits below the promoted content, nothing stranded');
+});
+
+const TRAILING_REF_NAMES_HEADING_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '## [Unreleased]',
+  '',
+  '- staged work',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+test('promote: a file-final ref naming an EXISTING heading stays in the trailing block, outside the promoted body (D-05)', () => {
+  const r = promoteUnreleased(TRAILING_REF_NAMES_HEADING_FIXTURE, '1.0.0');
+  assert.equal(r.changed, true);
+  const lines = r.text.split('\n');
+  const iBullet = lines.indexOf('- staged work');
+  const iRef = lines.indexOf('[1.0.0]: https://x/releases');
+  const iUnrel = lines.findIndex((l) => /^## \[Unreleased\]/.test(l));
+  assert.ok(iBullet >= 0 && iBullet < iUnrel, 'the bullet promoted up into the dated section, above the Unreleased stub');
+  assert.ok(iRef > iUnrel, 'the ref definition is untouched, still after the Unreleased stub at EOF');
+});
+
 test('promote: total on junk input - a non-string text and a falsy version never throw', () => {
   const r = promoteUnreleased(/** @type {any} */ (null), '2.0.0');
   assert.equal(r.changed, false);
