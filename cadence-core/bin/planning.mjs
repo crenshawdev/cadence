@@ -192,6 +192,7 @@ import { isReportName } from './lib/report-rotation.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
+import { runTransition } from './lib/file-transition.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces, interviewOptions } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
 import { buildEntries, deriveCounts, recordName } from './lib/adjudication-record.mjs';
@@ -6014,26 +6015,28 @@ function cmdRenumber(dir, sub, opts) {
   if (newReqText !== null) steps.push([{ edit: 'REQUIREMENTS.md' }, () => atomicWrite(reqFile, newReqText)]);
   if (newCursor) steps.push([{ edit: 'STATE.md' }, () => atomicWrite(stateFile, renderCursor(newCursor))]);
 
-  const completed = [];
-  for (const [op, runStep] of steps) {
-    try { runStep(); }
-    catch (e) {
-      // Bypasses the dispatch-level catch (which flattens to `internal`) and
-      // fail()'s reason/detail/hint-only shape - a completed-ops list needs
-      // its own emit (D-11).
-      return emit({
-        ok: false, reason: 'partial-apply', completed, failed: op,
-        detail: e && e.message ? e.message : String(e),
-        // Deliberately does NOT say "re-run". The half-applied tree no longer
-        // matches ROADMAP, and a re-run recomputes its plan FROM ROADMAP: on
-        // a remove it would rm phases/<at>, which now holds the NEXT phase's
-        // work, and exit ok:true having destroyed it. Verified live.
-        hint: completed.length
-          ? 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory'
-          : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
-      });
-    }
-    completed.push(op);
+  // Stop at the FIRST throw: once a step fails the tree no longer matches the
+  // plan every later step was computed from, so running them on would compound
+  // the disagreement rather than salvage anything. lib/file-transition.mjs
+  // keeps the ordering and the completed/failed record; the envelope below is
+  // this seam's own, because prune's is a different shape entirely (D-02).
+  const applied = runTransition({ steps, discipline: 'stop-at-first-failure' });
+  if (!applied.ok) {
+    const { key: op, error: e } = applied.failures[0];
+    // Bypasses the dispatch-level catch (which flattens to `internal`) and
+    // fail()'s reason/detail/hint-only shape - a completed-ops list needs
+    // its own emit (D-11).
+    return emit({
+      ok: false, reason: 'partial-apply', completed: applied.completed, failed: op,
+      detail: e && e.message ? e.message : String(e),
+      // Deliberately does NOT say "re-run". The half-applied tree no longer
+      // matches ROADMAP, and a re-run recomputes its plan FROM ROADMAP: on
+      // a remove it would rm phases/<at>, which now holds the NEXT phase's
+      // work, and exit ok:true having destroyed it. Verified live.
+      hint: applied.completed.length
+        ? 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory'
+        : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
+    });
   }
 
   // Sanity recount: every ROADMAP phase maps to at most one dir, none stray.
