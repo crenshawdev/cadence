@@ -265,6 +265,53 @@ test('bump: a SIBLING that would downgrade is recorded as a refusal, not silentl
     'the sibling manifest is byte-unchanged');
 });
 
+test('bump: an UNPARSEABLE sibling refuses the whole run, nothing written (D-07)', () => {
+  // The other half of the split D-08 became: a sibling that PARSES and is not
+  // upgradeable keeps its ok:true siblings[] row (the case above), while one
+  // this seam cannot READ refuses outright - the whole write set is decided
+  // before the first write, so there is no landed primary to unwind.
+  const dir = fixture();
+  // A trailing comma: the shape a truncated or hand-edited half-write leaves,
+  // the same idiom the primary's unparseable case uses.
+  const mangled = '{\n  "name": "cadence",\n  "version": "1.0.0",\n}\n';
+  writeFileSync(join(dir, '.claude-plugin', 'marketplace.json'), mangled);
+  const pluginBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+  const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+
+  const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', '2.0.0', '--date', '2026-07-17']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.reason, 'unreadable-sibling-manifest',
+    'its OWN code, never the primary manifest reason - the halt names which file to repair');
+  assert.equal(status, 1);
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore,
+    'the primary manifest never landed: nothing is written until the whole set is decided');
+  assert.equal(readJson(join(dir, '.claude-plugin', 'plugin.json')).version, '1.0.0');
+  assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore);
+});
+
+test('bump: a present-but-UNREADABLE CHANGELOG refuses, nothing written (D-09)', () => {
+  // A DIRECTORY at CHANGELOG.md - filesystem-shaped and uid-independent, so no
+  // chmodSync, which is a silent no-op under a root test runner (D-02). Built
+  // by omitting the fixture's changelog and putting a directory in its place.
+  // Before this arm, readText's ''-on-failure contract read that as an EMPTY
+  // changelog and scaffolded a fresh one over the release history - after the
+  // manifest had already been bumped.
+  const dir = fixture({ changelog: null });
+  mkdirSync(join(dir, 'CHANGELOG.md'));
+  const pluginBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+
+  const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', '2.0.0', '--date', '2026-07-17']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.reason, 'unreadable-changelog',
+    'its own code: the halt names WHICH member of the write set to repair');
+  assert.equal(status, 1);
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore,
+    'the manifest never landed - the changelog is validated before the first write');
+  assert.equal(readJson(join(dir, '.claude-plugin', 'plugin.json')).version, '1.0.0');
+});
+
 // --- promotion through the seam ---------------------------------------------
 
 const STAGED_CHANGELOG = [
