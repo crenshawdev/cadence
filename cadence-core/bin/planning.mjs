@@ -695,9 +695,20 @@ function cmdPhaseDone(dir, opts) {
     newReqText = res.text;
   }
 
-  // Both edits validated before either write - all-or-nothing.
-  atomicWrite(roadmapFile, boxed.text);
-  if (newReqText !== null) atomicWrite(reqFile, newReqText);
+  // ONE ordered step list, stopped at the first failure: ROADMAP.md, then
+  // REQUIREMENTS.md when there is one to write. The key on each step is the
+  // DOCUMENT NAME rather than the joined path, because that key is what the
+  // envelope reports and a caller reading it wants the document, not the
+  // fixture's temp directory. The order is load-bearing and is the one this
+  // seam has always used.
+  //
+  // What is NOT claimed here: an atomic rename protects ONE file from torn
+  // bytes and cannot make two files change together, so no guarantee of a
+  // single indivisible edit is stated - and none is given at this commit.
+  /** @type {Array<[string, () => void]>} */
+  const steps = [['ROADMAP.md', () => atomicWrite(roadmapFile, boxed.text)]];
+  if (newReqText !== null) steps.push(['REQUIREMENTS.md', () => atomicWrite(reqFile, newReqText)]);
+  runTransition({ steps, discipline: 'stop-at-first-failure' });
   ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs });
 }
 
