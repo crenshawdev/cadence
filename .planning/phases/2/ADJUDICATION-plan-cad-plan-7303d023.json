@@ -1,0 +1,71 @@
+{
+  "phase": "2",
+  "trigger": "plan",
+  "discriminator": "cad-plan-7303d023",
+  "round": 1,
+  "base": "20a7e312",
+  "head": "7303d023",
+  "base_id": "20a7e312c2e5648c503dbe77177f828979f0239b",
+  "head_id": "7303d02323adfd7b2491a219d8e01db718fba438",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/2/PLAN-1.md",
+      "line": 72,
+      "severity": "high",
+      "claim": "Task 1 installs the write transition before Task 2 adds the unreadable-REQUIREMENTS pre-flight, while explicitly retaining the current collapsed read behavior and deferring refusal rendering to later tasks.",
+      "failure_scenario": "After Task 1, a present REQUIREMENTS.md directory is still treated as absent, so the transition contains only the ROADMAP.md step and writes it successfully. This is precisely the write-before-validation behavior AC1/D-01 require the phase to remove. The Task 1 suite can pass because it adds no adversarial test, leaving an intermediate implementation/commit that violates the phase guarantee.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": ".planning/phases/2/PLAN-1.md",
+        "line": 128,
+        "note": "The named state is not a write-before-validation: with an unreadable REQUIREMENTS.md the transition Task 1 builds is a SINGLE ROADMAP.md step, so nothing is written ahead of an unvalidated second write - the defect there is a silent skip, which is today's behaviour preserved unchanged and closed by Task 2 of the same plan. The honesty half the finding rests on is already handled inside Task 1: its Action deletes the false all-or-nothing comment in that same edit and forbids restating a guarantee the commit does not yet give. A per-task commit is not required to satisfy the phase ACs, which the plan binds under Must be true when done."
+      },
+      "base_id": "20a7e312c2e5648c503dbe77177f828979f0239b",
+      "head_id": "7303d02323adfd7b2491a219d8e01db718fba438"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/2/PLAN-2.md",
+      "line": 69,
+      "severity": "high",
+      "claim": "Task 1 moves reads before writes but says every existing refusal remains unchanged; Tasks 2 and 3 only later convert unreadable sibling and CHANGELOG states into pre-write refusals.",
+      "failure_scenario": "After Task 1, an unparseable marketplace manifest can still be recorded as the existing siblings[] refusal and a directory/unreadable CHANGELOG can still be treated as empty by the existing read path. The transition can therefore write plugin.json before the unresolved sibling/CHANGELOG condition is rejected or fails. This leaves the exact JRN-03 partial-write defect in a task that claims to establish the whole read-and-decide-before-write structure.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": ".planning/phases/2/PLAN-2.md",
+        "line": 97,
+        "note": "The factual half is true and the severity is not. After Task 1 an unreadable CHANGELOG can still throw inside the transition with plugin.json already written, so that intermediate commit does not yet close JRN-03 - but Task 1's own Action moves every read and decision above the first write and its Verify pins that ordering mechanically by line number, and Tasks 3 and 4 of the same plan convert the residual state into a pre-write refusal and a named partial envelope. The finding names a task-ordering preference inside one plan, not a defect that survives the plan, so it is not blocker/high. Dropped to low; no plan change owed."
+      },
+      "base_id": "20a7e312c2e5648c503dbe77177f828979f0239b",
+      "head_id": "7303d02323adfd7b2491a219d8e01db718fba438"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/2/PLAN-2.md",
+      "line": 174,
+      "severity": "medium",
+      "claim": "Task 5 updates milestone.md's ok:false reason list only with unreadable-sibling-manifest and unreadable-changelog, despite Task 4 adding the additional ok:false reason partial-bump.",
+      "failure_scenario": "A residual write failure after the primary manifest lands emits ok:false/action:partial/reason:partial-bump, but the workflow halt prose continues to enumerate only reasons for which it says the seam wrote NOTHING. Operators following milestone.md are given a false state guarantee and no documentation for the partial outcome, contradicting D-11's requirement that the halt prose move with the seam's emitted reasons.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "7303d023",
+      "base_id": "20a7e312c2e5648c503dbe77177f828979f0239b",
+      "head_id": "7303d02323adfd7b2491a219d8e01db718fba438"
+    }
+  ]
+}
