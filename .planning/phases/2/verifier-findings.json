@@ -1,0 +1,104 @@
+{
+  "status": "gaps",
+  "score": "10/11",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "phase-done refuses a present-but-unreadable REQUIREMENTS.md BEFORE the first write, leaving ROADMAP.md byte-identical",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/planning.mjs:734-742 - runTransition is called with a preflight condition `${reqFile} must be a readable file, or absent` whose satisfied() answers from `reqUnreadable` (computed at :700-702 as existsSync && read()===null), and `applied.refused !== null` renders fail('unreadable-requirements', ...). lib/file-transition.mjs:148-152 returns before any step runs. Behaviour observed: `node --test --test-name-pattern=phase-done cadence-core/bin/planning.test.mjs` -> 18/18 pass including 'phase-done: an unreadable REQUIREMENTS.md refuses whole; ROADMAP.md is byte-identical' (planning.test.mjs:907-921), which spawns the real binary via execFileSync and compares createHash('sha256') over ROADMAP.md across the run, asserting reason 'unreadable-requirements' and _exit 1."
+    },
+    {
+      "n": 2,
+      "truth": "An entirely ABSENT REQUIREMENTS.md still closes the phase ok:true at exit 0 with the roadmap line boxed - absent and unreadable are now different envelopes",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/planning.mjs:700-702 splits the three states (reqPresent / reqText / reqUnreadable) locally without touching read(); no REQUIREMENTS step is pushed when newReqText is null (:733). Test 'phase-done: an ABSENT REQUIREMENTS.md still boxes the phase, ok:true' (planning.test.mjs:925-937) passes and asserts ok true, _exit 0, roadmap.now '[x]', reqs deep-equal []. Live spot-check on a scratch fixture with no REQUIREMENTS.md returned {\"ok\":true,...,\"wrote\":[\"ROADMAP.md\"]} at exit 0."
+    },
+    {
+      "n": 3,
+      "truth": "The success envelope carries a NEW field naming which documents moved, on both shapes, with roadmap.{line,now} and reqs[] unchanged and no pre-existing phase-done case edited",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/planning.mjs:777 emits ok({roadmap, reqs, wrote: applied.completed}) - `wrote` is the primitive's own completed key list, added after reqs. Test 'phase-done: `wrote` names the documents that moved, on both shapes' (planning.test.mjs:943-958) asserts ['ROADMAP.md','REQUIREMENTS.md'] and ['ROADMAP.md'] and re-pins reqs/roadmap.now in the same block. `git diff -U0 5dd8cdca..HEAD -- cadence-core/bin/planning.test.mjs | grep -c '^-[^-]'` prints 8, and all 8 removed lines are inside the single detail-idiom COUNT census (the disclosed deviation, commit 46f625cb) - zero pre-existing phase-done cases were touched. Full planning.test.mjs phase-done pattern run: 18 pass, 0 fail."
+    },
+    {
+      "n": 4,
+      "truth": "release-bump refuses an unparseable sibling manifest under its own machine code with nothing written - plugin.json keeps the OLD version and CHANGELOG.md is byte-identical",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "cadence-core/bin/release-bump.mjs:280-295 - the sibling readManifest and its 'unreadable' emit sit inside the READ AND DECIDE half; the first atomicWrite( is at :361, after the last readManifest( at :280 and the changelog read at :329, so the ordering is structural. Test 'bump: an UNPARSEABLE sibling refuses the whole run, nothing written (D-07)' (release-bump.test.mjs:268-291) passes and asserts ok false, action 'refuse', reason 'unreadable-sibling-manifest', status 1, plugin.json byte-identical and still '1.0.0', CHANGELOG.md byte-identical. Full suite: `node --test cadence-core/bin/release-bump.test.mjs` -> 36 tests, 36 pass, 0 fail."
+    },
+    {
+      "n": 5,
+      "truth": "A sibling that PARSES but is not upgradeable still returns ok:true with a siblings[] row action:'refuse' carrying that verdict's own code, unmodified",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/bin/release-bump.mjs:302-312 keeps the recorded-row arm for a `refuse` verdict from decideManifestBump. `node --test --test-name-pattern='a SIBLING that would downgrade' cadence-core/bin/release-bump.test.mjs` -> 1 pass; the case now sits at release-bump.test.mjs:250-266 (shifted one line by the new import) and `git diff -U2 5dd8cdca..HEAD -- cadence-core/bin/release-bump.test.mjs` shows its body unmodified - the single removed line in that file is the fs import at the top."
+    },
+    {
+      "n": 6,
+      "truth": "The all-or-nothing claim is gone from cmdPhaseDone and the write set really does route through phase 1's runTransition primitive",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "`sed -n '/^function cmdPhaseDone/,/^}/p' cadence-core/bin/planning.mjs | grep -c 'all-or-nothing'` prints 0; the only remaining hit in the file is planning.mjs:1074, inside the unrelated uat-merge envelope comment. cadence-core/bin/planning.mjs:195 imports runTransition and :734 is the single call; cadence-core/bin/release-bump.mjs:114 imports it and :371 is the single call. Both use discipline 'stop-at-first-failure'. The replacement comment at planning.mjs:714-731 states what is actually guaranteed (a pre-flight refusal, no undo) rather than a transaction."
+    },
+    {
+      "n": 7,
+      "truth": "self-verify is clean at HEAD",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/self-verify.mjs --root .` -> {\"ok\":true,\"checked\":\"...budgets...\",\"problems\":[]} with `budgets` in the checked list."
+    },
+    {
+      "n": 8,
+      "truth": "A non-regular CHANGELOG.md refuses under unreadable-changelog instead of hanging or scaffolding a fresh changelog over release history",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "cadence-core/bin/release-bump.mjs:212 - `if (!statSync(file).isFile()) return { state: 'unreadable', text: null }` runs BEFORE readFileSync, so a FIFO/device never reaches the blocking read (gate commit a90d8b12). Two committed tests pass by name: 'bump: a present-but-UNREADABLE CHANGELOG refuses, nothing written (D-09)' (directory fixture) and 'bump: a NON-REGULAR CHANGELOG that reads CLEANLY still refuses, nothing written' (symlink to /dev/null, release-bump.test.mjs:315-345), both asserting reason 'unreadable-changelog', status 1 and plugin.json byte-identical."
+    },
+    {
+      "n": 9,
+      "truth": "milestone.md's halt prose, weight-budgets.json and the DOCS-CLAIMS rows moved in the same commit as the behaviour, at correct anchors",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "cadence-core/workflows/milestone.md:65 reads 'Four halts' (grep for 'Three halts' -> 0); :67-71 lists unreadable-sibling-manifest and unreadable-changelog under action:'refuse'; :72-76 is the new partial-bump bullet; :77-82 rewrites the siblings[] bullet and `grep -n 'the primary manifest already wrote'` prints nothing. `wc -c cadence-core/workflows/milestone.md` = 14937 and weight-budgets.json:66 = 14937 (exact, and it is a ceiling). .planning/DOCS-CLAIMS.md:881 (MILESTONE-06, anchor 67-71) and :882 (MILESTONE-07, anchor 77-82) both restate the new behaviour and both anchors resolve to the bullets they describe."
+    },
+    {
+      "n": 10,
+      "truth": "A step failure past the pre-flight reports what actually landed (partial-flip / partial-bump) instead of an undifferentiated {\"ok\":false,\"reason\":\"internal\"}",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "Confirmed by spot-check against patched copies of both seams in the scratchpad (repo untouched). phase-done with the REQUIREMENTS.md thunk forced to throw emitted {\"ok\":false,\"reason\":\"partial-flip\",\"wrote\":[\"ROADMAP.md\"],\"detail\":\"PROBE forced failure\",\"hint\":\"ROADMAP.md was written and the rest was not ...\"} at exit 1, with ROADMAP.md boxed on disk and REQUIREMENTS.md still Pending - the envelope matched the tree. release-bump with the CHANGELOG thunk forced to throw emitted {\"ok\":false,\"action\":\"partial\",\"reason\":\"partial-bump\",...,\"manifest\":{...,\"bumped\":true},\"siblings\":[{...,\"bumped\":true}],\"changelog\":{\"changed\":false,...}} at exit 1, and disk agreed on all three (both manifests at 2.0.0, CHANGELOG untouched). Code: planning.mjs:744-770, release-bump.mjs:372-393. The SUMMARY's stated gap is CONFIRMED as a CI-coverage gap only, and REFUTED as a behaviour gap: no committed test names partial-flip or partial-bump (grep over both suites returns only the census comment at planning.test.mjs:5849,5876), which both plans' Notes declare deliberate under D-01/D-02, but the arms themselves behave as documented."
+    },
+    {
+      "n": 11,
+      "truth": "phase-done validates REQUIREMENTS.md to the same bar the gate commit set for CHANGELOG.md - a path that is not a regular file is unreadable, whatever readFileSync answered",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "cadence-core/bin/planning.mjs:700-702 gates on `existsSync(reqFile)` plus `read(reqFile)` returning non-null, with no statSync().isFile() - the exact check release-bump.mjs:212 gained in gate commit a90d8b12 for the sibling seam. Two shapes observed live against the REAL binary: (a) `mkfifo .planning/REQUIREMENTS.md` -> `timeout 6 node cadence-core/bin/planning.mjs phase-done --n 1 --dir <fx>` exited 124 with no output at all, the refusal the seam advertises never arriving (ROADMAP.md sha256 unchanged, so nothing was torn); (b) `ln -s /dev/null .planning/REQUIREMENTS.md` -> {\"ok\":true,\"roadmap\":{\"line\":9,\"now\":\"[x]\"},\"reqs\":[],\"wrote\":[\"ROADMAP.md\",\"REQUIREMENTS.md\"]} at exit 0, and the symlink was replaced by a 0-byte regular file - a clean read of '' treated as a real requirements document and written over."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "phase-done refuses on an unreadable REQUIREMENTS.md, leaving ROADMAP.md byte-identical (AC1)", "evidence": "planning.mjs:734-742 preflight + fail('unreadable-requirements'); test 'phase-done: an unreadable REQUIREMENTS.md refuses whole; ROADMAP.md is byte-identical' (planning.test.mjs:907) passes, comparing sha256 across the run at exit 1." },
+    { "k": 2, "name": "phase-done still succeeds when REQUIREMENTS.md is absent entirely (AC2)", "evidence": "planning.mjs:700-702 three-state read, no REQUIREMENTS step when absent; test at planning.test.mjs:925 passes (ok:true, exit 0, roadmap.now '[x]', reqs []); live run on a no-REQUIREMENTS fixture returned wrote:[\"ROADMAP.md\"] at exit 0." },
+    { "k": 3, "name": "phase-done's success envelope names which documents were written (AC3)", "evidence": "planning.mjs:777 emits `wrote: applied.completed`; test at planning.test.mjs:943 pins both shapes; the 8 removed test lines since 5dd8cdca are all inside the disclosed detail-idiom census, zero pre-existing phase-done cases edited." },
+    { "k": 4, "name": "release-bump refuses an unparseable sibling manifest with nothing written (AC4)", "evidence": "release-bump.mjs:280-295 refuses inside the read-and-decide half; first atomicWrite( at :361 > last readManifest( at :280 and changelog read at :329; test at release-bump.test.mjs:268 passes asserting reason 'unreadable-sibling-manifest', exit 1, plugin.json and CHANGELOG.md byte-identical." },
+    { "k": 5, "name": "A readable-but-not-upgradeable sibling stays an ok:true siblings[] refusal row (AC5)", "evidence": "release-bump.mjs:302-312; 'bump: a SIBLING that would downgrade is recorded as a refusal, not silently written (D-08)' passes by name at release-bump.test.mjs:250-266, its body unmodified since the phase base." },
+    { "k": 6, "name": "The all-or-nothing claim in cmdPhaseDone matches the behaviour (AC6)", "evidence": "grep inside the cmdPhaseDone sed range prints 0; the only file hit is planning.mjs:1074 in the unrelated uat-merge comment; planning.mjs:734 is the single runTransition call and :714-731 states the pre-flight guarantee instead." },
+    { "k": 7, "name": "self-verify is clean (AC7)", "evidence": "`node cadence-core/bin/self-verify.mjs --root .` -> ok:true, problems: []." },
+    { "k": 8, "name": "A non-regular CHANGELOG.md refuses instead of hanging or scaffolding over history", "evidence": "release-bump.mjs:212 statSync().isFile() before the read; both the directory case and the symlink-to-/dev/null case (release-bump.test.mjs:293, :315) pass under reason 'unreadable-changelog' at exit 1." },
+    { "k": 9, "name": "milestone.md's halt prose, its weight budget and the DOCS-CLAIMS row moved with the behaviour", "evidence": "milestone.md:65 'Four halts', :67-71 new refusal codes, :72-76 partial-bump bullet, :77-82 rewritten siblings[] bullet with the stale parenthetical gone; wc -c = 14937 = weight-budgets.json:66; DOCS-CLAIMS.md:881-882 restated and re-anchored to 67-71 / 77-82." }
+  ],
+  "gaps": [
+    {
+      "name": "phase-done accepts a non-regular REQUIREMENTS.md - the regular-file bar the gate set for CHANGELOG.md never reached the sibling seam",
+      "reason": "behavior wrong - cadence-core/bin/planning.mjs:700-702 decides 'unreadable' from `read()` returning null, i.e. from whether reading THREW, which is the exact defect the blocking risk_surface review found in readChangelog and gate commit a90d8b12 fixed one seam over with `statSync(file).isFile()`. A path that is not a regular file is either never classified (it reads cleanly) or never reached (it blocks).",
+      "evidence": "cadence-core/bin/planning.mjs:700-702 has no statSync/isFile check, against cadence-core/bin/release-bump.mjs:212 which does. Measured against the real binary at HEAD, 2026-08-22, n=1 each: (a) FIFO at .planning/REQUIREMENTS.md - `timeout 6 node cadence-core/bin/planning.mjs phase-done --n 1 --dir <fx>` exited 124 having printed nothing; the seam hangs before its own refusal can run, so the advertised halt never arrives (ROADMAP.md sha256 unchanged - nothing torn, but no envelope either). (b) symlink to /dev/null at .planning/REQUIREMENTS.md - the run printed {\"ok\":true,\"roadmap\":{\"line\":9,\"now\":\"[x]\"},\"reqs\":[],\"wrote\":[\"ROADMAP.md\",\"REQUIREMENTS.md\"]} at exit 0 and replaced the symlink with a 0-byte regular file, having read '' as a genuine requirements document. SUMMARY.md's open item names root cause and the FIFO symptom; the clean-read symptom (a silent write plus an envelope claiming REQUIREMENTS.md moved) is not disclosed anywhere and is the closer analogue of the changelog defect the gate rejected.",
+      "severity": "minor",
+      "missing": "In cadence-core/bin/planning.mjs's three-state REQUIREMENTS.md read (around :700-702), classify a present path that is not a regular file as UNREADABLE before reading it, mirroring readChangelog at cadence-core/bin/release-bump.mjs:212 (`try { if (!statSync(reqFile).isFile()) -> unreadable } catch { -> unreadable }`), so both shapes reach the existing `unreadable-requirements` pre-flight refusal. Add one regression case beside planning.test.mjs:907 using `symlinkSync('/dev/null', ...)` guarded by existsSync('/dev/null') - the same uid-independent idiom release-bump.test.mjs:315-345 already ships, no chmodSync. All seven declared acceptance criteria pass without this; it is the one proven residual."
+    }
+  ],
+  "human_checks": []
+}

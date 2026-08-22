@@ -1,0 +1,39 @@
+{
+  "phase": "2",
+  "trigger": "risk_surface",
+  "discriminator": "verify-8b73e00",
+  "round": 1,
+  "base": "441a17ef224defb99b465940f7c6ce1e469dd257",
+  "head": "8b73e0018f700decf8c651cc8b28df9b4acde23e",
+  "base_id": "441a17ef224defb99b465940f7c6ce1e469dd257",
+  "head_id": "8b73e0018f700decf8c651cc8b28df9b4acde23e",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning.mjs",
+      "line": 713,
+      "severity": "high",
+      "claim": "The shape check is vulnerable to a TOCTOU race: a path accepted as regular by `statSync()` can be replaced before `read(reqFile)` consumes it.",
+      "failure_scenario": "An attacker or concurrent process initially provides a regular `REQUIREMENTS.md`, allowing line 710 to set `reqRegular` true, then replaces it with a FIFO before line 713. `read()` blocks indefinitely on the FIFO, so the command still hangs rather than refusing the non-regular requirements path. Replacing it with `/dev/null` or another character device instead makes the read succeed as `''`, allowing the phase transition and ROADMAP write to proceed despite the requirements path being non-regular at use time.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/planning.mjs",
+        "line": 713,
+        "note": "Opened the cited lines (planning.mjs:709-715). The race is mechanically real and it is also the SHIPPED, gate-accepted pattern one seam over: release-bump.mjs:212 is statSync(file).isFile() then readFileSync(file), landed as gate commit a90d8b12 through this same blocking trigger. The identical claim was raised by this same voice against that line and REFUTED at .planning/phases/2/ADJUDICATION-risk_surface-plan-2-r2.json; the counter-evidence transfers verbatim. (1) The remedy the finding names does not close what it names: open(2) on a FIFO with no writer BLOCKS in the open call itself, so openSync-then-fstatSync moves the hang from read to open, and only O_NONBLOCK avoids that - which the finding does not propose. (2) No privilege boundary is crossed: the race needs an actor with write access to the user's own .planning/ directory during a single-shot CLI run that same user just started, and that actor can already edit ROADMAP.md directly, rewrite REQUIREMENTS.md's rows, or replace planning.mjs - a hang is strictly less than what it already holds. (3) The change strictly narrows the window from ALWAYS to a race: before it there was no shape check at all and both shapes hit unconditionally. (4) Diverging to an fd-based read here and not at release-bump.mjs:212 would recreate exactly the one-seam-only bar this fix exists to remove. Mechanism confirmed, severity `high` refuted on this seam's threat model."
+      },
+      "base_id": "441a17ef224defb99b465940f7c6ce1e469dd257",
+      "head_id": "8b73e0018f700decf8c651cc8b28df9b4acde23e"
+    }
+  ]
+}
