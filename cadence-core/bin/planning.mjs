@@ -145,7 +145,7 @@
 //                                   .gitignore lives)
 'use strict';
 
-import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, lstatSync, statSync } from 'node:fs';
 import { join, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -696,9 +696,23 @@ function cmdPhaseDone(dir, opts) {
   // ok:true. verify.md's phase-done step is a hard step, so a project that
   // never kept a REQUIREMENTS.md must still be able to close a phase (D-03).
   // UNREADABLE refuses the whole transition below.
+  //
+  // UNREADABLE is decided from the file's SHAPE, not from whether reading it
+  // threw. `read()` wraps readFileSync, which does not throw on a FIFO (it
+  // blocks forever with no writer) nor on a character device (/dev/null reads
+  // as ''), so neither shape would ever reach the refusal the pre-flight below
+  // advertises: one hangs before any envelope, the other reads '' as a genuine
+  // requirements document and reports REQUIREMENTS.md as written. That is the
+  // same defect the blocking review found at readChangelog, fixed there with
+  // this check (`cadence-core/bin/release-bump.mjs`); the bar belongs on both
+  // members of the write set, not one.
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqPresent = existsSync(reqFile);
-  const reqText = reqPresent ? read(reqFile) : null;
+  let reqRegular = false;
+  if (reqPresent) {
+    try { reqRegular = statSync(reqFile).isFile(); } catch { reqRegular = false; }
+  }
+  const reqText = reqRegular ? read(reqFile) : null;
   const reqUnreadable = reqPresent && reqText === null;
   let reqs = [];
   let newReqText = null;

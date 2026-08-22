@@ -936,6 +936,39 @@ test('phase-done: an ABSENT REQUIREMENTS.md still boxes the phase, ok:true', () 
   assert.match(roadmap, /- \[ \] \*\*Phase 2: Two\*\*/);
 });
 
+// The case the DIRECTORY fixture above cannot reach. A directory throws EISDIR,
+// so `read()`'s catch arm alone answers it; a character device does not throw at
+// all - readFileSync on /dev/null returns '', a SUCCESSFUL read of a path that
+// is not a requirements document. Deciding "unreadable" from whether reading
+// threw let that '' through as genuine content: the run boxed the phase, wrote
+// a 0-byte regular file over the symlink and reported REQUIREMENTS.md in
+// `wrote`. A FIFO is the same class and worse - it blocks the seam forever
+// before any envelope - which is why the check is on the file's SHAPE, and why
+// no FIFO case is driven here: a regression would hang this suite rather than
+// redden it. Same defect and same fix as the CHANGELOG arm one seam over
+// (`release-bump.test.mjs`, 'a NON-REGULAR CHANGELOG that reads CLEANLY').
+test('phase-done: a non-regular REQUIREMENTS.md that reads CLEANLY still refuses', () => {
+  if (!existsSync('/dev/null')) return;
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  rmSync(join(dir, 'REQUIREMENTS.md'));
+  symlinkSync('/dev/null', join(dir, 'REQUIREMENTS.md'));
+  const sha = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
+  const before = sha(join(dir, 'ROADMAP.md'));
+
+  const r = run(['phase-done', '--n', '1'], dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unreadable-requirements',
+    'a path that is not a regular file is unreadable, whatever readFileSync answered');
+  assert.equal(r._exit, 1);
+  assert.equal(sha(join(dir, 'ROADMAP.md')), before,
+    'the refusal lands before the first write - the box never flipped');
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), '',
+    'and the symlink target was never overwritten by a scaffolded document');
+});
+
 // The success envelope has to SAY which documents moved, on both shapes - the
 // one-document run is not a failure and must not be reported by mutating
 // `reqs`, so the roadmap-only arm pins `reqs` and the box in the same block: a
