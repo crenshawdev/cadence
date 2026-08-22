@@ -15,10 +15,6 @@ traced zero requirements and returned PASS on an empty set while the coverage ar
 carried the entire proof. `/cad-plan` seeds each Traceability row as its phase is
 planned; rows are never hand-populated here.
 
-- **RDX-01**: the read-set redundancy the read trace already measures reaches a consumer that acts on it, rather than being a number nothing reads (#167)
-- **CER-01**: ceremony is chosen per change rather than per project, so a README phase and an auth phase stop buying the same model, effort rung and gate set (#189)
-- **IVW-01**: the risk-surface interview has a user-triggerable entry point and its menu stops offering the same set twice (#206)
-- **HLT-01**: a blocking finding defers to the land instead of stopping the run, so unreviewed work cannot reach base but a phase can finish with nobody watching (#193)
 
 `BCH-01` left this cycle on 2026-08-21, moved to `## Deferred` carrying the
 spike verdict that invalidated it rather than dropped - the exit ROADMAP.md's
@@ -227,6 +223,10 @@ parses only the Traceability table).
 | SHP-01 (#183: `## Shipped` is located fence-aware, by the same `sectionSpan` its own function already uses for `## Active`.) | 3 | Complete | v3.5.5 |
 | ARG-06 (#147: the per-seam refusals are expressed once as a declarative argument contract the seam CLIs share.) | 4 | Complete | v3.5.5 |
 | RME-01 (`README.md` is a decision document, not a reference manual - the cost-to-run section and the worked example move to `docs/`, the command list is cut in favour of a pointer at `/cad-help` and `cadence-core/references/COMMANDS.md`, the audience material states the DEMAND rather than a label and sits ABOVE Install, and every claim that survives the move is verified rather than carried over. Promoted from the 2026-08-18 capture decision; the command-list clause revised 2026-08-19 at `/cad-context 5` (phase 5 CONTEXT D-03); the audience clause revised 2026-08-19 at `/cad-verify 5` from "section" to "material", because the register review that produced commit `47d7214` dissolved the section into the opening paragraphs while keeping both the placement and the load-bearing sentence.) | 5 | Complete | v3.5.5 |
+| IVW-01 (the risk-surface interview has a user-triggerable entry point and its menu stops offering the same set twice (#206)) | 1 | Complete | v3.5.7 |
+| HLT-01 (a blocking finding defers to the land instead of stopping the run, so unreviewed work cannot reach base but a phase can finish with nobody watching (#193)) | 2 | Complete | v3.5.7 |
+| CER-01 (ceremony is chosen per change rather than per project, so a README phase and an auth phase stop buying the same model, effort rung and gate set (#189)) | 3 | Complete | v3.5.7 |
+| RDX-01 (the read-set redundancy the read trace already measures reaches a consumer that acts on it, rather than being a number nothing reads (#167)) | 4 | Complete | v3.5.7 |
 
 ## Deferred
 
@@ -269,10 +269,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| IVW-01 | Phase 1 | Complete |
-| HLT-01 | Phase 2 | Complete |
-| CER-01 | Phase 3 | Complete |
-| RDX-01 | Phase 4 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
