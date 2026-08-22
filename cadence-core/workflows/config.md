@@ -43,20 +43,38 @@ belong to an on-demand command rather than the phase loop.
    - one question; its text = the knob's **Purpose**, options = the knob's Values,
    - **each option carries its Explanation as the option `description`** (the small
      line shown under the option in the selection list),
-   - **preselect the option matching the repo file's OWN literal value** (from
-     the step-0 raw read of `.planning/config.json`, never `config.mjs get`:
-     `get` returns the *effective* value, so a knob inherited from the global
-     layer would show as `(current)` and get pinned into the repo file as if
-     chosen). A knob absent from the repo file gets NO `(current)` label - show
-     its effective/default value unlabelled, so leaving the page unchanged keeps
-     it inherited rather than writing it. List the preselected option first, e.g.
-     `standard (current)`,
+   - **Label the value in force, and name the LAYER it comes from. Two labels,
+     never zero.** Compare step 0's raw read of `.planning/config.json` against
+     `config.mjs get`:
+     - the knob IS in the repo file -> that option is `(current)`.
+     - the knob is NOT in the repo file -> the effective value's option is
+       `(in force)`, and its `description` opens by saying the value is active
+       but INHERITED, and that picking it writes it into this repo.
+     List the labelled option FIRST either way. An unlabelled option is the bug
+     this replaces: `get` returns the effective value, so the old rule dropped
+     the label to stop an inherited value being mislabelled `(current)` and
+     pinned - but dropping it entirely left the user choosing with nothing on
+     screen saying what is active. Name the layer; never hide what is set.
+   - **A pick equal to the value already in force writes NOTHING**, on both
+     arms: re-picking `(current)` and re-picking `(in force)` are each a no-op.
+     This is what stops the walk pinning the whole global layer into the repo
+     file one page at a time - a user who agrees with an inherited value is
+     agreeing, not choosing to override it.
+   - **An enum with more than four values does not fit the seam.** The cap is 4
+     options and `Other` is the free-type entry, so show the value in force plus
+     the three the user is most likely to want, and name every omitted value in
+     the last option's `description` with the words "reachable via `Other`". A
+     value silently absent reads as a value that does not exist -
+     `review.triggers.<t>.gate` is the live case, at five.
    - `Other` (auto-added) is the free-type entry for numbers, strings, and lists.
 
    Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/config-catalog.md`
    (one consult site - this step) for the rows themselves, in walk
    order, each carrying its Purpose, Values and Explanations.
-3. A page whose knobs the user leaves unchanged is a no-op; only diffs are applied.
+3. A page whose knobs the user leaves unchanged is a no-op, and so is a page
+   where every pick matched the value already in force (step 2's no-op rule).
+   Only a value that DIFFERS from what is in force is a diff, and only diffs are
+   applied.
 4. After the last page, show the changed keys as a diff and write once via the
    **Validation seam** (`config.mjs set`) - one atomic, validated write. The user
    may pick `Skip rest` on any page to stop and write what changed so far.
@@ -90,11 +108,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get   [key …]       #
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys                # dump schema (types/enums/defaults/purpose)
 ```
 
-`get` is how every workflow reads config - it is the only read that sees the
-global layer. Never read `.planning/config.json` raw for a value. (Lone
-exception: the interactive menu's `(current)` label needs the repo layer's
-literal value to avoid pinning an inherited global, so it reads the repo file raw
-for the label only - never for a workflow value.)
+`get` is how every workflow reads config - the only read that sees the global
+layer. Never read `.planning/config.json` raw for a value; the lone exception is
+the walk's layer labels (step 2), which read it for the LABEL only.
 
 Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
 `.planning/config.json`, and `--global` targets the user-global layer at

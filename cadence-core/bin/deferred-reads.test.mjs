@@ -367,7 +367,7 @@ test('D-04: a <step name="..."> with NO <process> wrapper is still a region', ()
 // ship with no anchorable region at all.
 
 const CONFIG_WF = 'cadence-core/workflows/config.md';
-const WALK_STEP_3 = '\n3. A page whose knobs the user leaves unchanged is a no-op;';
+const WALK_STEP_3 = '\n3. A page whose knobs the user leaves unchanged is a no-op';
 const WALK_STEP_2 = '\n2. Walk the catalog **in order, 4 knobs per';
 const DIRECT_SET = '## Direct set\n';
 const WALK_ANCHOR = 'Interactive menu (no args)/The walk/2';

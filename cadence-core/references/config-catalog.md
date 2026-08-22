@@ -19,7 +19,7 @@ pair is one selectable option and its `description`.
 | **Core** |||||
 | `granularity` `[repo]` | enum | How many phases the roadmap gets - new-project roadmap step only, it splits no phase into tasks | `fine`→8-12 phases · `standard`→5-8 · `coarse`→3-5 | standard |
 | **Model** |||||
-| `stakes` `[repo]` | enum | What does a break here cost? (routing asks this, not what a dispatch costs) | `solo`→nobody else runs this, a break costs only my time · `shipped`→other people run this, a break comes back as a bug report · `critical`→a break is not a bug report | shipped |
+| `stakes` `[repo]` | enum | How bad is it if something here breaks? | `solo`→just me - a break costs my own time · `shipped`→other people run this - a break comes back as a bug report · `critical`→a break costs more than a bug report: money, security, safety or data loss | shipped |
 | `model.escalate_on_failure` | bool | Re-dispatch a failed attempt at the role's harder rung | `true`→retry at the rung the role's own cell names · `false`→hold the retry at the rung it started on | false |
 | **Workflow** |||||
 | `workflow.research` | bool | Run a research pass - new-project research step only | `true`→scout first · `false`→skip | false |
@@ -38,20 +38,20 @@ pair is one selectable option and its `description`.
 | **Git** |||||
 | `git.protected_branches` | list | Branches Cadence won't commit to directly | comma list, e.g. `main, master` | main, master |
 | `git.on_protected` `[repo]` | enum | What to do on a protected branch | `ask`→prompt · `refuse`→block · `allow`→proceed | ask |
-| `git.integration_branch` `[repo]` | enum | Two-tier branch model at cycle start | `milestone`→create a per-milestone integration branch (the branch worktrees merge back into; where they fork FROM is the host's `worktree.baseRef`) · `trunk`→no integration branch, commit on the base under `on_protected` | milestone |
+| `git.integration_branch` `[repo]` | enum | Where a cycle's commits land | `milestone`→one shared branch per milestone that every plan's work merges into · `trunk`→no shared branch, commit straight onto the base branch | milestone |
 | `git.auto_branch` `[repo]` | enum | How the integration branch is created at cycle start | `ask`→prompt once · `auto`→create/switch silently · `off`→stay put | ask |
 | `git.base_branch` | str\|null | Branch new work branches off | branch name, or empty→`null` (current) | null |
 | `git.create_tag` | bool | At the end of a land, cut the release tag on the pulled base once the merge confirms? | `true`→tag · `false`→don't | true |
 | `git.on_land_cleanup` | bool | After a land/merge, return to base, pull, reap the merged integration branch? | `true`→return + pull + reap · `false`→leave in place | true |
-| `git.issue_check` | bool | When a land starts, report the issue tracker - which issues this branch's commits reference and which are still open? | `true`→read-only report, one line naming the reason when it cannot be read · `false`→say nothing about the tracker and run no forge CLI | true |
-| `git.auto_close` | bool | Run the close end-to-end (audit → tag → PR → merge → reset) with no per-step prompts? | `true`→autonomous close, halting on a surviving blocker/high `risk_surface` finding · `false`→publish stays the user's separate call | false |
+| `git.issue_check` | bool | When a land starts, show which issues this branch's commits mention and which are still open? | `true`→show it, read-only, and say in one line when the tracker cannot be reached · `false`→skip it, and never call the hosting CLI | true |
+| `git.auto_close` | bool | Run the whole close unattended (audit → tag → PR → merge → reset) with no prompts? | `true`→run it start to finish, stopping only if a serious review finding is still unresolved · `false`→stop before publishing - you run `/cad-land` yourself | false |
 | **Planning** |||||
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
 | **Memory** |||||
-| `memory.backend` `[repo]` | enum | Backend for recall over `.planning/` | `builtin`→zero-dep BM25 recall over `.planning/` · `none`→recall off | builtin |
+| `memory.backend` `[repo]` | enum | How past planning notes are searched and resurfaced | `builtin`→built-in search over your `.planning/` docs, no setup and no dependencies · `none`→turn that search off | builtin |
 | **Review** (providers handled separately) |||||
-| `review.reviewers` `[repo]` | list(enum) | Which reviewer backends fire() resolves (multi-select) | `claude-subagent`→local zero-dep · `openai`→cross-model · `gemini`→cross-model · `deepseek`→cross-model | claude-subagent |
-| `review.mode` `[repo]` | enum | How multiple reviewers combine | `single`→first available only · `panel`→union all · `adjudicated`→run all, main model grounds each | adjudicated |
+| `review.reviewers` `[repo]` | list(enum) | Which reviewers should run? (pick any number) | `claude-subagent`→runs locally, needs no API key · `openai`→a second model, needs a key · `gemini`→a second model, needs a key · `deepseek`→a second model, needs a key | claude-subagent |
+| `review.mode` `[repo]` | enum | When several reviewers are on, how are their findings combined? | `single`→use only the first reviewer that is available · `panel`→report every finding from all of them · `adjudicated`→run all, then have the main model check each finding against the code and drop the ones that do not hold | adjudicated |
 | `review.key_file` `[global]` | str\|null | Path override for the provider key env file - set it in the user-global layer, a repo layer's value is ignored | path, or empty→`null` (default location) | null |
 | `review.request_timeout_ms` | int | ms before a provider request is aborted | e.g. `540000` (9 min); clamped to the 600000 host ceiling | 540000 |
 | `review.max_prompt_tokens` | int | Estimated tokens (chars/4) a review or consult payload may reach | e.g. `120000` (just under the tightest shipped provider window); over-cap is refused before any request, cross-model only | 120000 |
@@ -59,11 +59,11 @@ pair is one selectable option and its `description`.
 | `review.consult.tier` `[repo]` | enum | Model tier for consults | `flagship`→strongest · `balanced`→mid · `cheap`→cheapest | flagship |
 | `review.consult.effort` `[repo]` | enum | Reasoning effort for consults | `minimal` · `low` · `medium` · `high` | high |
 | `review.consult.attempt_threshold` | int | Failed fix attempts on one bug before cad-debug offers a consult | e.g. `3` | 3 |
-| `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `deferred`→persist a queue member and carry on, `/cad-land` refuses until it is adjudicated · `blocking`→hard stop · `adjudicated`→ground, then present the survivors and ask which to act on (default none) | unset→the stakes level decides, per trigger (`route.mjs resolve` answers it) |
+| `review.triggers.<t>.gate` `[repo]` | enum | When this review runs, what should happen to what it finds? | `off`→do not run it · `advisory`→run it and just report what it finds · `deferred`→run it, save the findings, and let the work continue - `/cad-land` refuses to publish until you rule on them · `blocking`→run it and stop the work until the findings are dealt with · `adjudicated`→run it, check each finding against the code, then show you the ones that hold and ask which to act on (nothing is preselected) | unset→the stakes level decides, per trigger (`route.mjs resolve` answers it) |
 | `review.triggers.<t>.tier` `[repo]` | enum | Model tier for this trigger - **cross-model only** (the claude-subagent reviewer's model comes from the routing cell) | `flagship` · `balanced` · `cheap` | unset→the stakes level decides, per trigger (`route.mjs resolve` answers it) |
 | `review.triggers.<t>.effort` `[repo]` | enum | Reasoning effort for this trigger - **cross-model only** (claude-subagent effort is frontmatter-frozen) | `minimal` · `low` · `medium` · `high` | unset→the stakes level decides, per trigger (`route.mjs resolve` answers it) |
-| `review.triggers.risk_surface.surfaces` `[repo]` | list(enum) | Which risk surfaces the one blocking trigger fires on (risk_surface only) | the menu routes this to **Risk surfaces** (`/cad-config --surfaces`) rather than free-typing a list: the answer is picked against the structural scan's own evidence, and a second door writing this key blind is what that step exists to replace | unset→all eight, and the first fire asks once |
-| `review.triggers.risk_surface.waive_routing_floor` `[repo]` | list(enum) | Which surfaces may NOT raise the plan-time routing level (risk_surface only) - it waives a LEVEL, never a review: the blocking review still fires on the diff | same eight categories as `surfaces`; naming one lowers to the configured `stakes` and no further, an unnamed one still raises, and every waiver applied is named in the resolve's `reason` | unset→nothing is waived |
+| `review.triggers.risk_surface.surfaces` `[repo]` | list(enum) | Which kinds of risky code get the blocking review (risk_surface only) | picking this opens **Risk surfaces** (`/cad-config --surfaces`), which scans your project first and offers answers based on what it finds, instead of asking you to type a list blind | unset→all eight, and the first fire asks once |
+| `review.triggers.risk_surface.waive_routing_floor` `[repo]` | list(enum) | Which risky-code categories should stop bumping a plan up to a stronger model? (risk_surface only) - this changes the model only; the blocking review still runs either way | same eight categories as `surfaces`. A category you pick here holds the plan at your normal `stakes` level and no lower; one you leave out still bumps it up. Every category actually waived is named in the routing decision's `reason` | unset→nothing is waived |
 
 `<t>` ∈ `{plan, diff, risk_surface, phase_diff}` - present the triggers as
 their own page (or a "Review triggers?" opt-in step) since they are power knobs.
