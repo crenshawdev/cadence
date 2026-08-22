@@ -2211,3 +2211,80 @@ test('RDX-01: suggest.md qualifies its no-tweak line to CONFIG KEYS and states t
   assert.ok(/relay the remedy its `evidence` names/.test(present),
     'suggest.md does not tell the composer to relay the remedy the evidence names');
 });
+
+// --- REL/D-07: every verdict code the pure core can return reaches both docs -
+
+/**
+ * The `code:` string literals inside `decideManifestBump`'s BODY: the
+ * EXECUTABLE set, read from the source rather than from either prose list.
+ * Deriving it from one list and comparing against the other would pass while
+ * both were stale together, which is exactly how `unparseable-version`,
+ * `downgrade` and `not-an-upgrade` stayed unnamed in release-bump.mjs's header
+ * for two release cycles. helper-census.test.mjs is this tree's precedent for
+ * a test that regexes module source.
+ */
+function verdictCodes(src) {
+  const start = src.indexOf('export function decideManifestBump(');
+  assert.ok(start >= 0, 'decideManifestBump is no longer declared in lib/release-decision.mjs');
+  const end = src.indexOf('\n}\n', start);
+  assert.ok(end > start, 'could not find the closing brace of decideManifestBump');
+  const body = src.slice(start, end);
+  return [...new Set([...body.matchAll(/\bcode: '([a-z][a-z-]*)'/g)].map((m) => m[1]))];
+}
+
+/** The run of leading `//` lines of a script, past its shebang: its header. */
+function headerComment(src) {
+  const out = [];
+  for (const line of src.split('\n')) {
+    if (!out.length && line.startsWith('#!')) continue;
+    if (!line.startsWith('//')) break;
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+/** The `/** ... *\/` block immediately above `decl`. */
+function jsdocAbove(src, decl) {
+  const at = src.indexOf(decl);
+  assert.ok(at >= 0, `${decl} is no longer declared`);
+  const open = src.lastIndexOf('/**', at);
+  assert.ok(open >= 0, `no JSDoc block above ${decl}`);
+  const close = src.indexOf('*/', open);
+  assert.ok(close > open && close < at, `the JSDoc block above ${decl} does not close before it`);
+  return src.slice(open, close);
+}
+
+test('every decideManifestBump verdict code is named in BOTH documents (D-07)', () => {
+  const core = doc('cadence-core', 'bin', 'lib', 'release-decision.mjs');
+  const seam = doc('cadence-core', 'bin', 'release-bump.mjs');
+
+  const codes = verdictCodes(core);
+  // Non-vacuity first: a regex that matched nothing would otherwise pass green
+  // over an empty loop, which is the same silence this test exists to break.
+  const SHIPPED = ['no-target-version', 'unparseable-version', 'no-version-field',
+    'already-at-target', 'downgrade', 'not-an-upgrade', 'bump'];
+  for (const code of SHIPPED) {
+    assert.ok(codes.includes(code),
+      `the extraction missed \`${code}\`, a code decideManifestBump ships: ${JSON.stringify(codes)}`);
+  }
+  assert.ok(codes.length >= SHIPPED.length,
+    `extracted fewer codes than ship today: ${JSON.stringify(codes)}`);
+
+  const header = headerComment(seam);
+  assert.ok(header.length > 500, 'release-bump.mjs\'s leading header comment block did not parse');
+  const jsdoc = jsdocAbove(core, 'export function decideManifestBump(');
+
+  // Word-boundary, so `bump` is not satisfied by `partial-bump`. `bump` IS
+  // also this seam's subcommand name, so its presence in the header is not
+  // distinguishing - every OTHER code has to be written down on purpose.
+  const named = (text, code) => new RegExp(`(?<![\\w-])${code}(?![\\w-])`).test(text);
+  for (const code of codes) {
+    assert.ok(named(header, code),
+      `verdict code \`${code}\` is missing from cadence-core/bin/release-bump.mjs's leading `
+      + 'header comment block: the header claims to name the codes it emits verbatim as `reason`, '
+      + 'so a caller reading that list cannot branch on this one');
+    assert.ok(named(jsdoc, code),
+      `verdict code \`${code}\` is missing from decideManifestBump's JSDoc in `
+      + 'cadence-core/bin/lib/release-decision.mjs: that block declares the CLOSED set it owns');
+  }
+});

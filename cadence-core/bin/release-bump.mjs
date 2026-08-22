@@ -111,9 +111,16 @@
 //                         `bad-date` is what a caller branches on, so it is
 //                         read in the returning form and named below (D-07).
 //   usage | internal    - bad subcommand / an unexpected throw.
-// The VERDICT codes (`no-target-version`, `no-version-field`,
-// `already-at-target`, `bump`) are owned by lib/release-decision.mjs's JSDoc
-// and emitted verbatim as `reason`.
+// The VERDICT codes (`no-target-version`, `unparseable-version`,
+// `no-version-field`, `already-at-target`, `downgrade`, `not-an-upgrade`,
+// `bump`) are owned by lib/release-decision.mjs's JSDoc and emitted verbatim
+// as `reason` - with the ONE exception stated above: a PRIMARY
+// `no-version-field` is a `skip` verdict this seam re-classifies as an
+// `ok:false` refusal, emitting the code unchanged under `action:"refuse"`
+// (phase 1 D-01). This list named four of the seven for two release cycles;
+// prose-agreement.test.mjs now derives the set from decideManifestBump's own
+// executable `code:` literals and reddens until a new one is named BOTH here
+// and in that function's JSDoc.
 'use strict';
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
