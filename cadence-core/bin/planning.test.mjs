@@ -936,6 +936,27 @@ test('phase-done: an ABSENT REQUIREMENTS.md still boxes the phase, ok:true', () 
   assert.match(roadmap, /- \[ \] \*\*Phase 2: Two\*\*/);
 });
 
+// The success envelope has to SAY which documents moved, on both shapes - the
+// one-document run is not a failure and must not be reported by mutating
+// `reqs`, so the roadmap-only arm pins `reqs` and the box in the same block: a
+// future change that expresses "not written" through `reqs` reddens here.
+test('phase-done: `wrote` names the documents that moved, on both shapes', () => {
+  const both = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  const r = run(['phase-done', '--n', '1'], both);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.wrote, ['ROADMAP.md', 'REQUIREMENTS.md']);
+
+  const roadmapOnly = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const o = run(['phase-done', '--n', '1'], roadmapOnly);
+  assert.equal(o.ok, true);
+  assert.deepEqual(o.wrote, ['ROADMAP.md']);
+  assert.deepEqual(o.reqs, []);
+  assert.equal(o.roadmap.now, '[x]');
+});
+
 // --- uat -----------------------------------------------------------------------
 
 const UAT_ITEMS = JSON.stringify([

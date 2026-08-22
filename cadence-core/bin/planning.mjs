@@ -740,7 +740,15 @@ function cmdPhaseDone(dir, opts) {
     }],
   });
   if (applied.refused !== null) return fail('unreadable-requirements', applied.refused);
-  ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs });
+  // `wrote` is the transition's own completed record rendered into the
+  // envelope: the document names, in write order, so a caller can tell "both
+  // documents moved" from "only the roadmap did" without re-deriving it from
+  // `reqs`. It is a NEW field precisely so nothing existing has to carry that
+  // meaning (D-04): `roadmap.{line,now}` and `reqs` keep the shape and contents
+  // they have always had - `reqs` stays the ids setReqStatus reported changed
+  // and never becomes `null` to mean "not written", because /cad-verify and
+  // /cad-undo read it and planning.test.mjs deep-equals it across nine cases.
+  ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs, wrote: applied.completed });
 }
 
 // ---------------------------------------------------------------------------
