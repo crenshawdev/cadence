@@ -1,0 +1,177 @@
+// Zero-dep tests for lib/why-corpus.mjs - the storage-tier locator behind
+// `/cad-why`'s commit-to-phase index (WHY-01, phase 1 plan 2). See that
+// module's header for the design.
+//
+// Two kinds of fixture, deliberately: this repository's OWN `.planning` for the
+// facts the index exists to get right on a real corpus (28 phase directories
+// across both tiers, one of them the live phase 1 of a DIFFERENT milestone from
+// the archived phase 1 the commit belongs to), and built temp roots for the
+// states this corpus does not currently hold - an unreadable summary and a
+// genuine prefix ambiguity.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { buildCommitIndex, resolveCommit, readArtifact } from './lib/why-corpus.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** This repository's own planning root: bin -> cadence-core -> root. */
+const REAL = join(HERE, '..', '..', '.planning');
+
+/** The full sha of the commit `_archive-v3.4.0/1/SUMMARY.md` records as 0053735. */
+const ISSUE_CORE = '00537356bf14084f3676eeeca1c4747146979bc3';
+
+/**
+ * A planning root holding the phase directories `spec` names. Each value is
+ * the SUMMARY.md body (or `null` for a directory with plans and no summary);
+ * every directory also gets a PLAN.md, because `phaseDirsIn` counts a
+ * directory as a phase by the conforming plan file it holds.
+ * @param {Record<string, string|null>} spec keyed `<group>/<name>`
+ * @returns {string}
+ */
+function planningRoot(spec) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-why-corpus-'));
+  for (const [label, summary] of Object.entries(spec)) {
+    const dir = join(root, label);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'PLAN.md'), '---\nphase: 1\nplan: 1\n---\n\n# a plan\n');
+    if (summary !== null) writeFileSync(join(dir, 'SUMMARY.md'), summary);
+  }
+  return root;
+}
+
+/** A `## Commits` table over `rows` of `[plan, task, commit, description]`. */
+const commitsTable = (rows) => [
+  '# Summary', '', '## Commits', '',
+  '| Plan | Task | Commit | Description |',
+  '|---|---|---|---|',
+  ...rows.map((r) => `| ${r.join(' | ')} |`),
+  '',
+].join('\n');
+
+// --- The real corpus, both tiers ------------------------------------------
+
+test('the index over this repository resolves 00537356 to _archive-v3.4.0/1, plan 1, task 2', () => {
+  const index = buildCommitIndex(REAL);
+  assert.deepEqual(index.warnings, [], 'this repository has no unreadable summary');
+  assert.ok(index.rows.length > 0, 'the archived summaries contribute rows');
+
+  const { state, row } = resolveCommit(index, ISSUE_CORE);
+  assert.equal(state, 'resolved');
+  assert.equal(row.dir.label, '_archive-v3.4.0/1');
+  assert.equal(row.dir.milestone, 'v3.4.0');
+  assert.equal(row.dir.phase, '1');
+  assert.equal(row.plan, '1');
+  assert.equal(row.task, '2');
+  assert.equal(row.commit, '0053735', 'the abbreviation the record wrote, carried verbatim');
+});
+
+test('the same index does NOT resolve it to the live phases/1, which is another milestone entirely', () => {
+  const index = buildCommitIndex(REAL);
+  const { row, matches } = resolveCommit(index, ISSUE_CORE);
+  assert.equal(row.dir.group, '_archive-v3.4.0');
+  assert.ok(matches.every((m) => m.dir.label !== 'phases/1'),
+    'the live phase 1 legitimately exists and belongs to a different cycle - a scope-keyed read would land there');
+  assert.ok(index.dirs.some((d) => d.label === 'phases/1'),
+    'and it IS in the walk, so the negative above is a real discrimination rather than an absent directory');
+});
+
+test('the live tier and the archive tier are both walked, each labelled by its own group', () => {
+  const { dirs } = buildCommitIndex(REAL);
+  assert.ok(dirs.some((d) => d.group === 'phases'));
+  assert.ok(dirs.filter((d) => d.group.startsWith('_archive-')).length > 1);
+  const labels = dirs.map((d) => d.label);
+  assert.deepEqual(labels, [...labels].sort(), 'the walk order is label order, so two runs index the same way');
+});
+
+// --- Built roots: the states this corpus does not hold ---------------------
+
+test('two archive groups each carrying a phase 1 both index, each under its own label', () => {
+  const root = planningRoot({
+    '_archive-v9.0.0/1': commitsTable([['1', '1', 'aaaaaaa', 'the older cycle']]),
+    '_archive-v9.1.0/1': commitsTable([['1', '1', 'bbbbbbb', 'the newer cycle']]),
+  });
+  const index = buildCommitIndex(root);
+  assert.deepEqual(index.dirs.map((d) => d.label), ['_archive-v9.0.0/1', '_archive-v9.1.0/1']);
+  assert.deepEqual(index.warnings, []);
+
+  const older = resolveCommit(index, `aaaaaaa${'0'.repeat(33)}`);
+  const newer = resolveCommit(index, `bbbbbbb${'0'.repeat(33)}`);
+  assert.equal(older.state, 'resolved');
+  assert.equal(older.row.dir.milestone, 'v9.0.0');
+  assert.equal(older.row.description, 'the older cycle');
+  assert.equal(newer.state, 'resolved');
+  assert.equal(newer.row.dir.milestone, 'v9.1.0');
+  assert.equal(newer.row.description, 'the newer cycle');
+});
+
+test('a SUMMARY.md that cannot be read contributes no rows and exactly one warning, never a throw', () => {
+  const root = planningRoot({
+    'phases/1': commitsTable([['1', '1', 'ccccccc', 'a readable phase']]),
+    'phases/2': null,
+  });
+  // A directory where the summary should be: present, so not the absent state,
+  // and unreadable as a file - the same shape a FIFO or a device node has.
+  mkdirSync(join(root, 'phases', '2', 'SUMMARY.md'));
+
+  let index;
+  assert.doesNotThrow(() => { index = buildCommitIndex(root); });
+  assert.equal(index.rows.length, 1);
+  assert.equal(index.rows[0].dir.label, 'phases/1');
+  assert.equal(index.warnings.length, 1, `expected exactly one warning, got ${JSON.stringify(index.warnings)}`);
+  assert.match(index.warnings[0], /phases\/2\/SUMMARY\.md/);
+  assert.match(index.warnings[0], /ENOTREGULAR/);
+});
+
+test('an ABSENT SUMMARY.md is silent - a phase with plans and no summary is the ordinary mid-phase state', () => {
+  const root = planningRoot({ 'phases/1': null });
+  const index = buildCommitIndex(root);
+  assert.deepEqual(index.warnings, []);
+  assert.deepEqual(index.rows, []);
+  assert.equal(index.dirs.length, 1, 'the directory is still in the walk');
+});
+
+test('two abbreviations that both prefix one full sha answer ambiguous, naming both', () => {
+  const full = `abcdef12${'0'.repeat(32)}`;
+  const root = planningRoot({
+    '_archive-v9.0.0/3': commitsTable([['1', '4', 'abcdef1', 'the seven-character era']]),
+    '_archive-v9.1.0/2': commitsTable([['2', '5', 'abcdef12', 'the eight-character era']]),
+  });
+  const index = buildCommitIndex(root);
+  const answer = resolveCommit(index, full);
+
+  assert.equal(answer.state, 'ambiguous');
+  assert.equal(answer.row, null, 'an ambiguous answer picks nobody');
+  assert.equal(answer.matches.length, 2);
+  assert.deepEqual(answer.matches.map((m) => m.dir.label), ['_archive-v9.0.0/3', '_archive-v9.1.0/2']);
+  assert.deepEqual(answer.matches.map((m) => `${m.plan}/${m.task}`), ['1/4', '2/5']);
+});
+
+test('a sha no summary names is unresolved, which is a different answer from ambiguous', () => {
+  const root = planningRoot({ 'phases/1': commitsTable([['1', '1', 'ddddddd', 'unrelated']]) });
+  const answer = resolveCommit(buildCommitIndex(root), `eeeeeee${'0'.repeat(33)}`);
+  assert.equal(answer.state, 'unresolved');
+  assert.equal(answer.row, null);
+  assert.deepEqual(answer.matches, []);
+});
+
+test('an absent planning root is the pre-project state: no dirs, no rows, no warning', () => {
+  const index = buildCommitIndex(join(tmpdir(), 'cad-why-corpus-nothing-here'));
+  assert.deepEqual(index, { dirs: [], rows: [], warnings: [] });
+});
+
+// --- The guarded read itself ----------------------------------------------
+
+test('readArtifact tells absent, unreadable and readable apart', () => {
+  const root = planningRoot({ 'phases/1': 'text' });
+  assert.deepEqual(readArtifact(join(root, 'phases', '1', 'SUMMARY.md')),
+    { text: 'text', absent: false, code: null });
+  assert.deepEqual(readArtifact(join(root, 'phases', '1', 'nothing.md')),
+    { text: null, absent: true, code: null });
+  assert.deepEqual(readArtifact(join(root, 'phases', '1')),
+    { text: null, absent: false, code: 'ENOTREGULAR' },
+    'a non-regular file is refused BEFORE it is opened, so a FIFO cannot block the process');
+});
