@@ -120,6 +120,59 @@ const ABBREV_LEN = 8;
 const candidate = (/** @type {JoinMatch} */ m) =>
   `${m.label} (plan ${m.plan || '-'}, task ${m.task || '-'})`;
 
+/** How many `.planning/ARCHIVE.md` residue rows and touched paths an
+ * unresolved entry prints before it states how many more there are. Both are
+ * unbounded in the corpus - v3.5.9's archive section alone is 38 rows - and
+ * D-13 bounds this response by counting, not by relocating bytes. */
+const GAP_ROWS = 3;
+const GAP_PATHS = 10;
+
+/** The sentence an unresolved entry leads with. It names WHICH lookups failed,
+ * because "not joined" alone does not say whether the record is missing or the
+ * reader is. */
+const GAP = 'NOT RESOLVED - no phase directory on disk and no summary recovered from git '
+  + 'history names this commit, so the record does not say which phase produced it';
+
+/** One capped list, with the remainder counted rather than dropped. */
+function capped(items, limit) {
+  const out = items.slice(0, limit).map((i) => `  ${i}`);
+  if (items.length > limit) out.push(`  ... and ${items.length - limit} more`);
+  return out;
+}
+
+/**
+ * The gap block (AC4's second half). Everything here is either a fact git
+ * carries or a fact the record carries under a LABEL; no line of it names a
+ * phase number, and the one number that looks like one - the commit-message
+ * scope - is printed with the statement that it is not the answer (D-06).
+ * @param {any} g @returns {string}
+ */
+function gapLines(g) {
+  const lines = [];
+  if (g.close) {
+    lines.push(g.close.label
+      ? `the gap sits under the close at ${g.close.commit.slice(0, ABBREV_LEN)}, labelled ${g.close.label}`
+      : `the gap sits under the close at ${g.close.commit.slice(0, ABBREV_LEN)}, which bound no milestone label`);
+  } else {
+    lines.push('no close has pruned this commit yet, so no milestone label covers the gap');
+  }
+  lines.push(g.scope
+    ? `commit-message scope: ${g.scope} - read off the subject line as corroboration and `
+      + 'explicitly NOT a resolved phase, because those numbers reset every milestone (D-06)'
+    : 'the commit message carries no conventional-commit scope to corroborate with');
+  if (g.paths && g.paths.length) {
+    lines.push(`git records ${g.paths.length} path(s) touched by this commit:`, ...capped(g.paths, GAP_PATHS));
+  } else {
+    lines.push('git records no paths touched by this commit');
+  }
+  if (g.archive && g.archive.length) {
+    lines.push(`.planning/ARCHIVE.md keeps ${g.archive.length} residue row(s) under that label, `
+      + 'bound to the label and to no commit (D-04):',
+    ...capped(g.archive.map((/** @type {any} */ r) => `${r.origin}: ${r.text}`), GAP_ROWS));
+  }
+  return quoted(GAP, lines);
+}
+
 /**
  * The `phase:` line - the milestone and the phase number READ OFF the resolved
  * directory's own name, never derived from the commit's conventional-commit
@@ -134,6 +187,7 @@ function fieldPhase(j) {
     const named = (j.matches || []).map(candidate).join('; ');
     return `AMBIGUOUS - ${(j.matches || []).length} records name this commit: ${named}`;
   }
+  if (j.state === 'unresolved') return /** @type {any} */ (j).gap ? gapLines(/** @type {any} */ (j).gap) : undefined;
   if (j.state !== 'resolved') return undefined;
   // A RECOVERED resolution says where it was recovered FROM, because the
   // directory it names no longer exists and a reader who cannot tell the two

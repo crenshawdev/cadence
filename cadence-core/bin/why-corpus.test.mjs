@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildCommitIndex, resolveCommit, readArtifact, readAdjudications, rangeMembers,
   findPruneCommits, parsePruneRecords, PRUNE_ARGV,
-  buildRecoveredIndex, mergeCommitIndexes, readPhaseRecords,
+  buildRecoveredIndex, mergeCommitIndexes, readPhaseRecords, closeOver,
 } from './lib/why-corpus.mjs';
 import { decisionsFor, parseCommitRows, parseDeviations } from './lib/why-record.mjs';
 
@@ -582,4 +582,21 @@ test('a recovered adjudication record is found by listing the tree, not by guess
   assert.deepEqual(warnings, []);
   assert.deepEqual(records.map((r) => r.name), ['ADJUDICATION-risk_surface-plan-e7c1f09.json']);
   assert.equal(records[0].survivors[0].claim, 'kept out of a tree');
+});
+
+test('the close a gap sits under is the EARLIEST one at or after the commit, never the newest', () => {
+  // `findPruneCommits` answers newest-first, so picking the first match would
+  // put every old commit under the most recent close.
+  const prunes = [
+    { commit: 'c'.repeat(40), date: '2026-08-01T00:00:00-04:00', label: 'v3.0.0' },
+    { commit: 'b'.repeat(40), date: '2026-06-01T00:00:00-04:00', label: 'v2.0.0' },
+    { commit: 'a'.repeat(40), date: '2026-04-01T00:00:00-04:00', label: 'v1.0.0' },
+  ];
+  assert.equal(closeOver(prunes, '2026-03-01T00:00:00-04:00').label, 'v1.0.0');
+  assert.equal(closeOver(prunes, '2026-05-01T00:00:00-04:00').label, 'v2.0.0');
+  assert.equal(closeOver(prunes, '2026-07-01T00:00:00-04:00').label, 'v3.0.0');
+  assert.equal(closeOver(prunes, '2026-09-01T00:00:00-04:00'), null,
+    'a commit newer than every close sits under no milestone label - and is not guessed into one');
+  assert.equal(closeOver(prunes, ''), null);
+  assert.equal(closeOver([], '2026-05-01T00:00:00-04:00'), null);
 });

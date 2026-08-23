@@ -59,6 +59,7 @@ import { renderChain } from './lib/why-render.mjs';
 import {
   buildCommitIndex, buildRecoveredIndex, mergeCommitIndexes,
   resolveCommit, readPhaseRecords, readAdjudications, rangeMembers,
+  touchedPaths, closeOver, archiveSections,
 } from './lib/why-corpus.mjs';
 import { decisionsFor, declaringTasks, parseDeviations } from './lib/why-record.mjs';
 
@@ -136,7 +137,7 @@ function joinFor(index, sha) {
  * and the memo is keyed by the directory and plan cell the entry resolved to,
  * which is exactly the granularity a phase's artifacts are stored at.
  * @param {string} dir @param {string} path the queried repo-relative path
- * @param {any} index @param {{sha: string}[]} raws
+ * @param {any} index @param {{sha: string, date: string, subject: string}[]} raws
  * @returns {{entries: any[], warnings: string[]}}
  */
 function joinChain(dir, path, index, raws) {
@@ -210,7 +211,40 @@ function joinChain(dir, path, index, raws) {
     };
     return { ...e, join };
   });
+
+  // THE NAMED GAP, in one further pass (AC4's second half). It runs after the
+  // resolution rather than inside it because both of its git-side facts are
+  // fetched for the WHOLE unresolved set at once: one `git show --name-only`
+  // for every touched path, and the closes the index already carries. An entry
+  // that resolved costs nothing here.
+  const open = /** @type {any[]} */ (entries).filter((e) => e.join.state === 'unresolved');
+  if (open.length) {
+    const paths = touchedPaths(dir, open.map((e) => e.sha));
+    const archive = archiveSections(joinPath(dir, '.planning'));
+    for (const e of open) {
+      const close = closeOver(index.prunes || [], e.date);
+      e.join.gap = {
+        close,
+        scope: commitScope(e.subject),
+        paths: paths.get(e.sha) || [],
+        archive: (close && close.label && archive.get(close.label)) || [],
+      };
+    }
+  }
   return { entries, warnings: [...warnings] };
+}
+
+/** A conventional commit's scope, as the subject line spells it - `1-3` out of
+ * `feat(1-3): ...`. CORROBORATION ONLY (D-06): phase numbers reset every
+ * milestone, `feat(1-1)` exists in seven cycles of this repository, both
+ * candidate directories legitimately exist, and so reading it as the phase key
+ * fails invisibly. Measured over 1,711 commits: 749 carry `(N-M)`, 190 carry
+ * `(N)`, 526 are conventional with no scope and 135 are not conventional at
+ * all, so it is absent or uninformative on 39% of them anyway.
+ * @param {string} subject @returns {string|null} */
+function commitScope(subject) {
+  const m = String(subject || '').match(/^[a-zA-Z]+\(([^)\n]*)\)!?:/);
+  return m && m[1].trim() ? m[1].trim() : null;
 }
 
 /**

@@ -232,7 +232,11 @@ test('a commit no summary names keeps its phase and plan-task fields stated abse
   assert.equal(env.entries[0].join.state, 'unresolved');
 
   const entry = entryFor(env.text, second);
-  for (const label of ['phase', 'plan task', 'decision', 'deviation', 'review']) {
+  // `phase` is the one field an unresolved entry answers rather than defers -
+  // plan 3 task 5 replaced its placeholder with the NAMED GAP, which is a
+  // statement about the record, not a shorter entry.
+  assert.match(entry, /^phase: NOT RESOLVED - /m);
+  for (const label of ['plan task', 'decision', 'deviation', 'review']) {
     assert.ok(entry.includes(`${label}: not yet joined`),
       `expected a stated-absent line for ${label}, got:\n${entry}`);
   }
@@ -296,7 +300,8 @@ test("the rendered chain carries the phase's deviation bullets under a phase-sco
 test('every joined entry names the absent corrected-by marker rather than reporting "none"', () => {
   for (const path of ['cadence-core/bin/lib/capture-file.mjs', 'cadence-core/bin/lib/issue-decision.mjs']) {
     const env = oneJsonLine(run([path, '--dir', REPO, '--top', '30']).stdout);
-    const joined = env.text.split('\n\n').filter((b) => b.includes('phase: ') && !b.includes('phase: not yet joined'));
+    const joined = env.text.split('\n\n').filter(
+      (b) => b.includes('phase: ') && !/^phase: (not yet joined|NOT RESOLVED)/m.test(b));
     assert.ok(joined.length > 0, `expected at least one joined entry for ${path}`);
     for (const entry of joined) {
       assert.ok(entry.includes('corrected by plan-<k> deviation:'),
@@ -434,7 +439,8 @@ test('every join field is stated on an unjoined entry, including the sixth', () 
   const { dir, second } = repo();
   const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
   const entry = entryFor(env.text, second);
-  for (const label of ['phase', 'plan task', 'decision', 'deviation', 'review', 'declared by']) {
+  assert.match(entry, /^phase: NOT RESOLVED - /m);
+  for (const label of ['plan task', 'decision', 'deviation', 'review', 'declared by']) {
     assert.ok(entry.includes(`${label}: not yet joined`), `expected a stated-absent line for ${label}`);
   }
 });
@@ -524,4 +530,98 @@ test('an artifact the recovered tree does not carry is a stated absence, not a f
   assert.match(entry, /^review: no adjudication record in this phase's directory$/m);
   assert.equal(entry.split('\n').filter((l) => /^(phase|plan task|decision|deviation|review|declared by):/.test(l)).length, 6,
     'all six fields are stated, none dropped');
+});
+
+// --- The named gap, and the phase number that is never guessed (task 5) ----
+
+/**
+ * A repository with one commit on `f.txt` under `subject`, and optionally a
+ * close that deletes a phase directory and appends an ARCHIVE.md section.
+ * Nothing in it ever names the `f.txt` commit, so the chain's only entry is
+ * the unresolved arm.
+ * @param {{subject?: string, close?: string}} [opts]
+ * @returns {{dir: string, sha: string}}
+ */
+function repoWithNoRecord(opts = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-gap-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env: GIT_ENV });
+  const at = (msg, iso) => execFileSync('git', ['-C', dir, 'commit', '-q', '-m', msg],
+    { stdio: 'ignore', env: { ...GIT_ENV, GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso } });
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(dir, 'f.txt'), 'one\n');
+  git('add', '.');
+  at(opts.subject || 'a subject with no scope at all', '2026-01-01T00:00:00-05:00');
+  const sha = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim();
+
+  if (opts.close) {
+    mkdirSync(join(dir, '.planning', 'phases', '1'), { recursive: true });
+    writeFileSync(join(dir, '.planning', 'phases', '1', 'SUMMARY.md'), '# a phase\n');
+    writeFileSync(join(dir, '.planning', 'phases', '1', 'PLAN.md'), '---\nphase: 1\nplan: 1\n---\n\n# a plan\n');
+    git('add', '-A');
+    at('feat: the phase', '2026-01-02T00:00:00-05:00');
+    git('rm', '-q', '-r', join('.planning', 'phases', '1'));
+    mkdirSync(join(dir, '.planning'), { recursive: true });
+    writeFileSync(join(dir, '.planning', 'ARCHIVE.md'), [
+      '# Archive', '', `## ${opts.close}`, '',
+      '- `phases/1/SUMMARY.md`: the residue this close kept', '',
+    ].join('\n'));
+    git('add', '-A');
+    at(`chore: prune ${opts.close} completed phases`, '2026-01-03T00:00:00-05:00');
+  }
+  return { dir, sha };
+}
+
+test('a commit no record names comes back as a NAMED gap carrying what git does have', () => {
+  const { dir, sha } = repoWithNoRecord();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.equal(env.ok, true);
+  const entry = entryFor(env.text, sha);
+
+  assert.match(entry, /^commit [0-9a-f]{40} \([0-9a-f]{8}\)$/m);
+  assert.match(entry, /^date: 2026-01-01T00:00:00-05:00$/m);
+  assert.match(entry, /^subject: a subject with no scope at all$/m);
+  assert.match(entry, /^phase: NOT RESOLVED - no phase directory on disk and no summary recovered from git history names this commit/m);
+  assert.match(entry, /^ {2}no close has pruned this commit yet, so no milestone label covers the gap$/m);
+  assert.match(entry, /^ {2}the commit message carries no conventional-commit scope to corroborate with$/m);
+  assert.match(entry, /^ {2}git records 1 path\(s\) touched by this commit:$/m);
+  assert.match(entry, /^ {4}f\.txt$/m);
+});
+
+test('the unresolved arm presents NO digit as a phase number', () => {
+  const { dir, sha } = repoWithNoRecord();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  const entry = entryFor(env.text, sha);
+  assert.ok(!/phase\s+\d/i.test(entry), `a bare "phase <n>" reached the gap arm:\n${entry}`);
+  assert.ok(!/phases\/\d/.test(entry), 'and so did a phase directory name');
+  assert.ok(!/phase:\s*\d/i.test(entry));
+  // The whole rendered text, not just this entry - this chain has one entry and
+  // it is the unresolved arm, so the assertion covers the output.
+  assert.equal(env.entries.length, 1);
+  assert.ok(!/phase\s+\d/i.test(env.text) && !/phases\/\d/.test(env.text));
+});
+
+test('a conventional-commit scope is printed as corroboration, and the phase still reads as the gap', () => {
+  const { dir, sha } = repoWithNoRecord({ subject: 'feat(3-1): a commit whose scope names a phase it cannot prove' });
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  const entry = entryFor(env.text, sha);
+  assert.match(entry, /^ {2}commit-message scope: 3-1 - read off the subject line as corroboration and explicitly NOT a resolved phase/m);
+  assert.match(entry, /^phase: NOT RESOLVED - /m, 'the scope never becomes the answer (D-06)');
+  const phaseLine = entry.split('\n').find((l) => l.startsWith('phase: '));
+  assert.ok(!/\d/.test(phaseLine), 'and the phase line itself carries no digit at all');
+});
+
+test('a close labelled in ARCHIVE.md contributes its section rows, bound to the label and to no commit', () => {
+  const { dir, sha } = repoWithNoRecord({ close: 'v9.9.0' });
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  const entry = entryFor(env.text, sha);
+  assert.match(entry, /^ {2}the gap sits under the close at [0-9a-f]{8}, labelled v9\.9\.0$/m);
+  assert.match(entry, /^ {2}\.planning\/ARCHIVE\.md keeps 1 residue row\(s\) under that label, bound to the label and to no commit \(D-04\):$/m);
+  assert.match(entry, /^ {4}phases\/1\/SUMMARY\.md: the residue this close kept$/m,
+    "the row's origin and text, exactly as parseArchiveRows split them");
+  assert.match(entry, /^phase: NOT RESOLVED - /m, 'ARCHIVE.md supplies no commit-to-phase edge and none is invented');
+});
+
+test('two runs over the gap arm are byte-identical', () => {
+  const { dir } = repoWithNoRecord({ close: 'v9.9.0' });
+  assert.equal(run(['f.txt', '--dir', dir]).stdout, run(['f.txt', '--dir', dir]).stdout);
 });

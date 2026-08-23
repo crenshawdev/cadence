@@ -63,6 +63,7 @@ import { dirname, join, sep } from 'node:path';
 
 import { recordName } from './adjudication-record.mjs';
 import { phaseDirsIn } from './phase-plans.mjs';
+import { parseArchiveRows } from './planning-files.mjs';
 import { parseAdjudication, parseCommitRows, shaMatches } from './why-record.mjs';
 
 /** The three states `resolveCommit` answers in, and deliberately no fourth. */
@@ -692,7 +693,7 @@ function markPresence(repoDir, rows) {
  * D-05 chose cheaper than the lazy one it rejected.
  *
  * @param {string} repoDir
- * @returns {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}}
+ * @returns {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[], prunes: PruneCommit[]}}
  */
 export function buildRecoveredIndex(repoDir) {
   const { prunes, warnings } = findPruneCommits(repoDir);
@@ -714,14 +715,17 @@ export function buildRecoveredIndex(repoDir) {
     }
   }
   markPresence(repoDir, rows);
-  return { dirs, rows, warnings };
+  // `prunes` rides the index because the NAMED GAP below needs the same closes
+  // - which milestone a gap sits under is read off them, and searching twice
+  // is what D-05 rejected.
+  return { dirs, rows, warnings, prunes };
 }
 
 /**
  * The one index a caller asks, over ordered tiers: the on-disk record first,
  * the git-recovered record second (see the header).
  * @param {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}} disk
- * @param {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}} recovered
+ * @param {any} recovered
  * @returns {any}
  */
 export function mergeCommitIndexes(disk, recovered) {
@@ -729,6 +733,95 @@ export function mergeCommitIndexes(disk, recovered) {
     dirs: [...disk.dirs, ...recovered.dirs],
     rows: [...disk.rows, ...recovered.rows],
     tiers: [disk, recovered],
+    prunes: /** @type {any} */ (recovered).prunes || [],
     warnings: [...disk.warnings, ...recovered.warnings],
   };
+}
+
+// ---------------------------------------------------------------------------
+// THE NAMED GAP (AC4's second half, D-04, D-06) - plan 3, task 5.
+//
+// When neither tier resolves a commit, the answer is a STATED GAP plus
+// everything the record does carry, never a guessed phase number. Three
+// contributions, and each is honest about what it is:
+//
+//   - what GIT carries for that commit: the paths it touched, fetched for the
+//     whole unresolved set in ONE `git show --name-only`, never one call per
+//     entry;
+//   - which CLOSE the gap sits under, from the prune commits already found -
+//     the earliest close at or after the commit's date. It is a statement about
+//     WHEN, never about which phase, and it is absent rather than guessed when
+//     the commit is newer than every close;
+//   - `.planning/ARCHIVE.md`'s residue for that milestone, and NOTHING else.
+//     D-04 measured why: ARCHIVE.md carries no commit-to-phase edge and cannot
+//     supply one. Its row grammar is an origin path plus free text, only 18 of
+//     558 rows contain any hex token and those are incidental prose inside
+//     deviation text, and only `Deviations` and `Open items` ever reach the file
+//     - the `## Commits` table is never archived. So its rows are printed as
+//     the milestone's residue, joined to a LABEL and never to a commit.
+//
+// ROWS COME THROUGH `parseArchiveRows`, which already carries the label/origin
+// split and the phase-number round-trip guard. Its header states why `label`
+// and `origin` ride ALONGSIDE the composed `source` rather than being recovered
+// from it - a label containing a `/` makes the composed field ambiguous - so
+// nothing here re-splits `source`.
+// ---------------------------------------------------------------------------
+
+/**
+ * The paths each of `shas` touched, in ONE `git show`. A merge reports none
+ * under git's default, which is an absent list rather than a failure.
+ * @param {string} repoDir @param {string[]} shas @returns {Map<string, string[]>}
+ */
+export function touchedPaths(repoDir, shas) {
+  /** @type {Map<string, string[]>} */
+  const out = new Map();
+  const ids = [...new Set(shas)].filter((s) => COMMIT_ID.test(String(s || '')));
+  if (!ids.length) return out;
+  const res = git(repoDir, ['show', '--name-only', '-M', '--format=%x01%H', ...ids]);
+  let current = null;
+  for (const line of res.stdout.split('\n')) {
+    if (line.startsWith('\x01')) {
+      current = line.slice(1).trim();
+      if (!out.has(current)) out.set(current, []);
+      continue;
+    }
+    const path = line.trim();
+    if (current && path) out.get(current).push(path);
+  }
+  for (const list of out.values()) list.sort();
+  return out;
+}
+
+/**
+ * Which close a commit's date falls under, or null when no close is later than
+ * it - the ordinary state of a commit in the milestone currently open.
+ * `prunes` is newest-first, so the LAST one still at or after the date is the
+ * earliest close that could have pruned it.
+ * @param {PruneCommit[]} prunes @param {string} date an ISO commit date
+ * @returns {{commit: string, label: string|null, date: string}|null}
+ */
+export function closeOver(prunes, date) {
+  const when = String(date || '');
+  if (!when) return null;
+  let found = null;
+  for (const p of prunes) if (p.date >= when) found = p;
+  return found ? { commit: found.commit, label: found.label, date: found.date } : null;
+}
+
+/**
+ * `.planning/ARCHIVE.md`'s rows grouped by milestone label, in the file's own
+ * order. Absent is an empty map and is silent - most repositories have none.
+ * @param {string} planningRoot
+ * @returns {Map<string, Array<{origin: string, text: string}>>}
+ */
+export function archiveSections(planningRoot) {
+  /** @type {Map<string, Array<{origin: string, text: string}>>} */
+  const out = new Map();
+  const { text } = readArtifact(join(planningRoot, 'ARCHIVE.md'));
+  if (text === null) return out;
+  for (const row of parseArchiveRows(text)) {
+    if (!out.has(row.label)) out.set(row.label, []);
+    out.get(row.label).push({ origin: row.origin, text: row.text });
+  }
+  return out;
 }
