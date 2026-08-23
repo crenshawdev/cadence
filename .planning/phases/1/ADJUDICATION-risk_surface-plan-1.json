@@ -1,0 +1,34 @@
+{
+  "phase": "1",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "e40c9c30971db63d1f0623f2080adc8776d32feb",
+  "head": "65267c0a92c82e85e663912bdb8d1740fb684765",
+  "base_id": "e40c9c30971db63d1f0623f2080adc8776d32feb",
+  "head_id": "65267c0a92c82e85e663912bdb8d1740fb684765",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/why-render.mjs",
+      "line": 225,
+      "severity": "low",
+      "claim": "The new exclusion block interpolates the queried path verbatim into terminal-facing `text` when constructing its suggested git command.",
+      "failure_scenario": "A repository contains a path such as `src/\\u001b]52;c;...\\u0007.txt` (or a newline-containing path), and a user queries that exact path through the bare arm. When history simplification excludes a commit, `excludedBlock` emits the control bytes unchanged in `see them with: git log --full-history -- ${path}`. A caller that relays `text` verbatim can therefore execute terminal escape sequences or display forged additional command/output lines.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "base_id": "e40c9c30971db63d1f0623f2080adc8776d32feb",
+      "head_id": "65267c0a92c82e85e663912bdb8d1740fb684765"
+    }
+  ]
+}
