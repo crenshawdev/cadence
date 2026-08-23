@@ -55,6 +55,18 @@
 // index-once-per-invocation form cheap: this repository holds one record today
 // against 28 phase directories and 79 `git show` calls.
 //
+// AND THE BARE ARM ASKS GIT TWICE (WHY-02, v3.6.1 phase 1 D-01). The chain
+// query keeps `--follow`, which git's default history simplification comes
+// attached to; a SECOND query - `comparandArgv`, `--full-history` and no
+// `--follow` - measures what that simplification left out, and the difference
+// rides the envelope as `excluded` and is stated in `text`. The two flags do
+// not compose (measured: `--follow --full-history` returns the `--follow`
+// answer exactly), so this is a second invocation rather than a flag, and it
+// runs on the BARE arm only - the `-L` arm carries its own simplification and
+// WHY-02 is scoped to the bare path. It runs only after the chain query
+// succeeded, and a non-zero exit from it contributes an ABSENT report rather
+// than failing the query, on the same fail-open argument the index makes below.
+//
 // AN UNREADABLE PLANNING ARTIFACT NEVER FAILS THE QUERY. The index fails open
 // with `warnings[]`, and those warnings ride the envelope beside the answer:
 // `git log` already told this seam what the commits are, and a summary nobody
@@ -65,7 +77,9 @@ import { join as joinPath } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { emit } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
-import { parseQuery, probeArgv, bareArgv, lineArgv, classifyResult } from './lib/why-query.mjs';
+import {
+  parseQuery, probeArgv, bareArgv, lineArgv, comparandArgv, classifyResult, excludedFrom,
+} from './lib/why-query.mjs';
 import { renderChain } from './lib/why-render.mjs';
 import {
   buildCommitIndex, buildTaskIndex, buildRecoveredIndex, mergeCommitIndexes,
@@ -104,6 +118,40 @@ function parseEntries(stdout) {
     const [sha, date, ...rest] = line.split('\x1f');
     return { sha, date, subject: rest.join('\x1f') };
   });
+}
+
+/**
+ * Split raw `git log --format=<COMPARAND_FORMAT>` stdout into comparand
+ * records. One record per line: the full sha, then the space-separated parent
+ * list, which is EMPTY on a root commit (lib/why-query.mjs's
+ * `COMPARAND_FORMAT`).
+ * @param {string} stdout @returns {{sha: string, parents: string[]}[]}
+ */
+function parseComparand(stdout) {
+  return stdout.split('\n').filter((l) => l.trim() !== '').map((line) => {
+    const [sha, parents] = line.split('\x1f');
+    return { sha, parents: String(parents || '').split(' ').filter((p) => p !== '') };
+  });
+}
+
+/**
+ * What git's default history simplification left out of the bare arm's answer
+ * (WHY-02, CONTEXT D-01). A SECOND query, never a flag on the first: `--follow`
+ * and `--full-history` do not compose, and `--follow` is measured-justified
+ * already, so the chain keeps rename-following and this measures the cost.
+ *
+ * IT FAILS OPEN AND IT FAILS SILENT - `null`, never a refusal. `git log` has
+ * already told this seam what the commits are; a comparand that could not run
+ * makes the answer thinner, not wrong, which is the same discipline the index
+ * takes with `warnings[]`.
+ * @param {string} dir @param {string} path
+ * @param {{sha: string}[]} entries the chain the bare arm already answered
+ * @returns {{sha: string, parentCount: number}[]|null}
+ */
+function simplificationReport(dir, path, entries) {
+  const res = runGit(dir, comparandArgv(path));
+  if (res.status !== 0) return null;
+  return excludedFrom(entries.map((e) => e.sha), parseComparand(res.stdout));
 }
 
 /**
@@ -344,11 +392,17 @@ try {
           buildTaskIndex(joinPath(dir, '.planning')),
           buildRecoveredIndex(dir),
         );
-        const joined = joinChain(dir, path, index, parseEntries(chain.stdout));
+        const raws = parseEntries(chain.stdout);
+        // The BARE arm only: the `-L` arm carries its own simplification and
+        // WHY-02 is scoped to the bare path. And only after the chain query
+        // succeeded, so a failed query never pays for a second one.
+        const excluded = line === undefined ? simplificationReport(dir, path, raws) : null;
+        const joined = joinChain(dir, path, index, raws);
         const rendered = renderChain(joined.entries, { top });
         emit({
           ok: true, path, line, result: 'chain',
           text: rendered.text, shown: rendered.shown, total: rendered.total, entries: rendered.entries,
+          excluded,
           warnings: [...index.warnings, ...joined.warnings],
         });
       }
