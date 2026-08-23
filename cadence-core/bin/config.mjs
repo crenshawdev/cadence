@@ -133,10 +133,14 @@ function splitPair(tok) {
 function validate(file) {
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
-  catch (e) { fail('read', `cannot read/parse ${file}: ${e.message}`); }
+  catch (e) {
+    fail('read', `cannot read/parse ${file}: ${e.message}`,
+      'repair the JSON in the file the detail names, or point --file at a config that exists, then re-run');
+  }
   if (!isPlainObject(cfg)) {
     return out({ ok: false, file, checked: 0,
-      errors: [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }] });
+      errors: [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }],
+      hint: 'make the top level of this file a JSON object of key/value pairs - an empty {} is a valid layer - then re-run' });
   }
   const leaves = flatten(cfg, '', {});
   const errors = [];
@@ -233,11 +237,14 @@ function set(file, tokens, create) {
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) {
     if (create && e.code === 'ENOENT') cfg = {};
-    else fail('read', `cannot read/parse ${file}: ${e.message}`);
+    else fail('read', `cannot read/parse ${file}: ${e.message}`,
+      'repair the JSON in the file the detail names and re-run - set will not overwrite a layer it could not read');
   }
-  if (!isPlainObject(cfg)) fail('invalid', [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }]);
+  if (!isPlainObject(cfg)) fail('invalid', [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }],
+    `make the top level of ${file} a JSON object of key/value pairs - an empty {} is a valid layer - then re-run`);
   const pathErrors = checkPaths(cfg, pairs);
-  if (pathErrors.length) fail('invalid', pathErrors);
+  if (pathErrors.length) fail('invalid', pathErrors,
+    `edit ${file} by hand to free the path each error names, then re-run`);
   for (const { key, value } of pairs) setInto(cfg, key, value);
   if (create) mkdirSync(dirname(file), { recursive: true });
   // atomicWrite (temp + rename), not a bare write: config is a live layer
@@ -295,7 +302,8 @@ function get(file, keys, asGlobal) {
   // always the right answer; the whole fix is that a prototype member now
   // reaches it.
   const unknown = wanted.filter((k) => !Object.hasOwn(SCHEMA, k));
-  if (unknown.length) fail('unknown-key', unknown);
+  if (unknown.length) fail('unknown-key', unknown,
+    'run `config.mjs keys` for the keys this schema carries, then ask for one of those');
   for (const k of wanted) {
     // Guarded for the same reason, though the filter above now makes every `k`
     // an own schema key: the keyless arm walks Object.keys(SCHEMA) and the
@@ -386,14 +394,16 @@ try {
   try {
     SCHEMA = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')).keys;
   } catch (e) {
-    fail('bad-schema', `cannot read/parse ${SCHEMA_PATH}: ${e.message}`);
+    fail('bad-schema', `cannot read/parse ${SCHEMA_PATH}: ${e.message}`,
+      'restore config.schema.json at the path the detail names - a partial or damaged plugin install is the usual cause - then re-run');
   }
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') {
     // The same failure contract `set` speaks (and workflows/config.md
     // documents): one shape for both faces, so a caller reads `detail` once.
     const { errors } = checkPairs(rest);
-    if (errors.length) out({ ok: false, reason: 'invalid', detail: errors });
+    if (errors.length) out({ ok: false, reason: 'invalid', detail: errors,
+      hint: 'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts' });
     else out({ ok: true });
   }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
