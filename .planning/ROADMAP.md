@@ -34,7 +34,7 @@ Phases are added with `/cad-phase add`.
 
 ## Phases
 
-- [ ] **Phase 1: The chain reaches what it claims** - close the three gaps `v3.6.0` named about `/cad-why`, each measured before the fix and re-measured after
+- [x] **Phase 1: The chain reaches what it claims** - close the three gaps `v3.6.0` named about `/cad-why`, each measured before the fix and re-measured after
 
 ## Phase Details
 
