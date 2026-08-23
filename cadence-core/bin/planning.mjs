@@ -2278,6 +2278,60 @@ function cmdCiteCount(dir, opts) {
   // asks for an explicit id list rather than a number alone, and an empty
   // `cited.ids` beside `count: 0` is exactly the zero-citation case this seam
   // was built to make visible.
+  const surfaced = {
+    count: rows.length,
+    ids: rows.filter((r) => r.id !== undefined).map((r) => r.id),
+  };
+  const cited = { count: citedIds.length, ids: citedIds };
+  const citedByKind = {
+    decision: { surfaced: byKind.decision.surfaced, cited: byKind.decision.cited },
+    // UNJOINABLE, never silently zero (D-02): these three arms carry no
+    // identifier to join on, so `cited: 0` here would report a plan that
+    // ignored them where the truth is that nothing could tell either way.
+    capture: { surfaced: byKind.capture.surfaced, unjoinable: true },
+    deviation: { surfaced: byKind.deviation.surfaced, unjoinable: true },
+    uat: { surfaced: byKind.uat.surfaced, unjoinable: true },
+  };
+
+  // Appended BEFORE the envelope is emitted, `cmdRiskCheckRun`'s precedent
+  // exactly (D-08). An IN-CODE producer is what keeps the coordinator from
+  // retyping a figure onto a flag - the transcription surface this file
+  // condemns where `--payload` replaced inline JSON - and it is why the count
+  // is not a pure reader with `/cad-plan` issuing a separate `trace append`
+  // beside it: two extra invocations, and both figures retyped between them.
+  //
+  // `outcome` is one of `FAMILIES`, so this lands where `renderTrace` counts.
+  // The event carries BOTH figures with their id lists and the per-kind
+  // breakdown, so the record answers the same question the envelope does
+  // without a reader having to join back to the session that produced it - the
+  // legitimate-zero rate is measurable across phases, not only in the run.
+  //
+  // It opens no bracket and bills no worker, so it carries no `role` and no
+  // `tokens`: a token figure is read off a SUBAGENT's return and this seam has
+  // no return to read (lib/trace.mjs's TOKEN PROVENANCE).
+  //
+  // `phase` is the caller's OWN spelling, verbatim, the way a prose
+  // `trace append --phase` stores it - `lib/trace.mjs`'s `key()` stringifies
+  // both sides, so a record written `2` still joins a bracket written `"2"`.
+  //
+  // The write may NOT change the verdict, and `appendEvent` never throws and
+  // never speaks, so its `{written, reason}` rides the envelope instead. That
+  // field is the ONLY place a caller learns the figures were dropped (D-15):
+  // `MAX_TRACE_BYTES` is 1,048,576, `appendEvent` stats before it writes, and
+  // `.planning/trace.jsonl` held 1,762 events in 419,756 B on 2026-08-23 -
+  // unpruned and gitignored, so `size-cap` is a stated failure mode rather
+  // than a silent one.
+  const res = appendEvent(dir, {
+    phase: parsedPhase.raw,
+    family: 'outcome',
+    event: 'cite_count',
+    ...(point ? { point } : {}),
+    ...(off ? { backend: 'none' } : {}),
+    surfaced,
+    cited,
+    cited_by_kind: citedByKind,
+  });
+
   ok({
     phase: n,
     ...(point ? { point } : {}),
@@ -2286,17 +2340,12 @@ function cmdCiteCount(dir, opts) {
     // a live backend, so an omitted field is load-bearing here.
     ...(off ? { backend: 'none' } : {}),
     plans: planFiles,
-    surfaced: { count: rows.length, ids: rows.filter((r) => r.id !== undefined).map((r) => r.id) },
-    cited: { count: citedIds.length, ids: citedIds },
-    cited_by_kind: {
-      decision: { surfaced: byKind.decision.surfaced, cited: byKind.decision.cited },
-      // UNJOINABLE, never silently zero (D-02): these three arms carry no
-      // identifier to join on, so `cited: 0` here would report a plan that
-      // ignored them where the truth is that nothing could tell either way.
-      capture: { surfaced: byKind.capture.surfaced, unjoinable: true },
-      deviation: { surfaced: byKind.deviation.surfaced, unjoinable: true },
-      uat: { surfaced: byKind.uat.surfaced, unjoinable: true },
-    },
+    surfaced,
+    cited,
+    cited_by_kind: citedByKind,
+    // Present on EVERY path, `reason` only where the append failed. A trace
+    // that could not be written leaves every figure above byte-identical.
+    trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
     // A payload row this reader could not place. Reported rather than binned:
     // a row counted in `surfaced` and in no arm would make the breakdown stop
     // reconciling with the headline, and a row dropped in silence would make an

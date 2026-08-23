@@ -8020,3 +8020,76 @@ test('cite-count: memory.backend none is a third state, and needs no payload', (
   assert.match(missing.json.detail, /--payload/);
   assert.equal(missing._exit, 1);
 });
+
+test('cite-count: the count records itself, under the phase\'s own correlation id', () => {
+  // The seam appends its own `outcome` event rather than leaving /cad-plan to
+  // issue a `trace append` and retype both figures onto flags (D-08), so the
+  // legitimate-zero rate is readable across phases and not only in the session
+  // that produced it. Anchored first: `correlationId` derives `<phase>-<sha>`
+  // from the newest lifecycle/phase_start for that phase, so without an anchor
+  // the id would take the phase-only form and prove nothing about joining.
+  const dir = citeTree();
+  const trace = join(dir, 'trace.jsonl');
+  writeFileSync(trace,
+    '{"corr":"2-deadbee","phase":2,"ts":"2026-08-23T00:00:00.000Z",'
+    + '"family":"lifecycle","event":"phase_start","sha":"deadbee"}\n');
+  const payload = citePayload(dir, [
+    { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): cited' },
+    { score: 8, source: 'phases/1/CONTEXT.md', snippet: 'D-09 (area): uncited' },
+    { score: 7, source: 'phases/1/CAPTURE.md', snippet: 'a capture row' },
+  ]);
+  const r = citeCount(['--phase', '2', '--point', 'planned', '--payload', payload], dir);
+  assert.equal(r.json.ok, true, r.raw);
+  assert.deepEqual(r.json.trace, { written: true }, 'no reason where the append succeeded');
+
+  const lines = readFileSync(trace, 'utf8').split('\n').filter(Boolean);
+  assert.equal(lines.length, 2, 'the anchor plus exactly one appended event');
+  const e = JSON.parse(lines[1]);
+  assert.equal(e.family, 'outcome', 'outcome is one of FAMILIES, so renderTrace counts it');
+  assert.equal(e.event, 'cite_count');
+  assert.equal(e.corr, '2-deadbee', 'joined to the phase, not minted');
+  assert.equal(e.phase, '2', "the caller's OWN spelling, verbatim");
+  assert.equal(e.point, 'planned');
+
+  // BOTH figures with their id lists and the breakdown, so the record answers
+  // the same question the envelope does with no join back to a session.
+  assert.deepEqual(e.surfaced, r.json.surfaced);
+  assert.deepEqual(e.cited, r.json.cited);
+  assert.deepEqual(e.cited_by_kind, r.json.cited_by_kind);
+  assert.equal(e.surfaced.count, 3);
+  assert.equal(e.cited.count, 1);
+
+  // It opens no bracket and bills no worker: a `role` or a `tokens` here would
+  // render a nameless worker and claim a cost this seam never paid.
+  assert.equal('role' in e, false);
+  assert.equal('tokens' in e, false);
+  assert.equal('turns' in e, false);
+});
+
+test('cite-count: a trace at the cap comes back written:false, and moves no figure', () => {
+  // D-15: `.planning/trace.jsonl` is gitignored, unpruned and bounded at
+  // MAX_TRACE_BYTES, `appendEvent` stats BEFORE it writes, and the envelope's
+  // `trace` field is the only place a caller could learn the figures were
+  // dropped. A record of a decision may not change the decision, so every
+  // other field must be byte-identical to the same run with no trace at all.
+  const capped = citeTree();
+  const clean = citeTree();
+  const rows = [
+    { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): cited' },
+    { score: 8, source: 'phases/1/CAPTURE.md', snippet: 'a capture row' },
+  ];
+  writeFileSync(join(capped, 'trace.jsonl'), 'x'.repeat(1048576));
+
+  const a = citeCount(['--phase', '2', '--payload', citePayload(capped, rows)], capped);
+  const b = citeCount(['--phase', '2', '--payload', citePayload(clean, rows)], clean);
+  assert.deepEqual(a.json.trace, { written: false, reason: 'size-cap' });
+  assert.deepEqual(b.json.trace, { written: true });
+  assert.equal(a._exit, 0, 'a dropped record is not a refusal');
+
+  const strip = (j) => { const { trace, ...rest } = j; return rest; };
+  assert.deepEqual(strip(a.json), strip(b.json),
+    'the verdict and both figures are identical whether or not the record landed');
+
+  // And nothing was appended: the cap is enforced in FRONT of the write.
+  assert.equal(readFileSync(join(capped, 'trace.jsonl'), 'utf8').length, 1048576);
+});
