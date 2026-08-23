@@ -15,14 +15,22 @@
 // The `--mode delete` closes left neither, and recovering those out of git
 // history is plan 3's job, not this module's.
 //
-// ONE ENUMERATOR, `phaseDirsIn` FROM `lib/phase-plans.mjs`. It already walks
+// AND, BESIDE THE PHASE SPINE ENTIRELY, the OFF-ROADMAP tier: the
+// `tasks/<slug>/RECORD.md` a `/cad-task` run leaves (FST-01, phase 3 D-02).
+// `buildTaskIndex` states why that is a tier of its own rather than a widened
+// `phaseDirsIn`, and why its directory descriptor refuses to carry a phase
+// number.
+//
+// ONE ENUMERATOR PER TIER, AND NEVER A SECOND OPINION ABOUT EITHER:
+// `phaseDirsIn` FROM `lib/phase-plans.mjs` for the phase tiers, `taskRecordsIn`
+// FROM `lib/task-record.mjs` for the task one. `phaseDirsIn` already walks
 // `phases` plus every `_archive-`-prefixed group, already CONTAINS that walk
 // against a symlinked directory escaping the planning root, already fails open
 // on an unreadable directory, and already returns `{label, path}` sorted by
-// label so two runs see one order. A second enumerator beside it is the
-// split-brain `CAPTURE_WALK_SECTIONS` records the cost of in full: the reader
-// and the writer disagreeing about which directories are the walk lost five
-// filed bullets, and it can only recur while the fact has two homes.
+// label so two runs see one order. A second enumerator over the SAME tier is
+// the split-brain `CAPTURE_WALK_SECTIONS` records the cost of in full: the
+// reader and the writer disagreeing about which directories are the walk lost
+// five filed bullets, and it can only recur while the fact has two homes.
 //
 // THE INDEX IS WHAT MAKES THE PHASE A READ FACT RATHER THAN A GUESS (D-06).
 // The conventional-commit scope `<type>(<phase>-<plan>)` is CORROBORATION and a
@@ -64,6 +72,7 @@ import { dirname, join, sep } from 'node:path';
 import { recordName } from './adjudication-record.mjs';
 import { phaseDirsIn } from './phase-plans.mjs';
 import { parseArchiveRows } from './planning-files.mjs';
+import { RECORD_FILE, TASKS_DIR, taskRecordsIn } from './task-record.mjs';
 import { parseAdjudication, parseCommitRows, shaMatches } from './why-record.mjs';
 
 /** The three states `resolveCommit` answers in, and deliberately no fourth. */
@@ -172,6 +181,82 @@ export function buildCommitIndex(planningRoot) {
     if (absent) continue;
     if (text === null) {
       warnings.push(`${dir.label}/SUMMARY.md could not be read (${code}); its commits are not indexed`);
+      continue;
+    }
+    for (const row of parseCommitRows(text)) rows.push({ ...row, dir });
+  }
+  return { dirs, rows, warnings };
+}
+
+/**
+ * A TASK directory's descriptor: `describe()`'s five keys plus the `slug`
+ * MARKER a consumer tells a task directory from a phase directory by. `phase`
+ * and `milestone` are `null` rather than strings because a `/cad-task` run is
+ * off-roadmap - there is no number and no milestone to name, and any
+ * placeholder put here would eventually be printed as one.
+ * @typedef {{
+ *   label: string, path: string, group: string, phase: null, milestone: null,
+ *   slug: string,
+ * }} TaskDir
+ */
+
+/**
+ * The commit-to-TASK index (FST-01, CONTEXT phase 3 D-02) - the same
+ * `{dirs, rows, warnings}` shape `buildCommitIndex` returns, so `resolveCommit`
+ * needs no change at all and this is an added TIER rather than a second
+ * resolution path.
+ *
+ * NOT `phaseDirsIn`, DELIBERATELY. That enumerator admits a directory only when
+ * it holds a conforming `PLAN.md`/`PLAN-<k>.md`, and `/cad-task`'s inline arm
+ * writes no plan file at all. Widening it would also hand every task directory
+ * to `route.mjs`'s risk-floor replay and make `describe()` render
+ * `tasks phase <slug>` - a WRONG join rather than a missing one, which is the
+ * failure `/cad-why` exists to prevent.
+ *
+ * ONE HOME FOR WHERE A RECORD LIVES: `taskRecordsIn` in `lib/task-record.mjs`,
+ * never a second walk of `tasks/` written here. That module is the WRITER's and
+ * the recall walk's enumerator too, and it already contains the walk against a
+ * symlinked slug directory AND against a symlinked `RECORD.md` resolving out of
+ * the planning root, already fails open on an unreadable directory, and already
+ * sorts by slug so two runs see one order. This file's own header records what
+ * a second opinion about which directories are the walk costs.
+ *
+ * ONE READER FOR THE BYTES: `readArtifact` and `parseCommitRows`, unchanged.
+ * The record carries its own `## Commits` table (D-10) precisely so that no
+ * second table grammar is needed here.
+ *
+ * `tasks/<slug>` cannot collide with a `phases/<n>` or `_archive-<label>/<n>`
+ * label, so the merged index's per-label lookups stay unambiguous.
+ *
+ * @param {string} planningRoot
+ * @returns {{dirs: TaskDir[], rows: IndexRow[], warnings: string[]}}
+ */
+export function buildTaskIndex(planningRoot) {
+  /** @type {TaskDir[]} */
+  const dirs = [];
+  /** @type {IndexRow[]} */
+  const rows = [];
+  /** @type {string[]} */
+  const warnings = [];
+  for (const { slug, path } of taskRecordsIn(planningRoot)) {
+    /** @type {TaskDir} */
+    const dir = {
+      label: `${TASKS_DIR}/${slug}`,
+      path: dirname(path),
+      group: TASKS_DIR,
+      phase: null,
+      milestone: null,
+      slug,
+    };
+    dirs.push(dir);
+    const { text, absent, code } = readArtifact(path);
+    // ABSENT is unreachable except through a race: the lister returned this
+    // path only because it stat'd it as a regular file. It is taken silently
+    // anyway - `buildCommitIndex`'s disposition - because a record deleted
+    // between the walk and the read is not a corpus defect to warn about.
+    if (absent) continue;
+    if (text === null) {
+      warnings.push(`${dir.label}/${RECORD_FILE} could not be read (${code}); its commits are not indexed`);
       continue;
     }
     for (const row of parseCommitRows(text)) rows.push({ ...row, dir });

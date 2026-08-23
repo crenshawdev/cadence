@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,7 @@ import {
   buildCommitIndex, resolveCommit, readArtifact, readAdjudications, rangeMembers,
   findPruneCommits, parsePruneRecords, PRUNE_ARGV,
   buildRecoveredIndex, mergeCommitIndexes, readPhaseRecords, closeOver,
+  buildTaskIndex,
 } from './lib/why-corpus.mjs';
 import { decisionsFor, parseCommitRows, parseDeviations } from './lib/why-record.mjs';
 
@@ -599,4 +600,122 @@ test('the close a gap sits under is the EARLIEST one at or after the commit, nev
     'a commit newer than every close sits under no milestone label - and is not guessed into one');
   assert.equal(closeOver(prunes, ''), null);
   assert.equal(closeOver([], '2026-05-01T00:00:00-04:00'), null);
+});
+
+// --- The off-roadmap tasks tier (phase 3 plan 2, task 1) -------------------
+//
+// A `/cad-task` run leaves `tasks/<slug>/RECORD.md` and no phase directory at
+// all, so this tier's fixtures are built rather than borrowed: this repository
+// holds exactly one record today, and the states that matter here - a task
+// directory with no record, and a record that cannot be read - are states it
+// does not hold.
+
+/** One RECORD.md's bytes, in the grammar `lib/task-record.mjs` renders: a
+ * three-column `## Commits` table with no Plan column, and a `- **Files:**`
+ * declaration under an anchored `### Task 1:` heading. */
+const taskRecord = (rows, files = 'src/a.mjs') => [
+  '# Task: a task', '', '## What shipped', '', '- what it did', '',
+  '## Commits', '',
+  '| Task | Commit | Description |',
+  '| --- | --- | --- |',
+  ...rows.map((r) => `| ${r.join(' | ')} |`),
+  '', '## Files', '', '### Task 1: the title', '', `- **Files:** ${files}`, '',
+].join('\n');
+
+/**
+ * A planning root holding `tasks/<slug>/`. A `null` body is a task directory
+ * with a PLAN.md and NO record - the planned path mid-run, which the lister
+ * must not return at all.
+ * @param {Record<string, string|null>} spec keyed by slug
+ * @returns {string}
+ */
+function tasksRoot(spec) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-why-tasks-'));
+  for (const [slug, body] of Object.entries(spec)) {
+    const dir = join(root, 'tasks', slug);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'PLAN.md'), '# a task plan\n');
+    if (body !== null) writeFileSync(join(dir, 'RECORD.md'), body);
+  }
+  return root;
+}
+
+test('one task record yields one directory and its table rows, each carrying the slug', () => {
+  const root = tasksRoot({
+    'bound-plan-size': taskRecord([
+      ['1', 'aaaaaaa', 'the first commit'],
+      ['1', 'bbbbbbb', 'the second commit'],
+    ]),
+    'never-recorded': null,
+  });
+  const index = buildTaskIndex(root);
+
+  assert.deepEqual(index.warnings, []);
+  assert.deepEqual(index.dirs.map((d) => d.label), ['tasks/bound-plan-size'],
+    'a task directory with a plan and no record is not in the walk');
+  assert.equal(index.dirs[0].slug, 'bound-plan-size');
+  assert.equal(index.dirs[0].group, 'tasks');
+  assert.equal(index.dirs[0].phase, null, 'a task is off-roadmap and names no phase number');
+  assert.equal(index.dirs[0].milestone, null);
+  assert.equal(index.dirs[0].path, join(root, 'tasks', 'bound-plan-size'),
+    'the descriptor points at the DIRECTORY, so the artifact readers can open names inside it');
+
+  assert.deepEqual(index.rows.map((r) => r.commit), ['aaaaaaa', 'bbbbbbb'],
+    "the table's own order, preserved");
+  assert.deepEqual(index.rows.map((r) => r.dir.slug), ['bound-plan-size', 'bound-plan-size']);
+  assert.deepEqual(index.rows.map((r) => r.task), ['1', '1']);
+  assert.deepEqual(index.rows.map((r) => r.plan), ['', ''],
+    'a record carries no Plan column, so the cell is empty rather than invented');
+
+  const answer = resolveCommit(index, `aaaaaaa${'0'.repeat(33)}`);
+  assert.equal(answer.state, 'resolved');
+  assert.equal(answer.row.description, 'the first commit');
+});
+
+test('an absent tasks/ is the never-ran-a-task state: no dirs, no rows, no warning', () => {
+  const root = planningRoot({ 'phases/1': commitsTable([['1', '1', 'ccccccc', 'a phase, and no task']]) });
+  assert.deepEqual(buildTaskIndex(root), { dirs: [], rows: [], warnings: [] });
+  assert.deepEqual(buildTaskIndex(join(tmpdir(), 'cad-why-tasks-nothing-here')),
+    { dirs: [], rows: [], warnings: [] }, 'and so is an absent planning root');
+});
+
+test('a RECORD.md that cannot be read warns by artifact and errno code, and contributes no rows', () => {
+  const root = tasksRoot({ 'escaping-record': taskRecord([['1', 'ddddddd', 'never reached']]) });
+  // A record that RESOLVES out of its own directory: the lister contains the
+  // walk against a resolve OUT OF THE PLANNING ROOT, and `readArtifact` is
+  // what refuses the one level further in.
+  writeFileSync(join(root, 'elsewhere.md'), taskRecord([['1', 'eeeeeee', 'a file the caller never asked for']]));
+  const record = join(root, 'tasks', 'escaping-record', 'RECORD.md');
+  rmSync(record);
+  symlinkSync(join(root, 'elsewhere.md'), record);
+
+  let index;
+  assert.doesNotThrow(() => { index = buildTaskIndex(root); });
+  assert.deepEqual(index.rows, [], 'nothing it could not read reaches the index');
+  assert.equal(index.dirs.length, 1, 'the directory is still in the walk');
+  assert.equal(index.warnings.length, 1, `expected exactly one warning, got ${JSON.stringify(index.warnings)}`);
+  assert.match(index.warnings[0], /tasks\/escaping-record\/RECORD\.md/);
+  assert.match(index.warnings[0], /EESCAPE/);
+  assert.ok(!/caller never asked for/.test(index.warnings[0]),
+    'the warning names a code, never the bytes it refused to read');
+});
+
+test('building the tasks tier twice over an unchanged root returns deep-equal results', () => {
+  const root = tasksRoot({
+    'second-slug': taskRecord([['1', 'fffffff', 'later by name']]),
+    'first-slug': taskRecord([['1', 'ggggggg', 'earlier by name']]),
+  });
+  assert.deepEqual(buildTaskIndex(root), buildTaskIndex(root));
+  assert.deepEqual(buildTaskIndex(root).dirs.map((d) => d.label),
+    ['tasks/first-slug', 'tasks/second-slug'], 'slug order, never directory order');
+});
+
+test("this repository's own tasks tier holds the bound-plan-size record and its three commits", () => {
+  const index = buildTaskIndex(REAL);
+  assert.deepEqual(index.warnings, []);
+  assert.ok(index.dirs.some((d) => d.label === 'tasks/bound-plan-size'));
+  assert.ok(index.dirs.every((d) => d.phase === null && d.milestone === null && d.group === 'tasks'));
+  const row = index.rows.find((r) => r.commit.startsWith('093408c9'));
+  assert.ok(row, 'the record names the commit `/cad-why` has to resolve');
+  assert.equal(row.dir.slug, 'bound-plan-size');
 });
