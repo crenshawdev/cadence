@@ -203,6 +203,35 @@ is 1-indexed into the normalized text, `text` is the offending line trimmed
 and truncated to 120 characters with a trailing `...`, and a line reports at
 most one issue per code.
 
+Which codes a read sees depends on the KEY THAT OWNS the line, never on the
+key the caller asked for. Two sets:
+
+- **Every read, whatever key it asked for.** The five STRUCTURAL codes -
+  `unterminated-frontmatter`, `malformed-key-line`, `unknown-line`,
+  `item-without-key`, `commented-key-line` - plus the two BRACKET-level codes
+  `unterminated-inline-list` and `trailing-inline-content`, and
+  `redundant-path-segment` and `markdown-decorated-path`, which only a `files:`
+  declaration can raise in the first place. A structural defect belongs to the
+  block, not to a key: a `requirements:` block truncated by a stray line has to
+  reach a `files:` read too, or `plan-overlap` clears a half-parsed plan as
+  proved independence.
+- **Only where a LIST key owns the line.** The four VALUE-level codes -
+  `unterminated-quote`, `trailing-value-content`, `residual-quote`,
+  `backtick-wrapped-value` - are raised only when the key that owns the value
+  is `requirements:` or `files:`, the two keys the seams read as lists. A
+  backtick or a stray quote in the bytes of `goal:` or `plan:` is a defect in a
+  value nothing reads as a list, and reporting it would put it in
+  `plan-overlap`'s `frontmatter_issues` and the risk floor's declared-files
+  bail as though the plan's FILE LIST were unreadable. This is scoped at the
+  point the code is raised, so a `requirements:` value-level defect still
+  reaches a `files:` read and vice versa - both lists belong to the same
+  declaration, and an author should fix either before anything routes off the
+  other.
+
+An item line arriving while no block key is open owns no list key, so its
+value-level codes are scoped away there as well; the line still reports
+`item-without-key`, so nothing about it goes silent.
+
 A diagnostic is ADDITIVE: it never flips `ok` and is never ITSELF an audit
 `break`. It is NOT verdict-neutral in general, though (D-15) - where a code
 DROPS the payload it read, the ids or files that line would have

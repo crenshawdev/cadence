@@ -1814,6 +1814,53 @@ function resolveValue(raw) {
 }
 
 /**
+ * The four VALUE-LEVEL codes - the ones `scanValue`/`resolveValue` raise about
+ * one value's own bytes, as opposed to the structure of the block around it.
+ */
+const VALUE_LEVEL_CODES = new Set([
+  'unterminated-quote', 'trailing-value-content', 'residual-quote',
+  'backtick-wrapped-value',
+]);
+
+/**
+ * Scope value-level codes to the two LIST KEYS the seams actually read
+ * (D-01). A defect in the bytes of `goal:` or `plan:` is a defect in a value
+ * NOTHING reads as a list, and letting it reach `readFrontmatterList` put it
+ * in `plan-overlap`'s `frontmatter_issues` and `phase-plans`' risk-floor bail
+ * as though the plan's FILE LIST were unreadable - the gate answering
+ * "sequential, this declaration cannot be trusted" on evidence about a
+ * different key entirely.
+ *
+ * Deliberately NOT "only the key the caller asked for": a `requirements:`
+ * defect still reaches a `files:` read and vice versa, because a plan whose
+ * one list is misparsed is a plan whose frontmatter the author should fix
+ * before anything routes off the other one.
+ *
+ * Applied at the PUSH SITES, where the owning key is in scope, so no field is
+ * added to `Issue` and `readFrontmatterList` filters nothing - the five
+ * readers of that envelope (risk floor, audit, plan-overlap, seed-reqs,
+ * lease-check) all keep the shape they have, and an attribute-and-filter route
+ * would have to blind a `files:`-key read to `files:`-key defects to do it.
+ *
+ * The five STRUCTURAL codes (`unterminated-frontmatter`, `malformed-key-line`,
+ * `unknown-line`, `item-without-key`, `commented-key-line`) own no key and are
+ * never routed through here: under D-02 they must reach EVERY key's read, or a
+ * `requirements:` block truncated by a stray line reaches `plan-overlap` clean
+ * and `choose_path` reads a half-parsed file as proved independence. The two
+ * bracket-level codes (`unterminated-inline-list`, `trailing-inline-content`)
+ * are about the list container, not one value, and pass through untouched.
+ *
+ * A key of `null` - an item arriving while no block key is open - owns no list
+ * key, so its value-level codes are suppressed as well; `item-without-key`
+ * still fires on that same line, so nothing about it goes silent.
+ * @param {string|null} key @param {string[]} codes @returns {string[]}
+ */
+function scopeToListKeys(key, codes) {
+  if (key === 'requirements' || key === 'files') return codes;
+  return codes.filter((c) => !VALUE_LEVEL_CODES.has(c));
+}
+
+/**
  * Push one `{line, code, text}` issue per DISTINCT code in `codes`, in
  * first-occurrence order - a five-element inline list with five annotated
  * elements reports `trailing-value-content` once for its line, not five
@@ -1938,7 +1985,9 @@ const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
  * (inline list / block / scalar) and block-item payloads are resolved by
  * `scanValue` + `resolveValue` (+ `parseInlineList` for the inline form) -
  * the quote-aware scanner D-01 requires, so the two paths cannot drift and
- * every code either arm produces reaches `issues` with its line number.
+ * every code either arm produces reaches `issues` with its line number - the
+ * value-level four through `scopeToListKeys`, so a defect in the bytes of a
+ * key no seam reads as a list does not arrive as evidence about the file list.
  *
  * A key whose remainder is empty opens a block: `currentKey` stays set while
  * we walk forward, SKIPPING blank and comment-only lines and pushing each
@@ -1994,7 +2043,7 @@ export function parseFrontmatter(text) {
       const scanned = scanValue(remainder);
 
       if (scanned.code) {
-        pushIssues(issues, lineNo, line, [scanned.code]);
+        pushIssues(issues, lineNo, line, scopeToListKeys(key, [scanned.code]));
         if (first) keys.set(key, []);
         continue;
       }
@@ -2013,7 +2062,7 @@ export function parseFrontmatter(text) {
         items = [];
         if (first) currentKey = key; // block-eligible; items collected below
       }
-      pushIssues(issues, lineNo, line, codes);
+      pushIssues(issues, lineNo, line, scopeToListKeys(key, codes));
       if (first) keys.set(key, items);
       continue;
     }
@@ -2041,12 +2090,18 @@ export function parseFrontmatter(text) {
     if (im) {
       const scanned = scanValue(im[1]);
       if (scanned.code) {
-        pushIssues(issues, lineNo, line, [scanned.code]);
+        pushIssues(issues, lineNo, line, scopeToListKeys(currentKey, [scanned.code]));
+        // This arm returns early, BEFORE the no-block-key diagnosis below, so
+        // it has to make that call itself: with no key open the value-level
+        // code above is scoped away (D-01) and the line would otherwise leave
+        // the pass reporting NOTHING - a frontmatter line gone silent, the one
+        // outcome D-02 exists to prevent.
+        if (!currentKey) issues.push({ line: lineNo, code: 'item-without-key', text: issueText(line) });
         continue;
       }
       if (scanned.value === '') continue; // comment-only item / empty `- ` payload: D-01 cost, not an issue
       const resolved = resolveValue(scanned.value);
-      pushIssues(issues, lineNo, line, resolved.codes);
+      pushIssues(issues, lineNo, line, scopeToListKeys(currentKey, resolved.codes));
       if (currentKey) {
         if (resolved.value) keys.get(currentKey).push(resolved.value);
       } else {
@@ -2081,8 +2136,12 @@ export function parseFrontmatter(text) {
 }
 
 /**
- * Read one frontmatter key as a string list plus the WHOLE pass's issues
- * (never a key-scoped subset, D-02) - a thin selector over
+ * Read one frontmatter key as a string list plus the pass's issues - every
+ * STRUCTURAL issue the pass raised whatever key it sits under (D-02: never a
+ * subset scoped to the key the CALLER asked for), and the value-level four
+ * only where the key that owns them is `requirements:` or `files:`
+ * (`scopeToListKeys`, D-01, applied at the push sites so nothing is filtered
+ * here). A thin selector over
  * `parseFrontmatter`, the single implementation this grammar has (D-03). ONE
  * reader for both `requirements:` and `files:`: two copies of the same
  * pattern would drift, and audit would then accept a plan shape the
@@ -2101,8 +2160,11 @@ export function readFrontmatterList(text, key) {
 }
 
 /**
- * Extract the requirement IDs a plan commits to deliver, plus any
- * frontmatter grammar issues from the pass that read them.
+ * Extract the requirement IDs a plan commits to deliver, plus the frontmatter
+ * grammar issues from the pass that read them - `readFrontmatterList`'s set,
+ * so every structural issue in the block and the value-level codes owned by
+ * `requirements:` or `files:`, never a value-level defect under some other
+ * key.
  * @param {string} text @returns {{ids: string[], issues: Issue[]}}
  */
 export function parsePlanRequirements(text) {
