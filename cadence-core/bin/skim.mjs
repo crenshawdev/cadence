@@ -50,7 +50,8 @@ try {
       if (!stats.lines_match) {
         // The one invariant worth aborting on: if the line count moved, every
         // line reference the agent takes from this output is wrong.
-        emit({ ok: false, reason: 'line-count-drift', file, ...stats });
+        emit({ ok: false, reason: 'line-count-drift', file, ...stats,
+          hint: 'read this file with the Read tool - the line numbers this seam would print do not match the file' });
       } else if (flags.has('--stats')) {
         emit({ ok: true, file, ...stats });
       } else if (flags.has('--no-numbers')) {
@@ -66,5 +67,12 @@ try {
   }
 } catch (e) {
   const err = /** @type {any} */ (e);
-  emit({ ok: false, reason: err?.code === 'ENOENT' ? 'no-such-file' : 'skim-failed', detail: String(err?.message || err) });
+  // The hint splits where the reason splits: an absent path is the caller's to
+  // correct, and anything else leaves Read as the way to see the file at all.
+  const absent = err?.code === 'ENOENT';
+  emit({ ok: false, reason: absent ? 'no-such-file' : 'skim-failed',
+    detail: String(err?.message || err),
+    hint: absent
+      ? 'check the path - skim.mjs takes one file, absolute or relative to the current directory - then re-run'
+      : 'read this file with the Read tool' });
 }

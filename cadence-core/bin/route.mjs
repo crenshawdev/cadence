@@ -929,6 +929,7 @@ function resolve(opts) {
     // of shape). Dropping them made a torn table answer with the ONE thing the
     // caller cannot act on and none of the things it can.
     out({ ok: false, reason: 'unresolved', role: opts.role, stakes,
+      hint: 'route-table.json carries no cell for this role at this stakes level - restore the shipped table, a hand-edited or partial `cells` block being the usual cause, then re-run',
       ...(warnings.length ? { warnings } : {}) }); return;
   }
 
@@ -1518,7 +1519,8 @@ try {
   try {
     TABLE = JSON.parse(readFileSync(TABLE_PATH, 'utf8'));
   } catch (e) {
-    fail('bad-table', `cannot read/parse ${TABLE_PATH}: ${e.message}`);
+    fail('bad-table', `cannot read/parse ${TABLE_PATH}: ${e.message}`,
+      'restore route-table.json at the path the detail names - a partial or damaged plugin install is the usual cause - then re-run');
   }
   const argv = process.argv.slice(2);
   const cmd = argv[0];
