@@ -807,19 +807,35 @@ export function buildRecoveredIndex(repoDir) {
 }
 
 /**
- * The one index a caller asks, over ordered tiers: the on-disk record first,
- * the git-recovered record second (see the header).
+ * The one index a caller asks, over ORDERED tiers: the on-disk phase record
+ * first, the off-roadmap task record second, the git-recovered record third
+ * (see the header).
+ *
+ * THE PHASE SPINE IS THE AUTHORITY when a commit is named by both. A commit a
+ * phase SUMMARY and a task record both claim resolves to the phase, because
+ * `resolveCommit` takes the first tier that answers at all and the roadmap is
+ * where that work was planned, reviewed and verified.
+ *
+ * THE TASKS TIER GOES AHEAD OF THE RECOVERED ONE on the same argument the disk
+ * tier already makes against it: a task record and a phase directory are both
+ * records a reader can OPEN, while the recovered tier reconstructs a directory
+ * that no longer exists on disk at all.
+ *
+ * `prunes` comes off the RECOVERED argument alone. It is the close history the
+ * named-gap block reads, and neither on-disk tier produces one.
+ *
  * @param {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}} disk
+ * @param {{dirs: TaskDir[], rows: IndexRow[], warnings: string[]}} tasks
  * @param {any} recovered
  * @returns {any}
  */
-export function mergeCommitIndexes(disk, recovered) {
+export function mergeCommitIndexes(disk, tasks, recovered) {
   return {
-    dirs: [...disk.dirs, ...recovered.dirs],
-    rows: [...disk.rows, ...recovered.rows],
-    tiers: [disk, recovered],
+    dirs: [...disk.dirs, ...tasks.dirs, ...recovered.dirs],
+    rows: [...disk.rows, ...tasks.rows, ...recovered.rows],
+    tiers: [disk, tasks, recovered],
     prunes: /** @type {any} */ (recovered).prunes || [],
-    warnings: [...disk.warnings, ...recovered.warnings],
+    warnings: [...disk.warnings, ...tasks.warnings, ...recovered.warnings],
   };
 }
 

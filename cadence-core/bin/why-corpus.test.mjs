@@ -445,9 +445,13 @@ test('a merge-shaped prune record is REPORTED, never answered out of an arbitrar
 /** The full sha `72940906^:.planning/phases/1/SUMMARY.md` records as 73aa7bba. */
 const FENCE_AWARE = '73aa7bba503efb228c1b423c3d93cce87494036d';
 
-/** The merged index over this repository, both disk tiers plus git history. */
+/** The merged index over this repository: both phase tiers, the off-roadmap
+ * tasks tier, then git history - the four `why.mjs` itself builds. */
 function mergedHere() {
-  return mergeCommitIndexes(buildCommitIndex(join(REPO_ROOT, '.planning')), buildRecoveredIndex(REPO_ROOT));
+  const planning = join(REPO_ROOT, '.planning');
+  return mergeCommitIndexes(
+    buildCommitIndex(planning), buildTaskIndex(planning), buildRecoveredIndex(REPO_ROOT),
+  );
 }
 
 test('a commit behind a deleted phase directory resolves out of git history alone', () => {
@@ -718,4 +722,69 @@ test("this repository's own tasks tier holds the bound-plan-size record and its 
   const row = index.rows.find((r) => r.commit.startsWith('093408c9'));
   assert.ok(row, 'the record names the commit `/cad-why` has to resolve');
   assert.equal(row.dir.slug, 'bound-plan-size');
+});
+
+// --- The tier is merged, ordered, and asked (phase 3 plan 2, task 2) -------
+
+/** An empty tier, for a merge whose git-recovered half is not under test. */
+const noTier = () => ({ dirs: [], rows: [], warnings: [] });
+
+test('a sha named by BOTH a phase summary and a task record resolves to the PHASE', () => {
+  const root = planningRoot({ 'phases/1': commitsTable([['1', '2', 'abcdef1', 'the phase claims it']]) });
+  const tasks = join(root, 'tasks', 'both-name-it');
+  mkdirSync(tasks, { recursive: true });
+  writeFileSync(join(tasks, 'RECORD.md'), taskRecord([
+    ['1', 'abcdef1', 'and so does the task record'],
+    ['1', 'bcdef12', 'this one only the task record names'],
+  ]));
+
+  const merged = mergeCommitIndexes(buildCommitIndex(root), buildTaskIndex(root), noTier());
+  assert.deepEqual(merged.tiers.map((t) => t.dirs.map((d) => d.label)),
+    [['phases/1'], ['tasks/both-name-it'], []], 'three tiers, in the order the header states');
+
+  const shared = resolveCommit(merged, `abcdef1${'0'.repeat(33)}`);
+  assert.equal(shared.state, 'resolved');
+  assert.equal(shared.row.dir.label, 'phases/1');
+  assert.equal(shared.row.description, 'the phase claims it');
+  assert.equal(shared.row.dir.slug, undefined,
+    'the phase spine is the authority when a commit is named by both - flat-merged this would read ambiguous');
+
+  const only = resolveCommit(merged, `bcdef12${'0'.repeat(33)}`);
+  assert.equal(only.state, 'resolved');
+  assert.equal(only.row.dir.label, 'tasks/both-name-it');
+  assert.equal(only.row.dir.slug, 'both-name-it');
+  assert.equal(only.row.description, 'this one only the task record names');
+});
+
+test('the tasks tier is asked AHEAD of the git-recovered one, and prunes still come off recovered alone', () => {
+  const root = tasksRoot({ 'ahead-of-recovery': taskRecord([['1', 'abc1234', 'the record a reader can open']]) });
+  const recovered = {
+    dirs: [{ label: 'deadbeef:.planning/phases/9', path: null, group: 'recovered', phase: '9', milestone: 'v9.9.9' }],
+    rows: [{ plan: '1', task: '1', commit: 'abc1234', description: 'the tree a reader cannot open',
+      dir: { label: 'deadbeef:.planning/phases/9', path: null, group: 'recovered', phase: '9', milestone: 'v9.9.9' } }],
+    warnings: ['a recovered warning'],
+    prunes: [{ commit: 'f'.repeat(40), date: '2026-01-01T00:00:00-05:00', label: 'v9.9.9' }],
+  };
+  const merged = mergeCommitIndexes(buildCommitIndex(root), buildTaskIndex(root), recovered);
+
+  const answer = resolveCommit(merged, `abc1234${'0'.repeat(33)}`);
+  assert.equal(answer.row.dir.slug, 'ahead-of-recovery');
+  assert.equal(answer.row.description, 'the record a reader can open');
+  assert.deepEqual(merged.prunes, recovered.prunes, 'the close history is the recovered tier's alone');
+  assert.deepEqual(merged.warnings, ['a recovered warning']);
+  assert.deepEqual(merged.dirs.map((d) => d.label),
+    ['tasks/ahead-of-recovery', 'deadbeef:.planning/phases/9']);
+});
+
+test("this repository's merged index resolves 093408c9 to the bound-plan-size task, and 00537356 still to its phase", () => {
+  const merged = mergedHere();
+  const task = resolveCommit(merged, '093408c97560521e1e295ce949ac8beda2f29e50');
+  assert.equal(task.state, 'resolved');
+  assert.equal(task.row.dir.slug, 'bound-plan-size');
+  assert.equal(task.row.dir.label, 'tasks/bound-plan-size');
+  assert.equal(task.row.dir.phase, null);
+
+  const phase = resolveCommit(merged, ISSUE_CORE);
+  assert.equal(phase.state, 'resolved');
+  assert.equal(phase.row.dir.label, '_archive-v3.4.0/1', 'the phase tiers are untouched by the new one');
 });

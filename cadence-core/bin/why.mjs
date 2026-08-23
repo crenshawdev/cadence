@@ -35,14 +35,25 @@
 // single `join` object, which is the ONE attach point `lib/why-render.mjs`
 // reads and every later edge extends.
 //
-// AND THAT INDEX IS THREE TIERS, NOT TWO (plan 3). A `--mode delete` close left
-// no directory in either on-disk tier, so 16 of this repository's 25 closes are
-// readable only out of git history. `buildRecoveredIndex` recovers each close's
-// SUMMARY tables from its prune commit's parent and `mergeCommitIndexes` puts
-// them BEHIND the on-disk record rather than beside it, so an archived phase -
-// which both tiers can legitimately claim - resolves to the copy a reader can
-// actually open. Measured 2026-08-23: 108 ms for the whole merged build, 256
-// on-disk rows plus 734 recovered ones.
+// AND THAT INDEX IS FOUR TIERS, NOT TWO (plan 3, then phase 3 plan 2). A
+// `--mode delete` close left no directory in either on-disk tier, so 16 of this
+// repository's 25 closes are readable only out of git history.
+// `buildRecoveredIndex` recovers each close's SUMMARY tables from its prune
+// commit's parent and `mergeCommitIndexes` puts them BEHIND the on-disk record
+// rather than beside it, so an archived phase - which both tiers can
+// legitimately claim - resolves to the copy a reader can actually open.
+// Measured 2026-08-23: 108 ms for the whole merged build, 256 on-disk rows plus
+// 734 recovered ones.
+//
+// THE FOURTH TIER IS OFF THE ROADMAP ENTIRELY (FST-01, phase 3 D-02). A
+// `/cad-task` run leaves `.planning/tasks/<slug>/RECORD.md` and no phase
+// directory at all, so `buildTaskIndex` indexes those records as a tier of
+// their own - ordered AFTER the on-disk phase spine, which stays the authority
+// when both name one commit, and AHEAD of the git-recovered tier, on the same
+// argument the disk tier already makes against it. It costs ONE directory
+// listing plus ONE read per task record, which is what keeps the eager
+// index-once-per-invocation form cheap: this repository holds one record today
+// against 28 phase directories and 79 `git show` calls.
 //
 // AN UNREADABLE PLANNING ARTIFACT NEVER FAILS THE QUERY. The index fails open
 // with `warnings[]`, and those warnings ride the envelope beside the answer:
@@ -57,7 +68,7 @@ import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { parseQuery, probeArgv, bareArgv, lineArgv, classifyResult } from './lib/why-query.mjs';
 import { renderChain } from './lib/why-render.mjs';
 import {
-  buildCommitIndex, buildRecoveredIndex, mergeCommitIndexes,
+  buildCommitIndex, buildTaskIndex, buildRecoveredIndex, mergeCommitIndexes,
   resolveCommit, readPhaseRecords, readAdjudications, rangeMembers,
   touchedPaths, closeOver, archiveSections,
 } from './lib/why-corpus.mjs';
@@ -115,6 +126,12 @@ function brief(m) {
   // so the renderer can say so rather than print a directory name that no
   // longer resolves to anything a reader could open.
   if (m.dir.recovered) out.recovered = { ...m.dir.recovered };
+  // A row from the off-roadmap TASKS tier carries its slug, which is the MARKER
+  // the renderer tells a task directory from a phase directory by - never by
+  // parsing the label (`buildTaskIndex` in lib/why-corpus.mjs). `phase` and
+  // `milestone` above are `null` on that tier for the same reason: there is no
+  // number to print, and a placeholder here would be printed as one.
+  if (m.dir.slug) out.slug = m.dir.slug;
   return out;
 }
 
@@ -317,12 +334,15 @@ try {
       } else if (result.outcome === 'git-failed') {
         emit({ ok: false, reason: 'git-failed', detail: line === undefined ? 'the bare-path chain query' : 'the line-scoped chain query' });
       } else {
-        // ONE merged index per invocation, over three tiers: the live phase
-        // directories, the `_archive-v<ver>/` trees, and git history alone for
-        // the closes that left neither (CONTEXT D-03). The tiers are ORDERED,
-        // not flattened - `mergeCommitIndexes` states why.
+        // ONE merged index per invocation, over four tiers: the live phase
+        // directories, the `_archive-v<ver>/` trees, the off-roadmap
+        // `tasks/<slug>/` records, and git history alone for the closes that
+        // left neither on-disk phase tier (CONTEXT D-03, phase 3 D-02). The
+        // tiers are ORDERED, not flattened - `mergeCommitIndexes` states why.
         const index = mergeCommitIndexes(
-          buildCommitIndex(joinPath(dir, '.planning')), buildRecoveredIndex(dir),
+          buildCommitIndex(joinPath(dir, '.planning')),
+          buildTaskIndex(joinPath(dir, '.planning')),
+          buildRecoveredIndex(dir),
         );
         const joined = joinChain(dir, path, index, parseEntries(chain.stdout));
         const rendered = renderChain(joined.entries, { top });

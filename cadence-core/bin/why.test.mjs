@@ -625,3 +625,52 @@ test('two runs over the gap arm are byte-identical', () => {
   const { dir } = repoWithNoRecord({ close: 'v9.9.0' });
   assert.equal(run(['f.txt', '--dir', dir]).stdout, run(['f.txt', '--dir', dir]).stdout);
 });
+
+// --- The off-roadmap tasks tier at the seam (phase 3 plan 2, task 2) -------
+
+/**
+ * A repository whose only planning artifact is a `/cad-task` record: one
+ * commit on `f.txt`, and `tasks/<slug>/RECORD.md` naming it. No phase
+ * directory anywhere, which is exactly what the inline `/cad-task` path leaves.
+ * @param {string} slug
+ * @returns {{dir: string, sha: string, slug: string}}
+ */
+function repoWithTaskRecord(slug = 'a-fast-path-run') {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-task-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(dir, 'f.txt'), 'one\n');
+  git('add', '.');
+  execFileSync('git', ['-C', dir, 'commit', '-q', '-m', 'fix: something small enough for the fast path'],
+    { stdio: 'ignore', env: { ...GIT_ENV, GIT_AUTHOR_DATE: '2026-01-01T00:00:00-05:00', GIT_COMMITTER_DATE: '2026-01-01T00:00:00-05:00' } });
+  const sha = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim();
+
+  const taskDir = join(dir, '.planning', 'tasks', slug);
+  mkdirSync(taskDir, { recursive: true });
+  writeFileSync(join(taskDir, 'RECORD.md'), [
+    `# Task: ${slug}`, '', '## What shipped', '', '- the one thing it did', '',
+    '## Commits', '',
+    '| Task | Commit | Description |',
+    '| --- | --- | --- |',
+    `| 1 | ${sha} | fix: something small enough for the fast path |`,
+    '', '## Files', '', `### Task 1: ${slug}`, '', '- **Files:** f.txt', '',
+  ].join('\n'));
+  return { dir, sha, slug };
+}
+
+test('a commit only a task record names resolves at the seam, to the task and to no phase', () => {
+  const { dir, sha, slug } = repoWithTaskRecord();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.equal(env.ok, true);
+  assert.deepEqual(env.warnings, []);
+
+  const data = env.entries.find((e) => e.sha === sha);
+  assert.equal(data.join.state, 'resolved', 'before this tier existed the whole chain was the gap arm');
+  assert.equal(data.join.slug, slug);
+  assert.equal(data.join.label, `tasks/${slug}`);
+  assert.equal(data.join.phase, null, 'a task is off-roadmap and carries no phase number to print');
+  assert.equal(data.join.milestone, null);
+  assert.equal(data.join.task, '1');
+  assert.equal(data.join.plan, '', 'a record carries no Plan column');
+  assert.ok(!entryFor(env.text, sha).includes('NOT RESOLVED'));
+});
