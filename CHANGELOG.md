@@ -6,6 +6,94 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-08-23
+
+The Core Value at the top of `PROJECT.md` claims that what Cadence writes down
+comes back on its own at the moment it matters, and until this cycle that was
+the one claim in this project with no evidence behind it. Everything the gates
+write was written by a gate and read by nobody. Recall shipped as a BM25
+subcommand injected into `cad-context`, `cad-planner` and `cad-debug`, and
+nothing anywhere checked that it landed (#190). The `.planning/` corpus could
+already answer "why is this code like this" and there was no command that walked
+the join (#192). And the path most real work actually takes left the corpus a
+hole exactly where the work went: `/cad-task` produced commits recall could not
+find, ran no risk check on its committed range, and opened no trace bracket, so
+per-role accounting missed the path most runs use (#191).
+
+Three phases, 66 commits off `v3.5.9`, five requirement ids seeded at the open
+and all five traced to a verified phase: `WHY-01`, `RBK-01`, `FST-01`, `FST-02`
+and `FST-03`. `/cad-audit` PASS on both arms, 21 of 21 acceptance criteria
+covered.
+
+### Added
+
+- **`/cad-why <path>[:<line>]` walks the record join.** It takes a path, or a
+  path narrowed to a line, and joins the commits that touched it to six record
+  edges: the phase, the plan task, the numbered decision, the deviation, the
+  surviving review finding and the declaring task. It reads four tiers, the live
+  `phases/<N>/` directories, the `_archive-v<ver>/` directories, task records,
+  and milestones already pruned out of the live tree and recovered from git
+  history, and where no tier answers it names the gap in words rather than
+  returning an empty chain (`cadence-core/bin/why.mjs`, WHY-01).
+- **`planning.mjs cite-count` measures whether recall was read.** Per item it
+  counts what the recall pass surfaced against what the produced plan actually
+  cites. `/cad-plan` runs it at both of its points, `count_planned` and
+  `count_committed`, including the under-threshold inline arm, and the `done`
+  report carries a `Citations:` line that names a plan citing none of a
+  non-empty surfaced set. It reports and does nothing about it, by design
+  (RBK-01).
+- **The three readings a bare count cannot separate are distinct on the
+  record.** Backend off, surfaced nothing, and cited nothing were one number
+  before; `cite-count` now tells them apart on the envelope and in its own
+  `outcome`-family `cite_count` trace event, which carries `{written, reason}`
+  (RBK-01).
+- **`/cad-task` leaves a record.** The fast path now writes
+  `.planning/tasks/<slug>/RECORD.md` through a `task-record` seam that derives
+  every figure from the committed range. The recall corpus reads it as a tier,
+  `/cad-why` merges it as a commit tier and renders a resolved task as a task
+  rather than as a phase, and the run brackets itself under a per-run phase-0
+  correlation anchor so `cad-task` finally appears in per-role accounting
+  (FST-01, FST-02, FST-03).
+
+### Fixed
+
+- **A symlinked planning artifact could put bytes from outside the tree onto a
+  seam's stdout.** `readArtifact` in `lib/why-corpus.mjs` followed a joined
+  name's own symlink, which put the escape that `phaseDirsIn` guards per
+  directory back one level down: a `SUMMARY.md` symlinked out of the tree passed
+  `isFile()` and was read. The resolved path must now stay inside the resolved
+  directory it was joined onto, which closes the check-to-use race on the same
+  line (`b5f49bad`).
+- **The task-record writer is now contained the way the reader is.** The reader
+  checked containment and the writer did not, so the two disagreed about what
+  counted as inside `.planning/tasks/` (`71234385`).
+- **An echoed `mktemp` scratch directory was pasted into later shell commands as
+  a literal.** Injectable through `$TMPDIR`, at three prose sites, two of which
+  predate this cycle. Raised `high` by the phase-2 `risk_surface` gate, ruled
+  survived rather than downgraded, and fixed across all three
+  (`cadence-core/workflows/plan.md`,
+  `cadence-core/references/review-triggers.md`,
+  `cadence-core/references/triage-gate.md`, `054fa9a0`).
+
+### Known gaps
+
+- **`/cad-why`'s bare-path arm inherits git's default history simplification.**
+  Measured on `lib/release-decision.mjs`: 7 commits reachable against 10 with
+  `--full-history`, the three missing being `_archive-v2.2.0/3` phase commits
+  collapsed into a merge. The join is correct, the history it reaches is short.
+  The prune search already passes `--full-history`, which is why it recovers 25
+  closes instead of 4.
+- **The renderer's entry cap of 10 has a stated reason that is measured false.**
+  It claims ten entries stays under the 10,000-byte line in
+  `references/conventions.md`; with all edges filled, `planning.mjs` renders
+  15,637 B. The measurement is in the comment. The number was not lowered
+  because the test that pins it sat outside the touching plans' leases.
+- **`closeOver` compares `%cI` timestamps as strings**, and ISO-8601 values
+  under different UTC offsets do not string-sort chronologically, so an
+  unresolved commit can attach to the wrong close. Ruled low on reachability: it
+  needs mixed-offset commits, a `--mode delete` close, and a pair straddling a
+  prune.
+
 ## [3.5.9] - 2026-08-23
 
 Ten defects sat in `.planning/CAPTURE.md` between 2026-08-05 and 2026-08-08 and
@@ -3576,6 +3664,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.0
 [3.5.9]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.9
 [3.5.8]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.8
 [3.5.7]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.7
