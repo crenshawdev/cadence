@@ -6741,9 +6741,18 @@ function cmdRenumber(dir, sub, opts) {
   if (sub !== 'insert' && sub !== 'remove') return fail('usage', 'renumber <insert --at N | remove --n N> [--dry-run]');
   const roadmapFile = join(dir, 'ROADMAP.md');
   const roadmapText = read(roadmapFile);
-  if (roadmapText === null) return fail('no-roadmap', `${roadmapFile} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${roadmapFile} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md - renumbering is computed FROM'
+      + ' the roadmap, so there is nothing to renumber against without it');
+  }
   const phases = parseRoadmapPhases(roadmapText);
-  if (!phases.length) return fail('unparseable-roadmap', 'no phase lines under ## Phases');
+  if (!phases.length) {
+    return fail('unparseable-roadmap', 'no phase lines under ## Phases',
+      'give ROADMAP.md at least one phase line spelled'
+      + ' `- [ ] **Phase <n>: <name>** - <description>` under `## Phases`, then re-run - nothing was'
+      + ' moved');
+  }
   const total = phases.length;
   // Dir-move ceiling: integer phases only. Decimals are never shifted (see
   // below), and a decimal ceiling would walk fractional ks (2.1, 1.1, ...)
@@ -6769,10 +6778,22 @@ function cmdRenumber(dir, sub, opts) {
   // at the dispatch door, decimal wording included (see `decimalRefusal`), so
   // the well-formed-decimal re-test that used to sit here can no longer be
   // reached and is not left behind as a second home for that sentence.
-  if (!parsedAt.ok) return fail('bad-args', `renumber ${sub} needs --${flag} <N>`);
+  if (!parsedAt.ok) {
+    return fail('bad-args', `renumber ${sub} needs --${flag} <N>`,
+      `pass --${flag} <N> as a whole phase number, then re-run - nothing was moved; a valueless`
+      + ' flag arrives here as `true` and would otherwise have meant phase 1');
+  }
   const at = parsedAt.value;
-  if (sub === 'insert' && (at < 1 || at > total + 1)) return fail('out-of-range', `--at must be 1..${total + 1}`);
-  if (sub === 'remove' && !phases.some((p) => p.n === at)) return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`);
+  if (sub === 'insert' && (at < 1 || at > total + 1)) {
+    return fail('out-of-range', `--at must be 1..${total + 1}`,
+      `pick a position inside that range - ${total + 1} appends after the last phase - then re-run;`
+      + ' nothing was moved');
+  }
+  if (sub === 'remove' && !phases.some((p) => p.n === at)) {
+    return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`,
+      "re-run with a phase number that appears in ROADMAP.md's `## Phases` list; nothing was"
+      + ' moved');
+  }
 
   const delta = sub === 'insert' ? 1 : -1;
   const shiftFrom = sub === 'insert' ? at : at + 1;
@@ -7027,7 +7048,9 @@ function cmdCapture(dir, opts) {
   const kind = typeof opts.kind === 'string' ? opts.kind.trim() : '';
   if (!CAPTURE_KINDS.includes(kind)) {
     return fail('bad-args', `capture --kind must be one of ${CAPTURE_KINDS.join(' | ')}`
-      + ` (got: ${kind || 'none'})`);
+      + ` (got: ${kind || 'none'})`,
+      'send one of the kinds the detail lists - it decides which heading of CAPTURE.md the item is'
+      + ' filed under, and the recall walk reads them differently');
   }
   // `--text-file` is the SAFE transport and the one the workflows prescribe.
   // `--text "<item>"` puts caller-derived prose inside a double-quoted shell
@@ -7036,10 +7059,14 @@ function cmdCapture(dir, opts) {
   // names the file here. `--text` stays for a human typing at a shell, where
   // the text is the user's own.
   if ('text-file' in opts && (typeof opts['text-file'] !== 'string' || opts['text-file'].trim() === '')) {
-    return fail('bad-args', 'capture --text-file needs a path after it: --text-file <path>');
+    return fail('bad-args', 'capture --text-file needs a path after it: --text-file <path>',
+      'write the sentence to a file and name it after the flag - nothing was captured, so the'
+      + ' sentence is not in the queue yet');
   }
   if ('text' in opts && 'text-file' in opts) {
-    return fail('bad-args', 'capture takes --text or --text-file, never both');
+    return fail('bad-args', 'capture takes --text or --text-file, never both',
+      'drop one of the two and re-run - keeping both would silently discard one of the sentences'
+      + ' you believe was captured');
   }
   let text;
   if (typeof opts['text-file'] === 'string') {
@@ -7047,9 +7074,15 @@ function cmdCapture(dir, opts) {
       text = readFileSync(opts['text-file'].trim(), 'utf8').trim();
     } catch (e) {
       return fail('bad-args',
-        `capture --text-file could not be read: ${e && e.message ? e.message : String(e)}`);
+        `capture --text-file could not be read: ${e && e.message ? e.message : String(e)}`,
+        'write the sentence to that path, or point --text-file at the file that already holds it -'
+        + ' nothing was captured');
     }
-    if (!text) return fail('bad-args', 'capture --text-file names an empty file');
+    if (!text) {
+      return fail('bad-args', 'capture --text-file names an empty file',
+        'put the sentence in that file before re-running - nothing was captured, and an empty file'
+        + ' is what a write that never landed looks like');
+    }
   } else {
     // parseArgs hands a VALUELESS flag the boolean `true`, so a bare `--text`
     // has to be refused here - written through, it captures the literal word
@@ -7057,7 +7090,10 @@ function cmdCapture(dir, opts) {
     text = typeof opts.text === 'string' ? opts.text.trim() : '';
     if (!text) {
       return fail('bad-args',
-        'capture needs the sentence: --text-file <path> (workflows) or --text "<text>" (typed by hand)');
+        'capture needs the sentence: --text-file <path> (workflows) or --text "<text>" (typed by hand)',
+        'write what should be remembered as one sentence and pass it through --text-file, or --text'
+        + ' at a shell - a bare --text arrives here as the word "true" and is refused rather than'
+        + ' filed');
     }
   }
   /** @type {string|undefined} */
@@ -7068,10 +7104,17 @@ function cmdCapture(dir, opts) {
     // so the flag is refused rather than dropped.
     if (kind !== 'todo') {
       return fail('bad-args', 'capture --phase is admitted only with --kind todo'
-        + ' - a seed and a note carry no phase tag');
+        + ' - a seed and a note carry no phase tag',
+      'drop --phase, or file this as --kind todo if the phase tag is the point - nothing was'
+      + ' captured, and dropping the flag silently would have left you believing it tagged'
+      + ' something');
     }
     const parsed = requirePhaseArg(opts.phase);
-    if (!parsed.ok) return fail('bad-args', 'capture --phase needs a phase number: --phase <N>');
+    if (!parsed.ok) {
+      return fail('bad-args', 'capture --phase needs a phase number: --phase <N>',
+        'send a plain phase number, or drop --phase to file the item untagged - nothing was'
+        + ' captured');
+    }
     // The caller's OWN spelling, so `--phase 1.10` tags `(phase 1.10)`.
     phase = parsed.raw;
   }
@@ -7079,11 +7122,17 @@ function cmdCapture(dir, opts) {
   // nothing usable after it is never silently answered about the default path,
   // which would write a different file than the caller named (#42/#45).
   if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
-    return fail('bad-args', 'capture --file needs a path after it: --file <path to CAPTURE.md>');
+    return fail('bad-args', 'capture --file needs a path after it: --file <path to CAPTURE.md>',
+      'name the CAPTURE.md to append to, or drop --file to use the one under --dir - nothing was'
+      + ' captured');
   }
   const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
   const res = appendCapture(file, kind, text, phase);
-  if (res.ok === false) return fail(res.reason, res.detail);
+  if (res.ok === false) {
+    return fail(res.reason, res.detail,
+      'nothing was captured, so the sentence is not in the queue - make the file the detail names'
+      + ' writable and re-run; if another run is holding its lock, let that one finish first');
+  }
   ok({ file, kind, bullet: res.bullet, heading: res.heading, created: res.created });
 }
 
@@ -7102,7 +7151,8 @@ function cmdCaptureSections(dir, opts) {
   // flag with nothing usable after it is never silently answered about the
   // default path, which would report on a different file than the caller named.
   if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
-    return fail('bad-args', 'capture-sections --file needs a path after it: --file <path to CAPTURE.md>');
+    return fail('bad-args', 'capture-sections --file needs a path after it: --file <path to CAPTURE.md>',
+      'name the CAPTURE.md to report on, or drop --file to use the one under --dir');
   }
   const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
   /** @type {string} */
@@ -7118,7 +7168,9 @@ function cmdCaptureSections(dir, opts) {
     if (e && /** @type {any} */ (e).code === 'ENOENT') {
       return ok({ file, exists: false, walk: CAPTURE_WALK_SECTIONS, sections: [] });
     }
-    return fail('unreadable-capture', `${file}: ${e && e.message ? e.message : String(e)}`);
+    return fail('unreadable-capture', `${file}: ${e && e.message ? e.message : String(e)}`,
+      'make that file readable and re-run - the queue is PRESENT and could not be opened, so this'
+      + ' is not a report that no items are filed outside the recall walk');
   }
   ok({
     file,
@@ -7145,7 +7197,11 @@ const DEBT_MAX_FILE_BYTES = 1048576;
 const DEBT_HEADING = '## Debt markers';
 
 function cmdDebtHarvest(root) {
-  if (!existsSync(root)) return fail('no-root', `${root} not found`);
+  if (!existsSync(root)) {
+    return fail('no-root', `${root} not found`,
+      'point --root at the project root - the harvest walks the tracked files git lists from'
+      + ' there');
+  }
   /** @type {string} */
   let listing;
   try {
@@ -7156,7 +7212,9 @@ function cmdDebtHarvest(root) {
     // answer a caller acts on, and it has to mean "none planted", never "the
     // walk did not happen".
     return fail('no-git', `${root} could not be enumerated with git ls-files`
-      + ` (${e && e.message ? e.message.split('\n')[0] : String(e)})`);
+      + ` (${e && e.message ? e.message.split('\n')[0] : String(e)})`,
+      'run this inside a git repository whose index git can read, then re-run - the walk did not'
+      + ' happen, so this is not a report that no debt markers are planted');
   }
 
   const entries = [];
@@ -7223,11 +7281,17 @@ function cmdDebtHarvest(root) {
       return true;
     });
   } catch (e) {
-    return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`);
+    return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`,
+      'make that file and its directory writable, then re-run - the markers were found and none of'
+      + ' them reached CAPTURE.md');
   }
   // A refused lock is reported through the EXISTING failure path, not a new
   // one: every caller of this seam already branches on `write-failed`.
-  if (guarded.ok === false) return fail('write-failed', `${captureFile}: ${guarded.detail}`);
+  if (guarded.ok === false) {
+    return fail('write-failed', `${captureFile}: ${guarded.detail}`,
+      'let the run holding the lock finish and re-run, or clear a stale lock the detail names - the'
+      + ' harvest is idempotent, so a second pass costs nothing');
+  }
   const written = guarded.value;
   const malformed = entries.filter((e) => e.malformed)
     .map((e) => ({ path: e.path, line: e.line, missing: e.malformed }));
@@ -7261,10 +7325,18 @@ function cmdMilestonePrune(dir, opts) {
   // value, in the same order, before any read, mkdir or rename and in both
   // modes.
   const resolvedLabel = resolveTextFlag(opts, 'label', 'milestone-prune');
-  if (!resolvedLabel.ok) return fail('bad-args', resolvedLabel.detail);
+  if (!resolvedLabel.ok) {
+    return fail('bad-args', resolvedLabel.detail,
+      'pass --label or --label-file, never both, and point --label-file at a readable, non-empty'
+      + ' file - nothing was pruned');
+  }
   const raw = resolvedLabel.value !== undefined ? resolvedLabel.value : opts.label;
   const label = typeof raw === 'string' ? raw.trim() : '';
-  if (!label) return fail('bad-args', 'milestone-prune needs --label <version or milestone name>');
+  if (!label) {
+    return fail('bad-args', 'milestone-prune needs --label <version or milestone name>',
+      "name the milestone this close is archiving under - the released version, or PROJECT.md's"
+      + ' milestone name for an untagged close; nothing was pruned');
+  }
   // Two independent terms, both here at the point the label is read - before
   // any read, mkdir or rename, and in BOTH modes: `--mode delete` builds no
   // archive root but still writes the label into every shipped requirement row.
@@ -7278,7 +7350,9 @@ function cmdMilestonePrune(dir, opts) {
   //    markdown table cell, where either character silently rewrites the row.
   if (/[|\r\n]/.test(label)) {
     return fail('bad-args',
-      'milestone-prune --label cannot contain "|" or a newline - it is written into a REQUIREMENTS.md table cell');
+      'milestone-prune --label cannot contain "|" or a newline - it is written into a REQUIREMENTS.md table cell',
+      'take those characters out of the label and re-run - nothing was pruned, and either one would'
+      + ' silently rewrite the shipped requirement rows it is written into');
   }
   // 2. The containment term. `_archive-<label>` is handed to mkdirSync and
   //    renameSync below, so `--label '../../../outside-tree'` moved phases/1
@@ -7290,11 +7364,15 @@ function cmdMilestonePrune(dir, opts) {
   const archiveRoot = join(dir, `_archive-${label}`);
   if (!resolvePath(archiveRoot).startsWith(resolvePath(dir) + sep)) {
     return fail('bad-args',
-      `milestone-prune --label must stay inside the planning root: "_archive-${label}" resolves outside ${dir}`);
+      `milestone-prune --label must stay inside the planning root: "_archive-${label}" resolves outside ${dir}`,
+      'use a plain milestone name with no path separators or `..` segments - the label names an'
+      + ' archive directory inside the planning root; nothing was pruned');
   }
   const mode = opts.mode;
   if (mode !== 'delete' && mode !== 'archive') {
-    return fail('bad-args', 'milestone-prune needs --mode <delete|archive> (tagged release: delete - the tag is the archive; untagged: archive)');
+    return fail('bad-args', 'milestone-prune needs --mode <delete|archive> (tagged release: delete - the tag is the archive; untagged: archive)',
+      'pick the mode from the evidence: --mode delete when this milestone was tagged, since the tag'
+      + ' keeps the history, and --mode archive when it was not; nothing was pruned');
   }
   // 3. The TYPE term, and the reason the lexical test above cannot stand alone:
   //    `resolve()` is pure string arithmetic, so a pre-existing `_archive-<label>`
@@ -7314,13 +7392,17 @@ function cmdMilestonePrune(dir, opts) {
       return fail('archive-root-unusable',
         `${archiveRoot} exists and is not a real directory`
         + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-        + ' - move or remove it, then re-run');
+        + ' - move or remove it, then re-run',
+        'clear that path first - nothing was pruned and no phase directory moved, so the tree is'
+        + ' exactly as it was');
     }
   }
   const roadmapFile = join(dir, 'ROADMAP.md');
   let roadmapText;
   try { roadmapText = readFileSync(roadmapFile, 'utf8'); } catch {
-    return fail('no-roadmap', `${roadmapFile} is missing or unreadable`);
+    return fail('no-roadmap', `${roadmapFile} is missing or unreadable`,
+      'make ROADMAP.md readable at that path and re-run - the checked phase boxes there are what'
+      + ' says which phases this close may prune, and nothing was pruned');
   }
   const completed = completedPhases(roadmapText);
   if (!completed.length) {
@@ -7421,7 +7503,11 @@ function cmdMilestonePrune(dir, opts) {
   // A refused lock stops the close BEFORE any directory moves. Proceeding would
   // remove the phases whose residue this run could not write, which is the exact
   // permanent loss the lock exists to prevent.
-  if (archiveGuard.ok === false) return fail(archiveGuard.reason, archiveGuard.detail);
+  if (archiveGuard.ok === false) {
+    return fail(archiveGuard.reason, archiveGuard.detail,
+      'nothing was pruned and no phase directory moved - let the run holding the lock finish, or'
+      + ' clear a stale one the detail names, then re-run the close');
+  }
 
   // Directories FIRST, and the documents describe only what this pass actually
   // accomplished.
@@ -7752,7 +7838,13 @@ try {
   // `internal`.
   const args = evaluateRow(ARGV, CONTRACTS['planning.mjs'], subcommandKey(words));
   const handler = COMMANDS[cmd];
-  if (!args.ok) fail('bad-args', argRefusal(subcommandKey(words), args.detail));
+  if (!args.ok) {
+    fail('bad-args', argRefusal(subcommandKey(words), args.detail),
+      'correct the flag the detail names and re-run - nothing was written. A value that itself'
+      + ' starts with `--` cannot be protected by a bare `--` separator here: every `--`-prefixed'
+      + ' word is read as a flag that consumes the next one, so send such a value through the'
+      + ' matching `--<name>-file` flag where one exists');
+  }
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
   else handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
 } catch (e) {
