@@ -102,6 +102,7 @@ const ABBREV_LEN = 8;
  * @typedef {{
  *   label: string, milestone: string, phase: string,
  *   plan: string, task: string, description: string,
+ *   recovered?: {prune: string, parent: string, tree: string},
  * }} JoinMatch
  * @typedef {{
  *   state: 'resolved'|'ambiguous'|'unresolved',
@@ -134,6 +135,14 @@ function fieldPhase(j) {
     return `AMBIGUOUS - ${(j.matches || []).length} records name this commit: ${named}`;
   }
   if (j.state !== 'resolved') return undefined;
+  // A RECOVERED resolution says where it was recovered FROM, because the
+  // directory it names no longer exists and a reader who cannot tell the two
+  // apart has no way to go check. The milestone label rides beside the phase
+  // number for the same reason on both tiers: `v3.5.9 phase 1` and
+  // `the open milestone phase 1` are different phases wearing one number, which
+  // is precisely the invisible failure D-06 names.
+  const where = /** @type {any} */ (j).recovered;
+  if (where) return `${j.milestone} phase ${j.phase} (recovered from ${where.parent.slice(0, 8)}:${where.tree})`;
   return `${j.milestone} phase ${j.phase} (${j.label})`;
 }
 

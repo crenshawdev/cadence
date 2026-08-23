@@ -444,3 +444,33 @@ test('two runs over this repository stay byte-identical with all six edges joine
   const b = run(['cadence-core/bin/lib/capture-file.mjs', '--dir', REPO, '--top', '30']).stdout;
   assert.equal(a, b);
 });
+
+// --- The git-recovered tier reaching the chain (plan 3, task 3) ------------
+
+test('a commit whose phase directory exists in NO on-disk tier still names its phase', () => {
+  // `cadence-core/bin/lib/release-decision.mjs` was last touched by v3.5.9's
+  // phase 1, which closed with `--mode delete`: there is no `phases/1` holding
+  // it (the live one is v3.6.0's) and no `_archive-v3.5.9/` at all.
+  const env = oneJsonLine(run(['cadence-core/bin/lib/release-decision.mjs', '--dir', REPO]).stdout);
+  assert.equal(env.ok, true);
+  assert.deepEqual(env.warnings, []);
+  const entry = entryFor(env.text, '73aa7bba503efb228c1b423c3d93cce87494036d');
+  assert.match(entry, /^phase: v3\.5\.9 phase 1 \(recovered from [0-9a-f]{8}:\.planning\/phases\/1\)$/m);
+  assert.match(entry, /^plan task: plan 1, task 1 - Fence-aware heading scans in release-decision\.mjs$/m);
+  assert.ok(!/_archive-v3\.5\.9/.test(env.text), 'no such archive group exists on disk');
+});
+
+test('the recovered tier never overrides an on-disk record a reader could open', () => {
+  const env = oneJsonLine(run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']).stdout);
+  assert.equal(env.ok, true);
+  const entry = entryFor(env.text, '00537356bf14084f3676eeeca1c4747146979bc3');
+  assert.match(entry, /^phase: v3\.4\.0 phase 1 \(_archive-v3\.4\.0\/1\)$/m,
+    'the archived directory answers, not the copy recoverable from the same prune commit');
+  assert.ok(!/recovered from/.test(entry));
+});
+
+test('two runs over this repository stay byte-identical with the recovered tier in place', () => {
+  const a = run(['cadence-core/bin/lib/release-decision.mjs', '--dir', REPO]).stdout;
+  const b = run(['cadence-core/bin/lib/release-decision.mjs', '--dir', REPO]).stdout;
+  assert.equal(a, b);
+});

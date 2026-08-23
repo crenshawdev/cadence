@@ -35,6 +35,15 @@
 // single `join` object, which is the ONE attach point `lib/why-render.mjs`
 // reads and every later edge extends.
 //
+// AND THAT INDEX IS THREE TIERS, NOT TWO (plan 3). A `--mode delete` close left
+// no directory in either on-disk tier, so 16 of this repository's 25 closes are
+// readable only out of git history. `buildRecoveredIndex` recovers each close's
+// SUMMARY tables from its prune commit's parent and `mergeCommitIndexes` puts
+// them BEHIND the on-disk record rather than beside it, so an archived phase -
+// which both tiers can legitimately claim - resolves to the copy a reader can
+// actually open. Measured 2026-08-23: 108 ms for the whole merged build, 256
+// on-disk rows plus 734 recovered ones.
+//
 // AN UNREADABLE PLANNING ARTIFACT NEVER FAILS THE QUERY. The index fails open
 // with `warnings[]`, and those warnings ride the envelope beside the answer:
 // `git log` already told this seam what the commits are, and a summary nobody
@@ -48,7 +57,8 @@ import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { parseQuery, probeArgv, bareArgv, lineArgv, classifyResult } from './lib/why-query.mjs';
 import { renderChain } from './lib/why-render.mjs';
 import {
-  buildCommitIndex, resolveCommit, readPhaseRecords, readAdjudications, rangeMembers,
+  buildCommitIndex, buildRecoveredIndex, mergeCommitIndexes,
+  resolveCommit, readPhaseRecords, readAdjudications, rangeMembers,
 } from './lib/why-corpus.mjs';
 import { decisionsFor, declaringTasks, parseDeviations } from './lib/why-record.mjs';
 
@@ -92,7 +102,7 @@ function parseEntries(stdout) {
  * @param {any} m @returns {any}
  */
 function brief(m) {
-  return {
+  const out = {
     label: m.dir.label,
     milestone: m.dir.milestone,
     phase: m.dir.phase,
@@ -100,6 +110,11 @@ function brief(m) {
     task: m.task,
     description: m.description,
   };
+  // A row from the GIT-RECOVERED tier carries the tree it was recovered from,
+  // so the renderer can say so rather than print a directory name that no
+  // longer resolves to anything a reader could open.
+  if (m.dir.recovered) out.recovered = { ...m.dir.recovered };
+  return out;
 }
 
 /**
@@ -268,7 +283,13 @@ try {
       } else if (result.outcome === 'git-failed') {
         emit({ ok: false, reason: 'git-failed', detail: line === undefined ? 'the bare-path chain query' : 'the line-scoped chain query' });
       } else {
-        const index = buildCommitIndex(joinPath(dir, '.planning'));
+        // ONE merged index per invocation, over three tiers: the live phase
+        // directories, the `_archive-v<ver>/` trees, and git history alone for
+        // the closes that left neither (CONTEXT D-03). The tiers are ORDERED,
+        // not flattened - `mergeCommitIndexes` states why.
+        const index = mergeCommitIndexes(
+          buildCommitIndex(joinPath(dir, '.planning')), buildRecoveredIndex(dir),
+        );
         const joined = joinChain(dir, path, index, parseEntries(chain.stdout));
         const rendered = renderChain(joined.entries, { top });
         emit({

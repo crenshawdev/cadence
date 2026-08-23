@@ -225,6 +225,11 @@ export function resolveCommit(index, sha) {
 export function readPhaseRecords(dir, planCell) {
   /** @type {string[]} */
   const warnings = [];
+  // A RECOVERED directory has no `path` to join a name onto - its artifacts
+  // live in a git tree, and reading them there is task 4's job. Until then it
+  // contributes the same empty texts an absent artifact does, which every
+  // downstream field already renders as a stated absence.
+  if (!dir || dir.path === null) return { context: '', summary: '', plan: '', planFile: null, warnings };
   const pull = (/** @type {string} */ name) => {
     const { text, absent, code } = readArtifact(join(dir.path, name));
     if (text !== null) return text;
@@ -298,6 +303,9 @@ export function readAdjudications(dir) {
   const warnings = [];
   /** @type {any[]} */
   const records = [];
+  // A recovered directory is not on disk; task 4 reads its records out of the
+  // tree instead.
+  if (!dir || dir.path === null) return { records, warnings };
   let names;
   try {
     names = readdirSync(dir.path, { encoding: 'utf8' });
