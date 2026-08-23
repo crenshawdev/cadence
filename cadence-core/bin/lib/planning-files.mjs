@@ -2181,12 +2181,48 @@ function filesListRegion(text) {
  * cost: an annotated task line contributes a non-path string
  * (`src/a.rs (edit)`) to that plan's files list, which can appear in
  * `overlaps` output as a duplicate beside its normalized twin.
+ *
+ * The frontmatter arm ALSO reports `markdown-decorated-path` on a declaration
+ * wearing markdown (`isDecoratedPath` below states the three shapes). Reported,
+ * not repaired: the declaration stays in `files` byte-exact (D-04/D-19), the
+ * same reason the arm adds items verbatim at all - a decorated path and its
+ * plain sibling genuinely do not intersect, and rewriting one to match the
+ * other would make `overlaps` mean "intersect after repair". The diagnostic is
+ * what moves the gate, since `workflows/execute.md` routes any non-empty
+ * `frontmatter_issues` to the sequential path. FRONTMATTER ARM ONLY (D-06):
+ * the task-line arm already strips backticks and contributes both its
+ * normalized and its raw form, so a backticked task path already matches a
+ * sibling's plain one and a both-arms rule would turn committed, correctly
+ * matching plans into issue carriers.
  * @param {string} text @returns {{files: string[], issues: Issue[]}}
  */
 export function parsePlanFiles(text) {
   const files = new Set();
   /** The task-line arm's normalization, D-19: backticks and one trailing parenthetical. */
   const normalizeTaskItem = (raw) => raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
+  /**
+   * Markdown decoration around a declared path (D-03/D-08), three shapes under
+   * ONE code: bold (`**src/a.rs**`), the link form (`[src/a.rs](src/a.rs)`),
+   * and a MATCHED INTERIOR backtick pair (`` src/`a`.rs ``) - two or more
+   * backticks at indices strictly inside the value.
+   *
+   * The interior COUNT is the whole of the backtick arm (D-05), and it is what
+   * keeps this additive to `resolveValue`'s unchanged boundary rule rather than
+   * a second opinion about the same bytes: `` `src/a.rs` `` has zero interior
+   * backticks and a wrap-plus-punctuation `` `src/a.rs`, `` has exactly one, so
+   * both keep reporting `backtick-wrapped-value` alone instead of
+   * double-reporting, and a real path carrying ONE interior backtick
+   * (`` lib/a`b.mjs ``) stays diagnostic-free - the over-fire guard UAT-21
+   * pinned.
+   * @param {string} v @returns {boolean}
+   */
+  const isDecoratedPath = (v) => {
+    if (v.length > 4 && v.startsWith('**') && v.endsWith('**')) return true;
+    if (v.startsWith('[') && v.endsWith(')') && v.includes('](')) return true;
+    let interior = 0;
+    for (let idx = 1; idx < v.length - 1; idx++) if (v[idx] === '`') interior++;
+    return interior >= 2;
+  };
   const { items, issues } = readFrontmatterList(text, 'files');
 
   // The lease-spelling refusal, on BOTH arms of the union (D-02). `./a.txt`,
@@ -2225,6 +2261,17 @@ export function parsePlanFiles(text) {
       const at = refuseFrontmatter(f);
       issues.push({ line: at.line, code: 'redundant-path-segment', text: issueText(at.text) });
       continue;
+    }
+    // Decoration is REPORTED, never dropped and never rewritten (D-04): the
+    // bytes go into `files` exactly as declared, so `overlaps` keeps meaning
+    // "these two declarations intersect" and never "intersect after repair".
+    // The gate still moves, because `execute.md` routes ANY non-empty
+    // `frontmatter_issues` to the sequential path. Same cursor as the refusal
+    // arm above, so a decorated path written twice reports its own line each
+    // time.
+    if (isDecoratedPath(f)) {
+      const at = refuseFrontmatter(f);
+      issues.push({ line: at.line, code: 'markdown-decorated-path', text: issueText(at.text) });
     }
     files.add(f); // verbatim - no post-grammar rewriting (D-19)
   }
