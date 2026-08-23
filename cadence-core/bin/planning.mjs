@@ -1514,9 +1514,17 @@ function listPlanFiles(pdir) {
 // ---------------------------------------------------------------------------
 function cmdAudit(dir) {
   const reqText = read(join(dir, 'REQUIREMENTS.md'));
-  if (reqText === null) return fail('no-requirements', `${join(dir, 'REQUIREMENTS.md')} not found`);
+  if (reqText === null) {
+    return fail('no-requirements', `${join(dir, 'REQUIREMENTS.md')} not found`,
+      'point --dir at the .planning/ directory that holds REQUIREMENTS.md, or run /cad-new-project'
+      + ' if this project has none yet - the audit reads its `## Traceability` table');
+  }
   const roadmapText = read(join(dir, 'ROADMAP.md'));
-  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md, or run /cad-new-project if'
+      + ' this project has no roadmap yet');
+  }
   const roadmap = new Map(parseRoadmapPhases(roadmapText).map((p) => [p.n, p]));
 
   // requirement id -> the plan file that carries it, per phase dir.
@@ -1806,7 +1814,11 @@ function readCoverageContext(file) {
 
 function cmdCriteriaCoverage(dir) {
   const roadmapText = read(join(dir, 'ROADMAP.md'));
-  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md - the phase list there is what'
+      + ' says which phases have criteria to cover');
+  }
   // The same phase list `cmdAudit` walks - no new source of truth for which
   // phases exist. `milestone.md` step 3 prunes completed phases out of the live
   // `## Phases` list, so this only ever holds the current cycle's phases.
@@ -2032,7 +2044,10 @@ function cmdCriteriaCoverage(dir) {
 // resolved ceiling to disagree with the one the planner was handed.
 function cmdPlanSize(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'plan-size needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'plan-size needs --phase <N>',
+      'pass --phase <N> naming the phase whose plans should be sized, then re-run');
+  }
   const n = parsedPhase.value;
 
   // Resolved to plain numbers at the boundary, never carried as the
@@ -2041,13 +2056,20 @@ function cmdPlanSize(dir, opts) {
   let maxTasks = null;
   if (opts['max-tasks'] !== undefined) {
     const parsed = requireInt(opts['max-tasks']);
-    if (!parsed.ok) return fail('bad-args', '--max-tasks must be an integer');
+    if (!parsed.ok) {
+      return fail('bad-args', '--max-tasks must be an integer',
+        'send --max-tasks as a plain integer, or drop it to size without a task ceiling - this seam'
+        + ' reads no config, so the value is the one the caller already resolved');
+    }
     maxTasks = parsed.value;
   }
   let maxReqs = null;
   if (opts['max-reqs'] !== undefined) {
     const parsed = requireInt(opts['max-reqs']);
-    if (!parsed.ok) return fail('bad-args', '--max-reqs must be an integer');
+    if (!parsed.ok) {
+      return fail('bad-args', '--max-reqs must be an integer',
+        'send --max-reqs as a plain integer, or drop it to size without a requirement ceiling');
+    }
     maxReqs = parsed.value;
   }
 
@@ -2154,12 +2176,19 @@ function cmdCriteriaSize(dir, opts) {
     ceiling[c.name] = null;
     if (opts[c.flag] === undefined) continue;
     const parsed = requireInt(opts[c.flag]);
-    if (!parsed.ok) return fail('bad-args', `--${c.flag} must be an integer`);
+    if (!parsed.ok) {
+      return fail('bad-args', `--${c.flag} must be an integer`,
+        `send --${c.flag} as a plain integer, or drop it to report the counts without that bound`);
+    }
     ceiling[c.name] = parsed.value;
   }
 
   const roadmapText = read(join(dir, 'ROADMAP.md'));
-  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md - with no --phase this walks'
+      + ' the phase list there, so it cannot run without one');
+  }
 
   // `--phase` present scopes to one phase, in the CALLER's spelling (D-02);
   // absent walks every phase the roadmap declares, through the same
@@ -2169,7 +2198,11 @@ function cmdCriteriaSize(dir, opts) {
   let targets;
   if (opts.phase !== undefined) {
     const parsedPhase = requirePhaseArg(opts.phase);
-    if (!parsedPhase.ok) return fail('bad-args', 'criteria-size --phase needs a phase number');
+    if (!parsedPhase.ok) {
+      return fail('bad-args', 'criteria-size --phase needs a phase number',
+        'send a plain phase number - 3, or 3.1 for an inserted phase - or drop --phase to check'
+        + ' every phase the roadmap declares in one call');
+    }
     targets = [{ n: parsedPhase.value, raw: parsedPhase.raw }];
   } else {
     targets = parseRoadmapPhases(roadmapText).map((p) => ({ n: p.n, raw: String(p.n) }));
@@ -2237,13 +2270,20 @@ function cmdCriteriaSize(dir, opts) {
 
 function cmdPlanOverlap(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'plan-overlap needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'plan-overlap needs --phase <N>',
+      "pass --phase <N> naming the phase whose plans should be compared, then re-run");
+  }
   const n = parsedPhase.value;
   // The DIRECTORY is the caller's spelling; only the echoed `phase` below is
   // the number (D-02).
   const pdir = join(dir, 'phases', parsedPhase.raw);
   const { plans: planFiles, nonconforming, missing } = listPlanFiles(pdir);
-  if (missing) return fail('no-phase-dir', `${pdir} not found`);
+  if (missing) {
+    return fail('no-phase-dir', `${pdir} not found`,
+      'run /cad-plan <N> to write this phase\'s plans first - the overlap check compares the'
+      + ' `files:` lists in the PLAN files that directory holds');
+  }
 
   // Parsed BEFORE the fewer-than-two-plans early return, so a one-plan
   // phase's grammar diagnostic still reaches this envelope instead of being
@@ -2349,12 +2389,17 @@ const CITE_POINTS = ['planned', 'committed'];
 
 function cmdCiteCount(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'cite-count needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'cite-count needs --phase <N>',
+      'pass --phase <N> naming the phase whose plans should be counted, then re-run');
+  }
   const n = parsedPhase.value;
 
   if (opts.point !== undefined) {
     if (typeof opts.point !== 'string' || !CITE_POINTS.includes(opts.point)) {
-      return fail('bad-args', `cite-count --point must be one of ${CITE_POINTS.join(' | ')}`);
+      return fail('bad-args', `cite-count --point must be one of ${CITE_POINTS.join(' | ')}`,
+        'send one of the two points the detail lists, naming which moment in /cad-plan this count'
+        + ' was taken at, or drop --point');
     }
   }
   const point = typeof opts.point === 'string' ? opts.point : undefined;
@@ -2387,7 +2432,9 @@ function cmdCiteCount(dir, opts) {
   if (!off && opts.payload === undefined) {
     return fail('bad-args',
       'cite-count needs --payload <file> - the surfaced set is a FILE, never inline '
-      + 'JSON and never stdin');
+      + 'JSON and never stdin',
+      "write the recall envelope to a file and pass --payload <path>; with `memory.backend` set to"
+      + ' `none` there is no surfaced set and the flag is not needed at all');
   }
   const payload = off ? { ok: true, value: {} } : readJsonPayload(opts.payload);
   if (!payload.ok) return;
@@ -2397,7 +2444,11 @@ function cmdCiteCount(dir, opts) {
   // so this seam and that one cannot disagree about what a plan file is.
   const pdir = join(dir, 'phases', parsedPhase.raw);
   const { plans: planFiles, missing } = listPlanFiles(pdir);
-  if (missing) return fail('no-phase-dir', `${pdir} not found`);
+  if (missing) {
+    return fail('no-phase-dir', `${pdir} not found`,
+      'run /cad-plan <N> first - this counts citations in the PLAN files that directory holds, so'
+      + ' there is nothing to count until they exist');
+  }
 
   const { rows, unkinded, malformed } = surfacedRows(payload.value, parsedPhase.raw);
   const mentions = [];
@@ -2526,11 +2577,18 @@ function cmdCiteCount(dir, opts) {
 // ---------------------------------------------------------------------------
 function cmdSeedReqs(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'seed-reqs needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'seed-reqs needs --phase <N>',
+      'pass --phase <N> naming the phase whose requirement ids should be seeded, then re-run');
+  }
   // Before any read and before any write: the two halves of the phase argument
   // must agree here, because this face uses BOTH.
   const spelling = phaseSpellingRefusal(parsedPhase);
-  if (spelling) return fail('bad-args', `seed-reqs ${spelling}`);
+  if (spelling) {
+    return fail('bad-args', `seed-reqs ${spelling}`,
+      `send --phase ${parsedPhase.value}, or rename the directory to match it - 2, 2.1 and 10 are`
+      + ' spellings this face accepts; 02, 1.0 and 1.10 are not');
+  }
   const n = parsedPhase.value;
   // The caller's own spelling, for the directory and for every diagnostic that
   // names one (D-02). The Traceability rows and the echoed `phase` below stay
@@ -2545,12 +2603,20 @@ function cmdSeedReqs(dir, opts) {
   // #42/#45 rail: the flag is validated before any read.
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
-  if (reqText === null) return fail('no-requirements', `${reqFile} not found`);
+  if (reqText === null) {
+    return fail('no-requirements', `${reqFile} not found`,
+      'point --dir at the .planning/ directory that holds REQUIREMENTS.md, or run /cad-new-project'
+      + ' to write one - the seeded rows go in its `## Traceability` table');
+  }
 
   const pdir = join(dir, 'phases', pname);
   let planFiles = [];
   try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
-  catch { return fail('no-phase-dir', `${pdir} not found`); }
+  catch {
+    return fail('no-phase-dir', `${pdir} not found`,
+      'run /cad-plan <N> first - the ids seeded here come from the `requirements:` lines of the'
+      + ' PLAN files in that directory');
+  }
   if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${pname}`);
 
   // Ids in plan-file order, union first-occurrence-wins across the phase's
@@ -2579,7 +2645,11 @@ function cmdSeedReqs(dir, opts) {
   }
 
   const res = insertReqRows(reqText, rows);
-  if (res.error) return fail('no-traceability-table', `${reqFile} has no "## Traceability" table with a header separator`);
+  if (res.error) {
+    return fail('no-traceability-table', `${reqFile} has no "## Traceability" table with a header separator`,
+      'add a `## Traceability` heading to REQUIREMENTS.md with a markdown table under it - a header'
+      + ' row and its `| --- |` separator - then re-run; nothing was written');
+  }
   if (res.inserted.length) atomicWrite(reqFile, res.text);
 
   // seeded/skipped are ALWAYS present, even empty - contrary to the
@@ -2607,7 +2677,10 @@ function cmdSeedReqs(dir, opts) {
 // spine, so it is safe to call before any phase has produced artifacts.
 // ---------------------------------------------------------------------------
 function cmdRecall(dir, query, opts) {
-  if (!query) return fail('bad-args', 'recall needs a query');
+  if (!query) {
+    return fail('bad-args', 'recall needs a query',
+      'put the search words after the subcommand: `recall "<what you are looking for>"`');
+  }
 
   // --top bounds the RETURNED set, default 5. Unbounded was the original
   // shape and it is what makes this seam expensive to call: a real query on
@@ -2621,7 +2694,8 @@ function cmdRecall(dir, query, opts) {
   if (opts.top !== undefined) {
     const parsed = requireInt(opts.top);
     if (!parsed.ok || parsed.value < 1) {
-      return fail('bad-args', '--top must be a positive integer');
+      return fail('bad-args', '--top must be a positive integer',
+        'send --top as a whole number of 1 or more, or drop it to take the default 5 results');
     }
     top = parsed.value;
   }
