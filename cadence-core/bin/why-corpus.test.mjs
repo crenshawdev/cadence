@@ -658,6 +658,43 @@ test('the close a gap sits under is the EARLIEST one at or after the commit, nev
   assert.equal(closeOver([], '2026-05-01T00:00:00-04:00'), null);
 });
 
+test('a mixed-offset commit attaches to the close it belongs to as an INSTANT, not as a string', () => {
+  // WHY-04, D-04. Every date here wears a DIFFERENT UTC offset, and the commit
+  // falls strictly between the two closes as instants:
+  //   the earlier close  2026-05-01T20:00:00+09:00  =  11:00Z
+  //   the commit         2026-05-01T07:00:00-05:00  =  12:00Z
+  //   the later close    2026-05-01T09:00:00-04:00  =  13:00Z
+  // so the earliest close at or after the commit is the LATER one, v2.0.0.
+  // Compared as `%cI` STRINGS the earlier close reads as `...T20:...`, which
+  // sorts after the commit's `...T07:...`, so a string compare walking this
+  // newest-first list keeps it as the last match and answers v1.0.0 - a commit
+  // filed under a close that happened an hour before it.
+  const prunes = [
+    { commit: 'b'.repeat(40), date: '2026-05-01T09:00:00-04:00', label: 'v2.0.0' },
+    { commit: 'a'.repeat(40), date: '2026-05-01T20:00:00+09:00', label: 'v1.0.0' },
+  ];
+  const commitDate = '2026-05-01T07:00:00-05:00';
+  assert.ok(prunes[1].date > commitDate, 'the fixture is only a fixture if the STRINGS really sort the wrong way');
+  assert.ok(Date.parse(prunes[1].date) < Date.parse(commitDate), 'while the instants sort the right way');
+  assert.equal(closeOver(prunes, commitDate).label, 'v2.0.0');
+
+  // And the selection does not depend on the incoming order, which is
+  // `findPruneCommits`'s and not this function's contract.
+  assert.equal(closeOver([...prunes].reverse(), commitDate).label, 'v2.0.0');
+});
+
+test('an unparseable date is a stated absence, and an unparseable close is skipped rather than deciding', () => {
+  const prunes = [
+    { commit: 'b'.repeat(40), date: '2026-06-01T00:00:00-04:00', label: 'v2.0.0' },
+    { commit: 'a'.repeat(40), date: 'not a date at all', label: 'v1.0.0' },
+  ];
+  let answer;
+  assert.doesNotThrow(() => { answer = closeOver(prunes, 'not a date at all'); });
+  assert.equal(answer, null, 'a commit date that will not parse answers null rather than throwing');
+  assert.equal(closeOver(prunes, '2026-05-01T00:00:00-04:00').label, 'v2.0.0',
+    'and a close whose own date will not parse is skipped, never allowed to decide');
+});
+
 // --- The off-roadmap tasks tier (phase 3 plan 2, task 1) -------------------
 //
 // A `/cad-task` run leaves `tasks/<slug>/RECORD.md` and no phase directory at

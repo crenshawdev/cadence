@@ -910,16 +910,42 @@ export function touchedPaths(repoDir, shas) {
 /**
  * Which close a commit's date falls under, or null when no close is later than
  * it - the ordinary state of a commit in the milestone currently open.
- * `prunes` is newest-first, so the LAST one still at or after the date is the
- * earliest close that could have pruned it.
+ *
+ * PARSED INSTANTS ON BOTH SIDES, NEVER THE `%cI` STRINGS (WHY-04, phase 1
+ * D-04). ISO-8601 values under different UTC offsets do not string-sort
+ * chronologically - `2026-05-01T20:00:00+09:00` sorts AFTER
+ * `2026-05-01T07:00:00-05:00` and happens an hour BEFORE it - so a string
+ * comparison attaches an unresolved commit to a close that happened before it.
+ *
+ * AND THE SELECTION IS ORDER-INDEPENDENT. This scans for the SMALLEST instant
+ * at or after the commit's rather than trusting `prunes` to arrive
+ * newest-first, which is `findPruneCommits`'s ordering and not a contract this
+ * function should silently depend on; a caller that sorted its own list would
+ * otherwise break it just as quietly as the string compare did. Two closes
+ * sharing one instant tie-break on the full sha, so the answer is a property of
+ * the data rather than of the array's order.
+ *
+ * AN UNPARSEABLE DATE IS A STATED ABSENCE, NEVER A THROW. A commit date that
+ * will not parse answers null - the same absence the empty-date arm already
+ * gives - and a prune whose OWN date will not parse is skipped rather than
+ * allowed to decide. This runs inside the gap pass over a chain git has already
+ * answered, so a throw here loses a query that was already resolved.
  * @param {PruneCommit[]} prunes @param {string} date an ISO commit date
  * @returns {{commit: string, label: string|null, date: string}|null}
  */
 export function closeOver(prunes, date) {
-  const when = String(date || '');
-  if (!when) return null;
+  const when = Date.parse(String(date || ''));
+  if (!Number.isFinite(when)) return null;
   let found = null;
-  for (const p of prunes) if (p.date >= when) found = p;
+  let foundAt = Infinity;
+  for (const p of prunes || []) {
+    const at = Date.parse(String((p && p.date) || ''));
+    if (!Number.isFinite(at) || at < when) continue;
+    if (at < foundAt || (at === foundAt && found && String(p.commit) < String(found.commit))) {
+      found = p;
+      foundAt = at;
+    }
+  }
   return found ? { commit: found.commit, label: found.label, date: found.date } : null;
 }
 
