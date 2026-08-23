@@ -8345,3 +8345,93 @@ test('task-record: --text and --text-file together are refused, and neither is g
   assert.match(readFileSync(join(dir, 'tasks', 'viafile', 'RECORD.md'), 'utf8'),
     /^- From a file\.$/m);
 });
+
+// --- recall: the tasks tier (D-09) -------------------------------------------
+//
+// The hole this closes was MEASURED, not supposed: a query naming exactly what a
+// shipped `/cad-task` run did returned five hits over a 59-snippet corpus and
+// none of them from `.planning/tasks/`, against a record on disk describing that
+// work.
+
+/** Plant `<dir>/tasks/<slug>/RECORD.md` holding `shipped` as its bullets. */
+function taskRecordIn(dir, slug, shipped) {
+  const tdir = join(dir, 'tasks', slug);
+  mkdirSync(tdir, { recursive: true });
+  writeFileSync(join(tdir, 'RECORD.md'),
+    `# Task: ${slug}\n\n## What shipped\n\n${shipped.map((s) => `- ${s}`).join('\n')}\n\n`
+    + '## Commits\n\n| Task | Commit | Description |\n| --- | --- | --- |\n\n'
+    + `## Files\n\n### Task 1: ${slug}\n\n- **Files:** a.txt\n`);
+  return dir;
+}
+
+const TASK_TIER_SPEC = {
+  phases: { 1: { summaryBody: { deviations: ['alpha beta gamma'] } } },
+  capture: [{ section: 'Todos', text: 'wire the beta recall path', phase: 1 }],
+};
+
+test('recall: a task record comes back, sourced by slug and with NO phase field', () => {
+  const dir = taskRecordIn(makeTree(TASK_TIER_SPEC), 'bound-plan-size',
+    ['a plan-size ceiling nothing enforced', 'the beta gamma path this task took']);
+  const r = recall('beta gamma', dir);
+  assert.equal(r.json.ok, true);
+  const hit = r.json.results.find((x) => x.source === 'tasks/bound-plan-size/RECORD.md');
+  assert.ok(hit, JSON.stringify(r.json.results));
+  assert.equal(hit.snippet, 'the beta gamma path this task took');
+  // NO inferred phase: a task sits outside the phase spine, and `phase: 0` here
+  // would be the substitution references/recall.md forbids.
+  assert.equal('phase' in hit, false,
+    'a task record carries no phase, and an inferred one is worse than none');
+});
+
+test('recall: a tree with no tasks/ answers byte-identically to one with an empty tasks/', () => {
+  const bare = recall('beta gamma', makeTree(TASK_TIER_SPEC));
+  const emptyDir = makeTree(TASK_TIER_SPEC);
+  mkdirSync(join(emptyDir, 'tasks'), { recursive: true });
+  const empty = recall('beta gamma', emptyDir);
+  assert.equal(bare.raw, empty.raw, 'the tasks walk contributes nothing when it finds nothing');
+
+  // And the task rows land AFTER every existing one, so no corpus INDEX moved:
+  // the live hits come back in the same order, the same rows. Their SCORES do
+  // move and are deliberately not asserted - BM25 is corpus-relative, the
+  // reasoning the ARCHIVE.md row above states in full.
+  const withRecord = recall('beta gamma',
+    taskRecordIn(makeTree(TASK_TIER_SPEC), 'later', ['an unrelated task note']));
+  assert.deepEqual(withRecord.json.results.map((x) => [x.source, x.snippet]),
+    bare.json.results.map((x) => [x.source, x.snippet]));
+});
+
+test('recall: two runs over a corpus holding a task record are byte-identical', () => {
+  const dir = taskRecordIn(makeTree(TASK_TIER_SPEC), 'bound-plan-size',
+    ['a plan-size ceiling nothing enforced', 'the beta gamma path this task took']);
+  taskRecordIn(dir, 'another-task', ['a second beta record, sorted after the first']);
+  const a = recall('beta gamma', dir);
+  const b = recall('beta gamma', dir);
+  assert.equal(a.raw, b.raw);
+  assert.ok(a.json.results.length >= 3, JSON.stringify(a.json.results));
+});
+
+test('recall: a RECORD.md symlinked OUT of the planning root is never indexed', () => {
+  // The lister contains the walk one level past `phaseDirsIn`: the recall tier
+  // reads snippets straight from the path it returns, so a cloned repository
+  // carrying such a link would otherwise surface an arbitrary readable file.
+  const outside = mkdtempSync(join(tmpdir(), 'cad-recall-outside-'));
+  const secret = join(outside, 'RECORD.md');
+  writeFileSync(secret, '# Task: stolen\n\n## What shipped\n\n- beta gamma secret bytes\n');
+  const dir = makeTree(TASK_TIER_SPEC);
+  mkdirSync(join(dir, 'tasks', 'leaky'), { recursive: true });
+  symlinkSync(secret, join(dir, 'tasks', 'leaky', 'RECORD.md'));
+  const r = recall('beta gamma', dir);
+  assert.equal(r.json.results.some((x) => x.snippet.includes('secret bytes')), false);
+  assert.equal(r.json.results.some((x) => x.source.startsWith('tasks/')), false);
+});
+
+test('task-record -> recall: a record written by the seam is found by what it says', () => {
+  // The round trip both halves of D-09 exist for: the writer's `## What shipped`
+  // heading and the walk's reader are one fact, and this is where they meet.
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  runIn(root, ['task-record', '--slug', 'bound-plan-size', '--base', `${shas[0]}^`,
+    '--head', shas[1], '--text', 'A ceiling on plan size, enforced at the gate.'], dir);
+  const r = recall('ceiling plan size gate', dir);
+  assert.equal(r.json.ok, true);
+  assert.deepEqual(r.json.results.map((x) => x.source), ['tasks/bound-plan-size/RECORD.md']);
+});

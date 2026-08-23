@@ -820,6 +820,43 @@ export function parseSummarySnippets(text) {
 }
 
 /**
+ * A TASK RECORD's item-level snippets: the `## What shipped` bullets of one
+ * `.planning/tasks/<slug>/RECORD.md` (D-09).
+ *
+ * ITS OWN READER, never a call to `parseSummarySnippets`, and the difference is
+ * the whole point: that one indexes `## Deviations` and `## Open items` ALONE,
+ * so even a SUMMARY-shaped record's headline and its `## What shipped` lines
+ * are invisible through it - measured over this repository's own
+ * `.planning/tasks/`, where a query naming exactly what a task did returned
+ * five hits and none of them the task. Folding the two headings into that
+ * function instead would change what `recall` returns for the phase tier it
+ * already walks, which this phase does not do.
+ *
+ * SAME RULES as its sibling otherwise, deliberately: a `^-\s+` bullet, a
+ * placeholder line (`None...`, `<...>`) skipped as the template's own prose,
+ * and an absent section as DATA - `[]`, never a throw, which is what the
+ * empty-corpus contract in `cmdRecall` rests on.
+ *
+ * The heading is a fact `lib/task-record.mjs` writes and this reads, and the two
+ * agreeing is what the recall row in `task-record.test.mjs` and the corpus row
+ * in `planning.test.mjs` hold together.
+ * @param {string} text one RECORD.md's bytes @returns {string[]}
+ */
+export function parseTaskRecordSnippets(text) {
+  const out = [];
+  const body = sectionBody(text, 'What shipped');
+  if (!body) return out;
+  for (const line of body.split('\n')) {
+    const m = line.match(/^-\s+(.*)$/);
+    if (!m) continue;
+    const raw = m[1].trim();
+    if (!raw || raw.startsWith('None') || raw.startsWith('<')) continue;
+    out.push(raw);
+  }
+  return out;
+}
+
+/**
  * The `## ` sections of CAPTURE.md the recall walk visits, in order, WITHOUT
  * the `## ` prefix.
  *

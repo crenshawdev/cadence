@@ -21,7 +21,7 @@ import {
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
   atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
-  parseArchiveRows, appendArchiveRows, parsePlanFiles,
+  parseArchiveRows, appendArchiveRows, parsePlanFiles, parseTaskRecordSnippets,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -2268,4 +2268,45 @@ test('archive: label and origin ride beside source, never recovered by splitting
   // The prefix test this replaced answered true here; the exact test must not.
   assert.ok(row.source.startsWith('v1/'));
   assert.notEqual(row.label, 'v1');
+});
+
+// --- parseTaskRecordSnippets: the tasks tier's corpus text (D-09) ------------
+//
+// Its OWN reader and not parseSummarySnippets', which indexes `## Deviations`
+// and `## Open items` alone - the measured reason a task record was invisible
+// to recall even when it was SUMMARY-shaped.
+
+/** A record's bytes, with `shipped` as the `## What shipped` body. */
+const taskRecord = (shipped) =>
+  `# Task: a-slug\n\n## What shipped\n\n${shipped}\n\n## Commits\n\n`
+  + '| Task | Commit | Description |\n| --- | --- | --- |\n\n## Files\n\n'
+  + '### Task 1: a-slug\n\n- **Files:** a.txt\n';
+
+test('parseTaskRecordSnippets: the `## What shipped` bullets come back', () => {
+  assert.deepEqual(parseTaskRecordSnippets(taskRecord('- first thing\n- second thing')),
+    ['first thing', 'second thing']);
+});
+
+test('parseTaskRecordSnippets: a `None yet` placeholder is the template\'s prose, not content', () => {
+  assert.deepEqual(parseTaskRecordSnippets(taskRecord('- None yet\n- a real one')),
+    ['a real one']);
+});
+
+test('parseTaskRecordSnippets: an angle-bracket placeholder is skipped too', () => {
+  assert.deepEqual(parseTaskRecordSnippets(taskRecord('- <what shipped>\n- a real one')),
+    ['a real one']);
+});
+
+test('parseTaskRecordSnippets: an absent section is DATA - [] and never a throw', () => {
+  assert.deepEqual(parseTaskRecordSnippets('# Task: a-slug\n\n## Commits\n'), []);
+  assert.deepEqual(parseTaskRecordSnippets(''), []);
+  assert.deepEqual(parseTaskRecordSnippets('not markdown at all'), []);
+});
+
+test('parseTaskRecordSnippets: it stops at the next `## ` heading', () => {
+  // The commits table sits under the very next heading, and a table row is not
+  // a bullet - but the section bound is what keeps the Files section's own
+  // `- **Files:**` line out of the corpus.
+  const snippets = parseTaskRecordSnippets(taskRecord('- only this'));
+  assert.deepEqual(snippets, ['only this']);
 });

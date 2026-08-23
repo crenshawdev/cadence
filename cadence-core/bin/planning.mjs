@@ -185,7 +185,7 @@ import { pruneRoadmap, archiveRequirements, completedPhases } from './lib/milest
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
   classifyPhaseList, CLOSED_CYCLE_NAME,
-  parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
+  parseRequirements, parseUat, renderUat, uatComplete, atomicWrite, parseTaskRecordSnippets,
   setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
@@ -226,7 +226,7 @@ import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
 import {
-  MAX_SLUG_LENGTH, RECORD_FILE, TASKS_DIR, isTaskSlug, renderTaskRecord,
+  MAX_SLUG_LENGTH, RECORD_FILE, TASKS_DIR, isTaskSlug, renderTaskRecord, taskRecordsIn,
 } from './lib/task-record.mjs';
 import { runTransition } from './lib/file-transition.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces, interviewOptions } from './lib/surface-scan.mjs';
@@ -2557,6 +2557,38 @@ function cmdRecall(dir, query, opts) {
   // one.
   const archive = read(join(dir, 'ARCHIVE.md'));
   if (archive) for (const row of parseArchiveRows(archive)) corpus.push(row);
+
+  // The TASKS tier (D-09), and it is EXPLICIT: `/cad-task` is the path most real
+  // work takes, and until now it left the corpus a hole exactly where the work
+  // went - commits, and nothing a query could find. Measured 2026-08-23, a query
+  // naming precisely what a shipped task did returned five hits over a corpus of
+  // 59 and none of them from `.planning/tasks/`, against a record on disk
+  // describing that work.
+  //
+  // LAST, on the identical argument the ARCHIVE.md walk above makes for its own
+  // position: `search()` orders hits by (score desc, corpus position asc), so
+  // appending leaves every existing corpus index where it was and a tree with no
+  // `tasks/` emits the bytes it emitted before this walk existed.
+  //
+  // NO `phase` KEY. A task sits outside the phase spine; `references/recall.md`
+  // states `phase` is optional and that a reader must never substitute an
+  // inferred one, and `phase: 0` here would be exactly the inferred one it
+  // forbids - it would also collide with the `phases/0/` directory this phase
+  // deliberately did not put the record in.
+  //
+  // The lister is lib/task-record.mjs's, guarded and contained the way
+  // `phaseDirsIn` is: an absent planning root and an unreadable `tasks/` are
+  // both an empty list rather than an ENOENT the dispatch catch would turn into
+  // `fail('internal')`, and a slug directory or a RECORD.md that resolves
+  // OUTSIDE the planning root is skipped rather than read into the corpus - the
+  // snippets below are read straight from the path it returns.
+  for (const { slug, path } of taskRecordsIn(dir)) {
+    const record = read(path);
+    if (!record) continue;
+    for (const text of parseTaskRecordSnippets(record)) {
+      corpus.push({ text, source: `tasks/${slug}/RECORD.md` });
+    }
+  }
 
   if (!corpus.length) return ok({ results: [], total: 0, ...warn });
 
