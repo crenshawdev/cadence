@@ -770,7 +770,7 @@ test('the tasks tier is asked AHEAD of the git-recovered one, and prunes still c
   const answer = resolveCommit(merged, `abc1234${'0'.repeat(33)}`);
   assert.equal(answer.row.dir.slug, 'ahead-of-recovery');
   assert.equal(answer.row.description, 'the record a reader can open');
-  assert.deepEqual(merged.prunes, recovered.prunes, 'the close history is the recovered tier's alone');
+  assert.deepEqual(merged.prunes, recovered.prunes, 'the close history belongs to the recovered tier alone');
   assert.deepEqual(merged.warnings, ['a recovered warning']);
   assert.deepEqual(merged.dirs.map((d) => d.label),
     ['tasks/ahead-of-recovery', 'deadbeef:.planning/phases/9']);
