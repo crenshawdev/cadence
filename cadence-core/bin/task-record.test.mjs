@@ -153,6 +153,46 @@ test('a RECORD.md that is a DIRECTORY is not a record', () => {
   assert.deepEqual(taskRecordsIn(root), []);
 });
 
+test('an entry name the writer would refuse is not listed back', () => {
+  // Containment passes on every one of these - they resolve inside the root -
+  // so the slug grammar is the only thing that stops the name reaching
+  // `/cad-why`'s rendered output and the recall index verbatim.
+  const root = planningRoot({ real: rec() });
+  for (const name of ['Upper', 'has space', 'trailing-', '-leading', 'double--hyphen', '.hidden']) {
+    const dir = join(root, TASKS_DIR, name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, RECORD_FILE), rec());
+  }
+  assert.deepEqual(taskRecordsIn(root).map((r) => r.slug), ['real']);
+});
+
+test('an entry name carrying a newline or a terminal escape is not listed back', () => {
+  // The forging shape: a name that closes one section and opens another, or
+  // one that repaints the line, printed straight into a diagnostic.
+  const root = planningRoot({ real: rec() });
+  for (const name of ['a\n## Commits', 'a\u001b[31mred']) {
+    const dir = join(root, TASKS_DIR, name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, RECORD_FILE), rec());
+  }
+  assert.deepEqual(taskRecordsIn(root).map((r) => r.slug), ['real']);
+});
+
+test('a name longer than MAX_SLUG_LENGTH is not listed back', () => {
+  const root = planningRoot({ real: rec() });
+  const dir = join(root, TASKS_DIR, 'a'.repeat(MAX_SLUG_LENGTH + 1));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, RECORD_FILE), rec());
+  assert.deepEqual(taskRecordsIn(root).map((r) => r.slug), ['real']);
+});
+
+test('every slug the lister returns satisfies isTaskSlug', () => {
+  const root = planningRoot({ zebra: rec(), alpha: rec(), 'two-words': rec(), 'v2': rec() });
+  const slugs = taskRecordsIn(root).map((r) => r.slug);
+  assert.deepEqual(slugs, ['alpha', 'two-words', 'v2', 'zebra']);
+  for (const slug of slugs) assert.equal(isTaskSlug(slug), true);
+});
+
 // --- renderTaskRecord --------------------------------------------------------
 
 test('the same inputs render byte-identical text', () => {

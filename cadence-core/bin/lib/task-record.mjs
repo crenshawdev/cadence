@@ -135,6 +135,11 @@ export function insideRoot(planningRoot, p) {
  * `planning.mjs recall`. So `RECORD.md` ITSELF is resolved and required to land
  * inside the planning root, and required to be a regular file.
  *
+ * NAMED the same way too: an entry whose name is not a slug this module would
+ * WRITE is skipped before it is joined onto anything, because the slug travels
+ * onward as rendered text - `/cad-why` prints it and the recall tier indexes it
+ * - and containment has nothing to say about what a name READS as.
+ *
  * @param {string} planningRoot
  * @returns {Array<{slug: string, path: string}>}
  */
@@ -150,6 +155,14 @@ export function taskRecordsIn(planningRoot) {
   }
   const found = [];
   for (const slug of names) {
+    // THE SAME PREDICATE THE WRITER IS HELD TO. Containment judges where a path
+    // resolves and says nothing about how the NAME reads: a directory called
+    // `\n## Commits` or one carrying a terminal escape resolves perfectly well
+    // inside the root, and its slug is then rendered verbatim by `/cad-why` and
+    // indexed verbatim by the recall tier. A name this module would refuse to
+    // WRITE is not one it will hand back, so a planning tree cloned from
+    // someone else cannot forge lines in a diagnostic.
+    if (!isTaskSlug(slug)) continue;
     const dir = join(group, slug);
     if (!inside(dir)) continue;
     const path = join(dir, RECORD_FILE);
