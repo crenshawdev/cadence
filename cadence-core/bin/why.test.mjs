@@ -710,3 +710,129 @@ test('the INLINE arm writes no PLAN.md at all, and the declaring task is still n
   assert.match(entry, /^declared by: declared in RECORD\.md$/m);
   assert.match(entry, new RegExp(`^ {2}task 1: ${slug} \\(declares f\\.txt\\)$`, 'm'));
 });
+
+// --- WHY-02 / v3.6.1 D-01: what history simplification excluded ------------
+//
+// The bare arm keeps `--follow`, which comes attached to git's default history
+// simplification, and a SECOND `--full-history` query measures what that left
+// out. The hermetic fixture below is the smallest shape that produces a real
+// exclusion: a merge whose tree matches the side parent's for the queried path
+// is TREESAME to it, so the simplified walk follows that parent and never
+// prints the merge, while `--full-history` does.
+
+/**
+ * A repo where `f.txt` is touched on a side branch and the merge that brings it
+ * in is dropped by the default simplification.
+ * @returns {{dir: string, merge: string, side: string}}
+ */
+function repoWithSimplifiedMerge() {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-simplified-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env: GIT_ENV });
+  const commitAt = (msg, iso) => execFileSync('git', ['-C', dir, 'commit', '-q', '-a', '-m', msg],
+    { stdio: 'ignore', env: { ...GIT_ENV, GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso } });
+  const head = () => execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim();
+
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(dir, 'f.txt'), 'one\n');
+  git('add', '.');
+  commitAt('add f', '2026-01-01T00:00:00-05:00');
+
+  git('checkout', '-q', '-b', 'side');
+  writeFileSync(join(dir, 'f.txt'), 'one\ntwo\n');
+  commitAt('side edits f', '2026-01-01T00:01:00-05:00');
+  const side = head();
+
+  git('checkout', '-q', 'main');
+  writeFileSync(join(dir, 'g.txt'), 'x\n');
+  git('add', '.');
+  commitAt('main edits g', '2026-01-01T00:02:00-05:00');
+  execFileSync('git', ['-C', dir, 'merge', '-q', '--no-ff', 'side', '-m', 'merge side'],
+    { stdio: 'ignore', env: { ...GIT_ENV, GIT_AUTHOR_DATE: '2026-01-01T00:03:00-05:00', GIT_COMMITTER_DATE: '2026-01-01T00:03:00-05:00' } });
+
+  return { dir, merge: head(), side };
+}
+
+test('the envelope names the merge the simplified walk dropped, and none of the commits it kept', () => {
+  const { dir, merge, side } = repoWithSimplifiedMerge();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.equal(env.ok, true);
+  assert.deepEqual(env.excluded, [{ sha: merge, parentCount: 2 }]);
+  const chainShas = env.entries.map((e) => e.sha);
+  assert.ok(chainShas.includes(side), 'the side commit IS in the chain');
+  assert.ok(!chainShas.includes(merge), 'and the merge is exactly what the chain does not carry');
+});
+
+test('a chain the simplification excluded nothing from reports an EMPTY exclusion, never an absent one', () => {
+  const { dir } = repo();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.deepEqual(env.excluded, [], 'a linear history has nothing to exclude, and says so as an empty list');
+});
+
+test('the LINE arm runs no comparand at all - it carries its own simplification', () => {
+  const { dir } = repoWithSimplifiedMerge();
+  const env = oneJsonLine(run(['f.txt:1', '--dir', dir]).stdout);
+  assert.equal(env.ok, true);
+  assert.equal(env.excluded, null, 'WHY-02 is scoped to the bare path, so the -L arm reports absence');
+});
+
+test('a failed comparand is not reachable through the shipped argv, so the guard is defensive', () => {
+  // The same disposition why-corpus.test.mjs states about the merge-shaped
+  // prune record: the comparand runs only after the probe and the chain query
+  // have already answered on this exact path, and `--full-history` adds no
+  // failure mode those two do not already have - so there is no input that
+  // fails the comparand alone. What is asserted is the contract the fail-open
+  // arm guarantees whichever way it goes: `excluded` is an array or it is
+  // absent, and the result is a chain either way, never a refusal.
+  const { dir } = repo();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.equal(env.result, 'chain');
+  assert.ok(env.excluded === null || Array.isArray(env.excluded));
+});
+
+test('this repository: the three merges --full-history adds are named, and none of the seven it keeps', () => {
+  const env = oneJsonLine(run(['cadence-core/bin/lib/release-decision.mjs', '--dir', REPO]).stdout);
+  const excluded = env.excluded.map((e) => e.sha.slice(0, 8));
+  // A CONTAINMENT assertion, not an equality: a later merge into main that
+  // touches this path adds a fourth, and that is history doing its job rather
+  // than a defect (D-05's lesson about live-corpus figures). The three named
+  // here are the ones measured on 2026-08-23, when `git log --full-history`
+  // reported 10 on this path and the chain carried 7.
+  for (const named of ['b86fc25c', '051f0df1', '9237a539']) {
+    assert.ok(excluded.includes(named), `${named} is one of the commits the simplification excluded`);
+  }
+  assert.ok(env.excluded.every((e) => e.parentCount >= 2),
+    'and every excluded commit is a merge, counted from the parent list rather than asserted');
+  const chainShas = new Set(env.entries.map((e) => e.sha));
+  assert.ok(env.excluded.every((e) => !chainShas.has(e.sha)), 'and not one of them is a commit the chain already lists');
+});
+
+test("the seam's own text states the exclusion, so a reader relaying text verbatim sees it", () => {
+  const { dir, merge } = repoWithSimplifiedMerge();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.match(env.text, /^1 commit\(s\) also touched this path and are NOT listed above\./m);
+  assert.ok(env.text.includes(merge.slice(0, 8)), 'the excluded merge is named in the text, not only in the envelope');
+  assert.match(env.text, /1 of them is a merge\./);
+  assert.match(env.text, /see them with: git log --full-history -- f\.txt$/m);
+});
+
+test('a hermetic chain with nothing excluded prints a text with no such block', () => {
+  const { dir } = repo();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.ok(!env.text.includes('NOT listed above'), 'a chain with no gap must not state a non-event');
+  assert.ok(!env.text.includes('--full-history'));
+});
+
+test('this repository: the exclusion reaches the rendered text with the count, the word merge and all three shas', () => {
+  // Measured 2026-08-23. Unlike the envelope assertion above this one IS a
+  // figure a later merge into main touching this path would move, because the
+  // block names at most three and counts the rest: that is the cap doing its
+  // job, and the assertion is here because the criterion is about what a reader
+  // of `text` sees, which the envelope cannot stand in for.
+  const env = oneJsonLine(run(['cadence-core/bin/lib/release-decision.mjs', '--dir', REPO]).stdout);
+  assert.match(env.text, /^3 commit\(s\) also touched this path and are NOT listed above\./m);
+  assert.match(env.text, /3 of them are merges\./);
+  for (const named of ['b86fc25c', '051f0df1', '9237a539']) {
+    assert.ok(env.text.includes(named), `${named} is named in the text`);
+  }
+  assert.match(env.text, /git log --full-history -- cadence-core\/bin\/lib\/release-decision\.mjs$/m);
+});

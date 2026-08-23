@@ -13,8 +13,9 @@ suspected.
 
 The bare-path arm inherits git's default history simplification, so the join is
 correct and the history it reaches is short: 7 commits against 10 with
-`--full-history` on `lib/release-decision.mjs`, the three missing being
-`_archive-v2.2.0/3` phase commits collapsed into a merge (`WHY-02`). The
+`--full-history` on `lib/release-decision.mjs`, the three missing being the
+merges `b86fc25c`, `051f0df1` and `9237a539`, none of which resolves to a
+planning record (`WHY-02`). The
 renderer's entry cap of 10 claims ten entries stays under the 10,000-byte line
 in `references/conventions.md`, and `planning.mjs` renders 15,637 B (`WHY-03`).
 And `closeOver` compares `%cI` timestamps as strings, so a mixed-offset pair

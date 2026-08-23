@@ -5,33 +5,27 @@
 
 ## Active
 
-Committed scope for **`v3.6.1 - the gaps v3.6.0 named`**, opened 2026-08-23 over
-the three gaps the `v3.6.0` changelog states about its own work. Ids are seeded
-here at the open, the practice `v3.5.7` established. `/cad-plan` seeds each
-Traceability row as its phase is planned; rows are never hand-populated here.
+No cycle open. `/cad-phase add` opens the next one.
 
-- **WHY-02**: `/cad-why`'s bare-path arm reaches the commits git's default history simplification hides, so a path's chain is not silently short (measured 7 of 10 on `lib/release-decision.mjs`)
-- **WHY-03**: the renderer's entry cap carries a byte reason that measurement supports, or a number that does (measured 15,637 B at a cap claiming under 10,000)
-- **WHY-04**: `closeOver` orders commits by parsed instants rather than by `%cI` string comparison, so a mixed-offset pair straddling a prune attaches to the right close
-
-This is a patch cycle and it adds no surface. `cite-count` stays ADVISORY and the
-read-back gate is not touched, for the reason `v3.6.0` stated: it becomes a gate
-only once there is data on how often a zero-citation plan is legitimate.
+`v3.6.1 - the gaps v3.6.0 named` closed 2026-08-23. Its three ids - `WHY-02`,
+`WHY-03`, `WHY-04` - are under `## Shipped`, tagged `v3.6.1`, all Complete.
+Nothing is promoted here to fill the section: ids are seeded at a cycle's open,
+the practice `v3.5.7` established, and there is no open cycle to seed.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted into this cycle, and `BCH-01` stays in
-`## Deferred` carrying the spike verdict that invalidated it rather than dropped.
-The 2026-08-18 caveats on the first four are still undecided: `CTX-02`'s stated
+deferral reasons and none is promoted, and `BCH-01` stays in `## Deferred`
+carrying the spike verdict that invalidated it rather than dropped. The
+2026-08-18 caveats on the first four are still undecided: `CTX-02`'s stated
 basis no longer holds, since both its issues (#69, #29) are closed and #29's ask
 shipped as `/cad-minimalism-review`; and `RCL-06` carries no deferral reason and
 no promotion trigger, so nothing can ever re-ask it. Both want a decision before
 either is scoped.
 
-Not in this cycle: #233's two stale self-description claims, both `low`. The open
-items filed at the `v3.5.1` close, the proposals filed at the `v3.5.2` close, and
-the medium `risk_surface` survivors carried forward at the `v3.5.4`, `v3.5.5` and
-`v3.5.6` closes are all still unassigned; `v3.5.8`'s own two survivors are `low`
-and sit in `.planning/REVIEW-risk_surface-v3.5.8.md`.
+Unassigned and carried across closes: the open items filed at the `v3.5.1`
+close, the proposals filed at the `v3.5.2` close, and the medium `risk_surface`
+survivors carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6` closes.
+`v3.5.8`'s own two survivors are `low` and sit in
+`.planning/REVIEW-risk_surface-v3.5.8.md`.
 
 `v3.5.8`'s two open items worth a decision before a later cycle inherits them:
 the `partial-flip` and `partial-bump` envelopes ship with no committed regression
@@ -48,8 +42,18 @@ stale line ranges against `milestone.md`.
 
 `v3.6.0`'s three `risk_surface` survivors (one medium, two low) and its open
 items are recorded in `PROJECT.md`'s `### Active`, which is where they live now
-that the phase directories are pruned. None is scoped here beyond the three ids
-above.
+that the phase directories are pruned.
+
+`v3.6.1`'s own outstanding work, none of it scoped: the entry cap bounds entry
+count and not bytes, so 63 of 548 tracked paths still render over the
+10,000-byte line (worst 30,825 B) and relocating the bytes the way
+`lib/bulk-output.mjs` does is the fix that would bound it; the `risk_surface`
+survivor at `lib/why-render.mjs:225`, ruled `low`, where the queried path is
+interpolated verbatim into terminal-facing `text`; and the two prompt-cache
+issues filed on the origin, which are ordered - issue 242 records cache figures
+on the dispatch bracket first, and only then does issue 241 move the rung label
+below the contract reference, since the latter's benefit is argued from byte
+layout and the former is what would make it measurable.
 
 ## Shipped
 
@@ -253,6 +257,9 @@ parses only the Traceability table).
 | FST-01 (a `/cad-task` run leaves a record recall can find, so the corpus stops having a hole exactly where the majority of real work went (#191).) | 3 | Complete | v3.6.0 |
 | FST-02 (`/cad-task` runs the risk-surface check on its committed range. A one-commit change to auth is not less risky for being off-roadmap (#191).) | 3 | Complete | v3.6.0 |
 | FST-03 (`/cad-task` opens and closes a trace bracket, so per-role token accounting covers the path most runs actually use (#191).) | 3 | Complete | v3.6.0 |
+| WHY-02 (`/cad-why`'s bare-path arm reaches the commits git's default history simplification hides, so a path's chain is not silently short (measured 7 of 10 on `lib/release-decision.mjs`)) | 1 | Complete | v3.6.1 |
+| WHY-03 (the renderer's entry cap carries a byte reason that measurement supports, or a number that does (measured 15,637 B at a cap claiming under 10,000)) | 1 | Complete | v3.6.1 |
+| WHY-04 (`closeOver` orders commits by parsed instants rather than by `%cI` string comparison, so a mixed-offset pair straddling a prune attaches to the right close) | 1 | Complete | v3.6.1 |
 
 ## Deferred
 

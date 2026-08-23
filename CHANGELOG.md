@@ -6,6 +6,64 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.6.1] - 2026-08-23
+
+`v3.6.0` shipped `/cad-why` and then wrote down three things wrong with it. This
+patch cycle closes those three and nothing else: no new command, no new surface.
+All three were measured before the fix and re-measured after, which is the only
+reason the third one changed the number it was supposed to defend.
+
+One phase, 19 commits off `v3.6.0`, three requirement ids seeded at the open and
+all three traced to a verified phase: `WHY-02`, `WHY-03` and `WHY-04`.
+`/cad-audit` PASS on both arms, 6 of 6 acceptance criteria covered.
+
+### Fixed
+
+- **The chain says what its own history simplification dropped.** The bare-path
+  arm inherits git's default simplification, so `/cad-why` was returning 7 of the
+  10 commits `--full-history` reports for `lib/release-decision.mjs` and saying
+  nothing about the other three. It now measures the excluded set and states it
+  in the rendered text: the count, how many are merges, the shas, and the
+  `git log --full-history` invocation that shows them. A path with nothing
+  excluded renders no block at all, so the statement is about a real gap rather
+  than a line every chain carries. `--follow` and `--full-history` do not
+  compose, so the simplification is kept and named instead of dropped
+  (`cadence-core/bin/lib/why-corpus.mjs`, `lib/why-render.mjs`, `WHY-02`).
+- **The entry cap carries a claim measurement supports.** `DEFAULT_TOP` was 10
+  with a comment asserting ten entries stayed under the 10,000-byte line in
+  `references/conventions.md`. Measured, it did not: `planning.mjs` rendered
+  15,637 B. The cap is now 6, re-measured after the exclusion block landed rather
+  than inherited from the plan, and `why-render.test.mjs` reads a parseable
+  `// MEASURED CAP:` line out of the module source and asserts it equals
+  `DEFAULT_TOP`, so the number and its stated reason cannot drift apart again
+  without a red test (`lib/why-render.mjs`, `WHY-03`).
+- **`closeOver` orders by instant, not by string.** It compared `%cI` timestamps
+  as strings, and ISO-8601 values under different UTC offsets do not string-sort
+  chronologically, so a mixed-offset pair straddling a prune could attach to the
+  wrong close. It now parses both sides and guards an unparseable date by
+  returning null rather than throwing. The pinning test was proved to fail
+  against the string-compare implementation (`lib/why-corpus.mjs`, `WHY-04`).
+
+### Changed
+
+- **The cap's header no longer claims to bound bytes.** It opened with "the
+  response is bounded by truncating the entry count" and supported that with a
+  three-path table. The phase's own verify pass swept every tracked path: 63 of
+  548 render at or over the 10,000-byte line at the shipped cap, worst 30,825 B.
+  The cap bounds entry COUNT; per-entry join bytes are unbounded, and no cap that
+  still shows useful history changes that. The header says so, names the measured
+  range instead of three samples, and points at relocating the bytes the way
+  `lib/bulk-output.mjs` does as the fix that would actually bound it
+  (`lib/why-render.mjs`).
+- **The `WHY-02` account is corrected at all three sites it was stated.**
+  `ROADMAP.md` and `PROJECT.md` recorded the three missing commits as
+  `_archive-v2.2.0/3` phase commits collapsed into merge `0bf62847`. Measured
+  three times independently, that is false in both halves: `0bf62847` is
+  single-parent and is already one of the reachable 7, and the three
+  `--full-history` adds are the merges `b86fc25c`, `051f0df1` and `9237a539`.
+  The five `_archive-v2.2.0/3` commits are not ancestors of `HEAD`, so no
+  `git log` flag reaches them.
+
 ## [3.6.0] - 2026-08-23
 
 The Core Value at the top of `PROJECT.md` claims that what Cadence writes down
@@ -3664,6 +3722,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.1
 [3.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.0
 [3.5.9]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.9
 [3.5.8]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.8

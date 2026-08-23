@@ -30,36 +30,73 @@
 // plan ships the five placeholder lines they will replace.
 //
 // THE ENTRY CAP IS D-13'S SECOND ARM. Raw `git log` bytes already cross the
-// 10,000-byte threshold `references/conventions.md` states on two of four
-// sampled paths (`planning.mjs` at 21,684 B over 144 commits), and every join
-// field this module will grow to carry only adds bytes per entry - so the
-// response is bounded by TRUNCATING THE ENTRY COUNT rather than by relocating
-// the bytes to a file, which is what `lib/bulk-output.mjs`'s register does for
+// 10,000-byte threshold `cadence-core/references/conventions.md` states on two
+// of four sampled paths, and every join field an entry carries adds bytes per
+// entry - so the entry COUNT is truncated rather than the bytes being
+// relocated to a file, which is what `lib/bulk-output.mjs`'s register does for
 // the three call shapes it watches (none of which is this seam). The shape is
-// `cmdRecall`'s `--top`: a stated default of 10 and the untruncated `total`
-// riding beside the `shown` count, so a truncated answer stays legible as
-// truncated. `total` is chosen here and recorded with its reason - ten entries
-// is the band that stays under the byte threshold once each entry carries its
-// joins, on the same 21,684 B / 144-commit ratio the default was measured
-// against.
+// `cmdRecall`'s `--top`: a stated default plus the untruncated `total` riding
+// beside the `shown` count, so a truncated answer stays legible as truncated.
 //
-// THAT LAST SENTENCE IS NOW MEASURED FALSE, and is left standing with its
-// correction rather than quietly edited, because the number it justifies has
-// not moved. With plan 2's six join fields filled, `/cad-why
-// cadence-core/bin/lib/capture-file.mjs` renders 10,137 B over EIGHT entries
-// (seven of them joined), measured 2026-08-23 - already past the 10,000-byte
-// threshold, and a full ten joined entries would be around 13 KB. The cap is
-// still D-13's satisfied arm (that decision reads "registers in
-// lib/bulk-output.mjs OR the command carries a default entry cap") and lowering
-// it is a re-decision with its own cost - a smaller default hides history a
-// reader asked for - so the default stays 10 and the discrepancy is recorded
-// here for whoever makes that call.
+// WHAT THE CAP DOES NOT DO IS BOUND THE RESPONSE IN BYTES, and this comment
+// said it did until the phase-1 UAT deep pass measured it. The cap bounds ENTRY
+// COUNT; the join fields an entry carries are UNBOUNDED, so a path with few
+// commits and heavy join fields crosses the line at any cap that shows its
+// history at all. Swept every tracked path 2026-08-23, git 2.55.0, as the UTF-8
+// byte length of the emitted `text` at the shipped default: 548 paths rendered,
+// median 5,569 B, and 63 of them (11.5%) at or over 10,000 B. The worst are
+// `design-notes/sweep-2026-08-10-context-weight.md` at 30,825 B,
+// `cadence-core/bin/why-record.test.mjs` at 29,378 B (6 of 6 entries shown, 1
+// excluded - so those are join bytes, not the exclusion block) and `.gitignore`
+// at 28,888 B. Lowering the cap does not fix that tail: holding
+// `why-record.test.mjs` under the line takes one or two entries, which hides
+// the history a reader asked for. Relocating the bytes the way
+// `lib/bulk-output.mjs` does is the fix that would, and it is not this cap's
+// job. Read the maximality claim below as scoped to the three paths it names,
+// because that is all it is.
+//
+// AND THE DEFAULT IS THE LARGEST CAP MEASUREMENT SUPPORTS, not a band estimated
+// from a bytes-per-commit ratio - which is what the shipped comment did, and how
+// this constant came to carry a claim nothing had measured (WHY-03, v3.6.1
+// phase 1 D-02). Measured 2026-08-23 on this repository, git 2.55.0, with all
+// six join edges filled AND the exclusion block above rendering, as the UTF-8
+// byte length of the `text` the seam emits:
+//
+//                              at --top 6     at --top 7
+//   lib/capture-file.mjs         9,129 B       10,343 B   (8 commits, 2 excluded)
+//   lib/issue-decision.mjs       8,158 B        9,474 B   (12 commits, 5 excluded)
+//   planning.mjs                 8,526 B        9,764 B   (152 commits, 39 excluded)
+//
+// The claim, stated so it can be falsified: SIX is the LARGEST cap under which
+// the worst of those paths stays under the 10,000-byte line, with 871 B of
+// headroom on `lib/capture-file.mjs`; at seven that same path renders 10,343 B
+// and is over it. Lowering the cap has its own cost - a smaller default hides
+// history a reader asked for - and that cost is what makes MAXIMALITY the claim
+// rather than mere safety.
+//
+// MEASURED CAP: 6 entries, 2026-08-23.
+//
+// That last line is not decoration. `why-render.test.mjs` PARSES it and asserts
+// it equals `DEFAULT_TOP`, and renders the frozen worst case in
+// `fixtures/why.chain-worst.json` at the default and at one above it - so the
+// pin reddens when the number and its stated reason disagree, which is exactly
+// what nothing checked when this comment claimed ten.
 //
 // THE TRUNCATION NOTE LIVES INSIDE `text`, not only in the envelope. D-02 has
 // the skill relay `text` verbatim and reformat nothing, so a truncated answer
 // that only the JSON envelope's `shown`/`total` fields recorded would never
 // reach a reader - the skill never prints those fields. The note is therefore
 // the last line of `text` itself when the chain was actually cut.
+//
+// AND SO DOES THE EXCLUSION BLOCK (WHY-02, v3.6.1 phase 1 D-01), for exactly
+// that reason. The bare arm keeps `--follow` and therefore keeps git's default
+// history simplification; the seam runs a second `--full-history` query and
+// hands the difference here, and this module states it in `text` because a gap
+// only the envelope recorded would never reach a reader - which is the defect
+// WHY-02 closes, a chain that was silently 7-of-10. It renders BEFORE the
+// truncation note so the `Pass --top` line stays last, and an absent or EMPTY
+// report renders nothing at all: a line stating a non-event would be bytes on
+// every query for no information, and they would land on the cap above.
 //
 // ---------------------------------------------------------------------------
 // PLAN 2 ADDS THE JOIN, AND IT ATTACHES IN EXACTLY ONE PLACE: `entry.join`.
@@ -87,8 +124,10 @@
 
 import { MARKER_GAP } from './why-record.mjs';
 
-/** The default entry cap (D-13). */
-export const DEFAULT_TOP = 10;
+/** The default entry cap: the largest one measurement supports (D-13, then
+ * v3.6.1 phase 1 D-02). See the MEASURED CAP line in this module's header,
+ * which `why-render.test.mjs` parses and pins against this number. */
+export const DEFAULT_TOP = 6;
 
 /** The fixed text an absent join field renders as, rather than dropping the
  * line. A field the record does not carry says so; it is never dropped. */
@@ -134,6 +173,11 @@ const GAP_PATHS = 10;
 const GAP = 'NOT RESOLVED - no phase directory on disk and no summary recovered from git '
   + 'history names this commit, so the record does not say which phase produced it';
 
+/** How many excluded commits the block names before it counts the rest. The
+ * same disposition `GAP_ROWS` takes: D-13 bounds this response by counting,
+ * and the block names the invocation a reader runs to see all of them. */
+const EXCLUDED_ROWS = 3;
+
 /** One capped list, with the remainder counted rather than dropped. */
 function capped(items, limit) {
   const out = items.slice(0, limit).map((i) => `  ${i}`);
@@ -172,6 +216,39 @@ function gapLines(g) {
     ...capped(g.archive.map((/** @type {any} */ r) => `${r.origin}: ${r.text}`), GAP_ROWS));
   }
   return quoted(GAP, lines);
+}
+
+/**
+ * What git's default history simplification left out, stated in `text` and not
+ * only in the envelope (WHY-02, v3.6.1 phase 1 D-01).
+ *
+ * IT LIVES INSIDE `text` FOR THE REASON THE TRUNCATION NOTE DOES. D-02 has the
+ * skill relay `text` verbatim and print no envelope field, so a gap only the
+ * JSON recorded would never reach a reader - which is the whole defect WHY-02
+ * closes, a chain that was silently 7-of-10.
+ *
+ * AND AN EMPTY REPORT RENDERS NOTHING AT ALL. A chain with nothing excluded must
+ * not grow a line stating a non-event: that would be bytes on every query for no
+ * information, and they would land on the entry cap D-02 measures.
+ *
+ * The merge count is COUNTED from the parent lists the report carries, never
+ * asserted - `--full-history` buys merges on every path measured, but a block
+ * that said so without counting would be repeating the measurement rather than
+ * making it.
+ * @param {{sha: string, parentCount: number}[]} excluded
+ * @param {string} [path] the queried path, named in the invocation line
+ * @returns {string}
+ */
+function excludedBlock(excluded, path) {
+  const merges = excluded.filter((e) => e.parentCount > 1).length;
+  const head = `${excluded.length} commit(s) also touched this path and are NOT listed above. `
+    + "Git's default history simplification dropped them, and this chain keeps that "
+    + 'simplification because --follow, which is how it tracks renames, requires it. '
+    + `${merges} of them ${merges === 1 ? 'is a merge' : 'are merges'}.`;
+  const rows = capped(excluded.map((e) => `${e.sha.slice(0, ABBREV_LEN)} (${e.parentCount} parent(s))`),
+    EXCLUDED_ROWS);
+  const run = `  see them with: git log --full-history --${path ? ` ${path}` : ' <path>'}`;
+  return [head, ...rows, run].join('\n');
 }
 
 /**
@@ -408,7 +485,13 @@ function renderEntry(raw) {
  * and returning the already-sorted slice here is what keeps the sort a single
  * computation rather than a second copy of it in the seam.
  *
- * @param {ChainEntry[]} entries @param {{top?: number}} [opts]
+ * `excluded` is the seam's simplification report (WHY-02): the commits a
+ * `--full-history` comparand carries and this chain does not. Absent or empty
+ * renders NOTHING, and when it renders it goes BEFORE the truncation note, so
+ * the `Pass --top` line stays the last line of a truncated chain.
+ *
+ * @param {ChainEntry[]} entries
+ * @param {{top?: number, excluded?: {sha: string, parentCount: number}[]|null, path?: string}} [opts]
  * @returns {{text: string, shown: number, total: number, entries: ChainEntry[]}}
  */
 export function renderChain(entries, opts = {}) {
@@ -420,6 +503,8 @@ export function renderChain(entries, opts = {}) {
   if (capped.length === 0) return { text: 'No commits in this chain.', shown: 0, total, entries: [] };
 
   let text = capped.map(renderEntry).join('\n\n');
+  const excluded = Array.isArray(opts.excluded) ? opts.excluded : [];
+  if (excluded.length) text += `\n\n${excludedBlock(excluded, opts.path)}`;
   if (total > capped.length) {
     text += `\n\nShowing ${capped.length} of ${total} commit(s). Pass --top ${total} to see the rest.`;
   }

@@ -675,3 +675,23 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/3/CONTEXT.md`: D-06 (FST-02 pin): the pin EXTENDS `cadence-core/bin/prose-agreement.test.mjs`
 - `phases/3/CONTEXT.md`: D-07 (who writes it): the record is written by CODE reached as a
 - `phases/3/CONTEXT.md`: D-08 (budget silence): `cad-task` stays an UNDECLARED role, so its bracket is
+
+## v3.6.1
+
+- `phases/1/SUMMARY.md`: The plan and the dispatch both asserted the suite was red with 6
+- `phases/1/SUMMARY.md`: The dispatch flagged that task 6's re-measurement might land
+- `phases/1/SUMMARY.md`: The dispatch noted task 7's planned assertions inspect byte
+- `phases/1/SUMMARY.md`: `.planning/ROADMAP.md:53-56` and `.planning/PROJECT.md`'s `### Active` still
+- `phases/1/SUMMARY.md`: `why.test.mjs`'s new "the exclusion reaches the rendered text" case names
+- `phases/1/SUMMARY.md`: `risk_surface` review (openai/gpt-5.6-terra, blocking gate, ruled downgraded):
+- `phases/1/UAT.md`: The chain names what history simplification dropped /cad-why on cadence-core/bin/lib/release-decision.mjs prints text naming b86fc25c, 051f0df1 and 9237a539 as commits also touching that path which the chain does not list, and says history simplification dropped them. A path with nothing excluded prints no such block at all.
+- `phases/1/UAT.md`: CONTEXT records the reachability choice as a numbered decision .planning/phases/1/CONTEXT.md carries D-01 naming what the reachability choice costs on a path with a busy merge history, with the figures and the date it was measured on.
+- `phases/1/UAT.md`: The entry cap's stated reason is measurement-backed Rendering the worst measured path at the shipped DEFAULT_TOP prints under the 10,000-byte line conventions.md states, and lib/why-render.mjs's comment states that measurement, its date, and the maximality claim it supports.
+- `phases/1/UAT.md`: The pin reddens when the number and its stated reason disagree why-render.test.mjs goes red when DEFAULT_TOP and the comment's stated figure disagree - the fixture render is under the threshold at the default and over it at one above.
+- `phases/1/UAT.md`: closeOver orders by instant and guards an unparseable date closeOver attaches a commit whose %cI string sorts on the wrong side of a close to the close it actually belongs to as an instant, returns null on an unparseable date rather than throwing, and the pinning test fails against the string-compare implementation.
+- `phases/1/UAT.md`: Suite and self-verify are green node cadence-core/bin/test.mjs reports 0 failures and node cadence-core/bin/self-verify.mjs --root . returns ok:true with problems: [].
+- `phases/1/UAT.md`: The cap's 3-path sample misses the real worst case by 3x, so the response is not bounded under the 10,000-byte line behavior wrong - the header's bounding claim does not hold on real paths; the maximality measurement was taken on a sample that excludes every path near the worst case
+- `phases/1/UAT.md`: The false WHY-02 premise is still live at three sites in the project record, one more than SUMMARY names behavior wrong - the planning record states as measured fact something this phase measured false, and now contradicts its own CONTEXT.md
+- `phases/1/CONTEXT.md`: D-01 (reachability, WHY-02): the bare-path arm KEEPS `--follow` and REPORTS
+- `phases/1/CONTEXT.md`: D-02 (entry cap, WHY-03): `DEFAULT_TOP` drops from 10 to the largest value
+- `phases/1/CONTEXT.md`: D-04 (ordering, WHY-04): `closeOver` selects on parsed instants, the selection

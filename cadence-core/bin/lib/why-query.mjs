@@ -1,20 +1,25 @@
 // @ts-check
-// why-query.mjs - the query grammar and the two git invocations for
+// why-query.mjs - the query grammar and the git invocations for
 // `/cad-why` (WHY-01, phase 1 plan 1). A pure module in the
 // lib/lease-grammar.mjs / lib/plan-key.mjs mold: no disk, no emit, no exit,
 // no Date, no randomness. The caller (why.mjs) owns every refusal sentence
 // and every envelope field; this module only classifies.
 //
-// THREE QUESTIONS, and only these three (CONTEXT phase 1 plan 1, task 1):
+// FOUR QUESTIONS, and only these four (CONTEXT phase 1 plan 1, task 1; the
+// fourth added by v3.6.1 phase 1 D-01):
 //
 //   1. The argument grammar - `parseQuery` splits the caller's one positional
 //      argument into a repository-relative path and an optional 1-based line.
-//   2. The git argument vectors - `probeArgv`, `bareArgv` and `lineArgv`
-//      build the argv ARRAYS the caller passes to `execFileSync('git', ...)`.
-//      Never a shell string: this module builds arrays only.
+//   2. The git argument vectors - `probeArgv`, `bareArgv`, `lineArgv` and
+//      `comparandArgv` build the argv ARRAYS the caller passes to
+//      `execFileSync('git', ...)`. Never a shell string: this module builds
+//      arrays only.
 //   3. The failure classification - `classifyResult` turns a git exit status
 //      plus its stderr into one of the outcomes the seam emits, carrying NO
 //      third-party bytes onward.
+//   4. What the bare arm's history simplification LEFT OUT - `excludedFrom`
+//      names the commits the comparand query carries and the chain does not,
+//      which is the whole of WHY-02 on this module's side.
 //
 // DISAMBIGUATION IS TWO STEPS, deliberately separate (CONTEXT D-15/D-16).
 // Step one CLASSIFIES the suffix after the LAST colon as a line attempt only
@@ -163,6 +168,61 @@ export function bareArgv(path) {
  */
 export function lineArgv(path, line) {
   return ['log', `-L${line},${line}:${path}`, '-s', `--format=${LOG_FORMAT}`, '-M'];
+}
+
+/** The comparand's `--format`: the full sha and the commit's PARENT LIST, and
+ * nothing else. The parents are what let a caller say how many of the excluded
+ * commits are merges from evidence rather than by assertion, and no subject
+ * rides along because this list is bounded by the same byte line the entry cap
+ * is (D-02) - the block names the invocation a reader runs to see the rest. */
+export const COMPARAND_FORMAT = '%H%x1f%P';
+
+/**
+ * The COMPARAND arm (WHY-02, phase 1 D-01): every commit that touched `path`
+ * with git's default history simplification turned OFF, so a caller can measure
+ * what the bare arm's simplification excluded rather than being silently short.
+ *
+ * IT CARRIES NO `--follow`, AND THAT IS THE WHOLE REASON IT IS A SECOND QUERY.
+ * Measured on git 2.55.0 on 2026-08-23: `git log -M --follow --full-history --
+ * cadence-core/bin/lib/release-decision.mjs` returns exactly the 7 commits
+ * `--follow` alone returns, while this argv returns 10. The two flags do not
+ * compose - `--follow` defeats `--full-history` - so adding the flag to
+ * `bareArgv` would change nothing and drop nothing, and the only way to have
+ * both rename-following and the full-history count is to ask twice.
+ *
+ * `-M` is pinned explicitly and the `--format` is fixed for the same reason
+ * both other arms pin them (D-17): a reading machine's `diff.renames` or
+ * `log.follow` must not change what this command answers.
+ * @param {string} path @returns {string[]}
+ */
+export function comparandArgv(path) {
+  return ['log', '--full-history', '-M', `--format=${COMPARAND_FORMAT}`, '--', path];
+}
+
+/**
+ * Which of the comparand's commits the chain does not carry, in the
+ * comparand's OWN order - which is newest-first, because that is the order
+ * `git log` answered in and re-sorting here would be a second opinion about
+ * chronology this module has no dates to form.
+ *
+ * Each survivor carries its PARENT COUNT rather than a merge flag, so the
+ * caller states how many are merges by counting evidence git returned instead
+ * of by asserting it. A record with no sha is dropped: it is a parse artifact,
+ * never a commit.
+ *
+ * @param {Iterable<string>} chainShas the full shas the chain already lists
+ * @param {{sha: string, parents?: string[]}[]} records the comparand's records
+ * @returns {{sha: string, parentCount: number}[]}
+ */
+export function excludedFrom(chainShas, records) {
+  const carried = new Set(chainShas || []);
+  const out = [];
+  for (const r of records || []) {
+    const sha = r && typeof r.sha === 'string' ? r.sha : '';
+    if (!sha || carried.has(sha)) continue;
+    out.push({ sha, parentCount: Array.isArray(r.parents) ? r.parents.length : 0 });
+  }
+  return out;
 }
 
 const LINE_PAST_END = /has only \d+ lines$/m;
