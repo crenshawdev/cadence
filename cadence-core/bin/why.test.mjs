@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -305,4 +305,100 @@ test('every joined entry names the absent corrected-by marker rather than report
       assert.ok(!/deviation:\s*$/m.test(entry), 'and never as an empty field');
     }
   }
+});
+
+// --- Plan 2 task 6: the surviving review finding edge ----------------------
+//
+// A BUILT fixture, because no `_archive-*` tree in this repository holds an
+// adjudication record - they postdate the last archive-mode close. Plan 3
+// proves the git-recovered arm; this is the live-and-archive on-disk tier's own
+// seam proof, and it is at the SEAM rather than in the module tests because a
+// correct reader whose finding never reaches the rendered chain has to fail
+// somewhere.
+
+/**
+ * A repository whose `.planning` records three commits on `f.txt` and carries
+ * an adjudication record covering the middle one alone.
+ * @returns {{dir: string, base: string, a: string, b: string}}
+ */
+function repoWithFinding() {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-review-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q', '-b', 'main');
+  const shas = [];
+  for (const n of ['zero', 'one', 'two']) {
+    writeFileSync(join(dir, 'f.txt'), `${n}\n`);
+    git('add', 'f.txt');
+    execFileSync('git', ['-C', dir, 'commit', '-q', '-m', n], { stdio: 'ignore', env: GIT_ENV });
+    shas.push(execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim());
+  }
+  const [base, a, b] = shas;
+
+  const phase = join(dir, '.planning', 'phases', '1');
+  mkdirSync(phase, { recursive: true });
+  writeFileSync(join(phase, 'PLAN.md'), '---\nphase: 1\nplan: 1\n---\n\n# a plan\n');
+  writeFileSync(join(phase, 'SUMMARY.md'), [
+    '# Phase 1 - Summary', '', '## Commits', '',
+    '| Plan | Task | Commit | Description |',
+    '|---|---|---|---|',
+    `| 1 | 1 | ${a.slice(0, 8)} | the commit the finding covers |`,
+    `| 1 | 2 | ${b.slice(0, 8)} | the commit it does not |`,
+    '', '## Deviations', '', '- [deviation] none of consequence', '',
+  ].join('\n'));
+  writeFileSync(join(phase, 'ADJUDICATION-risk_surface-plan-1.json'), JSON.stringify({
+    phase: '1', trigger: 'risk_surface', discriminator: 'plan-1', round: 1,
+    base_id: base, head_id: a,
+    entries: [
+      {
+        voice: 'openai', model: 'test', file: 'f.txt', line: 1, severity: 'high',
+        claim: 'THE-SURVIVING-CLAIM: the value is read before it is validated.',
+        failure_scenario: 'THE-SURVIVING-SCENARIO: a hostile value reaches the sink.',
+        counter_evidence: 'THE-COUNTER-EVIDENCE: the guard added at line 9.',
+        ruling: 'survived',
+      },
+      {
+        voice: 'openai', model: 'test', file: 'f.txt', line: 2, severity: 'low',
+        claim: 'THE-REFUTED-CLAIM: this must never print.',
+        failure_scenario: 'nothing', ruling: 'refuted',
+      },
+    ],
+  }));
+  return { dir, base, a, b };
+}
+
+test("a survived finding reaches the rendered chain on the commit its range covers, and on no other", () => {
+  const { dir, a, b } = repoWithFinding();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.equal(env.ok, true);
+  assert.deepEqual(env.warnings, []);
+
+  const covered = entryFor(env.text, a);
+  assert.ok(covered.includes('THE-SURVIVING-CLAIM: the value is read before it is validated.'),
+    `expected the claim verbatim on the covered commit, got:\n${covered}`);
+  assert.ok(covered.includes('THE-SURVIVING-SCENARIO: a hostile value reaches the sink.'),
+    `expected the failure scenario verbatim, got:\n${covered}`);
+  assert.ok(covered.includes('THE-COUNTER-EVIDENCE: the guard added at line 9.'));
+  assert.ok(covered.includes('[high] f.txt:1 (ADJUDICATION-risk_surface-plan-1.json)'));
+
+  const uncovered = entryFor(env.text, b);
+  assert.ok(!uncovered.includes('THE-SURVIVING-CLAIM'),
+    `a finding outside this commit range must not appear on it, got:\n${uncovered}`);
+  assert.ok(uncovered.includes('review: 1 adjudication record(s) read; no surviving finding covers this commit'),
+    `and the absence is stated rather than blank, got:\n${uncovered}`);
+
+  assert.ok(!env.text.includes('THE-REFUTED-CLAIM'), 'a refuted finding never prints');
+});
+
+test('a finding whose range does not resolve in this clone is stated unknown, never dropped or applied', () => {
+  const { dir, a } = repoWithFinding();
+  const record = join(dir, '.planning', 'phases', '1', 'ADJUDICATION-risk_surface-plan-1.json');
+  const parsed = JSON.parse(readFileSync(record, 'utf8'));
+  parsed.head_id = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+  writeFileSync(record, JSON.stringify(parsed));
+
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  const covered = entryFor(env.text, a);
+  assert.ok(covered.includes('THE-SURVIVING-CLAIM'), 'the finding is not dropped');
+  assert.ok(covered.includes('join UNRESOLVABLE:'), `expected the unknown stated, got:\n${covered}`);
+  assert.ok(covered.includes('could not be placed'));
 });

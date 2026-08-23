@@ -10,12 +10,15 @@
 // genuine prefix ambiguity.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildCommitIndex, resolveCommit, readArtifact } from './lib/why-corpus.mjs';
+import {
+  buildCommitIndex, resolveCommit, readArtifact, readAdjudications, rangeMembers,
+} from './lib/why-corpus.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** This repository's own planning root: bin -> cadence-core -> root. */
@@ -174,4 +177,98 @@ test('readArtifact tells absent, unreadable and readable apart', () => {
   assert.deepEqual(readArtifact(join(root, 'phases', '1')),
     { text: null, absent: false, code: 'ENOTREGULAR' },
     'a non-regular file is refused BEFORE it is opened, so a FIFO cannot block the process');
+});
+
+// --- Task 6: the review edge's disk and git half ---------------------------
+
+/** A repository with three commits on `f.txt`, returned oldest first. */
+function repoWithThreeCommits() {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-range-'));
+  const env = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+    GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+  };
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env });
+  git('init', '-q', '-b', 'main');
+  const shas = [];
+  for (const n of ['zero', 'one', 'two']) {
+    writeFileSync(join(dir, 'f.txt'), `${n}\n`);
+    git('add', '.');
+    git('commit', '-q', '-m', n);
+    shas.push(execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env }).trim());
+  }
+  return { dir, shas };
+}
+
+test('rangeMembers answers base..head, so a record covers A and not B', () => {
+  const { dir, shas } = repoWithThreeCommits();
+  const [base, a, b] = shas;
+  const members = rangeMembers(dir, base, a);
+  assert.ok(members instanceof Set);
+  assert.ok(members.has(a), 'the head of the range is in it');
+  assert.ok(!members.has(b), 'a commit after the head is not');
+  assert.ok(!members.has(base), 'and base itself is excluded, which is git own reading of base..head');
+});
+
+test('a range whose head this clone does not have is unresolvable, not empty', () => {
+  const { dir, shas } = repoWithThreeCommits();
+  assert.equal(rangeMembers(dir, shas[0], 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'), null);
+  assert.equal(rangeMembers(dir, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', shas[2]), null);
+  // Distinguishable from a range that resolves and happens to be empty.
+  const empty = rangeMembers(dir, shas[2], shas[2]);
+  assert.ok(empty instanceof Set);
+  assert.equal(empty.size, 0);
+});
+
+test('a base_id that is not hexadecimal never reaches git argv', () => {
+  const { dir, shas } = repoWithThreeCommits();
+  for (const hostile of ['--upload-pack=touch /tmp/pwned', '-x', 'HEAD', '', '../../etc/passwd']) {
+    assert.equal(rangeMembers(dir, hostile, shas[2]), null, `${JSON.stringify(hostile)} must be refused`);
+    assert.equal(rangeMembers(dir, shas[0], hostile), null);
+  }
+});
+
+test('readAdjudications finds records by the one filename rule and skips everything else', () => {
+  const root = planningRoot({ 'phases/1': commitsTable([['1', '1', 'aaaaaaa', 'a phase']]) });
+  const dir = { label: 'phases/1', path: join(root, 'phases', '1') };
+  const record = {
+    base_id: 'a'.repeat(40),
+    head_id: 'b'.repeat(40),
+    entries: [{ ruling: 'survived', claim: 'kept', failure_scenario: 'why', severity: 'high', file: 'x.mjs', line: 1 }],
+  };
+  writeFileSync(join(dir.path, 'ADJUDICATION-risk_surface-plan-1.json'), JSON.stringify(record));
+  writeFileSync(join(dir.path, 'ADJUDICATION-risk_surface-plan-1-r2.json'), JSON.stringify(record));
+  writeFileSync(join(dir.path, 'REVIEW-risk_surface-plan-1.md'), 'not a record');
+  writeFileSync(join(dir.path, 'notes.json'), '{"also":"not a record"}');
+
+  const { records, warnings } = readAdjudications(dir);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(records.map((r) => r.name),
+    ['ADJUDICATION-risk_surface-plan-1-r2.json', 'ADJUDICATION-risk_surface-plan-1.json'],
+    'sorted, so two runs read them in one order - and the round-2 record is not skipped');
+  assert.equal(records[0].survivors[0].claim, 'kept');
+});
+
+test('an unparseable record warns by name and code, and the other records still read', () => {
+  const root = planningRoot({ 'phases/1': commitsTable([['1', '1', 'aaaaaaa', 'a phase']]) });
+  const dir = { label: 'phases/1', path: join(root, 'phases', '1') };
+  writeFileSync(join(dir.path, 'ADJUDICATION-plan-good.json'), JSON.stringify({
+    base_id: 'a'.repeat(40), head_id: 'b'.repeat(40), entries: [],
+  }));
+  writeFileSync(join(dir.path, 'ADJUDICATION-plan-bad.json'), '{ truncated');
+
+  const { records, warnings } = readAdjudications(dir);
+  assert.equal(records.length, 2);
+  assert.deepEqual(warnings, ['phases/1/ADJUDICATION-plan-bad.json: unparseable-json']);
+});
+
+test('a phase directory with no record at all is silent', () => {
+  const root = planningRoot({ 'phases/1': commitsTable([['1', '1', 'aaaaaaa', 'a phase']]) });
+  const { records, warnings } = readAdjudications({ label: 'phases/1', path: join(root, 'phases', '1') });
+  assert.deepEqual(records, []);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(readAdjudications({ label: 'gone/9', path: join(root, 'gone', '9') }),
+    { records: [], warnings: [] }, 'and so is a directory that is not there');
 });

@@ -193,6 +193,54 @@ function fieldDeviation(j) {
 }
 
 /**
+ * One surviving finding, quoted in the reviewer's own returned words (D-11).
+ * `counter_evidence` is optional in the record and is omitted when absent
+ * rather than rendered empty - it is the adjudicator's note, not a field every
+ * entry has.
+ * @param {any} f @returns {string[]}
+ */
+function findingLines(f) {
+  const where = [f.file, f.line].filter((v) => v !== null && v !== undefined && v !== '').join(':');
+  const head = [f.severity ? `[${f.severity}]` : null, where || null, `(${f.record})`]
+    .filter(Boolean).join(' ');
+  const out = [head, `claim: ${f.claim}`, `failure_scenario: ${f.failure_scenario}`];
+  if (f.counter_evidence) out.push(`counter_evidence: ${f.counter_evidence}`);
+  return out;
+}
+
+/**
+ * The `review:` line (D-11). Three distinct answers, because they are three
+ * different facts: this phase kept no adjudication record; it kept records and
+ * none of their survivors covers this commit; and a survivor exists whose
+ * `base_id..head_id` does not resolve in this clone, so whether it covers this
+ * commit is UNKNOWN. The third is never collapsed into the second - a finding
+ * dropped for want of a resolvable range would read as a finding that does not
+ * apply.
+ * @param {EntryJoin} [j] @returns {string|undefined}
+ */
+function fieldReview(j) {
+  const r = j && /** @type {any} */ (j).review;
+  if (!r) return undefined;
+  if (!r.records) return "no adjudication record in this phase's directory";
+
+  const lines = [];
+  for (const f of r.findings) lines.push(...findingLines(f));
+  for (const f of r.unresolved) {
+    lines.push(...findingLines(f),
+      `  join UNRESOLVABLE: ${f.baseId || '(no base_id)'}..${f.headId || '(no head_id)'} `
+      + 'does not resolve in this clone, so whether it covers this commit is unknown');
+  }
+  if (!lines.length) {
+    return `${r.records} adjudication record(s) read; no surviving finding covers this commit`;
+  }
+  const kept = r.findings.length;
+  const unknown = r.unresolved.length;
+  const head = `${kept} surviving finding(s) cover this commit`
+    + (unknown ? `, and ${unknown} more could not be placed` : '');
+  return quoted(head, lines);
+}
+
+/**
  * Fill every join field the entry does not already carry as a literal string.
  * Never mutates its argument.
  * @param {ChainEntry} e @returns {ChainEntry}
@@ -206,6 +254,7 @@ function decorate(e) {
     task: e.task ?? fieldTask(j),
     decision: e.decision ?? fieldDecision(j),
     deviation: e.deviation ?? fieldDeviation(j),
+    review: e.review ?? fieldReview(j),
   };
 }
 

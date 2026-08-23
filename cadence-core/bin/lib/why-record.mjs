@@ -53,6 +53,7 @@
 import {
   normalize, parseContextDecisions, planTaskTitles, sectionBound, sectionSpan,
 } from './planning-files.mjs';
+import { RULINGS } from './adjudication-record.mjs';
 
 /** The heading whose table carries the commit-to-plan-task edge (D-08). */
 export const COMMITS_HEADING = '## Commits';
@@ -413,4 +414,108 @@ export function parseDeviations(text) {
     out.push(raw.replace(/^\[deviation\]\s*/, ''));
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SURVIVING REVIEW FINDING EDGE (D-11).
+//
+// SUMMARY PROSE IS NOT A VIABLE SOURCE, which is why this reads the JSON
+// records instead. Review sections appear in shipped summaries under five
+// different one-off spellings, one file each; `## Commits` appears at 26 of 26.
+// A reader built on the prose would be a reader of one summary.
+//
+// SO THE SOURCE IS THE PHASE DIRECTORY'S `ADJUDICATION-*.json` RECORDS, taking
+// only entries whose `ruling` is `survived` and quoting that entry's own
+// `claim`, `failure_scenario` and `counter_evidence` VERBATIM. The ruling
+// vocabulary is `RULINGS` in `lib/adjudication-record.mjs` and is imported
+// rather than restated: a second list of the three rulings is a second thing to
+// keep in step with the module that defines what a record IS.
+//
+// AN ENTRY JOINS TO A COMMIT BY RANGE, `base_id..head_id`, and the range
+// resolution is the CALLER's (`lib/why-corpus.mjs`), because it needs git and
+// this module has none. What is decided here is the degradation: an entry
+// missing either id contributes a STATED ABSENCE and an issue code, never a
+// silent drop and never a claim that the finding applies. CONTEXT flags the
+// both-fields-present assumption as verified on ONE git-recovered record rather
+// than across the corpus, so the degradation path is the one that has to exist.
+//
+// FAIL SOFT HERE, NOT FAIL CLOSED. `lib/adjudication-record.mjs` refuses a
+// malformed record outright, and it is right to: it is the WRITER's validator,
+// and a record silently missing one finding is the summarizing it exists to
+// end. This is a READER, over records written months ago by earlier versions of
+// that writer, and refusing the whole file would delete the other findings'
+// evidence to punish one entry's shape. So a bad entry is skipped with an
+// issue, and a file that will not parse yields one issue and no findings.
+// ---------------------------------------------------------------------------
+
+/**
+ * The one ruling this command reads, taken POSITIONALLY from the vocabulary
+ * that defines it rather than spelled again here - `RULINGS` is frozen and
+ * ordered survived, downgraded, refuted, and its first element is the ruling
+ * that means the finding was kept. The literal is pinned in
+ * `why-record.test.mjs` instead, the hand-maintained-then-compared shape
+ * `route-table.json` states its reason for on `risk_surface_categories`: a
+ * reorder of that list turns the test red rather than silently changing which
+ * findings this command prints.
+ */
+export const SURVIVED_RULING = RULINGS[0];
+
+/** A non-empty string, or null - so an absent field and a blank one are the
+ * same answer to the only question asked of them. */
+const str = (/** @type {unknown} */ v) => (typeof v === 'string' && v.trim() !== '' ? v : null);
+
+/**
+ * The survived findings of one adjudication record.
+ *
+ * `issues` are CODES, not sentences: this module never names the file it was
+ * handed, so the caller that opened it writes the warning.
+ *
+ * @param {string} text one ADJUDICATION-*.json's bytes
+ * @returns {{ok: boolean, baseId: string|null, headId: string|null,
+ *   survivors: Array<{claim: string, failure_scenario: string,
+ *     counter_evidence: string|null, file: string|null, line: number|null,
+ *     severity: string|null, baseId: string|null, headId: string|null}>,
+ *   issues: string[]}}
+ */
+export function parseAdjudication(text) {
+  /** @type {string[]} */
+  const issues = [];
+  const empty = { ok: false, baseId: null, headId: null, survivors: [], issues };
+
+  let record;
+  try {
+    record = JSON.parse(String(text || ''));
+  } catch {
+    issues.push('unparseable-json');
+    return empty;
+  }
+  if (record === null || typeof record !== 'object' || Array.isArray(record)) {
+    issues.push('not-a-record-object');
+    return empty;
+  }
+
+  const baseId = str(record.base_id);
+  const headId = str(record.head_id);
+  const entries = Array.isArray(record.entries) ? record.entries : [];
+  if (!Array.isArray(record.entries)) issues.push('no-entries-array');
+
+  const survivors = [];
+  for (const e of entries) {
+    if (e === null || typeof e !== 'object' || Array.isArray(e)) { issues.push('entry-not-an-object'); continue; }
+    if (e.ruling !== SURVIVED_RULING) continue;
+    const entryBase = str(e.base_id) || baseId;
+    const entryHead = str(e.head_id) || headId;
+    if (!entryBase || !entryHead) issues.push('survivor-without-a-range');
+    survivors.push({
+      claim: str(e.claim) || '',
+      failure_scenario: str(e.failure_scenario) || '',
+      counter_evidence: str(e.counter_evidence),
+      file: str(e.file),
+      line: Number.isInteger(e.line) ? e.line : null,
+      severity: str(e.severity),
+      baseId: entryBase,
+      headId: entryHead,
+    });
+  }
+  return { ok: true, baseId, headId, survivors, issues };
 }

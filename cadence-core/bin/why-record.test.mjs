@@ -6,14 +6,16 @@
 // rather than of the corpus.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  contextDecisions, decisionsFor, MARKER_GAP, parseCommitRows, parseDeviations,
-  planTaskBodies, shaMatches,
+  contextDecisions, decisionsFor, MARKER_GAP, parseAdjudication, parseCommitRows,
+  parseDeviations, planTaskBodies, shaMatches, SURVIVED_RULING,
 } from './lib/why-record.mjs';
+import { RULINGS } from './lib/adjudication-record.mjs';
 import { parseContextDecisions, parseSummarySnippets } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -303,4 +305,96 @@ test('MARKER_GAP names the marker the write side prescribes and never says "none
     'the marker is named by its literal spelling so a reader can grep for it');
   assert.ok(MARKER_GAP.includes('workflows/execute.md'), 'and so is the workflow that prescribes it');
   assert.ok(/write side/i.test(MARKER_GAP), 'the gap is located on the write side, not reported as an empty result');
+});
+
+// --- Task 6: the surviving review finding edge ----------------------------
+
+/** The verbatim bytes of a real adjudication record, recovered from history.
+ * No `_archive-*` tree in this repository holds one - they postdate the last
+ * archive-mode close - so the on-disk arm is proved on a built fixture and this
+ * is the only REAL record of its kind reachable from here. */
+const RECOVERED = execFileSync('git',
+  ['-C', ROOT, 'show', 'a34b0c8a^:.planning/phases/2/ADJUDICATION-risk_surface-plan-2.json'],
+  { encoding: 'utf8' });
+
+test('SURVIVED_RULING is the vocabulary the record module defines, pinned to its literal', () => {
+  assert.equal(SURVIVED_RULING, 'survived');
+  assert.ok(RULINGS.includes(SURVIVED_RULING));
+  assert.equal(RULINGS.length, 3, 'a fourth ruling would need a decision here, not a silent pass');
+});
+
+test("a real record's survived entry returns with the reviewer's own words byte-exact", () => {
+  const parsed = parseAdjudication(RECOVERED);
+  const raw = JSON.parse(RECOVERED);
+
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.issues, []);
+  assert.equal(parsed.baseId, raw.base_id);
+  assert.equal(parsed.headId, raw.head_id);
+  assert.equal(parsed.survivors.length, 1);
+
+  const [s] = parsed.survivors;
+  const [e] = raw.entries;
+  assert.equal(s.claim, e.claim, 'the claim is the reviewer returned bytes, not a paraphrase');
+  assert.equal(s.failure_scenario, e.failure_scenario);
+  assert.equal(s.file, e.file);
+  assert.equal(s.line, e.line);
+  assert.equal(s.severity, e.severity);
+  assert.equal(s.baseId, e.base_id);
+  assert.equal(s.headId, e.head_id);
+  // This record carries no `counter_evidence` - an optional field on the entry
+  // shape - and an absent one reads null rather than an empty string.
+  assert.equal(s.counter_evidence, null);
+  assert.ok(s.claim.includes('regular-file shape'));
+});
+
+test('a non-survived entry does not return', () => {
+  // A real record whose two entries were both DOWNGRADED, so the filter is
+  // proved against the corpus and not only against a hand-built copy.
+  const onDisk = readFileSync(planning('phases', '1', 'ADJUDICATION-risk_surface-plan-1.json'), 'utf8');
+  const live = parseAdjudication(onDisk);
+  assert.equal(live.ok, true);
+  assert.equal(JSON.parse(onDisk).entries.length, 2);
+  assert.deepEqual(live.survivors, [], 'two downgraded entries yield no surviving finding');
+
+  // And the third ruling, on a copy of the recovered record.
+  const raw = JSON.parse(RECOVERED);
+  const refuted = { ...raw, entries: [{ ...raw.entries[0], ruling: 'refuted' }] };
+  assert.deepEqual(parseAdjudication(JSON.stringify(refuted)).survivors, []);
+});
+
+test('a survivor with no base_id states an unresolvable join and an issue, never a throw', () => {
+  const raw = JSON.parse(RECOVERED);
+  delete raw.base_id;
+  delete raw.entries[0].base_id;
+
+  let parsed;
+  assert.doesNotThrow(() => { parsed = parseAdjudication(JSON.stringify(raw)); });
+  assert.equal(parsed.survivors.length, 1, 'the finding is not dropped for want of a range');
+  assert.equal(parsed.survivors[0].baseId, null);
+  assert.equal(parsed.survivors[0].headId, raw.entries[0].head_id);
+  assert.deepEqual(parsed.issues, ['survivor-without-a-range']);
+});
+
+test('a record-level range covers an entry that does not carry its own', () => {
+  const raw = JSON.parse(RECOVERED);
+  delete raw.entries[0].base_id;
+  delete raw.entries[0].head_id;
+  const parsed = parseAdjudication(JSON.stringify(raw));
+  assert.deepEqual(parsed.issues, []);
+  assert.equal(parsed.survivors[0].baseId, raw.base_id);
+  assert.equal(parsed.survivors[0].headId, raw.head_id);
+});
+
+test('a record that will not parse yields one issue and no findings, never a throw', () => {
+  for (const [text, issue] of [['{not json', 'unparseable-json'], ['[]', 'not-a-record-object'], ['null', 'not-a-record-object']]) {
+    let parsed;
+    assert.doesNotThrow(() => { parsed = parseAdjudication(text); });
+    assert.equal(parsed.ok, false);
+    assert.deepEqual(parsed.survivors, []);
+    assert.deepEqual(parsed.issues, [issue]);
+  }
+  const noEntries = parseAdjudication('{"base_id":"aaaa","head_id":"bbbb"}');
+  assert.deepEqual(noEntries.issues, ['no-entries-array']);
+  assert.deepEqual(noEntries.survivors, []);
 });
