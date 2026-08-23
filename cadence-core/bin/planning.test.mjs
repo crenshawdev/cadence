@@ -3806,6 +3806,31 @@ test('plan-overlap: a backtick-wrapped path does not silently miss a real collis
   }]);
 });
 
+test('plan-overlap: a markdown-decorated path does not silently miss a real collision (FRM-02)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - **src/shared.rs**\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - src/shared.rs\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  // Two plans that DO write one file. The decorated spelling and the plain one
+  // are not the same string, and D-04 keeps them from being made one: overlaps
+  // means "these two declarations intersect", never "intersect after repair".
+  // What stops the pair being cleared into two worktrees is the DIAGNOSTIC -
+  // workflows/execute.md routes any non-empty frontmatter_issues to the
+  // sequential path, which is the whole point this test pins.
+  assert.deepEqual(r.overlaps, []);
+  assert.deepEqual(r.frontmatter_issues, [{
+    plan: 'PLAN-1.md',
+    issues: [{ line: 6, code: 'markdown-decorated-path', text: '- **src/shared.rs**' }],
+  }]);
+});
+
 test('plan-overlap: a block item under an inline files: key is diagnosed and dropped on both plans, not overlapped (D-13)', () => {
   const dir = makeTree({
     roadmap: [{ n: 1, name: 'One' }],
