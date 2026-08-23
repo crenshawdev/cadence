@@ -5,16 +5,18 @@
 
 ## Active
 
-Committed scope for **`v3.6.0 - reading the corpus back`**, opened 2026-08-23
-from the tracker's #190, #191 and #192, filed 2026-08-16 and held out of `v3.5.9`
-as a cycle of their own. Ids are seeded here at the open, the practice `v3.5.7`
-established. `/cad-plan` seeds each Traceability row as its phase is planned;
-rows are never hand-populated here.
+Committed scope for **`v3.6.1 - the gaps v3.6.0 named`**, opened 2026-08-23 over
+the three gaps the `v3.6.0` changelog states about its own work. Ids are seeded
+here at the open, the practice `v3.5.7` established. `/cad-plan` seeds each
+Traceability row as its phase is planned; rows are never hand-populated here.
 
+- **WHY-02**: `/cad-why`'s bare-path arm reaches the commits git's default history simplification hides, so a path's chain is not silently short (measured 7 of 10 on `lib/release-decision.mjs`)
+- **WHY-03**: the renderer's entry cap carries a byte reason that measurement supports, or a number that does (measured 15,637 B at a cap claiming under 10,000)
+- **WHY-04**: `closeOver` orders commits by parsed instants rather than by `%cI` string comparison, so a mixed-offset pair straddling a prune attaches to the right close
 
-The fast path explicitly does NOT gain a context step, a plan gate or a verify
-walk - the guarantees without the machinery is the whole ask, and adding those
-back is how `/cad-task` becomes the thing it exists to avoid.
+This is a patch cycle and it adds no surface. `cite-count` stays ADVISORY and the
+read-back gate is not touched, for the reason `v3.6.0` stated: it becomes a gate
+only once there is data on how often a zero-citation plan is legitimate.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted into this cycle, and `BCH-01` stays in
@@ -43,6 +45,11 @@ sequential, it does not repair the comparison); the decoration rule's residual
 over-fire is a path that legitimately opens and closes on the same emphasis byte,
 `__main__`; and `DOCS-CLAIMS.md` rows `MILESTONE-04` and `MILESTONE-05` cite
 stale line ranges against `milestone.md`.
+
+`v3.6.0`'s three `risk_surface` survivors (one medium, two low) and its open
+items are recorded in `PROJECT.md`'s `### Active`, which is where they live now
+that the phase directories are pruned. None is scoped here beyond the three ids
+above.
 
 ## Shipped
 

@@ -5,11 +5,13 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v3.5.8` is the current release: four operations wrote several files
-and reported the result as if they had written one, and now one primitive owns
-the ordered multi-file write while `phase-done` and `release-bump` stop claiming
-an atomicity they never had. `v3.5.7` before it was measurement with no lever to
-spend it: `stakes` became a floor a phase raises from, a fifth gate mode moved
+subsystem. `v3.6.0` is the current release: everything Cadence wrote down
+was written by a gate and read by nobody, and now `/cad-why` walks the record
+join, `cite-count` measures whether recall was read, and the fast path leaves a
+record behind it. `v3.5.9` before it was the release seam and the frontmatter
+reader returning clean answers over cases they did not handle; `v3.5.8` four
+operations that wrote several files and reported the result as if they had
+written one. `v3.5.7` was measurement with no lever to spend it: `stakes` became a floor a phase raises from, a fifth gate mode moved
 the blocking refusal to the land, and read redundancy reached `trace suggest`.
 `v3.5.6` was the machinery that records what a run did - rotating executor
 reports, a refused re-run, and an adjudication record carrying each finding's
@@ -173,62 +175,97 @@ context-gathering, and debugging — without any external memory system.
   on one file route sequential rather than into separate worktrees (FRM-02) -
   v3.5.9
 
+- ✓ `v3.6.0 - reading the corpus back`: what the gates write is now read back.
+  `/cad-why <path>[:<line>]` joins a path's commits to six record edges - phase,
+  plan task, decision, deviation, surviving review finding and declaring task -
+  over four tiers, the live `phases/<N>/`, `_archive-v<ver>/`, task records, and
+  milestones recovered out of git history, naming the gap in words where no tier
+  answers (WHY-01); `planning.mjs cite-count` counts what recall surfaced against
+  what the produced plan cites, at both of `/cad-plan`'s points and on the
+  under-threshold inline arm, advisory by design, with backend-off, surfaced-
+  nothing and cited-nothing distinct on the record rather than collapsed to one
+  number (RBK-01); and `/cad-task` writes
+  `.planning/tasks/<slug>/RECORD.md` through a `task-record` seam that derives
+  every figure from the committed range, read by both the recall corpus and
+  `/cad-why`, bracketed under a per-run phase-0 correlation anchor so the fast
+  path appears in per-role accounting at last (FST-01, FST-02, FST-03) - v3.6.0
+
 ### Active
 
-**`v3.6.0 - reading the corpus back`, opened 2026-08-23.** Scoped from the
-tracker's #190, #191 and #192, filed 2026-08-16 and deliberately held out of
-`v3.5.9` as a cycle of their own rather than filler.
+**`v3.6.1 - the gaps v3.6.0 named`, opened 2026-08-23.** A patch cycle over the
+three gaps the `v3.6.0` changelog states about its own work, plus nothing else.
+No new surface, no new command, no theme beyond closing what shipped named.
 
-**The theme is one sentence: everything Cadence writes down is written by a gate
-and read by nobody.** The Core Value above claims the record "must come back on
-its own at the moment it matters", and that is the one claim in this project with
-no evidence behind it. Recall ships as a BM25 subcommand and is injected into
-`cad-context`, `cad-planner` and `cad-debug`, and nothing anywhere checks that it
-landed: a planner can receive twelve prior decisions and cite none of them, and
-no gate notices (#190). The `.planning/` corpus can already answer "why is this
-code like this" - the SUMMARY names what shipped and its commits, CONTEXT names
-the numbered decision, the deviation record names where the plan was wrong, the
-review artifacts name what an adversarial pass objected to, `trace.jsonl` names
-what it cost - and there is no command that walks the join (#192). And the path
-most real work actually takes leaves the corpus a hole exactly where the work
-went: `/cad-task` leaves commits and nothing recall can find, no risk-surface
-check on its committed range, and no trace bracket, so per-role accounting misses
-the path most runs use (#191).
+**The theme is one sentence: `/cad-why` reaches less of the corpus than it
+claims, and says so in a comment rather than in its behavior.** Three defects,
+all in what `v3.6.0` shipped, all measured rather than suspected.
 
-**The dogfooding bias is the argument for #191 specifically.** The phase spine
-got the design attention because Cadence's own work is always the heavy kind: a
-context step, a plan gate, an executor contract, per-plan risk checks, an
-adjudicated triage gate, a summary, a verify walk and a trace bracket, against a
-fast path with an inline mode and a `--plan` flag. Below roughly half a day of
-work the phase overhead dominates. The fast path should gain the same guarantees
-with none of that machinery, and explicitly not a context step, a plan gate or a
-verify walk.
+The bare-path arm inherits git's default history simplification, so the join is
+correct and the history it reaches is short. Measured on
+`lib/release-decision.mjs`: 7 commits reachable against 10 with `--full-history`,
+the three missing being `_archive-v2.2.0/3` phase commits collapsed into merge
+`0bf62847`, and none of that phase's five recorded commits reachable from any
+path they touched. The prune search already passes `--full-history`, which is the
+only reason it recovers 25 closes instead of 4 (`WHY-02`).
 
-**What this cycle is not.** It is not a recall-quality cycle. #190 ships
-ADVISORY, reporting the zero-citation case rather than refusing it, and becomes a
-gate only once there is data on how often that case is legitimate. #192 is a
-reader and a deterministic seam join, with no model judgment and no summarization
-pass, for the same reason. Nothing here changes what the write side records.
+The renderer's entry cap of 10 carries a stated reason that is measured false. It
+claims ten entries stays under the 10,000-byte line in `references/conventions.md`;
+with all edges filled, `capture-file.mjs` renders 11,211 B over 8 entries,
+`issue-decision.mjs` 12,481 B over 10 and `planning.mjs` 15,637 B. The
+measurement is already in the comment; `DEFAULT_TOP` was not lowered because
+`why-render.test.mjs` pins it outside the touching plans' leases (`WHY-03`).
 
-This cycle seeds ids up front - `RBK-01`, `FST-01`, `FST-02`, `FST-03` and
-`WHY-01` - the practice `v3.5.7` established and `v3.5.9` carried.
+`closeOver` in `lib/why-corpus.mjs` compares `%cI` timestamps as strings, and
+ISO-8601 values under different UTC offsets do not string-sort chronologically,
+so an unresolved commit can attach to the wrong close. Raised medium by the
+plan-3 `risk_surface` review and ruled low on reachability: it needs mixed-offset
+commits AND a `--mode delete` close AND a pair straddling a prune. The fix is
+`Date.parse` on both sides with a guard for an unparseable date, and a
+mixed-offset pair pinned in `why-corpus.test.mjs` (`WHY-04`).
 
-**Carried in unassigned, none of it scoped here:** the four deferred ids
-(`PRS-01`, `EVD-01`, `RCL-06`, `CTX-02`) and their standing 2026-08-18 caveats;
-#233's two stale self-description claims; the medium `risk_surface` survivors
-from `v3.5.4`, `v3.5.5` and `v3.5.6`; `v3.5.8`'s two `low` survivors in
-`.planning/REVIEW-risk_surface-v3.5.8.md`; and `v3.5.8`'s two open items - the
-`partial-flip`/`partial-bump` regression gap, and `planning.mjs`'s `read(reqFile)`
-accepting any existing filesystem object, so a FIFO at
-`.planning/REQUIREMENTS.md` hangs `phase-done` before its refusal can run.
+**What this cycle is not.** It is not a `/cad-why` quality cycle and it does not
+touch the read-back gate. `cite-count` stays ADVISORY, for the reason `v3.6.0`
+stated: it becomes a gate only once there is data on how often a zero-citation
+plan is legitimate. Nothing here changes what the write side records.
 
-`v3.5.9`'s own close left three, recorded here rather than in a pruned phase
-directory: `plan-overlap` still reports `overlaps: []` when one of two colliding
-declarations is decorated, by design (the diagnostic is the gate, not a repaired
-comparison); the decoration rule's residual over-fire is a path that legitimately
-opens and closes on the same emphasis byte, `__main__`; and `DOCS-CLAIMS.md` rows
-`MILESTONE-04` and `MILESTONE-05` still cite stale line ranges against
-`milestone.md`, which no mechanical check enforces.
+**Carried in unassigned, none of it scoped here.** From before this cycle: the
+four deferred ids (`PRS-01`, `EVD-01`, `RCL-06`, `CTX-02`) and their standing
+2026-08-18 caveats; #233's two stale self-description claims; the medium
+`risk_surface` survivors from `v3.5.4`, `v3.5.5` and `v3.5.6`; `v3.5.8`'s two
+`low` survivors and its two open items, the `partial-flip`/`partial-bump`
+regression gap and `planning.mjs`'s `read(reqFile)` accepting any existing
+filesystem object so a FIFO at `.planning/REQUIREMENTS.md` hangs `phase-done`
+before its refusal can run; and `v3.5.9`'s three, `plan-overlap` still reporting
+`overlaps: []` when one of two colliding declarations is decorated, the
+decoration rule's residual over-fire on a path that legitimately opens and closes
+on the same emphasis byte (`__main__`), and `DOCS-CLAIMS.md` rows `MILESTONE-04`
+and `MILESTONE-05` citing stale line ranges against `milestone.md` that no
+mechanical check enforces.
+
+`v3.6.0`'s own close left the following, recorded here rather than in a pruned
+phase directory. Its three adjudicated `risk_surface` survivors, none a blocker
+or high and none blocking the land: (1) `planning.mjs:2233` low, `cite-count`
+parses a caller-selected payload with `readJsonPayload()` under no size or
+structural bound; (2) `lib/why-corpus.mjs` medium, the containment check's
+residual time-of-check/time-of-use symlink swap, whose consequence is a hang by
+someone who could already write arbitrary planning bytes; (3) low, a task slug
+interpolated into human-readable output without escaping, narrowed by `8f439854`
+on the writer side. Then the open items: the two HUMAN-VERIFY clauses, plan 1's
+`/cad-why` comparand (stale by one line, since plan 3 replaced the `phase:`
+placeholder with the named gap) and plan 2's live `/cad-plan` zero-citation run;
+`lib/arg-contract.mjs`'s header still saying the test walks "all 156" flag rows
+when the table holds 173; `parseAdjudication` capping neither input size nor
+structural depth on `JSON.parse`, ruled low because every other JSON read in this
+tree is unbounded the same way; `.planning/ARCHIVE.md`'s residue reaching only
+the UNRESOLVED arm, which D-04 implies but plan 3's task 5 sentence reads as
+unconditional; `lib/why-render.mjs` saying "phase" about a resolved TASK entry's
+directory and wording its absent-decision placeholder as not-yet-joined rather
+than this-record-carries-none; a hand-written `_archive-v*/<N>/CONTEXT.md` row
+reaching `surfaced` unjoinable, a stated bound rather than a gap; whether
+`lib/text-transport.mjs` should grow a positional arm, this tree's first prose
+site with that shape; and the DECLINED `git cat-file --batch` reader, 79
+subprocesses measured at 76 ms against a 376 ms worst-path invocation, worth
+building only if the corpus grows an order of magnitude.
 
 ## Key Decisions
 

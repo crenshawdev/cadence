@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 3 (The fast path leaves a record)
-Status: phase complete
-Next: /cad-milestone - phase 3 was the last on the roadmap; the audit gate precedes any ship
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-08-23
