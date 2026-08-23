@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 1 (The chain reaches what it claims)
-Status: phase complete
-Next: /cad-milestone - last phase of v3.6.1; the audit gate precedes any ship
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-08-23
