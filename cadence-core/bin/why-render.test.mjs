@@ -26,18 +26,20 @@ test('two entries sharing one commit date render in descending full-sha order, a
     'the higher full sha must render first when dates tie');
 });
 
-test('a 25-entry chain renders exactly 10 entries while total reads 25', () => {
+test('a 25-entry chain renders exactly DEFAULT_TOP entries while total reads 25', () => {
   const entries = Array.from({ length: 25 }, (_, i) => ({
     sha: String(i).padStart(40, '0'),
     date: new Date(2026, 0, i + 1).toISOString(),
     subject: `commit ${i}`,
   }));
   const { text, shown, total } = renderChain(entries);
-  assert.equal(shown, 10);
-  assert.equal(total, 25);
+  // Read off the constant rather than typed out beside it: a second literal
+  // here is a second claim about the cap, and the two disagreeing silently is
+  // the shape of defect WHY-03 was (v3.6.1 D-02).
   assert.equal(shown, DEFAULT_TOP);
+  assert.equal(total, 25);
   const commitLines = text.split('\n').filter((l) => l.startsWith('commit '));
-  assert.equal(commitLines.length, 10);
+  assert.equal(commitLines.length, DEFAULT_TOP);
 });
 
 test('an entry carrying no join data renders one stated-absent line per join field', () => {

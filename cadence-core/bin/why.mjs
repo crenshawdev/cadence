@@ -13,7 +13,8 @@
 //   --dir             the repository the query runs against. ABSENT means
 //                      `process.cwd()`; empty, valueless or flag-shaped
 //                      REFUSES (issue-check.mjs's disposition).
-//   --top              task 2's entry cap, default 10 (lib/why-render.mjs).
+//   --top              task 2's entry cap, default 6 (lib/why-render.mjs's
+//                      DEFAULT_TOP, which states the measurement behind it).
 //
 // THE FLAG DOOR RUNS BEFORE THE POSITIONAL REFUSAL, deliberately, and this is
 // the first bin in this tree that needs the ordering stated (D-01 continued).

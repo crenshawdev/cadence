@@ -30,30 +30,41 @@
 // plan ships the five placeholder lines they will replace.
 //
 // THE ENTRY CAP IS D-13'S SECOND ARM. Raw `git log` bytes already cross the
-// 10,000-byte threshold `references/conventions.md` states on two of four
-// sampled paths (`planning.mjs` at 21,684 B over 144 commits), and every join
-// field this module will grow to carry only adds bytes per entry - so the
-// response is bounded by TRUNCATING THE ENTRY COUNT rather than by relocating
-// the bytes to a file, which is what `lib/bulk-output.mjs`'s register does for
-// the three call shapes it watches (none of which is this seam). The shape is
-// `cmdRecall`'s `--top`: a stated default of 10 and the untruncated `total`
-// riding beside the `shown` count, so a truncated answer stays legible as
-// truncated. `total` is chosen here and recorded with its reason - ten entries
-// is the band that stays under the byte threshold once each entry carries its
-// joins, on the same 21,684 B / 144-commit ratio the default was measured
-// against.
+// 10,000-byte threshold `cadence-core/references/conventions.md` states on two
+// of four sampled paths, and every join field an entry carries adds bytes per
+// entry - so the response is bounded by TRUNCATING THE ENTRY COUNT rather than
+// by relocating the bytes to a file, which is what `lib/bulk-output.mjs`'s
+// register does for the three call shapes it watches (none of which is this
+// seam). The shape is `cmdRecall`'s `--top`: a stated default plus the
+// untruncated `total` riding beside the `shown` count, so a truncated answer
+// stays legible as truncated.
 //
-// THAT LAST SENTENCE IS NOW MEASURED FALSE, and is left standing with its
-// correction rather than quietly edited, because the number it justifies has
-// not moved. With plan 2's six join fields filled, `/cad-why
-// cadence-core/bin/lib/capture-file.mjs` renders 10,137 B over EIGHT entries
-// (seven of them joined), measured 2026-08-23 - already past the 10,000-byte
-// threshold, and a full ten joined entries would be around 13 KB. The cap is
-// still D-13's satisfied arm (that decision reads "registers in
-// lib/bulk-output.mjs OR the command carries a default entry cap") and lowering
-// it is a re-decision with its own cost - a smaller default hides history a
-// reader asked for - so the default stays 10 and the discrepancy is recorded
-// here for whoever makes that call.
+// AND THE DEFAULT IS THE LARGEST CAP MEASUREMENT SUPPORTS, not a band estimated
+// from a bytes-per-commit ratio - which is what the shipped comment did, and how
+// this constant came to carry a claim nothing had measured (WHY-03, v3.6.1
+// phase 1 D-02). Measured 2026-08-23 on this repository, git 2.55.0, with all
+// six join edges filled AND the exclusion block above rendering, as the UTF-8
+// byte length of the `text` the seam emits:
+//
+//                              at --top 6     at --top 7
+//   lib/capture-file.mjs         9,129 B       10,343 B   (8 commits, 2 excluded)
+//   lib/issue-decision.mjs       8,158 B        9,474 B   (12 commits, 5 excluded)
+//   planning.mjs                 8,526 B        9,764 B   (152 commits, 39 excluded)
+//
+// The claim, stated so it can be falsified: SIX is the LARGEST cap under which
+// the worst of those paths stays under the 10,000-byte line, with 871 B of
+// headroom on `lib/capture-file.mjs`; at seven that same path renders 10,343 B
+// and is over it. Lowering the cap has its own cost - a smaller default hides
+// history a reader asked for - and that cost is what makes MAXIMALITY the claim
+// rather than mere safety.
+//
+// MEASURED CAP: 6 entries, 2026-08-23.
+//
+// That last line is not decoration. `why-render.test.mjs` PARSES it and asserts
+// it equals `DEFAULT_TOP`, and renders the frozen worst case in
+// `fixtures/why.chain-worst.json` at the default and at one above it - so the
+// pin reddens when the number and its stated reason disagree, which is exactly
+// what nothing checked when this comment claimed ten.
 //
 // THE TRUNCATION NOTE LIVES INSIDE `text`, not only in the envelope. D-02 has
 // the skill relay `text` verbatim and reformat nothing, so a truncated answer
@@ -97,8 +108,10 @@
 
 import { MARKER_GAP } from './why-record.mjs';
 
-/** The default entry cap (D-13). */
-export const DEFAULT_TOP = 10;
+/** The default entry cap: the largest one measurement supports (D-13, then
+ * v3.6.1 phase 1 D-02). See the MEASURED CAP line in this module's header,
+ * which `why-render.test.mjs` parses and pins against this number. */
+export const DEFAULT_TOP = 6;
 
 /** The fixed text an absent join field renders as, rather than dropping the
  * line. A field the record does not carry says so; it is never dropped. */
