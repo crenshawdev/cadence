@@ -422,7 +422,9 @@ function cmdStatus(dir) {
   // is not a canonical entry is reported per line with its own code.
   const classified = classifyPhaseList(roadmapText);
   if (classified.state === 'no-section') {
-    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md');
+    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md',
+      'add a `## Phases` heading to ROADMAP.md, outside any code fence - a closed milestone'
+      + ' is that heading with nothing under it, never a missing heading');
   }
   if (classified.state === 'out-of-grammar') {
     // Emitted directly rather than through fail(), which has no channel for
@@ -433,6 +435,8 @@ function cmdStatus(dir) {
       ok: false, reason: 'unparseable-roadmap',
       detail: `line ${first.line}: ${first.text}`,
       issues: classified.issues,
+      hint: 'rewrite each line listed in `issues` as `- [ ] **Phase <n>: <name>** - <description>`'
+        + ' under `## Phases`, or move it out of that section',
     });
   }
   const closed = classified.state === 'closed';
@@ -570,15 +574,26 @@ function cmdStatus(dir) {
 // ---------------------------------------------------------------------------
 function cmdCursorGet(dir) {
   const text = read(join(dir, 'STATE.md'));
-  if (text === null) return fail('no-cursor', `${join(dir, 'STATE.md')} not found`);
+  if (text === null) {
+    return fail('no-cursor', `${join(dir, 'STATE.md')} not found`,
+      'run /cad-progress, which derives where the project is from the phase artifacts and writes'
+      + ' the cursor; /cad-new-project if this project has no .planning/ yet');
+  }
   const c = parseCursor(text);
-  if (!c) return fail('unparseable-cursor', 'STATE.md does not match the 4-line schema');
+  if (!c) {
+    return fail('unparseable-cursor', 'STATE.md does not match the 4-line schema',
+      'run /cad-progress to rewrite the cursor from the phase artifacts - STATE.md is written'
+      + ' through `cursor set` and is never hand-edited');
+  }
   ok(c);
 }
 
 function cmdCursorSet(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
-  if (!opts.phase) return fail('bad-args', 'cursor set needs --phase <N>');
+  if (!opts.phase) {
+    return fail('bad-args', 'cursor set needs --phase <N>',
+      'pass --phase <N> for the phase this cursor points at, then re-run');
+  }
   // The shared reader, for the refusal WORDING - and the cursor keeps holding
   // the numeric value on purpose. `parseCursor` returns a Number that
   // `renumber`'s shift arithmetic, `cmdStatus`'s `parsed.phase === current`
@@ -591,10 +606,16 @@ function cmdCursorSet(dir, opts) {
   // the reads in this file that are not these two write faces.
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
-    return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
+    return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)',
+      'send a plain phase number - 3, or 3.1 for a phase inserted between two others - then re-run');
   }
   const spelling = phaseSpellingRefusal(parsedPhase);
-  if (spelling) return fail('bad-args', `cursor set ${spelling}`);
+  if (spelling) {
+    return fail('bad-args', `cursor set ${spelling}`,
+      'take one of the two fixes the detail names - retype the flag, or rename the directory - then'
+      + ' re-run; the cursor stores the phase NUMBER, so only a spelling that survives that round'
+      + ' trip can be written');
+  }
   const phase = parsedPhase.value;
   // `--next-file` is the path transport for a resume pointer the CALLER
   // composed - /cad-pause and `progress` build theirs from what the run was
@@ -602,9 +623,17 @@ function cmdCursorSet(dir, opts) {
   // (lib/text-flag-file.mjs, references/conventions.md). The seven sites that
   // pass a literal `/cad-<command> N` keep the inline form; nothing is deleted.
   const resolvedNext = resolveTextFlag(opts, 'next', 'cursor set');
-  if (!resolvedNext.ok) return fail('bad-args', resolvedNext.detail);
+  if (!resolvedNext.ok) {
+    return fail('bad-args', resolvedNext.detail,
+      'pass --next or --next-file, never both, and point --next-file at a readable, non-empty file,'
+      + ' then re-run');
+  }
   const next = resolvedNext.value !== undefined ? resolvedNext.value : opts.next;
-  if (!opts.status || !next) return fail('bad-args', 'cursor set needs --status and --next');
+  if (!opts.status || !next) {
+    return fail('bad-args', 'cursor set needs --status and --next',
+      `pass both: --status <one of ${CURSOR_STATUSES.join(' | ')}> and --next "<the command to run`
+      + ' next>", then re-run');
+  }
   // ONE refusal the inline form never needed: `renderCursor` writes `next` into
   // the cursor's `Next:` line unflattened, and references/conventions.md states
   // the cursor is always exactly four lines - a wrapped resume pointer would
@@ -615,10 +644,14 @@ function cmdCursorSet(dir, opts) {
   // term: a malformed value is a malformed CALL and nothing is written.
   if (typeof next === 'string' && /[\r\n]/.test(next)) {
     return fail('bad-args',
-      'cursor set --next cannot contain a newline - the cursor is exactly four lines');
+      'cursor set --next cannot contain a newline - the cursor is exactly four lines',
+      'put the resume pointer on ONE line and re-run; a wrapped one writes a fifth line the next'
+      + ' `cursor get` cannot read back');
   }
   if (!CURSOR_STATUSES.includes(opts.status)) {
-    return fail('bad-status', `"${opts.status}" is not in the lifecycle: ${CURSOR_STATUSES.join(' | ')}`);
+    return fail('bad-status', `"${opts.status}" is not in the lifecycle: ${CURSOR_STATUSES.join(' | ')}`,
+      'send one of the statuses the detail lists, spelled exactly as it appears there - the words'
+      + ' are the lifecycle, not free text');
   }
 
   // name/total: explicit flag > ROADMAP derivation > existing cursor > fail.
@@ -626,7 +659,11 @@ function cmdCursorSet(dir, opts) {
   let total;
   if ('total' in opts) {
     const parsed = requireCursorNumber(opts.total);
-    if (!parsed.ok) return fail('bad-args', 'cursor set --total needs a non-negative integer');
+    if (!parsed.ok) {
+      return fail('bad-args', 'cursor set --total needs a non-negative integer',
+        'send --total as the number of phases in this milestone, or drop the flag and let'
+        + " ROADMAP.md's phase list supply the count");
+    }
     total = parsed.value;
   }
   if (name === undefined || total === undefined) {
@@ -670,7 +707,9 @@ function cmdCursorSet(dir, opts) {
     }
   }
   if (name === undefined || total === undefined) {
-    return fail('cannot-derive', 'phase name/total not in flags, ROADMAP.md, or the existing cursor');
+    return fail('cannot-derive', 'phase name/total not in flags, ROADMAP.md, or the existing cursor',
+      'pass --name and --total explicitly, or add this phase to the `## Phases` list in ROADMAP.md'
+      + ' so both can be derived from it');
   }
 
   const cursor = {
@@ -696,7 +735,11 @@ function cmdPhaseDone(dir, opts) {
   // the unknown-phase message all take a number, and the raw spelling would
   // regress `--n 02` to unknown-phase while `--n 2.1` must keep boxing Phase 2.1.
   const parsedPhase = requirePhaseArg(opts.n);
-  if (!parsedPhase.ok) return fail('bad-args', 'phase-done needs --n <phase>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'phase-done needs --n <phase>',
+      'pass --n <phase> naming the phase to close, then re-run; a `--n "$PHASE"` with the variable'
+      + ' unset reaches here as a flag with no value');
+  }
   const n = parsedPhase.value;
   // An explicit --reqs means "exactly these rows". An empty one is almost
   // always an unset variable (`--reqs "$IDS"`), and treating it as "flag
@@ -705,19 +748,31 @@ function cmdPhaseDone(dir, opts) {
   let namedReqs = null;
   if ('reqs' in opts) {
     if (typeof opts.reqs !== 'string') {
-      return fail('bad-args', 'phase-done --reqs needs a comma-separated id list');
+      return fail('bad-args', 'phase-done --reqs needs a comma-separated id list',
+        'spell it --reqs "ABC-01,ABC-02", or drop the flag to close every non-Deferred row of'
+        + ' this phase');
     }
     namedReqs = opts.reqs.split(',').map((s) => s.trim()).filter(Boolean);
     if (!namedReqs.length) {
-      return fail('bad-args', 'phase-done --reqs is empty; omit it to close the whole phase');
+      return fail('bad-args', 'phase-done --reqs is empty; omit it to close the whole phase',
+        'name the ids you mean, or drop --reqs entirely - an empty value here is almost always an'
+        + ' unset shell variable, and guessing which you meant would flip rows you never named');
     }
   }
   const undo = 'undo' in opts;
   const roadmapFile = join(dir, 'ROADMAP.md');
   const roadmapText = read(roadmapFile);
-  if (roadmapText === null) return fail('no-roadmap', `${roadmapFile} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${roadmapFile} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md, or run /cad-new-project if'
+      + ' this project has no roadmap yet');
+  }
   const boxed = setPhaseBox(roadmapText, n, !undo);
-  if (!boxed) return fail('unknown-phase', `no "**Phase ${n}:**" line under ## Phases`);
+  if (!boxed) {
+    return fail('unknown-phase', `no "**Phase ${n}:**" line under ## Phases`,
+      "re-run with a phase number that appears in ROADMAP.md's `## Phases` list, or add the phase"
+      + ' there first');
+  }
 
   // REQUIREMENTS.md as a THREE-state fact - absent, present-but-unreadable,
   // present-and-read - because `read()` answers `null` for the first two alike
@@ -790,7 +845,11 @@ function cmdPhaseDone(dir, opts) {
       satisfied: () => !reqUnreadable,
     }],
   });
-  if (applied.refused !== null) return fail('unreadable-requirements', applied.refused);
+  if (applied.refused !== null) {
+    return fail('unreadable-requirements', applied.refused,
+      'make REQUIREMENTS.md a readable regular file and re-run - nothing was written, so ROADMAP.md'
+      + ' is byte-identical and the close starts over cleanly');
+  }
   if (!applied.ok) {
     // The shapes that reach here are the ones NO readability check can see - an
     // EACCES on `.planning` itself, a symlink planted at atomicWrite's derived
