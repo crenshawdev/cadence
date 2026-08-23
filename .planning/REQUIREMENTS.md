@@ -5,12 +5,35 @@
 
 ## Active
 
-No cycle open. `/cad-phase add` opens the next one.
+Committed scope for **`v3.7.0 - the refusal that names the next step`**, opened
+2026-08-23 from the tracker's #238 and #249. #238 was filed 2026-08-23 against
+`v3.6.1` and reassigned here the same day: it is a named theme, not a defect.
+Ids are seeded here at the open, the practice `v3.5.7` established. `/cad-plan`
+seeds each Traceability row as its phase is planned; rows are never
+hand-populated here.
 
-`v3.6.1 - the gaps v3.6.0 named` closed 2026-08-23. Its three ids - `WHY-02`,
-`WHY-03`, `WHY-04` - are under `## Shipped`, tagged `v3.6.1`, all Complete.
-Nothing is promoted here to fill the section: ids are seeded at a cycle's open,
-the practice `v3.5.7` established, and there is no open cycle to seed.
+- **HNT-01**: every seam refusal the cycle declares in scope sets a companion
+  hint that names, in the user's terms, what to do next. Measured 2026-08-23
+  across `cadence-core/bin/` with tests excluded: 186 sites set a literal
+  `reason`, 13 set a literal `hint`, and all 13 are in `planning.mjs` or
+  `skim.mjs`. The kebab-case token is what the user reads today (#238).
+- **HNT-02**: a reason site in scope with no hint is a reported problem, so the
+  invariant survives the next seam rather than being re-measured after it. The
+  ratio has drifted twice already - 130/10 at filing, 186/13 today - which is
+  why this is a check and not a sweep (#238).
+- **SCP-01**: `config.mjs set` refuses a repo-scoped key written at the
+  user-global layer, at write time, reading the schema's `"src": "repo"` marker
+  rather than naming keys. 33 keys carry that marker; `checkPairs`
+  (`bin/config.mjs:151`) validates retired, unknown and type and nothing about
+  layer scope, so `git.auto_close` written globally is silent until the close
+  refuses at land time (#249).
+
+Explicitly out of scope: no `reason` token string changes (tests and callers
+match them), no behavior change in phase 1, and no rewrite of model-facing
+prose - `workflows/plan.md` sits at its 22,638 B budget with zero headroom. The
+two accessibility gaps #238 names as deferred stay deferred: the ask-user
+register rail is a seam rule rather than a code change, and the done-step report
+field lists are model-facing.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted, and `BCH-01` stays in `## Deferred`

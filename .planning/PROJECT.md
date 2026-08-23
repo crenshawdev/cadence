@@ -195,7 +195,20 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open.
+**`v3.7.0 - the refusal that names the next step` opened 2026-08-23.** Two
+phases, three ids seeded - `HNT-01`, `HNT-02` (#238) and `SCP-01` (#249). The
+theme: Cadence states a failure in its own vocabulary and never states the
+remedy. Measured at the open across `cadence-core/bin/`, tests excluded, 186
+sites set a literal `reason` and 13 set a literal `hint`, all 13 of them in
+`planning.mjs` or `skim.mjs`. Phase 1 writes the missing hints and adds the
+self-verify check that keeps them; phase 2 makes `config.mjs set` refuse a
+repo-scoped key at the user-global layer, reading the schema's `"src": "repo"`
+marker across all 33 keys that carry it. The two phases share no files and carry
+no ordering.
+
+#238 was filed against `v3.6.1` and reassigned to this cycle on 2026-08-23: a
+theme with a thesis, not a patch-cycle defect. Its own deferred siblings - the
+ask-user register rail and the done-step report field lists - stay deferred.
 
 **`v3.6.1 - the gaps v3.6.0 named` closed 2026-08-23.** A patch cycle over the
 three gaps the `v3.6.0` changelog stated about its own work, and nothing else.
@@ -232,7 +245,7 @@ argued from byte layout and #242 is what would make it measurable. Neither is
 scoped to a cycle yet. The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`,
 `CTX-02` - keep their reasons and are unpromoted.
 
-`/cad-phase add` opens the next cycle.
+Next: `/cad-plan 1`.
 
 ## Key Decisions
 
