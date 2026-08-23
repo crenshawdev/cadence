@@ -303,9 +303,9 @@ section only, bounded at the next `## ` heading.
 |-------------|-------|--------|
 | WHY-01 | Phase 1 | Complete |
 | RBK-01 | Phase 2 | Complete |
-| FST-01 | Phase 3 | Pending |
-| FST-02 | Phase 3 | Pending |
-| FST-03 | Phase 3 | Pending |
+| FST-01 | Phase 3 | Complete |
+| FST-02 | Phase 3 | Complete |
+| FST-03 | Phase 3 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
