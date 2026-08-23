@@ -35,5 +35,61 @@ Phases are added with `/cad-phase add`.
 
 ## Phases
 
+- [ ] **Phase 1: The corpus, read back at a file and line** - `/cad-why` joins a path to the decision that put it there, and reports the gap rather than guessing
 
 ## Phase Details
+
+### Phase 1: The corpus, read back at a file and line
+**Goal:** `/cad-why <path>[:<line>]` answers "why is this code like this" from
+the record already on disk, so the corpus is READ for the first time and it
+becomes visible whether the write-side care has been worth it.
+
+**Requirements:** WHY-01
+
+Everything the answer needs is already written down and nothing surfaces it. The
+phase SUMMARY names what shipped and its commits, the plan names the task,
+CONTEXT names the numbered decision behind it, the deviation record names where
+the plan was wrong, the review artifacts name what an adversarial pass objected
+to, and `trace.jsonl` names what it all cost. A file path plus a commit is enough
+to walk all of it.
+
+This is a READER. It writes nothing, gates nothing, and dispatches no subagent,
+which is what makes it the safe first phase of this cycle and why a bug in it
+cannot corrupt anything. It is a deterministic seam join for the same reason
+`plan-overlap` is one: the output is the record's own words, so a model judgment
+or a summarization pass in the middle would make the answer unfalsifiable against
+the documents it claims to be quoting.
+
+It is also the phase that has to go before `RBK-01`. The read-back gate counts
+how often a plan cites the corpus, and a near-zero count has two readings that
+need opposite fixes: the planner ignored a good record, or the planner correctly
+ignored a useless one. Nothing in that count separates them. Reading the corpus
+by hand first is what settles which one is true, and PROJECT.md's Core Value line
+is what rides on the answer.
+
+The hard part is the join across renamed and pruned phases. `/cad-milestone`
+deletes `phases/<N>/` at every close and `/cad-phase` renumbers, so a commit from
+a shipped cycle points at a directory that is gone: `.planning/ARCHIVE.md` holds
+that residue and the git history holds the rest. Report the gap rather than
+guess - a fabricated join is worse than a missing one here, because the whole
+claim of the command is that it quotes.
+
+**Success Criteria:**
+
+1. `/cad-why <path>` resolves through `git log` for the commits touching that
+   path and prints a chain, newest first, with no model-authored prose in it.
+2. Each entry in that chain joins its commit to the phase, the plan task, the
+   D-NN decision behind it, any deviation that refuted that decision, and any
+   review finding that survived triage against it - each quoted in the record's
+   own words.
+3. `/cad-why <path>:<line>` narrows the chain to the commits that touched that
+   line, and a path with no line behaves exactly as criterion 1.
+4. A commit whose phase directory was pruned or renumbered reports the gap by
+   name and still prints what `.planning/ARCHIVE.md` and git history do carry -
+   it never guesses a phase number and never silently drops the entry.
+5. A path git has never seen, and a path with a record but no `.planning/` join
+   at all, each return a stated result rather than an empty chain or a crash.
+6. The join is a deterministic seam script: running it twice over an unchanged
+   tree returns byte-identical output, and it dispatches no subagent.
+7. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with
+   `problems: []`, and `node cadence-core/bin/test.mjs` reports 0 failures.
