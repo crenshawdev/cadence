@@ -226,7 +226,8 @@ import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
 import {
-  MAX_SLUG_LENGTH, RECORD_FILE, TASKS_DIR, isTaskSlug, renderTaskRecord, taskRecordsIn,
+  MAX_SLUG_LENGTH, RECORD_FILE, TASKS_DIR, isTaskSlug, insideRoot, renderTaskRecord,
+  taskRecordsIn,
 } from './lib/task-record.mjs';
 import { runTransition } from './lib/file-transition.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces, interviewOptions } from './lib/surface-scan.mjs';
@@ -4680,6 +4681,20 @@ function cmdTaskRecord(dir, opts) {
   } else {
     try {
       mkdirSync(recordDir, { recursive: true });
+      // CONTAINED THE WAY THE LISTER IS, and for the same reason one level
+      // earlier. `isTaskSlug` refuses a slug that TRAVERSES; it says nothing
+      // about a `tasks/<slug>` that already IS a symlink, and git carries
+      // symlinks, so a cloned planning tree ships one. `mkdirSync(recursive)`
+      // follows it without complaint and `atomicWrite` does not catch it - it
+      // `lstat`s its own TEMP path, which refuses a symlinked destination FILE
+      // and is silent about a symlinked parent DIRECTORY. So the record would
+      // land in a tree `taskRecordsIn` would then refuse to read it back from:
+      // the writer and the reader disagreeing about containment is the
+      // asymmetry, and this is the half that was missing. Checked AFTER the
+      // mkdir because that is when the directory exists to be resolved.
+      if (!insideRoot(dir, recordDir)) {
+        throw new Error(`task-record refused: ${recordDir} resolves outside ${dir}`);
+      }
       // OVERWRITING IS CORRECT HERE, and is the opposite of `cmdAdjudication`'s
       // refusal: that seam refuses because a second round's rulings must not
       // replace a first's, while this record is derived WHOLLY from the range

@@ -8306,6 +8306,27 @@ test('task-record: a slug that is not one path segment is refused, nothing writt
   assert.equal(existsSync(join(dirname(root), 'escape')), false);
 });
 
+test('task-record: a tasks/<slug> that is a symlink OUT is refused, nothing written', () => {
+  // The slug is a legal one path segment, so `isTaskSlug` passes it - lexical
+  // validation cannot see a link that already exists on disk. A cloned planning
+  // tree ships symlinks, `mkdirSync(recursive)` follows one without complaint,
+  // and `atomicWrite` lstats its own TEMP path so it refuses a symlinked
+  // destination FILE and is silent about a symlinked parent DIRECTORY. Without
+  // the writer's containment check this writes RECORD.md into `outside`.
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  const outside = mkdtempSync(join(tmpdir(), 'cad-task-outside-'));
+  mkdirSync(join(dir, 'tasks'), { recursive: true });
+  symlinkSync(outside, join(dir, 'tasks', 'escaped'));
+  const r = runIn(root, ['task-record', '--slug', 'escaped', '--base', `${shas[0]}^`,
+    '--head', shas[1], '--text', 'x'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-record');
+  assert.match(r.detail, /resolves outside/);
+  assert.equal(r.written, false);
+  // The point of the row: nothing landed in the tree the link pointed at.
+  assert.equal(existsSync(join(outside, 'RECORD.md')), false);
+});
+
 test('task-record: a --base that does not resolve is ok:false with nothing written', () => {
   const { root, dir, shas } = taskRepo(TASK_COMMITS);
   const r = runIn(root, ['task-record', '--slug', 'unresolvable',

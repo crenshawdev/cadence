@@ -81,6 +81,40 @@ export function isTaskSlug(raw) {
 }
 
 /**
+ * Does `p` RESOLVE inside `planningRoot`? The lister's own containment rule,
+ * lifted out so the WRITER answers it too. Validating a slug stops lexical
+ * traversal and nothing else: `tasks/<slug>` can already BE a symlink - git
+ * carries symlinks, so a cloned repo ships one - and `mkdirSync(recursive)`
+ * follows it without complaint, which put the record outside the tree the
+ * reader would never have read it from. `atomicWrite` does not close that: it
+ * `lstat`s its own TEMP path, so it refuses a symlinked destination FILE and
+ * says nothing about a symlinked parent DIRECTORY.
+ *
+ * `realpathSync` on BOTH sides, and a `sep` on the prefix, so `.planning-old`
+ * is not read as living inside `.planning`. An unresolvable path answers
+ * `false` - the reader's arm, and the safe one for a writer: a path that
+ * cannot be resolved has not been shown to be contained.
+ *
+ * @param {string} planningRoot
+ * @param {string} p
+ * @returns {boolean}
+ */
+export function insideRoot(planningRoot, p) {
+  let root;
+  try {
+    root = realpathSync(planningRoot);
+  } catch {
+    root = planningRoot;
+  }
+  try {
+    const real = realpathSync(p);
+    return real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Every `<planningRoot>/tasks/<slug>/RECORD.md` on disk, sorted by slug.
  *
  * FAILS OPEN exactly as `phaseDirsIn` in lib/phase-plans.mjs does: an absent
@@ -105,20 +139,7 @@ export function isTaskSlug(raw) {
  * @returns {Array<{slug: string, path: string}>}
  */
 export function taskRecordsIn(planningRoot) {
-  let root;
-  try {
-    root = realpathSync(planningRoot);
-  } catch {
-    root = planningRoot;
-  }
-  const inside = (/** @type {string} */ p) => {
-    try {
-      const real = realpathSync(p);
-      return real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
-    } catch {
-      return false;
-    }
-  };
+  const inside = (/** @type {string} */ p) => insideRoot(planningRoot, p);
   const group = join(planningRoot, TASKS_DIR);
   if (!inside(group)) return [];
   let names;
