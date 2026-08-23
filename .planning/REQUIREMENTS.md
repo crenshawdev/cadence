@@ -10,9 +10,6 @@ the three gaps the `v3.6.0` changelog states about its own work. Ids are seeded
 here at the open, the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
 
-- **WHY-02**: `/cad-why`'s bare-path arm reaches the commits git's default history simplification hides, so a path's chain is not silently short (measured 7 of 10 on `lib/release-decision.mjs`)
-- **WHY-03**: the renderer's entry cap carries a byte reason that measurement supports, or a number that does (measured 15,637 B at a cap claiming under 10,000)
-- **WHY-04**: `closeOver` orders commits by parsed instants rather than by `%cI` string comparison, so a mixed-offset pair straddling a prune attaches to the right close
 
 This is a patch cycle and it adds no surface. `cite-count` stays ADVISORY and the
 read-back gate is not touched, for the reason `v3.6.0` stated: it becomes a gate
@@ -253,6 +250,9 @@ parses only the Traceability table).
 | FST-01 (a `/cad-task` run leaves a record recall can find, so the corpus stops having a hole exactly where the majority of real work went (#191).) | 3 | Complete | v3.6.0 |
 | FST-02 (`/cad-task` runs the risk-surface check on its committed range. A one-commit change to auth is not less risky for being off-roadmap (#191).) | 3 | Complete | v3.6.0 |
 | FST-03 (`/cad-task` opens and closes a trace bracket, so per-role token accounting covers the path most runs actually use (#191).) | 3 | Complete | v3.6.0 |
+| WHY-02 (`/cad-why`'s bare-path arm reaches the commits git's default history simplification hides, so a path's chain is not silently short (measured 7 of 10 on `lib/release-decision.mjs`)) | 1 | Complete | v3.6.1 |
+| WHY-03 (the renderer's entry cap carries a byte reason that measurement supports, or a number that does (measured 15,637 B at a cap claiming under 10,000)) | 1 | Complete | v3.6.1 |
+| WHY-04 (`closeOver` orders commits by parsed instants rather than by `%cI` string comparison, so a mixed-offset pair straddling a prune attaches to the right close) | 1 | Complete | v3.6.1 |
 
 ## Deferred
 
@@ -295,9 +295,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WHY-02 | Phase 1 | Complete |
-| WHY-03 | Phase 1 | Complete |
-| WHY-04 | Phase 1 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
