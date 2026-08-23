@@ -955,6 +955,13 @@ test('both fire sites invoke the risk-check seam rather than reading a prose lis
     "execute.md's post-plan step no longer calls the risk-check seam");
   assert.match(task, /risk-check run/,
     "task.md's risk_check step no longer calls the risk-check seam");
+  // FST-02's third shipped byte. The two below it - the transient `.diff` rails
+  // and the `written: false` withholding - are already pinned (DFC-04 above,
+  // ENFORCEMENT below); only the phase number was unheld.
+  assert.match(task, /risk-check run --phase 0/,
+    "task.md's risk_check step calls the seam without `--phase 0` - a task sits "
+    + 'outside the phase spine and 0 is the one number no roadmap phase carries, '
+    + "so any other value files the task's range against a real phase's records");
   // An unjudged range is not a cleared one, and widening is the only safe
   // direction on the one gate that is `blocking` at every stakes level.
   assert.match(execute, /inconclusive/,
