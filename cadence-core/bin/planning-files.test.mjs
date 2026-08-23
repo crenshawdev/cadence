@@ -465,10 +465,22 @@ test('planning-files: a path added under the template\'s bare files: block key i
 // a legal path character, so only a MATCHED interior pair is decoration.
 const DECORATION_ROWS = [
   { name: 'bold', path: '**src/shared.rs**', decorated: true },
+  { name: 'underscore bold', path: '__src/shared.rs__', decorated: true },
+  { name: 'asterisk italic', path: '*src/a.rs*', decorated: true },
+  { name: 'underscore italic', path: '_src/a.rs_', decorated: true },
+  { name: 'autolink', path: '<src/a.rs>', decorated: true },
+  { name: 'bare bracket wrap', path: '[src/a.rs]', decorated: true },
   { name: 'link form', path: '[src/a.rs](src/a.rs)', decorated: true },
   { name: 'matched interior backtick pair', path: 'src/`a`.rs', decorated: true },
   { name: 'plain path', path: 'src/a.rs', decorated: false },
   { name: 'one interior backtick', path: 'lib/a`b.mjs', decorated: false },
+  // A wrap is MATCHED or it is nothing: `_`, `[` and `*` are legal path bytes,
+  // so a bare occurrence is never decoration. These are the over-fire guard on
+  // the emphasis arm, the counterpart to UAT-21's on the backtick arm.
+  { name: 'leading underscore only', path: '_private/a.rs', decorated: false },
+  { name: 'trailing underscore only', path: 'src/a_', decorated: false },
+  { name: 'interior underscores', path: 'src/__init__.py', decorated: false },
+  { name: 'unmatched bracket', path: '[src/a.rs', decorated: false },
 ];
 
 for (const row of DECORATION_ROWS) {

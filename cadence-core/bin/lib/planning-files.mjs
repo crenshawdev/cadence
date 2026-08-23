@@ -2211,6 +2211,22 @@ function filesListRegion(text) {
 }
 
 /**
+ * The markdown wraps `isDecoratedPath` refuses around a declared `files:` path,
+ * as `[open, close]` pairs tested against a value's two ends. Bold (`**`) and
+ * `__` need no entry of their own - they open and close on the single-byte
+ * emphasis pairs already listed, so `**src/a.rs**` matches the `*` row - and
+ * the entries are single-byte for exactly that reason: a wrap is recognised by
+ * its BOUNDARY bytes, never by counting how many the author repeated.
+ * @type {ReadonlyArray<readonly [string, string]>}
+ */
+const WRAP_PAIRS = /** @type {const} */ ([
+  ['*', '*'], // italic and, by repetition, bold
+  ['_', '_'], // italic and, by repetition, __bold__
+  ['<', '>'], // the autolink form
+  ['[', ']'], // a bare bracket wrap - the link form is tested separately
+]);
+
+/**
  * Extract the file paths a plan declares it touches: the frontmatter
  * `files:` list unioned with every task's `- **Files:** a, b` line (either
  * source alone can go stale; the union is what the parallel-safety overlap
@@ -2245,7 +2261,7 @@ function filesListRegion(text) {
  * `overlaps` output as a duplicate beside its normalized twin.
  *
  * The frontmatter arm ALSO reports `markdown-decorated-path` on a declaration
- * wearing markdown (`isDecoratedPath` below states the three shapes). Reported,
+ * wearing markdown (`isDecoratedPath` below states the shapes). Reported,
  * not repaired: the declaration stays in `files` byte-exact (D-04/D-19), the
  * same reason the arm adds items verbatim at all - a decorated path and its
  * plain sibling genuinely do not intersect, and rewriting one to match the
@@ -2263,10 +2279,21 @@ export function parsePlanFiles(text) {
   /** The task-line arm's normalization, D-19: backticks and one trailing parenthetical. */
   const normalizeTaskItem = (raw) => raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
   /**
-   * Markdown decoration around a declared path (D-03/D-08), three shapes under
-   * ONE code: bold (`**src/a.rs**`), the link form (`[src/a.rs](src/a.rs)`),
-   * and a MATCHED INTERIOR backtick pair (`` src/`a`.rs ``) - two or more
-   * backticks at indices strictly inside the value.
+   * Markdown decoration around a declared path (D-03/D-08), every shape under
+   * ONE code: a MATCHED WRAP (`WRAP_PAIRS` below - bold, italic, autolink and
+   * the bare bracket), the link form (`[src/a.rs](src/a.rs)`), and a MATCHED
+   * INTERIOR backtick pair (`` src/`a`.rs ``) - two or more backticks at
+   * indices strictly inside the value.
+   *
+   * A wrap is MATCHED or it is nothing: `_` and `[` are legal path bytes, so a
+   * bare occurrence never counts and `_private/a.rs` stays diagnostic-free.
+   * The residual over-fire is a path that legitimately opens AND closes on the
+   * same emphasis byte (`__main__`), which reports and is still returned
+   * byte-exact - a phantom diagnostic routes the phase sequential, the safe
+   * direction for a parallel-safety gate, where a missed shape clears two
+   * plans into separate worktrees on one file. Measured 2026-08-23: 0 of 597
+   * frontmatter `files:` entries under `.planning` open or close on any wrap
+   * byte.
    *
    * The interior COUNT is the whole of the backtick arm (D-05), and it is what
    * keeps this additive to `resolveValue`'s unchanged boundary rule rather than
@@ -2275,12 +2302,17 @@ export function parsePlanFiles(text) {
    * both keep reporting `backtick-wrapped-value` alone instead of
    * double-reporting, and a real path carrying ONE interior backtick
    * (`` lib/a`b.mjs ``) stays diagnostic-free - the over-fire guard UAT-21
-   * pinned.
+   * pinned. Backticks are deliberately absent from `WRAP_PAIRS`: the boundary
+   * pair is `backtick-wrapped-value`'s, and adding it here would double-report.
    * @param {string} v @returns {boolean}
    */
   const isDecoratedPath = (v) => {
-    if (v.length > 4 && v.startsWith('**') && v.endsWith('**')) return true;
+    // The link form first: it opens `[` and closes `)`, so no wrap pair reaches it.
     if (v.startsWith('[') && v.endsWith(')') && v.includes('](')) return true;
+    for (const [open, close] of WRAP_PAIRS) {
+      if (v.length > open.length + close.length
+        && v.startsWith(open) && v.endsWith(close)) return true;
+    }
     let interior = 0;
     for (let idx = 1; idx < v.length - 1; idx++) if (v[idx] === '`') interior++;
     return interior >= 2;
