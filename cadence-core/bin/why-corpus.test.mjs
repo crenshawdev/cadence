@@ -19,7 +19,9 @@ import { fileURLToPath } from 'node:url';
 import {
   buildCommitIndex, resolveCommit, readArtifact, readAdjudications, rangeMembers,
   findPruneCommits, parsePruneRecords, PRUNE_ARGV,
+  buildRecoveredIndex, mergeCommitIndexes,
 } from './lib/why-corpus.mjs';
+import { parseCommitRows } from './lib/why-record.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** This repository's own planning root: bin -> cadence-core -> root. */
@@ -360,7 +362,7 @@ test('a close older than ARCHIVE.md itself reports an ABSENT label rather than g
  * @param {string[]} labels
  * @returns {string}
  */
-function repoWithCloses(labels) {
+function repoWithCloses(labels, summaryFor = (label, phase) => `# ${label} phase ${phase}\n`) {
   const dir = mkdtempSync(join(tmpdir(), 'cad-why-prune-'));
   gitIn(dir, ['init', '-q', '-b', 'main']);
   let archive = '# Archive\n';
@@ -368,7 +370,7 @@ function repoWithCloses(labels) {
     const phase = String(i + 1);
     const pdir = join(dir, '.planning', 'phases', phase);
     mkdirSync(pdir, { recursive: true });
-    writeFileSync(join(pdir, 'SUMMARY.md'), `# ${label} phase ${phase}\n`);
+    writeFileSync(join(pdir, 'SUMMARY.md'), summaryFor(label, phase));
     gitIn(dir, ['add', '-A']);
     execFileSync('git', ['-C', dir, 'commit', '-q', '-m', `feat: ${label} phase ${phase}`],
       { env: { ...GIT_ENV, GIT_AUTHOR_DATE: `2026-01-0${i + 1}T00:00:00-05:00`, GIT_COMMITTER_DATE: `2026-01-0${i + 1}T00:00:00-05:00` }, stdio: 'ignore' });
@@ -432,4 +434,86 @@ test('a merge-shaped prune record is REPORTED, never answered out of an arbitrar
   assert.equal(records[0].parent, null, 'so no parent tree is named');
   assert.match(records[0].refused, /is a merge with 2 parents/);
   assert.match(records[0].refused, /without picking one arbitrarily/);
+});
+
+// --- The reverse commit-to-phase map (plan 3, task 2) ----------------------
+
+/** The full sha `72940906^:.planning/phases/1/SUMMARY.md` records as 73aa7bba. */
+const FENCE_AWARE = '73aa7bba503efb228c1b423c3d93cce87494036d';
+
+/** The merged index over this repository, both disk tiers plus git history. */
+function mergedHere() {
+  return mergeCommitIndexes(buildCommitIndex(join(REPO_ROOT, '.planning')), buildRecoveredIndex(REPO_ROOT));
+}
+
+test('a commit behind a deleted phase directory resolves out of git history alone', () => {
+  const merged = mergedHere();
+  const { state, row } = resolveCommit(merged, FENCE_AWARE);
+  assert.equal(state, 'resolved');
+  assert.equal(row.dir.milestone, 'v3.5.9');
+  assert.equal(row.dir.phase, '1');
+  assert.equal(row.plan, '1');
+  assert.equal(row.task, '1');
+  assert.equal(row.description, 'Fence-aware heading scans in release-decision.mjs');
+  assert.ok(row.dir.recovered.prune.startsWith('72940906'));
+  assert.equal(row.dir.recovered.tree, '.planning/phases/1');
+  assert.equal(row.dir.path, null, 'there is no directory on disk to open');
+
+  // The same row, read straight out of the command CONTEXT D-05 names.
+  const bytes = gitIn(REPO_ROOT, ['show', '72940906^:.planning/phases/1/SUMMARY.md']);
+  const direct = parseCommitRows(bytes).find((r) => r.commit === '73aa7bba');
+  assert.equal(row.description, direct.description);
+  assert.equal(row.task, direct.task);
+});
+
+test('the recovered phase 1 is v3.5.9\'s, never the live phases/1 that holds v3.6.0\'s', () => {
+  const merged = mergedHere();
+  const { row, matches } = resolveCommit(merged, FENCE_AWARE);
+  assert.notEqual(row.dir.label, 'phases/1');
+  assert.ok(matches.every((m) => m.dir.label !== 'phases/1'),
+    'the live phase 1 exists and reuses the number - a directory-keyed read would land there');
+});
+
+test('the disk tier still wins for a commit BOTH tiers can claim', () => {
+  // A `--mode archive` close deleted `phases/<N>/SUMMARY.md` and added
+  // `_archive-v<ver>/<N>/SUMMARY.md` in one commit, so 00537356 is in both
+  // tiers. Flat-merged that would read as ambiguous; tiered it reads as the
+  // record a person can open.
+  const merged = mergedHere();
+  const recovered = buildRecoveredIndex(REPO_ROOT);
+  assert.ok(recovered.rows.some((r) => r.commit === '0053735'),
+    'the recovered tier does carry it, so the tier order is what decides');
+  const { state, row } = resolveCommit(merged, ISSUE_CORE);
+  assert.equal(state, 'resolved');
+  assert.equal(row.dir.label, '_archive-v3.4.0/1');
+});
+
+test('an 8-character abbreviation matches its own sha and no neighbour of it', () => {
+  const merged = mergedHere();
+  assert.equal(resolveCommit(merged, FENCE_AWARE).state, 'resolved');
+  const neighbour = `73aa7bbb${FENCE_AWARE.slice(8)}`;
+  assert.equal(resolveCommit(merged, neighbour).state, 'unresolved',
+    'a one-character-off sha is a different commit, not a near miss');
+});
+
+test('building the map twice over the unchanged repository returns deep-equal results', () => {
+  assert.deepEqual(buildRecoveredIndex(REPO_ROOT), buildRecoveredIndex(REPO_ROOT));
+});
+
+test('a recovered row naming a sha this clone does not have is stated absent, never dropped', () => {
+  const table = (label, phase) => [
+    `# ${label} phase ${phase}`, '', '## Commits', '',
+    '| Plan | Task | Commit | Description |',
+    '|---|---|---|---|',
+    '| 1 | 1 | deadbeefdeadbeefdeadbeefdeadbeefdeadbeef | a commit this clone has never had |',
+    '',
+  ].join('\n');
+  const dir = repoWithCloses(['v9.0.0'], table);
+  const index = buildRecoveredIndex(dir);
+  const row = index.rows.find((r) => r.commit.startsWith('deadbeef'));
+  assert.ok(row, 'the row is in the map');
+  assert.equal(row.present, false, 'and it says the clone cannot show that commit');
+  assert.equal(row.dir.milestone, 'v9.0.0');
+  assert.equal(row.dir.phase, '1');
+  assert.deepEqual(index.warnings, []);
 });

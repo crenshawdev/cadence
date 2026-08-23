@@ -130,6 +130,7 @@ export function readArtifact(file) {
  * }} PhaseDir
  * @typedef {{
  *   commit: string, plan: string, task: string, description: string, dir: PhaseDir,
+ *   present?: boolean,
  * }} IndexRow
  */
 
@@ -188,11 +189,18 @@ export function buildCommitIndex(planningRoot) {
  * @returns {{state: 'resolved'|'ambiguous'|'unresolved', row: IndexRow|null, matches: IndexRow[]}}
  */
 export function resolveCommit(index, sha) {
-  const matches = index.rows.filter((r) => shaMatches(r.commit, sha));
-  if (!matches.length) return { state: 'unresolved', row: null, matches };
-  const distinct = new Set(matches.map((r) => `${r.dir.label}\x1f${r.plan}\x1f${r.task}`));
-  if (distinct.size > 1) return { state: 'ambiguous', row: null, matches };
-  return { state: 'resolved', row: matches[0], matches };
+  // A MERGED index carries ordered TIERS and is asked in order, taking the
+  // first tier that answers at all (`mergeCommitIndexes` states why). A
+  // single-tier index is its own only tier, so this is one code path.
+  const tiers = /** @type {any} */ (index).tiers || [index];
+  for (const tier of tiers) {
+    const matches = tier.rows.filter((/** @type {IndexRow} */ r) => shaMatches(r.commit, sha));
+    if (!matches.length) continue;
+    const distinct = new Set(matches.map((/** @type {IndexRow} */ r) => `${r.dir.label}\x1f${r.plan}\x1f${r.task}`));
+    if (distinct.size > 1) return { state: 'ambiguous', row: null, matches };
+    return { state: 'resolved', row: matches[0], matches };
+  }
+  return { state: 'unresolved', row: null, matches: [] };
 }
 
 /**
@@ -533,4 +541,134 @@ export function parsePruneRecords(stdout) {
     return a.commit > b.commit ? -1 : 1;
   });
   return prunes;
+}
+
+// ---------------------------------------------------------------------------
+// THE REVERSE COMMIT-TO-PHASE MAP (D-05), AND THE MERGE WITH THE DISK TIERS.
+//
+// THE KEY IS THE COMMIT THE RECORD NAMES. Not the directory name, not the
+// commit message scope. That is the whole reason a RENUMBERED phase resolves
+// unchanged: `/cad-phase renumber` moves the directory and leaves the summary's
+// `## Commits` rows exactly where they were, so a map keyed on the row's commit
+// cell answers the same thing before and after the move, while a map keyed on
+// `phases/<N>` answers a different phase or nothing at all.
+//
+// MATCHING IS `shaMatches` AND NOTHING ELSE - case-insensitive, a prefix test in
+// either direction, against the full 40-character shas the chain carries
+// (D-17). That is what admits the 7-character abbreviations every on-disk
+// archive uses AND the 8-character ones v3.5.9's record carries, without a
+// fixed-width slice that would be wrong for one era or the other.
+//
+// A SHA THE MAP NAMES THAT THIS CLONE DOES NOT HAVE IS A STATED ABSENCE, NOT A
+// DROPPED ROW. Measured here on 2026-08-23, 248 of 248 shas extracted from the
+// archived tables resolve; a shallow clone is the case that does not, and there
+// the honest answer is "the record names a commit this clone cannot show you",
+// never a silently shorter map. The presence probe is ONE `git cat-file
+// --batch-check` over every recovered row, reading shas on STDIN - so a commit
+// cell can never be read by git as an option, whatever a summary's table says.
+//
+// THE DISK TIER WINS, ALWAYS. A `--mode archive` close both DELETED
+// `phases/<N>/SUMMARY.md` and ADDED `_archive-v<ver>/<N>/SUMMARY.md` in one
+// commit, so every archived phase is ALSO recoverable out of that commit's
+// parent - the same rows under two labels. Merging the two tiers flat would
+// make every one of them `ambiguous`, which is the index reporting a conflict
+// with itself. So the merged index carries ORDERED TIERS and the resolution
+// asks them in order, taking the first tier that answers at all: the on-disk
+// record is the one a reader can open, and the recovered tier exists for the
+// commits no on-disk summary claims. Ambiguity WITHIN a tier is still an
+// answer, and still stops the walk.
+// ---------------------------------------------------------------------------
+
+/**
+ * One recovered phase directory - the same shape `describe` returns for a disk
+ * directory, with `path: null` (there is nothing to open) and a `recovered`
+ * anchor naming the tree its artifacts live in.
+ * @param {PruneCommit} prune @param {string} phase @param {string} path
+ * @returns {PhaseDir}
+ */
+function recoveredDir(prune, phase, path) {
+  const tree = path.slice(0, path.lastIndexOf('/'));
+  return /** @type {any} */ ({
+    label: `${prune.parent.slice(0, 8)}:${tree}`,
+    path: null,
+    group: 'recovered',
+    phase,
+    // The label the close bound, or a statement that it bound none. Never the
+    // close's subject line, and never a version inferred from the date.
+    milestone: prune.label || `an unlabelled close (${prune.commit.slice(0, 8)})`,
+    recovered: { prune: prune.commit, parent: prune.parent, tree },
+  });
+}
+
+/**
+ * Mark every row's commit cell as present in this clone or not, in ONE call.
+ * Shas ride STDIN, so no cell is ever argv.
+ * @param {string} repoDir @param {IndexRow[]} rows @returns {void}
+ */
+function markPresence(repoDir, rows) {
+  if (!rows.length) return;
+  const ids = [...new Set(rows.map((r) => r.commit))];
+  let out = { ok: false, stdout: '' };
+  try {
+    out = { ok: true, stdout: execFileSync('git', ['-C', repoDir, 'cat-file', '--batch-check'],
+      { encoding: 'utf8', input: `${ids.join('\n')}\n`, stdio: ['pipe', 'pipe', 'ignore'] }) };
+  } catch { /* an unreadable probe leaves every row stated absent below */ }
+  /** @type {Map<string, boolean>} */
+  const present = new Map();
+  const lines = out.stdout.split('\n').filter((l) => l !== '');
+  ids.forEach((id, i) => {
+    const answer = lines[i] || '';
+    present.set(id, / commit \d+$/.test(answer));
+  });
+  for (const row of rows) row.present = present.get(row.commit) === true;
+}
+
+/**
+ * The reverse commit-to-phase map, recovered from git history alone.
+ *
+ * ONE pass for the closes (`findPruneCommits`), then one `git show
+ * <prune>^:<path>` per deleted phase summary - 79 of them in this repository,
+ * measured at 76 ms total on 2026-08-23, which is what makes the eager form
+ * D-05 chose cheaper than the lazy one it rejected.
+ *
+ * @param {string} repoDir
+ * @returns {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}}
+ */
+export function buildRecoveredIndex(repoDir) {
+  const { prunes, warnings } = findPruneCommits(repoDir);
+  /** @type {PhaseDir[]} */
+  const dirs = [];
+  /** @type {IndexRow[]} */
+  const rows = [];
+  for (const prune of prunes) {
+    if (!prune.parent) continue; // already named in `warnings` by the refusal
+    for (const { phase, path } of prune.phases) {
+      const dir = recoveredDir(prune, phase, path);
+      const out = git(repoDir, ['show', `${prune.parent}:${path}`]);
+      if (!out.ok) {
+        warnings.push(`${path} could not be recovered from ${prune.parent.slice(0, 8)}; its commits are not indexed`);
+        continue;
+      }
+      dirs.push(dir);
+      for (const row of parseCommitRows(out.stdout)) rows.push({ ...row, dir });
+    }
+  }
+  markPresence(repoDir, rows);
+  return { dirs, rows, warnings };
+}
+
+/**
+ * The one index a caller asks, over ordered tiers: the on-disk record first,
+ * the git-recovered record second (see the header).
+ * @param {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}} disk
+ * @param {{dirs: PhaseDir[], rows: IndexRow[], warnings: string[]}} recovered
+ * @returns {any}
+ */
+export function mergeCommitIndexes(disk, recovered) {
+  return {
+    dirs: [...disk.dirs, ...recovered.dirs],
+    rows: [...disk.rows, ...recovered.rows],
+    tiers: [disk, recovered],
+    warnings: [...disk.warnings, ...recovered.warnings],
+  };
 }
