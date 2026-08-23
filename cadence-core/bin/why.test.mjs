@@ -171,3 +171,75 @@ test('every child-process call in why.mjs names git as its command', () => {
   }
   assert.ok(found > 0, 'expected at least one child-process call in why.mjs');
 });
+
+// --- Plan 2: the phase and plan-task edge ----------------------------------
+//
+// These run against THIS repository rather than a built fixture, deliberately.
+// The index's whole claim is that a phase number is READ off a resolved
+// directory rather than guessed from a commit's `(N-M)` scope, and the only
+// place that distinction is real is a corpus where both a live `phases/1` and
+// an archived `_archive-v3.4.0/1` exist and hold different milestones' work.
+// A fixture cannot falsify a guess that would also be right in the fixture.
+
+/** This repository's root: bin -> cadence-core -> root. */
+const REPO = join(HERE, '..', '..');
+/** The rendered entry for `sha`, cut out of `text` at its own commit line. */
+function entryFor(text, sha) {
+  const blocks = text.split('\n\n');
+  return blocks.find((b) => b.startsWith(`commit ${sha} `));
+}
+
+test('a commit an archived summary names joins to that milestone, phase, plan and task', () => {
+  // 12 commits touch this path; the one under test is the oldest, so the cap
+  // is lifted rather than the assertion narrowed to the newest ten.
+  const { stdout } = run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']);
+  const env = oneJsonLine(stdout);
+  assert.equal(env.ok, true);
+  assert.equal(env.result, 'chain');
+  assert.deepEqual(env.warnings, [], 'no summary in this repository is unreadable');
+
+  const sha = '00537356bf14084f3676eeeca1c4747146979bc3';
+  const entry = entryFor(env.text, sha);
+  assert.ok(entry, `expected a rendered entry for ${sha} in a chain of ${env.shown}`);
+  assert.ok(entry.includes('phase: v3.4.0 phase 1 (_archive-v3.4.0/1)'),
+    `expected the archived milestone and the phase read off its directory, got:\n${entry}`);
+  assert.ok(entry.includes('plan task: plan 1, task 2 - '), `expected plan 1 task 2, got:\n${entry}`);
+  assert.ok(entry.includes('The pure issue-decision core + 15 tests'),
+    `expected the commits table's own description verbatim, got:\n${entry}`);
+
+  const data = env.entries.find((e) => e.sha === sha);
+  assert.equal(data.join.state, 'resolved');
+  assert.equal(data.join.label, '_archive-v3.4.0/1');
+  assert.equal(data.join.phase, '1');
+  assert.equal(data.join.plan, '1');
+  assert.equal(data.join.task, '2');
+});
+
+test('the phase printed is the archived one, never the live phases/1 that reuses the number', () => {
+  const { stdout } = run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']);
+  const env = oneJsonLine(stdout);
+  assert.ok(!env.text.includes('(phases/1)'),
+    'the live phase 1 is a different milestone; a scope-keyed read would print it');
+  assert.ok(env.entries.every((e) => e.join.label !== 'phases/1'));
+});
+
+test('a commit no summary names keeps its phase and plan-task fields stated absent rather than dropped', () => {
+  const { dir, second } = repo();
+  const { stdout } = run(['f.txt', '--dir', dir]);
+  const env = oneJsonLine(stdout);
+  assert.equal(env.ok, true);
+  assert.equal(env.entries.length, 2);
+  assert.equal(env.entries[0].join.state, 'unresolved');
+
+  const entry = entryFor(env.text, second);
+  for (const label of ['phase', 'plan task', 'decision', 'deviation', 'review']) {
+    assert.ok(entry.includes(`${label}: not yet joined`),
+      `expected a stated-absent line for ${label}, got:\n${entry}`);
+  }
+});
+
+test('two runs over this repository, with the index in place, write byte-identical stdout', () => {
+  const a = run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']).stdout;
+  const b = run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']).stdout;
+  assert.equal(a, b, 'a readdir-ordered index build is exactly how this goes non-deterministic');
+});

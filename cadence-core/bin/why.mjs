@@ -27,13 +27,27 @@
 // ONE JSON OBJECT ON STDOUT (lib/seam-io.mjs), never a subagent: `git` is the
 // only child process this script spawns, structurally asserted by
 // why.test.mjs reading its own source.
+//
+// ONE INDEX BUILD PER INVOCATION (plan 2). `lib/why-corpus.mjs` walks the live
+// and archived phase directories ONCE and every entry in the chain resolves
+// against that one index - never a per-entry walk, which on a 144-commit chain
+// would re-read 28 summaries 144 times. The join hangs off the entry as a
+// single `join` object, which is the ONE attach point `lib/why-render.mjs`
+// reads and every later edge extends.
+//
+// AN UNREADABLE PLANNING ARTIFACT NEVER FAILS THE QUERY. The index fails open
+// with `warnings[]`, and those warnings ride the envelope beside the answer:
+// `git log` already told this seam what the commits are, and a summary nobody
+// can read makes the join thinner, not the chain wrong.
 'use strict';
 
+import { join as joinPath } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { emit } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { parseQuery, probeArgv, bareArgv, lineArgv, classifyResult } from './lib/why-query.mjs';
 import { renderChain } from './lib/why-render.mjs';
+import { buildCommitIndex, resolveCommit } from './lib/why-corpus.mjs';
 
 /**
  * Run `git <args>` in `dir`, never throwing: a non-zero exit or a spawn
@@ -65,6 +79,36 @@ function parseEntries(stdout) {
     const [sha, date, ...rest] = line.split('\x1f');
     return { sha, date, subject: rest.join('\x1f') };
   });
+}
+
+/**
+ * One index row as the entry carries it: the directory's OWN label, milestone
+ * and phase number, plus the commits table's plan, task and description cells
+ * verbatim. Flat and serializable, because it rides the JSON envelope beside
+ * the rendered text.
+ * @param {any} m @returns {any}
+ */
+function brief(m) {
+  return {
+    label: m.dir.label,
+    milestone: m.dir.milestone,
+    phase: m.dir.phase,
+    plan: m.plan,
+    task: m.task,
+    description: m.description,
+  };
+}
+
+/**
+ * The ONE attach point (see the header). Every later edge adds a key to the
+ * object this returns.
+ * @param {any} index @param {string} sha @returns {any}
+ */
+function joinFor(index, sha) {
+  const { state, row, matches } = resolveCommit(index, sha);
+  if (state === 'resolved') return { state, ...brief(row) };
+  if (state === 'ambiguous') return { state, matches: matches.map(brief) };
+  return { state: 'unresolved' };
 }
 
 /**
@@ -137,10 +181,14 @@ try {
       } else if (result.outcome === 'git-failed') {
         emit({ ok: false, reason: 'git-failed', detail: line === undefined ? 'the bare-path chain query' : 'the line-scoped chain query' });
       } else {
-        const rendered = renderChain(parseEntries(chain.stdout), { top });
+        const index = buildCommitIndex(joinPath(dir, '.planning'));
+        const joined = parseEntries(chain.stdout)
+          .map((e) => ({ ...e, join: joinFor(index, e.sha) }));
+        const rendered = renderChain(joined, { top });
         emit({
           ok: true, path, line, result: 'chain',
           text: rendered.text, shown: rendered.shown, total: rendered.total, entries: rendered.entries,
+          warnings: index.warnings,
         });
       }
     }

@@ -48,13 +48,36 @@
 // that only the JSON envelope's `shown`/`total` fields recorded would never
 // reach a reader - the skill never prints those fields. The note is therefore
 // the last line of `text` itself when the chain was actually cut.
+//
+// ---------------------------------------------------------------------------
+// PLAN 2 ADDS THE JOIN, AND IT ATTACHES IN EXACTLY ONE PLACE: `entry.join`.
+//
+// The seam resolves each commit against `lib/why-corpus.mjs`'s index and hangs
+// ONE plain, serializable object off the entry; the `field*` functions below
+// turn that object into the label lines. Every later edge - the D-NN decision,
+// the deviation bullets, the surviving review finding, the declaring task -
+// adds a KEY to that object and a formatter here, never a second traversal of
+// the chain and never a second attach point.
+//
+// A LITERAL STRING ON THE ENTRY STILL WINS. `entry.phase` and its four siblings
+// are read FIRST and the join is only consulted when they are absent, so a
+// caller holding a rendered string (the plan-1 shape, and every test that
+// builds an entry by hand) keeps working unchanged. That is not back-compat
+// ceremony: it is what keeps this module's contract "a field is a string or it
+// is stated absent", with the join as one way to compute the string rather than
+// a second rendering path.
+//
+// AND THE STATED ABSENCE IS UNCHANGED. A field the join cannot fill still
+// renders `not yet joined` rather than disappearing, because AC5 requires a
+// path in history with no `.planning/` join to come back as a chain with each
+// field stated absent - never a shorter entry, and never an empty chain.
 'use strict';
 
 /** The default entry cap (D-13). */
 export const DEFAULT_TOP = 10;
 
 /** The fixed text an absent join field renders as, rather than dropping the
- * line. Plans 2 and 3 replace this with quoted record text per field. */
+ * line. A field the record does not carry says so; it is never dropped. */
 const NOT_JOINED = 'not yet joined';
 
 /** Characters of the full sha the rendered commit line's abbreviation carries
@@ -63,11 +86,71 @@ const ABBREV_LEN = 8;
 
 /**
  * @typedef {{
+ *   label: string, milestone: string, phase: string,
+ *   plan: string, task: string, description: string,
+ * }} JoinMatch
+ * @typedef {{
+ *   state: 'resolved'|'ambiguous'|'unresolved',
+ *   matches?: JoinMatch[],
+ * } & Partial<JoinMatch>} EntryJoin
+ * @typedef {{
  *   sha: string, date: string, subject: string,
  *   phase?: string, task?: string, decision?: string,
  *   deviation?: string, review?: string,
+ *   join?: EntryJoin,
  * }} ChainEntry
  */
+
+/** One ambiguous candidate, as the entry names it when it refuses to pick. */
+const candidate = (/** @type {JoinMatch} */ m) =>
+  `${m.label} (plan ${m.plan || '-'}, task ${m.task || '-'})`;
+
+/**
+ * The `phase:` line - the milestone and the phase number READ OFF the resolved
+ * directory's own name, never derived from the commit's conventional-commit
+ * scope (D-06). An ambiguous resolution names every candidate rather than
+ * picking one, because picking is the invisible failure the index exists to
+ * remove.
+ * @param {EntryJoin} [j] @returns {string|undefined}
+ */
+function fieldPhase(j) {
+  if (!j) return undefined;
+  if (j.state === 'ambiguous') {
+    const named = (j.matches || []).map(candidate).join('; ');
+    return `AMBIGUOUS - ${(j.matches || []).length} records name this commit: ${named}`;
+  }
+  if (j.state !== 'resolved') return undefined;
+  return `${j.milestone} phase ${j.phase} (${j.label})`;
+}
+
+/**
+ * The `plan task:` line - the commits table's own plan, task and description
+ * cells, quoted as the record wrote them. The task cell is NEVER integerized:
+ * `fix 1` is a real value in shipped summaries.
+ * @param {EntryJoin} [j] @returns {string|undefined}
+ */
+function fieldTask(j) {
+  if (!j || j.state !== 'resolved') return undefined;
+  const plan = j.plan ? `plan ${j.plan}, ` : '';
+  const task = j.task ? `task ${j.task}` : 'task unnamed';
+  const description = j.description ? ` - ${j.description}` : '';
+  return `${plan}${task}${description}`;
+}
+
+/**
+ * Fill every join field the entry does not already carry as a literal string.
+ * Never mutates its argument.
+ * @param {ChainEntry} e @returns {ChainEntry}
+ */
+function decorate(e) {
+  const j = e.join;
+  if (!j) return e;
+  return {
+    ...e,
+    phase: e.phase ?? fieldPhase(j),
+    task: e.task ?? fieldTask(j),
+  };
+}
 
 /**
  * Sort a COPY of `entries` newest first: commit date descending, full sha
@@ -84,8 +167,9 @@ function sortEntries(entries) {
   });
 }
 
-/** @param {ChainEntry} e @returns {string} */
-function renderEntry(e) {
+/** @param {ChainEntry} raw @returns {string} */
+function renderEntry(raw) {
+  const e = decorate(raw);
   const abbrev = e.sha.slice(0, ABBREV_LEN);
   return [
     `commit ${e.sha} (${abbrev})`,
