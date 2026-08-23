@@ -624,6 +624,35 @@ export const CONTRACTS = {
     recall: {
       '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
+    // THE RECORD A `/cad-task` RUN LEAVES (FST-01): the fast path's own artifact
+    // under `.planning/tasks/<slug>/`, written so the recall corpus and
+    // `/cad-why` can both reach it. ONE WORD, never a two-word spelling:
+    // `subcommandKey` consumes a second word only for the families in
+    // `TWO_WORD`, and one operation does not earn widening that Set - the
+    // `adjudication` row above is the precedent.
+    //
+    // `--slug` is joined onto a directory path, so its grammar is a REFUSAL and
+    // not a trim: one path segment or nothing written. The declaration cannot
+    // state that grammar - it is not one of the declared types - so the seam
+    // refuses in its own `bad-args` vocabulary through lib/task-record.mjs's
+    // predicate, the carve-out `capture --kind must be one of ...` occupies.
+    //
+    // `--base` and `--head` are both REQUIRED for the reason the `risk-check
+    // run` row above states: a defaulted head is a range the caller never
+    // stated, and this record IS the evidence of what shipped. Both the commits
+    // table and the declared-files line are DERIVED from that range by the seam,
+    // so there is no flag a caller could retype a figure onto.
+    //
+    // `--text` / `--text-file` are the pair the `capture` row below already
+    // models: the file form is the safe transport a workflow prescribes, and the
+    // inline form stays for a human typing at a shell.
+    'task-record': {
+      '--slug': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--text': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--text-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // `--join` ties each record to the `trace.jsonl` dispatch bracket that
     // caused it, by role normalization and timestamp containment. Off by
     // default so the envelope every existing reader parses is unchanged, and
