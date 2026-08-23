@@ -8093,3 +8093,92 @@ test('cite-count: a trace at the cap comes back written:false, and moves no figu
   // And nothing was appended: the cap is enforced in FRONT of the write.
   assert.equal(readFileSync(join(capped, 'trace.jsonl'), 'utf8').length, 1048576);
 });
+
+test('cite-count: three runs are told apart by their records alone', () => {
+  // The whole point of D-06 in ONE test. Two of these three states count ZERO
+  // surfaced rows, so a reader with only a count in front of them cannot tell
+  // a memory backend that was switched off from a search that found nothing -
+  // and the legitimate-zero rate this seam exists to produce is measured
+  // against exactly that difference. All three are CONSTRUCTED here rather
+  // than sampled: this repository sets no `memory.backend` and runs the
+  // `builtin` default, so its own dogfooding never reaches the off arm.
+  //
+  // The assertion reads the RECORD - the appended trace.jsonl line - and not
+  // the envelope alone, because "measurable across phases" is a claim about
+  // the record, and the separation has to hold for a reader who was not in the
+  // session that produced it.
+  const record = (dir) => {
+    const lines = readFileSync(join(dir, 'trace.jsonl'), 'utf8').split('\n').filter(Boolean);
+    assert.equal(lines.length, 1, 'exactly one cite_count event was appended');
+    // `corr` and `ts` are the two fields that differ between any two runs
+    // whatever their state, so they are dropped: leaving them in would make
+    // every pair below trivially distinct and the check would prove nothing.
+    const { corr, ts, ...state } = JSON.parse(lines[0]);
+    return state;
+  };
+
+  // State one: the backend is off. No payload is passed, because on that path
+  // `workflows/plan.md` never makes the call that would produce one.
+  const offTree = makeTree({
+    phases: { 2: { plan: ['PLAN-1.md'] } },
+    config: { memory: { backend: 'none' } },
+  });
+  const offRun = citeCount(['--phase', '2', '--point', 'planned'], offTree);
+  assert.equal(offRun.json.ok, true, offRun.raw);
+
+  // State two: a live backend that surfaced nothing.
+  const emptyTree = citeTree();
+  const emptyRun = citeCount(
+    ['--phase', '2', '--point', 'planned', '--payload', citePayload(emptyTree, [])], emptyTree);
+  assert.equal(emptyRun.json.ok, true, emptyRun.raw);
+
+  // State three: a live backend that surfaced rows the plan cites none of.
+  // citeTree's plan cites a bare `D-03` and a qualified `phase 7 D-05`, so
+  // neither row below can match.
+  const zeroTree = citeTree();
+  const zeroRun = citeCount(['--phase', '2', '--point', 'planned', '--payload', citePayload(zeroTree, [
+    { score: 9, source: 'phases/1/CONTEXT.md', snippet: 'D-09 (area): nobody cited this' },
+    { score: 8, source: 'phases/1/CAPTURE.md', snippet: 'a capture row carries no id' },
+  ])], zeroTree);
+  assert.equal(zeroRun.json.ok, true, zeroRun.raw);
+
+  const off = record(offTree);
+  const empty = record(emptyTree);
+  const zero = record(zeroTree);
+
+  // The premise, asserted rather than assumed: the first two records carry the
+  // SAME count, so whatever separates them is not the number.
+  assert.equal(off.surfaced.count, empty.surfaced.count,
+    'both states count zero surfaced rows - a count alone cannot be what tells them apart');
+
+  // PAIRWISE, and first: a change that collapsed any one state into another
+  // has to fail HERE, naming the two that merged, rather than passing three
+  // single-run assertions that each look at one record and never compare them.
+  const states = [
+    ['backend-off', off],
+    ['surfaced-nothing', empty],
+    ['surfaced-some-cited-none', zero],
+  ];
+  for (let i = 0; i < states.length; i++) {
+    for (let j = i + 1; j < states.length; j++) {
+      assert.notDeepStrictEqual(states[i][1], states[j][1],
+        `the ${states[i][0]} run and the ${states[j][0]} run are INDISTINGUISHABLE on the `
+        + 'record: their appended events carry the same combination of fields, so a reader '
+        + 'who was not in the session cannot tell which of the two states produced it');
+    }
+  }
+
+  // And what each record says, so the pairwise result above is three known
+  // states and not three arbitrary ones. No field exists here that the three
+  // do not already differ by - a fourth marker would give one fact a second
+  // source, and the two would disagree the first time one of them moved.
+  assert.equal(off.backend, 'none');
+  assert.equal(off.cited.count, 0);
+  assert.equal('backend' in empty, false,
+    'an ABSENT backend field is what says the count ran against a live one');
+  assert.equal(empty.surfaced.count, 0);
+  assert.equal('backend' in zero, false);
+  assert.equal(zero.surfaced.count, 2);
+  assert.deepEqual(zero.cited, { count: 0, ids: [] },
+    'the case the phase exists to make visible: surfaced rows, cited by nothing');
+});
