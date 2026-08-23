@@ -26,6 +26,17 @@
 //                        `criteria-size` call at the end of write_context is a
 //                        NEW invocation (+1).
 //
+// One derivation has been made FROM those figures since, and it is stated the
+// same way rather than folded into them - a row that absorbed later arithmetic
+// would stop showing which phase spent which call:
+//
+//   plan.md     9 -> 11  RBK-01's two read-back count points are NEW
+//                        invocations (+2): `cite-count --point planned` at
+//                        count_planned and `cite-count --point committed` at
+//                        count_committed. The `--inline` path adds NEITHER - it
+//                        references those two steps instead of restating their
+//                        calls, which is what keeps this +2 and not +4.
+//
 // PLAN-2 task 6 stated 5 for `context.md`. That figure omits the +1 its own
 // task 3 mandates - the criteria-ceilings call - and 5 is unreachable while
 // that call exists. 6 is not "whatever the tree says" either: skipping the
@@ -72,11 +83,17 @@ const CENSUS = [
   },
   {
     file: join('cadence-core', 'workflows', 'plan.md'),
-    calls: 9,
+    calls: 11,
     note: 'status, config.mjs get, plan-size x2, recall, trace close x2, '
-      + 'seed-reqs, cursor set. A tenth means a call came back - most likely a '
-      + 'restated `trace append --event return` beside a `trace close`, which '
-      + 'is the pair one subcommand replaced.',
+      + 'seed-reqs, cursor set (9), plus RBK-01\'s two read-back count points - '
+      + '`cite-count --point planned` at count_planned and `cite-count --point '
+      + 'committed` at count_committed (+2). Two, not one: a checker revision '
+      + 'and an applied adjudicated survivor both edit the plan between them, so '
+      + 'one count would describe a plan that no longer exists. And not four: '
+      + 'inline_plan REFERENCES those two steps rather than restating their '
+      + 'calls. A twelfth means a call came back - most likely a restated count '
+      + 'in inline_plan, or a `trace append` beside the seam\'s own in-code '
+      + 'outcome event.',
   },
 ];
 
