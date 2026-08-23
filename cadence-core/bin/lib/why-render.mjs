@@ -103,6 +103,7 @@ const ABBREV_LEN = 8;
  *   label: string, milestone: string, phase: string,
  *   plan: string, task: string, description: string,
  *   recovered?: {prune: string, parent: string, tree: string},
+ *   slug?: string,
  * }} JoinMatch
  * @typedef {{
  *   state: 'resolved'|'ambiguous'|'unresolved',
@@ -179,6 +180,13 @@ function gapLines(g) {
  * scope (D-06). An ambiguous resolution names every candidate rather than
  * picking one, because picking is the invisible failure the index exists to
  * remove.
+ *
+ * AND A RESOLVED TASK IS NOT A PHASE. A commit the off-roadmap tasks tier
+ * answered names its SLUG and says so in words, and prints no phase number and
+ * no milestone at all (FST-01, phase 3 D-02). That is the whole of the arm: the
+ * failure D-02 rejects is a task directory rendering as `tasks phase <slug>`,
+ * which READS as a phase and so is a wrong answer rather than a missing one -
+ * strictly worse than the gap block, because a reader has no way to tell.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldPhase(j) {
@@ -189,6 +197,12 @@ function fieldPhase(j) {
   }
   if (j.state === 'unresolved') return /** @type {any} */ (j).gap ? gapLines(/** @type {any} */ (j).gap) : undefined;
   if (j.state !== 'resolved') return undefined;
+  // The `slug` MARKER, never a label prefix: `buildTaskIndex` puts it on the
+  // directory descriptor precisely so this arm needs no opinion about how a
+  // label is spelled. `j.phase` and `j.milestone` are `null` on this tier, so
+  // the resolved-phase line below could not render them anyway - which is the
+  // point of their being null rather than a placeholder.
+  if (j.slug) return `off-roadmap task ${j.slug} - a /cad-task run, not a roadmap phase (${j.label})`;
   // A RECOVERED resolution says where it was recovered FROM, because the
   // directory it names no longer exists and a reader who cannot tell the two
   // apart has no way to go check. The milestone label rides beside the phase
@@ -204,6 +218,10 @@ function fieldPhase(j) {
  * The `plan task:` line - the commits table's own plan, task and description
  * cells, quoted as the record wrote them. The task cell is NEVER integerized:
  * `fix 1` is a real value in shipped summaries.
+ *
+ * NO ARM IS NEEDED FOR A TASK RECORD: its table has no Plan column at all, so
+ * `j.plan` is `''` and the `plan ` prefix is already dropped by the same
+ * three-column rule the pre-numbered-plan SUMMARY era needs.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldTask(j) {
