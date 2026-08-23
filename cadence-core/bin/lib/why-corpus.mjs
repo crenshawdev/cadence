@@ -326,3 +326,211 @@ export function rangeMembers(repoDir, base, head) {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// THE GIT-HISTORY TIER (D-03's third, D-05) - plan 3.
+//
+// A `--mode delete` close leaves NEITHER a live `phases/<N>/` nor an
+// `_archive-v<ver>/<N>/`, so for 16 of this repository's 25 closes the record
+// exists only in git history. This half finds those closes and binds each to
+// the milestone label it carried; the map itself is built on top of it.
+//
+// `--full-history` IS LOAD-BEARING, NOT DECORATIVE. Measured against this
+// repository on 2026-08-22 and again on 2026-08-23: the same search WITHOUT it
+// returns 4 prune commits, and WITH it returns 25. Git's default history
+// simplification drops commits a pathspec makes "uninteresting", so the plain
+// form silently loses 21 of 25 closes and would report the gap on milestones
+// the record can actually answer. `PRUNE_ARGV` is exported and its control -
+// the same argv with the flag filtered out, returning strictly fewer - is
+// asserted in why-corpus.test.mjs, so the flag cannot be dropped without a red
+// test.
+//
+// `-M` IS PINNED EXPLICITLY (D-17) rather than inherited from whatever
+// `diff.renames` the reading machine happens to configure. It changes nothing
+// here - all three of `-M`, `--no-renames` and the default answer 25 - because
+// the pathspec limits the diff BEFORE rename detection runs, so the archive
+// copy a `--mode archive` close adds is never a rename candidate for the phase
+// copy it deletes. Pinning it is what keeps that true on someone else's clone.
+//
+// ONE PASS, NOT ONE `git show` PER ENTRY. D-05 rejects the lazy per-commit
+// form, which reruns the prune search for every chain entry. `--name-only`
+// rides the same invocation so the deleted paths come back with the commits,
+// and the labels come back in ONE further call over exactly the commits the
+// first pass found.
+//
+// THE LABEL COMES FROM THE CLOSE'S OWN WRITE, NEVER FROM ITS SUBJECT LINE. A
+// prune appends `.planning/ARCHIVE.md`'s `## <label>` heading in the SAME
+// commit that removes the directories (measured: `72940906` appends
+// `## v3.5.9`), so the binding is a diff of one file at one commit rather than
+// a regex over a commit message. It is available for 7 of this repository's 25
+// closes and no more, because `.planning/ARCHIVE.md` did not exist before
+// v3.5.3 - an absent label is therefore the ORDINARY state of an old close and
+// is reported as absent rather than guessed. Exactly one added heading binds;
+// zero binds nothing, and two or more bind nothing either, because a close that
+// wrote two headings does not say which one owns the deleted phases.
+//
+// A MERGE-SHAPED PRUNE COMMIT IS REPORTED, NOT RESOLVED. Every recovery below
+// reads `<prune>^`, and on a commit with two parents `^` names the first one
+// arbitrarily - so a merge would silently answer out of whichever side git
+// listed first. All 25 in this repository are single-parent today, which is
+// what makes refusing cheap rather than a lost answer.
+//
+// AND THE REFUSAL IS NOT REACHABLE THROUGH `PRUNE_ARGV` AS SHIPPED. Measured on
+// git 2.55.0 on 2026-08-23 against two built fixtures - an ordinary merge of a
+// branch that deleted the summary, and an "evil" merge whose own tree performs
+// the deletion - `--diff-filter=D` selects NEITHER, because a merge produces no
+// diff under the default `--diff-merges=off` and so matches no diff filter.
+// Adding `--diff-merges=first-parent` to the same argv makes the evil merge
+// come back with its two parents, which is why the guard stays and why the
+// parse is a separate exported function: `parsePruneRecords` is where the
+// two-parent record is proved refused, over stdout git itself produced.
+// ---------------------------------------------------------------------------
+
+/** The pathspec a milestone close deletes when it prunes a phase directory. */
+export const PRUNED_SUMMARY = '.planning/phases/*/SUMMARY.md';
+
+/** The record separator that lets `--name-only`'s path lines be told apart
+ * from the next commit's header - `\x01`, matching `LOG_FORMAT`'s use of
+ * `\x1f` for the same reason: a byte no path and no date can contain. */
+const PRUNE_FORMAT = '%x01%H%x1f%cI%x1f%P';
+
+/** The prune search, exported so its control can be built from it. */
+export const PRUNE_ARGV = Object.freeze([
+  'log', '--full-history', '-M', '--diff-filter=D', '--name-only',
+  `--format=${PRUNE_FORMAT}`, '--', PRUNED_SUMMARY,
+]);
+
+/** The heading a close appends to ARCHIVE.md, as a diff line. */
+const ADDED_SECTION = /^\+## (.+?)\s*$/;
+
+/** `.planning/phases/<N>/SUMMARY.md`, with the phase number captured. It is
+ * READ from the deleted path, which is a recovered artifact, never guessed. */
+const PRUNED_PATH = /^\.planning\/phases\/([^/]+)\/SUMMARY\.md$/;
+
+/**
+ * Run git in `repoDir`, never throwing. A non-zero exit or a spawn failure is
+ * `{ok: false}` with whatever stdout arrived, which every caller here treats as
+ * "this tier contributes nothing" rather than as a failed query.
+ * @param {string} repoDir @param {readonly string[]} args
+ * @returns {{ok: boolean, stdout: string}}
+ */
+function git(repoDir, args) {
+  try {
+    return { ok: true, stdout: execFileSync('git', ['-C', repoDir, ...args],
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) };
+  } catch (e) {
+    const err = /** @type {any} */ (e);
+    return { ok: false, stdout: typeof err.stdout === 'string' ? err.stdout : '' };
+  }
+}
+
+/**
+ * @typedef {{
+ *   commit: string, date: string, parents: string[], parent: string|null,
+ *   label: string|null, phases: Array<{phase: string, path: string}>,
+ *   refused: string|null,
+ * }} PruneCommit
+ */
+
+/**
+ * The milestone label each of `commits` bound, read off the `## <label>`
+ * heading that commit added to `.planning/ARCHIVE.md`. ONE git call for the
+ * whole set.
+ * @param {string} repoDir @param {string[]} commits
+ * @returns {Map<string, string|null>}
+ */
+function pruneLabels(repoDir, commits) {
+  /** @type {Map<string, string[]>} */
+  const added = new Map();
+  for (const c of commits) added.set(c, []);
+  if (!commits.length) return new Map();
+
+  const out = git(repoDir, ['show', '-U0', '-M', '--format=%x01%H', ...commits, '--', '.planning/ARCHIVE.md']);
+  let current = null;
+  for (const line of out.stdout.split('\n')) {
+    if (line.startsWith('\x01')) { current = line.slice(1).trim(); continue; }
+    if (current === null || !added.has(current)) continue;
+    const m = line.match(ADDED_SECTION);
+    if (m) added.get(current).push(m[1]);
+  }
+  /** @type {Map<string, string|null>} */
+  const labels = new Map();
+  // EXACTLY ONE added heading binds. Zero is the ordinary state of a close
+  // older than ARCHIVE.md itself; two or more does not say which heading owns
+  // the deleted phases, so it binds nothing rather than picking.
+  for (const [commit, headings] of added) labels.set(commit, headings.length === 1 ? headings[0] : null);
+  return labels;
+}
+
+/**
+ * Every commit that DELETED a phase SUMMARY, newest first, each bound to the
+ * milestone label its close carried and carrying the phase paths it removed.
+ *
+ * Order is explicit (D-17): commit date descending, then full 40-character sha
+ * descending, never git's own emission order.
+ *
+ * @param {string} repoDir
+ * @returns {{prunes: PruneCommit[], warnings: string[]}}
+ */
+export function findPruneCommits(repoDir) {
+  const out = git(repoDir, PRUNE_ARGV);
+  if (!out.ok && !out.stdout) return { prunes: [], warnings: [] };
+  const prunes = parsePruneRecords(out.stdout);
+
+  const labels = pruneLabels(repoDir, prunes.map((p) => p.commit));
+  for (const p of prunes) p.label = labels.get(p.commit) ?? null;
+
+  return { prunes, warnings: prunes.filter((p) => p.refused).map((p) => p.refused) };
+}
+
+/**
+ * Turn `PRUNE_ARGV`'s stdout into prune records, sorted by the explicit key.
+ *
+ * Pure and exported for the reason the module header gives: the merge-shaped
+ * record the guard refuses cannot be produced by `PRUNE_ARGV` as shipped, so
+ * the only way to prove the refusal over bytes GIT wrote rather than bytes a
+ * test invented is to run the same log with `--diff-merges=first-parent` and
+ * feed its stdout here.
+ *
+ * @param {string} stdout @returns {PruneCommit[]}
+ */
+export function parsePruneRecords(stdout) {
+  /** @type {PruneCommit[]} */
+  const prunes = [];
+  for (const record of String(stdout || '').split('\x01')) {
+    if (!record.trim()) continue;
+    const lines = record.split('\n');
+    const [commit, date, parentField] = String(lines[0] || '').split('\x1f');
+    if (!commit) continue;
+    const parents = String(parentField || '').split(' ').map((p) => p.trim()).filter(Boolean);
+    /** @type {Array<{phase: string, path: string}>} */
+    const phases = [];
+    for (const raw of lines.slice(1)) {
+      const path = raw.trim();
+      const m = path.match(PRUNED_PATH);
+      if (m) phases.push({ phase: m[1], path });
+    }
+    phases.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    prunes.push({
+      commit,
+      date: String(date || ''),
+      parents,
+      parent: parents.length === 1 ? parents[0] : null,
+      label: null,
+      phases,
+      refused: parents.length > 1
+        ? `the close at ${commit.slice(0, 8)} is a merge with ${parents.length} parents, `
+          + 'so the tree its phases were deleted from cannot be named without picking one arbitrarily'
+        : parents.length === 0
+          ? `the close at ${commit.slice(0, 8)} is a root commit, so there is no parent tree to recover from`
+          : null,
+    });
+  }
+
+  prunes.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    if (a.commit === b.commit) return 0;
+    return a.commit > b.commit ? -1 : 1;
+  });
+  return prunes;
+}

@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   buildCommitIndex, resolveCommit, readArtifact, readAdjudications, rangeMembers,
+  findPruneCommits, parsePruneRecords, PRUNE_ARGV,
 } from './lib/why-corpus.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -291,4 +292,144 @@ test('a phase directory with no record at all is silent', () => {
   assert.deepEqual(warnings, []);
   assert.deepEqual(readAdjudications({ label: 'gone/9', path: join(root, 'gone', '9') }),
     { records: [], warnings: [] }, 'and so is a directory that is not there');
+});
+
+// --- The git-history tier: the prune search and the label binding (plan 3) --
+
+/** This repository's root: bin -> cadence-core -> root. */
+const REPO_ROOT = join(HERE, '..', '..');
+
+const GIT_ENV = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+  GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+  GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+};
+
+/** Run git in `dir`, returning stdout and never inheriting a real config. */
+const gitIn = (dir, args) => execFileSync('git', ['-C', dir, ...args],
+  { encoding: 'utf8', env: GIT_ENV, stdio: ['ignore', 'pipe', 'ignore'] });
+
+test('the prune search finds every close in this repository, including the three named ones', () => {
+  const { prunes, warnings } = findPruneCommits(REPO_ROOT);
+  assert.equal(prunes.length, 25, 'this repository has 25 closes that deleted a phase SUMMARY');
+  assert.deepEqual(warnings, [], 'every one of them is single-parent, so none is refused');
+  const shas = prunes.map((p) => p.commit);
+  for (const named of ['72940906', 'a34b0c8a', '8d9bbac9']) {
+    assert.ok(shas.some((s) => s.startsWith(named)), `${named} is among the prune commits`);
+  }
+  assert.ok(prunes.every((p) => p.commit.length === 40), 'full shas travel (D-17)');
+});
+
+test('--full-history is load-bearing: without it the same search returns strictly fewer', () => {
+  assert.ok(PRUNE_ARGV.includes('--full-history'),
+    'the flag is in the shipped argv - this assertion is half of what stops it being dropped');
+  const control = PRUNE_ARGV.filter((a) => a !== '--full-history');
+  const count = (args) => gitIn(REPO_ROOT, args.map((a) => (a.startsWith('--format=') ? '--format=%H' : a)))
+    .split('\n').filter((l) => /^[0-9a-f]{40}$/.test(l.trim())).length;
+  const withFlag = count([...PRUNE_ARGV]);
+  const without = count(control);
+  assert.equal(withFlag, 25);
+  assert.ok(without < withFlag,
+    `git's default history simplification drops closes: ${without} without the flag, ${withFlag} with it`);
+  assert.equal(without, 4, 'measured 2026-08-23: 4 of 25 survive the simplification');
+});
+
+test('72940906 binds to the milestone label its own close appended to ARCHIVE.md', () => {
+  const { prunes } = findPruneCommits(REPO_ROOT);
+  const p = prunes.find((x) => x.commit.startsWith('72940906'));
+  assert.equal(p.label, 'v3.5.9');
+  assert.deepEqual(p.phases.map((x) => x.phase), ['1', '2']);
+  assert.equal(p.parent.length, 40, 'the single parent is the tree the phases are recovered from');
+  assert.equal(p.refused, null);
+});
+
+test('a close older than ARCHIVE.md itself reports an ABSENT label rather than guessing one', () => {
+  const { prunes } = findPruneCommits(REPO_ROOT);
+  const old = prunes.find((x) => x.commit.startsWith('8d9bbac9'));
+  assert.equal(old.label, null,
+    'ARCHIVE.md did not exist at v3.4.0, and the close subject line is not a label source (D-06)');
+  const labelled = prunes.filter((p) => p.label !== null);
+  assert.equal(labelled.length, 7, 'exactly the closes from v3.5.3 on, when ARCHIVE.md was created');
+});
+
+/**
+ * A repository with `closes` successive milestone closes, each deleting one
+ * phase directory's SUMMARY.md and appending its own `## <label>` heading to
+ * `.planning/ARCHIVE.md` - the shape `cmdMilestonePrune` writes.
+ * @param {string[]} labels
+ * @returns {string}
+ */
+function repoWithCloses(labels) {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-prune-'));
+  gitIn(dir, ['init', '-q', '-b', 'main']);
+  let archive = '# Archive\n';
+  labels.forEach((label, i) => {
+    const phase = String(i + 1);
+    const pdir = join(dir, '.planning', 'phases', phase);
+    mkdirSync(pdir, { recursive: true });
+    writeFileSync(join(pdir, 'SUMMARY.md'), `# ${label} phase ${phase}\n`);
+    gitIn(dir, ['add', '-A']);
+    execFileSync('git', ['-C', dir, 'commit', '-q', '-m', `feat: ${label} phase ${phase}`],
+      { env: { ...GIT_ENV, GIT_AUTHOR_DATE: `2026-01-0${i + 1}T00:00:00-05:00`, GIT_COMMITTER_DATE: `2026-01-0${i + 1}T00:00:00-05:00` }, stdio: 'ignore' });
+
+    gitIn(dir, ['rm', '-q', '-r', join('.planning', 'phases', phase)]);
+    archive += `\n## ${label}\n\n- \`phases/${phase}/SUMMARY.md\`: residue for ${label}\n`;
+    // `git rm -r` on the last tracked file under `.planning/` takes the empty
+    // directory with it, so the close re-creates it before writing ARCHIVE.md.
+    mkdirSync(join(dir, '.planning'), { recursive: true });
+    writeFileSync(join(dir, '.planning', 'ARCHIVE.md'), archive);
+    gitIn(dir, ['add', '-A']);
+    execFileSync('git', ['-C', dir, 'commit', '-q', '-m', `chore: prune ${label} completed phases`],
+      { env: { ...GIT_ENV, GIT_AUTHOR_DATE: `2026-01-0${i + 1}T12:00:00-05:00`, GIT_COMMITTER_DATE: `2026-01-0${i + 1}T12:00:00-05:00` }, stdio: 'ignore' });
+  });
+  return dir;
+}
+
+test('two closes in one repository each come back under their own label, in a stable order', () => {
+  const dir = repoWithCloses(['v9.0.0', 'v9.1.0']);
+  const first = findPruneCommits(dir);
+  const second = findPruneCommits(dir);
+  assert.equal(first.prunes.length, 2);
+  assert.deepEqual(first.prunes.map((p) => p.label), ['v9.1.0', 'v9.0.0'], 'newest close first');
+  assert.deepEqual(first.prunes.map((p) => p.phases.map((x) => x.phase)), [['2'], ['1']]);
+  assert.deepEqual(second, first, 'two runs over an unchanged repository answer identically');
+});
+
+test('a merge-shaped prune record is REPORTED, never answered out of an arbitrary parent', () => {
+  // The shipped argv cannot produce this record - measured on git 2.55.0, a
+  // merge matches no diff filter - so the bytes here are git's own, produced by
+  // the same log with --diff-merges=first-parent added, and the refusal is
+  // proved over them rather than over an invented string.
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-merge-'));
+  gitIn(dir, ['init', '-q', '-b', 'main']);
+  mkdirSync(join(dir, '.planning', 'phases', '1'), { recursive: true });
+  writeFileSync(join(dir, '.planning', 'phases', '1', 'SUMMARY.md'), '# s\n');
+  writeFileSync(join(dir, 'f.txt'), 'x\n');
+  gitIn(dir, ['add', '-A']);
+  gitIn(dir, ['commit', '-q', '-m', 'base']);
+  gitIn(dir, ['checkout', '-q', '-b', 'side']);
+  writeFileSync(join(dir, 'a.txt'), 'a\n');
+  gitIn(dir, ['add', '-A']);
+  gitIn(dir, ['commit', '-q', '-m', 'side']);
+  gitIn(dir, ['checkout', '-q', 'main']);
+  writeFileSync(join(dir, 'b.txt'), 'b\n');
+  gitIn(dir, ['add', '-A']);
+  gitIn(dir, ['commit', '-q', '-m', 'main']);
+  // `--no-commit` reports "stopped before committing as requested" and its exit
+  // status is not the thing under test here.
+  try { gitIn(dir, ['merge', '--no-ff', '--no-commit', 'side']); } catch { /* expected */ }
+  gitIn(dir, ['rm', '-q', join('.planning', 'phases', '1', 'SUMMARY.md')]);
+  gitIn(dir, ['commit', '-q', '-m', 'merge that also deletes the summary']);
+
+  assert.deepEqual(findPruneCommits(dir).prunes, [],
+    'the shipped argv does not surface a merge at all - which is why the guard is defensive');
+
+  const stdout = gitIn(dir, [...PRUNE_ARGV.slice(0, 1), '--diff-merges=first-parent', ...PRUNE_ARGV.slice(1)]);
+  const records = parsePruneRecords(stdout);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].parents.length, 2, 'git returned a two-parent prune record');
+  assert.equal(records[0].parent, null, 'so no parent tree is named');
+  assert.match(records[0].refused, /is a merge with 2 parents/);
+  assert.match(records[0].refused, /without picking one arbitrarily/);
 });
