@@ -160,3 +160,5 @@ anyway, and which is the exact collision this phase exists to make detectable.
   returns `lint:null, typecheck:null`), so any `// @ts-check` annotation on
   `planning-files.mjs` goes unchecked locally - Confident; if wrong: a type
   error ships that CI catches later. Carried forward from phase 1's open items.
+  [corrected by plan-1 deviation: `detect-commands --root .` returns
+  `typecheck: "npx tsc -p tsconfig.ci.json"`; only `lint` is null]
