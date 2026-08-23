@@ -1,0 +1,39 @@
+{
+  "phase": "1",
+  "trigger": "risk_surface",
+  "discriminator": "plan-3",
+  "round": 1,
+  "base": "b5f49bad",
+  "head": "2382a9a7",
+  "base_id": "b5f49bad6aee9d05eae6356ab9223e1aa4326b49",
+  "head_id": "2382a9a70f772e0b1db41888f5161b363205fd87",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/why-corpus.mjs",
+      "line": 802,
+      "severity": "medium",
+      "claim": "`closeOver` compares `%cI` timestamps as strings, but ISO-8601 strings with different UTC offsets do not sort chronologically. This can attach an unresolved commit to no close or to the wrong milestone.",
+      "failure_scenario": "Create a commit dated `2026-01-01T00:30:00+00:00`, then a pruning close dated `2026-01-01T00:00:00-01:00`. The close is actually later (01:00Z), so it should cover the commit, but `p.date >= when` is false lexicographically because `00:00` sorts before `00:30`. `/cad-why` consequently emits “no close has pruned this commit yet” and omits the milestone/archive residue despite a later close existing.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/why-corpus.mjs",
+        "line": 802,
+        "note": "The claim is correct and the code is as described: closeOver at why-corpus.mjs:806 compares %cI strings with >=, and two commits written under different UTC offsets do not string-sort chronologically. Ruled low rather than medium on reachability, not on correctness. Three conditions must hold together: the repository has commits at differing UTC offsets, it has been through a --mode delete close so the pruned-milestone recovery path runs at all, and the mis-ordered pair straddles a prune commit. The consequence is a mislabeled milestone on one /cad-why entry, not a wrong commit or a lost record. Queued as an open item with its fix named: compare Date.parse(p.date) >= Date.parse(when) with a guard for an unparseable date, and pin a mixed-offset pair in why-corpus.test.mjs."
+      },
+      "base_id": "b5f49bad6aee9d05eae6356ab9223e1aa4326b49",
+      "head_id": "2382a9a70f772e0b1db41888f5161b363205fd87"
+    }
+  ]
+}

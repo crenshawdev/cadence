@@ -11,6 +11,7 @@ files:
   - cadence-core/bin/why-render.test.mjs
   - cadence-core/bin/why.test.mjs
   - cadence-core/bin/lib/arg-contract.mjs
+  - cadence-core/bin/arg-contract.test.mjs
   - skills/cad-why/SKILL.md
   - cadence-core/references/COMMANDS.md
   - cadence-core/bin/weight-budgets.json

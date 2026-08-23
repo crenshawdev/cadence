@@ -105,7 +105,10 @@ readers (AC2). /cad-plan breaks it down.
   inventing a task-level edge the record does not carry. Nothing in a PLAN.md or
   SUMMARY.md structurally references a D-NN; the template's `## Context` is free
   prose. Reads `## Durable decisions` first with the documented `## Decisions`
-  fallback. Evidence: `cadence-core/bin/lib/planning-files.mjs:998-1007`
+  fallback [corrected by plan-2 deviation: the `## Decisions` fallback never
+  fires - `## Durable decisions` is present in 27 of 27 CONTEXT files, so
+  `parseContextDecisions` alone leaves 243 of 435 decision bullets (56%)
+  unreachable and D-08 read back as a false gap]. Evidence: `cadence-core/bin/lib/planning-files.mjs:998-1007`
   (`parseContextDecisions`); all 26 archived CONTEXT files carry
   `## Durable decisions`; 405 of 418 D-NN lines match the template shape.
 - D-11 (review edge): surviving review findings come from
@@ -132,7 +135,9 @@ readers (AC2). /cad-plan breaks it down.
 - D-13 (bulk output): the prescribing `/cad-why` call registers in
   `cadence-core/bin/lib/bulk-output.mjs` or the command carries a default entry
   cap, or self-verify check 20 reports an unclassified prescribing site and AC7
-  cannot pass. Raw `git log` bytes before any join already cross the 10,000-byte
+  cannot pass [corrected by plan-1 deviation: check 20 cannot report this site -
+  `BULK_SHAPES` watches only `trace render`, `recall` and `git diff`, so the
+  decision is met by its other arm, task 2's default entry cap of 10]. Raw `git log` bytes before any join already cross the 10,000-byte
   threshold on two of four sampled paths: `cadence-core/bin/planning.mjs` 21,684 B
   over 144 commits, `cadence-core/workflows/execute.md` 10,098 B over 68.
   Evidence: `cadence-core/references/conventions.md:144-147`.
