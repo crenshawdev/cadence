@@ -36,6 +36,8 @@ Phases are added with `/cad-phase add`.
 ## Phases
 
 - [x] **Phase 1: The corpus, read back at a file and line** - `/cad-why` joins a path to the decision that put it there, and reports the gap rather than guessing
+- [ ] **Phase 2: The read-back gate** - count what recall surfaced against what the plan cited, and report the plan that cited none of it
+- [ ] **Phase 3: The fast path leaves a record** - `/cad-task` becomes findable by recall and priced by a trace bracket, with none of the phase machinery
 
 ## Phase Details
 
@@ -92,4 +94,97 @@ claim of the command is that it quotes.
 6. The join is a deterministic seam script: running it twice over an unchanged
    tree returns byte-identical output, and it dispatches no subagent.
 7. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with
+   `problems: []`, and `node cadence-core/bin/test.mjs` reports 0 failures.
+
+### Phase 2: The read-back gate
+**Goal:** at plan time, count the prior decisions, deviations and captures the
+recall pass surfaced against how many the produced plan actually cites, and
+REPORT a plan that cited none of a non-empty set - so the Core Value's claim
+that the record "comes back at the moment it matters" finally has a number
+behind it.
+
+**Requirements:** RBK-01
+
+Recall ships as a BM25 subcommand and is injected into `cad-context`,
+`cad-planner` and `cad-debug`, and nothing anywhere checks that it landed. A
+planner can receive twelve prior decisions and cite none of them, and the run
+looks identical to one where recall surfaced nothing at all. Those two states
+need opposite fixes and no artifact on disk separates them today.
+
+Advisory, never a refusal. A near-zero citation count has two readings - the
+planner ignored a good record, or the planner correctly ignored a useless one -
+and this phase exists to produce the data that settles which, not to act on it.
+It becomes a gate in a later cycle once there is a legitimate-zero rate to
+threshold against. A gate shipped before that data would be a number picked out
+of the air, enforced.
+
+Phase 1 is what makes this readable rather than circular. `/cad-why` established
+by hand that the corpus does answer the question when it is walked, so a zero
+count here can no longer be explained away as the record being empty.
+
+**Success Criteria:**
+
+1. A seam subcommand emits one JSON object carrying, for a planned phase, the
+   count and ids of what the recall pass surfaced and the count and ids of what
+   the produced PLAN cites - D-NN references, CAPTURE ids and prior SUMMARY open
+   items - with the cited set as an explicit list rather than a number alone.
+2. `/cad-plan` runs the count after the planner returns and REPORTS a plan citing
+   zero of a non-empty surfaced set. It never refuses the plan, never
+   re-dispatches the planner, and never edits the plan to add a citation.
+3. The count reaches `trace.jsonl` as its own event, so the legitimate-zero rate
+   is measurable across phases rather than visible only in the session that
+   produced it.
+4. A phase whose recall pass surfaced nothing reports the empty set as such, and
+   is distinguishable in the record from a non-empty set cited zero times - the
+   two readings this phase exists to separate are separated on disk.
+5. Running the count twice over an unchanged plan returns byte-identical output,
+   and the count dispatches no subagent.
+6. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with
+   `problems: []`, and `node cadence-core/bin/test.mjs` reports 0 failures.
+
+### Phase 3: The fast path leaves a record
+**Goal:** `/cad-task` leaves a record recall can find and a trace bracket that
+prices it, so the corpus and the per-role accounting both cover the path most
+real work actually takes.
+
+**Requirements:** FST-01, FST-02, FST-03
+
+The dogfooding bias is the whole argument. The phase spine got the design
+attention because Cadence's own work is always the heavy kind - a context step,
+a plan gate, an executor contract, per-plan risk checks, an adjudicated triage
+gate, a summary, a verify walk and a trace bracket - while the fast path got an
+inline mode and a `--plan` flag. Below roughly half a day of work the phase
+overhead dominates, so the fast path is where the majority of real commits land,
+and it is precisely where the corpus has a hole.
+
+`FST-02` is already delivered and is carried here to be PINNED, not rebuilt. The
+risk-surface check on the committed range landed in `workflows/task.md` at
+`23daf54f` (2026-08-15) and was hardened at `78164874` (2026-08-18), both before
+this cycle opened; the requirement was filed 2026-08-16, mid-flight. What it
+still lacks is a regression test, so nothing stops a later edit removing it
+silently.
+
+The guarantees without the machinery is the entire ask. This phase explicitly
+does NOT add a context step, a plan gate or a verify walk to `/cad-task`, and it
+does not make the inline path create `.planning/` scaffolding where none exists -
+`Zero planning artifacts for inline tasks` is that workflow's own success
+criterion and it survives this phase intact.
+
+**Success Criteria:**
+
+1. A completed `/cad-task` run leaves a record `recall` returns for a query
+   naming what the task did, on BOTH the inline and the planned path, and the
+   inline path still creates no `.planning/` directory it did not already have.
+2. The record carries the task's commits and files in the corpus's own grammar,
+   so `/cad-why` on a file a task touched resolves to that task instead of
+   reporting the gap - checked against a real task commit, not a fixture.
+3. `/cad-task` opens and closes a trace bracket, so the run's tokens and turns
+   are attributed to the task path in per-role accounting rather than missing
+   from it, and a failed or abandoned run closes its bracket exactly once.
+4. A regression test in `cadence-core/bin/` fails if the `risk-check run
+   --phase 0` step or its `written: true` withholding is removed from
+   `workflows/task.md`, pinning FST-02's shipped behavior.
+5. `/cad-task` gains no context step, no plan gate and no verify walk, and the
+   record it writes costs no subagent on the inline path.
+6. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with
    `problems: []`, and `node cadence-core/bin/test.mjs` reports 0 failures.
