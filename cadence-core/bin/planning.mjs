@@ -4642,7 +4642,10 @@ function resolveRange(base, head) {
 
 function cmdRiskCheckRun(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'risk-check run needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'risk-check run needs --phase <N>',
+      'pass --phase <N> for the phase whose committed range is being checked, then re-run');
+  }
   const n = parsedPhase.value;
 
   // THE WORKER KEY, through the one grammar both faces read (RSK-03, D-02).
@@ -4658,7 +4661,9 @@ function cmdRiskCheckRun(dir, opts) {
     const parsedPlan = requirePlanKey(opts.plan);
     if (!parsedPlan.ok) {
       return fail('bad-args', 'risk-check run --plan needs the worker key after it - a plan number '
-        + 'or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+        + 'or the key the dispatch was bracketed under (`1-fix`): --plan <k>',
+      'send the key this dispatch was bracketed under - the number for PLAN-<k>.md, or the'
+      + ' non-numeric key a fix pass used - then re-run');
     }
     plan = parsedPlan.key;
   }
@@ -4668,7 +4673,9 @@ function cmdRiskCheckRun(dir, opts) {
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   if (!base || !head) {
-    return fail('bad-args', 'risk-check run needs --base <ref> and --head <ref>, neither opening with `-`');
+    return fail('bad-args', 'risk-check run needs --base <ref> and --head <ref>, neither opening with `-`',
+      'name both ends of the range this check covers, as refs this repository can resolve, then'
+      + ' re-run this check');
   }
 
   // The scope of the check, narrowed only by what the caller named. A token
@@ -4687,7 +4694,9 @@ function cmdRiskCheckRun(dir, opts) {
   const { config: surfaceConfig, warnings: surfaceWarnings } = mergeLayers(join(dir, 'config.json'));
   if (surfaceWarnings.length) {
     return fail('surfaces-unanswered',
-      `a config layer did not parse, so the surface question cannot be read as answered: ${surfaceWarnings.join('; ')}`);
+      `a config layer did not parse, so the surface question cannot be read as answered: ${surfaceWarnings.join('; ')}`,
+      'repair the config layer the detail names so it parses as JSON, then re-run - this gate is'
+      + ' blocking and there is no arm that proceeds while the answer cannot be read');
   }
   const surfaceTriggers = isPlainObject(surfaceConfig.review)
     && isPlainObject(surfaceConfig.review.triggers) ? surfaceConfig.review.triggers : {};
@@ -4699,12 +4708,16 @@ function cmdRiskCheckRun(dir, opts) {
     const raw = typeof opts.surfaces === 'string' ? opts.surfaces : '';
     const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
     if (!tokens.length) {
-      return fail('bad-args', 'risk-check run --surfaces needs a comma-separated list after it: --surfaces <a,b,c>');
+      return fail('bad-args', 'risk-check run --surfaces needs a comma-separated list after it: --surfaces <a,b,c>',
+        "list this run's scope as one comma-separated value, or drop --surfaces to use the set the"
+        + ' project already answered');
     }
     const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
     if (unknown.length) {
       return fail('bad-args',
-        `risk-check run --surfaces names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
+        `risk-check run --surfaces names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`,
+        'correct the token(s) the detail names against the list beside them, then re-run - dropping'
+        + ' one instead would narrow a blocking gate to a scope nobody chose');
     }
     categories = [...new Set(tokens)];
   } else {
@@ -4731,7 +4744,10 @@ function cmdRiskCheckRun(dir, opts) {
         'no config layer answered review.triggers.risk_surface.surfaces, so detection would run '
         + `on the ${CATEGORIES.length} categories nobody chose. Run \`detect-surfaces --root .\` `
         + 'and put the choice to the user (references/review-triggers.md), or pass '
-        + '--surfaces <a,b,c> to state this run\'s scope explicitly');
+        + '--surfaces <a,b,c> to state this run\'s scope explicitly',
+        'do one of the two the detail names: put the question to the user and save the answer at'
+        + ' review.triggers.risk_surface.surfaces, or pass --surfaces for this run alone. Answering'
+        + ' it is what clears this gate - there is no arm that skips the scan');
     }
     categories = [...new Set(decided.surfaces)];
   }
@@ -4838,7 +4854,9 @@ function cmdRiskCheckRun(dir, opts) {
   // A range that could not be READ is never ok: a caller must not be able to
   // take "git refused" for "clean".
   if (diffError !== null) {
-    return emit({ ok: false, reason: 'no-diff', detail: diffError, ...envelope });
+    return emit({ ok: false, reason: 'no-diff', detail: diffError, ...envelope,
+      hint: 'name a --base and --head this repository can resolve, then re-run this check - git'
+        + ' could not read the range, so nothing here says the diff is clean' });
   }
   return ok(envelope);
 }
@@ -4879,7 +4897,9 @@ function cmdTaskRecord(dir, opts) {
   if (!isTaskSlug(opts.slug)) {
     return fail('bad-args',
       'task-record --slug must be ONE path segment of lowercase letters, digits and '
-      + `single hyphens, at most ${MAX_SLUG_LENGTH} characters: --slug <name>`);
+      + `single hyphens, at most ${MAX_SLUG_LENGTH} characters: --slug <name>`,
+      'send a short kebab-case name for the task - `fix-login-redirect` - with no slashes, dots or'
+      + ' spaces; it becomes the directory this record is written into');
   }
   const slug = String(opts.slug);
 
@@ -4890,7 +4910,9 @@ function cmdTaskRecord(dir, opts) {
   const head = riskRef(opts.head);
   if (!base || !head) {
     return fail('bad-args',
-      'task-record needs --base <ref> and --head <ref>, neither opening with `-`');
+      'task-record needs --base <ref> and --head <ref>, neither opening with `-`',
+      'name both ends of what this task shipped, as refs this repository can resolve, then re-run'
+      + ' this record');
   }
 
   // The prose, through the ONE reader every `--<field>-file` flag goes through.
@@ -4898,7 +4920,10 @@ function cmdTaskRecord(dir, opts) {
   // puts caller-derived prose inside a double-quoted shell word, where a `$(...)`
   // executes before Node starts - and `--text` stays for a human at a shell.
   const resolvedText = resolveTextFlag(opts, 'text', 'task-record');
-  if (!resolvedText.ok) return fail('bad-args', resolvedText.detail);
+  if (!resolvedText.ok) {
+    return fail('bad-args', resolvedText.detail,
+      'pass --text or --text-file, never both, and point --text-file at a readable, non-empty file');
+  }
   const text = resolvedText.value !== undefined
     ? resolvedText.value
     // parseArgs mints the boolean `true` for a valueless flag, so a bare
@@ -4906,7 +4931,9 @@ function cmdTaskRecord(dir, opts) {
     : (typeof opts.text === 'string' ? opts.text.trim() : '');
   if (!text) {
     return fail('bad-args', 'task-record needs what shipped: --text-file <path> '
-      + '(workflows) or --text "<text>" (typed by hand)');
+      + '(workflows) or --text "<text>" (typed by hand)',
+      'write a sentence or two saying what this task changed and pass it through --text-file, or'
+      + ' --text at a shell - it is what a later /cad-why reads back off this range');
   }
 
   // ONE git call per figure, never one per commit. `%x1f` separates the fields
@@ -5049,11 +5076,15 @@ function cmdTaskRecord(dir, opts) {
   // nothing".
   if (rangeError !== null) {
     return emit({ ok: false, reason: 'no-range', detail: rangeError, slug, base, head,
-      written: false, trace });
+      written: false, trace,
+      hint: 'name a --base and --head this repository can resolve, then re-run this record - no'
+        + ' record was written, and this is not saying the task touched nothing' });
   }
   if (writeError !== null) {
     return emit({ ok: false, reason: 'no-record', detail: writeError, slug, base, head,
-      written: false, trace });
+      written: false, trace,
+      hint: 'fix what the detail names about the path and re-run - the commits are in git either'
+        + ' way, but nothing has been recorded about them yet' });
   }
   ok({
     slug,
@@ -5122,7 +5153,10 @@ const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override', 'deferr
 
 function cmdRiskCheckStatus(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'risk-check status needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'risk-check status needs --phase <N>',
+      'pass --phase <N> for the phase whose fires are being reported, then re-run');
+  }
   const n = parsedPhase.value;
 
   // The triple is all three or none. A plan number alone is NOT a range
@@ -5135,7 +5169,9 @@ function cmdRiskCheckStatus(dir, opts) {
   if (given.length) {
     if (given.length !== 3) {
       return fail('bad-args',
-        'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three');
+        'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three',
+        'send all three to ask about ONE range, or none of them for the phase-wide answer - two of'
+        + ' the three would report on a record some other range left');
     }
     // The SAME predicate `risk-check run` reads (D-02). One consultation each,
     // so the face that enforces the question and the face that reports it
@@ -5143,12 +5179,16 @@ function cmdRiskCheckStatus(dir, opts) {
     const parsedPlan = requirePlanKey(opts.plan);
     if (!parsedPlan.ok) {
       return fail('bad-args', 'risk-check status --plan needs the worker key after it - a plan '
-        + 'number or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+        + 'number or the key the dispatch was bracketed under (`1-fix`): --plan <k>',
+      'send the key the dispatch was bracketed under - the number for PLAN-<k>.md, or the'
+      + ' non-numeric key a fix pass used - then re-run');
     }
     const base = riskRef(opts.base);
     const head = riskRef(opts.head);
     if (!base || !head) {
-      return fail('bad-args', 'risk-check status needs --base <ref> and --head <ref>, neither opening with `-`');
+      return fail('bad-args', 'risk-check status needs --base <ref> and --head <ref>, neither opening with `-`',
+        'name both ends of the range you are asking about, as refs this repository can resolve,'
+        + ' then re-run this check');
     }
     // The COMMIT PAIR is the identity, not the spelling (see resolveRange), so
     // the asked range is resolved here and compared as ids below. A ref that
@@ -5874,7 +5914,11 @@ function groundCitations(top, headId, entries) {
  */
 function fireIdentity(face, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) { fail('bad-args', `${face} needs --phase <N>`); return null; }
+  if (!parsedPhase.ok) {
+    fail('bad-args', `${face} needs --phase <N>`,
+      `pass --phase <N> for the phase this fire belongs to, then re-run the ${face}`);
+    return null;
+  }
   // The caller's OWN spelling, the way `uatFile` addresses a phase: every use
   // of it is a path or a label, never arithmetic.
   const n = parsedPhase.raw;
@@ -5886,7 +5930,9 @@ function fireIdentity(face, opts) {
       fail('bad-args',
         `${face} ${flag} reaches a FILENAME, so it takes letters, digits, _ and - `
         + 'only, opening with a letter or a digit and at most 64 characters - got '
-        + `${typeof raw === 'string' ? JSON.stringify(raw) : 'nothing'}`);
+        + `${typeof raw === 'string' ? JSON.stringify(raw) : 'nothing'}`,
+        `re-send ${flag} spelled with those characters only - it becomes part of this artifact's`
+        + ' filename, so nothing else can be stored; nothing was written');
       return null;
     }
   }
@@ -5902,7 +5948,10 @@ function fireIdentity(face, opts) {
     if (!parsedRound.ok || parsedRound.value < 1) {
       fail('bad-args',
         `${face} --round needs the re-arm round after it, a whole number of at `
-        + 'least 1: --round 2');
+        + 'least 1: --round 2',
+        'send --round 2 for the first re-arm of this trigger, or leave the flag off for a first'
+        + " fire - without it a re-arm would overwrite round one's record, which is the one an"
+        + ' auditor reads');
       return null;
     }
     round = parsedRound.value;
@@ -5914,7 +5963,9 @@ function fireIdentity(face, opts) {
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   if (!base || !head) {
-    fail('bad-args', `${face} needs --base <ref> and --head <ref>, neither opening with \`-\``);
+    fail('bad-args', `${face} needs --base <ref> and --head <ref>, neither opening with \`-\``,
+      `name both ends of the range this fire reviewed, as refs this repository can resolve, then`
+      + ` re-run the ${face}`);
     return null;
   }
 
@@ -5964,7 +6015,10 @@ function fireHome(dir, n, what) {
   fail('no-phase-dir',
     `neither phases/${n}/ nor deferred/${n}/ is a directory under ${dir} - the ${what} is `
     + 'written BESIDE the sibling REVIEW file, or beside the queue member a milestone close '
-    + 'carried out of that phase, so one of the two has to exist already');
+    + 'carried out of that phase, so one of the two has to exist already',
+    `check the --phase spelling first - it addresses phases/${n}/ verbatim. If the milestone close `
+    + `already carried this phase's queue out, run \`deferred carry --phase ${n}\`, which is what `
+    + 'creates the second home');
   return null;
 }
 
@@ -5980,12 +6034,18 @@ function cmdAdjudication(dir, opts) {
   if (opts.payload === undefined) {
     return fail('bad-args',
       'adjudication needs --payload <file> - the composed payload is a FILE, never '
-      + 'inline JSON and never stdin');
+      + 'inline JSON and never stdin',
+      'write the composed rulings to a file and pass --payload <path> - reviewer text carries'
+      + ' arbitrary quoting, which is why it never rides the command line');
   }
   const payload = readJsonPayload(opts.payload);
   if (!payload.ok) return;
   const built = buildEntries(payload.value);
-  if (!built.ok) return fail('bad-payload', built.detail);
+  if (!built.ok) {
+    return fail('bad-payload', built.detail,
+      'repair the payload file at the point the detail names, then re-run - nothing was written,'
+      + ' so the fire is still unrecorded');
+  }
 
   const range = resolveRange(base, head);
   if (!range.ok) {
@@ -6128,12 +6188,18 @@ function cmdDeferredRecord(dir, opts) {
   if (opts.payload === undefined) {
     return fail('bad-args',
       'deferred record needs --payload <file> - the reviewer\'s returned object is a '
-      + 'FILE, never inline JSON and never stdin');
+      + 'FILE, never inline JSON and never stdin',
+      'pass --payload <path> naming the file the fire already wrote - the same object that went'
+      + ' into the sibling REVIEW-<trigger>-<discriminator>.md');
   }
   const payload = readJsonPayload(opts.payload);
   if (!payload.ok) return;
   const queued = buildQueue(payload.value);
-  if (!queued.ok) return fail('bad-payload', queued.detail);
+  if (!queued.ok) {
+    return fail('bad-payload', queued.detail,
+      'repair the payload file at the point the detail names, then re-run - nothing was queued, and'
+      + ' an unqueued finding is one /cad-land will never see');
+  }
 
   // RESOLVED, never the caller's spelling (D-08): a queue member is read at
   // land time, in another session, and `HEAD` will name a different commit by
@@ -6362,7 +6428,9 @@ function cmdDeferredList(dir, opts) {
   if ('phase' in opts) {
     const parsed = requirePhaseArg(opts.phase);
     if (!parsed.ok) {
-      return fail('bad-args', 'deferred list --phase needs a phase number (N or N.M)');
+      return fail('bad-args', 'deferred list --phase needs a phase number (N or N.M)',
+        'send a plain phase number, or drop --phase to list every finding still queued across the'
+        + ' milestone');
     }
     // The caller's OWN spelling, the way every other phase-addressed read in
     // this file works: the value is a directory component before it is
@@ -6423,7 +6491,11 @@ function cmdDeferredList(dir, opts) {
 // ---------------------------------------------------------------------------
 function cmdDeferredCarry(dir, opts) {
   const parsed = requirePhaseArg(opts.phase);
-  if (!parsed.ok) return fail('bad-args', 'deferred carry needs --phase <N>');
+  if (!parsed.ok) {
+    return fail('bad-args', 'deferred carry needs --phase <N>',
+      'pass --phase <N> for the phase whose queue is being carried out, then re-run - this runs'
+      + ' BEFORE milestone-prune, which deletes the directory the members sit in');
+  }
   const n = parsed.raw;
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
 
@@ -6449,7 +6521,9 @@ function cmdDeferredCarry(dir, opts) {
     return fail('carry-dest-unusable',
       'deferred/ exists and is not a real directory'
       + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-      + ' - move or remove it, then re-run');
+      + ' - move or remove it, then re-run',
+      'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
+      + ' are still in the phase directory the prune deletes');
   }
 
   const dest = join(dir, 'deferred', n);
@@ -6458,7 +6532,9 @@ function cmdDeferredCarry(dir, opts) {
     return fail('carry-dest-unusable',
       `deferred/${n} exists and is not a real directory`
       + `${destStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-      + ' - move or remove it, then re-run');
+      + ' - move or remove it, then re-run',
+      'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
+      + ' are still in the phase directory the prune deletes');
   }
 
   const q = readQueue(dir, n);
