@@ -186,15 +186,27 @@ down.
 - [ ] AC3: `node cadence-core/bin/planning.mjs trace render --phase 0` shows the
       run's bracket paired under a per-run correlation id with `cad-task` in the
       `roles` block; on the inline arm its token and turn totals read
-      `unrecorded`, and that arm's trace holds zero `lifecycle/dispatch` events.
+      `unrecorded`, and no `lifecycle/dispatch` event on that arm names any role
+      but `cad-task` - the record costs no subagent there.
       Two runs of the same slug produce two brackets, neither in `unpaired`.
+      (Amended at UAT, 2026-08-23, to what PLAN-3.md's Notes already recorded:
+      the clause as first written - "that arm's trace holds zero
+      `lifecycle/dispatch` events" - contradicts this criterion's own first
+      clause, since `renderTrace` pairs a terminal only against a `dispatch` and
+      a role row exists only because one does. D-03 is durable and says a REAL
+      bracket opens on both paths, so it wins.)
 - [ ] AC4: `node cadence-core/bin/test.mjs` fails when either the
       `risk-check run --phase 0` line or the `written: false` withholding
       sentence is removed from `cadence-core/workflows/task.md`, and the failure
       message names which one is missing.
 - [ ] AC5: `cadence-core/workflows/task.md` names no context step, no plan gate
-      and no verify walk: a grep for `cad-context`, `cad-plan-checker` and
-      `cad-verify` in that file returns nothing.
+      and no verify walk: a grep for `cad-plan-checker` and `cad-verify` in that
+      file returns nothing, and the `cad-context` count stays at exactly 2 with
+      both sentences byte-identical - `:35` and `:254`, which route work OUT to
+      the phase spine rather than adding a context step to `/cad-task`.
+      (Amended at UAT, 2026-08-23, to what PLAN-3.md's Notes already recorded:
+      the grep as first written already failed against the shipped file, which
+      this phase never touched on those two lines.)
 - [ ] AC6: `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true`
       with `problems: []`, and `node cadence-core/bin/test.mjs` reports 0
       failures.

@@ -47,10 +47,24 @@ in the per-role accounting.
 
 ## Deviations
 
-None - plans executed as written. Two in-plan repairs are recorded above rather
-than as deviations: `b6c6ebf5` fixed a syntax error plan 2's own task 2 shipped
-(the suite loaded the file and 0 of 40 cases ran), and `71234385` is the fix the
-blocking `risk_surface` gate required of plan 1.
+Two acceptance criteria were delivered as re-read rather than as written, and
+CONTEXT.md has been amended to match (UAT, 2026-08-23). PLAN-3.md's Notes hold
+the full reasoning for both:
+
+- AC3's third clause ("that arm's trace holds zero `lifecycle/dispatch` events")
+  contradicts its own first clause - a paired bracket and a `roles.cad-task` row
+  exist only because a dispatch event does. Delivered as ROADMAP criterion 5
+  states it: no dispatch on the inline arm names any role but `cad-task`.
+- AC5's grep already failed against the shipped `cadence-core/workflows/task.md`,
+  which names `/cad-context` at `:35` and `:254` and which this phase never
+  touched on those lines. Both sentences route work OUT to the phase spine.
+  Delivered as: `cad-plan-checker` and `cad-verify` appear nowhere and the
+  `cad-context` count stays at exactly 2, byte-identical.
+
+Otherwise plans executed as written. Two in-plan repairs are recorded above
+rather than as deviations: `b6c6ebf5` fixed a syntax error plan 2's own task 2
+shipped (the suite loaded the file and 0 of 40 cases ran), and `71234385` is the
+fix the blocking `risk_surface` gate required of plan 1.
 
 ## Open items
 
