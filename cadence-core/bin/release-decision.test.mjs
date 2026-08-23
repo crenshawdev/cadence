@@ -296,6 +296,39 @@ test('changelog: empty url omits the link reference line entirely (no malformed 
   assert.ok(r.text.includes('[1.0.0]: https://github.com/crenshawdev/cadence/releases'));
 });
 
+const FENCED_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [Unreleased]',
+  '',
+  '- a bullet',
+  '```',
+  '## [9.9.9] - inside a fence',
+  '```',
+  '- a trailing bullet',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+test('changelog: a `## ` line inside a fenced block is not a heading - the fence stays contiguous (D-09)', () => {
+  const r = prependChangelogEntry(FENCED_FIXTURE, {
+    version: '2.0.0', date: '2026-08-22', url: 'https://x/releases/tag/v2.0.0',
+  });
+  assert.equal(r.changed, true);
+  // The fence-open, the fenced `## ` line and the fence-close stay
+  // contiguous - no dated heading spliced between them.
+  assert.ok(r.text.includes('```\n## [9.9.9] - inside a fence\n```'),
+    'the fence-open, fenced heading and fence-close stay contiguous');
+  // The new dated heading lands above the real, unfenced [1.0.0] heading.
+  assert.ok(r.text.indexOf('## [2.0.0] - 2026-08-22') < r.text.indexOf('## [1.0.0]'),
+    'the dated heading sits above the unfenced released heading');
+});
+
 // --- promoteUnreleased ------------------------------------------------------
 
 const STAGED_FIXTURE = [
@@ -435,6 +468,114 @@ test('promote: sectionEmpty is false once content landed, true when the section 
   assert.equal(scaffoldThenPromote(STAGED_FIXTURE, '2.0.0').sectionEmpty, false);
   const nothingStaged = STAGED_FIXTURE.replace('### Removed\n- the rail-3 evasion grammar\n', '');
   assert.equal(scaffoldThenPromote(nothingStaged, '2.0.0').sectionEmpty, true);
+});
+
+test('changelog+promote: scaffolding then promoting puts the dated heading above the fence-open line, all five body lines between it and [1.0.0] (D-09)', () => {
+  const r = scaffoldThenPromote(FENCED_FIXTURE, '2.0.0', '2026-08-22');
+  assert.equal(r.changed, true);
+  const iNew = r.text.indexOf('## [2.0.0] - 2026-08-22');
+  const iBullet = r.text.indexOf('- a bullet');
+  const iFence = r.text.indexOf('```\n## [9.9.9] - inside a fence\n```');
+  const iTrailingBullet = r.text.indexOf('- a trailing bullet');
+  const iOld = r.text.indexOf('## [1.0.0]');
+  assert.ok(iNew >= 0 && iNew < iBullet, 'the dated heading sits above the fence-open line');
+  assert.ok(iBullet < iFence, 'the staged bullet precedes the fence, still contiguous');
+  assert.ok(iFence < iTrailingBullet, 'the fenced block precedes the trailing bullet');
+  assert.ok(iTrailingBullet < iOld, 'and the whole body sits above the old release');
+});
+
+const HEADING_ONLY_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [Unreleased]',
+  '',
+  '### Added',
+  '',
+  '### Fixed',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+test('promote: a body of only ###/#### subheadings reports sectionEmpty:true (D-03)', () => {
+  const r = scaffoldThenPromote(HEADING_ONLY_FIXTURE, '2.0.0');
+  assert.equal(r.sectionEmpty, true);
+});
+
+const PROSE_ONLY_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [Unreleased]',
+  '',
+  'A prose paragraph describing the change, with no bullet.',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+test('promote: a prose-only body with no bullets reports sectionEmpty:false (D-03)', () => {
+  const r = scaffoldThenPromote(PROSE_ONLY_FIXTURE, '2.0.0');
+  assert.equal(r.sectionEmpty, false);
+});
+
+const INNER_REF_LAST_SECTION_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [2.0.0] - 2026-08-03',
+  '',
+  '## [Unreleased]',
+  '',
+  '- closes [#87]',
+  '[#87]: https://git.example/issues/87',
+  '',
+].join('\n');
+
+test('promote: a last-section body ending in a bare-key ref promotes BOTH the bullet and the definition (D-05)', () => {
+  const r = promoteUnreleased(INNER_REF_LAST_SECTION_FIXTURE, '2.0.0');
+  assert.equal(r.changed, true);
+  const iNew = r.text.indexOf('## [2.0.0]');
+  const iBullet = r.text.indexOf('- closes [#87]');
+  const iRef = r.text.indexOf('[#87]: https://git.example/issues/87');
+  assert.ok(iNew < iBullet, 'the bullet is inside the dated section');
+  assert.ok(iBullet < iRef, 'the #87 definition follows its bullet');
+  const lines = r.text.split('\n');
+  const unrelAt = lines.findIndex((l) => /^## \[Unreleased\]/.test(l));
+  assert.ok(unrelAt > lines.indexOf('[#87]: https://git.example/issues/87'),
+    'the Unreleased stub now sits below the promoted content, nothing stranded');
+});
+
+const TRAILING_REF_NAMES_HEADING_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '## [Unreleased]',
+  '',
+  '- staged work',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+test('promote: a file-final ref naming an EXISTING heading stays in the trailing block, outside the promoted body (D-05)', () => {
+  const r = promoteUnreleased(TRAILING_REF_NAMES_HEADING_FIXTURE, '1.0.0');
+  assert.equal(r.changed, true);
+  const lines = r.text.split('\n');
+  const iBullet = lines.indexOf('- staged work');
+  const iRef = lines.indexOf('[1.0.0]: https://x/releases');
+  const iUnrel = lines.findIndex((l) => /^## \[Unreleased\]/.test(l));
+  assert.ok(iBullet >= 0 && iBullet < iUnrel, 'the bullet promoted up into the dated section, above the Unreleased stub');
+  assert.ok(iRef > iUnrel, 'the ref definition is untouched, still after the Unreleased stub at EOF');
 });
 
 test('promote: total on junk input - a non-string text and a falsy version never throw', () => {

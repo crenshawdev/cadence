@@ -2211,3 +2211,159 @@ test('RDX-01: suggest.md qualifies its no-tweak line to CONFIG KEYS and states t
   assert.ok(/relay the remedy its `evidence` names/.test(present),
     'suggest.md does not tell the composer to relay the remedy the evidence names');
 });
+
+// --- REL/D-07: every verdict code the pure core can return reaches both docs -
+
+/**
+ * The `code:` string literals inside `decideManifestBump`'s BODY: the
+ * EXECUTABLE set, read from the source rather than from either prose list.
+ * Deriving it from one list and comparing against the other would pass while
+ * both were stale together, which is exactly how `unparseable-version`,
+ * `downgrade` and `not-an-upgrade` stayed unnamed in release-bump.mjs's header
+ * for two release cycles. helper-census.test.mjs is this tree's precedent for
+ * a test that regexes module source.
+ */
+function verdictCodes(src) {
+  const start = src.indexOf('export function decideManifestBump(');
+  assert.ok(start >= 0, 'decideManifestBump is no longer declared in lib/release-decision.mjs');
+  const end = src.indexOf('\n}\n', start);
+  assert.ok(end > start, 'could not find the closing brace of decideManifestBump');
+  const body = src.slice(start, end);
+  return [...new Set([...body.matchAll(/\bcode: '([a-z][a-z-]*)'/g)].map((m) => m[1]))];
+}
+
+/** The run of leading `//` lines of a script, past its shebang: its header. */
+function headerComment(src) {
+  const out = [];
+  for (const line of src.split('\n')) {
+    if (!out.length && line.startsWith('#!')) continue;
+    if (!line.startsWith('//')) break;
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+/** The `/** ... *\/` block immediately above `decl`. */
+function jsdocAbove(src, decl) {
+  const at = src.indexOf(decl);
+  assert.ok(at >= 0, `${decl} is no longer declared`);
+  const open = src.lastIndexOf('/**', at);
+  assert.ok(open >= 0, `no JSDoc block above ${decl}`);
+  const close = src.indexOf('*/', open);
+  assert.ok(close > open && close < at, `the JSDoc block above ${decl} does not close before it`);
+  return src.slice(open, close);
+}
+
+test('every decideManifestBump verdict code is named in BOTH documents (D-07)', () => {
+  const core = doc('cadence-core', 'bin', 'lib', 'release-decision.mjs');
+  const seam = doc('cadence-core', 'bin', 'release-bump.mjs');
+
+  const codes = verdictCodes(core);
+  // Non-vacuity first: a regex that matched nothing would otherwise pass green
+  // over an empty loop, which is the same silence this test exists to break.
+  const SHIPPED = ['no-target-version', 'unparseable-version', 'no-version-field',
+    'already-at-target', 'downgrade', 'not-an-upgrade', 'bump'];
+  for (const code of SHIPPED) {
+    assert.ok(codes.includes(code),
+      `the extraction missed \`${code}\`, a code decideManifestBump ships: ${JSON.stringify(codes)}`);
+  }
+  assert.ok(codes.length >= SHIPPED.length,
+    `extracted fewer codes than ship today: ${JSON.stringify(codes)}`);
+
+  const header = headerComment(seam);
+  assert.ok(header.length > 500, 'release-bump.mjs\'s leading header comment block did not parse');
+  const jsdoc = jsdocAbove(core, 'export function decideManifestBump(');
+
+  // Word-boundary, so `bump` is not satisfied by `partial-bump`. `bump` IS
+  // also this seam's subcommand name, so its presence in the header is not
+  // distinguishing - every OTHER code has to be written down on purpose.
+  const named = (text, code) => new RegExp(`(?<![\\w-])${code}(?![\\w-])`).test(text);
+  for (const code of codes) {
+    assert.ok(named(header, code),
+      `verdict code \`${code}\` is missing from cadence-core/bin/release-bump.mjs's leading `
+      + 'header comment block: the header claims to name the codes it emits verbatim as `reason`, '
+      + 'so a caller reading that list cannot branch on this one');
+    assert.ok(named(jsdoc, code),
+      `verdict code \`${code}\` is missing from decideManifestBump's JSDoc in `
+      + 'cadence-core/bin/lib/release-decision.mjs: that block declares the CLOSED set it owns');
+  }
+});
+
+
+// --- FRM/D-12: every frontmatter grammar code reaches its reference table ----
+
+/**
+ * The frontmatter grammar's code set, read from EXECUTABLE source: every
+ * kebab-case single-quoted literal between `scanValue`'s declaration and the
+ * end of `parsePlanFiles`, with comments stripped first so prose naming a code
+ * cannot stand in for the code being raised.
+ *
+ * From the SOURCE and not from a second prose list, for the reason
+ * `verdictCodes` above states: a prose-to-prose comparison passes while both
+ * lists are stale together. Nothing tied this module to
+ * references/plan-frontmatter.md before this test.
+ *
+ * Bounded by SYMBOL, never by line number, and bounded at all because the same
+ * module defines `active-non-id-bullet`, `criteria-heading-near-miss`,
+ * `criterion-duplicate-id`, `criterion-empty-text` and
+ * `criterion-indented-bullet` for OTHER grammars with their own references - an
+ * unbounded scan would demand rows for them in this table.
+ *
+ * A whole-literal net rather than one regex per push form, because the forms
+ * are not a closed set: the codes are written as a `code:` property, inside a
+ * `codes:` array literal, as a `codes.push` argument, inside a ternary's array
+ * branch and inside a `new Set([...])`, and a form-by-form extraction silently
+ * finds a SUBSET - drafting this test three-form-wise missed
+ * `trailing-inline-content` on exactly that. The cost of the wider net is a
+ * false positive if a non-code kebab literal is ever added to this region,
+ * whose remedy is to write the row or rename the string: the safe direction for
+ * an agreement test, unlike a miss.
+ */
+function frontmatterCodes(src) {
+  const start = src.indexOf('\nfunction scanValue(');
+  assert.ok(start >= 0, 'scanValue is no longer declared in lib/planning-files.mjs');
+  const last = src.indexOf('\nexport function parsePlanFiles(');
+  assert.ok(last > start, 'parsePlanFiles is no longer declared below scanValue');
+  const end = src.indexOf('\n}\n', last);
+  assert.ok(end > last, 'could not find the closing brace of parsePlanFiles');
+  const region = src.slice(start, end)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  return [...new Set([...region.matchAll(/'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g)].map((m) => m[1]))];
+}
+
+test('every frontmatter grammar code has a row in plan-frontmatter.md (D-12)', () => {
+  const codes = frontmatterCodes(doc('cadence-core', 'bin', 'lib', 'planning-files.mjs'));
+
+  // Non-vacuity first: an extraction that matched nothing would pass green
+  // over an empty loop, which is the same silence this test exists to break.
+  const SHIPPED = [
+    'unterminated-quote', 'trailing-value-content', 'residual-quote',
+    'backtick-wrapped-value', 'unterminated-inline-list', 'trailing-inline-content',
+    'unterminated-frontmatter', 'malformed-key-line', 'unknown-line',
+    'item-without-key', 'commented-key-line', 'redundant-path-segment',
+    'markdown-decorated-path',
+  ];
+  for (const code of SHIPPED) {
+    assert.ok(codes.includes(code),
+      `the extraction missed \`${code}\`, a code the frontmatter grammar raises: ${JSON.stringify(codes)}`);
+  }
+  assert.ok(codes.length >= SHIPPED.length,
+    `extracted fewer codes than ship today: ${JSON.stringify(codes)}`);
+
+  const ref = doc('cadence-core', 'references', 'plan-frontmatter.md');
+  const at = ref.indexOf('\n## Diagnostic codes\n');
+  assert.ok(at >= 0, 'plan-frontmatter.md no longer carries a `## Diagnostic codes` heading');
+  const after = ref.indexOf('\n## ', at + 1);
+  const table = ref.slice(at, after === -1 ? ref.length : after);
+  assert.ok(/^\| Code \| Means \| Payload \| Cleared by \|$/m.test(table),
+    'the `## Diagnostic codes` section no longer holds the four-column code table');
+
+  for (const code of codes) {
+    assert.ok(new RegExp(`^\\| \`${code}\` \\|`, 'm').test(table),
+      `grammar code \`${code}\` is raised by cadence-core/bin/lib/planning-files.mjs but has no row `
+      + 'in cadence-core/references/plan-frontmatter.md\'s `## Diagnostic codes` table: that table is '
+      + 'the stated grammar a plan author reads, so a code missing from it is a diagnostic with no '
+      + 'documented meaning and no stated remedy');
+  }
+});

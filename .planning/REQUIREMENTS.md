@@ -1,42 +1,66 @@
-# Requirements: Cadence (no cycle open)
+# Requirements: Cadence (v3.6.0)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-**No cycle open.** `v3.5.8` closed on 2026-08-22. Its three ids - `JRN-01`,
-`JRN-02`, `JRN-03` - are in `## Shipped` below with their milestone, and nothing
-is promoted here to fill the section. `/cad-phase add` opens the next cycle's
-first phase entry; `/cad-plan` seeds each Traceability row as its phase is
-planned, and rows are never hand-populated here.
+Committed scope for **`v3.6.0 - reading the corpus back`**, opened 2026-08-23
+from the tracker's #190, #191 and #192, filed 2026-08-16 and held out of `v3.5.9`
+as a cycle of their own. Ids are seeded here at the open, the practice `v3.5.7`
+established. `/cad-plan` seeds each Traceability row as its phase is planned;
+rows are never hand-populated here.
 
-The five deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02`, `BCH-01` - keep
-their deferral reasons and none was promoted. `BCH-01` moved to `## Deferred` on
-2026-08-21 carrying the spike verdict that invalidated it rather than dropped,
-which is the exit ROADMAP.md's Overview committed to for a spike that comes back
-invalidated. The 2026-08-18 caveats on the other four are still undecided:
-`CTX-02`'s stated basis no longer holds, since both its issues (#69, #29) are
-closed and #29's ask shipped as `/cad-minimalism-review`; and `RCL-06` carries no
-deferral reason and no promotion trigger, so nothing can ever re-ask it. Both
-want a decision before either is scoped.
+- **RBK-01**: at plan time, count the prior decisions, deviations and captures
+  the recall pass surfaced for the phase against how many the produced plan
+  actually cites (D-NN references, CAPTURE ids, prior SUMMARY open items), and
+  REPORT a plan citing zero of a non-empty set. Advisory, never a refusal: it
+  becomes a gate only once there is data on how often the zero case is
+  legitimate (#190).
+- **FST-01**: a `/cad-task` run leaves a record recall can find, so the corpus
+  stops having a hole exactly where the majority of real work went (#191).
+- **FST-02**: `/cad-task` runs the risk-surface check on its committed range. A
+  one-commit change to auth is not less risky for being off-roadmap (#191).
+- **FST-03**: `/cad-task` opens and closes a trace bracket, so per-role token
+  accounting covers the path most runs actually use (#191).
+- **WHY-01**: `/cad-why <path>[:<line>]` resolves through `git log` for the
+  commits touching that path and joins each to its phase, its plan task, the
+  D-NN that decided it, any deviation that refuted that decision, and any review
+  finding that survived triage against it. Newest first, in the record's own
+  words. A deterministic seam join: no model judgment, no summarization pass
+  (#192).
 
-Unassigned and waiting for a cycle to be scoped around them: #190, #191 and #192,
-which still carry no milestone and are product-surface proposals about reading
-the corpus back, a cycle of their own rather than filler. The open items filed at
-the `v3.5.1` close, the proposals filed at the `v3.5.2` close, and the medium
-`risk_surface` survivors carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6`
-closes are all still unassigned. The `v3.5.7` note that stood here - two
-blocker/high findings persisted in `.planning/REVIEW-risk_surface-v3.5.7.md` -
-is resolved: that file is gone, and the `v3.5.8` close carried its own two
-survivors, both `low` and both already open items, to
-`.planning/REVIEW-risk_surface-v3.5.8.md` for the pending `/cad-land`.
+The fast path explicitly does NOT gain a context step, a plan gate or a verify
+walk - the guarantees without the machinery is the whole ask, and adding those
+back is how `/cad-task` becomes the thing it exists to avoid.
 
-`v3.5.8`'s two open items worth a decision before the next cycle is scoped: the
-`partial-flip` and `partial-bump` envelopes ship with no committed regression
+The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted into this cycle, and `BCH-01` stays in
+`## Deferred` carrying the spike verdict that invalidated it rather than dropped.
+The 2026-08-18 caveats on the first four are still undecided: `CTX-02`'s stated
+basis no longer holds, since both its issues (#69, #29) are closed and #29's ask
+shipped as `/cad-minimalism-review`; and `RCL-06` carries no deferral reason and
+no promotion trigger, so nothing can ever re-ask it. Both want a decision before
+either is scoped.
+
+Not in this cycle: #233's two stale self-description claims, both `low`. The open
+items filed at the `v3.5.1` close, the proposals filed at the `v3.5.2` close, and
+the medium `risk_surface` survivors carried forward at the `v3.5.4`, `v3.5.5` and
+`v3.5.6` closes are all still unassigned; `v3.5.8`'s own two survivors are `low`
+and sit in `.planning/REVIEW-risk_surface-v3.5.8.md`.
+
+`v3.5.8`'s two open items worth a decision before a later cycle inherits them:
+the `partial-flip` and `partial-bump` envelopes ship with no committed regression
 test, and `planning.mjs`'s `read(reqFile)` still accepts any existing filesystem
 object, so a FIFO at `.planning/REQUIREMENTS.md` hangs `phase-done` before its
 refusal can run.
+
+`v3.5.9`'s three: `plan-overlap` still reports `overlaps: []` when one of two
+colliding declarations is decorated (by design - the diagnostic routes the phase
+sequential, it does not repair the comparison); the decoration rule's residual
+over-fire is a path that legitimately opens and closes on the same emphasis byte,
+`__main__`; and `DOCS-CLAIMS.md` rows `MILESTONE-04` and `MILESTONE-05` cite
+stale line ranges against `milestone.md`.
 
 ## Shipped
 
@@ -230,6 +254,11 @@ parses only the Traceability table).
 | JRN-01 (a multi-file state transition is either complete or recoverable, through one shared primitive rather than four hand-written approximations of one (#145)) | 1 | Complete | v3.5.8 |
 | JRN-02 (`phase-done` stops claiming all-or-nothing over two independent renames, and reports what it actually guarantees across ROADMAP.md and REQUIREMENTS.md (#140)) | 2 | Complete | v3.5.8 |
 | JRN-03 (`release-bump` reads and validates every manifest it will write before it writes the first, so a malformed sibling cannot leave a partially bumped tree inside an `ok:true` envelope (#139)) | 2 | Complete | v3.5.8 |
+| REL-02 (changelog section bounding and emptiness read the document's real structure - fenced `## ` lines are not boundaries, a heading with no bullets is empty, and a body-final link-ref promotes with its section (#231 items 2, 3, 5)) | 1 | Complete | v3.5.9 |
+| REL-03 (the seam documents every verdict code it can return, and an unparseable `--version` target refuses by name instead of reporting an empty target (#231 item 6)) | 1 | Complete | v3.5.9 |
+| REL-01 (the release seam's silent no-ops become states a close can halt on - a manifest with no `version` field, and an absent `CHANGELOG.md` distinguishable from a clean run (#231 items 1, 4)) | 1 | Complete | v3.5.9 |
+| FRM-01 (a frontmatter read reports only the issues belonging to the key that was asked for, so a defect in one scalar stops surfacing on an unrelated list (#232 item 1)) | 2 | Complete | v3.5.9 |
+| FRM-02 (markdown decoration on a path is caught before `plan-overlap` compares strings, so two plans that write the same file are never cleared to run in parallel (#232 item 2)) | 2 | Complete | v3.5.9 |
 
 ## Deferred
 

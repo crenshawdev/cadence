@@ -1814,6 +1814,53 @@ function resolveValue(raw) {
 }
 
 /**
+ * The four VALUE-LEVEL codes - the ones `scanValue`/`resolveValue` raise about
+ * one value's own bytes, as opposed to the structure of the block around it.
+ */
+const VALUE_LEVEL_CODES = new Set([
+  'unterminated-quote', 'trailing-value-content', 'residual-quote',
+  'backtick-wrapped-value',
+]);
+
+/**
+ * Scope value-level codes to the two LIST KEYS the seams actually read
+ * (D-01). A defect in the bytes of `goal:` or `plan:` is a defect in a value
+ * NOTHING reads as a list, and letting it reach `readFrontmatterList` put it
+ * in `plan-overlap`'s `frontmatter_issues` and `phase-plans`' risk-floor bail
+ * as though the plan's FILE LIST were unreadable - the gate answering
+ * "sequential, this declaration cannot be trusted" on evidence about a
+ * different key entirely.
+ *
+ * Deliberately NOT "only the key the caller asked for": a `requirements:`
+ * defect still reaches a `files:` read and vice versa, because a plan whose
+ * one list is misparsed is a plan whose frontmatter the author should fix
+ * before anything routes off the other one.
+ *
+ * Applied at the PUSH SITES, where the owning key is in scope, so no field is
+ * added to `Issue` and `readFrontmatterList` filters nothing - the five
+ * readers of that envelope (risk floor, audit, plan-overlap, seed-reqs,
+ * lease-check) all keep the shape they have, and an attribute-and-filter route
+ * would have to blind a `files:`-key read to `files:`-key defects to do it.
+ *
+ * The five STRUCTURAL codes (`unterminated-frontmatter`, `malformed-key-line`,
+ * `unknown-line`, `item-without-key`, `commented-key-line`) own no key and are
+ * never routed through here: under D-02 they must reach EVERY key's read, or a
+ * `requirements:` block truncated by a stray line reaches `plan-overlap` clean
+ * and `choose_path` reads a half-parsed file as proved independence. The two
+ * bracket-level codes (`unterminated-inline-list`, `trailing-inline-content`)
+ * are about the list container, not one value, and pass through untouched.
+ *
+ * A key of `null` - an item arriving while no block key is open - owns no list
+ * key, so its value-level codes are suppressed as well; `item-without-key`
+ * still fires on that same line, so nothing about it goes silent.
+ * @param {string|null} key @param {string[]} codes @returns {string[]}
+ */
+function scopeToListKeys(key, codes) {
+  if (key === 'requirements' || key === 'files') return codes;
+  return codes.filter((c) => !VALUE_LEVEL_CODES.has(c));
+}
+
+/**
  * Push one `{line, code, text}` issue per DISTINCT code in `codes`, in
  * first-occurrence order - a five-element inline list with five annotated
  * elements reports `trailing-value-content` once for its line, not five
@@ -1938,7 +1985,9 @@ const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
  * (inline list / block / scalar) and block-item payloads are resolved by
  * `scanValue` + `resolveValue` (+ `parseInlineList` for the inline form) -
  * the quote-aware scanner D-01 requires, so the two paths cannot drift and
- * every code either arm produces reaches `issues` with its line number.
+ * every code either arm produces reaches `issues` with its line number - the
+ * value-level four through `scopeToListKeys`, so a defect in the bytes of a
+ * key no seam reads as a list does not arrive as evidence about the file list.
  *
  * A key whose remainder is empty opens a block: `currentKey` stays set while
  * we walk forward, SKIPPING blank and comment-only lines and pushing each
@@ -1994,7 +2043,7 @@ export function parseFrontmatter(text) {
       const scanned = scanValue(remainder);
 
       if (scanned.code) {
-        pushIssues(issues, lineNo, line, [scanned.code]);
+        pushIssues(issues, lineNo, line, scopeToListKeys(key, [scanned.code]));
         if (first) keys.set(key, []);
         continue;
       }
@@ -2013,7 +2062,7 @@ export function parseFrontmatter(text) {
         items = [];
         if (first) currentKey = key; // block-eligible; items collected below
       }
-      pushIssues(issues, lineNo, line, codes);
+      pushIssues(issues, lineNo, line, scopeToListKeys(key, codes));
       if (first) keys.set(key, items);
       continue;
     }
@@ -2041,12 +2090,18 @@ export function parseFrontmatter(text) {
     if (im) {
       const scanned = scanValue(im[1]);
       if (scanned.code) {
-        pushIssues(issues, lineNo, line, [scanned.code]);
+        pushIssues(issues, lineNo, line, scopeToListKeys(currentKey, [scanned.code]));
+        // This arm returns early, BEFORE the no-block-key diagnosis below, so
+        // it has to make that call itself: with no key open the value-level
+        // code above is scoped away (D-01) and the line would otherwise leave
+        // the pass reporting NOTHING - a frontmatter line gone silent, the one
+        // outcome D-02 exists to prevent.
+        if (!currentKey) issues.push({ line: lineNo, code: 'item-without-key', text: issueText(line) });
         continue;
       }
       if (scanned.value === '') continue; // comment-only item / empty `- ` payload: D-01 cost, not an issue
       const resolved = resolveValue(scanned.value);
-      pushIssues(issues, lineNo, line, resolved.codes);
+      pushIssues(issues, lineNo, line, scopeToListKeys(currentKey, resolved.codes));
       if (currentKey) {
         if (resolved.value) keys.get(currentKey).push(resolved.value);
       } else {
@@ -2081,8 +2136,12 @@ export function parseFrontmatter(text) {
 }
 
 /**
- * Read one frontmatter key as a string list plus the WHOLE pass's issues
- * (never a key-scoped subset, D-02) - a thin selector over
+ * Read one frontmatter key as a string list plus the pass's issues - every
+ * STRUCTURAL issue the pass raised whatever key it sits under (D-02: never a
+ * subset scoped to the key the CALLER asked for), and the value-level four
+ * only where the key that owns them is `requirements:` or `files:`
+ * (`scopeToListKeys`, D-01, applied at the push sites so nothing is filtered
+ * here). A thin selector over
  * `parseFrontmatter`, the single implementation this grammar has (D-03). ONE
  * reader for both `requirements:` and `files:`: two copies of the same
  * pattern would drift, and audit would then accept a plan shape the
@@ -2101,8 +2160,11 @@ export function readFrontmatterList(text, key) {
 }
 
 /**
- * Extract the requirement IDs a plan commits to deliver, plus any
- * frontmatter grammar issues from the pass that read them.
+ * Extract the requirement IDs a plan commits to deliver, plus the frontmatter
+ * grammar issues from the pass that read them - `readFrontmatterList`'s set,
+ * so every structural issue in the block and the value-level codes owned by
+ * `requirements:` or `files:`, never a value-level defect under some other
+ * key.
  * @param {string} text @returns {{ids: string[], issues: Issue[]}}
  */
 export function parsePlanRequirements(text) {
@@ -2149,6 +2211,22 @@ function filesListRegion(text) {
 }
 
 /**
+ * The markdown wraps `isDecoratedPath` refuses around a declared `files:` path,
+ * as `[open, close]` pairs tested against a value's two ends. Bold (`**`) and
+ * `__` need no entry of their own - they open and close on the single-byte
+ * emphasis pairs already listed, so `**src/a.rs**` matches the `*` row - and
+ * the entries are single-byte for exactly that reason: a wrap is recognised by
+ * its BOUNDARY bytes, never by counting how many the author repeated.
+ * @type {ReadonlyArray<readonly [string, string]>}
+ */
+const WRAP_PAIRS = /** @type {const} */ ([
+  ['*', '*'], // italic and, by repetition, bold
+  ['_', '_'], // italic and, by repetition, __bold__
+  ['<', '>'], // the autolink form
+  ['[', ']'], // a bare bracket wrap - the link form is tested separately
+]);
+
+/**
  * Extract the file paths a plan declares it touches: the frontmatter
  * `files:` list unioned with every task's `- **Files:** a, b` line (either
  * source alone can go stale; the union is what the parallel-safety overlap
@@ -2181,12 +2259,64 @@ function filesListRegion(text) {
  * cost: an annotated task line contributes a non-path string
  * (`src/a.rs (edit)`) to that plan's files list, which can appear in
  * `overlaps` output as a duplicate beside its normalized twin.
+ *
+ * The frontmatter arm ALSO reports `markdown-decorated-path` on a declaration
+ * wearing markdown (`isDecoratedPath` below states the shapes). Reported,
+ * not repaired: the declaration stays in `files` byte-exact (D-04/D-19), the
+ * same reason the arm adds items verbatim at all - a decorated path and its
+ * plain sibling genuinely do not intersect, and rewriting one to match the
+ * other would make `overlaps` mean "intersect after repair". The diagnostic is
+ * what moves the gate, since `workflows/execute.md` routes any non-empty
+ * `frontmatter_issues` to the sequential path. FRONTMATTER ARM ONLY (D-06):
+ * the task-line arm already strips backticks and contributes both its
+ * normalized and its raw form, so a backticked task path already matches a
+ * sibling's plain one and a both-arms rule would turn committed, correctly
+ * matching plans into issue carriers.
  * @param {string} text @returns {{files: string[], issues: Issue[]}}
  */
 export function parsePlanFiles(text) {
   const files = new Set();
   /** The task-line arm's normalization, D-19: backticks and one trailing parenthetical. */
   const normalizeTaskItem = (raw) => raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
+  /**
+   * Markdown decoration around a declared path (D-03/D-08), every shape under
+   * ONE code: a MATCHED WRAP (`WRAP_PAIRS` below - bold, italic, autolink and
+   * the bare bracket), the link form (`[src/a.rs](src/a.rs)`), and a MATCHED
+   * INTERIOR backtick pair (`` src/`a`.rs ``) - two or more backticks at
+   * indices strictly inside the value.
+   *
+   * A wrap is MATCHED or it is nothing: `_` and `[` are legal path bytes, so a
+   * bare occurrence never counts and `_private/a.rs` stays diagnostic-free.
+   * The residual over-fire is a path that legitimately opens AND closes on the
+   * same emphasis byte (`__main__`), which reports and is still returned
+   * byte-exact - a phantom diagnostic routes the phase sequential, the safe
+   * direction for a parallel-safety gate, where a missed shape clears two
+   * plans into separate worktrees on one file. Measured 2026-08-23: 0 of 597
+   * frontmatter `files:` entries under `.planning` open or close on any wrap
+   * byte.
+   *
+   * The interior COUNT is the whole of the backtick arm (D-05), and it is what
+   * keeps this additive to `resolveValue`'s unchanged boundary rule rather than
+   * a second opinion about the same bytes: `` `src/a.rs` `` has zero interior
+   * backticks and a wrap-plus-punctuation `` `src/a.rs`, `` has exactly one, so
+   * both keep reporting `backtick-wrapped-value` alone instead of
+   * double-reporting, and a real path carrying ONE interior backtick
+   * (`` lib/a`b.mjs ``) stays diagnostic-free - the over-fire guard UAT-21
+   * pinned. Backticks are deliberately absent from `WRAP_PAIRS`: the boundary
+   * pair is `backtick-wrapped-value`'s, and adding it here would double-report.
+   * @param {string} v @returns {boolean}
+   */
+  const isDecoratedPath = (v) => {
+    // The link form first: it opens `[` and closes `)`, so no wrap pair reaches it.
+    if (v.startsWith('[') && v.endsWith(')') && v.includes('](')) return true;
+    for (const [open, close] of WRAP_PAIRS) {
+      if (v.length > open.length + close.length
+        && v.startsWith(open) && v.endsWith(close)) return true;
+    }
+    let interior = 0;
+    for (let idx = 1; idx < v.length - 1; idx++) if (v[idx] === '`') interior++;
+    return interior >= 2;
+  };
   const { items, issues } = readFrontmatterList(text, 'files');
 
   // The lease-spelling refusal, on BOTH arms of the union (D-02). `./a.txt`,
@@ -2225,6 +2355,17 @@ export function parsePlanFiles(text) {
       const at = refuseFrontmatter(f);
       issues.push({ line: at.line, code: 'redundant-path-segment', text: issueText(at.text) });
       continue;
+    }
+    // Decoration is REPORTED, never dropped and never rewritten (D-04): the
+    // bytes go into `files` exactly as declared, so `overlaps` keeps meaning
+    // "these two declarations intersect" and never "intersect after repair".
+    // The gate still moves, because `execute.md` routes ANY non-empty
+    // `frontmatter_issues` to the sequential path. Same cursor as the refusal
+    // arm above, so a decorated path written twice reports its own line each
+    // time.
+    if (isDecoratedPath(f)) {
+      const at = refuseFrontmatter(f);
+      issues.push({ line: at.line, code: 'markdown-decorated-path', text: issueText(at.text) });
     }
     files.add(f); // verbatim - no post-grammar rewriting (D-19)
   }

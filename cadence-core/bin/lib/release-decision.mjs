@@ -16,6 +16,41 @@
 // null-version lesson).
 
 /**
+ * Fence-state scanner: an opening fence is three or more backticks or tildes
+ * with up to three leading spaces, a closing fence is the same character at
+ * least as long carrying no info string, and the delimiter line itself is
+ * never a heading. Mirrors the module-private `fenceScanner` in
+ * lib/planning-files.mjs byte-for-shape; not imported from there because that
+ * module carries `node:fs` and this file's header states it never does I/O.
+ * @returns {(line: string) => boolean}
+ */
+function fenceScanner() {
+  /** @type {{char: string, len: number}|null} */
+  let fence = null;
+  return (/** @type {string} */ line) => {
+    const f = line.match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
+    if (!f) return fence !== null;
+    const char = f[1][0], len = f[1].length;
+    if (fence === null) fence = { char, len };
+    else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
+    return true;
+  };
+}
+
+/**
+ * Per-line fence state for a whole document, fed in order so the state at
+ * each index is the state a reader of the whole document would have at that
+ * line. `true` means the line is a fence delimiter or sits inside a fenced
+ * block - never a heading, for any `^## ` scan in this module.
+ * @param {string[]} lines
+ * @returns {boolean[]}
+ */
+function fenceMask(lines) {
+  const fenced = fenceScanner();
+  return lines.map((l) => fenced(l));
+}
+
+/**
  * Normalize the EXPLICIT shipping version into bare semver. One argument,
  * total: a non-string, empty or whitespace-only value returns null - never
  * invent a version (the Phase-1 null lesson); the seam turns null into an
@@ -148,9 +183,10 @@ export function compareVersions(a, b) {
  * Every verdict carries a `code`: a stable machine token the seam emits as its
  * `reason`, while the human sentence in `reason` becomes the seam's `detail`.
  * The codes are a CLOSED set, owned HERE - the seam owns its own disjoint set
- * (`no-plugin-manifest`, `unreadable-manifest`, `usage`, `internal`) in
- * release-bump.mjs's header, so one list has one owner and the two can never
- * disagree:
+ * (`no-plugin-manifest`, `unreadable-manifest`, `unreadable-sibling-manifest`,
+ * `unreadable-changelog`, `partial-bump`, `bad-date`, `missing-flag-value`,
+ * `usage`, `internal`) in release-bump.mjs's header, so one list has one
+ * owner and the two can never disagree:
  *
  *   no-target-version | unparseable-version | no-version-field |
  *   already-at-target | downgrade | not-an-upgrade | bump
@@ -262,16 +298,19 @@ export function prependChangelogEntry(changelogText, { version, date, url } = /*
   // Changelog pins Unreleased at the top, so a release must land below it, not
   // above). Fall back to just after an Unreleased section, then the first `## `
   // heading, else append after the file body.
+  // A `## ` line inside a fenced code block is not a heading: computed once,
+  // before any splice, against the document's real structure (D-09).
+  const fenced = fenceMask(lines);
   const isReleased = (l) => /^## \[/.test(l) && !/^## \[unreleased\]/i.test(l);
-  let headingAt = lines.findIndex(isReleased);
+  let headingAt = lines.findIndex((l, i) => !fenced[i] && isReleased(l));
   if (headingAt < 0) {
-    const unreleasedAt = lines.findIndex((l) => /^## \[unreleased\]/i.test(l));
+    const unreleasedAt = lines.findIndex((l, i) => !fenced[i] && /^## \[unreleased\]/i.test(l));
     if (unreleasedAt >= 0) {
       // Insert before the next `## ` heading after Unreleased (the end of its
       // section); -1 (Unreleased is the last section) falls through to append.
-      headingAt = lines.findIndex((l, i) => i > unreleasedAt && /^## /.test(l));
+      headingAt = lines.findIndex((l, i) => i > unreleasedAt && !fenced[i] && /^## /.test(l));
     } else {
-      headingAt = lines.findIndex((l) => /^## /.test(l));
+      headingAt = lines.findIndex((l, i) => !fenced[i] && /^## /.test(l));
     }
   }
   if (headingAt < 0) {
@@ -335,7 +374,8 @@ export function promoteUnreleased(changelogText, version) {
   if (!version) return done(text, false, 'no-version: no target section to promote into');
 
   const lines = text.split('\n');
-  const unrelAt = lines.findIndex((l) => /^## \[unreleased\]/i.test(l));
+  const fenced = fenceMask(lines);
+  const unrelAt = lines.findIndex((l, i) => !fenced[i] && /^## \[unreleased\]/i.test(l));
   if (unrelAt < 0) return done(text, false, 'no-unreleased-section: nothing staged to promote');
 
   // Bound the body, then trim its blank edges. The trailing link-reference
@@ -349,7 +389,7 @@ export function promoteUnreleased(changelogText, version) {
   if (start >= end) return done(text, false, 'empty-unreleased: nothing staged, a re-run changes no byte');
 
   const headingRe = new RegExp(`^## \\[${escapeRe(version)}\\]`);
-  if (!lines.some((l) => headingRe.test(l))) {
+  if (!lines.some((l, i) => !fenced[i] && headingRe.test(l))) {
     return done(text, false, `no-release-heading: no ## [${version}] section exists to promote into`);
   }
 
@@ -360,8 +400,9 @@ export function promoteUnreleased(changelogText, version) {
   out.splice(unrelAt + 1, bodyEnd - (unrelAt + 1), '');
   // RE-FIND the release heading on the mutated array rather than doing
   // arithmetic on a stale index - the same discipline the link-reference insert
-  // above uses.
-  const relAt = out.findIndex((l) => headingRe.test(l));
+  // above uses. Re-mask too: the splice shifted every line index below it.
+  const outFenced = fenceMask(out);
+  const relAt = out.findIndex((l, i) => !outFenced[i] && headingRe.test(l));
   let at = relAt + 1;
   if (!/\n\s*$/.test(out[relAt])) {
     if (out[at] !== undefined && out[at].trim() === '') at++;
@@ -381,30 +422,55 @@ export function promoteUnreleased(changelogText, version) {
  * @param {string[]} lines @param {number} from
  */
 function sectionEnd(lines, from) {
-  const next = lines.findIndex((l, i) => i > from && /^## /.test(l));
+  const fenced = fenceMask(lines);
+  const next = lines.findIndex((l, i) => i > from && !fenced[i] && /^## /.test(l));
   if (next >= 0) return next;
   let end = lines.length;
   while (end > 0 && lines[end - 1].trim() === '') end--;
+  // D-05: the trailing link-reference block is the run of `[key]: url`
+  // definitions at EOF whose keys name an existing `## [key]` heading in the
+  // document. Walking up from the last non-blank line, the block ends at the
+  // first definition whose key names no such heading - that definition and
+  // everything above it (down to `from`) is body content that promotes with
+  // its section, not a trailing reference. Accepted cost, stated rather than
+  // patched: a file-final definition naming no heading pulls the WHOLE run at
+  // EOF into the body, even a ref line above it whose own key does name a
+  // heading - the rule's stated edge, not a regression to repair with a
+  // second exclusion.
   let refs = end;
-  while (refs > from + 1 && /^\[[^\]]+\]:\s/.test(lines[refs - 1])) refs--;
+  while (refs > from + 1) {
+    const m = lines[refs - 1].match(/^\[([^\]]+)\]:\s/);
+    if (!m) break;
+    const headingRe = new RegExp(`^## \\[${escapeRe(m[1])}\\]`);
+    if (!lines.some((l, i) => !fenced[i] && headingRe.test(l))) break;
+    refs--;
+  }
   return refs < end ? refs : lines.length;
 }
 
 /**
- * Does the `## [<version>]` section hold nothing but blank lines? An absent
- * heading (or no version at all) counts as empty - there is nothing in a
- * section that does not exist.
+ * Does the `## [<version>]` section hold nothing but blank lines and
+ * `###`/`####` subheadings? An absent heading (or no version at all) counts
+ * as empty - there is nothing in a section that does not exist. Any OTHER
+ * non-blank line is content, including a prose paragraph with no bullets
+ * (D-03): every released section in this repo's own CHANGELOG.md opens with
+ * prose before any bullet, so a bullet-only rule would report real authored
+ * sections as empty and fire the close's halt on every close.
  * @param {string} text @param {string} version
  */
 function releaseSectionEmpty(text, version) {
   if (!version) return true;
   const lines = String(text).split('\n');
   const headingRe = new RegExp(`^## \\[${escapeRe(version)}\\]`);
-  const at = lines.findIndex((l) => headingRe.test(l));
+  const fenced = fenceMask(lines);
+  const at = lines.findIndex((l, i) => !fenced[i] && headingRe.test(l));
   if (at < 0) return true;
   const stop = sectionEnd(lines, at);
   for (let i = at + 1; i < stop; i++) {
-    if (lines[i].trim() !== '') return false;
+    const l = lines[i];
+    if (l.trim() === '') continue;
+    if (/^#{3,4}\s/.test(l)) continue;
+    return false;
   }
   return true;
 }

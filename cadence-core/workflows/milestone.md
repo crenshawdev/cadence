@@ -65,10 +65,11 @@ deterministic scaffold, prose owns the judgment.
 Four halts, each before the bump commit:
 
 - `ok:false` with `action:"refuse"` (exit 1). The seam wrote NOTHING and named a
-  `reason`: `no-target-version`, `unparseable-version`, `unreadable-manifest`,
-  `unreadable-sibling-manifest`, `unreadable-changelog`, `downgrade`,
-  `not-an-upgrade` or `bad-date`. Report it and STOP. A close continued past a
-  refused bump ships a manifest still carrying the previous version.
+  `reason`: `no-target-version`, `unparseable-version`, `no-version-field`,
+  `unreadable-manifest`, `unreadable-sibling-manifest`, `unreadable-changelog`,
+  `downgrade`, `not-an-upgrade` or `bad-date`. Report it and STOP. A close
+  continued past a refused bump ships a manifest still carrying the previous
+  version.
 - `ok:false` with `action:"partial"` and `reason:"partial-bump"` (exit 1). The
   write set was decided and a step failed part way, so the seam DID write:
   `manifest.bumped`, each `siblings[]` row's `bumped` and `changelog.changed`
@@ -80,9 +81,12 @@ Four halts, each before the bump commit:
   and it still ships the old version. Name the file and STOP. A sibling that
   cannot be READ is not this case: it refuses the whole run under
   `unreadable-sibling-manifest` above, with nothing written.
-- `changelog.section_empty: true`. The dated heading has no body at all;
-  author the release notes into it before the bump commit rather than shipping
-  a heading over silence.
+- `changelog.section_empty: true`, or `changelog.state: "absent"`. Either ships
+  a release with no notes: the dated heading has no body at all, or there is no
+  `CHANGELOG.md` to scaffold in the first place - a state the envelope NAMES, so
+  it is no longer read as a clean changelog. Author the notes before the bump
+  commit; on `absent` STOP and say so unless the user confirms this project
+  keeps none.
 
 Commit the manifest + changelog as
 `chore: bump manifest to <version> + changelog`, so the merge - and the tag

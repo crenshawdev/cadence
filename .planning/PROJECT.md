@@ -156,76 +156,79 @@ context-gathering, and debugging — without any external memory system.
   the primary manifest at the old version under `ok:false` instead of shipping a
   half-bumped tree as success (JRN-03) - v3.5.8
 
+- ✓ `v3.5.9 - the defects that were filed and never read`: the release seam and
+  the frontmatter reader both stopped returning a clean answer over a case they
+  did not handle. The changelog core decides section bounds, emptiness and the
+  trailing link-reference block from the document's real structure rather than
+  from a heuristic a fenced `## ` defeats (REL-01); a version-less primary
+  manifest and an absent CHANGELOG halt the close instead of passing as a benign
+  `skip`, with `changelog.state` named on every emitting envelope (REL-02); an
+  unparseable `--version` refuses by naming the raw argument rather than
+  reporting `no-target-version` over an empty target (REL-03); the four
+  value-level grammar codes are scoped to the two list keys the seams read, so a
+  backtick in `goal:` stops bailing the risk floor on a plan's whole declared
+  file list, while the five structural codes still cross keys on purpose
+  (FRM-01); and a markdown-decorated `files:` path reports
+  `markdown-decorated-path` instead of parsing clean, so two plans that collide
+  on one file route sequential rather than into separate worktrees (FRM-02) -
+  v3.5.9
+
 ### Active
 
-**No cycle open.** `v3.5.8` closed on 2026-08-22 and no next theme is scoped yet.
-`/cad-phase add` opens the next cycle's first phase entry.
+**`v3.6.0 - reading the corpus back`, opened 2026-08-23.** Scoped from the
+tracker's #190, #191 and #192, filed 2026-08-16 and deliberately held out of
+`v3.5.9` as a cycle of their own rather than filler.
 
-`v3.5.8 - the transition that claims to be one` closed on 2026-08-22: two phases,
-33 commits off `v3.5.7`, the manifest at `3.5.8`, and `/cad-audit` PASS on both
-arms - three of three requirements traced requirement to phase to plan to
-verified (`JRN-01`, `JRN-02`, `JRN-03`), and 13 of 13 acceptance criteria covered
-with zero breaks. Its narrative is in `CHANGELOG.md`, its shipped rows in
-`REQUIREMENTS.md`'s `## Shipped`, its per-phase residue in `.planning/ARCHIVE.md`
-at 41 new rows, and its phase record in git history at the pruning commit; this
-close ran `--mode delete`, so there is no `_archive-v3.5.8/`. The merge and the
-release tag are still outstanding: `/cad-land` cuts `v3.5.8` on the pulled base
-after the merge confirms.
+**The theme is one sentence: everything Cadence writes down is written by a gate
+and read by nobody.** The Core Value above claims the record "must come back on
+its own at the moment it matters", and that is the one claim in this project with
+no evidence behind it. Recall ships as a BM25 subcommand and is injected into
+`cad-context`, `cad-planner` and `cad-debug`, and nothing anywhere checks that it
+landed: a planner can receive twelve prior decisions and cite none of them, and
+no gate notices (#190). The `.planning/` corpus can already answer "why is this
+code like this" - the SUMMARY names what shipped and its commits, CONTEXT names
+the numbered decision, the deviation record names where the plan was wrong, the
+review artifacts name what an adversarial pass objected to, `trace.jsonl` names
+what it cost - and there is no command that walks the join (#192). And the path
+most real work actually takes leaves the corpus a hole exactly where the work
+went: `/cad-task` leaves commits and nothing recall can find, no risk-surface
+check on its committed range, and no trace bracket, so per-role accounting misses
+the path most runs use (#191).
 
-What it delivered: one home for a multi-file write, and the two operations that
-claimed atomicity without having it moved onto it.
-`cadence-core/bin/lib/file-transition.mjs` owns the ordered-step-list idiom with
-a lazy pre-flight and two disciplines, and a `HELPERS` census row reddens if its
-body is copied under any name. `cmdPhaseDone`'s "all-or-nothing" comment is gone
-rather than qualified - every edit is validated before the first write, and its
-envelope now names which documents moved. `release-bump` reads and decides its
-whole write set before the first `atomicWrite`, so a malformed sibling leaves the
-primary manifest at the old version under an `ok:false` envelope instead of
-shipping a half-bumped tree as a success. `renumber` and `milestone-prune` route
-their existing partial-state refusals through the primitive with their envelopes
-unmoved.
+**The dogfooding bias is the argument for #191 specifically.** The phase spine
+got the design attention because Cadence's own work is always the heavy kind: a
+context step, a plan gate, an executor contract, per-plan risk checks, an
+adjudicated triage gate, a summary, a verify walk and a trace bracket, against a
+fast path with an inline mode and a `--plan` flag. Below roughly half a day of
+work the phase overhead dominates. The fast path should gain the same guarantees
+with none of that machinery, and explicitly not a context step, a plan gate or a
+verify walk.
 
-The shape was decided on evidence rather than on the issue text. #145 asked for a
-journal; the two operations that already refused honestly were a refusal
-protocol, which needs no on-disk state, no resume path and no `/cad-health`
-reader. The plan took the second arm and pinned it, the same way `v3.5.7` phase 4
-pinned its no-config-key arm.
+**What this cycle is not.** It is not a recall-quality cycle. #190 ships
+ADVISORY, reporting the zero-citation case rather than refusing it, and becomes a
+gate only once there is data on how often that case is legitimate. #192 is a
+reader and a deterministic seam join, with no model judgment and no summarization
+pass, for the same reason. Nothing here changes what the write side records.
 
-The honest line on this cycle: the `partial-flip` and `partial-bump` arms ship
-probe-proven only, with no committed regression test. Every uid-independent way
-to force a write to fail past the pre-flight was converted into a pre-write
-refusal by the work itself, and D-02 forbids `chmodSync`, so the two envelopes
-that report a torn write are the two this cycle cannot demonstrate in CI. Both
-executors recorded the exact envelopes they observed.
+This cycle seeds ids up front - `RBK-01`, `FST-01`, `FST-02`, `FST-03` and
+`WHY-01` - the practice `v3.5.7` established and `v3.5.9` carried.
 
-Still unassigned, carried out of `v3.5.8` unscoped: the previous cycle's note
-about two blocker/high `risk_surface` findings persisted in
-`.planning/REVIEW-risk_surface-v3.5.7.md` is now moot - that file is gone, and
-this close carried `v3.5.8`'s own two survivors (both `low`, both open items) to
-`.planning/REVIEW-risk_surface-v3.5.8.md` for the pending `/cad-land`. The medium
-survivors from `v3.5.4`, `v3.5.5` and `v3.5.6` are still unassigned, and so are
-#190, #191 and #192, which PROJECT has called a cycle of their own rather than
-filler. The deferred ids `PRS-01`, `EVD-01`, `RCL-06` and `CTX-02` were not
-promoted and their 2026-08-18 caveats stand: `CTX-02`'s stated basis no longer
-holds and `RCL-06` carries no promotion trigger, so both want a decision before
-either is scoped. The capture queue holds 197 live items - 196 under `## Todos`
-and one seed - beside the 185-item block `v2.6.0` phase 1 archived on 2026-08-08,
-which sits outside the recall walk. Count the live sections, not the file's 382
-open checkboxes.
+**Carried in unassigned, none of it scoped here:** the four deferred ids
+(`PRS-01`, `EVD-01`, `RCL-06`, `CTX-02`) and their standing 2026-08-18 caveats;
+#233's two stale self-description claims; the medium `risk_surface` survivors
+from `v3.5.4`, `v3.5.5` and `v3.5.6`; `v3.5.8`'s two `low` survivors in
+`.planning/REVIEW-risk_surface-v3.5.8.md`; and `v3.5.8`'s two open items - the
+`partial-flip`/`partial-bump` regression gap, and `planning.mjs`'s `read(reqFile)`
+accepting any existing filesystem object, so a FIFO at
+`.planning/REQUIREMENTS.md` hangs `phase-done` before its refusal can run.
 
-That archive was triaged on 2026-08-22 for the first time since it was written.
-Of its 30 severity-marked items, **19 were already fixed, 10 were still live, 1
-was moot** - the fixes had shipped across later cycles with nothing closing the
-capture. The 10 live are now tracker issues #231 (six defects in the
-release/changelog seam), #232 (plan frontmatter defeats `plan-overlap`) and #233
-(two stale self-description claims). The other 155 are unverified.
-
-The tracker is the home for this now: `issue-check.mjs` surfaces referenced
-issues at every `/cad-land`, which is the come-back-on-its-own property
-`CAPTURE.md` stopped providing the moment anything went below `## Archive`. Two
-findings that argue for it - #231 duplicates a defect class `v3.5.8` phase 2
-filed independently against the same seam, and `CAPTURE.md` is gitignored, so it
-is the one planning document with no history behind it.
+`v3.5.9`'s own close left three, recorded here rather than in a pruned phase
+directory: `plan-overlap` still reports `overlaps: []` when one of two colliding
+declarations is decorated, by design (the diagnostic is the gate, not a repaired
+comparison); the decoration rule's residual over-fire is a path that legitimately
+opens and closes on the same emphasis byte, `__main__`; and `DOCS-CLAIMS.md` rows
+`MILESTONE-04` and `MILESTONE-05` still cite stale line ranges against
+`milestone.md`, which no mechanical check enforces.
 
 ## Key Decisions
 

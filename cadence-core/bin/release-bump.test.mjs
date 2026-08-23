@@ -406,18 +406,119 @@ test('bump: an empty Unreleased body reports section_empty so the close authors 
   assert.equal(r.changelog.section_empty, true);
 });
 
-test('bump: a version-less manifest skips - no dated heading for a release that never happened', () => {
+test('bump: a version-less PRIMARY manifest refuses, exit 1, nothing written (phase 1 D-01)', () => {
   const { version, ...noVersion } = PLUGIN_1_0_0;
   assert.equal(version, '1.0.0'); // the field really was there to remove
   const dir = fixture({ plugin: noVersion, changelog: STAGED_CHANGELOG });
   const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+  const pluginBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
 
-  const r = seam(['bump', '--dir', dir, '--version', '2.2.0', '--date', '2026-08-03']);
-  assert.equal(r.ok, true);
-  assert.equal(r.action, 'skip');
-  assert.equal(r.changelog.changed, false);
+  // This used to be {"ok":true,"action":"skip"} at exit 0, which milestone.md
+  // read as success and closed over: the release shipped with an unbumped
+  // manifest. The verdict is still `skip` in the pure core; the SEAM refuses.
+  const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', '2.2.0', '--date', '2026-08-03']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.reason, 'no-version-field');
+  assert.equal(status, 1, 'ok:false mirrors into exit 1 so the close halts');
+  assert.match(r.detail, /version/, 'the seam names the missing field, not "leave it untouched"');
   assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore,
     'no ## [2.2.0] heading over a manifest that bumped nothing');
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore,
+    'the manifest it refused over is byte-identical');
+});
+
+test("bump: THIS repo's own manifest pair still bumps, marketplace.json recorded as skip (D-02)", () => {
+  // The regression the seam-level refusal must not cause: Cadence's own
+  // .claude-plugin/marketplace.json carries no `version` BY DESIGN, so a
+  // verdict-level refusal would halt this project's close every cycle. Copied
+  // from the real files rather than restated, so a change to either is seen.
+  const repoRoot = join(dirname(SEAM), '..', '..');
+  const realPlugin = readJson(join(repoRoot, '.claude-plugin', 'plugin.json'));
+  const realMarket = readJson(join(repoRoot, '.claude-plugin', 'marketplace.json'));
+  assert.equal(typeof realPlugin.version, 'string', 'the primary manifest carries a version');
+  assert.equal('version' in realMarket, false, 'marketplace.json carries none - the D-02 premise');
+  const above = `${Number(String(realPlugin.version).split('.')[0]) + 1}.0.0`;
+
+  const dir = fixture({ plugin: realPlugin, marketplace: realMarket });
+  const marketBefore = readRaw(join(dir, '.claude-plugin', 'marketplace.json'));
+  const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', above, '--date', '2026-08-03']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(status, 0);
+  assert.equal(r.action, 'bumped');
+  assert.equal(readJson(join(dir, '.claude-plugin', 'plugin.json')).version, above);
+  const row = r.siblings.find((x) => x.file === '.claude-plugin/marketplace.json');
+  assert.ok(row, `no siblings[] row for marketplace.json: ${JSON.stringify(r.siblings)}`);
+  assert.equal(row.action, 'skip', 'the sibling still SKIPS - it never becomes a refusal');
+  assert.equal(row.bumped, false);
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'marketplace.json')), marketBefore,
+    'left byte-untouched');
+});
+
+test('bump: changelog.state tells the three states apart by VALUE, not by key presence (D-10)', () => {
+  // The defect this pins: the three outcomes used to differ only by whether
+  // `section_empty` was there at all - absent when CHANGELOG.md was absent,
+  // false when it had been read and was fine - and both read falsy, so
+  // milestone.md's halt could not tell a project with NO changelog from a clean
+  // one and closed as if the notes were fine. All three in one place so the
+  // distinguishing is the assertion, not three separate hopes.
+  const absent = seam(['bump', '--dir', fixture({ changelog: null }), '--version', '2.0.0', '--date', '2026-08-03']);
+  // Present, read, and nothing left to do: the target IS the manifest version,
+  // so the heading already exists and nothing is staged under Unreleased.
+  const clean = seam(['bump', '--dir', fixture(), '--version', '1.0.0', '--date', '2026-08-03']);
+  const { version, ...noVersion } = PLUGIN_1_0_0;
+  const refused = seam(['bump', '--dir', fixture({ plugin: noVersion }), '--version', '2.0.0', '--date', '2026-08-03']);
+
+  assert.equal(absent.ok, true, JSON.stringify(absent));
+  assert.equal(clean.ok, true, JSON.stringify(clean));
+  assert.equal(refused.ok, false, JSON.stringify(refused));
+  assert.equal(absent.changelog.state, 'absent');
+  assert.equal(clean.changelog.state, 'ok');
+  assert.equal(clean.changelog.changed, false, 'read and needed nothing');
+  assert.equal(refused.changelog.state, 'not-examined', 'refused before the gate was entered');
+  const states = [absent, clean, refused].map((r) => r.changelog.state);
+  assert.equal(new Set(states).size, 3, `three states, three values: ${JSON.stringify(states)}`);
+  for (const [label, r] of [['absent', absent], ['clean', clean], ['refused', refused]]) {
+    assert.ok('state' in r.changelog, `${label}: the key is PRESENT on every path`);
+  }
+});
+
+test('bump: --version v refuses by NAMING the raw argument, not as no-target-version (D-06)', () => {
+  // Measured before the fix: `--version v` returned
+  // {"ok":false,"reason":"no-target-version","target":""} - the leading `v` was
+  // stripped, the empty remainder discarded the raw argument, and the seam then
+  // reported that no version was given. That is false, and it names nothing the
+  // operator can repair.
+  for (const arg of ['v', '  v  ']) {
+    const dir = fixture();
+    const pluginBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+    const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+    const { json: r, status } = seamStatus(['bump', '--dir', dir, '--version', arg, '--date', '2026-08-03']);
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.action, 'refuse');
+    assert.equal(r.reason, 'unparseable-version', `--version ${JSON.stringify(arg)}: ${JSON.stringify(r)}`);
+    assert.equal(r.target, 'v', 'the RAW trimmed argument survives into the envelope');
+    assert.match(r.detail, /"v"/, 'the sentence names what it was given');
+    assert.equal(status, 1);
+    assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), pluginBefore);
+    assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore);
+  }
+});
+
+test('bump: the three neighbouring --version spellings keep their own refusals', () => {
+  // The guard on the arm above: only a value that normalization EMPTIES takes
+  // the raw-argument path. `vv` still normalizes to something, an ABSENT
+  // --version has no raw value at all, and a blank one never reaches bump().
+  const doubled = seam(['bump', '--dir', fixture(), '--version', 'vv', '--date', '2026-08-03']);
+  assert.equal(doubled.reason, 'unparseable-version', JSON.stringify(doubled));
+
+  const absent = seam(['bump', '--dir', fixture(), '--date', '2026-08-03']);
+  assert.equal(absent.ok, false);
+  assert.equal(absent.reason, 'no-target-version', JSON.stringify(absent));
+
+  const blank = seam(['bump', '--dir', fixture(), '--version', '   ', '--date', '2026-08-03']);
+  assert.equal(blank.ok, false);
+  assert.equal(blank.reason, 'missing-flag-value', JSON.stringify(blank));
 });
 
 test('unknown subcommand: usage, ok false', () => {

@@ -203,6 +203,35 @@ is 1-indexed into the normalized text, `text` is the offending line trimmed
 and truncated to 120 characters with a trailing `...`, and a line reports at
 most one issue per code.
 
+Which codes a read sees depends on the KEY THAT OWNS the line, never on the
+key the caller asked for. Two sets:
+
+- **Every read, whatever key it asked for.** The five STRUCTURAL codes -
+  `unterminated-frontmatter`, `malformed-key-line`, `unknown-line`,
+  `item-without-key`, `commented-key-line` - plus the two BRACKET-level codes
+  `unterminated-inline-list` and `trailing-inline-content`, and
+  `redundant-path-segment` and `markdown-decorated-path`, which only a `files:`
+  declaration can raise in the first place. A structural defect belongs to the
+  block, not to a key: a `requirements:` block truncated by a stray line has to
+  reach a `files:` read too, or `plan-overlap` clears a half-parsed plan as
+  proved independence.
+- **Only where a LIST key owns the line.** The four VALUE-level codes -
+  `unterminated-quote`, `trailing-value-content`, `residual-quote`,
+  `backtick-wrapped-value` - are raised only when the key that owns the value
+  is `requirements:` or `files:`, the two keys the seams read as lists. A
+  backtick or a stray quote in the bytes of `goal:` or `plan:` is a defect in a
+  value nothing reads as a list, and reporting it would put it in
+  `plan-overlap`'s `frontmatter_issues` and the risk floor's declared-files
+  bail as though the plan's FILE LIST were unreadable. This is scoped at the
+  point the code is raised, so a `requirements:` value-level defect still
+  reaches a `files:` read and vice versa - both lists belong to the same
+  declaration, and an author should fix either before anything routes off the
+  other.
+
+An item line arriving while no block key is open owns no list key, so its
+value-level codes are scoped away there as well; the line still reports
+`item-without-key`, so nothing about it goes silent.
+
 A diagnostic is ADDITIVE: it never flips `ok` and is never ITSELF an audit
 `break`. It is NOT verdict-neutral in general, though (D-15) - where a code
 DROPS the payload it read, the ids or files that line would have
@@ -237,6 +266,7 @@ so in their own row and are marked CONDITIONAL. Read the row, not the class.
 | `trailing-value-content` | Non-whitespace follows a resolved scalar or block-item value. | Preserves the value resolved before it. | Remove the trailing content, quote the whole value, or move the extra text into a comment. |
 | `residual-quote` | The resolved value still contains a backslash, or the same quote character that wrapped it. | Preserves the payload (D-20: escapes are detected, never implemented). | Remove the stray quote/backslash, or rewrite the value without needing one. |
 | `redundant-path-segment` | A `files:` declaration carries a refused lease spelling: it begins `./`, carries a `/./` segment, or carries `//`. The one code that fires on BOTH arms of the declared-files union - the `files:` list and a `- **Files:**` task line - because a refusal on one arm alone lets the spelling reach `lease-check` through the other door undiagnosed. | Drops that declaration. Normalizing it instead could only WIDEN what the plan leases, which is the one direction a parallel-safety gate must not move quietly. | Write the plain spelling (`a.txt`, `src/a.txt`). |
+| `markdown-decorated-path` | A `files:` declaration wears markdown around the path: a MATCHED WRAP on one of the four emphasis pairs - `*`/`*` (so bold `**src/shared.rs**` and italic `*src/a.rs*` alike), `_`/`_` (`__src/a.rs__`, `_src/a.rs_`), `<`/`>` (the autolink form) and `[`/`]` (a bare bracket wrap) - the link form (`[src/a.rs](src/a.rs)`), or a MATCHED INTERIOR backtick pair (two or more backticks at indices strictly inside the value, `` src/`a`.rs ``). A wrap is MATCHED or it is nothing, because `_`, `[` and `*` are legal path bytes: `_private/a.rs`, `src/a_`, `src/__init__.py` and `[src/a.rs` are all diagnostic-free. The residual over-fire is a path that legitimately opens AND closes on the same emphasis byte (`__main__`), which reports and is still returned byte-exact - a phantom diagnostic routes the phase sequential, the safe direction for a parallel-safety gate, where a missed shape clears two plans into separate worktrees on one file. Backticks are absent from the wrap set on purpose: the boundary pair is `backtick-wrapped-value`'s below, and listing it here would double-report. The interior COUNT is the whole of the backtick arm and keeps this additive to `backtick-wrapped-value` below rather than a second opinion on the same bytes: a wrap has zero interior backticks and a wrap-plus-punctuation exactly one, so neither double-reports, and a real path carrying ONE interior backtick (`` lib/a`b.mjs ``) is a legal path and is NOT reported. FRONTMATTER ARM ONLY - unlike `redundant-path-segment` above, this does not reach the `- **Files:**` task line, which already strips backticks and contributes both its normalized and its raw form, so a decorated task path already matches a sibling's plain one. | Preserves the declaration, byte-exact - it is REPORTED, not dropped the way `redundant-path-segment` drops and not rewritten to the undecorated form. A decorated path and its plain sibling genuinely do not intersect, so repairing one would make `plan-overlap`'s `overlaps` mean "intersect after repair"; the diagnostic is what moves the gate, since `workflows/execute.md` routes any non-empty `frontmatter_issues` to the sequential path. | Write the plain path, with the markdown removed. |
 | `backtick-wrapped-value` | The resolved value STARTS or ENDS with a backtick - markdown formatting that leaked into data. Boundary, not containment and not a matched pair: a backtick INSIDE a value (`` lib/a`b.mjs ``) is a legal path character and is NOT reported, while every near-miss wrap is (`` `src/a.rs `` half-wrapped, `` `src/a.rs`, `` wrap-plus-punctuation, and a lone `` ` `` left when the `#` rule cut `` `#41` `` down to it). | CONDITIONAL, and this code never REPAIRS what it reports. It adds no truncation of its own, but it frequently fires on a value an EARLIER rule already cut: the `#` rule reduces `` `#41` `` to a lone `` ` `` and the whitespace rule reduces `` `src/my file.rs` `` to `` `src/my `` before this test runs, so the delivered payload is that fragment, not the bytes the author wrote. Whatever survives is passed on unrewritten (D-19). Counts follow from that: a fragment is not a real id, so on `requirements:` the requirement goes untraced and `counts.broken` moves. `files:` never feeds `counts` for ANY code, so read the `requirements:` behavior as the code's real signature. | Remove the backticks. |
 
 ## What is out of scope

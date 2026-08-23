@@ -570,17 +570,34 @@ test('corpus: pruning this repository\'s own REQUIREMENTS.md needs no hand repai
   const out = r.text.split('\n');
   const after = shippedRows(r.text);
 
+  let wrapped = 0;
   for (const { id, phase } of r.moved) {
     const span = activeSpan(reqs, id);
-    assert.ok(span.length > 1, `${id} must be a wrapped bullet for this corpus to bite`);
+    if (span.length > 1) wrapped += 1;
     // No line of a moved bullet's original span survives anywhere in the text.
     for (const line of span) {
       assert.ok(!out.includes(line), `${id} left an orphan: ${line}`);
     }
-    // ...and its new parenthetical is that whole span.
+    // ...and its new parenthetical is that whole span. Scoped to the rows this
+    // run ADDED, for the same reason the pipe count below is: ids are reused
+    // across milestones - the live Shipped table already holds a `REL-02` from
+    // `v1.1.0-rc.2` - so a bare `startsWith` finds an older row and compares
+    // this run's work against a milestone that closed three versions ago.
     assert.equal(
-      after.find((l) => l.startsWith(`| ${id} `)),
+      after.find((l) => !before.has(l) && l.startsWith(`| ${id} `)),
       `| ${id} (${parenthetical(span)}) | ${phase} | Complete | v9.9.9 |`);
+  }
+
+  // The multi-line span is what makes this corpus bite, but whether the live
+  // file happens to hold a wrapped bullet is the milestone cycle's business and
+  // not this suite's - the same reason the empty roadmap above skips instead of
+  // asserting. Asserting it here made the suite red the moment someone typed a
+  // requirement on one line, which is a state of the repository and not a
+  // result. Say it out loud and let the rest of the corpus keep its bite.
+  if (wrapped === 0) {
+    t.diagnostic(
+      'no moved bullet wraps in the live REQUIREMENTS.md: '
+      + 'the multi-line span is unexercised by this corpus');
   }
 
   // Every row this run ADDED is five-piped. The rows it did not add are

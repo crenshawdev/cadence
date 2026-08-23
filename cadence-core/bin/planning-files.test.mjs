@@ -21,7 +21,7 @@ import {
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
   atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
-  parseArchiveRows, appendArchiveRows,
+  parseArchiveRows, appendArchiveRows, parsePlanFiles,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -371,6 +371,47 @@ const ROWS = [
     text: fence('files:\n  - "#41"\n  # shared with plan 2\n  - "#46"'),
     key: 'files', items: ['#41', '#46'], issues: [],
   },
+
+  // --- value-level codes are scoped to the two LIST keys (FRM-01, D-01) -----
+  // Measured 2026-08-22: a backtick-wrapped token followed by more words
+  // returns BOTH trailing-value-content and backtick-wrapped-value, so the
+  // gate has to cover the whole resolveValue family, not the backtick code
+  // alone (D-07).
+  {
+    name: 'a backtick-wrapped goal: scalar raises nothing on a files: read',
+    text: fence('goal: `something` and more words\nfiles:\n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: [],
+  },
+  {
+    name: 'the same defect under files: itself still reports, on the same read',
+    text: fence('goal: `something` and more words\nfiles:\n  - `src/a.rs`'),
+    key: 'files', items: ['`src/a.rs`'], issues: ['backtick-wrapped-value'],
+  },
+  {
+    name: 'a value-level defect owned by requirements: still reaches a files: read',
+    text: fence('requirements:\n  - `#41`\nfiles:\n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: ['backtick-wrapped-value'],
+  },
+  {
+    name: 'a structural unknown-line inside requirements: still appears on a files: read',
+    text: fence('requirements:\n  - "#41"\n  a stray line\nfiles:\n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: ['unknown-line'],
+  },
+  {
+    name: 'an unterminated quote under goal: is scoped away, not reported to a files: read',
+    text: fence('goal: "unbalanced\nfiles:\n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: [],
+  },
+  {
+    name: 'the two bracket-level codes are not gated: goal: keeps reporting them',
+    text: fence('goal: [a, b\nfiles:\n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: ['unterminated-inline-list'],
+  },
+  {
+    name: 'an item with no block key open reports item-without-key even when its value-level code is scoped away',
+    text: fence('goal: something\n- "unbalanced\nfiles:\n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: ['item-without-key'],
+  },
 ];
 
 // One test() per row, not one loop inside one test(): a row that fails
@@ -413,6 +454,74 @@ test('planning-files: a path added under the template\'s bare files: block key i
   const text = readFileSync(new URL('../templates/PLAN.md', import.meta.url), 'utf8')
     .replace(/^(files:.*)$/m, '$1\n  - src/a.rs');
   assert.deepEqual(readFrontmatterList(text, 'files'), { items: ['src/a.rs'], issues: [] });
+});
+
+// --- markdown decoration on a declared path (FRM-02) ------------------------
+
+// Each row: {name, path, decorated}. The path is written as the sole item of a
+// frontmatter `files:` block and read through parsePlanFiles - `decorated` is
+// whether it must earn `markdown-decorated-path`. The plain and
+// single-interior-backtick rows are the over-fire guard (UAT-21): a backtick is
+// a legal path character, so only a MATCHED interior pair is decoration.
+const DECORATION_ROWS = [
+  { name: 'bold', path: '**src/shared.rs**', decorated: true },
+  { name: 'underscore bold', path: '__src/shared.rs__', decorated: true },
+  { name: 'asterisk italic', path: '*src/a.rs*', decorated: true },
+  { name: 'underscore italic', path: '_src/a.rs_', decorated: true },
+  { name: 'autolink', path: '<src/a.rs>', decorated: true },
+  { name: 'bare bracket wrap', path: '[src/a.rs]', decorated: true },
+  { name: 'link form', path: '[src/a.rs](src/a.rs)', decorated: true },
+  { name: 'matched interior backtick pair', path: 'src/`a`.rs', decorated: true },
+  { name: 'plain path', path: 'src/a.rs', decorated: false },
+  { name: 'one interior backtick', path: 'lib/a`b.mjs', decorated: false },
+  // A wrap is MATCHED or it is nothing: `_`, `[` and `*` are legal path bytes,
+  // so a bare occurrence is never decoration. These are the over-fire guard on
+  // the emphasis arm, the counterpart to UAT-21's on the backtick arm.
+  { name: 'leading underscore only', path: '_private/a.rs', decorated: false },
+  { name: 'trailing underscore only', path: 'src/a_', decorated: false },
+  { name: 'interior underscores', path: 'src/__init__.py', decorated: false },
+  { name: 'unmatched bracket', path: '[src/a.rs', decorated: false },
+];
+
+for (const row of DECORATION_ROWS) {
+  test(`parsePlanFiles: ${row.name} ${row.decorated ? 'reports' : 'does not report'} markdown-decorated-path`, () => {
+    const { files, issues } = parsePlanFiles(fence(`files:\n  - ${row.path}`));
+    const decorations = issues.filter((i) => i.code === 'markdown-decorated-path');
+    assert.deepEqual(decorations, row.decorated
+      ? [{ line: 3, code: 'markdown-decorated-path', text: `- ${row.path}` }]
+      : []);
+    // AC4: reported, never dropped and never rewritten - the declaration is in
+    // the returned list byte-identical to what the plan wrote.
+    assert.deepEqual(files, [row.path]);
+  });
+}
+
+test('parsePlanFiles: every decorated shape survives in files byte-exact beside its diagnostic', () => {
+  const decorated = DECORATION_ROWS.filter((r) => r.decorated).map((r) => r.path);
+  const body = ['files:', ...decorated.map((p) => `  - ${p}`)].join('\n');
+  const { files, issues } = parsePlanFiles(fence(body));
+  assert.deepEqual(files, decorated, 'bytes unchanged, nothing dropped or rewritten');
+  assert.deepEqual(
+    issues.map((i) => [i.line, i.code]),
+    decorated.map((_, idx) => [idx + 3, 'markdown-decorated-path']),
+    'one issue per declaration, each naming its own line',
+  );
+});
+
+test('parsePlanFiles: a backtick-WRAPPED path reports the boundary code alone, not decoration too', () => {
+  // D-05: the interior rule is additive to the unchanged boundary rule. A wrap
+  // has zero interior backticks and a wrap-plus-punctuation exactly one, so
+  // neither double-reports.
+  for (const path of ['`src/a.rs`', '`src/a.rs`,']) {
+    const { issues } = parsePlanFiles(fence(`files:\n  - ${path}`));
+    assert.deepEqual(issues.map((i) => i.code), ['backtick-wrapped-value'], path);
+  }
+});
+
+test('parsePlanFiles: the decoration rule does not reach the - **Files:** task arm (D-06)', () => {
+  const text = fence('files: []') + '\n- **Files:** src/`a`.rs, **src/b.rs**\n';
+  const { issues } = parsePlanFiles(text);
+  assert.deepEqual(issues, []);
 });
 
 // --- normalize alone ---------------------------------------------------------
