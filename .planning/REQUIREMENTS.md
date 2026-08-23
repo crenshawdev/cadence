@@ -11,24 +11,6 @@ as a cycle of their own. Ids are seeded here at the open, the practice `v3.5.7`
 established. `/cad-plan` seeds each Traceability row as its phase is planned;
 rows are never hand-populated here.
 
-- **RBK-01**: at plan time, count the prior decisions, deviations and captures
-  the recall pass surfaced for the phase against how many the produced plan
-  actually cites (D-NN references, CAPTURE ids, prior SUMMARY open items), and
-  REPORT a plan citing zero of a non-empty set. Advisory, never a refusal: it
-  becomes a gate only once there is data on how often the zero case is
-  legitimate (#190).
-- **FST-01**: a `/cad-task` run leaves a record recall can find, so the corpus
-  stops having a hole exactly where the majority of real work went (#191).
-- **FST-02**: `/cad-task` runs the risk-surface check on its committed range. A
-  one-commit change to auth is not less risky for being off-roadmap (#191).
-- **FST-03**: `/cad-task` opens and closes a trace bracket, so per-role token
-  accounting covers the path most runs actually use (#191).
-- **WHY-01**: `/cad-why <path>[:<line>]` resolves through `git log` for the
-  commits touching that path and joins each to its phase, its plan task, the
-  D-NN that decided it, any deviation that refuted that decision, and any review
-  finding that survived triage against it. Newest first, in the record's own
-  words. A deterministic seam join: no model judgment, no summarization pass
-  (#192).
 
 The fast path explicitly does NOT gain a context step, a plan gate or a verify
 walk - the guarantees without the machinery is the whole ask, and adding those
@@ -259,6 +241,11 @@ parses only the Traceability table).
 | REL-01 (the release seam's silent no-ops become states a close can halt on - a manifest with no `version` field, and an absent `CHANGELOG.md` distinguishable from a clean run (#231 items 1, 4)) | 1 | Complete | v3.5.9 |
 | FRM-01 (a frontmatter read reports only the issues belonging to the key that was asked for, so a defect in one scalar stops surfacing on an unrelated list (#232 item 1)) | 2 | Complete | v3.5.9 |
 | FRM-02 (markdown decoration on a path is caught before `plan-overlap` compares strings, so two plans that write the same file are never cleared to run in parallel (#232 item 2)) | 2 | Complete | v3.5.9 |
+| WHY-01 (`/cad-why <path>[:<line>]` resolves through `git log` for the commits touching that path and joins each to its phase, its plan task, the D-NN that decided it, any deviation that refuted that decision, and any review finding that survived triage against it. Newest first, in the record's own words. A deterministic seam join: no model judgment, no summarization pass (#192).) | 1 | Complete | v3.6.0 |
+| RBK-01 (at plan time, count the prior decisions, deviations and captures the recall pass surfaced for the phase against how many the produced plan actually cites (D-NN references, CAPTURE ids, prior SUMMARY open items), and REPORT a plan citing zero of a non-empty set. Advisory, never a refusal: it becomes a gate only once there is data on how often the zero case is legitimate (#190).) | 2 | Complete | v3.6.0 |
+| FST-01 (a `/cad-task` run leaves a record recall can find, so the corpus stops having a hole exactly where the majority of real work went (#191).) | 3 | Complete | v3.6.0 |
+| FST-02 (`/cad-task` runs the risk-surface check on its committed range. A one-commit change to auth is not less risky for being off-roadmap (#191).) | 3 | Complete | v3.6.0 |
+| FST-03 (`/cad-task` opens and closes a trace bracket, so per-role token accounting covers the path most runs actually use (#191).) | 3 | Complete | v3.6.0 |
 
 ## Deferred
 
@@ -301,11 +288,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WHY-01 | Phase 1 | Complete |
-| RBK-01 | Phase 2 | Complete |
-| FST-01 | Phase 3 | Complete |
-| FST-02 | Phase 3 | Complete |
-| FST-03 | Phase 3 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
