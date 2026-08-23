@@ -2181,15 +2181,37 @@ function cmdCiteCount(dir, opts) {
   }
   const point = typeof opts.point === 'string' ? opts.point : undefined;
 
-  // Absent `--payload` is refused rather than fed to stdin, the reason
-  // `cmdAdjudication` states in full: `readJsonPayload()` with no argument sits
-  // reading a stdin no call site opens.
-  if (opts.payload === undefined) {
+  // The effective `memory.backend` across the config layers (repo > global),
+  // the SAME read `cmdRecall` makes and with the same schema default: an unset
+  // key is `builtin`. This repository sets no `memory.backend` and runs that
+  // default, so its own dogfooding never exercises the off arm - the state has
+  // to be CONSTRUCTED to be tested at all (D-06).
+  //
+  // `none` is a THIRD state on the record, not a spelling of "surfaced
+  // nothing". It is what makes three runs separable by their recorded fields
+  // alone: `backend: 'none'` is one, a `surfaced.count` of 0 WITHOUT that field
+  // is a second, and a non-empty `surfaced` with `cited.count` 0 is a third. No
+  // fourth field restates any of it.
+  const { config: citeConfig, warnings } = mergeLayers(join(dir, 'config.json'));
+  const off = (citeConfig?.memory?.backend ?? 'builtin') === 'none';
+
+  // On `none` there is no envelope to hand over, because `workflows/plan.md`
+  // skips the call that would have produced one, so `--payload` is neither
+  // required nor read and the surfaced set is empty by construction.
+  // `cmdRecall`'s own `none` arm is the precedent: it ignores the query it was
+  // handed and answers `{backend:'none', results:[], total:0}` without looking
+  // at the corpus. The envelope SHAPE below is the same on both paths, so a
+  // reader of these figures never has to branch on which state produced them.
+  //
+  // On `builtin` an absent `--payload` is refused rather than fed to stdin, the
+  // reason `cmdAdjudication` states in full: `readJsonPayload()` with no
+  // argument sits reading a stdin no call site opens.
+  if (!off && opts.payload === undefined) {
     return fail('bad-args',
       'cite-count needs --payload <file> - the surfaced set is a FILE, never inline '
       + 'JSON and never stdin');
   }
-  const payload = readJsonPayload(opts.payload);
+  const payload = off ? { ok: true, value: {} } : readJsonPayload(opts.payload);
   if (!payload.ok) return;
 
   // The DIRECTORY is the caller's spelling; only the echoed `phase` below is
@@ -2238,6 +2260,10 @@ function cmdCiteCount(dir, opts) {
   ok({
     phase: n,
     ...(point ? { point } : {}),
+    // Present ONLY on the off path, mirroring `cmdRecall`, which omits the
+    // field on every other arm. Its absence is what says the count ran against
+    // a live backend, so an omitted field is load-bearing here.
+    ...(off ? { backend: 'none' } : {}),
     plans: planFiles,
     surfaced: { count: rows.length, ids: rows.filter((r) => r.id !== undefined).map((r) => r.id) },
     cited: { count: citedIds.length, ids: citedIds },
@@ -2256,6 +2282,12 @@ function cmdCiteCount(dir, opts) {
     // unreadable payload look like a small one.
     ...(unkinded.length ? { unkinded } : {}),
     ...(malformed ? { malformed } : {}),
+    // A TORN config layer reads `memory.backend` as absent, which defaults to
+    // `builtin` - so a project that deliberately set `none` would be counted as
+    // a live backend and the third state would silently disappear from the
+    // record. Present only when non-empty, so the ordinary byte-stable output
+    // is unchanged (AC6).
+    ...(warnings.length ? { warnings } : {}),
   });
 }
 
