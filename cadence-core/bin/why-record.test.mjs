@@ -10,7 +10,10 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseCommitRows, shaMatches } from './lib/why-record.mjs';
+import {
+  contextDecisions, decisionsFor, parseCommitRows, planTaskBodies, shaMatches,
+} from './lib/why-record.mjs';
+import { parseContextDecisions } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** This repository's root: bin -> cadence-core -> root. */
@@ -154,4 +157,97 @@ test('a summary with no ## Commits section returns no rows rather than throwing'
   assert.deepEqual(parseCommitRows(read('_archive-v2.2.0', '1', 'SUMMARY.md')), []);
   assert.deepEqual(parseCommitRows(''), []);
   assert.deepEqual(parseCommitRows(undefined), []);
+});
+
+// --- Task 4: the decision edge --------------------------------------------
+
+const V220_3_PLAN = read('_archive-v2.2.0', '3', 'PLAN.md');
+const V220_3_CONTEXT = read('_archive-v2.2.0', '3', 'CONTEXT.md');
+
+test('planTaskBodies cuts a real plan on planTaskTitles own boundaries', () => {
+  const bodies = planTaskBodies(V220_3_PLAN);
+  assert.equal(bodies.length, 5);
+  assert.deepEqual(bodies.map((b) => b.ordinal), [1, 2, 3, 4, 5]);
+  assert.equal(bodies[2].title, 'a target that is not a strict upgrade refuses');
+  assert.ok(bodies[2].body.startsWith('### Task 3: '));
+  assert.ok(!bodies[2].body.includes('### Task 4:'), 'a body stops at the next task heading');
+  assert.ok(!bodies[4].body.includes('## Notes'), 'the last body stops at the next ## section, not at end of file');
+});
+
+test('planTaskBodies attributes nothing rather than wrongly when the heading count disagrees', () => {
+  // `### Task foo` is a heading line this cut would take and `planTaskTitles`
+  // would not, because its anchored grammar requires a number. The two counts
+  // disagree, so nothing is attributed.
+  const mixed = ['### Task 1: real', 'body', '', '### Task foo', 'body'].join('\n');
+  assert.deepEqual(planTaskBodies(mixed), []);
+  assert.deepEqual(planTaskBodies('# a plan with no tasks'), []);
+});
+
+test('contextDecisions unions the durable and the phase-local sections, durable first', () => {
+  const durable = parseContextDecisions(V220_3_CONTEXT);
+  const all = contextDecisions(V220_3_CONTEXT);
+  assert.equal(durable.length, 4, 'the recall surface returns the durable set alone');
+  assert.equal(all.length, 16, 'this command needs the phase-local decisions too - they are the answer');
+  assert.deepEqual(all.slice(0, 4), durable, 'durable first, verbatim');
+  assert.ok(all.some((d) => d.startsWith('D-08 (siblings):')));
+
+  const ids = all.map((d) => d.slice(0, d.indexOf(' ')));
+  assert.equal(new Set(ids).size, ids.length, 'no decision is listed twice');
+});
+
+test('a legacy CONTEXT with only ## Decisions still yields each decision exactly once', () => {
+  const legacy = ['## Decisions', '', '- D-01 (a): first', '- D-02 (b): second', ''].join('\n');
+  assert.deepEqual(contextDecisions(legacy), ['D-01 (a): first', 'D-02 (b): second']);
+});
+
+test('a task body citing D-08 yields a task-level cite carrying that CONTEXT line verbatim', () => {
+  const answer = decisionsFor({
+    planText: V220_3_PLAN, contextText: V220_3_CONTEXT, taskCell: '3',
+  });
+  assert.equal(answer.scope, 'task');
+  assert.deepEqual(answer.ids, ['D-02', 'D-05', 'D-06', 'D-07', 'D-08']);
+  assert.ok(answer.lines.includes('D-08 (siblings): the sibling-manifest loop inherits the guard through the'),
+    `expected the CONTEXT line's own text, got ${JSON.stringify(answer.lines)}`);
+});
+
+test("a task cell that names no task falls back to the plan's ## Context cites, labelled plan-scoped", () => {
+  // `fix 1` is a real cell in shipped summaries and names a review-fix round,
+  // not a task, so there is no body to read and the answer says so by scope.
+  const answer = decisionsFor({
+    planText: V220_3_PLAN, contextText: V220_3_CONTEXT, taskCell: 'fix 1',
+  });
+  assert.equal(answer.scope, 'plan');
+  assert.ok(answer.ids.includes('D-01'));
+  assert.ok(answer.ids.includes('D-05'));
+  assert.ok(answer.lines.includes('D-01 (refusal envelope): every refusal in `release-bump.mjs` - downgrade,'));
+  assert.ok(answer.lines.includes('D-05 (refusal is a verdict, not a throw): `decideManifestBump` stays total -'));
+});
+
+test('a plan naming no D-NN at all yields every decision the CONTEXT carries, phase-scoped', () => {
+  const bare = ['# Phase 3 - Plan', '', '## Context', '', 'No decision is cited here.', '',
+    '## Tasks', '', '### Task 1: something', '', '- **Action:** do it', ''].join('\n');
+  const answer = decisionsFor({ planText: bare, contextText: V220_3_CONTEXT, taskCell: '1' });
+  assert.equal(answer.scope, 'phase');
+  assert.deepEqual(answer.ids, []);
+  assert.deepEqual(answer.lines, contextDecisions(V220_3_CONTEXT));
+  assert.equal(answer.lines.length, 16, 'a phase-scoped answer is the whole set, never an empty result');
+});
+
+test('a cited decision the CONTEXT does not carry is stated rather than dropped', () => {
+  const plan = ['## Context', '', 'This plan turns on D-99.', ''].join('\n');
+  const answer = decisionsFor({ planText: plan, contextText: V220_3_CONTEXT, taskCell: '' });
+  assert.equal(answer.scope, 'plan');
+  assert.deepEqual(answer.ids, ['D-99']);
+  assert.deepEqual(answer.lines,
+    ["D-99 - cited here, but the phase's CONTEXT.md carries no such decision"]);
+});
+
+test('a phase with no CONTEXT.md at all reports absent, not an invented decision', () => {
+  const answer = decisionsFor({ planText: V220_3_PLAN, contextText: '', taskCell: '99' });
+  assert.equal(answer.scope, 'plan', 'the cites are still real; only their text is missing');
+  assert.ok(answer.lines.every((l) => l.includes('carries no such decision')));
+
+  const nothing = decisionsFor({ planText: '# no cites', contextText: '', taskCell: '1' });
+  assert.equal(nothing.scope, 'absent');
+  assert.deepEqual(nothing.lines, []);
 });

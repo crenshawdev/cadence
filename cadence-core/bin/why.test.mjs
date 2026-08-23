@@ -243,3 +243,36 @@ test('two runs over this repository, with the index in place, write byte-identic
   const b = run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']).stdout;
   assert.equal(a, b, 'a readdir-ordered index build is exactly how this goes non-deterministic');
 });
+
+// --- Plan 2 task 4: the decision edge --------------------------------------
+
+test("a task body's D-NN cite reaches the rendered chain with the CONTEXT line's own text", () => {
+  const { stdout } = run(['cadence-core/bin/lib/capture-file.mjs', '--dir', REPO, '--top', '30']);
+  const env = oneJsonLine(stdout);
+  assert.equal(env.ok, true);
+  assert.deepEqual(env.warnings, []);
+
+  // v3.3.0 phase 1 plan 1 task 4, whose Action names D-02.
+  const entry = entryFor(env.text, '16bd5e130ad970a14635e9466316da8fc6c9cdda');
+  assert.ok(entry, 'expected the debt-harvest commit in the chain');
+  assert.ok(entry.includes('decision: cited by this task (D-02)'),
+    `expected a task-level cite, got:\n${entry}`);
+  assert.ok(entry.includes('  D-02 (write path): All three product writers of CAPTURE.md route through that'),
+    `expected the CONTEXT line verbatim under it, got:\n${entry}`);
+});
+
+test('the fallback arm carries a phase-scoped label rather than passing itself off as task-level', () => {
+  const { stdout } = run(['cadence-core/bin/lib/capture-file.mjs', '--dir', REPO, '--top', '30']);
+  const env = oneJsonLine(stdout);
+
+  // v3.3.0 phase 1 plan 2 task 4, whose own body cites no decision - so the
+  // answer is the PLAN's cites, and it says so before it quotes anything.
+  const entry = entryFor(env.text, '8e27033805ac8a5886c07ddd61756106538b22e8');
+  assert.ok(entry, 'expected the recall-walk commit in the chain');
+  assert.ok(entry.includes("decision: PHASE-SCOPED - cited by the plan's ## Context, not by this task"),
+    `expected the phase-scoped label, got:\n${entry}`);
+
+  const data = env.entries.find((e) => e.sha === '8e27033805ac8a5886c07ddd61756106538b22e8');
+  assert.equal(data.join.decision.scope, 'plan');
+  assert.ok(data.join.decision.lines.length > 0);
+});

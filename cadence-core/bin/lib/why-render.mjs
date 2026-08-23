@@ -138,6 +138,39 @@ function fieldTask(j) {
 }
 
 /**
+ * A label line followed by the record's OWN lines, indented under it. The
+ * indent is the only byte this module adds to a quoted line: it is what keeps a
+ * multi-line quote readable as one field's value rather than as five more
+ * fields, and it is fixed rather than computed so two runs render it the same.
+ * @param {string} label @param {string[]} lines @returns {string}
+ */
+function quoted(label, lines) {
+  return [label, ...lines.map((l) => `  ${l}`)].join('\n');
+}
+
+/** How each decision scope announces itself. `phase` is the one that must not
+ * pass itself off as a task-level fact (D-10). */
+const DECISION_SCOPE = Object.freeze({
+  task: (/** @type {string[]} */ ids) => `cited by this task (${ids.join(', ')})`,
+  plan: (/** @type {string[]} */ ids) => `PHASE-SCOPED - cited by the plan's ## Context, not by this task (${ids.join(', ')})`,
+  phase: () => 'PHASE-SCOPED - neither the task nor the plan cites a decision, so every decision this phase recorded is listed',
+});
+
+/**
+ * The `decision:` line (D-10). The scope is announced BEFORE the quoted lines,
+ * because a phase-scoped answer presenting itself as a task-level one is the
+ * specific wrong this edge exists to avoid.
+ * @param {EntryJoin} [j] @returns {string|undefined}
+ */
+function fieldDecision(j) {
+  const d = j && /** @type {any} */ (j).decision;
+  if (!d || !d.lines || !d.lines.length) return undefined;
+  const announce = DECISION_SCOPE[d.scope];
+  if (!announce) return undefined;
+  return quoted(announce(d.ids || []), d.lines);
+}
+
+/**
  * Fill every join field the entry does not already carry as a literal string.
  * Never mutates its argument.
  * @param {ChainEntry} e @returns {ChainEntry}
@@ -149,6 +182,7 @@ function decorate(e) {
     ...e,
     phase: e.phase ?? fieldPhase(j),
     task: e.task ?? fieldTask(j),
+    decision: e.decision ?? fieldDecision(j),
   };
 }
 
