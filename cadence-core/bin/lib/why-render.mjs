@@ -32,12 +32,28 @@
 // THE ENTRY CAP IS D-13'S SECOND ARM. Raw `git log` bytes already cross the
 // 10,000-byte threshold `cadence-core/references/conventions.md` states on two
 // of four sampled paths, and every join field an entry carries adds bytes per
-// entry - so the response is bounded by TRUNCATING THE ENTRY COUNT rather than
-// by relocating the bytes to a file, which is what `lib/bulk-output.mjs`'s
-// register does for the three call shapes it watches (none of which is this
-// seam). The shape is `cmdRecall`'s `--top`: a stated default plus the
-// untruncated `total` riding beside the `shown` count, so a truncated answer
-// stays legible as truncated.
+// entry - so the entry COUNT is truncated rather than the bytes being
+// relocated to a file, which is what `lib/bulk-output.mjs`'s register does for
+// the three call shapes it watches (none of which is this seam). The shape is
+// `cmdRecall`'s `--top`: a stated default plus the untruncated `total` riding
+// beside the `shown` count, so a truncated answer stays legible as truncated.
+//
+// WHAT THE CAP DOES NOT DO IS BOUND THE RESPONSE IN BYTES, and this comment
+// said it did until the phase-1 UAT deep pass measured it. The cap bounds ENTRY
+// COUNT; the join fields an entry carries are UNBOUNDED, so a path with few
+// commits and heavy join fields crosses the line at any cap that shows its
+// history at all. Swept every tracked path 2026-08-23, git 2.55.0, as the UTF-8
+// byte length of the emitted `text` at the shipped default: 548 paths rendered,
+// median 5,569 B, and 63 of them (11.5%) at or over 10,000 B. The worst are
+// `design-notes/sweep-2026-08-10-context-weight.md` at 30,825 B,
+// `cadence-core/bin/why-record.test.mjs` at 29,378 B (6 of 6 entries shown, 1
+// excluded - so those are join bytes, not the exclusion block) and `.gitignore`
+// at 28,888 B. Lowering the cap does not fix that tail: holding
+// `why-record.test.mjs` under the line takes one or two entries, which hides
+// the history a reader asked for. Relocating the bytes the way
+// `lib/bulk-output.mjs` does is the fix that would, and it is not this cap's
+// job. Read the maximality claim below as scoped to the three paths it names,
+// because that is all it is.
 //
 // AND THE DEFAULT IS THE LARGEST CAP MEASUREMENT SUPPORTS, not a band estimated
 // from a bytes-per-commit ratio - which is what the shipped comment did, and how
