@@ -1,0 +1,173 @@
+// Zero-dep tests for why.mjs - the `/cad-why` seam (WHY-01, phase 1 plan 1).
+// A real, hermetically-configured git repository the fixture below builds
+// (GIT_CONFIG_GLOBAL/SYSTEM=/dev/null, identity forced in the env, the
+// git-head.test.mjs precedent), never this repository's own history.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SEAM = join(HERE, 'why.mjs');
+
+const GIT_ENV = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+  GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+  GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+};
+
+/**
+ * A repo with two commits touching `f.txt`: the first writes three lines, the
+ * second changes ONLY the second line - so line 1 has exactly one touching
+ * commit and the bare chain has exactly two, newest first.
+ * @returns {{dir: string, first: string, second: string}}
+ */
+function repo() {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-why-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env: GIT_ENV });
+  // Explicit, distinct commit dates (a minute apart) - two commits made back
+  // to back in a test otherwise share one second's timestamp, which is a real
+  // git resolution limit and not a fixture accident, and it is what a "newest
+  // commit first" assertion needs settled to mean chronology rather than the
+  // sha tiebreak D-17 falls back to when two entries' commit dates truly tie.
+  const commitAt = (msg, iso) => execFileSync('git', ['-C', dir, 'commit', '-q', '-a', '-m', msg],
+    { stdio: 'ignore', env: { ...GIT_ENV, GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso } });
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(dir, 'f.txt'), 'one\ntwo\nthree\n');
+  git('add', '.');
+  commitAt('add f', '2026-01-01T00:00:00-05:00');
+  const first = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim();
+
+  writeFileSync(join(dir, 'f.txt'), 'one\nTWO\nthree\n');
+  commitAt('change line 2', '2026-01-01T00:01:00-05:00');
+  const second = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', env: GIT_ENV }).trim();
+
+  return { dir, first, second };
+}
+
+/**
+ * Run the seam, never throwing on a non-zero exit - several arms here refuse
+ * on purpose and this helper reads their envelope like any other.
+ * @param {string[]} args
+ * @returns {{status: number, stdout: string}}
+ */
+function run(args) {
+  try {
+    const stdout = execFileSync(process.execPath, [SEAM, ...args], { encoding: 'utf8', env: GIT_ENV });
+    return { status: 0, stdout };
+  } catch (e) {
+    return { status: e.status, stdout: e.stdout || '' };
+  }
+}
+
+/** Every run's stdout must be exactly one JSON object on exactly one line. */
+function oneJsonLine(stdout) {
+  const lines = stdout.split('\n').filter((l) => l !== '');
+  assert.equal(lines.length, 1, `expected exactly one stdout line, got: ${JSON.stringify(stdout)}`);
+  return JSON.parse(lines[0]);
+}
+
+test('a tracked path returns ok:true, a non-empty text, and the newest commit first', () => {
+  const { dir, first, second } = repo();
+  const { status, stdout } = run(['f.txt', '--dir', dir]);
+  const env = oneJsonLine(stdout);
+  assert.equal(status, 0);
+  assert.equal(env.ok, true);
+  assert.equal(env.result, 'chain');
+  assert.ok(env.text.length > 0);
+  assert.equal(env.entries.length, 2);
+  assert.equal(env.entries[0].sha, second, 'the newest commit renders first');
+  assert.equal(env.entries[1].sha, first);
+});
+
+test('<path>:<line> on a line only one of two commits touched returns a strict subset of the bare chain', () => {
+  const { dir, first } = repo();
+  const bare = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  const scoped = oneJsonLine(run(['f.txt:1', '--dir', dir]).stdout);
+
+  assert.equal(scoped.ok, true);
+  assert.equal(scoped.result, 'chain');
+  assert.equal(scoped.entries.length, 1);
+  assert.equal(scoped.entries[0].sha, first);
+  assert.ok(scoped.entries.length < bare.entries.length);
+  const bareShas = new Set(bare.entries.map((e) => e.sha));
+  assert.ok(scoped.entries.every((e) => bareShas.has(e.sha)), 'every scoped entry must also be in the bare chain');
+});
+
+test('a path git never saw returns ok:true with a stated not-in-history result and no fatal: on stdout', () => {
+  const { dir } = repo();
+  const { status, stdout } = run(['nope/never.txt', '--dir', dir]);
+  const env = oneJsonLine(stdout);
+  assert.equal(status, 0);
+  assert.equal(env.ok, true);
+  assert.equal(env.result, 'not-in-history');
+  assert.ok(!stdout.includes('fatal:'));
+});
+
+test('a line past end of file returns a stated result rather than a non-zero exit or a crash', () => {
+  const { dir } = repo();
+  const { status, stdout } = run(['f.txt:9999', '--dir', dir]);
+  const env = oneJsonLine(stdout);
+  assert.equal(status, 0);
+  assert.equal(env.ok, true);
+  assert.equal(env.result, 'line-past-end');
+  assert.ok(!stdout.includes('fatal:'));
+});
+
+test('a valueless --dir returns ok:false naming --dir', () => {
+  const { status, stdout } = run(['--dir']);
+  const env = oneJsonLine(stdout);
+  assert.equal(status, 1);
+  assert.equal(env.ok, false);
+  assert.ok(env.detail.includes('--dir'));
+});
+
+test('a valueless --top with no positional argument refuses on --top rather than the missing query', () => {
+  const { dir } = repo();
+  const { status, stdout } = run(['--dir', dir, '--top']);
+  const env = oneJsonLine(stdout);
+  assert.equal(status, 1);
+  assert.equal(env.ok, false);
+  assert.ok(env.detail.includes('--top'), `expected the refusal to name --top, got ${JSON.stringify(env)}`);
+});
+
+test('every run in this file parses as exactly one JSON object', () => {
+  const { dir } = repo();
+  for (const args of [['f.txt', '--dir', dir], ['nope.txt', '--dir', dir], ['--dir'], []]) {
+    const { stdout } = run(args);
+    assert.doesNotThrow(() => oneJsonLine(stdout), `${JSON.stringify(args)} did not print one JSON line`);
+  }
+});
+
+// --- AC6 / D-07: determinism and the record that is not an input -----------
+
+test('two runs over an unchanged tree write byte-identical stdout', () => {
+  const { dir } = repo();
+  const a = run(['f.txt', '--dir', dir]).stdout;
+  const b = run(['f.txt', '--dir', dir]).stdout;
+  assert.equal(a, b);
+});
+
+test('the answer is unchanged whether .planning/trace.jsonl is present or absent', () => {
+  const { dir } = repo();
+  const before = run(['f.txt', '--dir', dir]).stdout;
+  execFileSync('mkdir', ['-p', join(dir, '.planning')]);
+  writeFileSync(join(dir, '.planning', 'trace.jsonl'), '{"not":"read"}\n');
+  const after = run(['f.txt', '--dir', dir]).stdout;
+  assert.equal(before, after);
+});
+
+test('every child-process call in why.mjs names git as its command', () => {
+  const source = readFileSync(SEAM, 'utf8');
+  const calls = source.matchAll(/\b(?:execFileSync|spawnSync|spawn|exec)\(\s*([^,)]+)/g);
+  let found = 0;
+  for (const m of calls) {
+    found += 1;
+    assert.equal(m[1].trim(), "'git'", `expected 'git' as the command argument, got ${m[1]}`);
+  }
+  assert.ok(found > 0, 'expected at least one child-process call in why.mjs');
+});

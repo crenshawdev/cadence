@@ -101,22 +101,25 @@ function renderEntry(e) {
 
 /**
  * Render `entries` into the one `text` string the seam emits, plus the counts
- * its envelope carries beside it.
+ * its envelope carries beside it and the SORTED, CAPPED entries themselves -
+ * why.mjs (task 3) carries both `text` and `entries` on its envelope (D-02),
+ * and returning the already-sorted slice here is what keeps the sort a single
+ * computation rather than a second copy of it in the seam.
  *
  * @param {ChainEntry[]} entries @param {{top?: number}} [opts]
- * @returns {{text: string, shown: number, total: number}}
+ * @returns {{text: string, shown: number, total: number, entries: ChainEntry[]}}
  */
 export function renderChain(entries, opts = {}) {
   const top = Number.isInteger(opts.top) && opts.top > 0 ? opts.top : DEFAULT_TOP;
   const sorted = sortEntries(entries);
   const total = sorted.length;
-  const shown = sorted.slice(0, top);
+  const capped = sorted.slice(0, top);
 
-  if (shown.length === 0) return { text: 'No commits in this chain.', shown: 0, total };
+  if (capped.length === 0) return { text: 'No commits in this chain.', shown: 0, total, entries: [] };
 
-  let text = shown.map(renderEntry).join('\n\n');
-  if (total > shown.length) {
-    text += `\n\nShowing ${shown.length} of ${total} commit(s). Pass --top ${total} to see the rest.`;
+  let text = capped.map(renderEntry).join('\n\n');
+  if (total > capped.length) {
+    text += `\n\nShowing ${capped.length} of ${total} commit(s). Pass --top ${total} to see the rest.`;
   }
-  return { text, shown: shown.length, total };
+  return { text, shown: capped.length, total, entries: capped };
 }

@@ -1055,6 +1055,19 @@ export const CONTRACTS = {
       '--list': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
   },
+  // why.mjs takes a QUERY (`<path>[:<line>]`) as its positional argument,
+  // never a subcommand, so the bare row carries the whole flag set - the
+  // skim.mjs precedent. `--dir` is the repository root and lives on `'*'`
+  // with every other seam's `--dir`/`--root` row; `--top` is this seam's own,
+  // task 2's entry cap (CONTEXT D-13).
+  'why.mjs': {
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    '': {
+      '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+  },
 };
 
 /**
