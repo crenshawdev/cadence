@@ -7838,3 +7838,185 @@ test('adjudication + deferred record: a symlink at the carried home is refused, 
   assert.equal(r.reason, 'no-phase-dir');
   assert.deepEqual(readdirSync(join(dir, 'elsewhere')), []);
 });
+
+// --- cite-count: the read-back count -------------------------------------------
+
+// A dedicated runner, for the same reason `recall` has one: the backend read
+// goes through the config layers, so the global layer is pinned off a
+// nonexistent path (D-06) or a developer's real ~/.claude/cadence/config.json
+// would flip the answer locally while CI stayed green. Returns the parsed JSON
+// AND the raw stdout - the determinism case byte-compares the raw string.
+function citeCount(args, dir) {
+  let raw;
+  let code = 0;
+  try {
+    raw = execFileSync('node', [PLANNING, 'cite-count', ...args, '--dir', dir], {
+      encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(tmpdir(), 'cad-no-such-global.json') },
+    });
+  } catch (e) { raw = e.stdout; code = e.status; }
+  return { json: JSON.parse(raw), raw, _exit: code };
+}
+
+/**
+ * The surfaced set as a FILE beside the fixture (D-03). Never inline JSON: the
+ * envelope carries verbatim artifact prose with arbitrary quoting.
+ */
+function citePayload(dir, results, name = 'payload.json') {
+  const file = join(dir, name);
+  // `total` is deliberately larger than `results.length` everywhere below - the
+  // count reads the BOUNDED results and never `total` (D-11).
+  writeFileSync(file, JSON.stringify({ total: 441, results }));
+  return file;
+}
+
+/** A plan BODY: makeTree writes `# Plan <n>`, and a citation is prose (D-09). */
+function citePlanBody(dir, n, file, body) {
+  writeFileSync(join(dir, 'phases', String(n), file), body);
+}
+
+/**
+ * The fixture every case below shares: phase 2, one plan citing a BARE `D-03`
+ * and a phase-QUALIFIED `phase 7 D-05`. Every tree is scratch; nothing here
+ * reaches this repository's own .planning.
+ */
+function citeTree() {
+  const dir = makeTree({ phases: { 2: { plan: ['PLAN-1.md'] } } });
+  citePlanBody(dir, 2, 'PLAN-1.md',
+    '# Plan\n\n## Context\n\nThis plan carries D-03 forward unchanged, and it holds '
+    + 'the boundary phase 7 D-05 drew.\n');
+  return dir;
+}
+
+test('cite-count: the envelope names both sides per item, with the unjoinable arms marked', () => {
+  const dir = citeTree();
+  const payload = citePayload(dir, [
+    // Cited: a bare mention scopes to the plan's own phase 2, and this archived
+    // row's source phase IS 2 - the locked consequence of D-04 plus D-10.
+    { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): the archived one' },
+    // Cited: `phase 7 D-05` scopes to 7 and this row's source phase is 7.
+    { score: 8, source: 'phases/7/CONTEXT.md', snippet: 'D-05 (area): the qualified one' },
+    // Surfaced and NOT cited - the case the whole phase exists to make visible.
+    { score: 7, source: 'phases/1/CONTEXT.md', snippet: 'D-09 (area): nobody cited this' },
+    { score: 6, source: 'phases/1/CAPTURE.md', snippet: 'a capture row carries no id' },
+    { score: 5, source: 'phases/3/SUMMARY.md', snippet: 'a deviation carries no id either' },
+    { score: 4, source: 'phases/3/UAT.md', snippet: 'a uat finding' },
+  ]);
+  const r = citeCount(['--phase', '2', '--payload', payload], dir);
+  assert.equal(r.json.ok, true, r.raw);
+  assert.equal(r._exit, 0);
+  assert.equal(r.json.phase, 2);
+  assert.deepEqual(r.json.plans, ['PLAN-1.md']);
+
+  // The BOUNDED results, never `total` (D-11): six rows surfaced against a
+  // payload claiming 441 matched.
+  assert.equal(r.json.surfaced.count, 6);
+  assert.deepEqual(r.json.surfaced.ids, [
+    'v3.5.3/phases/2/CONTEXT.md#D-03',
+    'phases/7/CONTEXT.md#D-05',
+    'phases/1/CONTEXT.md#D-09',
+  ], 'only a CONTEXT decision carries an id (D-02); the other three arms have none');
+
+  // An explicit LIST and never a number alone (AC1), and a subset of the ids
+  // above - a cited id nothing surfaced would be an answer about another tree.
+  assert.deepEqual(r.json.cited.ids,
+    ['v3.5.3/phases/2/CONTEXT.md#D-03', 'phases/7/CONTEXT.md#D-05']);
+  assert.equal(r.json.cited.count, 2);
+  for (const id of r.json.cited.ids) assert.ok(r.json.surfaced.ids.includes(id), id);
+
+  // All four arms ALWAYS, and the three that carry no identifier read as
+  // UNJOINABLE rather than as `cited: 0` - a plan that ignored them and a plan
+  // nothing could tell about are different answers (D-02).
+  assert.deepEqual(r.json.cited_by_kind.decision, { surfaced: 3, cited: 2 });
+  assert.deepEqual(r.json.cited_by_kind.capture, { surfaced: 1, unjoinable: true });
+  assert.deepEqual(r.json.cited_by_kind.deviation, { surfaced: 1, unjoinable: true });
+  assert.deepEqual(r.json.cited_by_kind.uat, { surfaced: 1, unjoinable: true });
+  for (const arm of ['capture', 'deviation', 'uat']) {
+    assert.equal('cited' in r.json.cited_by_kind[arm], false,
+      `${arm} reports unjoinable, never a zero a later gate would threshold against`);
+  }
+
+  // The arms reconcile with the headline: a row counted in `surfaced` and in no
+  // arm would make the breakdown stop adding up.
+  const armed = Object.values(r.json.cited_by_kind).reduce((a, k) => a + k.surfaced, 0);
+  assert.equal(armed, r.json.surfaced.count);
+});
+
+test('cite-count: the queried phase\'s own rows are dropped and archived same-numbered ones are kept', () => {
+  // BOTH directions on ONE payload, so a rule that dropped both or kept both
+  // fails here: the plan trivially cites its own CONTEXT (D-04), and an
+  // archived phase 2 is a PRIOR phase 2 that the goal is asking about.
+  const dir = citeTree();
+  const payload = citePayload(dir, [
+    { score: 9, source: 'phases/2/CONTEXT.md', snippet: 'D-03 (area): the phase\'s own' },
+    { score: 8, source: '_archive-v3.5.0/2/CONTEXT.md', snippet: 'D-03 (area): a retired cycle' },
+    { score: 7, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): an ARCHIVE.md row' },
+  ]);
+  const r = citeCount(['--phase', '2', '--payload', payload], dir);
+  assert.equal(r.json.ok, true, r.raw);
+  assert.equal(r.json.surfaced.count, 2);
+  assert.deepEqual(r.json.surfaced.ids, [
+    '_archive-v3.5.0/2/CONTEXT.md#D-03',
+    'v3.5.3/phases/2/CONTEXT.md#D-03',
+  ]);
+  for (const id of r.json.surfaced.ids) {
+    assert.equal(id.startsWith('phases/2/'), false, id);
+  }
+});
+
+test('cite-count: two runs over an unchanged plan and payload are byte-identical', () => {
+  const dir = citeTree();
+  const payload = citePayload(dir, [
+    { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): cited' },
+    { score: 8, source: 'phases/1/CAPTURE.md', snippet: 'a capture row' },
+  ]);
+  const a = citeCount(['--phase', '2', '--payload', payload], dir);
+  const b = citeCount(['--phase', '2', '--payload', payload], dir);
+  assert.equal(a.raw, b.raw);
+  assert.equal(a.json.ok, true, a.raw);
+});
+
+test('cite-count: the run records no lifecycle/dispatch - it is a reader, not a subagent', () => {
+  const dir = citeTree();
+  const payload = citePayload(dir, [
+    { score: 9, source: 'phases/1/CONTEXT.md', snippet: 'D-01 (area): uncited' },
+  ]);
+  // Seeded with an unrelated event so an EMPTY file cannot pass this vacuously.
+  const trace = join(dir, 'trace.jsonl');
+  writeFileSync(trace,
+    '{"corr":"2-abc","phase":2,"family":"lifecycle","event":"phase_start"}\n');
+  const r = citeCount(['--phase', '2', '--payload', payload], dir);
+  assert.equal(r.json.ok, true, r.raw);
+  const events = readFileSync(trace, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(events.length >= 1, 'the seeded anchor is still there');
+  assert.deepEqual(events.filter((e) => e.family === 'lifecycle' && e.event === 'dispatch'), [],
+    'the count is a deterministic read; a dispatch here would mean a model was asked');
+});
+
+test('cite-count: memory.backend none is a third state, and needs no payload', () => {
+  // The off arm has to be CONSTRUCTED (D-06): this repository sets no
+  // memory.backend and runs the `builtin` default, so nothing dogfoods it.
+  const off = makeTree({ phases: { 2: { plan: ['PLAN-1.md'] } }, config: { memory: { backend: 'none' } } });
+  const r = citeCount(['--phase', '2'], off);
+  assert.equal(r.json.ok, true, r.raw);
+  assert.equal(r._exit, 0);
+  assert.equal(r.json.backend, 'none');
+  assert.equal(r.json.surfaced.count, 0);
+
+  // State two: a live backend that surfaced nothing. Separable from the above
+  // by the ABSENT `backend` field alone, which is why it is omitted rather than
+  // spelled `builtin`.
+  const live = citeTree();
+  const empty = citeCount(['--phase', '2', '--payload', citePayload(live, [])], live);
+  assert.equal(empty.json.ok, true, empty.raw);
+  assert.equal(empty.json.backend, undefined);
+  assert.equal(empty.json.surfaced.count, 0);
+
+  // And on a live backend the payload is REQUIRED, not defaulted to empty -
+  // otherwise state two would swallow a caller that simply forgot the file.
+  const missing = citeCount(['--phase', '2'], live);
+  assert.equal(missing.json.ok, false);
+  assert.equal(missing.json.reason, 'bad-args');
+  assert.match(missing.json.detail, /--payload/);
+  assert.equal(missing._exit, 1);
+});
