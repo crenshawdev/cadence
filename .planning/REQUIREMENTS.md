@@ -13,11 +13,22 @@ archive triage - the first time that block was read since it was written. Ids ar
 seeded here at the open, the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
 
-- **REL-01**: the release seam's silent no-ops become states a close can halt on - a manifest with no `version` field, and an absent `CHANGELOG.md` distinguishable from a clean run (#231 items 1, 4)
-- **REL-02**: changelog section bounding and emptiness read the document's real structure - fenced `## ` lines are not boundaries, a heading with no bullets is empty, and a body-final link-ref promotes with its section (#231 items 2, 3, 5)
-- **REL-03**: the seam documents every verdict code it can return, and an unparseable `--version` target refuses by name instead of reporting an empty target (#231 item 6)
-- **FRM-01**: a frontmatter read reports only the issues belonging to the key that was asked for, so a defect in one scalar stops surfacing on an unrelated list (#232 item 1)
-- **FRM-02**: markdown decoration on a path is caught before `plan-overlap` compares strings, so two plans that write the same file are never cleared to run in parallel (#232 item 2)
+- **REL-01**: the release seam's silent no-ops become states a close can halt
+  on - a manifest with no `version` field, and an absent `CHANGELOG.md`
+  distinguishable from a clean run (#231 items 1, 4)
+- **REL-02**: changelog section bounding and emptiness read the document's real
+  structure - fenced `## ` lines are not boundaries, a heading with no bullets
+  is empty, and a body-final link-ref promotes with its section (#231 items 2,
+  3, 5)
+- **REL-03**: the seam documents every verdict code it can return, and an
+  unparseable `--version` target refuses by name instead of reporting an empty
+  target (#231 item 6)
+- **FRM-01**: a frontmatter read reports only the issues belonging to the key
+  that was asked for, so a defect in one scalar stops surfacing on an unrelated
+  list (#232 item 1)
+- **FRM-02**: markdown decoration on a path is caught before `plan-overlap`
+  compares strings, so two plans that write the same file are never cleared to
+  run in parallel (#232 item 2)
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted into this cycle, and `BCH-01` stays in
