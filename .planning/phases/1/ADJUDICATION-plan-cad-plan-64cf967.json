@@ -1,0 +1,51 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "cad-plan-64cf967",
+  "round": 1,
+  "base": "64cf9670cecdc705be99e997a9ca0fdc87636596",
+  "head": "64cf9670cecdc705be99e997a9ca0fdc87636596",
+  "base_id": "64cf9670cecdc705be99e997a9ca0fdc87636596",
+  "head_id": "64cf9670cecdc705be99e997a9ca0fdc87636596",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN-2.md",
+      "line": 79,
+      "severity": "medium",
+      "claim": "Task 2 explicitly exempts the `no-plugin-manifest` and `bad-date` envelopes from carrying `changelog.state`, contradicting D-10's locked requirement that the explicit absent/not-examined signal is set on every path, including paths that never enter the changelog gate.",
+      "failure_scenario": "A `bump` invocation rejected for a bad date, or skipped because no plugin manifest exists, still has no explicit changelog state. Consumers cannot distinguish \"not examined\" from an envelope that simply omitted changelog information, so the phase leaves the key-presence ambiguity D-10 locked the work to remove. The proposed three-fixture test cannot expose either exempted path.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "Partly grounded, overstated in consequence. release-bump.mjs:232 (no-plugin-manifest) and :488 (bad-date) emit envelopes carrying NO manifest, siblings or changelog key at all, and the code comment at those sites states that filling them would fabricate values. D-10 names one ambiguity - milestone.md:83 reads changelog.section_empty and cannot tell an absent CHANGELOG.md from a clean one because both are falsy - and that ambiguity lives only on envelopes that DO carry a changelog object. PLAN-2 task 2 covers every such site: release-bump.mjs:238, :249, :292, :333 are the in-bump refusals that never enter the changelog gate, and :391 is the success emit. The two exempted envelopes have no changelog object for a consumer to misread, so the failure scenario's \"cannot distinguish\" does not arise there. Real residue: the plan states its exemption inline in task 2 rather than in PLAN Notes as a recorded deviation from a locked decision. That is a documentation nit, not an unmet requirement - kept as an open item, not a plan edit.",
+      "citation_missing": true,
+      "base_id": "64cf9670cecdc705be99e997a9ca0fdc87636596",
+      "head_id": "64cf9670cecdc705be99e997a9ca0fdc87636596"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN-1.md",
+      "line": 141,
+      "severity": "low",
+      "claim": "Task 4's verification does not prove that the five missing seam codes were added to `decideManifestBump`'s JSDoc block.",
+      "failure_scenario": "All five tokens can be placed in an unrelated comment or executable text in `release-decision.mjs`, making the unscoped `grep` pass while the JSDoc remains stale. The Plan 2 prose-agreement test only derives and checks the seven executable verdict literals, so it does not cover these five seam-owned codes either; D-11's nine-code JSDoc requirement can therefore ship unmet with every listed verification green.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "The scenario requires a token to already exist elsewhere in the file. Measured against this tree on 2026-08-22: grep -n for all five tokens in cadence-core/bin/lib/release-decision.mjs returns NOTHING, so after task 4 the only place any of the five can match is the JSDoc block the task edits. The verification also prints line numbers, so a reader confirms the block by inspection. The residual gap - the grep is file-scoped rather than block-scoped - is real but requires an executor to deliberately write the codes somewhere it was not told to. Kept as an open item for the executor to tighten, not a blocker on the plan.",
+      "citation_missing": true,
+      "base_id": "64cf9670cecdc705be99e997a9ca0fdc87636596",
+      "head_id": "64cf9670cecdc705be99e997a9ca0fdc87636596"
+    }
+  ]
+}
