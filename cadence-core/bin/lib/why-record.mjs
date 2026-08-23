@@ -345,3 +345,72 @@ function quote(ids, decisions) {
     return hit || `${id} - cited here, but the phase's CONTEXT.md carries no such decision`;
   });
 }
+
+// ---------------------------------------------------------------------------
+// THE DEVIATION EDGE, AND THE GAP IT HAS TO NAME (D-09).
+//
+// A SEPARATE READER FROM `parseSummarySnippets`, which merges `## Deviations`
+// with `## Open items` for the BM25 corpus and cannot tell them apart
+// afterwards. Both are the right answer for their own caller: recall wants
+// every bullet a phase left behind, and this command must never print an open
+// item as though the plan had been wrong about something. The `[deviation]`
+// tag is stripped exactly as that reader strips it, and the template's own
+// placeholder prose (`None...`, `<...>`) is skipped for the same reason it is
+// there - it is the template speaking, not the phase.
+//
+// THE EDGE ITSELF DOES NOT EXIST IN MACHINE-READABLE FORM, AND THE OUTPUT SAYS
+// SO BY NAME. `cadence-core/workflows/execute.md`, at the paragraph beginning
+// "A deviation that REFUTES a numbered context decision", prescribes appending
+// ` [corrected by plan-<k> deviation: ...]` to the refuted `D-NN` line in
+// CONTEXT.md. Measured across the archived and git-recovered CONTEXT files: 0
+// of 792 D-NN lines carry it, and only 6 of 123 `## Deviations` bullets name
+// any D-NN at all. So an entry prints the phase's deviation bullets UNJOINED
+// and labelled phase-scoped, plus `MARKER_GAP` - a statement, in the output,
+// that the marker the write side prescribes is absent from the record.
+//
+// REPORTING THIS EDGE AS "none" IS REFUSED. "No deviation corrected a decision
+// here" and "nothing in this corpus can express that a deviation corrected a
+// decision" are different claims, and only the second one is true. Printing the
+// first would hide the write-side gap this phase exists to expose - and fixing
+// the write side is explicitly out of scope, which is exactly why the gap has
+// to be visible from the read side instead of quietly absorbed by it.
+// ---------------------------------------------------------------------------
+
+/** The section whose bullets are deviations and nothing else. */
+export const DEVIATIONS_HEADING = '## Deviations';
+
+/**
+ * The sentence every entry with a resolved phase carries beside its deviation
+ * bullets. It names the marker by its literal spelling so a reader can grep the
+ * workflow that prescribes it and see for themselves that nothing emits it.
+ */
+export const MARKER_GAP = 'the `corrected by plan-<k> deviation:` marker '
+  + '`workflows/execute.md` prescribes for a deviation that refutes a decision '
+  + 'is absent from the whole record, so no deviation below is joined to a '
+  + 'decision - the edge is missing on the WRITE side, not empty here';
+
+/** Template prose, not phase content - the same two shapes
+ * `parseSummarySnippets` skips. */
+const PLACEHOLDER = /^(?:None\b|<)/;
+
+/**
+ * One SUMMARY.md's `## Deviations` bullets, `[deviation]` stripped and the rest
+ * byte-exact. Column-0 `- ` bullets only, first line of each: a wrapped
+ * continuation is the bullet's own tail and `parseSummarySnippets` reads it the
+ * same way, so a reader comparing the two sees one convention.
+ * @param {string} text @returns {string[]}
+ */
+export function parseDeviations(text) {
+  const lines = normalize(String(text || '')).split('\n');
+  const { start, end } = sectionSpan(lines, DEVIATIONS_HEADING);
+  if (start === -1) return [];
+  const out = [];
+  for (let i = start + 1; i < end; i++) {
+    const m = lines[i].match(/^-\s+(.*)$/);
+    if (!m) continue;
+    const raw = m[1].trim();
+    if (!raw || PLACEHOLDER.test(raw)) continue;
+    out.push(raw.replace(/^\[deviation\]\s*/, ''));
+  }
+  return out;
+}

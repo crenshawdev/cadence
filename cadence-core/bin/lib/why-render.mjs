@@ -73,6 +73,8 @@
 // field stated absent - never a shorter entry, and never an empty chain.
 'use strict';
 
+import { MARKER_GAP } from './why-record.mjs';
+
 /** The default entry cap (D-13). */
 export const DEFAULT_TOP = 10;
 
@@ -170,6 +172,26 @@ function fieldDecision(j) {
   return quoted(announce(d.ids || []), d.lines);
 }
 
+/** What an entry says when its phase recorded no deviation at all. It is a
+ * statement about the SUMMARY, never about whether a decision was refuted -
+ * `MARKER_GAP`, printed beside it, is what carries that. */
+const NO_DEVIATION_BULLETS = "(this phase's SUMMARY records no deviation)";
+
+/**
+ * The `deviation:` line (D-09). ALWAYS phase-scoped and ALWAYS carrying
+ * `MARKER_GAP`: the deviation-refutes-a-decision edge does not exist in
+ * machine-readable form, and an entry that quietly printed "none" would be
+ * reporting the absence of a refutation when what is actually absent is the
+ * marker that could have recorded one.
+ * @param {EntryJoin} [j] @returns {string|undefined}
+ */
+function fieldDeviation(j) {
+  const d = j && /** @type {any} */ (j).deviation;
+  if (!d || !Array.isArray(d.bullets)) return undefined;
+  const bullets = d.bullets.length ? d.bullets.map((/** @type {string} */ b) => `- ${b}`) : [NO_DEVIATION_BULLETS];
+  return quoted(`PHASE-SCOPED - ${MARKER_GAP}`, bullets);
+}
+
 /**
  * Fill every join field the entry does not already carry as a literal string.
  * Never mutates its argument.
@@ -183,6 +205,7 @@ function decorate(e) {
     phase: e.phase ?? fieldPhase(j),
     task: e.task ?? fieldTask(j),
     decision: e.decision ?? fieldDecision(j),
+    deviation: e.deviation ?? fieldDeviation(j),
   };
 }
 

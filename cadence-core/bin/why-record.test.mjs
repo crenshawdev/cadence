@@ -11,9 +11,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  contextDecisions, decisionsFor, parseCommitRows, planTaskBodies, shaMatches,
+  contextDecisions, decisionsFor, MARKER_GAP, parseCommitRows, parseDeviations,
+  planTaskBodies, shaMatches,
 } from './lib/why-record.mjs';
-import { parseContextDecisions } from './lib/planning-files.mjs';
+import { parseContextDecisions, parseSummarySnippets } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** This repository's root: bin -> cadence-core -> root. */
@@ -250,4 +251,56 @@ test('a phase with no CONTEXT.md at all reports absent, not an invented decision
   const nothing = decisionsFor({ planText: '# no cites', contextText: '', taskCell: '1' });
   assert.equal(nothing.scope, 'absent');
   assert.deepEqual(nothing.lines, []);
+});
+
+// --- Task 5: the deviation edge, and the gap it has to name ----------------
+
+const V220_3_SUMMARY = read('_archive-v2.2.0', '3', 'SUMMARY.md');
+
+test('the deviation reader returns the ## Deviations bullets and none of the ## Open items bullets', () => {
+  const bullets = parseDeviations(V220_3_SUMMARY);
+  // Six, not the three the plan predicted - counted off the file on 2026-08-23.
+  assert.equal(bullets.length, 6);
+  assert.equal(bullets[0], "Task 2's verify grep hit my own JSDoc naming the removed sources",
+    'the [deviation] tag is stripped and the rest is byte-exact');
+  assert.equal(bullets[5], 'The §11 chain is seven per-pair `test()` calls rather than one');
+  assert.ok(bullets.every((b) => !b.startsWith('[deviation]')));
+
+  // The `## Open items` section of the same file, which must not leak in: ten
+  // bullets, six of them severity-led adjudicated survivors.
+  assert.ok(!bullets.some((b) => b.startsWith('HIGH')), 'no severity-led open item');
+  assert.ok(!bullets.some((b) => b.startsWith('MEDIUM')));
+  assert.ok(!bullets.some((b) => b.startsWith('LOW')));
+  assert.ok(!bullets.some((b) => b.includes('Accepted cost')));
+  assert.ok(!bullets.some((b) => b.includes('review.triggers.diff.gate')));
+
+  // And the merged reader really does carry both, so the negative above is a
+  // separation this reader performs rather than an accident of the fixture.
+  const merged = parseSummarySnippets(V220_3_SUMMARY);
+  assert.equal(merged.length, 16, 'six deviations plus ten open items, indistinguishable afterwards');
+  assert.ok(merged.some((b) => b.startsWith('HIGH (convergent, live-verified):')));
+});
+
+test('a fenced ## line inside ## Deviations does not truncate the bullet list', () => {
+  const summary = [
+    '## Deviations', '',
+    '- [deviation] before the fence', '',
+    '```markdown', '## Open items', '```', '',
+    '- [deviation] after the fence', '',
+    '## Open items', '', '- an open item, not a deviation', '',
+  ].join('\n');
+  assert.deepEqual(parseDeviations(summary), ['before the fence', 'after the fence']);
+});
+
+test("the template's own placeholder prose is not a deviation", () => {
+  const summary = ['## Deviations', '', '- None.', '- <what went differently>', '', '## Open items', ''].join('\n');
+  assert.deepEqual(parseDeviations(summary), []);
+  assert.deepEqual(parseDeviations('# a summary with no deviations section'), []);
+});
+
+test('MARKER_GAP names the marker the write side prescribes and never says "none"', () => {
+  assert.ok(MARKER_GAP.includes('corrected by plan-<k> deviation:'),
+    'the marker is named by its literal spelling so a reader can grep for it');
+  assert.ok(MARKER_GAP.includes('workflows/execute.md'), 'and so is the workflow that prescribes it');
+  assert.ok(/write side/i.test(MARKER_GAP), 'the gap is located on the write side, not reported as an empty result');
 });

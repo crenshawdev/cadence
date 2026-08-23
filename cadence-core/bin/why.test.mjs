@@ -276,3 +276,33 @@ test('the fallback arm carries a phase-scoped label rather than passing itself o
   assert.equal(data.join.decision.scope, 'plan');
   assert.ok(data.join.decision.lines.length > 0);
 });
+
+// --- Plan 2 task 5: the deviation edge, and the gap it has to name ---------
+
+test("the rendered chain carries the phase's deviation bullets under a phase-scoped label", () => {
+  const { stdout } = run(['cadence-core/bin/lib/capture-file.mjs', '--dir', REPO, '--top', '30']);
+  const env = oneJsonLine(stdout);
+  const entry = entryFor(env.text, '8e27033805ac8a5886c07ddd61756106538b22e8');
+
+  assert.ok(entry.includes('deviation: PHASE-SCOPED - '),
+    `a deviation is a fact about the phase, not about this commit; got:\n${entry}`);
+  assert.ok(entry.includes('  - Plans otherwise executed as written; plan 2 reported zero deviations.'),
+    `expected the SUMMARY's own bullet, quoted; got:\n${entry}`);
+
+  const data = env.entries.find((e) => e.sha === '8e27033805ac8a5886c07ddd61756106538b22e8');
+  assert.ok(data.join.deviation.bullets.length > 0);
+});
+
+test('every joined entry names the absent corrected-by marker rather than reporting "none"', () => {
+  for (const path of ['cadence-core/bin/lib/capture-file.mjs', 'cadence-core/bin/lib/issue-decision.mjs']) {
+    const env = oneJsonLine(run([path, '--dir', REPO, '--top', '30']).stdout);
+    const joined = env.text.split('\n\n').filter((b) => b.includes('phase: ') && !b.includes('phase: not yet joined'));
+    assert.ok(joined.length > 0, `expected at least one joined entry for ${path}`);
+    for (const entry of joined) {
+      assert.ok(entry.includes('corrected by plan-<k> deviation:'),
+        `expected the marker named as absent on every joined entry of ${path}; got:\n${entry}`);
+      assert.ok(!/deviation: none/i.test(entry), 'the edge is never reported as "none"');
+      assert.ok(!/deviation:\s*$/m.test(entry), 'and never as an empty field');
+    }
+  }
+});
