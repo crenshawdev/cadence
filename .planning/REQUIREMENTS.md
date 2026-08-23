@@ -13,22 +13,6 @@ archive triage - the first time that block was read since it was written. Ids ar
 seeded here at the open, the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
 
-- **REL-01**: the release seam's silent no-ops become states a close can halt
-  on - a manifest with no `version` field, and an absent `CHANGELOG.md`
-  distinguishable from a clean run (#231 items 1, 4)
-- **REL-02**: changelog section bounding and emptiness read the document's real
-  structure - fenced `## ` lines are not boundaries, a heading with no bullets
-  is empty, and a body-final link-ref promotes with its section (#231 items 2,
-  3, 5)
-- **REL-03**: the seam documents every verdict code it can return, and an
-  unparseable `--version` target refuses by name instead of reporting an empty
-  target (#231 item 6)
-- **FRM-01**: a frontmatter read reports only the issues belonging to the key
-  that was asked for, so a defect in one scalar stops surfacing on an unrelated
-  list (#232 item 1)
-- **FRM-02**: markdown decoration on a path is caught before `plan-overlap`
-  compares strings, so two plans that write the same file are never cleared to
-  run in parallel (#232 item 2)
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted into this cycle, and `BCH-01` stays in
@@ -247,6 +231,11 @@ parses only the Traceability table).
 | JRN-01 (a multi-file state transition is either complete or recoverable, through one shared primitive rather than four hand-written approximations of one (#145)) | 1 | Complete | v3.5.8 |
 | JRN-02 (`phase-done` stops claiming all-or-nothing over two independent renames, and reports what it actually guarantees across ROADMAP.md and REQUIREMENTS.md (#140)) | 2 | Complete | v3.5.8 |
 | JRN-03 (`release-bump` reads and validates every manifest it will write before it writes the first, so a malformed sibling cannot leave a partially bumped tree inside an `ok:true` envelope (#139)) | 2 | Complete | v3.5.8 |
+| REL-02 (changelog section bounding and emptiness read the document's real structure - fenced `## ` lines are not boundaries, a heading with no bullets is empty, and a body-final link-ref promotes with its section (#231 items 2, 3, 5)) | 1 | Complete | v3.5.9 |
+| REL-03 (the seam documents every verdict code it can return, and an unparseable `--version` target refuses by name instead of reporting an empty target (#231 item 6)) | 1 | Complete | v3.5.9 |
+| REL-01 (the release seam's silent no-ops become states a close can halt on - a manifest with no `version` field, and an absent `CHANGELOG.md` distinguishable from a clean run (#231 items 1, 4)) | 1 | Complete | v3.5.9 |
+| FRM-01 (a frontmatter read reports only the issues belonging to the key that was asked for, so a defect in one scalar stops surfacing on an unrelated list (#232 item 1)) | 2 | Complete | v3.5.9 |
+| FRM-02 (markdown decoration on a path is caught before `plan-overlap` compares strings, so two plans that write the same file are never cleared to run in parallel (#232 item 2)) | 2 | Complete | v3.5.9 |
 
 ## Deferred
 
@@ -289,11 +278,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REL-02 | Phase 1 | Complete |
-| REL-03 | Phase 1 | Complete |
-| REL-01 | Phase 1 | Complete |
-| FRM-01 | Phase 2 | Complete |
-| FRM-02 | Phase 2 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time

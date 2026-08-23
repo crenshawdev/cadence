@@ -542,3 +542,44 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/2/CONTEXT.md`: D-05 (phase-done failure arm): `phase-done` takes the
 - `phases/2/CONTEXT.md`: D-07 (D-08 splits, it does not die): An UNREADABLE sibling manifest becomes a
 - `phases/2/CONTEXT.md`: D-12 (no new arm on the primitive): Both callers' pre-flight conditions are
+
+## v3.5.9
+
+- `phases/1/SUMMARY.md`: `MILESTONE-07`'s line range in `.planning/DOCS-CLAIMS.md` was shifted by task
+- `phases/1/SUMMARY.md`: No static-analysis command exists for this tree: `planning.mjs
+- `phases/1/SUMMARY.md`: No `changelog.state` assertion pins the `unreadable-changelog` and
+- `phases/1/SUMMARY.md`: `.planning/DOCS-CLAIMS.md` rows `MILESTONE-04` (cites 41-42) and
+- `phases/1/UAT.md`: Version-less primary manifest halts the close `release-bump.mjs bump --version <v>` against a fixture whose primary manifest has no `version` field returns {"ok":false,"action":"refuse","reason":"no-version-field"} at exit 1 and writes nothing; the same command against this repo's own manifests still returns ok:true with the .claude-plugin/marketplace.json sibling row as action:"skip".
+- `phases/1/UAT.md`: Fenced `## ` lines survive promotion and prepend Promoting an [Unreleased] body containing a fenced block with a `## ` line moves the whole body (fence-open, the fenced line, fence-close, trailing bullet) into the dated section; prependChangelogEntry over the same document writes the dated heading before the fence, never inside it.
+- `phases/1/UAT.md`: Heading-only section is empty, prose-only is not An [Unreleased] body carrying only `### Added`/`### Fixed` with no bullets returns section_empty:true and the close's empty-section halt fires; a body that is a prose paragraph with no bullets returns section_empty:false.
+- `phases/1/UAT.md`: Three changelog states are distinguishable CHANGELOG.md absent, present with nothing to do, and gate never entered return three distinguishable envelopes asserted by one test, and workflows/milestone.md names the absent state.
+- `phases/1/UAT.md`: Trailing link-reference block bounded by heading keys A last-in-file [Unreleased] section ending in a `[#NN]: url` definition promotes that definition with its section, while a file-final `[1.0.0]: url` whose key names an existing `## [1.0.0]` heading stays put; release-decision.test.mjs:381-404 and :406-432 still pass.
+- `phases/1/UAT.md`: Unparseable --version names the raw argument `release-bump.mjs bump --version v` returns ok:false with a reason naming the unparseable target and the raw `v` in the envelope; and a test derives the verdict-code set from release-decision.mjs's executable `code:` literals, reddening when any code is missing from either the release-bump.mjs header or the release-decision.mjs JSDoc.
+- `phases/1/UAT.md`: self-verify clean `node cadence-core/bin/self-verify.mjs --root .` returns ok:true with an empty problems array.
+- `phases/1/CONTEXT.md`: D-01 (no-version-field fork): the refusal is SEAM-LEVEL. `release-bump.mjs`
+- `phases/1/CONTEXT.md`: D-02 (no-version-field fork): the pure core is NOT the place for it -
+- `phases/1/CONTEXT.md`: D-03 (emptiness rule): "empty" means blank lines plus `###`/`####`
+- `phases/1/CONTEXT.md`: D-04 (empty scaffold): a heading-only `## [Unreleased]` body still PROMOTES,
+- `phases/1/CONTEXT.md`: D-05 (trailing link-refs): the trailing link-reference block is the run of
+- `phases/1/CONTEXT.md`: D-06 (unparseable target): item 6's fix KEEPS THE RAW ARGUMENT and refuses
+- `phases/1/CONTEXT.md`: D-07 (code-set test): the verdict-code test derives its set from EXECUTABLE
+- `phases/2/SUMMARY.md`: Task 3's Action asserted that a block item whose value-level codes
+- `phases/2/SUMMARY.md`: CONTEXT's flagged assumption and the plan's Notes both state
+- `phases/2/SUMMARY.md`: AC7's second half - `node cadence-core/bin/test.mjs` reports 0
+- `phases/2/SUMMARY.md`: Declined a shared decoration helper in `lib/lease-grammar.mjs` beside
+- `phases/2/SUMMARY.md`: Declined a `markdown-decorated-path` row in the `parsePlanFiles`-level seam
+- `phases/2/SUMMARY.md`: `plan-overlap` still reports `overlaps: []` for two plans declaring the same
+- `phases/2/UAT.md`: Value-level codes stay on their own key readFrontmatterList(text,'files') over a doc whose goal: scalar is backtick-wrapped returns issues: [] (both trailing-value-content and backtick-wrapped-value suppressed), while the same read over a backticked files: entry still reports its code.
+- `phases/2/UAT.md`: Structural codes still cross keys An unknown-line raised inside a requirements: block still appears on a files: read.
+- `phases/2/UAT.md`: Decoration shapes flagged, plain paths not parsePlanFiles reports an issue for **path**, for [path](path), and for a matched interior backtick pair; reports none for a plain path or a path with one interior backtick.
+- `phases/2/UAT.md`: Flagged paths keep their bytes Every flagged decorated entry appears in the returned files list byte-unchanged - not dropped, not rewritten to the undecorated form.
+- `phases/2/UAT.md`: Collision reaches the plan-overlap envelope planning.mjs plan-overlap over two plans declaring the same file, one plain and one decorated, returns a non-empty frontmatter_issues naming the decorated line.
+- `phases/2/UAT.md`: Code-set guard reddens on a missing table row A grammar code literal in planning-files.mjs that is absent from references/plan-frontmatter.md's code table fails the source-derived test.
+- `phases/2/UAT.md`: Self-verify and full test suite clean node cadence-core/bin/self-verify.mjs --root . returns ok:true with problems: [], and node cadence-core/bin/test.mjs reports 0 failures.
+- `phases/2/UAT.md`: Decoration shapes outside the three named ones are still accepted as clean paths behavior wrong - incomplete rule. isDecoratedPath (cadence-core/bin/lib/planning-files.mjs:2281-2288) tests exactly bold, the link form and a matched interior backtick pair. Italic and its neighbours are not tested, so an italic-decorated declaration is neither flagged nor equal to its plain sibling, and the phase's own failure mode survives in that spelling. All seven promised acceptance criteria hold and ROADMAP criterion 2 says 'at minimum' those three shapes, so this is scope beyond the phase contract, not a broken promise - it is recorded so it is not rediscovered as a live incident.
+- `phases/2/CONTEXT.md`: D-01 (FRM-01 route): value-level codes are gated to the two LIST KEYS the
+- `phases/2/CONTEXT.md`: D-02 (FRM-01 structural): diagnostics with no owning key -
+- `phases/2/CONTEXT.md`: D-03 (FRM-02 placement): the decoration rule lives in `parsePlanFiles`,
+- `phases/2/CONTEXT.md`: D-04 (FRM-02 payload): a flagged decorated path is REPORTED and its bytes
+- `phases/2/CONTEXT.md`: D-05 (FRM-02 backticks): "non-boundary backticks" means a MATCHED INTERIOR
+- `phases/2/CONTEXT.md`: D-06 (FRM-02 arm scope): the decoration rule applies to the FRONTMATTER arm
