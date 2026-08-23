@@ -282,6 +282,36 @@ against a ceiling of 4. Two model-judgment gates missed a comparison a count
 makes exactly.
 </step>
 
+<step name="count_planned">
+The read-back count at the first of its two points (D-05): how many of the prior
+decisions, captures and deviations `spawn_planner` surfaced does the plan the
+planner just wrote actually cite. Here because it is the criterion's literal
+"after the planner returns" - after `handle_return`, and before `check_gate`.
+
+Both `<the echoed ...>` placeholders are the LITERALS `spawn_planner` printed,
+never a fresh `mktemp` and never a `$(...)`. Check the token FIRST, in the same
+invocation: a carried path is the one arm where an EARLIER run's well-formed
+file still resolves, and the token is the only thing that separates them.
+
+```
+[ "$(cat "<the echoed scratch directory>/run-token" 2>/dev/null)" = "<the echoed run token>" ] || { echo "scratch-stale: that directory belongs to another run" >&2; exit 1; }
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cite-count --phase {N} --point planned --payload "<the echoed scratch directory>/surfaced.json"
+```
+
+When the effective `memory.backend` read in `parse` is `none`, no search ran and
+no scratch directory exists: drop the token check and the `--payload` flag, and
+the seam answers with its backend-off state - a THIRD thing on the record,
+distinct from a run that surfaced nothing.
+
+Read the one JSON line and hold `surfaced.count`, `cited.count` and `trace` for
+`done`. ADVISORY, both here and at `count_committed`: this never refuses the
+plan, never re-dispatches the planner and never edits a plan file to add a
+citation, and a non-zero exit from either call is REPORTED and the workflow
+CONTINUES to its next step. A measurement that could halt planning is the gate
+this cycle deliberately did not ship - a threshold needs a legitimate-zero rate
+to be set against, and these two counts are what produce it.
+</step>
+
 <step name="check_gate">
 Skip when workflow.plan_check is false or `--skip-check` was passed.
 
@@ -416,6 +446,30 @@ opinion, not another iteration.
    (references/git-guard.md rail 1), then commit the plan file(s), STATE.md, and
    `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.
+</step>
+
+<step name="count_committed">
+The same count at its second point, on the plan as it FINALLY stands. After
+`commit` rather than beside `count_planned`, because `check_gate` drives one
+checker revision that edits the plan file and an adjudicated survivor edits it
+again: a single early count describes a plan that no longer exists, and a
+revision that ADDED the missing citation would still sit on the record as a
+zero-citation plan. Recording the PAIR is what makes a revision's effect on
+citation visible, and that is the data a later gate decision needs (D-05).
+
+Same two literals, same token check first, same `none` arm - only `--point`
+differs:
+
+```
+[ "$(cat "<the echoed scratch directory>/run-token" 2>/dev/null)" = "<the echoed run token>" ] || { echo "scratch-stale: that directory belongs to another run" >&2; exit 1; }
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cite-count --phase {N} --point committed --payload "<the echoed scratch directory>/surfaced.json"
+```
+
+Both counts reach `.planning/trace.jsonl` as their own `outcome`-family events
+under this phase's correlation id: the seam appends each one itself, so neither
+figure is retyped onto a flag, and the envelope's `trace` field is the only
+place a caller learns a record was dropped. Hold this count for `done` beside
+the first.
 </step>
 
 <step name="done">
