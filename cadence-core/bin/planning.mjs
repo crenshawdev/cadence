@@ -913,25 +913,41 @@ function readJsonPayload(file) {
     // parseArgs gives a valueless flag the boolean `true`, so `--payload` with
     // no path must be refused here rather than reaching readFileSync.
     if (typeof file !== 'string' || !file.trim()) {
-      fail('no-payload', '--payload needs a file path');
+      fail('no-payload', '--payload needs a file path',
+        'write the payload JSON to a file and name it: --payload <path>; this flag reads a file'
+        + ' and never a value typed on the command line');
       return { ok: false };
     }
     where = file;
     text = read(file);
     if (text === null) {
-      fail('no-payload', `${file} not found or unreadable`);
+      fail('no-payload', `${file} not found or unreadable`,
+        'write the payload JSON to that path before re-running, or point --payload at the file that'
+        + ' already holds it');
       return { ok: false };
     }
   } else {
     try { text = readFileSync(0, 'utf8'); }
-    catch (e) { fail('no-payload', `stdin: ${e.message}`); return { ok: false }; }
+    catch (e) {
+      fail('no-payload', `stdin: ${e.message}`,
+        'pipe the payload JSON into this command, or send it as a file with --payload <path> where'
+        + ' the subcommand takes one');
+      return { ok: false };
+    }
   }
   if (!text.trim()) {
-    fail('no-payload', `${where} is empty`);
+    fail('no-payload', `${where} is empty`,
+      'put the payload JSON there and re-run - an empty payload is what a truncated or'
+      + ' never-written findings file looks like, so check the step that was supposed to write it');
     return { ok: false };
   }
   try { return { ok: true, value: JSON.parse(text) }; }
-  catch (e) { fail('bad-payload', e.message); return { ok: false }; }
+  catch (e) {
+    fail('bad-payload', e.message,
+      'repair the JSON at the position the detail names - in the file, or in the step that wrote'
+      + ' it - then re-run');
+    return { ok: false };
+  }
 }
 
 /**
@@ -959,7 +975,12 @@ function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }
 
 function loadUat(dir, n) {
   const text = read(uatFile(dir, n));
-  if (text === null) { fail('no-uat', `${uatFile(dir, n)} not found`); return null; }
+  if (text === null) {
+    fail('no-uat', `${uatFile(dir, n)} not found`,
+      'create this phase\'s checklist first with `uat init --phase <N>`, which /cad-verify runs as'
+      + ' its own first step');
+    return null;
+  }
   return parseUat(text);
 }
 
@@ -992,7 +1013,10 @@ function cmdUat(dir, sub, opts) {
   // FINDINGS.json path) or a label (`fm.phase`), never arithmetic, so
   // `--phase 1.10` reads `phases/1.10` instead of phase 1.1's checklist.
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'uat needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'uat needs --phase <N>',
+      'pass --phase <N> naming the phase whose checklist this call touches, then re-run');
+  }
   const n = parsedPhase.raw;
 
   if (sub === 'init' || sub === 'refresh') {
@@ -1003,7 +1027,9 @@ function cmdUat(dir, sub, opts) {
     if (!payload.ok) return;
     const items = payload.value;
     if (!Array.isArray(items) || items.some((i) => !i || !i.name || !i.expected)) {
-      return fail('bad-payload', 'expected a JSON array of {name, expected}');
+      return fail('bad-payload', 'expected a JSON array of {name, expected}',
+        'send an ARRAY, and give every element both a `name` and an `expected` - fix the step that'
+        + ' composed the payload and send it again');
     }
     // The traceability fields are OPTIONAL but validated before any write, so a
     // typo lands as a named refusal rather than as an item whose `criterion`
@@ -1011,11 +1037,15 @@ function cmdUat(dir, sub, opts) {
     // `unknown_criterion` on a file already on disk).
     const badCriterion = items.find((i) => i.criterion !== undefined && !/^AC\d+$/.test(i.criterion));
     if (badCriterion) {
-      return fail('bad-payload', `criterion must be AC<N> (got: ${badCriterion.criterion})`);
+      return fail('bad-payload', `criterion must be AC<N> (got: ${badCriterion.criterion})`,
+        "spell that item's criterion as an acceptance-criterion id from this phase's CONTEXT.md"
+        + ' - AC1, AC2 - or leave the field off the item; nothing was written');
     }
     const badOrigin = items.find((i) => i.origin !== undefined && !UAT_ORIGINS.includes(i.origin));
     if (badOrigin) {
-      return fail('bad-payload', `origin must be one of: ${UAT_ORIGINS.join(' | ')} (got: ${badOrigin.origin})`);
+      return fail('bad-payload', `origin must be one of: ${UAT_ORIGINS.join(' | ')} (got: ${badOrigin.origin})`,
+        'use one of the values the detail lists, or leave `origin` off the item - it records where'
+        + ' the item came from, so a guessed value misreports its provenance');
     }
     // Carried onto the item by BOTH arms. `origin` is never derived from the
     // presence of `criterion`: a present `criterion` is itself the
@@ -1026,7 +1056,11 @@ function cmdUat(dir, sub, opts) {
       ...(it.origin ? { origin: it.origin } : {}),
       status: 'pending', ...(it.source ? { source: it.source } : {}) });
     if (sub === 'init') {
-      if (existsSync(uatFile(dir, n))) return fail('uat-exists', 'use refresh, or remove the file deliberately');
+      if (existsSync(uatFile(dir, n))) {
+        return fail('uat-exists', 'use refresh, or remove the file deliberately',
+          'run `uat refresh --phase <N>` to append the new items to the checklist already on disk;'
+          + ' deleting UAT.md instead throws away every result already recorded in it');
+      }
       const today = new Date().toISOString().slice(0, 10);
       const uat = {
         // `fields_version` is written unconditionally, before any item is
@@ -1067,12 +1101,22 @@ function cmdUat(dir, sub, opts) {
     // today's `unknown-item` answer: "you named no item" and "that item is not
     // here" are different repairs.
     const parsedItem = requireInt(opts.item);
-    if (!parsedItem.ok) return fail('bad-args', 'uat record needs --item <k>');
+    if (!parsedItem.ok) {
+      return fail('bad-args', 'uat record needs --item <k>',
+        "pass --item <k> using the item's number from this phase's UAT.md, then re-run; a"
+        + ' `--item "$K"` with the variable unset arrives here as a flag with no value');
+    }
     const k = parsedItem.value;
     const item = uat.items.find((i) => Number(i.k) === k);
-    if (!item) return fail('unknown-item', `no item ${k} in UAT.md`);
+    if (!item) {
+      return fail('unknown-item', `no item ${k} in UAT.md`,
+        "re-run with a number that appears in this phase's UAT.md; if the item you meant was never"
+        + ' added, `uat refresh --phase <N>` appends it first');
+    }
     if (!UAT_RESULTS.includes(opts.result)) {
-      return fail('bad-result', `--result must be one of: ${UAT_RESULTS.join(' | ')}`);
+      return fail('bad-result', `--result must be one of: ${UAT_RESULTS.join(' | ')}`,
+        'send one of the results the detail lists; a failure you have since fixed goes back to'
+        + ' `pending` so the walk retests it');
     }
     const source = opts.source || 'user';
     // Validated BEFORE any write, same shape as the `--origin` guard below:
@@ -1081,7 +1125,9 @@ function cmdUat(dir, sub, opts) {
     // nothing reported the drop. An out-of-enum value must leave the file
     // byte-unchanged rather than silently discard the provenance.
     if (opts.source !== undefined && !UAT_SOURCES.includes(String(opts.source))) {
-      return fail('bad-args', `--source must be one of: ${UAT_SOURCES.join(' | ')}`);
+      return fail('bad-args', `--source must be one of: ${UAT_SOURCES.join(' | ')}`,
+        "send one of the values the detail lists, or drop --source to record this as the user's own"
+        + ' answer; nothing was written');
     }
     // Invariant: a verifier result only ever fills a pending item.
     //
@@ -1089,13 +1135,17 @@ function cmdUat(dir, sub, opts) {
     // answer at the item the walk is standing on, and widening the guard to it
     // would refuse the retest re-record `route_failures` depends on.
     if (source === 'verifier' && item.status !== 'pending') {
-      return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`);
+      return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`,
+        'leave the recorded result standing - it is a human answer this seam will not overwrite. If'
+        + ' it is genuinely wrong, re-record the item yourself without --source verifier');
     }
     // Validated BEFORE any write: `--origin` is the after-the-fact repair for
     // an item whose provenance was never declared, so an out-of-enum value must
     // leave the file byte-unchanged rather than record a marker nothing reads.
     if (opts.origin !== undefined && !UAT_ORIGINS.includes(opts.origin)) {
-      return fail('bad-args', `--origin must be one of: ${UAT_ORIGINS.join(' | ')}`);
+      return fail('bad-args', `--origin must be one of: ${UAT_ORIGINS.join(' | ')}`,
+        'send one of the values the detail lists, or drop --origin; nothing was written, so UAT.md'
+        + ' is byte-unchanged');
     }
     // `--criterion` is the repair for a link that was never written or was lost,
     // and it is where the `fieldless-checklist` diagnostic routes users. Same
@@ -1111,7 +1161,9 @@ function cmdUat(dir, sub, opts) {
     // which disqualifies the phase from the legacy rule, converts zero breaks
     // into one per criterion, and leaves no seam able to add `criterion` back.
     if (opts.criterion !== undefined && !/^AC\d+$/.test(String(opts.criterion))) {
-      return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`);
+      return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`,
+        "spell it --criterion AC<N>, matching an acceptance-criterion id in this phase's CONTEXT.md"
+        + ' - a flag given with no value arrives here as `true` and is refused the same way');
     }
     // `--fields-file`: the FREE-TEXT fields through the path transport, because
     // every one of them is caller-derived - a failing item's reason, what the
@@ -1131,7 +1183,11 @@ function cmdUat(dir, sub, opts) {
     // lands BEFORE any mutation of the item, so a rejected call leaves UAT.md
     // byte-unchanged - the standing posture at those same guards.
     const resolvedFields = resolveTextFlag(opts, 'fields', 'uat record');
-    if (!resolvedFields.ok) return fail('bad-args', resolvedFields.detail);
+    if (!resolvedFields.ok) {
+      return fail('bad-args', resolvedFields.detail,
+        'pass the free-text fields inline or through --fields-file <path>, never both, and point'
+        + ' --fields-file at a readable, non-empty file');
+    }
     /** @type {Record<string, string>} */
     let fileFields = {};
     if (resolvedFields.value !== undefined) {
@@ -1140,26 +1196,36 @@ function cmdUat(dir, sub, opts) {
         payload = JSON.parse(resolvedFields.value);
       } catch (e) {
         return fail('bad-args',
-          `uat record --fields-file is not JSON: ${e && e.message ? e.message : String(e)}`);
+          `uat record --fields-file is not JSON: ${e && e.message ? e.message : String(e)}`,
+          'repair the JSON in that file at the position the detail names, then re-run - the file is'
+          + ' the transport here, so nothing is fixed by retyping the value on the command line');
       }
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         return fail('bad-args',
-          `uat record --fields-file must hold a JSON object of ${UAT_TEXT_FIELDS.join(' | ')}`);
+          `uat record --fields-file must hold a JSON object of ${UAT_TEXT_FIELDS.join(' | ')}`,
+          'rewrite the file as one JSON object keyed by those field names, e.g.'
+          + ' {"reason": "...", "fix": "..."}');
       }
       for (const [key, value] of Object.entries(payload)) {
         if (!UAT_TEXT_FIELDS.includes(key)) {
           return fail('bad-args', `uat record --fields-file carries "${key}", which is not one of:`
-            + ` ${UAT_TEXT_FIELDS.join(' | ')}`);
+            + ` ${UAT_TEXT_FIELDS.join(' | ')}`,
+            'drop that key from the file, or pass it as its own flag - the fields the detail lists'
+            + ' are the only ones this transport carries, and the rest are enum-checked at their'
+            + ' own flags');
         }
         if (typeof value !== 'string') {
-          return fail('bad-args', `uat record --fields-file "${key}" must be a string`);
+          return fail('bad-args', `uat record --fields-file "${key}" must be a string`,
+            'quote that value as a JSON string in the file, then re-run');
         }
         // The same refusal the reader makes for one flag's two forms, per FIELD:
         // a precedence rule would silently discard one of two values the caller
         // believes was recorded.
         if (opts[key] !== undefined) {
           return fail('bad-args',
-            `uat record takes "${key}" inline or in --fields-file, never both`);
+            `uat record takes "${key}" inline or in --fields-file, never both`,
+            'remove the key from --fields-file, or drop the inline flag - keeping both would'
+            + ' silently discard one of the two values you believe was recorded');
         }
       }
       fileFields = payload;
@@ -1214,12 +1280,16 @@ function cmdUat(dir, sub, opts) {
     const f = payload.value;
     if (f === null || typeof f !== 'object' || Array.isArray(f)) {
       return fail('bad-payload',
-        'expected a JSON object carrying passes, gaps or human_checks');
+        'expected a JSON object carrying passes, gaps or human_checks',
+        'send an OBJECT like {"passes": [...], "gaps": [...]}, not an array or a bare value - fix'
+        + ' the findings payload and re-run; UAT.md is byte-unchanged');
     }
     if (!Array.isArray(f.passes) && !Array.isArray(f.gaps)
       && !Array.isArray(f.human_checks)) {
       return fail('bad-payload',
-        'payload carries none of passes, gaps, human_checks as an array');
+        'payload carries none of passes, gaps, human_checks as an array',
+        'add at least one of those three to the findings payload as an array - an object with none'
+        + ' of them would merge nothing while reporting a clean deep pass');
     }
     // ...and every list that IS present must be an array. The disjunction above
     // only proves ONE of them is, so a sibling holding a string used to reach
@@ -1231,7 +1301,9 @@ function cmdUat(dir, sub, opts) {
     // legitimately omit a list, and `undefined` is not a malformed one.
     for (const key of ['passes', 'gaps', 'human_checks']) {
       if (f[key] !== undefined && !Array.isArray(f[key])) {
-        return fail('bad-payload', `${key} is present but not an array`);
+        return fail('bad-payload', `${key} is present but not an array`,
+          'make that key an array in the findings payload, or remove it - anything else there is'
+          + ' iterated per character and would report a merge that never happened');
       }
     }
     const uat = loadUat(dir, n);
