@@ -210,7 +210,10 @@ offering it. Present one item:
 Expected: {expected}
 ```
 
-End the turn asking whether reality matches (ask-user seam, open-ended
+End the turn by asking in plain words: name what to run and what they should
+see, then ask what happened. Never an abstract "does this match", and never
+phrase it as though the user has already run it - an item the deep pass just
+appended has been in front of them for one turn (ask-user seam, open-ended
 prose - free-text pass/fail/describe answers do not fit a structured
 choice). Infer the result from the reply; never show pass/fail buttons,
 never ask severity:
