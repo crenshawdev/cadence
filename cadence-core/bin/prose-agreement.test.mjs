@@ -2288,3 +2288,82 @@ test('every decideManifestBump verdict code is named in BOTH documents (D-07)', 
       + 'cadence-core/bin/lib/release-decision.mjs: that block declares the CLOSED set it owns');
   }
 });
+
+
+// --- FRM/D-12: every frontmatter grammar code reaches its reference table ----
+
+/**
+ * The frontmatter grammar's code set, read from EXECUTABLE source: every
+ * kebab-case single-quoted literal between `scanValue`'s declaration and the
+ * end of `parsePlanFiles`, with comments stripped first so prose naming a code
+ * cannot stand in for the code being raised.
+ *
+ * From the SOURCE and not from a second prose list, for the reason
+ * `verdictCodes` above states: a prose-to-prose comparison passes while both
+ * lists are stale together. Nothing tied this module to
+ * references/plan-frontmatter.md before this test.
+ *
+ * Bounded by SYMBOL, never by line number, and bounded at all because the same
+ * module defines `active-non-id-bullet`, `criteria-heading-near-miss`,
+ * `criterion-duplicate-id`, `criterion-empty-text` and
+ * `criterion-indented-bullet` for OTHER grammars with their own references - an
+ * unbounded scan would demand rows for them in this table.
+ *
+ * A whole-literal net rather than one regex per push form, because the forms
+ * are not a closed set: the codes are written as a `code:` property, inside a
+ * `codes:` array literal, as a `codes.push` argument, inside a ternary's array
+ * branch and inside a `new Set([...])`, and a form-by-form extraction silently
+ * finds a SUBSET - drafting this test three-form-wise missed
+ * `trailing-inline-content` on exactly that. The cost of the wider net is a
+ * false positive if a non-code kebab literal is ever added to this region,
+ * whose remedy is to write the row or rename the string: the safe direction for
+ * an agreement test, unlike a miss.
+ */
+function frontmatterCodes(src) {
+  const start = src.indexOf('\nfunction scanValue(');
+  assert.ok(start >= 0, 'scanValue is no longer declared in lib/planning-files.mjs');
+  const last = src.indexOf('\nexport function parsePlanFiles(');
+  assert.ok(last > start, 'parsePlanFiles is no longer declared below scanValue');
+  const end = src.indexOf('\n}\n', last);
+  assert.ok(end > last, 'could not find the closing brace of parsePlanFiles');
+  const region = src.slice(start, end)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  return [...new Set([...region.matchAll(/'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/g)].map((m) => m[1]))];
+}
+
+test('every frontmatter grammar code has a row in plan-frontmatter.md (D-12)', () => {
+  const codes = frontmatterCodes(doc('cadence-core', 'bin', 'lib', 'planning-files.mjs'));
+
+  // Non-vacuity first: an extraction that matched nothing would pass green
+  // over an empty loop, which is the same silence this test exists to break.
+  const SHIPPED = [
+    'unterminated-quote', 'trailing-value-content', 'residual-quote',
+    'backtick-wrapped-value', 'unterminated-inline-list', 'trailing-inline-content',
+    'unterminated-frontmatter', 'malformed-key-line', 'unknown-line',
+    'item-without-key', 'commented-key-line', 'redundant-path-segment',
+    'markdown-decorated-path',
+  ];
+  for (const code of SHIPPED) {
+    assert.ok(codes.includes(code),
+      `the extraction missed \`${code}\`, a code the frontmatter grammar raises: ${JSON.stringify(codes)}`);
+  }
+  assert.ok(codes.length >= SHIPPED.length,
+    `extracted fewer codes than ship today: ${JSON.stringify(codes)}`);
+
+  const ref = doc('cadence-core', 'references', 'plan-frontmatter.md');
+  const at = ref.indexOf('\n## Diagnostic codes\n');
+  assert.ok(at >= 0, 'plan-frontmatter.md no longer carries a `## Diagnostic codes` heading');
+  const after = ref.indexOf('\n## ', at + 1);
+  const table = ref.slice(at, after === -1 ? ref.length : after);
+  assert.ok(/^\| Code \| Means \| Payload \| Cleared by \|$/m.test(table),
+    'the `## Diagnostic codes` section no longer holds the four-column code table');
+
+  for (const code of codes) {
+    assert.ok(new RegExp(`^\\| \`${code}\` \\|`, 'm').test(table),
+      `grammar code \`${code}\` is raised by cadence-core/bin/lib/planning-files.mjs but has no row `
+      + 'in cadence-core/references/plan-frontmatter.md\'s `## Diagnostic codes` table: that table is '
+      + 'the stated grammar a plan author reads, so a code missing from it is a diagnostic with no '
+      + 'documented meaning and no stated remedy');
+  }
+});
