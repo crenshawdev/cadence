@@ -6,6 +6,117 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.9] - 2026-08-23
+
+Ten defects sat in `.planning/CAPTURE.md` between 2026-08-05 and 2026-08-08 and
+nobody read them. The archive triage on 2026-08-22 reproduced every one against
+the current tree and filed them as #231 and #232, and the theme turned out to be
+one sentence: the release seam and the frontmatter reader both return a clean
+answer over a case they did not actually handle. Two phases, 38 commits off
+`v3.5.8`, five requirement ids seeded at the open and all five traced to a
+verified phase: `REL-01`, `REL-02`, `REL-03`, `FRM-01` and `FRM-02`.
+`/cad-audit` PASS on both arms, fourteen of fourteen acceptance criteria
+covered.
+
+Six of the ten were in the release/changelog seam, the seam `v3.5.8` rewrote.
+Item 6 of #231 and the open item `v3.5.8`'s own phase 2 filed against
+`release-decision.mjs` were the same defect class in the same subsystem, filed
+two weeks apart, neither aware of the other. That is the argument for reading
+the capture queue, and it is why this cycle led with it.
+
+### Fixed
+
+- **A `## ` inside a fenced code block no longer ends a changelog section.**
+  `sectionEnd`, all four `prependChangelogEntry` anchors, `promoteUnreleased`'s
+  locators and `releaseSectionEmpty` now scan headings fence-aware, so a
+  release section whose body quotes markdown keeps its real bounds
+  (`cadence-core/bin/lib/release-decision.mjs`, REL-01).
+- **A heading-only release section reports empty.** `releaseSectionEmpty` was
+  counting a bare `### Added` as content, so a scaffolded section with no
+  bullets under it passed the close's own emptiness halt. A prose-only body is
+  still not empty, which is the distinction that check exists to make
+  (REL-01).
+- **The trailing link-reference block is bounded by what its keys name.** A key
+  that names no `## [key]` heading is not part of the block, rather than the
+  block running to whatever the previous heuristic happened to stop on
+  (REL-01).
+- **A primary manifest carrying no `version` field halts the close.**
+  `release-bump.mjs` returned a benign `skip` over it, so a close continued and
+  shipped a manifest still at the previous number. It now returns `ok:false`,
+  `action:"refuse"`, `reason:"no-version-field"` at exit 1 (REL-02).
+- **An unparseable `--version` refuses by naming the raw argument.** Passing
+  `--version v` reported `no-target-version` over an empty target, which reads
+  as "you forgot the flag" when the flag was right there. It now reports
+  `reason:"unparseable-version"` with `target:"v"` (REL-03).
+- **Value-level frontmatter issues stop leaking across keys.**
+  `readFrontmatterList` returned the whole document's issues array whatever key
+  the caller asked for, so a backtick in `goal:` surfaced on a `files:` read and
+  the risk floor bailed on a plan's entire declared file list over a defect in a
+  scalar nothing reads as a list. The four value-level codes are now scoped to
+  `requirements:` and `files:`, the two keys the seams read as lists. The five
+  structural codes still cross keys on purpose: a `requirements:` block
+  truncated by a stray line has to reach a `files:` read too, or `plan-overlap`
+  clears a half-parsed plan as proved independence
+  (`cadence-core/bin/lib/planning-files.mjs`, FRM-01).
+- **A markdown-decorated path in a plan's `files:` list no longer parses
+  clean.** `plan-overlap` compares exact strings, so `**src/shared.rs**` in one
+  plan did not match `src/shared.rs` in another and two plans that genuinely
+  collide were cleared into separate parallel worktrees on the same file. This
+  is the failure that decides whether parallel dispatch is safe, and the safety
+  check for this cycle's own parallelism was the thing under repair (FRM-02).
+- **`item-without-key` fires on the early-continue path.** Scoping the
+  value-level codes exposed a line that then reported nothing at all: a block
+  item under no open key returned early on a `scanValue` failure, before the
+  no-block-key diagnosis, so `goal: something` followed by `- "unbalanced` went
+  fully silent. A frontmatter line that reports nothing is the one outcome that
+  gate exists to prevent.
+- **The live-corpus prune test no longer depends on how a bullet was typed.**
+  Pre-existing, found blocking a phase's own acceptance criterion rather than by
+  the suite (`cadence-core/bin/milestone-prune.test.mjs`).
+
+### Added
+
+- **`markdown-decorated-path`, a new grammar code.** Raised in `parsePlanFiles`'
+  frontmatter loop for a matched wrap on `*`, `_`, `<>` or a bare `[]`, the link
+  form `[path](path)`, and a matched interior backtick pair. It reports and
+  never repairs: the declaration comes back in `files` with its bytes untouched,
+  so `overlaps` keeps meaning "these two declarations intersect" and never
+  "intersect after repair". A non-empty `frontmatter_issues` is what routes the
+  phase sequential, which is the refusal to trust the comparison rather than a
+  corrected comparison.
+
+  A wrap is matched or it is nothing, because `_`, `[` and `*` are legal path
+  bytes: `_private/a.rs`, `src/a_`, `src/__init__.py` and `[src/a.rs` stay
+  diagnostic-free. All 597 frontmatter `files:` entries under `.planning` were
+  measured before the rule widened and none opens or closes on any wrap byte.
+- **`changelog.state` on every emitting envelope.** `not-examined`, `absent`,
+  `unreadable` or `ok`, so an absent `CHANGELOG.md` is named rather than read as
+  a clean run. `workflows/milestone.md` step 2 halts on it beside
+  `section_empty: true` (REL-02).
+- **`decideManifestBump`'s JSDoc names all nine codes the seam owns**, pinned by
+  a test that derives the verdict-code set from executable source and reddens
+  when a code misses either document (REL-01).
+- **A code-set guard for the frontmatter grammar.** A grammar code literal added
+  to `planning-files.mjs` without its row in
+  `references/plan-frontmatter.md`'s code table reddens
+  `prose-agreement.test.mjs`, derived from the source rather than from a
+  prose-to-prose comparison that passes when both lists are stale together.
+
+### Known gaps
+
+- `plan-overlap` still reports `overlaps: []` for two plans declaring the same
+  file when one declaration is decorated. The strings genuinely compare unequal,
+  and `frontmatter_issues` is what routes the phase sequential. Worth revisiting
+  if a caller ever wants the intersection itself rather than a refusal to trust
+  it.
+- The residual over-fire on the decoration rule is a path that legitimately
+  opens and closes on the same emphasis byte, `__main__`. It reports and is
+  still returned byte-exact. A phantom diagnostic costs a sequential dispatch;
+  a missed shape costs two plans writing one file.
+- `.planning/DOCS-CLAIMS.md` rows `MILESTONE-04` and `MILESTONE-05` cite stale
+  line ranges against `milestone.md`. Pre-existing, and no mechanical check
+  enforces those ranges.
+
 ## [3.5.8] - 2026-08-22
 
 Four operations in this codebase wrote several files and reported the result as
@@ -3465,6 +3576,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.9]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.9
 [3.5.8]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.8
 [3.5.7]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.7
 [3.5.6]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.6
