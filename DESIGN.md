@@ -375,9 +375,13 @@ lever is trigger frequency (gating), never a weak reviewer.
   Agent-SDK/Workflow harness *does* expose per-call effort, but Cadence is SKILL.md-based.)
   → **Design:** MODEL is the primary auto-routing lever (native per-dispatch). EFFORT is fixed per
   agent *role* (planner=high, formatter=low; role is known so this is fine). Runtime effort
-  *escalation* uses a small set of **variant agent files** (`planner-high`/`planner-low`, etc.) for
-  the ~4 heavy reasoners only — not every agent. Auto escalates model freely + swaps the rung file
-  when needed, bounded by guardrails.
+  *escalation* uses a small set of **variant agent files** for the heavy reasoners only — not
+  every agent. Auto escalates model freely + swaps the rung file when needed, bounded by
+  guardrails. *(As shipped, the illustrative `planner-high`/`planner-low` names here were never
+  the real ones: `cad-planner`'s ladder is high/xhigh/max over `cad-planner.md`,
+  `cad-planner-xhigh.md` and `cad-planner-max.md`, and six roles carry rung files rather than
+  four — see `RUNG_FILES` in `cadence-core/bin/lib/rung-agent.mjs`, which is the frozen statement
+  of what is on disk. Only `cad-plan-checker` has a `low` rung, as the next bullet says.)*
 - ✅ **IMPLEMENTED (2026-07-10):** resolver `bin/route.mjs` + editable data `route-table.json`
   (role→tier, profile→model matrix over Claude aliases, auto signals). The spawn-agent seam
   (`references/seams.md`) resolves every dispatch through it; re-dispatch sites pass `--attempt N`

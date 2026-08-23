@@ -1450,9 +1450,12 @@ test('check 10: a compliant sentence does not excuse the next one in the same it
 });
 
 test('check 10: the SAME sentence in a skill is out of scope (directory scope)', () => {
-  // What pins the scope to the two instruction surfaces: skills, agents and
-  // templates carry no dispatch instructions of their own, and references/ is
-  // in scope only because no other check reaches it at all.
+  // What pins the scope to the two instruction surfaces: check 10 applies to
+  // cadence-core/workflows/ and cadence-core/references/ for the SAME reason,
+  // each compared against a `relative(root, file)` walk result with the
+  // separator appended (self-verify.mjs's WORKFLOWS_DIR / REFERENCES_DIR). A
+  // skill is out of scope because it is neither directory, not because of any
+  // claim about what a skill carries.
   const root = fixtureWith({
     skills: { 'cad-x': 'For each reviewer in the set, in parallel where the host allows:\n' },
   });
