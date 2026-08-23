@@ -86,7 +86,15 @@ Out of scope here: every `workflows/task.md` edit (plan 3), the `/cad-why` tier
   unreadable directory are both an empty list and never a throw - and CONTAIN
   the walk the same way it does, resolving the group and each entry with
   `realpathSync` and skipping anything that resolves outside the planning root,
-  because `readdirSync` follows a symlinked directory. (4) A pure renderer
+  because `readdirSync` follows a symlinked directory. Resolve `RECORD.md`
+  ITSELF the same way and require it to land inside the planning root too, and
+  require it to be a regular file. `phaseDirsIn` contains DIRECTORY entries and
+  this lister returns a FILE path, so a walk that stopped at the slug directory
+  would still hand back `tasks/<slug>/RECORD.md` symlinked out of the tree - and
+  task 3's recall tier reads snippets straight from the path this returns, so a
+  cloned repository carrying one would surface an arbitrary readable file
+  through `planning.mjs recall`. Same VAL-01 lesson as the slug predicate, one
+  level further in. (4) A pure renderer
   turning `{slug, title, body, commits, files}` into the record's bytes, with no
   disk, no `Date` and no randomness so the same inputs give the same file. The
   sections, in this order and no other, because each one is read by a shipped
@@ -107,8 +115,11 @@ Out of scope here: every `workflows/task.md` edit (plan 3), the `/cad-why` tier
   cases proving: the slug predicate refuses `..`, `a/b`, `/abs`, an empty
   string and an over-long value while accepting `bound-plan-size`; the lister
   returns `[]` for an absent planning root, for a `tasks/` holding a directory
-  with no `RECORD.md`, and for a slug directory that is a symlink out of the
-  root, and returns the slugs sorted otherwise; and rendering the same inputs
+  with no `RECORD.md`, for a slug directory that is a symlink out of the
+  root, AND for an in-root slug directory whose `RECORD.md` is itself a symlink
+  to a readable file outside the planning root - the directory case passing does
+  not imply the file case does, and the second is the one the recall tier reads
+  through - and returns the slugs sorted otherwise; and rendering the same inputs
   twice returns byte-identical text whose `## Commits` table `parseCommitRows`
   reads back to the same rows, whose `- **Files:**` line `taskDeclaredFiles`
   reads back to the same paths, and whose description cell survives a subject
