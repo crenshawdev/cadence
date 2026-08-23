@@ -200,10 +200,22 @@ file only - inline never splits.
 Recall applies here too: the `--inline` under-threshold path is a real
 task-breakdown moment with no cad-planner dispatch, so it must not skip prior
 memory. When the effective `memory.backend` read in `parse` is `builtin`, run
-the same gated recall as spawn_planner and fold its results into the inline
-plan's truths and tasks, citing each recalled item's `source` file and `phase`
-(when present) in the task's Action or the plan's Notes. When the backend is
-`none`, the inline path issues no recall call, exactly like spawn_planner.
+the same gated recall as spawn_planner - the whole block, so the same
+`surfaced.json` and `run-token` land in this run's own echoed directory - and
+fold its results into the inline plan's truths and tasks, citing each recalled
+item's `source` file and `phase` (when present) in the task's Action or the
+plan's Notes. When the backend is `none`, the inline path issues no recall call,
+exactly like spawn_planner.
+
+`count_planned` and `count_committed` apply here too, for the same reason one
+step further on (D-12): criterion 2 names `/cad-plan`, not a dispatch mode, and
+leaving the cheap path out would make it the one path with no citation data.
+Run both steps as written - the first once this step's `PLAN.md` is on disk, the
+second after `commit` - against that same `surfaced.json` and behind that same
+token check. Do NOT restate either call here: a second spelling is a second seam
+invocation the census counts and a second copy that can drift from the first.
+The inline path writes `PLAN.md` from the same template, so the count reads it
+with no special case.
 </step>
 
 <step name="handle_return">
