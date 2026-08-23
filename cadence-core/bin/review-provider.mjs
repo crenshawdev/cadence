@@ -136,7 +136,13 @@ function beginProviderCall(command, subject) {
   return activeMeta;
 }
 
-function fail(reason, detail) {
+// `hint` is the third argument and rides as a conditional key, so an absent
+// hint adds no key and no shipped assertion moves (phase-1 D-09/D-10). It is
+// deliberately NOT passed to `traceProvider`: the trace records the
+// degradation for whoever reads the bracket instead of the envelope, and its
+// three arguments are the shipped record's shape - a hint is advice to the
+// person at the terminal, not a fact about what happened.
+function fail(reason, detail, hint) {
   // The degradation is recorded before the envelope is emitted, and never
   // instead of it: `traceProvider` never throws and never speaks, so this line
   // cannot change what the caller reads or when.
@@ -146,7 +152,7 @@ function fail(reason, detail) {
     // first, so this renders a real string or falls back to the reason.
     traceProvider(activeMeta, reason, typeof detail === 'string' && detail ? detail : reason);
   }
-  emit({ ok: false, reason, detail: detail || null });
+  emit({ ok: false, reason, detail: detail || null, ...(hint ? { hint } : {}) });
   throw DONE;
 }
 
@@ -1063,7 +1069,8 @@ async function readPayload(opts) {
 function resolveProvider(opts, cmdName) {
   const provider = opts.provider;
   const adapter = ADAPTERS[provider];
-  if (!adapter) fail('bad-provider', `unknown provider: ${provider}`);
+  if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
+    `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
   if (!opts.model) fail('bad-args', `${cmdName} needs --model`);
   const { key, where } = resolveKey(provider, opts['key-file']);
   if (!key) fail('no-key', `set ${where}`);

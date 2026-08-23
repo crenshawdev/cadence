@@ -141,7 +141,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 let TABLE;
 const TABLE_PATH = (testSeamOpen() && process.env.CADENCE_ROUTE_TABLE)
   || join(HERE, '..', 'route-table.json');
-const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
+// `hint` is the third argument and rides as a conditional key: an absent hint
+// adds no key, so no shipped assertion moves (phase-1 D-09/D-10).
+const fail = (reason, detail, hint) => {
+  out({ ok: false, reason, detail, ...(hint ? { hint } : {}) });
+  throw DONE;
+};
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
 const DEFAULTS = { stakes: 'shipped', escalate_on_failure: false,
@@ -853,6 +858,7 @@ function resolve(opts) {
     const degraded = [...cfg._warnings];
     out({ ok: false, reason: 'unknown-role', role: opts.role,
       detail: `known roles: ${roles.join(', ')}`,
+      hint: 'pass --role as one of the roles the detail lists, spelled exactly, and re-run',
       ...(degraded.length ? { warnings: degraded } : {}) });
     return;
   }

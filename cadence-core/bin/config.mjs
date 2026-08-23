@@ -45,7 +45,12 @@ const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
 // Seam convention lives in lib/seam-io.mjs. fail() throws DONE so the
 // dispatch unwinds without process.exit().
 const out = emit;
-const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
+// `hint` is the third argument and rides as a conditional key: an absent hint
+// adds no key, so no shipped assertion moves (phase-1 D-09/D-10).
+const fail = (reason, detail, hint) => {
+  out({ ok: false, reason, detail, ...(hint ? { hint } : {}) });
+  throw DONE;
+};
 
 // --- value typing ------------------------------------------------------------
 
@@ -222,7 +227,8 @@ function setInto(obj, dotted, value) {
 // dir if the file does not exist yet; a corrupt existing file still fails.
 function set(file, tokens, create) {
   const { pairs, errors } = checkPairs(tokens);
-  if (errors.length) fail('invalid', errors);
+  if (errors.length) fail('invalid', errors,
+    'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts');
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) {
