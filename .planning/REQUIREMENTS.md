@@ -13,10 +13,14 @@ seeds each Traceability row as its phase is planned; rows are never
 hand-populated here.
 
 - **HNT-01**: every seam refusal the cycle declares in scope sets a companion
-  hint that names, in the user's terms, what to do next. Measured 2026-08-23
-  across `cadence-core/bin/` with tests excluded: 186 sites set a literal
-  `reason`, 13 set a literal `hint`, and all 13 are in `planning.mjs` or
-  `skim.mjs`. The kebab-case token is what the user reads today (#238).
+  hint that names, in the user's terms, what to do next. In scope spans BOTH
+  refusal spellings under `cadence-core/bin/`, tests excluded: the `reason:`
+  object literal (186 sites, 13 hinted, measured 2026-08-23) and the positional
+  `fail('token', detail, hint)` call (196 sites, 13 hinted, 183 not), with only
+  5 tokens appearing in both forms. Those counts are provenance, not the
+  denominator - the in-scope population is fixed by phase 1's boundary decision,
+  which keys on the site emitting an `ok:false` envelope. The kebab-case token
+  is what the user reads today (#238).
 - **HNT-02**: a reason site in scope with no hint is a reported problem, so the
   invariant survives the next seam rather than being re-measured after it. The
   ratio has drifted twice already - 130/10 at filing, 186/13 today - which is
