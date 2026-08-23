@@ -137,9 +137,12 @@ rule; the scratch file is the model's own, never a phase artifact):
 
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-rearm-XXXXXX")" \
+  && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D holds a character a carried literal cannot survive" >&2; exit 1;; esac \
   && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N> > "$D/render.json" \
   && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+process.argv[1]+" is not an object");process.exit(1)}if(!Array.isArray(r.outcomes)){console.error("scratch-shape: outcomes is not an array in "+process.argv[1]);process.exit(1)}if(!r.outcomes.every((o)=>o&&typeof o==="object")){console.error("scratch-shape: outcomes has a non-object entry in "+process.argv[1]);process.exit(1)}console.log(r.outcomes.filter((o)=>o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr).length)' "$D/render.json" "<trigger>"
 ```
+
+A carried literal is pasted into a later command unquoted-by-construction, so the guard REFUSES the directory at creation rather than trying to quote it defensively at every use site: `mktemp` builds the path from `$TMPDIR`, which the operator does not always own (a cloned repo's `.envrc`, a devcontainer, a CI runner), and one `"` in it closes the argument and runs the rest as commands. The character class is deliberately narrow - a `TMPDIR` holding a space is refused too, and fixing that is one `export` away, where a path that executes is not.
 
 The directory is made for this run and the two calls are `&&`-chained to it,
 which is what makes the count this run's OWN. A fixed shared scratch name is

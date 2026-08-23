@@ -199,11 +199,15 @@ set never does. Per backend:
   directory and pass it with the EXISTING `--payload <file>` flag - no new
   subcommand or flag:
   ```
-  D="$(mktemp -d "${TMPDIR:-/tmp}/cad-review-XXXXXX")" && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
+  D="$(mktemp -d "${TMPDIR:-/tmp}/cad-review-XXXXXX")" \
+    && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D holds a character a carried literal cannot survive" >&2; exit 1;; esac \
+    && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
     && git diff <base_ref>..<head_ref> > "$D/artifact.txt" \
     && node -e 'const f=require("fs");const rd=(p)=>{try{return f.readFileSync(p,"utf8")}catch(e){console.error("scratch-unreadable: "+p+": "+e.message);process.exit(1)}};const brief=rd(process.argv[1]),art=rd(process.argv[3]);if(art===""){console.error("scratch-unreadable: "+process.argv[3]+" is empty");process.exit(1)}f.writeFileSync(process.argv[4],JSON.stringify({instruction:brief+"\n\n"+process.argv[2],artifact:art}))' "${CLAUDE_PLUGIN_ROOT}/cadence-core/references/reviewer-brief.md" "<instruction>" "$D/artifact.txt" "$D/payload.json" \
     && echo "scratch dir: $D  run token: $T"
   ```
+  A carried literal is pasted into a later command unquoted-by-construction, so the guard REFUSES the directory at creation rather than trying to quote it defensively at every use site: `mktemp` builds the path from `$TMPDIR`, which the operator does not always own (a cloned repo's `.envrc`, a devcontainer, a CI runner), and one `"` in it closes the argument and runs the rest as commands. The character class is deliberately narrow - a `TMPDIR` holding a space is refused too, and fixing that is one `export` away, where a path that executes is not.
+
   **The directory and the token are ECHOED because the seam call below runs in a
   DIFFERENT Bash invocation**, where `$D` is empty - the tool persists the
   working directory and not shell state. Carry both printed values into that

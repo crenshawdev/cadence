@@ -114,7 +114,9 @@ the single dispatch and neither depends on the other, which is the only thing
 that would serialize them.
 
 ```
-D="$(mktemp -d "${TMPDIR:-/tmp}/cad-plan-XXXXXX")" && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-plan-XXXXXX")" \
+  && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D holds a character a carried literal cannot survive" >&2; exit 1;; esac \
+  && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
   && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>" > "$D/surfaced.json" \
   && cat "$D/surfaced.json" \
   && echo "scratch dir: $D  run token: $T"
@@ -299,6 +301,8 @@ The read-back count at the first of its two points (D-05): how many of the prior
 decisions, captures and deviations `spawn_planner` surfaced does the plan the
 planner just wrote actually cite. Here because it is the criterion's literal
 "after the planner returns" - after `handle_return`, and before `check_gate`.
+
+A carried literal is pasted into a later command unquoted-by-construction, so the guard REFUSES the directory at creation rather than trying to quote it defensively at every use site: `mktemp` builds the path from `$TMPDIR`, which the operator does not always own (a cloned repo's `.envrc`, a devcontainer, a CI runner), and one `"` in it closes the argument and runs the rest as commands. The character class is deliberately narrow - a `TMPDIR` holding a space is refused too, and fixing that is one `export` away, where a path that executes is not.
 
 Both `<the echoed ...>` placeholders are the LITERALS `spawn_planner` printed,
 never a fresh `mktemp` and never a `$(...)`. Check the token FIRST, in the same
