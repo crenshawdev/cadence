@@ -22,7 +22,9 @@ import {
   buildRecoveredIndex, mergeCommitIndexes, readPhaseRecords, closeOver,
   buildTaskIndex,
 } from './lib/why-corpus.mjs';
-import { decisionsFor, parseCommitRows, parseDeviations } from './lib/why-record.mjs';
+import {
+  decisionsFor, declaringTasks, parseCommitRows, parseDeviations, taskDeclaredFiles,
+} from './lib/why-record.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** This repository's own planning root: bin -> cadence-core -> root. */
@@ -787,4 +789,35 @@ test("this repository's merged index resolves 093408c9 to the bound-plan-size ta
   const phase = resolveCommit(merged, ISSUE_CORE);
   assert.equal(phase.state, 'resolved');
   assert.equal(phase.row.dir.label, '_archive-v3.4.0/1', 'the phase tiers are untouched by the new one');
+});
+
+// --- The record's own declaration reaches the join (phase 3 plan 2, task 4) -
+
+test('a task directory holding BOTH a PLAN.md and a RECORD.md declares through the RECORD', () => {
+  const root = tasksRoot({ 'planned-then-run': taskRecord([['1', 'abc1234', 'what it did']], 'src/shipped.mjs') });
+  // The PLANNED `/cad-task` arm writes this; it states what the run set out to
+  // touch, which is not what the `declared by:` edge is asking.
+  writeFileSync(join(root, 'tasks', 'planned-then-run', 'PLAN.md'), [
+    '# a task plan', '', '### Task 1: the intent', '', '- **Files:** src/intended.mjs', '',
+  ].join('\n'));
+
+  const dir = buildTaskIndex(root).dirs[0];
+  const records = readPhaseRecords(dir, '');
+  assert.deepEqual(records.warnings, []);
+  assert.equal(records.planFile, 'RECORD.md', 'the record is tried ahead of the plan, not only as a fallback');
+  assert.deepEqual(taskDeclaredFiles(records.plan), [{ ordinal: 1, title: 'the title', files: ['src/shipped.mjs'] }]);
+  assert.deepEqual(declaringTasks(records.plan, 'src/intended.mjs'), [],
+    "the plan's declaration never reaches the edge for a task directory");
+  assert.equal(records.context, '', 'a task directory has no CONTEXT.md, and absent is silent');
+  assert.equal(records.summary, '', 'nor a SUMMARY.md');
+});
+
+test('a PHASE directory is unaffected: RECORD.md is never tried where there is no slug', () => {
+  const root = planningRoot({ 'phases/1': commitsTable([['1', '1', 'abc1234', 'a phase task']]) });
+  // A file that would win if the task arm leaked onto the phase tier.
+  writeFileSync(join(root, 'phases', '1', 'RECORD.md'), '### Task 1: never read\n\n- **Files:** src/wrong.mjs\n');
+  const dir = buildCommitIndex(root).dirs[0];
+  const records = readPhaseRecords(dir, '1');
+  assert.equal(records.planFile, 'PLAN.md');
+  assert.deepEqual(declaringTasks(records.plan, 'src/wrong.mjs'), []);
 });

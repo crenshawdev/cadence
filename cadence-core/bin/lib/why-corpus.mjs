@@ -342,6 +342,16 @@ function artifactReader(dir, repoDir, warnings) {
  * is what would drift. A Plan cell that is empty (the three-column era, before
  * plans were numbered) means `PLAN.md` and nothing else.
  *
+ * A TASK directory declares in its `RECORD.md`, which is tried FIRST (D-10).
+ * The record carries the `- **Files:**` line precisely so `taskDeclaredFiles` -
+ * and through it `declaringTasks`, which is what the `declared by:` edge calls
+ * - reaches it. Without that ordering the edge reads the task's `PLAN.md` when
+ * the PLANNED path happened to write one, which declares what the run set out
+ * to touch rather than what it did, and reads nothing at all when the INLINE
+ * path wrote no plan file. `CONTEXT.md` and `SUMMARY.md` stay read exactly as
+ * they are: a task directory has neither, absent is silent, and the decision
+ * and deviation edges then state their own absence - the true answer.
+ *
  * Absent is silent on both, for the reason `buildCommitIndex` gives: a phase
  * with no CONTEXT.md is a real and ordinary state, and a warning there would
  * fire on every run.
@@ -357,7 +367,11 @@ export function readPhaseRecords(dir, planCell, repoDir) {
   const pull = artifactReader(dir, repoDir, warnings);
 
   const key = String(planCell || '').trim();
-  const names = key && key !== '1' ? [`PLAN-${key}.md`] : [`PLAN-${key || '1'}.md`, 'PLAN.md'];
+  const spellings = key && key !== '1' ? [`PLAN-${key}.md`] : [`PLAN-${key || '1'}.md`, 'PLAN.md'];
+  // The `slug` MARKER again, never a label prefix. A task directory may hold a
+  // PLAN.md too - the planned `/cad-task` arm writes one - so the RECORD is
+  // tried ahead of it rather than only as a fallback.
+  const names = dir.slug ? [RECORD_FILE, ...spellings] : spellings;
   let plan = '';
   /** @type {string|null} */
   let planFile = null;

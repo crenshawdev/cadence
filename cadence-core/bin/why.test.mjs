@@ -674,3 +674,39 @@ test('a commit only a task record names resolves at the seam, to the task and to
   assert.equal(data.join.plan, '', 'a record carries no Plan column');
   assert.ok(!entryFor(env.text, sha).includes('NOT RESOLVED'));
 });
+
+// --- The record's own declaration, end to end (phase 3 plan 2, task 4) -----
+//
+// Against the record `.planning/tasks/bound-plan-size/RECORD.md` on disk rather
+// than a fixture, because the fact under test is that the corpus's own writer
+// and its own reader agree - which a fixture built by this file cannot falsify.
+
+test('the record on disk answers /cad-why for a file that task touched, end to end', () => {
+  const env = oneJsonLine(run(['cadence-core/templates/config.json', '--dir', REPO]).stdout);
+  assert.equal(env.ok, true);
+  assert.deepEqual(env.warnings, []);
+
+  const entry = entryFor(env.text, '093408c97560521e1e295ce949ac8beda2f29e50');
+  assert.match(entry,
+    /^phase: off-roadmap task bound-plan-size - a \/cad-task run, not a roadmap phase \(tasks\/bound-plan-size\)$/m);
+  assert.ok(!entry.includes('NOT RESOLVED'),
+    `the same command on the pre-change tree printed the gap block here:\n${entry}`);
+  assert.match(entry, /^plan task: task 1 - /m, 'no plan prefix: a record has no Plan column');
+  assert.match(entry, /^declared by: declared in RECORD\.md$/m);
+  assert.match(entry, /^ {2}task 1: bound-plan-size \(declares cadence-core\/templates\/config\.json\)$/m);
+});
+
+test('two runs over the tasks tier of this repository write byte-identical stdout', () => {
+  const a = run(['cadence-core/templates/config.json', '--dir', REPO]).stdout;
+  const b = run(['cadence-core/templates/config.json', '--dir', REPO]).stdout;
+  assert.equal(a, b);
+});
+
+test('the INLINE arm writes no PLAN.md at all, and the declaring task is still named', () => {
+  const { dir, sha, slug } = repoWithTaskRecord('inline-only');
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  const entry = entryFor(env.text, sha);
+  assert.match(entry, new RegExp(`^phase: off-roadmap task ${slug} - `, 'm'));
+  assert.match(entry, /^declared by: declared in RECORD\.md$/m);
+  assert.match(entry, new RegExp(`^ {2}task 1: ${slug} \\(declares f\\.txt\\)$`, 'm'));
+});
