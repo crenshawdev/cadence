@@ -849,6 +849,27 @@ function readJsonPayload(file) {
   catch (e) { fail('bad-payload', e.message); return { ok: false }; }
 }
 
+/**
+ * `memory.backend`, effective across the config layers (repo > global), with
+ * the layer warnings behind it.
+ *
+ * ONE reader for the key, not one per command. `cmdRecall` gates its whole
+ * corpus walk on it and `cmdCiteCount` records `none` as a third state on the
+ * record, and the two must agree by construction: a second inlined
+ * `mergeLayers` + `?? 'builtin'` pair is exactly how the off switch comes to
+ * mean one thing at the seam that produces the surfaced set and another at the
+ * seam that counts it. The schema default is `builtin`, so an unset key is on.
+ *
+ * `warnings` is RETURNED rather than surfaced here, because this is a reader
+ * and the envelope belongs to the caller - both callers put it on theirs, for
+ * the reason each states at its own emit: a TORN layer reads the key as absent
+ * and defaults a deliberate `none` back to `builtin`.
+ */
+function memoryBackend(dir) {
+  const { config, warnings } = mergeLayers(join(dir, 'config.json'));
+  return { backend: config?.memory?.backend ?? 'builtin', warnings };
+}
+
 function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }
 
 function loadUat(dir, n) {
@@ -2181,19 +2202,19 @@ function cmdCiteCount(dir, opts) {
   }
   const point = typeof opts.point === 'string' ? opts.point : undefined;
 
-  // The effective `memory.backend` across the config layers (repo > global),
-  // the SAME read `cmdRecall` makes and with the same schema default: an unset
-  // key is `builtin`. This repository sets no `memory.backend` and runs that
-  // default, so its own dogfooding never exercises the off arm - the state has
-  // to be CONSTRUCTED to be tested at all (D-06).
+  // The effective `memory.backend`, through the SAME reader `cmdRecall` gates
+  // on - literally the same function, so the two seams cannot come to disagree
+  // about whether the backend is off. This repository sets no `memory.backend`
+  // and runs the `builtin` default, so its own dogfooding never exercises the
+  // off arm: the state has to be CONSTRUCTED to be tested at all (D-06).
   //
   // `none` is a THIRD state on the record, not a spelling of "surfaced
   // nothing". It is what makes three runs separable by their recorded fields
   // alone: `backend: 'none'` is one, a `surfaced.count` of 0 WITHOUT that field
   // is a second, and a non-empty `surfaced` with `cited.count` 0 is a third. No
   // fourth field restates any of it.
-  const { config: citeConfig, warnings } = mergeLayers(join(dir, 'config.json'));
-  const off = (citeConfig?.memory?.backend ?? 'builtin') === 'none';
+  const { backend, warnings } = memoryBackend(dir);
+  const off = backend === 'none';
 
   // On `none` there is no envelope to hand over, because `workflows/plan.md`
   // skips the call that would have produced one, so `--payload` is neither
@@ -2399,18 +2420,16 @@ function cmdRecall(dir, query, opts) {
     top = parsed.value;
   }
 
-  // memory.backend, effective across the config layers (repo > global);
-  // schema default is builtin, so an unset key recalls. `none` is the off
-  // switch - a successful check with a negative answer, like plan-overlap.
+  // The off switch, read through the ONE reader below - a successful check
+  // with a negative answer, like plan-overlap.
   //
   // warnings[] rides the envelope, present only when non-empty so the ordinary
   // byte-stable output is unchanged: a torn layer reads memory.backend as
   // absent, which defaults to `builtin`, so a project that deliberately set
   // `none` would silently start recalling again - and the reverse reading, an
   // empty result set, is indistinguishable from a corpus with no hits.
-  const { config: recallConfig, warnings } = mergeLayers(join(dir, 'config.json'));
+  const { backend, warnings } = memoryBackend(dir);
   const warn = warnings.length ? { warnings } : {};
-  const backend = recallConfig?.memory?.backend ?? 'builtin';
   if (backend === 'none') return ok({ backend: 'none', results: [], total: 0, ...warn });
 
   // Corpus assembly in a fixed order: phases ascending (decimal-aware), each
