@@ -493,8 +493,24 @@ Plan(s): {files, task counts}
 Checker: {passed | passed after revision | skipped | overridden with N open issues}
 Review: {plan trigger outcome}
 Traceability: {seeded ids | none seeded | orphan_ids: [...] | no_active_section}
+Citations: {planned C of S} -> {committed C of S}; {the search was off | it surfaced nothing | it surfaced S and the plan cited ZERO of them}{, record not written: <reason>}
 Commit: {hash | not committed (planning.commit_docs false)}
 ```
+
+The three states are NAMED apart rather than left for a reader to derive from
+two numbers: the search was off (`backend: none` on the envelope), it surfaced
+nothing (`surfaced.count` 0 with no `backend` field), or it surfaced a non-empty
+set the plan cited ZERO of. That last one is the case this count exists to make
+visible, so it is said in those words and not implied by a `0`. Where the
+envelope's `trace.written` is false, name its reason on the same line - that
+field is the only place a dropped record shows.
+
+Advisory, once and last: the plan is not refused, the planner is not
+re-dispatched, the plan file is not edited to add a citation, and the run's one
+suggestion is unchanged. Add no second suggestion, no new ask and no branch on
+the count - a near-zero count reads two ways that need opposite fixes (the
+search surfaced the wrong things, or the planner ignored the right ones), and
+this cycle produces the data that settles which rather than acting on it.
 
 One suggestion only: `/cad-execute {N}` - safe to `/clear` first: the plan is
 on disk and each executor runs in a fresh context.
