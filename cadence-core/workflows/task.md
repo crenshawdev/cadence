@@ -165,9 +165,10 @@ path never does:
 - The PLANNED path wrote `.planning/tasks/{slug}/PLAN.md`, so the directory
   exists and the diff goes beside it at the named path above. Delete the
   `.diff` on return and the directory stays, correctly - it holds the plan.
-- The INLINE path creates no directory and must not start now: `Zero planning
-  artifacts for inline tasks` is this workflow's own success criterion, and an
-  inline task that `mkdir -p`s a slug directory leaves it behind empty once the
+- The INLINE path creates no directory and must not start now: the `record`
+  step below is the only writer under `.planning/tasks/{slug}/` on this path,
+  and an inline task that `mkdir -p`s a slug directory HERE leaves it behind
+  empty whenever the run ends before that step - a blocking FAIL, say - once the
   transient diff is deleted, accreting one per risk-surface task. So make this
   run's own directory - `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-risk-XXXXXX")"` - write
   the diff to `$D/cadence-risk-task-{slug}.diff`, and fire with THAT path -
@@ -184,6 +185,30 @@ This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a
 FAIL, since this workflow does not preload it and the cap lives only there.
+</step>
+
+<step name="record">
+(Both work paths. The fast path is where the majority of real commits land, so
+the hole in the corpus is precisely there.)
+
+Write what shipped into this run's own directory and hand the seam the PATH -
+that prose is caller-derived text, which references/conventions.md binds to a
+file transport, so it never rides the inline `--text` form:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" task-record --slug <the task's slug> --base <the echoed start sha> --head HEAD --text-file <the echoed scratch directory>/what-shipped.txt
+```
+
+Every figure in the record is DERIVED from the range - the commits table from
+one `git log` and the declared-files lines from one `git diff --name-only` - so
+nothing is retyped onto a flag and a re-run over an unchanged range rewrites the
+same bytes.
+
+The seam creates `.planning/tasks/{slug}/` under an EXISTING `.planning/` and
+creates NOTHING where `.planning/` is absent: there it answers `written: false`
+with a reason and writes no record at all. So an inline task in a repository
+with no planning tree still scaffolds nothing, which is what this workflow's
+success criterion actually protects.
 </step>
 
 <step name="done">
@@ -206,7 +231,15 @@ Report:
 Done: {what changed}
 Commit(s): {hashes}
 Files: {list}
+Record: {the `record` path from the task-record envelope}
 ```
+
+The `Record:` line rides an envelope that said `written: true`. On
+`written: false` - no planning tree, an unwritable or symlinked
+`tasks/{slug}/`, a range that would not resolve - drop the line and state the
+envelope's reason in its place: a record that never landed must not read as one
+that did. This is the same discipline the `risk_check` step applies to its own
+flag.
 
 No next-step menu.
 </step>
@@ -225,5 +258,6 @@ No next-step menu.
 - [ ] Protected-branch guard applied before the first commit
 - [ ] Each logical change is one conventional commit of specific files
 - [ ] Verification was observed behavior, not assumption
-- [ ] Zero planning artifacts for inline tasks; at most PLAN.md for planned ones
+- [ ] No PLAN.md and no SUMMARY.md for an inline task, and no `.planning/` tree
+      created where none exists
 </success_criteria>
