@@ -351,11 +351,18 @@ test("a real record's survived entry returns with the reviewer's own words byte-
 
 test('a non-survived entry does not return', () => {
   // A real record whose two entries were both DOWNGRADED, so the filter is
-  // proved against the corpus and not only against a hand-built copy.
-  const onDisk = readFileSync(planning('phases', '1', 'ADJUDICATION-risk_surface-plan-1.json'), 'utf8');
+  // proved against the corpus and not only against a hand-built copy. It read
+  // `.planning/phases/1/ADJUDICATION-risk_surface-plan-1.json` in place until
+  // the v3.6.0 close (`d8173830`) deleted that directory; the bytes are the
+  // same bytes, committed here so a LATER close cannot delete them out from
+  // under this case (D-05). Copying a real record is still reading a real
+  // record - `fixtures/verbatim.trace.jsonl` is the same move.
+  const onDisk = readFileSync(join(HERE, 'fixtures', 'why.adjudication-v3.6.0-1-1.json'), 'utf8');
   const live = parseAdjudication(onDisk);
   assert.equal(live.ok, true);
   assert.equal(JSON.parse(onDisk).entries.length, 2);
+  assert.deepEqual(JSON.parse(onDisk).entries.map((e) => e.ruling), ['downgraded', 'downgraded'],
+    'the fixture is the both-downgraded record this case is about, not merely a record');
   assert.deepEqual(live.survivors, [], 'two downgraded entries yield no surviving finding');
 
   // And the third ruling, on a copy of the recovered record.

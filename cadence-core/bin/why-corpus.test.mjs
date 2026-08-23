@@ -78,22 +78,52 @@ test('the index over this repository resolves 00537356 to _archive-v3.4.0/1, pla
   assert.equal(row.commit, '0053735', 'the abbreviation the record wrote, carried verbatim');
 });
 
-test('the same index does NOT resolve it to the live phases/1, which is another milestone entirely', () => {
+test('the same index does NOT resolve it to a live phase, which is another milestone entirely', () => {
   const index = buildCommitIndex(REAL);
   const { row, matches } = resolveCommit(index, ISSUE_CORE);
   assert.equal(row.dir.group, '_archive-v3.4.0');
-  assert.ok(matches.every((m) => m.dir.label !== 'phases/1'),
-    'the live phase 1 legitimately exists and belongs to a different cycle - a scope-keyed read would land there');
-  assert.ok(index.dirs.some((d) => d.label === 'phases/1'),
-    'and it IS in the walk, so the negative above is a real discrimination rather than an absent directory');
+  assert.ok(matches.every((m) => m.dir.group !== 'phases'),
+    'a live phase belongs to whatever cycle is open now - a scope-keyed read would land there');
+  // The "and it IS in the walk" half of this case USED to assert a live
+  // `phases/1` directory on this repository, and a milestone close deleted it:
+  // between milestones this corpus has no live phase directory at all, so the
+  // walk proof moved onto the built root in the case below, where both tiers
+  // exist by construction. What is left here is the discrimination this case
+  // exists for, which the real corpus is the only place to prove.
 });
 
 test('the live tier and the archive tier are both walked, each labelled by its own group', () => {
-  const { dirs } = buildCommitIndex(REAL);
-  assert.ok(dirs.some((d) => d.group === 'phases'));
-  assert.ok(dirs.filter((d) => d.group.startsWith('_archive-')).length > 1);
+  // A BUILT root, not this repository's: `phases/<N>` exists only while a
+  // milestone is open, so pinning the live tier against the real corpus reddens
+  // at every close for a reason that is not about the walk (D-05).
+  const root = planningRoot({
+    'phases/1': commitsTable([['1', '1', 'ccccccc', 'the open cycle']]),
+    '_archive-v9.0.0/1': commitsTable([['1', '1', 'aaaaaaa', 'the older cycle']]),
+    '_archive-v9.1.0/1': commitsTable([['1', '1', 'bbbbbbb', 'the newer cycle']]),
+  });
+  const { dirs } = buildCommitIndex(root);
+  assert.ok(dirs.some((d) => d.group === 'phases'), 'the live tier is walked');
+  assert.equal(dirs.filter((d) => d.group.startsWith('_archive-')).length, 2,
+    'and so is every archive group beside it');
   const labels = dirs.map((d) => d.label);
   assert.deepEqual(labels, [...labels].sort(), 'the walk order is label order, so two runs index the same way');
+});
+
+test('a live phase and an archive phase sharing one number resolve apart, each under its own group', () => {
+  // The discrimination the real-corpus case above states, proved on a root that
+  // holds both halves whatever milestone this repository is in.
+  const root = planningRoot({
+    'phases/1': commitsTable([['1', '1', 'ccccccc', 'the open cycle']]),
+    '_archive-v9.0.0/1': commitsTable([['1', '1', 'aaaaaaa', 'the older cycle']]),
+  });
+  const index = buildCommitIndex(root);
+  const archived = resolveCommit(index, `aaaaaaa${'0'.repeat(33)}`);
+  assert.equal(archived.state, 'resolved');
+  assert.equal(archived.row.dir.label, '_archive-v9.0.0/1');
+  assert.ok(archived.matches.every((m) => m.dir.label !== 'phases/1'),
+    'the live phase 1 legitimately exists and belongs to a different cycle - a scope-keyed read would land there');
+  const live = resolveCommit(index, `ccccccc${'0'.repeat(33)}`);
+  assert.equal(live.row.dir.label, 'phases/1', 'and the live phase still answers for its own commit');
 });
 
 // --- Built roots: the states this corpus does not hold ---------------------
@@ -315,9 +345,21 @@ const GIT_ENV = {
 const gitIn = (dir, args) => execFileSync('git', ['-C', dir, ...args],
   { encoding: 'utf8', env: GIT_ENV, stdio: ['ignore', 'pipe', 'ignore'] });
 
+/** Closes measured in this repository on 2026-08-23, asserted as a MONOTONE
+ * LOWER BOUND and never as an equality: every milestone close adds one, so an
+ * equality here reddens at the next close for a reason that is not a defect
+ * (D-05). The named shas below and the `--full-history` control are what
+ * actually pin the search; the count only has to stay non-shrinking. */
+const CLOSES_MEASURED = 26;
+/** Of those, the ones ARCHIVE.md can label - it did not exist before v3.5.3, so
+ * this grows with the count above. Measured 2026-08-23. */
+const LABELLED_CLOSES_MEASURED = 8;
+
 test('the prune search finds every close in this repository, including the three named ones', () => {
   const { prunes, warnings } = findPruneCommits(REPO_ROOT);
-  assert.equal(prunes.length, 25, 'this repository has 25 closes that deleted a phase SUMMARY');
+  assert.ok(prunes.length >= CLOSES_MEASURED,
+    `this repository had ${CLOSES_MEASURED} closes that deleted a phase SUMMARY on 2026-08-23, `
+    + `and closes only ever accumulate - got ${prunes.length}`);
   assert.deepEqual(warnings, [], 'every one of them is single-parent, so none is refused');
   const shas = prunes.map((p) => p.commit);
   for (const named of ['72940906', 'a34b0c8a', '8d9bbac9']) {
@@ -334,10 +376,14 @@ test('--full-history is load-bearing: without it the same search returns strictl
     .split('\n').filter((l) => /^[0-9a-f]{40}$/.test(l.trim())).length;
   const withFlag = count([...PRUNE_ARGV]);
   const without = count(control);
-  assert.equal(withFlag, 25);
+  assert.ok(withFlag >= CLOSES_MEASURED, `the flagged search still finds every close (got ${withFlag})`);
+  // THIS is the assertion that stops the flag being dropped, and it is the one
+  // that does not move at a close: the simplification drops closes, so the
+  // control is strictly smaller whatever the totals have grown to.
   assert.ok(without < withFlag,
     `git's default history simplification drops closes: ${without} without the flag, ${withFlag} with it`);
-  assert.equal(without, 4, 'measured 2026-08-23: 4 of 25 survive the simplification');
+  assert.ok(withFlag - without >= 21,
+    `measured 2026-08-23: 4 of 26 survive the simplification, a gap of 22 - got ${withFlag - without}`);
 });
 
 test('72940906 binds to the milestone label its own close appended to ARCHIVE.md', () => {
@@ -355,7 +401,11 @@ test('a close older than ARCHIVE.md itself reports an ABSENT label rather than g
   assert.equal(old.label, null,
     'ARCHIVE.md did not exist at v3.4.0, and the close subject line is not a label source (D-06)');
   const labelled = prunes.filter((p) => p.label !== null);
-  assert.equal(labelled.length, 7, 'exactly the closes from v3.5.3 on, when ARCHIVE.md was created');
+  assert.ok(labelled.length >= LABELLED_CLOSES_MEASURED,
+    `the closes from v3.5.3 on, when ARCHIVE.md was created - ${LABELLED_CLOSES_MEASURED} of them on `
+    + `2026-08-23 and one more at every close since - got ${labelled.length}`);
+  assert.ok(labelled.length < prunes.length,
+    'and NOT every close: the ones older than ARCHIVE.md have no label to bind to');
 });
 
 /**
