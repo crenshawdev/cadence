@@ -52,6 +52,7 @@ are the on-demand and standalone gates.
 | `/cad-spike <question>` | Time-boxed risk-first experiment with falsifiable criteria and a verdict. Throwaway code, one SPIKE.md. |
 | `/cad-suggest [N]` | The retune the run record supports - each suggestion with its trace evidence and its config key. Applies nothing; no argument spans the whole record. |
 | `/cad-health` | Quick structural check that `.planning/` is present, parseable, and consistent. |
+| `/cad-why <path>[:<line>]` | Why is this code like this - a git-log chain over one file (or file and line), joined to the phase, task, decision, deviation and review record on disk. Read-only. |
 
 ## Capabilities (not standalone skills)
 - **Adversarial review** - references/review-triggers.md. Fires at plan / diff /
