@@ -54,6 +54,7 @@ import {
   normalize, parseContextDecisions, planTaskTitles, sectionBound, sectionSpan,
 } from './planning-files.mjs';
 import { RULINGS } from './adjudication-record.mjs';
+import { covers } from './lease-grammar.mjs';
 
 /** The heading whose table carries the commit-to-plan-task edge (D-08). */
 export const COMMITS_HEADING = '## Commits';
@@ -518,4 +519,97 @@ export function parseAdjudication(text) {
     });
   }
   return { ok: true, baseId, headId, survivors, issues };
+}
+
+// ---------------------------------------------------------------------------
+// THE TASK-ATTRIBUTED DECLARED-FILES EDGE (D-12).
+//
+// BESIDE `parsePlanFiles`, NEVER INSTEAD OF IT. That function is what
+// `plan-overlap` depends on, this phase changes nothing on the write side, and
+// its two arms answer a different question anyway: it returns ONE flat union of
+// every path a plan names, which is exactly right for "do these two plans
+// collide" and useless for "which task declared the file I asked about".
+//
+// AND ITS TASK-LINE ARM IS SINGLE-LINE. `/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm`
+// stops at the newline, and 92 of 251 task `Files:` lines across the 27
+// archived plans wrap onto an indented continuation - so 37% of declared task
+// paths are invisible to it. For the union that is harmless (the wrapped paths
+// are usually named by a sibling task or the frontmatter); for an attribution
+// it is the difference between naming the declaring task and naming the wrong
+// one. The reader below consumes the continuation lines.
+//
+// THE SAME NORMALIZATION AS THAT ARM, deliberately: backticks stripped and one
+// trailing parenthetical dropped (`planning.mjs (the seam)`), because a second
+// cleaning rule over the same bytes is two readers disagreeing about one
+// declaration - the defect LSE-01 closed between `plan-overlap` and
+// `lease-check`. It is written out here rather than imported because that arm
+// is an inline closure inside `parsePlanFiles`, and exporting it would be a
+// change to the function this decision exists to leave alone.
+//
+// TASK BOUNDARIES ARE `planTaskBodies`'S, which are `planTaskTitles`'S: one
+// anchored `### Task` grammar in this tree, not a second spelling of it.
+//
+// CONTAINMENT IS `covers` FROM `lib/lease-grammar.mjs` AND NOTHING ELSE. That
+// is the ONE containment predicate LSE-01 put in place so the pre-flight
+// overlap gate and the commit-time enforcement read one grammar; a fresh string
+// comparison here would be the third opinion and would eventually disagree with
+// both. It is also what makes a directory lease (`src/`) claim `src/auth.js`
+// without this module knowing anything about directories.
+// ---------------------------------------------------------------------------
+
+/** A task's declared-files line. */
+const FILES_LINE = /^\s*-\s*\*\*Files:\*\*\s*(.*)$/;
+/** An indented, non-blank line - a continuation of whatever came before it. */
+const CONTINUATION = /^\s+\S/;
+/** An indented bullet opening a NEW bold field, which ends the continuation. */
+const NEXT_FIELD = /^\s*-\s*\*\*/;
+
+/** `parsePlanFiles`'s task-line normalization, D-19: backticks and one trailing
+ * parenthetical. */
+const normalizeTaskItem = (/** @type {string} */ raw) =>
+  raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
+
+/**
+ * The paths each `### Task <n>:` heading's `- **Files:**` line declares,
+ * INCLUDING its continuation lines, attributed to the task that wrote them.
+ * @param {string} text one PLAN file's bytes
+ * @returns {Array<{ordinal: number, title: string, files: string[]}>}
+ */
+export function taskDeclaredFiles(text) {
+  return planTaskBodies(text).map(({ ordinal, title, body }) => {
+    const lines = body.split('\n');
+    const files = [];
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(FILES_LINE);
+      if (!m) continue;
+      let raw = m[1];
+      for (let k = i + 1; k < lines.length; k++) {
+        if (!CONTINUATION.test(lines[k]) || NEXT_FIELD.test(lines[k])) break;
+        raw += ` ${lines[k].trim()}`;
+        i = k;
+      }
+      for (const part of raw.split(',')) {
+        const f = normalizeTaskItem(part);
+        // `{...}` is a template placeholder, the skip `parsePlanFiles` takes.
+        if (f && !f.startsWith('{') && !files.includes(f)) files.push(f);
+      }
+    }
+    return { ordinal, title, files };
+  });
+}
+
+/**
+ * Which of a plan's tasks DECLARED the queried path, and by which declaration.
+ * A task may claim it through a directory lease, which is why the declaration
+ * itself is carried back rather than just the task.
+ * @param {string} text one PLAN file's bytes @param {string} path repo-relative
+ * @returns {Array<{ordinal: number, title: string, declaration: string}>}
+ */
+export function declaringTasks(text, path) {
+  const out = [];
+  for (const task of taskDeclaredFiles(text)) {
+    const declaration = task.files.find((f) => covers(f, path));
+    if (declaration) out.push({ ordinal: task.ordinal, title: task.title, declaration });
+  }
+  return out;
 }

@@ -402,3 +402,45 @@ test('a finding whose range does not resolve in this clone is stated unknown, ne
   assert.ok(covered.includes('join UNRESOLVABLE:'), `expected the unknown stated, got:\n${covered}`);
   assert.ok(covered.includes('could not be placed'));
 });
+
+// --- Plan 2 task 7: the task-attributed declared-files edge ----------------
+
+test('a joined entry names the task whose Files: line declared the queried path', () => {
+  const { stdout } = run(['cadence-core/bin/lib/capture-file.mjs', '--dir', REPO, '--top', '30']);
+  const env = oneJsonLine(stdout);
+  const entry = entryFor(env.text, '8e27033805ac8a5886c07ddd61756106538b22e8');
+
+  assert.ok(entry.includes('declared by: declared in PLAN-'),
+    `expected the declaring plan file named, got:\n${entry}`);
+  assert.ok(/declares cadence-core\/bin\/lib\/capture-file\.mjs\)/.test(entry),
+    `expected the declaration itself quoted, got:\n${entry}`);
+
+  const data = env.entries.find((e) => e.sha === '8e27033805ac8a5886c07ddd61756106538b22e8');
+  assert.ok(data.join.declared.tasks.length > 0);
+  assert.ok(data.join.declared.tasks.every((t) => Number.isInteger(t.ordinal) && t.title));
+});
+
+test('a path no task in the resolved plan declares says so rather than going blank', () => {
+  // `f.txt` is what the built fixture's commits touch; its PLAN.md declares
+  // nothing, so the sixth field is a stated absence with a reason.
+  const { dir, a } = repoWithFinding();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  const entry = entryFor(env.text, a);
+  assert.ok(entry.includes('declared by: no task in PLAN.md declares this path'),
+    `expected a stated absence naming the plan file, got:\n${entry}`);
+});
+
+test('every join field is stated on an unjoined entry, including the sixth', () => {
+  const { dir, second } = repo();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  const entry = entryFor(env.text, second);
+  for (const label of ['phase', 'plan task', 'decision', 'deviation', 'review', 'declared by']) {
+    assert.ok(entry.includes(`${label}: not yet joined`), `expected a stated-absent line for ${label}`);
+  }
+});
+
+test('two runs over this repository stay byte-identical with all six edges joined', () => {
+  const a = run(['cadence-core/bin/lib/capture-file.mjs', '--dir', REPO, '--top', '30']).stdout;
+  const b = run(['cadence-core/bin/lib/capture-file.mjs', '--dir', REPO, '--top', '30']).stdout;
+  assert.equal(a, b);
+});

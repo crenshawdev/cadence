@@ -13,7 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
   contextDecisions, decisionsFor, MARKER_GAP, parseAdjudication, parseCommitRows,
-  parseDeviations, planTaskBodies, shaMatches, SURVIVED_RULING,
+  declaringTasks, parseDeviations, planTaskBodies, shaMatches, SURVIVED_RULING,
+  taskDeclaredFiles,
 } from './lib/why-record.mjs';
 import { RULINGS } from './lib/adjudication-record.mjs';
 import { parseContextDecisions, parseSummarySnippets } from './lib/planning-files.mjs';
@@ -397,4 +398,76 @@ test('a record that will not parse yields one issue and no findings, never a thr
   const noEntries = parseAdjudication('{"base_id":"aaaa","head_id":"bbbb"}');
   assert.deepEqual(noEntries.issues, ['no-entries-array']);
   assert.deepEqual(noEntries.survivors, []);
+});
+
+// --- Task 7: the task-attributed declared-files edge ----------------------
+
+const V210_1_PLAN = read('_archive-v2.1.0', '1', 'PLAN.md');
+
+test("a wrapped Files: line yields both the first line's paths and the continuation's", () => {
+  const tasks = taskDeclaredFiles(V210_1_PLAN);
+  assert.equal(tasks.length, 8);
+
+  const six = tasks.find((t) => t.ordinal === 6);
+  assert.deepEqual(six.files, [
+    'cadence-core/bin/planning.mjs',
+    'cadence-core/bin/planning.test.mjs',
+    'cadence-core/bin/self-verify.mjs',
+  ], 'planning.test.mjs comes off the first line and self-verify.mjs off the indented continuation');
+
+  // The single-line arm this reader exists to widen would stop at the newline.
+  const singleLine = [...V210_1_PLAN.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)]
+    .map((m) => m[1]).join(' ');
+  assert.ok(!singleLine.includes('cadence-core/bin/self-verify.mjs'),
+    'a single-line reader really does miss it - the negative that makes this reader necessary');
+});
+
+test('every task is attributed to its own heading rather than merged into one set', () => {
+  const tasks = taskDeclaredFiles(V210_1_PLAN);
+  assert.deepEqual(tasks.find((t) => t.ordinal === 1).files, ['cadence-core/bin/planning-files.test.mjs']);
+  assert.deepEqual(tasks.find((t) => t.ordinal === 3).files, ['cadence-core/bin/planning.test.mjs']);
+  assert.deepEqual(tasks.find((t) => t.ordinal === 7).files, [
+    'cadence-core/references/acceptance-criteria.md',
+    'cadence-core/workflows/audit.md',
+    'cadence-core/bin/weight-budgets.json',
+  ]);
+  assert.ok(!tasks.find((t) => t.ordinal === 1).files.includes('cadence-core/bin/self-verify.mjs'),
+    'task 6 declaration does not leak into task 1');
+});
+
+test('declaringTasks names the task that claimed the queried path, and its declaration', () => {
+  const claims = declaringTasks(V210_1_PLAN, 'cadence-core/bin/self-verify.mjs');
+  assert.equal(claims.length, 1);
+  assert.equal(claims[0].ordinal, 6);
+  assert.equal(claims[0].declaration, 'cadence-core/bin/self-verify.mjs');
+  assert.ok(claims[0].title.includes('uat record --criterion'));
+});
+
+test('containment runs through covers, so a directory lease claims a file it does not name', () => {
+  const plan = [
+    '### Task 1: the directory lease', '',
+    '- **Files:** src/', '- **Action:** everything under it', '',
+    '### Task 2: the single file', '',
+    '- **Files:** src/auth.js', '- **Action:** just that one', '',
+  ].join('\n');
+
+  assert.deepEqual(declaringTasks(plan, 'src/auth.js').map((t) => t.ordinal), [1, 2],
+    'the directory lease and the exact declaration both claim it');
+  assert.deepEqual(declaringTasks(plan, 'src/other.js').map((t) => t.ordinal), [1],
+    'the sibling declaring src/auth.js alone does not claim src/other.js');
+  assert.deepEqual(declaringTasks(plan, 'lib/other.js'), []);
+});
+
+test('the task-line normalization matches parsePlanFiles: backticks and one trailing parenthetical', () => {
+  const plan = [
+    '### Task 1: decorated declarations', '',
+    '- **Files:** `src/a.js`, src/b.js (the seam), {placeholder}',
+    '- **Action:** x', '',
+  ].join('\n');
+  assert.deepEqual(taskDeclaredFiles(plan)[0].files, ['src/a.js', 'src/b.js']);
+});
+
+test('a plan whose task headings do not parse declares nothing rather than something wrong', () => {
+  assert.deepEqual(taskDeclaredFiles('# a plan with no tasks'), []);
+  assert.deepEqual(declaringTasks('', 'src/a.js'), []);
 });

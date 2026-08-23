@@ -43,6 +43,18 @@
 // joins, on the same 21,684 B / 144-commit ratio the default was measured
 // against.
 //
+// THAT LAST SENTENCE IS NOW MEASURED FALSE, and is left standing with its
+// correction rather than quietly edited, because the number it justifies has
+// not moved. With plan 2's six join fields filled, `/cad-why
+// cadence-core/bin/lib/capture-file.mjs` renders 10,137 B over EIGHT entries
+// (seven of them joined), measured 2026-08-23 - already past the 10,000-byte
+// threshold, and a full ten joined entries would be around 13 KB. The cap is
+// still D-13's satisfied arm (that decision reads "registers in
+// lib/bulk-output.mjs OR the command carries a default entry cap") and lowering
+// it is a re-decision with its own cost - a smaller default hides history a
+// reader asked for - so the default stays 10 and the discrepancy is recorded
+// here for whoever makes that call.
+//
 // THE TRUNCATION NOTE LIVES INSIDE `text`, not only in the envelope. D-02 has
 // the skill relay `text` verbatim and reformat nothing, so a truncated answer
 // that only the JSON envelope's `shown`/`total` fields recorded would never
@@ -98,7 +110,7 @@ const ABBREV_LEN = 8;
  * @typedef {{
  *   sha: string, date: string, subject: string,
  *   phase?: string, task?: string, decision?: string,
- *   deviation?: string, review?: string,
+ *   deviation?: string, review?: string, declared?: string,
  *   join?: EntryJoin,
  * }} ChainEntry
  */
@@ -241,6 +253,23 @@ function fieldReview(j) {
 }
 
 /**
+ * The `declared by:` line (D-12) - which task's `- **Files:**` line claimed the
+ * queried path, and through which declaration, since a directory lease claims a
+ * file it does not name. It is a SIXTH join field, and it obeys the same rule
+ * as the other five: stated when known, stated absent when not, never dropped.
+ * @param {EntryJoin} [j] @returns {string|undefined}
+ */
+function fieldDeclared(j) {
+  const d = j && /** @type {any} */ (j).declared;
+  if (!d) return undefined;
+  if (!d.planFile) return "no plan file for this task's plan in the phase directory";
+  if (!d.tasks.length) return `no task in ${d.planFile} declares this path`;
+  return quoted(`declared in ${d.planFile}`, d.tasks.map(
+    (/** @type {any} */ t) => `task ${t.ordinal}: ${t.title} (declares ${t.declaration})`,
+  ));
+}
+
+/**
  * Fill every join field the entry does not already carry as a literal string.
  * Never mutates its argument.
  * @param {ChainEntry} e @returns {ChainEntry}
@@ -255,6 +284,7 @@ function decorate(e) {
     decision: e.decision ?? fieldDecision(j),
     deviation: e.deviation ?? fieldDeviation(j),
     review: e.review ?? fieldReview(j),
+    declared: e.declared ?? fieldDeclared(j),
   };
 }
 
@@ -286,6 +316,7 @@ function renderEntry(raw) {
     `decision: ${e.decision ?? NOT_JOINED}`,
     `deviation: ${e.deviation ?? NOT_JOINED}`,
     `review: ${e.review ?? NOT_JOINED}`,
+    `declared by: ${e.declared ?? NOT_JOINED}`,
   ].join('\n');
 }
 
