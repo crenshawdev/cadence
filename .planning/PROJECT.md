@@ -203,10 +203,13 @@ all in what `v3.6.0` shipped, all measured rather than suspected.
 The bare-path arm inherits git's default history simplification, so the join is
 correct and the history it reaches is short. Measured on
 `lib/release-decision.mjs`: 7 commits reachable against 10 with `--full-history`,
-the three missing being `_archive-v2.2.0/3` phase commits collapsed into merge
-`0bf62847`, and none of that phase's five recorded commits reachable from any
-path they touched. The prune search already passes `--full-history`, which is the
-only reason it recovers 25 closes instead of 4 (`WHY-02`).
+the three missing being the merges `b86fc25c`, `051f0df1` and `9237a539`, none
+of which resolves to a planning record. `0bf62847` is single-parent
+(`0bba96f4`) and is already one of the reachable 7 - an earlier reading of this
+had it collapsing the `_archive-v2.2.0/3` commits, which is false: those five
+are not ancestors of HEAD at all, so no `git log` flag reaches them. The prune
+search already passes `--full-history`, which is the only reason it recovers 25
+closes instead of 4 (`WHY-02`).
 
 The renderer's entry cap of 10 carries a stated reason that is measured false. It
 claims ten entries stays under the 10,000-byte line in `references/conventions.md`;

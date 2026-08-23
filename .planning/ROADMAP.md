@@ -13,8 +13,9 @@ suspected.
 
 The bare-path arm inherits git's default history simplification, so the join is
 correct and the history it reaches is short: 7 commits against 10 with
-`--full-history` on `lib/release-decision.mjs`, the three missing being
-`_archive-v2.2.0/3` phase commits collapsed into a merge (`WHY-02`). The
+`--full-history` on `lib/release-decision.mjs`, the three missing being the
+merges `b86fc25c`, `051f0df1` and `9237a539`, none of which resolves to a
+planning record (`WHY-02`). The
 renderer's entry cap of 10 claims ten entries stays under the 10,000-byte line
 in `references/conventions.md`, and `planning.mjs` renders 15,637 B (`WHY-03`).
 And `closeOver` compares `%cI` timestamps as strings, so a mixed-offset pair
@@ -51,8 +52,8 @@ nothing here to discover, only three numbers to make true.
 `WHY-02` is the one with a real decision in it and it is not a fix. The bare-path
 arm inherits git's default history simplification, so the join is correct and the
 history reaching it is short: 7 commits against 10 with `--full-history` on
-`lib/release-decision.mjs`, the three missing being `_archive-v2.2.0/3` phase
-commits collapsed into a merge. `--full-history` is what the prune search already
+`lib/release-decision.mjs`, the three missing being the merges `b86fc25c`,
+`051f0df1` and `9237a539`. `--full-history` is what the prune search already
 passes, and it is why that search recovers 25 closes instead of 4. But it is not
 free on the chain query: it widens every path with a busy merge history, and the
 entry cap `WHY-03` is about is what the widening lands on. The two want deciding
