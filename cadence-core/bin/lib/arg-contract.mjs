@@ -564,6 +564,33 @@ export const CONTRACTS = {
       '--max-reqs': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--max-tasks': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
+    // THE READ-BACK COUNT (RBK-01): what the retrieval pass put in front of the
+    // planner, against what the produced plan cites. ONE WORD, never a two-word
+    // spelling: `subcommandKey` consumes a second word only for the families in
+    // `TWO_WORD`, and one operation does not earn widening that Set - the
+    // `adjudication` row below is the precedent, and `plan-overlap`,
+    // `lease-check` and `criteria-coverage` are the older ones.
+    //
+    // `--payload` is a FILE and never inline JSON, the rule the `adjudication`
+    // row states in full: the payload is a retrieval envelope carrying verbatim
+    // artifact prose with arbitrary quoting, so one unescaped quote in a heredoc
+    // makes it unparseable. It is declared OPTIONAL rather than required because
+    // `memory.backend: none` skips the retrieval call entirely, so on that path
+    // there is no envelope to hand over and none to demand; the seam qualifies
+    // the refusal by backend, which is a presence rule no declaration can state
+    // (the PRESENCE carve-out this file's header names).
+    //
+    // `--point` names WHICH of the two count points a run is recording - the
+    // count runs after the planner returns and again on the plan as committed,
+    // and the pair is what makes a revision's effect on citation visible. Its
+    // two values are an ENUM the declaration cannot express, so the seam refuses
+    // a value outside them in its own `bad-args` vocabulary, the carve-out
+    // `capture --kind must be one of ...` already occupies.
+    'cite-count': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--payload': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--point': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // `--label-file` is `--label`'s path transport: an untagged close takes the
     // label from PROJECT.md's milestone NAME, which is repository content. The
     // table term (`|` or a newline) and the containment term run on the

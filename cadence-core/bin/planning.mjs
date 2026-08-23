@@ -21,6 +21,15 @@
 //                                   from ROADMAP when omitted; stamps today
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
+//   cite-count --phase N [--payload <file>] [--point planned|committed]
+//                                   the read-back count: how many of the prior
+//                                   decisions, captures and deviations the
+//                                   memory pass surfaced does that phase's
+//                                   PLAN*.md actually cite, per item and per
+//                                   kind. --payload is the surfaced set as a
+//                                   FILE (the envelope the planner was handed);
+//                                   --point names which of the two count points
+//                                   is being recorded. REPORTS and never gates
 //   seed-reqs --phase N             insert Traceability rows for a phase's
 //                                   plan-declared, ## Active-bounded req ids
 //   criteria-coverage               every CONTEXT `## Acceptance criteria` id
@@ -188,6 +197,8 @@ import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-
 import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { covers, intersects } from './lib/lease-grammar.mjs';
+import { surfacedRows, SURFACED_KINDS } from './lib/cite-surfaced.mjs';
+import { citedMentions } from './lib/cite-cited.mjs';
 import { isReportName } from './lib/report-rotation.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
@@ -2116,6 +2127,135 @@ function cmdPlanOverlap(dir, opts) {
     ...(undeclared.length ? { undeclared } : {}),
     ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
     ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// cite-count - the read-back count (RBK-01). The Core Value claims what Cadence
+// writes down "comes back on its own at the moment it matters", and until this
+// subcommand nothing measured it: a planner could be handed twelve prior
+// decisions and cite none of them, and no gate noticed.
+//
+// It REPORTS and never gates. A plan citing zero of a non-empty surfaced set is
+// a number on the record, not a refusal - a threshold needs a legitimate-zero
+// rate to be set against, and that rate is what this seam exists to produce.
+//
+// TWO READERS, ONE JOIN. lib/cite-surfaced.mjs states what the surfaced set is
+// (bounded `results`, the queried phase's own rows excluded, one of four kinds,
+// an id only where the artifact carries one) and lib/cite-cited.mjs states what
+// a citation is (a textual D-NN scan of the whole plan, bare mentions scoped to
+// the plan's own phase). Both are pure; this function owns the refusals, the
+// disk reads and the envelope, and nothing else.
+//
+// THE MATCH IS PER ITEM (D-01), never per source. Measured on a reconstructed
+// phase-1 plan-time query against the three real PLAN files, the per-item rule
+// reads 1 cited of 5 and the per-source rule reads 4 of 5 on the identical plan
+// and the identical envelope - because per-source credits every row from a
+// source on one mention. The rule IS the metric, so the low honest number is
+// the one that can carry a threshold later.
+//
+// STATED CONSEQUENCE, not a defect to be "fixed": under D-04 (own-phase rows
+// excluded) plus D-10 (a bare mention is own-phase) a BARE mention can only
+// ever match an ARCHIVED same-numbered phase's decision. That falls out of the
+// two rules together, and widening either one to raise the number would be
+// widening the metric to flatter the thing it measures.
+// ---------------------------------------------------------------------------
+
+/**
+ * The two count points D-05 names: once after the planner returns and before
+ * the gate, and once on the plan as committed. An ENUM the declared row cannot
+ * express, so it is refused here in this file's own `bad-args` vocabulary - the
+ * same carve-out `capture --kind must be one of ...` occupies.
+ */
+const CITE_POINTS = ['planned', 'committed'];
+
+function cmdCiteCount(dir, opts) {
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'cite-count needs --phase <N>');
+  const n = parsedPhase.value;
+
+  if (opts.point !== undefined) {
+    if (typeof opts.point !== 'string' || !CITE_POINTS.includes(opts.point)) {
+      return fail('bad-args', `cite-count --point must be one of ${CITE_POINTS.join(' | ')}`);
+    }
+  }
+  const point = typeof opts.point === 'string' ? opts.point : undefined;
+
+  // Absent `--payload` is refused rather than fed to stdin, the reason
+  // `cmdAdjudication` states in full: `readJsonPayload()` with no argument sits
+  // reading a stdin no call site opens.
+  if (opts.payload === undefined) {
+    return fail('bad-args',
+      'cite-count needs --payload <file> - the surfaced set is a FILE, never inline '
+      + 'JSON and never stdin');
+  }
+  const payload = readJsonPayload(opts.payload);
+  if (!payload.ok) return;
+
+  // The DIRECTORY is the caller's spelling; only the echoed `phase` below is
+  // the number (D-02). `listPlanFiles` is the SAME reader `plan-overlap` uses,
+  // so this seam and that one cannot disagree about what a plan file is.
+  const pdir = join(dir, 'phases', parsedPhase.raw);
+  const { plans: planFiles, missing } = listPlanFiles(pdir);
+  if (missing) return fail('no-phase-dir', `${pdir} not found`);
+
+  const { rows, unkinded, malformed } = surfacedRows(payload.value, parsedPhase.raw);
+  const mentions = [];
+  for (const f of planFiles) {
+    mentions.push(...citedMentions(read(join(pdir, f)) || '', parsedPhase.raw));
+  }
+
+  // A surfaced decision is cited when some mention carries the SAME number AND
+  // the same scope phase as that row's own source phase. A row with neither -
+  // every capture, deviation and UAT row, and a CONTEXT bullet nobody numbered -
+  // can match nothing, which is what the unjoinable arms below report.
+  const isCited = (row) => row.kind === 'decision'
+    && row.number !== undefined && row.phase !== undefined
+    && mentions.some((m) => m.number === row.number && m.phase === row.phase);
+
+  const byKind = {};
+  for (const k of SURFACED_KINDS) byKind[k] = { surfaced: 0, cited: 0 };
+  const citedIds = [];
+  for (const row of rows) {
+    byKind[row.kind].surfaced += 1;
+    if (!isCited(row)) continue;
+    byKind[row.kind].cited += 1;
+    citedIds.push(row.id);
+  }
+
+  // `surfaced.count` is every KINDED row and `surfaced.ids` is only the rows an
+  // id exists for, and the gap between the two numbers is the answer rather
+  // than a truncation: D-02 says a CAPTURE row and a SUMMARY deviation carry no
+  // identifier at all, and synthesizing one from corpus position would break
+  // determinism the moment a bullet is added above the row. `cited_by_kind` is
+  // what reconciles the headline - the four arms' `surfaced` figures sum to it.
+  //
+  // The three lists ride the envelope even when EMPTY, against this file's
+  // usual compactness rule, because they are the answer and not decoration: AC1
+  // asks for an explicit id list rather than a number alone, and an empty
+  // `cited.ids` beside `count: 0` is exactly the zero-citation case this seam
+  // was built to make visible.
+  ok({
+    phase: n,
+    ...(point ? { point } : {}),
+    plans: planFiles,
+    surfaced: { count: rows.length, ids: rows.filter((r) => r.id !== undefined).map((r) => r.id) },
+    cited: { count: citedIds.length, ids: citedIds },
+    cited_by_kind: {
+      decision: { surfaced: byKind.decision.surfaced, cited: byKind.decision.cited },
+      // UNJOINABLE, never silently zero (D-02): these three arms carry no
+      // identifier to join on, so `cited: 0` here would report a plan that
+      // ignored them where the truth is that nothing could tell either way.
+      capture: { surfaced: byKind.capture.surfaced, unjoinable: true },
+      deviation: { surfaced: byKind.deviation.surfaced, unjoinable: true },
+      uat: { surfaced: byKind.uat.surfaced, unjoinable: true },
+    },
+    // A payload row this reader could not place. Reported rather than binned:
+    // a row counted in `surfaced` and in no arm would make the breakdown stop
+    // reconciling with the headline, and a row dropped in silence would make an
+    // unreadable payload look like a small one.
+    ...(unkinded.length ? { unkinded } : {}),
+    ...(malformed ? { malformed } : {}),
   });
 }
 
@@ -6772,6 +6912,10 @@ const COMMANDS = {
   'criteria-size': (dir, _sub, opts) => cmdCriteriaSize(dir, opts),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
   'plan-size': (dir, _sub, opts) => cmdPlanSize(dir, opts),
+  // The read-back count (RBK-01). ONE word, never a two-word spelling, for the
+  // reason the `adjudication` arm below states: `subcommandKey` consumes a
+  // second word only for the `TWO_WORD` families.
+  'cite-count': (dir, _sub, opts) => cmdCiteCount(dir, opts),
   'seed-reqs': (dir, _sub, opts) => cmdSeedReqs(dir, opts),
   // Bare words are JOINED, never rejected: every workflow caller quotes, so
   // rejecting extras would turn a today-degraded interactive call into a hard
