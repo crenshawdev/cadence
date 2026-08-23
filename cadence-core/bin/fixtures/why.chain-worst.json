@@ -1,0 +1,468 @@
+{
+  "note": "A FROZEN worst case, not a live query. These are the exact arguments the /cad-why seam handed lib/why-render.mjs's renderChain for cadence-core/bin/lib/capture-file.mjs on 2026-08-23 with the entry cap lifted (--top 100): the joined chain entries and the WHY-02 simplification report, and deliberately NOT the rendered text, which why-render.test.mjs re-renders from these. Its job is to pin DEFAULT_TOP against a shape that was really measured - 9,129 B at a cap of 6 and 10,343 B at 7, the two figures the maximality claim in why-render.mjs's header rests on - and NOT to track whatever this path's history does next. Recapture it only when the claim is being re-measured on purpose.",
+  "measured": "2026-08-23",
+  "source": "cadence-core/bin/why.mjs cadence-core/bin/lib/capture-file.mjs --dir . --top 100",
+  "path": "cadence-core/bin/lib/capture-file.mjs",
+  "entries": [
+    {
+      "sha": "d30ed50955e4526d0811a6ab1b0ca15bdc2ad7e7",
+      "date": "2026-08-16T15:06:40-04:00",
+      "subject": "fix(1-1): serialize the ARCHIVE.md read-modify-write under a planning-file lock",
+      "join": {
+        "state": "resolved",
+        "label": "c8ba51c1:.planning/phases/1",
+        "milestone": "v3.5.3",
+        "phase": "1",
+        "plan": "1",
+        "task": "gate",
+        "description": "Serialize the ARCHIVE.md read-modify-write under a planning-file lock",
+        "recovered": {
+          "prune": "bc04ef6cfe649c716404a150c70fea27a8584f1c",
+          "parent": "c8ba51c12dcb3d4721d755b3adbdfed8e99a96dc",
+          "tree": ".planning/phases/1"
+        },
+        "decision": {
+          "scope": "plan",
+          "ids": [
+            "D-01",
+            "D-02",
+            "D-03",
+            "D-04",
+            "D-05"
+          ],
+          "lines": [
+            "D-01 (RCL-07): The residue is written at prune time, BEFORE the directories",
+            "D-02 (RCL-07): The residue is a NEW tracked top-level `.planning/ARCHIVE.md`",
+            "D-03 (RCL-07): The residue carries the SAME snippets the walker already",
+            "D-04 (RCL-07): Each residue row names its ORIGIN artifact, so `recall`'s",
+            "D-05 (RCL-07): Recall keeps ONE flat BM25 ranking - archived rows compete"
+          ]
+        },
+        "deviation": {
+          "bullets": [
+            "None from the plans as written. Every `gate` row above is work the blocking `risk_surface` and `diff` gates required after an executor returned, not a departure from a plan."
+          ]
+        },
+        "review": {
+          "records": 0,
+          "findings": [],
+          "unresolved": []
+        },
+        "declared": {
+          "planFile": "PLAN-1.md",
+          "tasks": []
+        }
+      }
+    },
+    {
+      "sha": "8e27033805ac8a5886c07ddd61756106538b22e8",
+      "date": "2026-08-14T14:55:23-04:00",
+      "subject": "refactor(1-2): the recall walk's sections are stated once",
+      "join": {
+        "state": "resolved",
+        "label": "_archive-v3.3.0/1",
+        "milestone": "v3.3.0",
+        "phase": "1",
+        "plan": "2",
+        "task": "4",
+        "description": "recall walk's sections stated once",
+        "decision": {
+          "scope": "plan",
+          "ids": [
+            "D-04",
+            "D-05",
+            "D-06",
+            "D-07",
+            "D-03",
+            "D-10"
+          ],
+          "lines": [
+            "D-04 (grammar): Criterion 2 is met by widening the READER, with the grammar",
+            "D-05 (grammar): A leading parenthetical that is not a phase tag is CONTENT and",
+            "D-06 (health): The out-of-walk report is an unconditional per-section count",
+            "D-07 (health): The check ships as a standalone subcommand that `/cad-health`",
+            "D-03 (scope): `## Archive` and `## Debt markers` stay OUT of the recall walk.",
+            "D-10 (surfaces): Every prose surface this phase grows carries its"
+          ]
+        },
+        "deviation": {
+          "bullets": [
+            "[plan 1, post-plan] The blocking `risk_surface` gate returned three HIGH",
+            "Plans otherwise executed as written; plan 2 reported zero deviations."
+          ]
+        },
+        "review": {
+          "records": 0,
+          "findings": [],
+          "unresolved": []
+        },
+        "declared": {
+          "planFile": "PLAN-2.md",
+          "tasks": [
+            {
+              "ordinal": 4,
+              "title": "State the recall walk once",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sha": "09d25d81be10a77da8368fe256a9d2856c26da3b",
+      "date": "2026-08-14T14:46:29-04:00",
+      "subject": "fix(1-1): move the no-lost-append guarantee off the lock and onto the writer",
+      "join": {
+        "state": "resolved",
+        "label": "_archive-v3.3.0/1",
+        "milestone": "v3.3.0",
+        "phase": "1",
+        "plan": "1",
+        "task": "fix",
+        "description": "no-lost-append guarantee moved onto the writer (post-release verify-retry)",
+        "decision": {
+          "scope": "plan",
+          "ids": [
+            "D-01",
+            "D-02",
+            "D-08",
+            "D-09",
+            "D-10",
+            "D-03"
+          ],
+          "lines": [
+            "D-01 (write path): The CAPTURE.md append moves out of skill prose and into a",
+            "D-02 (write path): All three product writers of CAPTURE.md route through that",
+            "D-08 (concurrency): `atomicWrite` is NOT modified. Its contract is explicitly",
+            "D-09 (concurrency): No bare EOF `O_APPEND`. CAPTURE.md is sectioned markdown",
+            "D-10 (surfaces): Every prose surface this phase grows carries its",
+            "D-03 (scope): `## Archive` and `## Debt markers` stay OUT of the recall walk."
+          ]
+        },
+        "deviation": {
+          "bullets": [
+            "[plan 1, post-plan] The blocking `risk_surface` gate returned three HIGH",
+            "Plans otherwise executed as written; plan 2 reported zero deviations."
+          ]
+        },
+        "review": {
+          "records": 0,
+          "findings": [],
+          "unresolved": []
+        },
+        "declared": {
+          "planFile": "PLAN-1.md",
+          "tasks": [
+            {
+              "ordinal": 1,
+              "title": "The guarded capture seam, wired end to end",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 3,
+              "title": "The concurrent-append guard",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 4,
+              "title": "Route debt-harvest through the seam",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sha": "d49bb2e50f1a44b146d7ab4ae1fc45b9f4081465",
+      "date": "2026-08-14T14:41:02-04:00",
+      "subject": "fix(1-1): close the three high risk_surface findings on the capture seam",
+      "join": {
+        "state": "resolved",
+        "label": "_archive-v3.3.0/1",
+        "milestone": "v3.3.0",
+        "phase": "1",
+        "plan": "1",
+        "task": "fix",
+        "description": "three high risk_surface findings closed (ownership-safe stale break, ENOENT-only read, --text-file)",
+        "decision": {
+          "scope": "plan",
+          "ids": [
+            "D-01",
+            "D-02",
+            "D-08",
+            "D-09",
+            "D-10",
+            "D-03"
+          ],
+          "lines": [
+            "D-01 (write path): The CAPTURE.md append moves out of skill prose and into a",
+            "D-02 (write path): All three product writers of CAPTURE.md route through that",
+            "D-08 (concurrency): `atomicWrite` is NOT modified. Its contract is explicitly",
+            "D-09 (concurrency): No bare EOF `O_APPEND`. CAPTURE.md is sectioned markdown",
+            "D-10 (surfaces): Every prose surface this phase grows carries its",
+            "D-03 (scope): `## Archive` and `## Debt markers` stay OUT of the recall walk."
+          ]
+        },
+        "deviation": {
+          "bullets": [
+            "[plan 1, post-plan] The blocking `risk_surface` gate returned three HIGH",
+            "Plans otherwise executed as written; plan 2 reported zero deviations."
+          ]
+        },
+        "review": {
+          "records": 0,
+          "findings": [],
+          "unresolved": []
+        },
+        "declared": {
+          "planFile": "PLAN-1.md",
+          "tasks": [
+            {
+              "ordinal": 1,
+              "title": "The guarded capture seam, wired end to end",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 3,
+              "title": "The concurrent-append guard",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 4,
+              "title": "Route debt-harvest through the seam",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sha": "f8a004a603670a4fb9a516dcbea714760a5af1b4",
+      "date": "2026-08-14T14:26:00-04:00",
+      "subject": "feat(1-1): /cad-capture writes through the seam, and holds no write tools",
+      "join": {
+        "state": "resolved",
+        "label": "_archive-v3.3.0/1",
+        "milestone": "v3.3.0",
+        "phase": "1",
+        "plan": "1",
+        "task": "5",
+        "description": "/cad-capture writes through the seam, no write tools",
+        "decision": {
+          "scope": "task",
+          "ids": [
+            "D-10"
+          ],
+          "lines": [
+            "D-10 (surfaces): Every prose surface this phase grows carries its"
+          ]
+        },
+        "deviation": {
+          "bullets": [
+            "[plan 1, post-plan] The blocking `risk_surface` gate returned three HIGH",
+            "Plans otherwise executed as written; plan 2 reported zero deviations."
+          ]
+        },
+        "review": {
+          "records": 0,
+          "findings": [],
+          "unresolved": []
+        },
+        "declared": {
+          "planFile": "PLAN-1.md",
+          "tasks": [
+            {
+              "ordinal": 1,
+              "title": "The guarded capture seam, wired end to end",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 3,
+              "title": "The concurrent-append guard",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 4,
+              "title": "Route debt-harvest through the seam",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sha": "16bd5e130ad970a14635e9466316da8fc6c9cdda",
+      "date": "2026-08-14T14:23:40-04:00",
+      "subject": "refactor(1-1): debt-harvest rewrites CAPTURE.md through the seam",
+      "join": {
+        "state": "resolved",
+        "label": "_archive-v3.3.0/1",
+        "milestone": "v3.3.0",
+        "phase": "1",
+        "plan": "1",
+        "task": "4",
+        "description": "debt-harvest rewrites through the seam",
+        "decision": {
+          "scope": "task",
+          "ids": [
+            "D-02"
+          ],
+          "lines": [
+            "D-02 (write path): All three product writers of CAPTURE.md route through that"
+          ]
+        },
+        "deviation": {
+          "bullets": [
+            "[plan 1, post-plan] The blocking `risk_surface` gate returned three HIGH",
+            "Plans otherwise executed as written; plan 2 reported zero deviations."
+          ]
+        },
+        "review": {
+          "records": 0,
+          "findings": [],
+          "unresolved": []
+        },
+        "declared": {
+          "planFile": "PLAN-1.md",
+          "tasks": [
+            {
+              "ordinal": 1,
+              "title": "The guarded capture seam, wired end to end",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 3,
+              "title": "The concurrent-append guard",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 4,
+              "title": "Route debt-harvest through the seam",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sha": "1847c94f1c2c9e446e0205219d414db63bfc32b6",
+      "date": "2026-08-14T14:21:54-04:00",
+      "subject": "feat(1-1): a concurrent-append guard around the read-modify-write",
+      "join": {
+        "state": "resolved",
+        "label": "_archive-v3.3.0/1",
+        "milestone": "v3.3.0",
+        "phase": "1",
+        "plan": "1",
+        "task": "3",
+        "description": "concurrent-append guard around the read-modify-write",
+        "decision": {
+          "scope": "task",
+          "ids": [
+            "D-08"
+          ],
+          "lines": [
+            "D-08 (concurrency): `atomicWrite` is NOT modified. Its contract is explicitly"
+          ]
+        },
+        "deviation": {
+          "bullets": [
+            "[plan 1, post-plan] The blocking `risk_surface` gate returned three HIGH",
+            "Plans otherwise executed as written; plan 2 reported zero deviations."
+          ]
+        },
+        "review": {
+          "records": 0,
+          "findings": [],
+          "unresolved": []
+        },
+        "declared": {
+          "planFile": "PLAN-1.md",
+          "tasks": [
+            {
+              "ordinal": 1,
+              "title": "The guarded capture seam, wired end to end",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 3,
+              "title": "The concurrent-append guard",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 4,
+              "title": "Route debt-harvest through the seam",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sha": "cc469f76eacdef9c6bc8e08234cb0aa77608c68a",
+      "date": "2026-08-14T14:15:56-04:00",
+      "subject": "feat(1-1): the capture seam owns CAPTURE.md's headings and format",
+      "join": {
+        "state": "resolved",
+        "label": "_archive-v3.3.0/1",
+        "milestone": "v3.3.0",
+        "phase": "1",
+        "plan": "1",
+        "task": "1",
+        "description": "capture seam owns CAPTURE.md headings and format",
+        "decision": {
+          "scope": "task",
+          "ids": [
+            "D-09",
+            "D-08"
+          ],
+          "lines": [
+            "D-09 (concurrency): No bare EOF `O_APPEND`. CAPTURE.md is sectioned markdown",
+            "D-08 (concurrency): `atomicWrite` is NOT modified. Its contract is explicitly"
+          ]
+        },
+        "deviation": {
+          "bullets": [
+            "[plan 1, post-plan] The blocking `risk_surface` gate returned three HIGH",
+            "Plans otherwise executed as written; plan 2 reported zero deviations."
+          ]
+        },
+        "review": {
+          "records": 0,
+          "findings": [],
+          "unresolved": []
+        },
+        "declared": {
+          "planFile": "PLAN-1.md",
+          "tasks": [
+            {
+              "ordinal": 1,
+              "title": "The guarded capture seam, wired end to end",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 3,
+              "title": "The concurrent-append guard",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            },
+            {
+              "ordinal": 4,
+              "title": "Route debt-harvest through the seam",
+              "declaration": "cadence-core/bin/lib/capture-file.mjs"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "sha": "f4bec975d1a13f7a2406528df2d04eb7d4d53d44",
+      "parentCount": 2
+    },
+    {
+      "sha": "9ae64ae97747ce633b50326c4e5267861f6dc9e3",
+      "parentCount": 2
+    }
+  ]
+}

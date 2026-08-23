@@ -3,7 +3,12 @@
 // for the design.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderChain, DEFAULT_TOP } from './lib/why-render.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const OLD = { sha: 'a'.repeat(40), date: '2026-01-01T00:00:00-05:00', subject: 'older commit' };
 const NEW = { sha: 'b'.repeat(40), date: '2026-06-01T00:00:00-05:00', subject: 'newer commit' };
@@ -210,4 +215,60 @@ test('the truncation note stays the LAST line even when the exclusion block rend
   assert.match(lines[lines.length - 1], /^Showing \d+ of 25 commit\(s\)\. Pass --top 25 to see the rest\.$/);
   assert.ok(text.indexOf('NOT listed above') < text.indexOf('Pass --top'),
     'the exclusion block renders before the truncation note');
+});
+
+// --- WHY-03 / v3.6.1 D-02, D-03: the cap and the reason it states ---------
+//
+// The shipped `DEFAULT_TOP = 10` carried a byte claim measurement had already
+// falsified, and nothing checked. What follows is the pin that reddens when the
+// number and its stated reason disagree again, and it needs BOTH halves: the
+// under-assertion alone would let the cap be lowered while the header went on
+// claiming maximality, and the over-assertion alone would let it be raised.
+
+/** The byte line `cadence-core/references/conventions.md` states under
+ * `## Bulk tool output`: "does that call's own measured response cross 10,000
+ * bytes?" - the mean `Read` response on this repository, 10,323 B over 780
+ * recorded calls, measured 2026-08-17. One named constant, because it is the
+ * threshold the header's maximality claim is made against. */
+const BULK_OUTPUT_BYTES = 10000;
+
+/** The frozen worst measured case: the exact arguments the seam handed
+ * `renderChain` for `lib/capture-file.mjs` with the cap lifted. Its own `note`
+ * field says why it is frozen. */
+const WORST = JSON.parse(readFileSync(join(HERE, 'fixtures', 'why.chain-worst.json'), 'utf8'));
+
+/** Render the fixture at `top`, in the UTF-8 bytes the seam would emit. */
+const worstBytes = (top) => Buffer.byteLength(
+  renderChain(WORST.entries, { top, excluded: WORST.excluded, path: WORST.path }).text, 'utf8',
+);
+
+test('the frozen worst case carries more entries than the default, so the cap is really exercised', () => {
+  assert.ok(WORST.entries.length > DEFAULT_TOP,
+    `a fixture at or under the cap would pin nothing: ${WORST.entries.length} entries against a cap of ${DEFAULT_TOP}`);
+  assert.ok(Array.isArray(WORST.excluded) && WORST.excluded.length > 0,
+    'and it carries a simplification report, whose block is bytes the cap has to absorb');
+});
+
+test('the worst measured path renders UNDER the conventions.md byte line at the default cap', () => {
+  assert.ok(worstBytes(DEFAULT_TOP) < BULK_OUTPUT_BYTES,
+    `${worstBytes(DEFAULT_TOP)} B at --top ${DEFAULT_TOP}, against a line of ${BULK_OUTPUT_BYTES} B`);
+});
+
+test('and OVER it at one above the default, which is what makes the stated cap maximal', () => {
+  assert.ok(worstBytes(DEFAULT_TOP + 1) >= BULK_OUTPUT_BYTES,
+    `${worstBytes(DEFAULT_TOP + 1)} B at --top ${DEFAULT_TOP + 1} - if this is under the line the cap is `
+    + 'merely safe, not the largest measurement supports, and the header claims otherwise');
+});
+
+test("the header's stated cap and DEFAULT_TOP are the same number", () => {
+  // The whole of Success Criterion 4: the pin fails when the NUMBER and its
+  // STATED REASON disagree. The two byte assertions above catch a cap that moved
+  // without its measurement; this one catches a measurement that moved without
+  // the cap, and it reads the claim out of the module's own header rather than
+  // trusting a reader to notice.
+  const header = readFileSync(join(HERE, 'lib', 'why-render.mjs'), 'utf8');
+  const claim = header.match(/^\/\/ MEASURED CAP: (\d+) entries, (\d{4}-\d{2}-\d{2})\.$/m);
+  assert.ok(claim, 'why-render.mjs must carry one `// MEASURED CAP: <n> entries, <YYYY-MM-DD>.` line');
+  assert.equal(Number(claim[1]), DEFAULT_TOP,
+    `the header claims a measured cap of ${claim[1]} and DEFAULT_TOP is ${DEFAULT_TOP}`);
 });
