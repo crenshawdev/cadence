@@ -156,23 +156,33 @@ rungs, and two configuration changes would do that:
 
 ## Recommendation
 
-1. **Move the rung label below the contract reference, or delete it.** One line,
-   six roles, no behavior change - the frontmatter's `effort:` already carries
-   the rung, and nothing in the contracts branches on the prose line. This makes
-   the ~11 KB contract a shared prefix across a role's rungs instead of a
-   per-rung copy, and it costs nothing to do before the defect is live.
-2. **Keep `model.escalate_on_failure: false`** (pinned in `.planning/config.json`
-   during this session, previously only inherited from the shipped template
-   default - which the v2.6.0 docs-verify runs record as having been `true`).
-3. **Do not consolidate the rung files.** The split is already minimal: one
-   changed line per rung, identical tools, identical contract. There is nothing
-   to merge.
-4. **Record cache figures in the trace before acting on any of this.** The
-   bracket captures `tokens` and `turns` only; `cache_read_input_tokens` and
+Ordered. 1 gates 2, and the ordering is the recommendation, not a preference
+about it.
+
+1. **Record cache figures in the trace FIRST** (issue #242). The bracket
+   captures `tokens` and `turns` only; `cache_read_input_tokens` and
    `cache_creation_input_tokens` are what a hit rate is computed from, and
    Cadence stores neither. Every claim in this spike is structural - the byte
    layout forecloses sharing - and none of it is a measured hit rate, because
    the record cannot produce one.
+2. **Then move the rung label below the contract reference, or delete it**
+   (issue #241, marked blocked by #242). One line, six roles, no behavior
+   change - the frontmatter's `effort:` already carries the rung, and nothing in
+   the contracts branches on the prose line. This makes the ~11 KB contract a
+   shared prefix across a role's rungs instead of a per-rung copy. It is cheap
+   enough to be tempting to do first; doing it first reproduces the defect #242
+   describes, since there would be no before/after to show it recovered
+   anything.
+3. **Keep `model.escalate_on_failure: false`** (pinned in `.planning/config.json`
+   during this session, previously only inherited from the shipped template
+   default - which the v2.6.0 docs-verify runs record as having been `true`).
+4. **Do not consolidate the rung files.** The split is already minimal: one
+   changed line per rung, identical tools, identical contract. There is nothing
+   to merge.
+
+Neither 1 nor 2 is scoped into `v3.6.1`, whose roadmap states the cycle closes
+the three named `/cad-why` gaps and nothing else. Both are captured as a seed in
+`.planning/CAPTURE.md` for the next milestone.
 
 ## Throwaway code
 

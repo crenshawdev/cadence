@@ -16,7 +16,8 @@
       "cad-executor": "high",
       "cad-plan-checker": "high",
       "cad-verifier": "high"
-    }
+    },
+    "escalate_on_failure": false
   },
   "git": {
     "auto_close": true

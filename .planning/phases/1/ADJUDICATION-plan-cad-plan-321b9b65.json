@@ -1,0 +1,63 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "cad-plan-321b9b65",
+  "round": 1,
+  "base": "321b9b65fa3a75af3971a96fc24f2b2e949f250a",
+  "head": "321b9b65fa3a75af3971a96fc24f2b2e949f250a",
+  "base_id": "321b9b65fa3a75af3971a96fc24f2b2e949f250a",
+  "head_id": "321b9b65fa3a75af3971a96fc24f2b2e949f250a",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN.md",
+      "line": 173,
+      "severity": "medium",
+      "claim": "Task 6 permits changing `DEFAULT_TOP` if post-task-5 measurement finds a maximal cap other than 6, but its verification is hard-coded to require that `--top 7` exceeds 10,000 bytes.",
+      "failure_scenario": "If the remeasurement establishes 5 as the largest safe cap, testing only 6 and 7 cannot establish maximality at 5; if it establishes 7 (or higher) as safe, the required `--top 7` overflow assertion contradicts the correct result. The task can therefore either fail after a correct evidence-driven change or pass without verifying the chosen cap is maximal.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "citation_missing": true,
+      "base_id": "321b9b65fa3a75af3971a96fc24f2b2e949f250a",
+      "head_id": "321b9b65fa3a75af3971a96fc24f2b2e949f250a"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN.md",
+      "line": 186,
+      "severity": "medium",
+      "claim": "Task 7 claims its fixture assertions make the pin fail when `DEFAULT_TOP` and the render comment's stated reason disagree, but the specified assertions inspect only rendered fixture byte lengths and `DEFAULT_TOP`, not the comment or its claimed measurement.",
+      "failure_scenario": "A later edit can change the D-13 comment to claim a different cap, worst path, byte count, or maximality rationale while leaving `DEFAULT_TOP` and fixture rendering unchanged. Both Task 7 assertions still pass, so Success Criterion 4's required guard against the number and stated reason drifting apart is not actually established.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "citation_missing": true,
+      "base_id": "321b9b65fa3a75af3971a96fc24f2b2e949f250a",
+      "head_id": "321b9b65fa3a75af3971a96fc24f2b2e949f250a"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN.md",
+      "line": 130,
+      "severity": "low",
+      "claim": "Task 4 requires a non-zero comparand query to produce an absent report without failing the already-successful chain query, but none of its verification cases induces or asserts that failure path.",
+      "failure_scenario": "An implementation can correctly build and diff normal comparand output yet propagate a comparand `runGit` error and fail `/cad-why`. The listed live and hermetic successful-query checks would all pass, while a transient comparand failure turns an otherwise answered query into an error rather than the promised thinner result.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "citation_missing": true,
+      "base_id": "321b9b65fa3a75af3971a96fc24f2b2e949f250a",
+      "head_id": "321b9b65fa3a75af3971a96fc24f2b2e949f250a"
+    }
+  ]
+}
