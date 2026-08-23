@@ -2989,9 +2989,15 @@ function parseStagedNameStatus(out) {
 
 function cmdLeaseCheck(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'lease-check needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'lease-check needs --phase <N>',
+      'pass --phase <N> for the phase the plan being committed belongs to, then re-run');
+  }
   const parsedPlan = requireInt(opts.plan);
-  if (!parsedPlan.ok) return fail('bad-args', 'lease-check needs --plan <k>');
+  if (!parsedPlan.ok) {
+    return fail('bad-args', 'lease-check needs --plan <k>',
+      'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
+  }
   const n = parsedPhase.value;
   const k = parsedPlan.value;
 
@@ -3026,12 +3032,17 @@ function cmdLeaseCheck(dir, opts) {
       { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     return fail('no-staged-set',
-      `could not read the staged set: ${redactUrl(e && e.message ? e.message : String(e))}`);
+      `could not read the staged set: ${redactUrl(e && e.message ? e.message : String(e))}`,
+      'run this from inside the git repository holding the staged commit - the lease is checked'
+      + ' against `git diff --cached`, and this gate is not saying the commit is clean');
   }
   const parsed = parseStagedNameStatus(stagedOut);
   if (parsed === null) {
     return fail('no-staged-set',
-      'the staged set could not be parsed: git --name-status -z returned a truncated record');
+      'the staged set could not be parsed: git --name-status -z returned a truncated record',
+      'inspect what is staged by hand with `git diff --cached --name-status` and compare it against'
+      + " the plan's files: list - the gate could not read it, so it is not saying the commit is"
+      + ' clean');
   }
   if (parsed.unrepresentable.length) {
     // Fail CLOSED, and name the path rather than guess at it: neither the
@@ -3163,7 +3174,9 @@ function cmdDetectCommands(root) {
   try {
     entries = readdirSync(root, { encoding: 'utf8' });
   } catch (e) {
-    return fail('no-root', `${root} cannot be listed (${e.code || e.message})`);
+    return fail('no-root', `${root} cannot be listed (${e.code || e.message})`,
+      'point --root at a directory this process can list - the lint and typecheck commands are read'
+      + ' from the project manifests sitting at its top level');
   }
   const has = (/** @type {string} */ name) => entries.includes(name);
 
@@ -3440,12 +3453,16 @@ function cmdDetectSurfaces(root, answeredArg) {
     const raw = typeof answeredArg === 'string' ? answeredArg : '';
     const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
     if (!tokens.length) {
-      return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>');
+      return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>',
+        'list the surfaces already answered as one comma-separated value, or leave --answered off'
+        + ' entirely when none have been');
     }
     const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
     if (unknown.length) {
       return fail('bad-args',
-        `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
+        `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`,
+        'correct the token(s) the detail names against the list beside them, then re-run - dropping'
+        + ' one instead would offer a narrower option list built from an answer nobody gave');
     }
     answered = tokens;
   }
@@ -3510,7 +3527,11 @@ function cmdDetectSurfaces(root, answeredArg) {
   };
 
   const roots = level(root, '');
-  if (roots === null) return fail('no-root', `${root} cannot be listed (${rootError})`);
+  if (roots === null) {
+    return fail('no-root', `${root} cannot be listed (${rootError})`,
+      'point --root at a directory this process can list - the surface scan walks the tree down'
+      + ' from there');
+  }
   for (const sub of roots) level(join(root, sub), sub);
 
   const scan = scanTree({ dirs, files, extensions: [...extensions], dependencies });
@@ -3667,7 +3688,11 @@ function gitignoreCarriesLine(root) {
  * @param {string} root @param {any} opts
  */
 function cmdTraceIgnore(root, opts) {
-  if (!existsSync(root)) return fail('no-root', `${root} not found`);
+  if (!existsSync(root)) {
+    return fail('no-root', `${root} not found`,
+      'point --root at the PROJECT root, the directory holding .gitignore - it is deliberately not'
+      + ' --dir, which names .planning/');
+  }
   const file = join(root, '.gitignore');
   const git = gitIgnoreState(root);
   const ignored = git.method === 'git' ? git.travels : gitignoreCarriesLine(root);
@@ -3745,7 +3770,11 @@ function cmdReads(dir, opts) {
   // of that arm: swallowing an EACCES here would change `reads`'s contract with
   // nothing red, and `/cad-report`'s Reading line would go quiet as though the
   // project had opened no files at all.
-  if (status === 'unreadable') return fail('read-failed', `cannot read ${file}`);
+  if (status === 'unreadable') {
+    return fail('read-failed', `cannot read ${file}`,
+      'make that file readable, or move it aside if it is corrupt - until then this seam has no'
+      + ' figures at all, and it is not reporting that the project opened no files');
+  }
   const summary = summarizeReads(records);
   // Without `--join` the envelope is what it has always been, including the
   // `no reads recorded yet` arm above, which returns before this line: a
@@ -4018,7 +4047,11 @@ function cmdTrace(dir, sub, opts) {
   // close half is exactly where the token figure lands.
   if (sub === 'append' || sub === 'close') {
     const parsedPhase = requirePhaseArg(opts.phase);
-    if (!parsedPhase.ok) return fail('bad-args', `trace ${sub} needs --phase <N>`);
+    if (!parsedPhase.ok) {
+      return fail('bad-args', `trace ${sub} needs --phase <N>`,
+        `pass --phase <N> for the phase this event belongs to, then re-run the ${sub} - nothing was`
+        + ' appended, so exactly one event lands');
+    }
     // `--detail-file` is the SAFE transport for a detail the CALLER derived -
     // a reviewer's verdict, a checkpoint's reason - and the reasoning lives in
     // lib/text-flag-file.mjs and references/conventions.md, not restated here.
@@ -4026,7 +4059,11 @@ function cmdTrace(dir, sub, opts) {
     // left on `opts.detail` alone, every converted checkpoint site would bill
     // as a clean `return`, the one arm the record exists to keep separate.
     const resolvedDetail = resolveTextFlag(opts, 'detail', `trace ${sub}`);
-    if (!resolvedDetail.ok) return fail('bad-args', resolvedDetail.detail);
+    if (!resolvedDetail.ok) {
+      return fail('bad-args', resolvedDetail.detail,
+        'pass --detail or --detail-file, never both, and point --detail-file at a readable,'
+        + ' non-empty file - nothing was appended');
+    }
     const detail = resolvedDetail.value !== undefined ? resolvedDetail.value : opts.detail;
     let family;
     let event;
@@ -4051,10 +4088,16 @@ function cmdTrace(dir, sub, opts) {
     } else {
       family = typeof opts.family === 'string' ? opts.family : '';
       if (!FAMILIES.includes(family)) {
-        return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`);
+        return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`,
+          'send one of the families the detail lists; a coordinator closing a bracket calls `trace'
+          + ' close` instead, which picks the family itself - nothing was appended');
       }
       event = typeof opts.event === 'string' && opts.event ? opts.event : '';
-      if (!event) return fail('bad-args', 'trace append needs --event <name>');
+      if (!event) {
+        return fail('bad-args', 'trace append needs --event <name>',
+          'add --event <name> for what happened - dispatch, outcome, adjudication - or call `trace'
+          + ' close`, which names the event itself; nothing was appended');
+      }
     }
 
     // --tokens: what the dispatch COST, read by the orchestrator off the
@@ -4079,7 +4122,10 @@ function cmdTrace(dir, sub, opts) {
         : opts.tokens;
       const parsed = requireInt(raw);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --tokens needs a non-negative integer`);
+        return fail('bad-args', `trace ${sub} --tokens needs a non-negative integer`,
+          "copy the token figure off the worker's return as a whole number - grouped as this plugin"
+          + ' prints it (146,405) or plain; nothing was appended, so a corrected re-run writes'
+          + ' exactly one event');
       }
       tokens = parsed.value;
     }
@@ -4105,7 +4151,9 @@ function cmdTrace(dir, sub, opts) {
     if ('turns' in opts) {
       const parsed = requireInt(opts.turns);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --turns needs a non-negative integer`);
+        return fail('bad-args', `trace ${sub} --turns needs a non-negative integer`,
+          "copy the tool-call count off the worker's return as a plain whole number, ungrouped;"
+          + ' nothing was appended, so a corrected re-run writes exactly one event');
       }
       turns = parsed.value;
     }
@@ -4127,7 +4175,9 @@ function cmdTrace(dir, sub, opts) {
     if ('raised' in opts) {
       const parsed = requireInt(opts.raised);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --raised needs a non-negative integer`);
+        return fail('bad-args', `trace ${sub} --raised needs a non-negative integer`,
+          'send the number of findings the reviewers raised before adjudication as a plain whole'
+          + ' number, ungrouped; nothing was appended');
       }
       raised = parsed.value;
     }
@@ -4151,7 +4201,9 @@ function cmdTrace(dir, sub, opts) {
       if (!(flag in opts)) continue;
       const parsed = requireInt(opts[flag]);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --${flag} needs a non-negative integer`);
+        return fail('bad-args', `trace ${sub} --${flag} needs a non-negative integer`,
+          `send --${flag} as a plain whole number, ungrouped - the settled figures come off the`
+          + " adjudication seam's own return rather than being typed; nothing was appended");
       }
       settled[flag] = parsed.value;
     }
@@ -4168,7 +4220,9 @@ function cmdTrace(dir, sub, opts) {
       const parsed = requireInt(opts.round);
       if (!parsed.ok || parsed.value < 1) {
         return fail('bad-args',
-          `trace ${sub} --round needs the re-arm round after it, a whole number of at least 1`);
+          `trace ${sub} --round needs the re-arm round after it, a whole number of at least 1`,
+          'send --round as the re-arm round this event belongs to - 2 for the first re-arm - or'
+          + ' leave it off for an ordinary round-1 fire; nothing was appended');
       }
       round = parsed.value;
     }
@@ -4194,7 +4248,11 @@ function cmdTrace(dir, sub, opts) {
     // disagree about what an element is.
     let read;
     const resolvedRead = resolveTextFlag(opts, 'read', `trace ${sub}`);
-    if (!resolvedRead.ok) return fail('bad-args', resolvedRead.detail);
+    if (!resolvedRead.ok) {
+      return fail('bad-args', resolvedRead.detail,
+        'pass --read or --read-file, never both, and point --read-file at a readable, non-empty'
+        + ' file - nothing was appended');
+    }
     if ('read' in opts || 'read-file' in opts) {
       const raw = resolvedRead.value !== undefined ? resolvedRead.value : opts.read;
       const list = typeof raw === 'string'
@@ -4207,7 +4265,10 @@ function cmdTrace(dir, sub, opts) {
       // whitespace-only file is already refused by the reader as empty.
       if (!list.length) {
         return fail('bad-args',
-          `trace ${sub} --read${'read-file' in opts ? '-file' : ''} needs a comma-separated path list`);
+          `trace ${sub} --read${'read-file' in opts ? '-file' : ''} needs a comma-separated path list`,
+          'list what this site caused the worker to read as one comma-separated value - paths,'
+          + ' globs, or a <base>..<head> range - or leave the flag off; a bare one is almost always'
+          + ' an unset "$PATHS", and nothing was appended');
       }
       read = list;
     }
@@ -4258,7 +4319,11 @@ function cmdTrace(dir, sub, opts) {
       // composes from, so `trace append --role` (bare) answers with the same
       // sentence whichever of the two refuses it first - the door for the flags
       // the resolved row declares, this loop for the ones only the UNION does.
-      if (!parsedFlag.ok) return fail('bad-args', argRefusal(`trace ${sub}`, flag));
+      if (!parsedFlag.ok) {
+        return fail('bad-args', argRefusal(`trace ${sub}`, flag),
+          'give the flag the detail names a value, or leave it off entirely - nothing was appended,'
+          + ' so a corrected re-run writes exactly one event');
+      }
       flags[flag] = parsedFlag.value;
     }
     // Trimmed for the four that refuse, because a stored name is a JOIN KEY and
@@ -4347,7 +4412,11 @@ function cmdTrace(dir, sub, opts) {
     let phase;
     if (opts.phase !== undefined) {
       const parsedPhase = requirePhaseArg(opts.phase);
-      if (!parsedPhase.ok) return fail('bad-args', 'trace suggest --phase must be a phase number');
+      if (!parsedPhase.ok) {
+        return fail('bad-args', 'trace suggest --phase must be a phase number',
+          "send a plain phase number, or drop --phase to read the whole record - a milestone's"
+          + ' evidence spans every phase it shipped');
+      }
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
@@ -4390,7 +4459,10 @@ function cmdTrace(dir, sub, opts) {
     let phase;
     if (opts.phase !== undefined) {
       const parsedPhase = requirePhaseArg(opts.phase);
-      if (!parsedPhase.ok) return fail('bad-args', 'trace render --phase must be a phase number');
+      if (!parsedPhase.ok) {
+        return fail('bad-args', 'trace render --phase must be a phase number',
+          'send a plain phase number, or drop --phase to render the whole record');
+      }
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
@@ -4443,7 +4515,11 @@ function cmdTrace(dir, sub, opts) {
     let phase;
     if (opts.phase !== undefined) {
       const parsedPhase = requirePhaseArg(opts.phase);
-      if (!parsedPhase.ok) return fail('bad-args', 'trace window --phase must be a phase number');
+      if (!parsedPhase.ok) {
+        return fail('bad-args', 'trace window --phase must be a phase number',
+          'send a plain phase number, or drop --phase to argue the window ceilings off the whole'
+          + ' record');
+      }
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
