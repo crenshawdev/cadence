@@ -9,6 +9,7 @@ files:
   - cadence-core/bin/lib/cite-cited.mjs
   - cadence-core/bin/cite-cited.test.mjs
   - cadence-core/bin/lib/arg-contract.mjs
+  - cadence-core/bin/arg-contract.test.mjs
   - cadence-core/bin/planning.mjs
   - cadence-core/bin/planning.test.mjs
 ---
