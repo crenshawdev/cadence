@@ -49,14 +49,17 @@
 // it is opened - `readFileSync` follows a FIFO and blocks the process forever
 // waiting for a writer, which is the same defect a `risk_surface` reviewer
 // raised against `readChangelog` and the same one still open against
-// `planning.mjs`'s `read(reqFile)`. A warning carries the artifact's label and
+// `planning.mjs`'s `read(reqFile)`. So is a path that RESOLVES outside the
+// directory it was joined onto: `phaseDirsIn` contains the walk per DIRECTORY,
+// and a symlinked NAME under a contained directory is how that containment came
+// back one level down (`readArtifact`'s `EESCAPE`). A warning carries the artifact's label and
 // an errno CODE, never the raw error text: a filesystem error message is
 // third-party bytes, and this seam's stdout is the place EXP-01 was about.
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { dirname, join, sep } from 'node:path';
 
 import { recordName } from './adjudication-record.mjs';
 import { phaseDirsIn } from './phase-plans.mjs';
@@ -86,11 +89,35 @@ export function readArtifact(file) {
     return { text: null, absent: false, code: String((err && err.code) || 'ESTAT') };
   }
   // `statSync` follows symlinks, so this judges what the path RESOLVES to - a
-  // symlinked SUMMARY.md inside the tree still reads, a symlink to a FIFO does
-  // not. The check is what stops `readFileSync` blocking on a pipe.
+  // symlinked SUMMARY.md inside the phase directory still reads, a symlink to a
+  // FIFO does not. The check is what stops `readFileSync` blocking on a pipe.
   if (!st.isFile()) return { text: null, absent: false, code: 'ENOTREGULAR' };
+  // CONTAINMENT IS PER FILE, NOT ONLY PER DIRECTORY. `phaseDirsIn` contains the
+  // WALK against a symlinked directory escaping the planning root, and this
+  // module's header says so - but every caller then joins a NAME onto a
+  // contained directory, and `statSync` following that name's own symlink is
+  // how the escape came back one level down. A `SUMMARY.md` symlinked to
+  // `~/.ssh/id_rsa` passes `isFile()` and its bytes reach a seam whose stdout is
+  // the place EXP-01 was about. So the RESOLVED path must stay inside the
+  // resolved directory the caller joined it onto: a non-symlink resolves to
+  // itself and passes trivially, a symlink pointing out is refused before it is
+  // opened. Refusing rather than following also closes the check-to-use race on
+  // the same line - the path a symlink names cannot be swapped for one outside
+  // the directory after the check, because a symlink out never passes it.
+  let real;
+  let realDir;
   try {
-    return { text: readFileSync(file, 'utf8'), absent: false, code: null };
+    real = realpathSync(file);
+    realDir = realpathSync(dirname(file));
+  } catch (e) {
+    const err = /** @type {any} */ (e);
+    return { text: null, absent: false, code: String((err && err.code) || 'ERESOLVE') };
+  }
+  if (real !== realDir && !real.startsWith(realDir.endsWith(sep) ? realDir : realDir + sep)) {
+    return { text: null, absent: false, code: 'EESCAPE' };
+  }
+  try {
+    return { text: readFileSync(real, 'utf8'), absent: false, code: null };
   } catch (e) {
     const err = /** @type {any} */ (e);
     return { text: null, absent: false, code: String((err && err.code) || 'EREAD') };

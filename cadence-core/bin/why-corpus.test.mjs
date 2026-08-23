@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -177,6 +177,26 @@ test('readArtifact tells absent, unreadable and readable apart', () => {
   assert.deepEqual(readArtifact(join(root, 'phases', '1')),
     { text: null, absent: false, code: 'ENOTREGULAR' },
     'a non-regular file is refused BEFORE it is opened, so a FIFO cannot block the process');
+});
+
+test('readArtifact refuses a symlink resolving outside its own directory', () => {
+  const root = planningRoot({ 'phases/1': 'text' });
+  const outside = join(root, 'secret.txt');
+  writeFileSync(outside, 'a credential the caller never asked for');
+
+  const escape = join(root, 'phases', '1', 'CONTEXT.md');
+  symlinkSync(outside, escape);
+  assert.deepEqual(readArtifact(escape),
+    { text: null, absent: false, code: 'EESCAPE' },
+    'the walk is contained per DIRECTORY; a name joined onto a contained directory '
+    + 'must be contained too, or the escape returns one level down');
+
+  const inside = join(root, 'phases', '1', 'PLAN-1.md');
+  writeFileSync(join(root, 'phases', '1', 'real.md'), 'inside the phase directory');
+  symlinkSync(join(root, 'phases', '1', 'real.md'), inside);
+  assert.deepEqual(readArtifact(inside),
+    { text: 'inside the phase directory', absent: false, code: null },
+    'a symlink that stays inside the phase directory still reads');
 });
 
 // --- Task 6: the review edge's disk and git half ---------------------------
