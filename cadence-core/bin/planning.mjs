@@ -29,7 +29,13 @@
 //                                   kind. --payload is the surfaced set as a
 //                                   FILE (the envelope the planner was handed);
 //                                   --point names which of the two count points
-//                                   is being recorded. REPORTS and never gates
+//                                   is being recorded. REPORTS and never gates,
+//                                   and WRITES: the pair it answers with is
+//                                   appended onto .planning/trace.jsonl as an
+//                                   outcome event, so the rate is readable
+//                                   across phases and not only in the session.
+//                                   `trace: {written, reason?}` on the envelope
+//                                   is the only place a dropped record is said
 //   seed-reqs --phase N             insert Traceability rows for a phase's
 //                                   plan-declared, ## Active-bounded req ids
 //   criteria-coverage               every CONTEXT `## Acceptance criteria` id
