@@ -178,6 +178,25 @@
 //                    surface, for the reason check 19 states about its own scope.
 //                    It takes no CONTRACTS row, for the reason check 14 states
 //                    about `lib/*.mjs`.
+//  22. refusal      every refusal a user can READ must name the next step. A
+//      hints         site is in scope when it EMITS an `ok:false` envelope -
+//                    `emit`, `out` or `fail` - never when it merely contains a
+//                    field called `reason`, which is the rule that goes green
+//                    while the largest refusal surface in the plugin stays
+//                    untouched: keyed on the `reason:` object key alone it
+//                    never sees `planning.mjs`'s 150-odd hintless `fail()`
+//                    calls. Measured across cadence-core/bin on 2026-08-23,
+//                    tests excluded, 186 sites set a literal `reason` and 13
+//                    set a literal `hint` - 130 against 10 when #238 was filed
+//                    - and every one of those hints sits in `planning.mjs` or
+//                    `skim.mjs`. Writing the missing hints is a one-time sweep;
+//                    the sweep going stale the next time a seam ships a refusal
+//                    is what this check exists to stop. The rule, the balanced-
+//                    span scan it classifies calls with, its exclusion register
+//                    and the one-line reason on every row of it live in
+//                    lib/refusal-hints.mjs; this side decides only that it
+//                    applies to the whole root. It takes no CONTRACTS row, for
+//                    the reason check 14 states about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -201,6 +220,7 @@ import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
+import { refusalHintIssues } from './lib/refusal-hints.mjs';
 import { textTransportIssues } from './lib/text-transport.mjs';
 import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
@@ -1244,6 +1264,14 @@ function run(root) {
   // side only decides that it applies to the whole root.
   for (const issue of includeConsumerIssues(root)) problems.push(issue);
 
+  // 22. refusal hints: a refusal a user can READ must name the next step. The
+  // population is the EMITTING call - `emit`, `out` or `fail` with an `ok:false`
+  // envelope - never a field named `reason`; the balanced-span scan that
+  // classifies those calls, the exclusion register and the one-line reason on
+  // every row of it live in lib/refusal-hints.mjs, and this side only decides
+  // that it applies to the whole root.
+  for (const issue of refusalHintIssues(root)) problems.push(issue);
+
   return problems;
 }
 
@@ -1270,7 +1298,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
