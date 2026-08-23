@@ -1762,7 +1762,24 @@ const BRACKETING = new Map([
   [join('cadence-core', 'workflows', 'decision-review.md'), 1],
   [join('cadence-core', 'workflows', 'minimalism-review.md'), 1],
   [join('cadence-core', 'workflows', 'verify-deep.md'), 1],
+  [join('cadence-core', 'workflows', 'task.md'), 1],
 ]);
+
+/**
+ * The ONE close in the tree that bills the COORDINATOR rather than a subagent,
+ * keyed on the FILE and the ROLE together (phase-3 D-03). `/cad-task` does its
+ * work in the coordinator's own context, so there is no subagent return to read
+ * `--tokens` or `--turns` off, and `lib/trace.mjs` states that an invented
+ * figure is strictly worse than an absent one: it would land in `trace
+ * suggest`'s share denominator and misprice every other role with it. The role
+ * is half the key and not a spare word - `task.md`'s planned path may still
+ * dispatch a `cad-executor`, and THAT close has a return to read, so it stays
+ * under the rule.
+ */
+const COORDINATOR_BILLED_CLOSE = {
+  where: join('cadence-core', 'workflows', 'task.md'),
+  role: 'cad-task',
+};
 
 /**
  * Every `trace <verb>` INVOCATION in one text, as
@@ -1961,10 +1978,26 @@ test('census: every trace family has a producer, and every producer speaks the r
     // shedding this flag, and turns per role would then read as LOW rather than
     // as partial, which is the zero/unrecorded/recorded conflation the separate
     // `turns_unrecorded` counter exists to prevent.
+    // The one STATED exception, and it is self-limiting: an exempted close must
+    // carry NEITHER figure, exactly as the COORDINATOR marker block below
+    // refuses `--tokens`. So this arm cannot become the door an invented number
+    // walks in through, and it admits nothing but the file and role named.
+    if (c.where === COORDINATOR_BILLED_CLOSE.where && c.role === COORDINATOR_BILLED_CLOSE.role) {
+      assert.ok(!c.tokens,
+        `${c.where}: the coordinator-billed \`${c.role}\` close carries \`--tokens ${c.tokens}\` `
+        + '- a coordinator has no subagent return to read a figure off, so that number was invented.');
+      assert.ok(!c.turns,
+        `${c.where}: the coordinator-billed \`${c.role}\` close carries \`--turns ${c.turns}\` `
+        + '- same reason as `--tokens`: the figure does not exist to report, and an `unrecorded` '
+        + 'role row is the honest render.');
+      continue;
+    }
     assert.ok(c.turns && c.turns.trim(),
       `${c.where}: a \`trace close\` with no \`--turns\` - its dispatch's tool-call count `
       + 'never reaches the record, and the role\'s turn total then reads as low rather '
-      + 'than as partial. All ten close sites carry it or none of them should.');
+      + 'than as partial. Every close site carries it but the ONE stated exception - the '
+      + `coordinator-billed \`${COORDINATOR_BILLED_CLOSE.role}\` close in `
+      + `${COORDINATOR_BILLED_CLOSE.where}, which has no subagent return to read one off.`);
   }
   for (const p of lifecycle) {
     const event = String(p.event);

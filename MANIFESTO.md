@@ -1,6 +1,6 @@
 # I Kept Three Percent
 
-I forked GSD and deleted almost all of it. Seventy-one skills down to twenty-two, thirty-four agents down to seven, and the number that actually tells the story, one-point-one million words of documentation down to thirty-three thousand. Cadence is about three percent of what I started with. People hear that and assume I gutted something good. I did the opposite. I went in after the good part, and the good part was buried.
+I forked GSD and deleted almost all of it. Seventy-one skills down to twenty-eight, thirty-four agents down to six roles, and the number that actually tells the story, one-point-one million words of documentation down to thirty-three thousand. Cadence is about three percent of what I started with. People hear that and assume I gutted something good. I did the opposite. I went in after the good part, and the good part was buried.
 
 Because GSD gets the hard thing right. The loop is sound, discuss and plan and execute and verify, one atomic commit at a time, a plan you can check before you build against it. That is a real methodology and I kept every bone of it. Whoever laid that out had done the work of thinking about how software actually gets made, and I am not too proud to say I took it.
 

@@ -14,7 +14,7 @@ counts (`find`/`wc` over `agents/`, `skills/`, `gsd-core/workflows/`, `*.md`).
 |---|---|---|---|
 | **Documentary mass (words)** | **1,113,812** | **33,621** | **~3%** |
 | Agents | 34 | 19 rung files (6 roles) | 56% |
-| Skills | 71 | 33 (27 user-invocable, 6 contract) | 46% |
+| Skills | 71 | 34 (28 user-invocable, 6 contract) | 48% |
 | Workflows | 114 | 16 | 14% |
 | References | 86 | 7 | 8% |
 | Commands | 71 | 0 (folded into skills) | — |

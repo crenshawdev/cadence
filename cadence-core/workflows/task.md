@@ -38,6 +38,52 @@ Classify $TASK before touching anything:
 When unsure between inline and planned, pick planned.
 </step>
 
+<step name="bracket">
+(Both work paths, and NOT the "too big" arm: that arm says so and stops, so a
+bracket opened there would have nothing left to close it.)
+
+One Bash invocation makes this run's own directory, mints its run token, reads
+the start sha off HEAD, writes the read set, and opens the bracket. The three
+`trace` lines stay on their own lines rather than chained with `\`, because a
+continuation joins them into one command and one command carries one event:
+
+```
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-task-XXXXXX")" && T="$$-$(date +%s)" && S="$(git rev-parse --short HEAD)" && printf '%s' "<the paths this task will open, comma-separated>" > "$D/read-set.txt" && echo "scratch dir: $D  run token: $T  start sha: $S"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event phase_start --sha "$S-$T"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family lifecycle --event dispatch --plan <the task's slug> --role cad-task --read-file "$D/read-set.txt"
+```
+
+The correlation id is DERIVED from the `--sha` value, the way
+`workflows/execute.md` derives a phase's from its own `phase_start`. Without an
+anchor every phase-0 event keys to the bare `0`, and two task runs then fund one
+worker. The TOKEN half is what makes the id PER-RUN rather than per-commit: a
+run that ends without committing leaves HEAD where it was, so a re-run of the
+same slug from the same commit would mint a byte-identical anchor, and because
+the worker key pairs FIFO the second run's close would pair against the first
+run's still-open dispatch. `--sha` is a free-form string flag here - nothing
+validates it as hex - so carrying the token in it costs no seam change.
+
+The START SHA ALONE - the echoed `$S`, never the anchor value - is what the
+`risk_check` step's `--base` and the `record` step's `--base` want. Two
+quantities from one measurement: name them apart and hand neither the other's.
+
+The read set rides a PATH and not an inline `--read` because it is
+caller-derived text, which references/conventions.md binds to a file transport.
+
+The bracket is closed by ONE line, and it lives in the `done` step. Exactly one:
+the trace census asserts closes equal dispatches, and a second closing call on
+one moment appends a duplicate terminal that either funds this dispatch twice or
+strands the next run as unpaired. EVERY path that ends this run once the bracket
+is open routes through that one line - a blocking `risk_surface` FAIL surviving
+its one narrowed re-arm included.
+
+That close carries no `--tokens` and no `--turns`, and neither is an oversight:
+both figures are read off a SUBAGENT's return, and this bracket bills the
+COORDINATOR, which has no return to read. So the role renders `unrecorded`
+rather than claiming a number - an invented figure would land in
+`trace suggest`'s share denominator and misprice every other role with it.
+</step>
+
 <step name="inline_path">
 (Inline scope only.)
 
@@ -119,9 +165,10 @@ path never does:
 - The PLANNED path wrote `.planning/tasks/{slug}/PLAN.md`, so the directory
   exists and the diff goes beside it at the named path above. Delete the
   `.diff` on return and the directory stays, correctly - it holds the plan.
-- The INLINE path creates no directory and must not start now: `Zero planning
-  artifacts for inline tasks` is this workflow's own success criterion, and an
-  inline task that `mkdir -p`s a slug directory leaves it behind empty once the
+- The INLINE path creates no directory and must not start now: the `record`
+  step below is the only writer under `.planning/tasks/{slug}/` on this path,
+  and an inline task that `mkdir -p`s a slug directory HERE leaves it behind
+  empty whenever the run ends before that step - a blocking FAIL, say - once the
   transient diff is deleted, accreting one per risk-surface task. So make this
   run's own directory - `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-risk-XXXXXX")"` - write
   the diff to `$D/cadence-risk-task-{slug}.diff`, and fire with THAT path -
@@ -140,14 +187,59 @@ narrowed round - RE-READ
 FAIL, since this workflow does not preload it and the cap lives only there.
 </step>
 
+<step name="record">
+(Both work paths. The fast path is where the majority of real commits land, so
+the hole in the corpus is precisely there.)
+
+Write what shipped into this run's own directory and hand the seam the PATH -
+that prose is caller-derived text, which references/conventions.md binds to a
+file transport, so it never rides the inline `--text` form:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" task-record --slug <the task's slug> --base <the echoed start sha> --head HEAD --text-file <the echoed scratch directory>/what-shipped.txt
+```
+
+Every figure in the record is DERIVED from the range - the commits table from
+one `git log` and the declared-files lines from one `git diff --name-only` - so
+nothing is retyped onto a flag and a re-run over an unchanged range rewrites the
+same bytes.
+
+The seam creates `.planning/tasks/{slug}/` under an EXISTING `.planning/` and
+creates NOTHING where `.planning/` is absent: there it answers `written: false`
+with a reason and writes no record at all. So an inline task in a repository
+with no planning tree still scaffolds nothing, which is what this workflow's
+success criterion actually protects.
+</step>
+
 <step name="done">
+Close the bracket first - this is the only closing call in this workflow, and
+every path that ends the run reaches it:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan <the task's slug> --role cad-task
+```
+
+On a run that ends WITHOUT reporting done - a blocking `risk_surface` FAIL that
+survived its one narrowed re-arm, a guard refusal, a stop you can still describe
+- add `--detail-file "<the echoed scratch directory>/close-detail.txt"` naming
+why, and the seam closes a `checkpoint` instead of a `return`. A run that never
+reaches this line at all is reported as unpaired, which is what it is.
+
 Report:
 
 ```
 Done: {what changed}
 Commit(s): {hashes}
 Files: {list}
+Record: {the `record` path from the task-record envelope}
 ```
+
+The `Record:` line rides an envelope that said `written: true`. On
+`written: false` - no planning tree, an unwritable or symlinked
+`tasks/{slug}/`, a range that would not resolve - drop the line and state the
+envelope's reason in its place: a record that never landed must not read as one
+that did. This is the same discipline the `risk_check` step applies to its own
+flag.
 
 No next-step menu.
 </step>
@@ -166,5 +258,6 @@ No next-step menu.
 - [ ] Protected-branch guard applied before the first commit
 - [ ] Each logical change is one conventional commit of specific files
 - [ ] Verification was observed behavior, not assumption
-- [ ] Zero planning artifacts for inline tasks; at most PLAN.md for planned ones
+- [ ] No PLAN.md and no SUMMARY.md for an inline task, and no `.planning/` tree
+      created where none exists
 </success_criteria>

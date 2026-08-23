@@ -21,6 +21,21 @@
 //                                   from ROADMAP when omitted; stamps today
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
+//   cite-count --phase N [--payload <file>] [--point planned|committed]
+//                                   the read-back count: how many of the prior
+//                                   decisions, captures and deviations the
+//                                   memory pass surfaced does that phase's
+//                                   PLAN*.md actually cite, per item and per
+//                                   kind. --payload is the surfaced set as a
+//                                   FILE (the envelope the planner was handed);
+//                                   --point names which of the two count points
+//                                   is being recorded. REPORTS and never gates,
+//                                   and WRITES: the pair it answers with is
+//                                   appended onto .planning/trace.jsonl as an
+//                                   outcome event, so the rate is readable
+//                                   across phases and not only in the session.
+//                                   `trace: {written, reason?}` on the envelope
+//                                   is the only place a dropped record is said
 //   seed-reqs --phase N             insert Traceability rows for a phase's
 //                                   plan-declared, ## Active-bounded req ids
 //   criteria-coverage               every CONTEXT `## Acceptance criteria` id
@@ -41,8 +56,24 @@
 //                                   declared nothing reports *_found:false and
 //                                   is never compared, so `within` is null
 //                                   when nothing was compared at all
-//   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
-//                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
+//   task-record --slug <s> --base <ref> --head <ref>
+//               [--text "<what shipped>" | --text-file <path>]
+//                                   the record a `/cad-task` run leaves:
+//                                   .planning/tasks/<slug>/RECORD.md, written in
+//                                   the corpus's own grammar so `recall` indexes
+//                                   it and `/cad-why` joins a commit back to it.
+//                                   The commits table and the declared-files
+//                                   line are DERIVED from the range, never
+//                                   retyped onto a flag. A slug that is not one
+//                                   safe path segment is refused with nothing
+//                                   written, and a tree with no planning root
+//                                   gets neither one nor a record - `written:
+//                                   false` with a reason, ok:true
+//   recall "<query>"                BM25 over .planning artifacts (SUMMARY
+//                                   deviations and open items, CAPTURE, UAT,
+//                                   CONTEXT decisions, ARCHIVE rows, and each
+//                                   tasks/<slug>/RECORD.md's `## What shipped`
+//                                   bullets); memory.backend-gated.
 //                                   Bare words after `recall` are joined into
 //                                   one query, so an unquoted multi-word call
 //                                   searches all of it, not just the first word
@@ -154,7 +185,7 @@ import { pruneRoadmap, archiveRequirements, completedPhases } from './lib/milest
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
   classifyPhaseList, CLOSED_CYCLE_NAME,
-  parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
+  parseRequirements, parseUat, renderUat, uatComplete, atomicWrite, parseTaskRecordSnippets,
   setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
@@ -188,10 +219,16 @@ import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-
 import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { covers, intersects } from './lib/lease-grammar.mjs';
+import { surfacedRows, SURFACED_KINDS } from './lib/cite-surfaced.mjs';
+import { citedMentions } from './lib/cite-cited.mjs';
 import { isReportName } from './lib/report-rotation.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
+import {
+  MAX_SLUG_LENGTH, RECORD_FILE, TASKS_DIR, isTaskSlug, insideRoot, renderTaskRecord,
+  taskRecordsIn,
+} from './lib/task-record.mjs';
 import { runTransition } from './lib/file-transition.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces, interviewOptions } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
@@ -836,6 +873,27 @@ function readJsonPayload(file) {
   }
   try { return { ok: true, value: JSON.parse(text) }; }
   catch (e) { fail('bad-payload', e.message); return { ok: false }; }
+}
+
+/**
+ * `memory.backend`, effective across the config layers (repo > global), with
+ * the layer warnings behind it.
+ *
+ * ONE reader for the key, not one per command. `cmdRecall` gates its whole
+ * corpus walk on it and `cmdCiteCount` records `none` as a third state on the
+ * record, and the two must agree by construction: a second inlined
+ * `mergeLayers` + `?? 'builtin'` pair is exactly how the off switch comes to
+ * mean one thing at the seam that produces the surfaced set and another at the
+ * seam that counts it. The schema default is `builtin`, so an unset key is on.
+ *
+ * `warnings` is RETURNED rather than surfaced here, because this is a reader
+ * and the envelope belongs to the caller - both callers put it on theirs, for
+ * the reason each states at its own emit: a TORN layer reads the key as absent
+ * and defaults a deliberate `none` back to `builtin`.
+ */
+function memoryBackend(dir) {
+  const { config, warnings } = mergeLayers(join(dir, 'config.json'));
+  return { backend: config?.memory?.backend ?? 'builtin', warnings };
 }
 
 function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }
@@ -2120,6 +2178,216 @@ function cmdPlanOverlap(dir, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// cite-count - the read-back count (RBK-01). The Core Value claims what Cadence
+// writes down "comes back on its own at the moment it matters", and until this
+// subcommand nothing measured it: a planner could be handed twelve prior
+// decisions and cite none of them, and no gate noticed.
+//
+// It REPORTS and never gates. A plan citing zero of a non-empty surfaced set is
+// a number on the record, not a refusal - a threshold needs a legitimate-zero
+// rate to be set against, and that rate is what this seam exists to produce.
+//
+// TWO READERS, ONE JOIN. lib/cite-surfaced.mjs states what the surfaced set is
+// (bounded `results`, the queried phase's own rows excluded, one of four kinds,
+// an id only where the artifact carries one) and lib/cite-cited.mjs states what
+// a citation is (a textual D-NN scan of the whole plan, bare mentions scoped to
+// the plan's own phase). Both are pure; this function owns the refusals, the
+// disk reads and the envelope, and nothing else.
+//
+// THE MATCH IS PER ITEM (D-01), never per source. Measured on a reconstructed
+// phase-1 plan-time query against the three real PLAN files, the per-item rule
+// reads 1 cited of 5 and the per-source rule reads 4 of 5 on the identical plan
+// and the identical envelope - because per-source credits every row from a
+// source on one mention. The rule IS the metric, so the low honest number is
+// the one that can carry a threshold later.
+//
+// STATED CONSEQUENCE, not a defect to be "fixed": under D-04 (own-phase rows
+// excluded) plus D-10 (a bare mention is own-phase) a BARE mention can only
+// ever match an ARCHIVED same-numbered phase's decision. That falls out of the
+// two rules together, and widening either one to raise the number would be
+// widening the metric to flatter the thing it measures.
+// ---------------------------------------------------------------------------
+
+/**
+ * The two count points D-05 names: once after the planner returns and before
+ * the gate, and once on the plan as committed. An ENUM the declared row cannot
+ * express, so it is refused here in this file's own `bad-args` vocabulary - the
+ * same carve-out `capture --kind must be one of ...` occupies.
+ */
+const CITE_POINTS = ['planned', 'committed'];
+
+function cmdCiteCount(dir, opts) {
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'cite-count needs --phase <N>');
+  const n = parsedPhase.value;
+
+  if (opts.point !== undefined) {
+    if (typeof opts.point !== 'string' || !CITE_POINTS.includes(opts.point)) {
+      return fail('bad-args', `cite-count --point must be one of ${CITE_POINTS.join(' | ')}`);
+    }
+  }
+  const point = typeof opts.point === 'string' ? opts.point : undefined;
+
+  // The effective `memory.backend`, through the SAME reader `cmdRecall` gates
+  // on - literally the same function, so the two seams cannot come to disagree
+  // about whether the backend is off. This repository sets no `memory.backend`
+  // and runs the `builtin` default, so its own dogfooding never exercises the
+  // off arm: the state has to be CONSTRUCTED to be tested at all (D-06).
+  //
+  // `none` is a THIRD state on the record, not a spelling of "surfaced
+  // nothing". It is what makes three runs separable by their recorded fields
+  // alone: `backend: 'none'` is one, a `surfaced.count` of 0 WITHOUT that field
+  // is a second, and a non-empty `surfaced` with `cited.count` 0 is a third. No
+  // fourth field restates any of it.
+  const { backend, warnings } = memoryBackend(dir);
+  const off = backend === 'none';
+
+  // On `none` there is no envelope to hand over, because `workflows/plan.md`
+  // skips the call that would have produced one, so `--payload` is neither
+  // required nor read and the surfaced set is empty by construction.
+  // `cmdRecall`'s own `none` arm is the precedent: it ignores the query it was
+  // handed and answers `{backend:'none', results:[], total:0}` without looking
+  // at the corpus. The envelope SHAPE below is the same on both paths, so a
+  // reader of these figures never has to branch on which state produced them.
+  //
+  // On `builtin` an absent `--payload` is refused rather than fed to stdin, the
+  // reason `cmdAdjudication` states in full: `readJsonPayload()` with no
+  // argument sits reading a stdin no call site opens.
+  if (!off && opts.payload === undefined) {
+    return fail('bad-args',
+      'cite-count needs --payload <file> - the surfaced set is a FILE, never inline '
+      + 'JSON and never stdin');
+  }
+  const payload = off ? { ok: true, value: {} } : readJsonPayload(opts.payload);
+  if (!payload.ok) return;
+
+  // The DIRECTORY is the caller's spelling; only the echoed `phase` below is
+  // the number (D-02). `listPlanFiles` is the SAME reader `plan-overlap` uses,
+  // so this seam and that one cannot disagree about what a plan file is.
+  const pdir = join(dir, 'phases', parsedPhase.raw);
+  const { plans: planFiles, missing } = listPlanFiles(pdir);
+  if (missing) return fail('no-phase-dir', `${pdir} not found`);
+
+  const { rows, unkinded, malformed } = surfacedRows(payload.value, parsedPhase.raw);
+  const mentions = [];
+  for (const f of planFiles) {
+    mentions.push(...citedMentions(read(join(pdir, f)) || '', parsedPhase.raw));
+  }
+
+  // A surfaced decision is cited when some mention carries the SAME number AND
+  // the same scope phase as that row's own source phase. A row with neither -
+  // every capture, deviation and UAT row, and a CONTEXT bullet nobody numbered -
+  // can match nothing, which is what the unjoinable arms below report.
+  const isCited = (row) => row.kind === 'decision'
+    && row.number !== undefined && row.phase !== undefined
+    && mentions.some((m) => m.number === row.number && m.phase === row.phase);
+
+  const byKind = {};
+  for (const k of SURFACED_KINDS) byKind[k] = { surfaced: 0, cited: 0 };
+  const citedIds = [];
+  for (const row of rows) {
+    byKind[row.kind].surfaced += 1;
+    if (!isCited(row)) continue;
+    byKind[row.kind].cited += 1;
+    citedIds.push(row.id);
+  }
+
+  // `surfaced.count` is every KINDED row and `surfaced.ids` is only the rows an
+  // id exists for, and the gap between the two numbers is the answer rather
+  // than a truncation: D-02 says a CAPTURE row and a SUMMARY deviation carry no
+  // identifier at all, and synthesizing one from corpus position would break
+  // determinism the moment a bullet is added above the row. `cited_by_kind` is
+  // what reconciles the headline - the four arms' `surfaced` figures sum to it.
+  //
+  // The three lists ride the envelope even when EMPTY, against this file's
+  // usual compactness rule, because they are the answer and not decoration: AC1
+  // asks for an explicit id list rather than a number alone, and an empty
+  // `cited.ids` beside `count: 0` is exactly the zero-citation case this seam
+  // was built to make visible.
+  const surfaced = {
+    count: rows.length,
+    ids: rows.filter((r) => r.id !== undefined).map((r) => r.id),
+  };
+  const cited = { count: citedIds.length, ids: citedIds };
+  const citedByKind = {
+    decision: { surfaced: byKind.decision.surfaced, cited: byKind.decision.cited },
+    // UNJOINABLE, never silently zero (D-02): these three arms carry no
+    // identifier to join on, so `cited: 0` here would report a plan that
+    // ignored them where the truth is that nothing could tell either way.
+    capture: { surfaced: byKind.capture.surfaced, unjoinable: true },
+    deviation: { surfaced: byKind.deviation.surfaced, unjoinable: true },
+    uat: { surfaced: byKind.uat.surfaced, unjoinable: true },
+  };
+
+  // Appended BEFORE the envelope is emitted, `cmdRiskCheckRun`'s precedent
+  // exactly (D-08). An IN-CODE producer is what keeps the coordinator from
+  // retyping a figure onto a flag - the transcription surface this file
+  // condemns where `--payload` replaced inline JSON - and it is why the count
+  // is not a pure reader with `/cad-plan` issuing a separate `trace append`
+  // beside it: two extra invocations, and both figures retyped between them.
+  //
+  // `outcome` is one of `FAMILIES`, so this lands where `renderTrace` counts.
+  // The event carries BOTH figures with their id lists and the per-kind
+  // breakdown, so the record answers the same question the envelope does
+  // without a reader having to join back to the session that produced it - the
+  // legitimate-zero rate is measurable across phases, not only in the run.
+  //
+  // It opens no bracket and bills no worker, so it carries no `role` and no
+  // `tokens`: a token figure is read off a SUBAGENT's return and this seam has
+  // no return to read (lib/trace.mjs's TOKEN PROVENANCE).
+  //
+  // `phase` is the caller's OWN spelling, verbatim, the way a prose
+  // `trace append --phase` stores it - `lib/trace.mjs`'s `key()` stringifies
+  // both sides, so a record written `2` still joins a bracket written `"2"`.
+  //
+  // The write may NOT change the verdict, and `appendEvent` never throws and
+  // never speaks, so its `{written, reason}` rides the envelope instead. That
+  // field is the ONLY place a caller learns the figures were dropped (D-15):
+  // `MAX_TRACE_BYTES` is 1,048,576, `appendEvent` stats before it writes, and
+  // `.planning/trace.jsonl` held 1,762 events in 419,756 B on 2026-08-23 -
+  // unpruned and gitignored, so `size-cap` is a stated failure mode rather
+  // than a silent one.
+  const res = appendEvent(dir, {
+    phase: parsedPhase.raw,
+    family: 'outcome',
+    event: 'cite_count',
+    ...(point ? { point } : {}),
+    ...(off ? { backend: 'none' } : {}),
+    surfaced,
+    cited,
+    cited_by_kind: citedByKind,
+  });
+
+  ok({
+    phase: n,
+    ...(point ? { point } : {}),
+    // Present ONLY on the off path, mirroring `cmdRecall`, which omits the
+    // field on every other arm. Its absence is what says the count ran against
+    // a live backend, so an omitted field is load-bearing here.
+    ...(off ? { backend: 'none' } : {}),
+    plans: planFiles,
+    surfaced,
+    cited,
+    cited_by_kind: citedByKind,
+    // Present on EVERY path, `reason` only where the append failed. A trace
+    // that could not be written leaves every figure above byte-identical.
+    trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
+    // A payload row this reader could not place. Reported rather than binned:
+    // a row counted in `surfaced` and in no arm would make the breakdown stop
+    // reconciling with the headline, and a row dropped in silence would make an
+    // unreadable payload look like a small one.
+    ...(unkinded.length ? { unkinded } : {}),
+    ...(malformed ? { malformed } : {}),
+    // A TORN config layer reads `memory.backend` as absent, which defaults to
+    // `builtin` - so a project that deliberately set `none` would be counted as
+    // a live backend and the third state would silently disappear from the
+    // record. Present only when non-empty, so the ordinary byte-stable output
+    // is unchanged (AC6).
+    ...(warnings.length ? { warnings } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // seed-reqs - insert Traceability rows for the requirement ids a phase's
 // plan(s) declare, bounded by ## Active (D-02/D-04/D-05/D-06). Called by
 // /cad-plan right where the plan is written - the write path this table
@@ -2227,18 +2495,16 @@ function cmdRecall(dir, query, opts) {
     top = parsed.value;
   }
 
-  // memory.backend, effective across the config layers (repo > global);
-  // schema default is builtin, so an unset key recalls. `none` is the off
-  // switch - a successful check with a negative answer, like plan-overlap.
+  // The off switch, read through the ONE reader below - a successful check
+  // with a negative answer, like plan-overlap.
   //
   // warnings[] rides the envelope, present only when non-empty so the ordinary
   // byte-stable output is unchanged: a torn layer reads memory.backend as
   // absent, which defaults to `builtin`, so a project that deliberately set
   // `none` would silently start recalling again - and the reverse reading, an
   // empty result set, is indistinguishable from a corpus with no hits.
-  const { config: recallConfig, warnings } = mergeLayers(join(dir, 'config.json'));
+  const { backend, warnings } = memoryBackend(dir);
   const warn = warnings.length ? { warnings } : {};
-  const backend = recallConfig?.memory?.backend ?? 'builtin';
   if (backend === 'none') return ok({ backend: 'none', results: [], total: 0, ...warn });
 
   // Corpus assembly in a fixed order: phases ascending (decimal-aware), each
@@ -2292,6 +2558,38 @@ function cmdRecall(dir, query, opts) {
   // one.
   const archive = read(join(dir, 'ARCHIVE.md'));
   if (archive) for (const row of parseArchiveRows(archive)) corpus.push(row);
+
+  // The TASKS tier (D-09), and it is EXPLICIT: `/cad-task` is the path most real
+  // work takes, and until now it left the corpus a hole exactly where the work
+  // went - commits, and nothing a query could find. Measured 2026-08-23, a query
+  // naming precisely what a shipped task did returned five hits over a corpus of
+  // 59 and none of them from `.planning/tasks/`, against a record on disk
+  // describing that work.
+  //
+  // LAST, on the identical argument the ARCHIVE.md walk above makes for its own
+  // position: `search()` orders hits by (score desc, corpus position asc), so
+  // appending leaves every existing corpus index where it was and a tree with no
+  // `tasks/` emits the bytes it emitted before this walk existed.
+  //
+  // NO `phase` KEY. A task sits outside the phase spine; `references/recall.md`
+  // states `phase` is optional and that a reader must never substitute an
+  // inferred one, and `phase: 0` here would be exactly the inferred one it
+  // forbids - it would also collide with the `phases/0/` directory this phase
+  // deliberately did not put the record in.
+  //
+  // The lister is lib/task-record.mjs's, guarded and contained the way
+  // `phaseDirsIn` is: an absent planning root and an unreadable `tasks/` are
+  // both an empty list rather than an ENOENT the dispatch catch would turn into
+  // `fail('internal')`, and a slug directory or a RECORD.md that resolves
+  // OUTSIDE the planning root is skipped rather than read into the corpus - the
+  // snippets below are read straight from the path it returns.
+  for (const { slug, path } of taskRecordsIn(dir)) {
+    const record = read(path);
+    if (!record) continue;
+    for (const text of parseTaskRecordSnippets(record)) {
+      corpus.push({ text, source: `tasks/${slug}/RECORD.md` });
+    }
+  }
 
   if (!corpus.length) return ok({ results: [], total: 0, ...warn });
 
@@ -4262,6 +4560,236 @@ function cmdRiskCheckRun(dir, opts) {
     return emit({ ok: false, reason: 'no-diff', detail: diffError, ...envelope });
   }
   return ok(envelope);
+}
+
+// ---------------------------------------------------------------------------
+// task-record - the artifact a `/cad-task` run leaves behind (FST-01).
+//
+// THE HOLE IT FILLS. The fast path is the one most real work takes, and until
+// now it left commits and nothing else: no artifact the recall corpus could
+// index and nothing `/cad-why` could join a commit back to. The phase spine got
+// the design attention because Cadence's own work is always the heavy kind.
+//
+// CODE WRITES IT, never workflow prose holding `Write`/`Edit` (D-07).
+// lib/capture-file.mjs's header records what that shape cost this queue: five
+// filed bullets were lost because a model wrote them below a heading the recall
+// walk does not visit, and nothing could fail. `cmdCiteCount` and
+// `cmdRiskCheckRun` are the in-code precedents, down to appending their own
+// `outcome` event before the envelope is emitted.
+//
+// EVERY FIGURE IS DERIVED FROM THE RANGE, never retyped onto a flag. The
+// commits table comes from one `git log` and the declared-files line from one
+// `git diff --name-only`, both over the ids `resolveRange` resolved - so a
+// re-run over an unchanged range rewrites byte-identical bytes, which is what
+// makes the record evidence rather than a claim about the range.
+//
+// WHERE IT LANDS is lib/task-record.mjs's, and so is what it looks like: the
+// writer here, the recall walk in `cmdRecall` and `/cad-why`'s task tier are
+// three readers of one fact, which is exactly the split that lost those five
+// bullets.
+// ---------------------------------------------------------------------------
+
+function cmdTaskRecord(dir, opts) {
+  // THE SLUG IS A PATH SEGMENT, refused and never sanitised - the VAL-01 lesson
+  // from `milestone-prune --label`, which was only TRIMMED before being joined
+  // onto a directory path and escaped the tree. Judged FIRST and with nothing
+  // written, so a slug that could name a path outside `.planning/tasks/` never
+  // reaches a `join`.
+  if (!isTaskSlug(opts.slug)) {
+    return fail('bad-args',
+      'task-record --slug must be ONE path segment of lowercase letters, digits and '
+      + `single hyphens, at most ${MAX_SLUG_LENGTH} characters: --slug <name>`);
+  }
+  const slug = String(opts.slug);
+
+  // BOTH required and neither defaulted, `risk-check run`'s rule read through
+  // that face's own `riskRef`: a defaulted head is a range the caller never
+  // stated, and this record is the evidence of what shipped.
+  const base = riskRef(opts.base);
+  const head = riskRef(opts.head);
+  if (!base || !head) {
+    return fail('bad-args',
+      'task-record needs --base <ref> and --head <ref>, neither opening with `-`');
+  }
+
+  // The prose, through the ONE reader every `--<field>-file` flag goes through.
+  // `--text-file` is the transport a workflow prescribes - `--text "<value>"`
+  // puts caller-derived prose inside a double-quoted shell word, where a `$(...)`
+  // executes before Node starts - and `--text` stays for a human at a shell.
+  const resolvedText = resolveTextFlag(opts, 'text', 'task-record');
+  if (!resolvedText.ok) return fail('bad-args', resolvedText.detail);
+  const text = resolvedText.value !== undefined
+    ? resolvedText.value
+    // parseArgs mints the boolean `true` for a valueless flag, so a bare
+    // `--text` written through would record the literal word "true" (#42/#45).
+    : (typeof opts.text === 'string' ? opts.text.trim() : '');
+  if (!text) {
+    return fail('bad-args', 'task-record needs what shipped: --text-file <path> '
+      + '(workflows) or --text "<text>" (typed by hand)');
+  }
+
+  // ONE git call per figure, never one per commit. `%x1f` separates the fields
+  // because a subject can carry anything a commit message can, a tab and a pipe
+  // included; the split is on the FIRST separator alone, so a subject carrying
+  // one keeps its tail instead of losing it to a third field. `--reverse` puts
+  // the oldest commit first, the order a record reads in. The trailing `--`
+  // ends the revision list, so a ref that also names a path cannot turn into a
+  // pathspec.
+  let commits = [];
+  let files = [];
+  let rangeError = null;
+  const range = resolveRange(base, head);
+  if (!range.ok) {
+    rangeError = range.error;
+  } else {
+    const git = (/** @type {string[]} */ args) => execFileSync('git', ['-C', range.top, ...args],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER })
+      .split('\n').filter(Boolean);
+    try {
+      commits = git(['log', '--reverse', '--format=%H%x1f%s', `${range.base}..${range.head}`, '--'])
+        .map((line) => {
+          const at = line.indexOf('\x1f');
+          return at === -1
+            ? { commit: line, description: '' }
+            : { commit: line.slice(0, at), description: line.slice(at + 1) };
+        });
+      files = git(['diff', '--name-only', range.base, range.head, '--']);
+    } catch (e) {
+      // redactUrl first, the EXP-01 rail `resolveRange` itself applies: a git
+      // failure detail can carry a remote URL with credentials in it.
+      rangeError = redactUrl(e && e.message ? e.message : String(e));
+    }
+  }
+
+  const recordDir = join(dir, TASKS_DIR, slug);
+  const recordPath = join(recordDir, RECORD_FILE);
+  let written = false;
+  let reason;
+  let writeError = null;
+  // A PLANNING ROOT THAT DOES NOT EXIST IS NOT CREATED HERE, and neither is
+  // `tasks/`. The record is a tracked artifact of a project that has one; on a
+  // tree with no `.planning/` the fast path's guarantee is that it scaffolds
+  // nothing, so this answers `written: false` with a reason rather than minting
+  // a planning tree the user never asked for. A non-directory at that path
+  // takes the same arm: it is the same answer - there is no root to write into.
+  let rootIsDir = false;
+  try { rootIsDir = statSync(dir).isDirectory(); } catch { /* absent is the ordinary case */ }
+  if (rangeError !== null) {
+    reason = 'the range did not resolve, so no record could be derived from it';
+  } else if (!rootIsDir) {
+    reason = `no planning root at ${dir}, and this command creates neither it nor tasks/`;
+  } else {
+    try {
+      mkdirSync(recordDir, { recursive: true });
+      // CONTAINED THE WAY THE LISTER IS, and for the same reason one level
+      // earlier. `isTaskSlug` refuses a slug that TRAVERSES; it says nothing
+      // about a `tasks/<slug>` that already IS a symlink, and git carries
+      // symlinks, so a cloned planning tree ships one. `mkdirSync(recursive)`
+      // follows it without complaint and `atomicWrite` does not catch it - it
+      // `lstat`s its own TEMP path, which refuses a symlinked destination FILE
+      // and is silent about a symlinked parent DIRECTORY. So the record would
+      // land in a tree `taskRecordsIn` would then refuse to read it back from:
+      // the writer and the reader disagreeing about containment is the
+      // asymmetry, and this is the half that was missing. Checked AFTER the
+      // mkdir because that is when the directory exists to be resolved.
+      if (!insideRoot(dir, recordDir)) {
+        throw new Error(`task-record refused: ${recordDir} resolves outside ${dir}`);
+      }
+      // OVERWRITING IS CORRECT HERE, and is the opposite of `cmdAdjudication`'s
+      // refusal: that seam refuses because a second round's rulings must not
+      // replace a first's, while this record is derived WHOLLY from the range
+      // and the text - a re-run over an unchanged range rewrites the same bytes,
+      // and a re-run over a wider range is the correction the caller intended.
+      // `atomicWrite` is the symlink-refusing writer FSW-01 put in place.
+      atomicWrite(recordPath, renderTaskRecord({
+        slug,
+        // The heading's title is the SLUG, not a flag: a title a caller could
+        // type is a second name for the record, and nothing reads it but this
+        // heading.
+        title: slug,
+        body: text,
+        commits,
+        files,
+      }));
+      written = true;
+    } catch (e) {
+      // NOT through `redactUrl`, and the census in planning.test.mjs states the
+      // rule: this is an `fs` error over a path the CALLER just named through
+      // `--dir`, so the only string it can echo is one the caller already holds.
+      // `redactUrl` targets a credential arriving from a remote the user never
+      // typed, which a local write cannot carry. The `git` catch above IS
+      // wrapped, for exactly that reason.
+      writeError = e && e.message ? e.message : String(e);
+      reason = writeError;
+    }
+  }
+
+  // Appended BEFORE the envelope is emitted and on every path past argument
+  // validation - the unresolvable-range path and the absent-root path included -
+  // so even a refusal leaves the record saying a task record was ATTEMPTED.
+  // `cmdRiskCheckRun`'s precedent exactly, and the reason this is a WRITING seam
+  // rather than a reader with a `trace append` beside it: two extra invocations,
+  // and every figure retyped between them.
+  //
+  // `phase` is hardcoded to 0 rather than taken from a `--phase` a caller could
+  // misstate: `workflows/task.md` already states the fast path carries no
+  // roadmap phase, and 0 is the number it uses for that.
+  //
+  // NO `role` and NO `tokens`: this opens no bracket and bills no worker, and a
+  // token figure is read off a SUBAGENT return this seam does not have
+  // (lib/trace.mjs's TOKEN PROVENANCE).
+  //
+  // The append may NOT change the verdict - `appendEvent` never throws and never
+  // speaks - so its `{written, reason}` rides the envelope as `trace: {...}`
+  // beside the record's own top-level `{written, reason}`. On a tree with no
+  // planning root it writes nothing either, which is the same answer the record
+  // gave and not a second failure.
+  const res = appendEvent(dir, {
+    phase: 0,
+    family: 'outcome',
+    event: 'task_record',
+    slug,
+    // Both spellings AND both ids, always: the spelling is what a reader
+    // recognises, the id is the range's identity. Written even when null, so a
+    // run that resolved nothing is visibly unidentifiable rather than silently
+    // absent a field.
+    base,
+    head,
+    base_id: range.ok ? range.base : null,
+    head_id: range.ok ? range.head : null,
+    commits: commits.length,
+    files: files.length,
+    written,
+  });
+  const trace = { written: res.written, ...(res.reason ? { reason: res.reason } : {}) };
+
+  // A range that could not be READ is never ok, `risk-check run`'s `no-diff`
+  // rule: a caller must not be able to take "git refused" for "the task touched
+  // nothing".
+  if (rangeError !== null) {
+    return emit({ ok: false, reason: 'no-range', detail: rangeError, slug, base, head,
+      written: false, trace });
+  }
+  if (writeError !== null) {
+    return emit({ ok: false, reason: 'no-record', detail: writeError, slug, base, head,
+      written: false, trace });
+  }
+  ok({
+    slug,
+    base,
+    head,
+    base_id: range.base,
+    head_id: range.head,
+    record: recordPath,
+    commits: commits.length,
+    files: files.length,
+    // ALWAYS present, both of them: `written: false` beside a reason is the
+    // answer on a tree with no planning root, and a caller that had to infer it
+    // from an absent `record` field would be inferring.
+    written,
+    ...(reason ? { reason } : {}),
+    trace,
+  });
 }
 
 /**
@@ -6772,12 +7300,20 @@ const COMMANDS = {
   'criteria-size': (dir, _sub, opts) => cmdCriteriaSize(dir, opts),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
   'plan-size': (dir, _sub, opts) => cmdPlanSize(dir, opts),
+  // The read-back count (RBK-01). ONE word, never a two-word spelling, for the
+  // reason the `adjudication` arm below states: `subcommandKey` consumes a
+  // second word only for the `TWO_WORD` families.
+  'cite-count': (dir, _sub, opts) => cmdCiteCount(dir, opts),
   'seed-reqs': (dir, _sub, opts) => cmdSeedReqs(dir, opts),
   // Bare words are JOINED, never rejected: every workflow caller quotes, so
   // rejecting extras would turn a today-degraded interactive call into a hard
   // failure. tokenize() splits on non-alphanumerics, so the separator is
   // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
   recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
+  // The record a `/cad-task` run leaves (FST-01). ONE word, never a two-word
+  // spelling, for the reason the `adjudication` arm below states:
+  // `subcommandKey` consumes a second word only for the `TWO_WORD` families.
+  'task-record': (dir, _sub, opts) => cmdTaskRecord(dir, opts),
   'lease-check': (dir, _sub, opts) => cmdLeaseCheck(dir, opts),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the

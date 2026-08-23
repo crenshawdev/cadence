@@ -564,6 +564,33 @@ export const CONTRACTS = {
       '--max-reqs': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--max-tasks': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
+    // THE READ-BACK COUNT (RBK-01): what the retrieval pass put in front of the
+    // planner, against what the produced plan cites. ONE WORD, never a two-word
+    // spelling: `subcommandKey` consumes a second word only for the families in
+    // `TWO_WORD`, and one operation does not earn widening that Set - the
+    // `adjudication` row below is the precedent, and `plan-overlap`,
+    // `lease-check` and `criteria-coverage` are the older ones.
+    //
+    // `--payload` is a FILE and never inline JSON, the rule the `adjudication`
+    // row states in full: the payload is a retrieval envelope carrying verbatim
+    // artifact prose with arbitrary quoting, so one unescaped quote in a heredoc
+    // makes it unparseable. It is declared OPTIONAL rather than required because
+    // `memory.backend: none` skips the retrieval call entirely, so on that path
+    // there is no envelope to hand over and none to demand; the seam qualifies
+    // the refusal by backend, which is a presence rule no declaration can state
+    // (the PRESENCE carve-out this file's header names).
+    //
+    // `--point` names WHICH of the two count points a run is recording - the
+    // count runs after the planner returns and again on the plan as committed,
+    // and the pair is what makes a revision's effect on citation visible. Its
+    // two values are an ENUM the declaration cannot express, so the seam refuses
+    // a value outside them in its own `bad-args` vocabulary, the carve-out
+    // `capture --kind must be one of ...` already occupies.
+    'cite-count': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--payload': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--point': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // `--label-file` is `--label`'s path transport: an untagged close takes the
     // label from PROJECT.md's milestone NAME, which is repository content. The
     // table term (`|` or a newline) and the containment term run on the
@@ -596,6 +623,35 @@ export const CONTRACTS = {
     },
     recall: {
       '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+    // THE RECORD A `/cad-task` RUN LEAVES (FST-01): the fast path's own artifact
+    // under `.planning/tasks/<slug>/`, written so the recall corpus and
+    // `/cad-why` can both reach it. ONE WORD, never a two-word spelling:
+    // `subcommandKey` consumes a second word only for the families in
+    // `TWO_WORD`, and one operation does not earn widening that Set - the
+    // `adjudication` row above is the precedent.
+    //
+    // `--slug` is joined onto a directory path, so its grammar is a REFUSAL and
+    // not a trim: one path segment or nothing written. The declaration cannot
+    // state that grammar - it is not one of the declared types - so the seam
+    // refuses in its own `bad-args` vocabulary through lib/task-record.mjs's
+    // predicate, the carve-out `capture --kind must be one of ...` occupies.
+    //
+    // `--base` and `--head` are both REQUIRED for the reason the `risk-check
+    // run` row above states: a defaulted head is a range the caller never
+    // stated, and this record IS the evidence of what shipped. Both the commits
+    // table and the declared-files line are DERIVED from that range by the seam,
+    // so there is no flag a caller could retype a figure onto.
+    //
+    // `--text` / `--text-file` are the pair the `capture` row below already
+    // models: the file form is the safe transport a workflow prescribes, and the
+    // inline form stays for a human typing at a shell.
+    'task-record': {
+      '--slug': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--text': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--text-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // `--join` ties each record to the `trace.jsonl` dispatch bracket that
     // caused it, by role normalization and timestamp containment. Off by
@@ -1053,6 +1109,19 @@ export const CONTRACTS = {
     },
     '': {
       '--list': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+  },
+  // why.mjs takes a QUERY (`<path>[:<line>]`) as its positional argument,
+  // never a subcommand, so the bare row carries the whole flag set - the
+  // skim.mjs precedent. `--dir` is the repository root and lives on `'*'`
+  // with every other seam's `--dir`/`--root` row; `--top` is this seam's own,
+  // task 2's entry cap (CONTEXT D-13).
+  'why.mjs': {
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    '': {
+      '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
   },
 };

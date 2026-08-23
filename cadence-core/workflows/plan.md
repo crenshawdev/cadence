@@ -114,8 +114,31 @@ the single dispatch and neither depends on the other, which is the only thing
 that would serialize them.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-plan-XXXXXX")" \
+  && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D holds a character a carried literal cannot survive" >&2; exit 1;; esac \
+  && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
+  && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>" > "$D/surfaced.json" \
+  && cat "$D/surfaced.json" \
+  && echo "scratch dir: $D  run token: $T"
 ```
+
+The query and the block below are unchanged; the FILE beside them is new, and
+it is the surfaced set `count_planned` and `count_committed` read. The query is
+model-authored, so re-running the search there from re-typed terms returns a
+different top 5 and a plan that cited every real hit would report zero -
+indistinguishable from a genuine zero, the false signal this count exists to
+remove (D-03). The `cat` is chained on the write with `&&` because this step
+still needs the results in hand to build the block; the response measures
+8,617 B, under the transport threshold, so a redirect that left the step blind
+would buy a second round trip for nothing.
+
+**The directory and the token are ECHOED** because those two count steps run in
+DIFFERENT Bash invocations, where `$D` is empty - the tool persists the working
+directory and not shell state. Carry both printed values there as LITERALS,
+never a fresh `mktemp` and never a `$(...)`; a fixed name under `/tmp` is one
+file two runs in two repositories both write, and the token is what makes a
+carried path safe
+(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the rule).
 
 Parse its JSON line (`{ok, results:[{score, source, phase?, snippet}]}`) and
 append a `<recalled_memory>` block at the END of the `<planning_context>` below
@@ -179,10 +202,22 @@ file only - inline never splits.
 Recall applies here too: the `--inline` under-threshold path is a real
 task-breakdown moment with no cad-planner dispatch, so it must not skip prior
 memory. When the effective `memory.backend` read in `parse` is `builtin`, run
-the same gated recall as spawn_planner and fold its results into the inline
-plan's truths and tasks, citing each recalled item's `source` file and `phase`
-(when present) in the task's Action or the plan's Notes. When the backend is
-`none`, the inline path issues no recall call, exactly like spawn_planner.
+the same gated recall as spawn_planner - the whole block, so the same
+`surfaced.json` and `run-token` land in this run's own echoed directory - and
+fold its results into the inline plan's truths and tasks, citing each recalled
+item's `source` file and `phase` (when present) in the task's Action or the
+plan's Notes. When the backend is `none`, the inline path issues no recall call,
+exactly like spawn_planner.
+
+`count_planned` and `count_committed` apply here too, for the same reason one
+step further on (D-12): criterion 2 names `/cad-plan`, not a dispatch mode, and
+leaving the cheap path out would make it the one path with no citation data.
+Run both steps as written - the first once this step's `PLAN.md` is on disk, the
+second after `commit` - against that same `surfaced.json` and behind that same
+token check. Do NOT restate either call here: a second spelling is a second seam
+invocation the census counts and a second copy that can drift from the first.
+The inline path writes `PLAN.md` from the same template, so the count reads it
+with no special case.
 </step>
 
 <step name="handle_return">
@@ -259,6 +294,38 @@ This exists because soft enforcement was measured and failed: a planner told
 the ceiling and a checker told to flag the overrun both passed an 8-task plan
 against a ceiling of 4. Two model-judgment gates missed a comparison a count
 makes exactly.
+</step>
+
+<step name="count_planned">
+The read-back count at the first of its two points (D-05): how many of the prior
+decisions, captures and deviations `spawn_planner` surfaced does the plan the
+planner just wrote actually cite. Here because it is the criterion's literal
+"after the planner returns" - after `handle_return`, and before `check_gate`.
+
+A carried literal is pasted into a later command unquoted-by-construction, so the guard REFUSES the directory at creation rather than trying to quote it defensively at every use site: `mktemp` builds the path from `$TMPDIR`, which the operator does not always own (a cloned repo's `.envrc`, a devcontainer, a CI runner), and one `"` in it closes the argument and runs the rest as commands. The character class is deliberately narrow - a `TMPDIR` holding a space is refused too, and fixing that is one `export` away, where a path that executes is not.
+
+Both `<the echoed ...>` placeholders are the LITERALS `spawn_planner` printed,
+never a fresh `mktemp` and never a `$(...)`. Check the token FIRST, in the same
+invocation: a carried path is the one arm where an EARLIER run's well-formed
+file still resolves, and the token is the only thing that separates them.
+
+```
+[ "$(cat "<the echoed scratch directory>/run-token" 2>/dev/null)" = "<the echoed run token>" ] || { echo "scratch-stale: that directory belongs to another run" >&2; exit 1; }
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cite-count --phase {N} --point planned --payload "<the echoed scratch directory>/surfaced.json"
+```
+
+When the effective `memory.backend` read in `parse` is `none`, no search ran and
+no scratch directory exists: drop the token check and the `--payload` flag, and
+the seam answers with its backend-off state - a THIRD thing on the record,
+distinct from a run that surfaced nothing.
+
+Read the one JSON line and hold `surfaced.count`, `cited.count` and `trace` for
+`done`. ADVISORY, both here and at `count_committed`: this never refuses the
+plan, never re-dispatches the planner and never edits a plan file to add a
+citation, and a non-zero exit from either call is REPORTED and the workflow
+CONTINUES to its next step. A measurement that could halt planning is the gate
+this cycle deliberately did not ship - a threshold needs a legitimate-zero rate
+to be set against, and these two counts are what produce it.
 </step>
 
 <step name="check_gate">
@@ -397,6 +464,30 @@ opinion, not another iteration.
    `docs: plan phase {N} - {name}` - staging exactly those files.
 </step>
 
+<step name="count_committed">
+The same count at its second point, on the plan as it FINALLY stands. After
+`commit` rather than beside `count_planned`, because `check_gate` drives one
+checker revision that edits the plan file and an adjudicated survivor edits it
+again: a single early count describes a plan that no longer exists, and a
+revision that ADDED the missing citation would still sit on the record as a
+zero-citation plan. Recording the PAIR is what makes a revision's effect on
+citation visible, and that is the data a later gate decision needs (D-05).
+
+Same two literals, same token check first, same `none` arm - only `--point`
+differs:
+
+```
+[ "$(cat "<the echoed scratch directory>/run-token" 2>/dev/null)" = "<the echoed run token>" ] || { echo "scratch-stale: that directory belongs to another run" >&2; exit 1; }
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cite-count --phase {N} --point committed --payload "<the echoed scratch directory>/surfaced.json"
+```
+
+Both counts reach `.planning/trace.jsonl` as their own `outcome`-family events
+under this phase's correlation id: the seam appends each one itself, so neither
+figure is retyped onto a flag, and the envelope's `trace` field is the only
+place a caller learns a record was dropped. Hold this count for `done` beside
+the first.
+</step>
+
 <step name="done">
 Report:
 
@@ -406,8 +497,24 @@ Plan(s): {files, task counts}
 Checker: {passed | passed after revision | skipped | overridden with N open issues}
 Review: {plan trigger outcome}
 Traceability: {seeded ids | none seeded | orphan_ids: [...] | no_active_section}
+Citations: {planned C of S} -> {committed C of S}; {the search was off | it surfaced nothing | it surfaced S and the plan cited ZERO of them}{, record not written: <reason>}
 Commit: {hash | not committed (planning.commit_docs false)}
 ```
+
+The three states are NAMED apart rather than left for a reader to derive from
+two numbers: the search was off (`backend: none` on the envelope), it surfaced
+nothing (`surfaced.count` 0 with no `backend` field), or it surfaced a non-empty
+set the plan cited ZERO of. That last one is the case this count exists to make
+visible, so it is said in those words and not implied by a `0`. Where the
+envelope's `trace.written` is false, name its reason on the same line - that
+field is the only place a dropped record shows.
+
+Advisory, once and last: the plan is not refused, the planner is not
+re-dispatched, the plan file is not edited to add a citation, and the run's one
+suggestion is unchanged. Add no second suggestion, no new ask and no branch on
+the count - a near-zero count reads two ways that need opposite fixes (the
+search surfaced the wrong things, or the planner ignored the right ones), and
+this cycle produces the data that settles which rather than acting on it.
 
 One suggestion only: `/cad-execute {N}` - safe to `/clear` first: the plan is
 on disk and each executor runs in a fresh context.

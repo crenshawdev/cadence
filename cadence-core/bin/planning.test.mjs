@@ -5942,13 +5942,20 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // The `-file` transports' READ failures are not counted here at all - they
   // live in lib/text-flag-file.mjs, which this file-scoped census does not
   // walk, and they are the same caller-named-path class.
+  //
+  // `task-record` added BOTH classes at once, which is what this row is for: its
+  // `git log`/`git diff` catch is wrapped, on the same argument as `risk-check
+  // run`'s, and its `mkdirSync`/`atomicWrite` catch is NOT - that detail is an
+  // `fs` error over the path `--dir` just named, the caller-named-path class
+  // `capture --text-file` and phase-done's partial-flip already sit in.
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 12, 'planning.mjs gained or lost a detail site');
-  assert.equal((src.match(WRAPPED) || []).length, 5,
-    'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch or '
-    + 'groundCitations\' probe) or readQueue\'s provider-authored parse detail is unredacted');
+  assert.equal((src.match(IDIOM) || []).length, 14, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(WRAPPED) || []).length, 6,
+    'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch, '
+    + 'task-record\'s range read or groundCitations\' probe) or readQueue\'s '
+    + 'provider-authored parse detail is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });
 
@@ -7837,4 +7844,615 @@ test('adjudication + deferred record: a symlink at the carried home is refused, 
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'no-phase-dir');
   assert.deepEqual(readdirSync(join(dir, 'elsewhere')), []);
+});
+
+// --- cite-count: the read-back count -------------------------------------------
+
+// A dedicated runner, for the same reason `recall` has one: the backend read
+// goes through the config layers, so the global layer is pinned off a
+// nonexistent path (D-06) or a developer's real ~/.claude/cadence/config.json
+// would flip the answer locally while CI stayed green. Returns the parsed JSON
+// AND the raw stdout - the determinism case byte-compares the raw string.
+function citeCount(args, dir) {
+  let raw;
+  let code = 0;
+  try {
+    raw = execFileSync('node', [PLANNING, 'cite-count', ...args, '--dir', dir], {
+      encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(tmpdir(), 'cad-no-such-global.json') },
+    });
+  } catch (e) { raw = e.stdout; code = e.status; }
+  return { json: JSON.parse(raw), raw, _exit: code };
+}
+
+/**
+ * The surfaced set as a FILE beside the fixture (D-03). Never inline JSON: the
+ * envelope carries verbatim artifact prose with arbitrary quoting.
+ */
+function citePayload(dir, results, name = 'payload.json') {
+  const file = join(dir, name);
+  // `total` is deliberately larger than `results.length` everywhere below - the
+  // count reads the BOUNDED results and never `total` (D-11).
+  writeFileSync(file, JSON.stringify({ total: 441, results }));
+  return file;
+}
+
+/** A plan BODY: makeTree writes `# Plan <n>`, and a citation is prose (D-09). */
+function citePlanBody(dir, n, file, body) {
+  writeFileSync(join(dir, 'phases', String(n), file), body);
+}
+
+/**
+ * The fixture every case below shares: phase 2, one plan citing a BARE `D-03`
+ * and a phase-QUALIFIED `phase 7 D-05`. Every tree is scratch; nothing here
+ * reaches this repository's own .planning.
+ */
+function citeTree() {
+  const dir = makeTree({ phases: { 2: { plan: ['PLAN-1.md'] } } });
+  citePlanBody(dir, 2, 'PLAN-1.md',
+    '# Plan\n\n## Context\n\nThis plan carries D-03 forward unchanged, and it holds '
+    + 'the boundary phase 7 D-05 drew.\n');
+  return dir;
+}
+
+test('cite-count: the envelope names both sides per item, with the unjoinable arms marked', () => {
+  const dir = citeTree();
+  const payload = citePayload(dir, [
+    // Cited: a bare mention scopes to the plan's own phase 2, and this archived
+    // row's source phase IS 2 - the locked consequence of D-04 plus D-10.
+    { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): the archived one' },
+    // Cited: `phase 7 D-05` scopes to 7 and this row's source phase is 7.
+    { score: 8, source: 'phases/7/CONTEXT.md', snippet: 'D-05 (area): the qualified one' },
+    // Surfaced and NOT cited - the case the whole phase exists to make visible.
+    { score: 7, source: 'phases/1/CONTEXT.md', snippet: 'D-09 (area): nobody cited this' },
+    { score: 6, source: 'phases/1/CAPTURE.md', snippet: 'a capture row carries no id' },
+    { score: 5, source: 'phases/3/SUMMARY.md', snippet: 'a deviation carries no id either' },
+    { score: 4, source: 'phases/3/UAT.md', snippet: 'a uat finding' },
+  ]);
+  const r = citeCount(['--phase', '2', '--payload', payload], dir);
+  assert.equal(r.json.ok, true, r.raw);
+  assert.equal(r._exit, 0);
+  assert.equal(r.json.phase, 2);
+  assert.deepEqual(r.json.plans, ['PLAN-1.md']);
+
+  // The BOUNDED results, never `total` (D-11): six rows surfaced against a
+  // payload claiming 441 matched.
+  assert.equal(r.json.surfaced.count, 6);
+  assert.deepEqual(r.json.surfaced.ids, [
+    'v3.5.3/phases/2/CONTEXT.md#D-03',
+    'phases/7/CONTEXT.md#D-05',
+    'phases/1/CONTEXT.md#D-09',
+  ], 'only a CONTEXT decision carries an id (D-02); the other three arms have none');
+
+  // An explicit LIST and never a number alone (AC1), and a subset of the ids
+  // above - a cited id nothing surfaced would be an answer about another tree.
+  assert.deepEqual(r.json.cited.ids,
+    ['v3.5.3/phases/2/CONTEXT.md#D-03', 'phases/7/CONTEXT.md#D-05']);
+  assert.equal(r.json.cited.count, 2);
+  for (const id of r.json.cited.ids) assert.ok(r.json.surfaced.ids.includes(id), id);
+
+  // All four arms ALWAYS, and the three that carry no identifier read as
+  // UNJOINABLE rather than as `cited: 0` - a plan that ignored them and a plan
+  // nothing could tell about are different answers (D-02).
+  assert.deepEqual(r.json.cited_by_kind.decision, { surfaced: 3, cited: 2 });
+  assert.deepEqual(r.json.cited_by_kind.capture, { surfaced: 1, unjoinable: true });
+  assert.deepEqual(r.json.cited_by_kind.deviation, { surfaced: 1, unjoinable: true });
+  assert.deepEqual(r.json.cited_by_kind.uat, { surfaced: 1, unjoinable: true });
+  for (const arm of ['capture', 'deviation', 'uat']) {
+    assert.equal('cited' in r.json.cited_by_kind[arm], false,
+      `${arm} reports unjoinable, never a zero a later gate would threshold against`);
+  }
+
+  // The arms reconcile with the headline: a row counted in `surfaced` and in no
+  // arm would make the breakdown stop adding up.
+  const armed = Object.values(r.json.cited_by_kind).reduce((a, k) => a + k.surfaced, 0);
+  assert.equal(armed, r.json.surfaced.count);
+});
+
+test('cite-count: the queried phase\'s own rows are dropped and archived same-numbered ones are kept', () => {
+  // BOTH directions on ONE payload, so a rule that dropped both or kept both
+  // fails here: the plan trivially cites its own CONTEXT (D-04), and an
+  // archived phase 2 is a PRIOR phase 2 that the goal is asking about.
+  const dir = citeTree();
+  const payload = citePayload(dir, [
+    { score: 9, source: 'phases/2/CONTEXT.md', snippet: 'D-03 (area): the phase\'s own' },
+    { score: 8, source: '_archive-v3.5.0/2/CONTEXT.md', snippet: 'D-03 (area): a retired cycle' },
+    { score: 7, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): an ARCHIVE.md row' },
+  ]);
+  const r = citeCount(['--phase', '2', '--payload', payload], dir);
+  assert.equal(r.json.ok, true, r.raw);
+  assert.equal(r.json.surfaced.count, 2);
+  assert.deepEqual(r.json.surfaced.ids, [
+    '_archive-v3.5.0/2/CONTEXT.md#D-03',
+    'v3.5.3/phases/2/CONTEXT.md#D-03',
+  ]);
+  for (const id of r.json.surfaced.ids) {
+    assert.equal(id.startsWith('phases/2/'), false, id);
+  }
+});
+
+test('cite-count: two runs over an unchanged plan and payload are byte-identical', () => {
+  const dir = citeTree();
+  const payload = citePayload(dir, [
+    { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): cited' },
+    { score: 8, source: 'phases/1/CAPTURE.md', snippet: 'a capture row' },
+  ]);
+  const a = citeCount(['--phase', '2', '--payload', payload], dir);
+  const b = citeCount(['--phase', '2', '--payload', payload], dir);
+  assert.equal(a.raw, b.raw);
+  assert.equal(a.json.ok, true, a.raw);
+});
+
+test('cite-count: the run records no lifecycle/dispatch - it is a reader, not a subagent', () => {
+  const dir = citeTree();
+  const payload = citePayload(dir, [
+    { score: 9, source: 'phases/1/CONTEXT.md', snippet: 'D-01 (area): uncited' },
+  ]);
+  // Seeded with an unrelated event so an EMPTY file cannot pass this vacuously.
+  const trace = join(dir, 'trace.jsonl');
+  writeFileSync(trace,
+    '{"corr":"2-abc","phase":2,"family":"lifecycle","event":"phase_start"}\n');
+  const r = citeCount(['--phase', '2', '--payload', payload], dir);
+  assert.equal(r.json.ok, true, r.raw);
+  const events = readFileSync(trace, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(events.length >= 1, 'the seeded anchor is still there');
+  assert.deepEqual(events.filter((e) => e.family === 'lifecycle' && e.event === 'dispatch'), [],
+    'the count is a deterministic read; a dispatch here would mean a model was asked');
+});
+
+test('cite-count: memory.backend none is a third state, and needs no payload', () => {
+  // The off arm has to be CONSTRUCTED (D-06): this repository sets no
+  // memory.backend and runs the `builtin` default, so nothing dogfoods it.
+  const off = makeTree({ phases: { 2: { plan: ['PLAN-1.md'] } }, config: { memory: { backend: 'none' } } });
+  const r = citeCount(['--phase', '2'], off);
+  assert.equal(r.json.ok, true, r.raw);
+  assert.equal(r._exit, 0);
+  assert.equal(r.json.backend, 'none');
+  assert.equal(r.json.surfaced.count, 0);
+
+  // State two: a live backend that surfaced nothing. Separable from the above
+  // by the ABSENT `backend` field alone, which is why it is omitted rather than
+  // spelled `builtin`.
+  const live = citeTree();
+  const empty = citeCount(['--phase', '2', '--payload', citePayload(live, [])], live);
+  assert.equal(empty.json.ok, true, empty.raw);
+  assert.equal(empty.json.backend, undefined);
+  assert.equal(empty.json.surfaced.count, 0);
+
+  // And on a live backend the payload is REQUIRED, not defaulted to empty -
+  // otherwise state two would swallow a caller that simply forgot the file.
+  const missing = citeCount(['--phase', '2'], live);
+  assert.equal(missing.json.ok, false);
+  assert.equal(missing.json.reason, 'bad-args');
+  assert.match(missing.json.detail, /--payload/);
+  assert.equal(missing._exit, 1);
+});
+
+test('cite-count: the count records itself, under the phase\'s own correlation id', () => {
+  // The seam appends its own `outcome` event rather than leaving /cad-plan to
+  // issue a `trace append` and retype both figures onto flags (D-08), so the
+  // legitimate-zero rate is readable across phases and not only in the session
+  // that produced it. Anchored first: `correlationId` derives `<phase>-<sha>`
+  // from the newest lifecycle/phase_start for that phase, so without an anchor
+  // the id would take the phase-only form and prove nothing about joining.
+  const dir = citeTree();
+  const trace = join(dir, 'trace.jsonl');
+  writeFileSync(trace,
+    '{"corr":"2-deadbee","phase":2,"ts":"2026-08-23T00:00:00.000Z",'
+    + '"family":"lifecycle","event":"phase_start","sha":"deadbee"}\n');
+  const payload = citePayload(dir, [
+    { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): cited' },
+    { score: 8, source: 'phases/1/CONTEXT.md', snippet: 'D-09 (area): uncited' },
+    { score: 7, source: 'phases/1/CAPTURE.md', snippet: 'a capture row' },
+  ]);
+  const r = citeCount(['--phase', '2', '--point', 'planned', '--payload', payload], dir);
+  assert.equal(r.json.ok, true, r.raw);
+  assert.deepEqual(r.json.trace, { written: true }, 'no reason where the append succeeded');
+
+  const lines = readFileSync(trace, 'utf8').split('\n').filter(Boolean);
+  assert.equal(lines.length, 2, 'the anchor plus exactly one appended event');
+  const e = JSON.parse(lines[1]);
+  assert.equal(e.family, 'outcome', 'outcome is one of FAMILIES, so renderTrace counts it');
+  assert.equal(e.event, 'cite_count');
+  assert.equal(e.corr, '2-deadbee', 'joined to the phase, not minted');
+  assert.equal(e.phase, '2', "the caller's OWN spelling, verbatim");
+  assert.equal(e.point, 'planned');
+
+  // BOTH figures with their id lists and the breakdown, so the record answers
+  // the same question the envelope does with no join back to a session.
+  assert.deepEqual(e.surfaced, r.json.surfaced);
+  assert.deepEqual(e.cited, r.json.cited);
+  assert.deepEqual(e.cited_by_kind, r.json.cited_by_kind);
+  assert.equal(e.surfaced.count, 3);
+  assert.equal(e.cited.count, 1);
+
+  // It opens no bracket and bills no worker: a `role` or a `tokens` here would
+  // render a nameless worker and claim a cost this seam never paid.
+  assert.equal('role' in e, false);
+  assert.equal('tokens' in e, false);
+  assert.equal('turns' in e, false);
+});
+
+test('cite-count: a trace at the cap comes back written:false, and moves no figure', () => {
+  // D-15: `.planning/trace.jsonl` is gitignored, unpruned and bounded at
+  // MAX_TRACE_BYTES, `appendEvent` stats BEFORE it writes, and the envelope's
+  // `trace` field is the only place a caller could learn the figures were
+  // dropped. A record of a decision may not change the decision, so every
+  // other field must be byte-identical to the same run with no trace at all.
+  const capped = citeTree();
+  const clean = citeTree();
+  const rows = [
+    { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): cited' },
+    { score: 8, source: 'phases/1/CAPTURE.md', snippet: 'a capture row' },
+  ];
+  writeFileSync(join(capped, 'trace.jsonl'), 'x'.repeat(1048576));
+
+  const a = citeCount(['--phase', '2', '--payload', citePayload(capped, rows)], capped);
+  const b = citeCount(['--phase', '2', '--payload', citePayload(clean, rows)], clean);
+  assert.deepEqual(a.json.trace, { written: false, reason: 'size-cap' });
+  assert.deepEqual(b.json.trace, { written: true });
+  assert.equal(a._exit, 0, 'a dropped record is not a refusal');
+
+  const strip = (j) => { const { trace, ...rest } = j; return rest; };
+  assert.deepEqual(strip(a.json), strip(b.json),
+    'the verdict and both figures are identical whether or not the record landed');
+
+  // And nothing was appended: the cap is enforced in FRONT of the write.
+  assert.equal(readFileSync(join(capped, 'trace.jsonl'), 'utf8').length, 1048576);
+});
+
+test('cite-count: three runs are told apart by their records alone', () => {
+  // The whole point of D-06 in ONE test. Two of these three states count ZERO
+  // surfaced rows, so a reader with only a count in front of them cannot tell
+  // a memory backend that was switched off from a search that found nothing -
+  // and the legitimate-zero rate this seam exists to produce is measured
+  // against exactly that difference. All three are CONSTRUCTED here rather
+  // than sampled: this repository sets no `memory.backend` and runs the
+  // `builtin` default, so its own dogfooding never reaches the off arm.
+  //
+  // The assertion reads the RECORD - the appended trace.jsonl line - and not
+  // the envelope alone, because "measurable across phases" is a claim about
+  // the record, and the separation has to hold for a reader who was not in the
+  // session that produced it.
+  const record = (dir) => {
+    const lines = readFileSync(join(dir, 'trace.jsonl'), 'utf8').split('\n').filter(Boolean);
+    assert.equal(lines.length, 1, 'exactly one cite_count event was appended');
+    // `corr` and `ts` are the two fields that differ between any two runs
+    // whatever their state, so they are dropped: leaving them in would make
+    // every pair below trivially distinct and the check would prove nothing.
+    const { corr, ts, ...state } = JSON.parse(lines[0]);
+    return state;
+  };
+
+  // State one: the backend is off. No payload is passed, because on that path
+  // `workflows/plan.md` never makes the call that would produce one.
+  const offTree = makeTree({
+    phases: { 2: { plan: ['PLAN-1.md'] } },
+    config: { memory: { backend: 'none' } },
+  });
+  const offRun = citeCount(['--phase', '2', '--point', 'planned'], offTree);
+  assert.equal(offRun.json.ok, true, offRun.raw);
+
+  // State two: a live backend that surfaced nothing.
+  const emptyTree = citeTree();
+  const emptyRun = citeCount(
+    ['--phase', '2', '--point', 'planned', '--payload', citePayload(emptyTree, [])], emptyTree);
+  assert.equal(emptyRun.json.ok, true, emptyRun.raw);
+
+  // State three: a live backend that surfaced rows the plan cites none of.
+  // citeTree's plan cites a bare `D-03` and a qualified `phase 7 D-05`, so
+  // neither row below can match.
+  const zeroTree = citeTree();
+  const zeroRun = citeCount(['--phase', '2', '--point', 'planned', '--payload', citePayload(zeroTree, [
+    { score: 9, source: 'phases/1/CONTEXT.md', snippet: 'D-09 (area): nobody cited this' },
+    { score: 8, source: 'phases/1/CAPTURE.md', snippet: 'a capture row carries no id' },
+  ])], zeroTree);
+  assert.equal(zeroRun.json.ok, true, zeroRun.raw);
+
+  const off = record(offTree);
+  const empty = record(emptyTree);
+  const zero = record(zeroTree);
+
+  // The premise, asserted rather than assumed: the first two records carry the
+  // SAME count, so whatever separates them is not the number.
+  assert.equal(off.surfaced.count, empty.surfaced.count,
+    'both states count zero surfaced rows - a count alone cannot be what tells them apart');
+
+  // PAIRWISE, and first: a change that collapsed any one state into another
+  // has to fail HERE, naming the two that merged, rather than passing three
+  // single-run assertions that each look at one record and never compare them.
+  const states = [
+    ['backend-off', off],
+    ['surfaced-nothing', empty],
+    ['surfaced-some-cited-none', zero],
+  ];
+  for (let i = 0; i < states.length; i++) {
+    for (let j = i + 1; j < states.length; j++) {
+      assert.notDeepStrictEqual(states[i][1], states[j][1],
+        `the ${states[i][0]} run and the ${states[j][0]} run are INDISTINGUISHABLE on the `
+        + 'record: their appended events carry the same combination of fields, so a reader '
+        + 'who was not in the session cannot tell which of the two states produced it');
+    }
+  }
+
+  // And what each record says, so the pairwise result above is three known
+  // states and not three arbitrary ones. No field exists here that the three
+  // do not already differ by - a fourth marker would give one fact a second
+  // source, and the two would disagree the first time one of them moved.
+  assert.equal(off.backend, 'none');
+  assert.equal(off.cited.count, 0);
+  assert.equal('backend' in empty, false,
+    'an ABSENT backend field is what says the count ran against a live one');
+  assert.equal(empty.surfaced.count, 0);
+  assert.equal('backend' in zero, false);
+  assert.equal(zero.surfaced.count, 2);
+  assert.deepEqual(zero.cited, { count: 0, ids: [] },
+    'the case the phase exists to make visible: surfaced rows, cited by nothing');
+});
+
+// --- task-record: the artifact a `/cad-task` run leaves (FST-01) -------------
+//
+// Every row builds its OWN scratch repository and runs the seam with that
+// repository as the child's cwd, because `resolveRange` asks git for
+// `--show-toplevel` from where it stands - a row that ran from this repository's
+// own tree would be asserting about Cadence's history rather than a fixture's.
+
+/**
+ * A scratch git repository holding `commits`, each a `{file, text, subject}`,
+ * plus a `.planning` directory unless `planning` is false. Returns
+ * `{root, dir, shas}` - `shas` in the order the commits were made.
+ */
+function taskRepo(commits, { planning = true } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-task-record-'));
+  const git = (...args) => execFileSync('git', ['-C', root, ...args],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: GIT_FIXTURE_ENV }).trim();
+  git('init', '-q');
+  git('commit', '--allow-empty', '-q', '-m', 'root');
+  const shas = [];
+  for (const c of commits) {
+    writeFileSync(join(root, c.file), c.text);
+    git('add', c.file);
+    git('commit', '-q', '-m', c.subject);
+    shas.push(git('rev-parse', 'HEAD'));
+  }
+  const dir = join(root, '.planning');
+  if (planning) mkdirSync(dir, { recursive: true });
+  return { root, dir, shas };
+}
+
+/** planning.mjs, run FROM `root` so the seam's git reads resolve there. */
+function runIn(root, args, dir) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, ...args, '--dir', dir],
+      { encoding: 'utf8', cwd: root, env: GIT_FIXTURE_ENV });
+  } catch (e) {
+    stdout = e.stdout; code = e.status;
+  }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+const TASK_COMMITS = [
+  { file: 'alpha.txt', text: 'a\n', subject: 'feat: the first thing' },
+  { file: 'beta.txt', text: 'b\n', subject: 'fix: the second | thing' },
+];
+
+test('task-record: writes the record, with the range\'s own commits and files', () => {
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  const r = runIn(root, ['task-record', '--slug', 'bound-plan-size',
+    '--base', `${shas[0]}^`, '--head', shas[1], '--text', 'What this task shipped.'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  assert.equal(r.commits, 2);
+  assert.equal(r.files, 2);
+  assert.equal(r.trace.written, true);
+
+  const file = join(dir, 'tasks', 'bound-plan-size', 'RECORD.md');
+  assert.equal(r.record, file);
+  const text = readFileSync(file, 'utf8');
+  // EXACTLY the range's commits, in range order, at full width - `HEX` refuses
+  // a non-hexadecimal cell and `shaMatches` prefix-matches, so the widest
+  // spelling is the one that joins to every abbreviation.
+  assert.deepEqual([...text.matchAll(/^\| 1 \| ([0-9a-f]{40}) \|/gm)].map((m) => m[1]), shas);
+  // And exactly the paths it touched. The `|` in the second subject is escaped
+  // rather than splitting the row, which would attach its tail to no commit.
+  assert.match(text, /^- \*\*Files:\*\* alpha\.txt, beta\.txt$/m);
+  assert.match(text, /fix: the second \\\| thing/);
+  assert.match(text, /^- What this task shipped\.$/m);
+});
+
+test('task-record: a second identical run leaves the file byte-identical', () => {
+  // The record is DERIVED from the range and the text, so a re-run rewrites the
+  // same bytes rather than accumulating - no Date and no randomness anywhere in
+  // the renderer.
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  const args = ['task-record', '--slug', 'again', '--base', `${shas[0]}^`,
+    '--head', shas[1], '--text', 'Ran twice.'];
+  const first = runIn(root, args, dir);
+  const file = join(dir, 'tasks', 'again', 'RECORD.md');
+  const before = readFileSync(file, 'utf8');
+  const second = runIn(root, args, dir);
+  assert.equal(readFileSync(file, 'utf8'), before);
+  // And the envelope too: only the appended trace LINE differs between runs.
+  assert.deepEqual(second, first);
+});
+
+test('task-record: no planning root means nothing is created and written:false says why', () => {
+  const { root, dir, shas } = taskRepo(TASK_COMMITS, { planning: false });
+  const r = runIn(root, ['task-record', '--slug', 'no-root', '--base', `${shas[0]}^`,
+    '--head', shas[1], '--text', 'Nothing to write into.'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, false);
+  assert.match(r.reason, /no planning root/);
+  // NEITHER the root NOR tasks/: the fast path's guarantee is that it scaffolds
+  // nothing where nothing exists.
+  assert.equal(existsSync(dir), false);
+  assert.equal(existsSync(join(root, 'tasks')), false);
+});
+
+test('task-record: a slug that is not one path segment is refused, nothing written', () => {
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  for (const slug of ['../escape', 'a/b', '/abs', 'Upper', '']) {
+    const r = runIn(root, ['task-record', '--slug', slug, '--base', `${shas[0]}^`,
+      '--head', shas[1], '--text', 'x'], dir);
+    assert.equal(r.ok, false, `--slug ${JSON.stringify(slug)} was not refused`);
+    assert.equal(r.reason, 'bad-args');
+    assert.equal(r._exit, 1);
+  }
+  // Not one file anywhere under the planning root, and no escape above it.
+  assert.equal(existsSync(join(dir, 'tasks')), false);
+  assert.equal(existsSync(join(root, 'escape')), false);
+  assert.equal(existsSync(join(dirname(root), 'escape')), false);
+});
+
+test('task-record: a tasks/<slug> that is a symlink OUT is refused, nothing written', () => {
+  // The slug is a legal one path segment, so `isTaskSlug` passes it - lexical
+  // validation cannot see a link that already exists on disk. A cloned planning
+  // tree ships symlinks, `mkdirSync(recursive)` follows one without complaint,
+  // and `atomicWrite` lstats its own TEMP path so it refuses a symlinked
+  // destination FILE and is silent about a symlinked parent DIRECTORY. Without
+  // the writer's containment check this writes RECORD.md into `outside`.
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  const outside = mkdtempSync(join(tmpdir(), 'cad-task-outside-'));
+  mkdirSync(join(dir, 'tasks'), { recursive: true });
+  symlinkSync(outside, join(dir, 'tasks', 'escaped'));
+  const r = runIn(root, ['task-record', '--slug', 'escaped', '--base', `${shas[0]}^`,
+    '--head', shas[1], '--text', 'x'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-record');
+  assert.match(r.detail, /resolves outside/);
+  assert.equal(r.written, false);
+  // The point of the row: nothing landed in the tree the link pointed at.
+  assert.equal(existsSync(join(outside, 'RECORD.md')), false);
+});
+
+test('task-record: a --base that does not resolve is ok:false with nothing written', () => {
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  const r = runIn(root, ['task-record', '--slug', 'unresolvable',
+    '--base', 'no-such-ref-anywhere', '--head', shas[1], '--text', 'x'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-range');
+  assert.equal(r.written, false);
+  assert.equal(r._exit, 1);
+  assert.equal(existsSync(join(dir, 'tasks')), false);
+  // The attempt is still ON THE RECORD - `cmdRiskCheckRun`'s rule, so a refusal
+  // does not read like a run that never happened.
+  const events = readFileSync(join(dir, 'trace.jsonl'), 'utf8').trim().split('\n')
+    .map((l) => JSON.parse(l));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, 'task_record');
+  assert.equal(events[0].phase, 0);
+  assert.equal(events[0].written, false);
+  assert.equal(events[0].base_id, null);
+  // No role and no tokens: it opens no bracket and bills no worker.
+  assert.equal('role' in events[0], false);
+  assert.equal('tokens' in events[0], false);
+});
+
+test('task-record: --text and --text-file together are refused, and neither is guessed', () => {
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  const textFile = join(root, 'shipped.md');
+  writeFileSync(textFile, 'From a file.\n');
+  const both = runIn(root, ['task-record', '--slug', 'both', '--base', `${shas[0]}^`,
+    '--head', shas[1], '--text', 'inline', '--text-file', textFile], dir);
+  assert.equal(both.ok, false);
+  assert.equal(both.reason, 'bad-args');
+  assert.equal(existsSync(join(dir, 'tasks')), false);
+
+  const viaFile = runIn(root, ['task-record', '--slug', 'viafile', '--base', `${shas[0]}^`,
+    '--head', shas[1], '--text-file', textFile], dir);
+  assert.equal(viaFile.ok, true);
+  assert.match(readFileSync(join(dir, 'tasks', 'viafile', 'RECORD.md'), 'utf8'),
+    /^- From a file\.$/m);
+});
+
+// --- recall: the tasks tier (D-09) -------------------------------------------
+//
+// The hole this closes was MEASURED, not supposed: a query naming exactly what a
+// shipped `/cad-task` run did returned five hits over a 59-snippet corpus and
+// none of them from `.planning/tasks/`, against a record on disk describing that
+// work.
+
+/** Plant `<dir>/tasks/<slug>/RECORD.md` holding `shipped` as its bullets. */
+function taskRecordIn(dir, slug, shipped) {
+  const tdir = join(dir, 'tasks', slug);
+  mkdirSync(tdir, { recursive: true });
+  writeFileSync(join(tdir, 'RECORD.md'),
+    `# Task: ${slug}\n\n## What shipped\n\n${shipped.map((s) => `- ${s}`).join('\n')}\n\n`
+    + '## Commits\n\n| Task | Commit | Description |\n| --- | --- | --- |\n\n'
+    + `## Files\n\n### Task 1: ${slug}\n\n- **Files:** a.txt\n`);
+  return dir;
+}
+
+const TASK_TIER_SPEC = {
+  phases: { 1: { summaryBody: { deviations: ['alpha beta gamma'] } } },
+  capture: [{ section: 'Todos', text: 'wire the beta recall path', phase: 1 }],
+};
+
+test('recall: a task record comes back, sourced by slug and with NO phase field', () => {
+  const dir = taskRecordIn(makeTree(TASK_TIER_SPEC), 'bound-plan-size',
+    ['a plan-size ceiling nothing enforced', 'the beta gamma path this task took']);
+  const r = recall('beta gamma', dir);
+  assert.equal(r.json.ok, true);
+  const hit = r.json.results.find((x) => x.source === 'tasks/bound-plan-size/RECORD.md');
+  assert.ok(hit, JSON.stringify(r.json.results));
+  assert.equal(hit.snippet, 'the beta gamma path this task took');
+  // NO inferred phase: a task sits outside the phase spine, and `phase: 0` here
+  // would be the substitution references/recall.md forbids.
+  assert.equal('phase' in hit, false,
+    'a task record carries no phase, and an inferred one is worse than none');
+});
+
+test('recall: a tree with no tasks/ answers byte-identically to one with an empty tasks/', () => {
+  const bare = recall('beta gamma', makeTree(TASK_TIER_SPEC));
+  const emptyDir = makeTree(TASK_TIER_SPEC);
+  mkdirSync(join(emptyDir, 'tasks'), { recursive: true });
+  const empty = recall('beta gamma', emptyDir);
+  assert.equal(bare.raw, empty.raw, 'the tasks walk contributes nothing when it finds nothing');
+
+  // And the task rows land AFTER every existing one, so no corpus INDEX moved:
+  // the live hits come back in the same order, the same rows. Their SCORES do
+  // move and are deliberately not asserted - BM25 is corpus-relative, the
+  // reasoning the ARCHIVE.md row above states in full.
+  const withRecord = recall('beta gamma',
+    taskRecordIn(makeTree(TASK_TIER_SPEC), 'later', ['an unrelated task note']));
+  assert.deepEqual(withRecord.json.results.map((x) => [x.source, x.snippet]),
+    bare.json.results.map((x) => [x.source, x.snippet]));
+});
+
+test('recall: two runs over a corpus holding a task record are byte-identical', () => {
+  const dir = taskRecordIn(makeTree(TASK_TIER_SPEC), 'bound-plan-size',
+    ['a plan-size ceiling nothing enforced', 'the beta gamma path this task took']);
+  taskRecordIn(dir, 'another-task', ['a second beta record, sorted after the first']);
+  const a = recall('beta gamma', dir);
+  const b = recall('beta gamma', dir);
+  assert.equal(a.raw, b.raw);
+  assert.ok(a.json.results.length >= 3, JSON.stringify(a.json.results));
+});
+
+test('recall: a RECORD.md symlinked OUT of the planning root is never indexed', () => {
+  // The lister contains the walk one level past `phaseDirsIn`: the recall tier
+  // reads snippets straight from the path it returns, so a cloned repository
+  // carrying such a link would otherwise surface an arbitrary readable file.
+  const outside = mkdtempSync(join(tmpdir(), 'cad-recall-outside-'));
+  const secret = join(outside, 'RECORD.md');
+  writeFileSync(secret, '# Task: stolen\n\n## What shipped\n\n- beta gamma secret bytes\n');
+  const dir = makeTree(TASK_TIER_SPEC);
+  mkdirSync(join(dir, 'tasks', 'leaky'), { recursive: true });
+  symlinkSync(secret, join(dir, 'tasks', 'leaky', 'RECORD.md'));
+  const r = recall('beta gamma', dir);
+  assert.equal(r.json.results.some((x) => x.snippet.includes('secret bytes')), false);
+  assert.equal(r.json.results.some((x) => x.source.startsWith('tasks/')), false);
+});
+
+test('task-record -> recall: a record written by the seam is found by what it says', () => {
+  // The round trip both halves of D-09 exist for: the writer's `## What shipped`
+  // heading and the walk's reader are one fact, and this is where they meet.
+  const { root, dir, shas } = taskRepo(TASK_COMMITS);
+  runIn(root, ['task-record', '--slug', 'bound-plan-size', '--base', `${shas[0]}^`,
+    '--head', shas[1], '--text', 'A ceiling on plan size, enforced at the gate.'], dir);
+  const r = recall('ceiling plan size gate', dir);
+  assert.equal(r.json.ok, true);
+  assert.deepEqual(r.json.results.map((x) => x.source), ['tasks/bound-plan-size/RECORD.md']);
 });
