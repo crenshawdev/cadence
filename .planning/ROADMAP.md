@@ -36,7 +36,7 @@ Phases are added with `/cad-phase add`.
 ## Phases
 
 - [x] **Phase 1: The corpus, read back at a file and line** - `/cad-why` joins a path to the decision that put it there, and reports the gap rather than guessing
-- [ ] **Phase 2: The read-back gate** - count what recall surfaced against what the plan cited, and report the plan that cited none of it
+- [x] **Phase 2: The read-back gate** - count what recall surfaced against what the plan cited, and report the plan that cited none of it
 - [ ] **Phase 3: The fast path leaves a record** - `/cad-task` becomes findable by recall and priced by a trace bracket, with none of the phase machinery
 
 ## Phase Details
