@@ -805,3 +805,34 @@ test('this repository: the three merges --full-history adds are named, and none 
   const chainShas = new Set(env.entries.map((e) => e.sha));
   assert.ok(env.excluded.every((e) => !chainShas.has(e.sha)), 'and not one of them is a commit the chain already lists');
 });
+
+test("the seam's own text states the exclusion, so a reader relaying text verbatim sees it", () => {
+  const { dir, merge } = repoWithSimplifiedMerge();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.match(env.text, /^1 commit\(s\) also touched this path and are NOT listed above\./m);
+  assert.ok(env.text.includes(merge.slice(0, 8)), 'the excluded merge is named in the text, not only in the envelope');
+  assert.match(env.text, /1 of them is a merge\./);
+  assert.match(env.text, /see them with: git log --full-history -- f\.txt$/m);
+});
+
+test('a hermetic chain with nothing excluded prints a text with no such block', () => {
+  const { dir } = repo();
+  const env = oneJsonLine(run(['f.txt', '--dir', dir]).stdout);
+  assert.ok(!env.text.includes('NOT listed above'), 'a chain with no gap must not state a non-event');
+  assert.ok(!env.text.includes('--full-history'));
+});
+
+test('this repository: the exclusion reaches the rendered text with the count, the word merge and all three shas', () => {
+  // Measured 2026-08-23. Unlike the envelope assertion above this one IS a
+  // figure a later merge into main touching this path would move, because the
+  // block names at most three and counts the rest: that is the cap doing its
+  // job, and the assertion is here because the criterion is about what a reader
+  // of `text` sees, which the envelope cannot stand in for.
+  const env = oneJsonLine(run(['cadence-core/bin/lib/release-decision.mjs', '--dir', REPO]).stdout);
+  assert.match(env.text, /^3 commit\(s\) also touched this path and are NOT listed above\./m);
+  assert.match(env.text, /3 of them are merges\./);
+  for (const named of ['b86fc25c', '051f0df1', '9237a539']) {
+    assert.ok(env.text.includes(named), `${named} is named in the text`);
+  }
+  assert.match(env.text, /git log --full-history -- cadence-core\/bin\/lib\/release-decision\.mjs$/m);
+});

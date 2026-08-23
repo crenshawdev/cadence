@@ -398,7 +398,7 @@ try {
         // succeeded, so a failed query never pays for a second one.
         const excluded = line === undefined ? simplificationReport(dir, path, raws) : null;
         const joined = joinChain(dir, path, index, raws);
-        const rendered = renderChain(joined.entries, { top });
+        const rendered = renderChain(joined.entries, { top, excluded, path });
         emit({
           ok: true, path, line, result: 'chain',
           text: rendered.text, shown: rendered.shown, total: rendered.total, entries: rendered.entries,

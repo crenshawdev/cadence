@@ -152,3 +152,60 @@ test('the GAP arm is unmoved: an unresolved entry still opens with NOT RESOLVED'
   const line = lineFor(renderChain([entry]).text, 'phase');
   assert.ok(line.startsWith('phase: NOT RESOLVED - '), `got: ${line}`);
 });
+
+// --- WHY-02 / v3.6.1 D-01: the exclusion block ----------------------------
+//
+// The bare arm keeps `--follow` and so keeps git's default history
+// simplification; the seam measures what that left out and hands it here. The
+// block has to live in `text` because D-02 has the skill relay `text` verbatim
+// and print no envelope field.
+
+const EXCLUDED = [
+  { sha: 'b'.repeat(40), parentCount: 2 },
+  { sha: 'c'.repeat(40), parentCount: 2 },
+  { sha: 'd'.repeat(40), parentCount: 1 },
+];
+
+test('the exclusion block names the count, what dropped them, the merge count and the invocation', () => {
+  const { text } = renderChain([OLD, NEW], { excluded: EXCLUDED, path: 'a/b.rs' });
+  assert.match(text, /^3 commit\(s\) also touched this path and are NOT listed above\./m);
+  assert.match(text, /history simplification/);
+  assert.match(text, /--follow/, 'and why this chain keeps it');
+  assert.match(text, /2 of them are merges\./, 'counted from the parent lists, not asserted');
+  for (const e of EXCLUDED) assert.ok(text.includes(e.sha.slice(0, 8)), `${e.sha.slice(0, 8)} is named`);
+  assert.match(text, /see them with: git log --full-history -- a\/b\.rs$/m);
+});
+
+test('one excluded merge reads as one, not as a plural', () => {
+  const { text } = renderChain([NEW], { excluded: [{ sha: 'e'.repeat(40), parentCount: 2 }], path: 'a/b.rs' });
+  assert.match(text, /1 of them is a merge\./);
+});
+
+test('a chain with nothing excluded grows no block at all - an absent report and an empty one alike', () => {
+  const marker = 'NOT listed above';
+  assert.ok(!renderChain([OLD, NEW]).text.includes(marker), 'no report at all renders nothing');
+  assert.ok(!renderChain([OLD, NEW], { excluded: [] }).text.includes(marker), 'an empty report renders nothing');
+  assert.ok(!renderChain([OLD, NEW], { excluded: null }).text.includes(marker), 'and so does an absent one');
+  assert.equal(renderChain([OLD, NEW]).text, renderChain([OLD, NEW], { excluded: [] }).text,
+    'byte-identical: a chain with no gap must not pay for the gap block');
+});
+
+test('the excluded list is capped with the remainder counted, never dropped', () => {
+  const many = Array.from({ length: 9 }, (_, i) => ({ sha: String(i).repeat(40).slice(0, 40), parentCount: 2 }));
+  const { text } = renderChain([NEW], { excluded: many, path: 'a/b.rs' });
+  assert.match(text, /^9 commit\(s\) also touched/m);
+  assert.match(text, /^ {2}\.\.\. and 6 more$/m);
+});
+
+test('the truncation note stays the LAST line even when the exclusion block renders', () => {
+  const entries = Array.from({ length: 25 }, (_, i) => ({
+    sha: String(i).padStart(40, '0'),
+    date: new Date(2026, 0, i + 1).toISOString(),
+    subject: `commit ${i}`,
+  }));
+  const { text } = renderChain(entries, { excluded: EXCLUDED, path: 'a/b.rs' });
+  const lines = text.split('\n');
+  assert.match(lines[lines.length - 1], /^Showing \d+ of 25 commit\(s\)\. Pass --top 25 to see the rest\.$/);
+  assert.ok(text.indexOf('NOT listed above') < text.indexOf('Pass --top'),
+    'the exclusion block renders before the truncation note');
+});

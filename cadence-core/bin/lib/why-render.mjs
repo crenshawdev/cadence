@@ -61,6 +61,16 @@
 // reach a reader - the skill never prints those fields. The note is therefore
 // the last line of `text` itself when the chain was actually cut.
 //
+// AND SO DOES THE EXCLUSION BLOCK (WHY-02, v3.6.1 phase 1 D-01), for exactly
+// that reason. The bare arm keeps `--follow` and therefore keeps git's default
+// history simplification; the seam runs a second `--full-history` query and
+// hands the difference here, and this module states it in `text` because a gap
+// only the envelope recorded would never reach a reader - which is the defect
+// WHY-02 closes, a chain that was silently 7-of-10. It renders BEFORE the
+// truncation note so the `Pass --top` line stays last, and an absent or EMPTY
+// report renders nothing at all: a line stating a non-event would be bytes on
+// every query for no information, and they would land on the cap above.
+//
 // ---------------------------------------------------------------------------
 // PLAN 2 ADDS THE JOIN, AND IT ATTACHES IN EXACTLY ONE PLACE: `entry.join`.
 //
@@ -134,6 +144,11 @@ const GAP_PATHS = 10;
 const GAP = 'NOT RESOLVED - no phase directory on disk and no summary recovered from git '
   + 'history names this commit, so the record does not say which phase produced it';
 
+/** How many excluded commits the block names before it counts the rest. The
+ * same disposition `GAP_ROWS` takes: D-13 bounds this response by counting,
+ * and the block names the invocation a reader runs to see all of them. */
+const EXCLUDED_ROWS = 3;
+
 /** One capped list, with the remainder counted rather than dropped. */
 function capped(items, limit) {
   const out = items.slice(0, limit).map((i) => `  ${i}`);
@@ -172,6 +187,39 @@ function gapLines(g) {
     ...capped(g.archive.map((/** @type {any} */ r) => `${r.origin}: ${r.text}`), GAP_ROWS));
   }
   return quoted(GAP, lines);
+}
+
+/**
+ * What git's default history simplification left out, stated in `text` and not
+ * only in the envelope (WHY-02, v3.6.1 phase 1 D-01).
+ *
+ * IT LIVES INSIDE `text` FOR THE REASON THE TRUNCATION NOTE DOES. D-02 has the
+ * skill relay `text` verbatim and print no envelope field, so a gap only the
+ * JSON recorded would never reach a reader - which is the whole defect WHY-02
+ * closes, a chain that was silently 7-of-10.
+ *
+ * AND AN EMPTY REPORT RENDERS NOTHING AT ALL. A chain with nothing excluded must
+ * not grow a line stating a non-event: that would be bytes on every query for no
+ * information, and they would land on the entry cap D-02 measures.
+ *
+ * The merge count is COUNTED from the parent lists the report carries, never
+ * asserted - `--full-history` buys merges on every path measured, but a block
+ * that said so without counting would be repeating the measurement rather than
+ * making it.
+ * @param {{sha: string, parentCount: number}[]} excluded
+ * @param {string} [path] the queried path, named in the invocation line
+ * @returns {string}
+ */
+function excludedBlock(excluded, path) {
+  const merges = excluded.filter((e) => e.parentCount > 1).length;
+  const head = `${excluded.length} commit(s) also touched this path and are NOT listed above. `
+    + "Git's default history simplification dropped them, and this chain keeps that "
+    + 'simplification because --follow, which is how it tracks renames, requires it. '
+    + `${merges} of them ${merges === 1 ? 'is a merge' : 'are merges'}.`;
+  const rows = capped(excluded.map((e) => `${e.sha.slice(0, ABBREV_LEN)} (${e.parentCount} parent(s))`),
+    EXCLUDED_ROWS);
+  const run = `  see them with: git log --full-history --${path ? ` ${path}` : ' <path>'}`;
+  return [head, ...rows, run].join('\n');
 }
 
 /**
@@ -408,7 +456,13 @@ function renderEntry(raw) {
  * and returning the already-sorted slice here is what keeps the sort a single
  * computation rather than a second copy of it in the seam.
  *
- * @param {ChainEntry[]} entries @param {{top?: number}} [opts]
+ * `excluded` is the seam's simplification report (WHY-02): the commits a
+ * `--full-history` comparand carries and this chain does not. Absent or empty
+ * renders NOTHING, and when it renders it goes BEFORE the truncation note, so
+ * the `Pass --top` line stays the last line of a truncated chain.
+ *
+ * @param {ChainEntry[]} entries
+ * @param {{top?: number, excluded?: {sha: string, parentCount: number}[]|null, path?: string}} [opts]
  * @returns {{text: string, shown: number, total: number, entries: ChainEntry[]}}
  */
 export function renderChain(entries, opts = {}) {
@@ -420,6 +474,8 @@ export function renderChain(entries, opts = {}) {
   if (capped.length === 0) return { text: 'No commits in this chain.', shown: 0, total, entries: [] };
 
   let text = capped.map(renderEntry).join('\n\n');
+  const excluded = Array.isArray(opts.excluded) ? opts.excluded : [];
+  if (excluded.length) text += `\n\n${excludedBlock(excluded, opts.path)}`;
   if (total > capped.length) {
     text += `\n\nShowing ${capped.length} of ${total} commit(s). Pass --top ${total} to see the rest.`;
   }
