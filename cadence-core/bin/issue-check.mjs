@@ -337,6 +337,7 @@ try {
   // refusal object carries no `message`, so without it a valueless --dir emits
   // detail "[object Object]". Its detail is the flag name this file wrote,
   // never third-party bytes, so the no-output-reaches-the-envelope rule holds.
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
+    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
 }

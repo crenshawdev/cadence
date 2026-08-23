@@ -411,6 +411,7 @@ try {
   }
 } catch (e) {
   const err = /** @type {any} */ (e);
-  if (err && err.seam) emit({ ok: false, reason: err.seam, detail: err.detail });
+  if (err && err.seam) emit({ ok: false, reason: err.seam, detail: err.detail,
+    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: String(err && err.message ? err.message : err) });
 }

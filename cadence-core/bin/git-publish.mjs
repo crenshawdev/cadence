@@ -303,6 +303,7 @@ try {
   // {"ok":false,"reason":"internal","detail":"[object Object]"}. It goes out
   // through emit on stdout like every other verdict (D-02) - stderr is a
   // channel no workflow reading this seam parses.
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
+    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
 }

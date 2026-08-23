@@ -1302,6 +1302,7 @@ try {
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
+    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
