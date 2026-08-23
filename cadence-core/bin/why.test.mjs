@@ -474,3 +474,54 @@ test('two runs over this repository stay byte-identical with the recovered tier 
   const b = run(['cadence-core/bin/lib/release-decision.mjs', '--dir', REPO]).stdout;
   assert.equal(a, b);
 });
+
+// --- The recovered artifacts behind the remaining edges (plan 3, task 4) ---
+
+test('every edge works on a phase whose directory is gone: decision, deviation and surviving finding', () => {
+  // v3.5.8's phase 2 closed with `--mode delete`. Its CONTEXT.md, PLAN-2.md,
+  // SUMMARY.md and adjudication records exist only at `a34b0c8a^`.
+  const env = oneJsonLine(run(['cadence-core/bin/release-bump.mjs', '--dir', REPO, '--top', '20']).stdout);
+  assert.equal(env.ok, true);
+  assert.deepEqual(env.warnings, []);
+  const entry = entryFor(env.text, 'c7921b29e9afb0ee3d0a6f2673f40239d94b2bf3');
+
+  assert.match(entry, /^phase: v3\.5\.8 phase 2 \(recovered from [0-9a-f]{8}:\.planning\/phases\/2\)$/m);
+  assert.match(entry, /^plan task: plan 2, task 3 - the CHANGELOG joins the validated write set$/m);
+
+  // The finding, compared against the record's own bytes at the prune parent.
+  const bytes = execFileSync('git',
+    ['-C', REPO, 'show', 'a34b0c8a^:.planning/phases/2/ADJUDICATION-risk_surface-plan-2.json'],
+    { encoding: 'utf8', env: GIT_ENV });
+  const survivor = JSON.parse(bytes).entries.find((e) => e.ruling === 'survived');
+  assert.ok(entry.includes(`claim: ${survivor.claim}`), 'the claim is quoted verbatim');
+  assert.ok(entry.includes(`failure_scenario: ${survivor.failure_scenario}`));
+  assert.match(entry, /^review: 1 surviving finding\(s\) cover this commit$/m);
+  assert.ok(entry.includes('(ADJUDICATION-risk_surface-plan-2.json)'),
+    'the record is found by listing the recovered tree, not by guessing its name');
+
+  // The same phase's recovered CONTEXT decisions and SUMMARY deviations.
+  const context = execFileSync('git', ['-C', REPO, 'show', 'a34b0c8a^:.planning/phases/2/CONTEXT.md'],
+    { encoding: 'utf8', env: GIT_ENV });
+  assert.match(entry, /^decision: cited by this task \(D-09, D-08, D-02\)$/m);
+  for (const id of ['D-09', 'D-08', 'D-02']) {
+    const line = context.split('\n').find((l) => l.startsWith(`- ${id} `));
+    assert.ok(entry.includes(line.replace(/^- /, '').trim()),
+      `${id}'s own CONTEXT line reaches the entry`);
+  }
+  const summary = execFileSync('git', ['-C', REPO, 'show', 'a34b0c8a^:.planning/phases/2/SUMMARY.md'],
+    { encoding: 'utf8', env: GIT_ENV });
+  assert.ok(summary.includes('## Deviations'));
+  assert.match(entry, /^ {2}- \(plan 1\) PLAN-1's `Must be true when done` asserts zero removed$/m);
+  assert.match(entry, /^ {2}- \(gate\) The blocking `risk_surface` review on plan 2's range raised$/m);
+});
+
+test('an artifact the recovered tree does not carry is a stated absence, not a failed entry', () => {
+  // v3.5.5's phase 2 is recovered the same way and keeps no adjudication
+  // record, so the review edge states that rather than dropping the entry.
+  const env = oneJsonLine(run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO]).stdout);
+  const entry = entryFor(env.text, '45be702b328ee5b791fd77703aaf63595e8dc727');
+  assert.match(entry, /^phase: v3\.5\.5 phase 2 \(recovered from [0-9a-f]{8}:\.planning\/phases\/2\)$/m);
+  assert.match(entry, /^review: no adjudication record in this phase's directory$/m);
+  assert.equal(entry.split('\n').filter((l) => /^(phase|plan task|decision|deviation|review|declared by):/.test(l)).length, 6,
+    'all six fields are stated, none dropped');
+});

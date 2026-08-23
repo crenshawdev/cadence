@@ -204,6 +204,48 @@ export function resolveCommit(index, sha) {
 }
 
 /**
+ * One named artifact out of a phase directory, wherever that directory lives.
+ *
+ * TWO SOURCES, ONE SET OF READERS. A disk directory opens the file; a RECOVERED
+ * directory - whose `path` is null because the close deleted it - shows the
+ * same name out of the prune commit's parent tree. Both hand back plain text to
+ * the SAME pure readers in `lib/why-record.mjs`, which is the whole reason this
+ * tier costs a different SOURCE and not a second parser: a `## Deviations`
+ * section means the same thing whether its bytes came from `open(2)` or from a
+ * tree object.
+ *
+ * Absent is silent on both, and for the same reason `buildCommitIndex` gives.
+ * The git side cannot tell an absent path from an unreadable one - both are a
+ * non-zero exit with the message on stderr, which never reaches this seam's
+ * stdout - so it takes the absent reading, which is what the corpus actually
+ * holds: a phase with no adjudication record and a phase with no CONTEXT.md are
+ * both ordinary.
+ *
+ * The git argument is `<40-hex parent>:<tree>/<name>`. It opens with a
+ * hexadecimal sha, so it can never be read by git as an option, and `<tree>`
+ * came out of a pathspec-limited `--name-only` under `.planning/phases/`.
+ *
+ * @param {any} dir @param {string|undefined} repoDir @param {string[]} warnings
+ * @returns {(name: string) => string}
+ */
+function artifactReader(dir, repoDir, warnings) {
+  if (dir.path === null) {
+    const at = dir.recovered;
+    if (!at || !repoDir) return () => '';
+    return (name) => {
+      const out = git(repoDir, ['show', `${at.parent}:${at.tree}/${name}`]);
+      return out.ok ? out.stdout : '';
+    };
+  }
+  return (name) => {
+    const { text, absent, code } = readArtifact(join(dir.path, name));
+    if (text !== null) return text;
+    if (!absent) warnings.push(`${dir.label}/${name} could not be read (${code}); it did not reach the join`);
+    return '';
+  };
+}
+
+/**
  * The artifacts a resolved phase directory joins THROUGH: its CONTEXT.md, its
  * SUMMARY.md, and the ONE plan file the commits table's Plan cell names.
  *
@@ -218,24 +260,15 @@ export function resolveCommit(index, sha) {
  * with no CONTEXT.md is a real and ordinary state, and a warning there would
  * fire on every run.
  *
- * @param {{label: string, path: string}} dir @param {string} [planCell]
+ * @param {any} dir @param {string} [planCell] @param {string} [repoDir]
  * @returns {{context: string, summary: string, plan: string,
  *   planFile: string|null, warnings: string[]}}
  */
-export function readPhaseRecords(dir, planCell) {
+export function readPhaseRecords(dir, planCell, repoDir) {
   /** @type {string[]} */
   const warnings = [];
-  // A RECOVERED directory has no `path` to join a name onto - its artifacts
-  // live in a git tree, and reading them there is task 4's job. Until then it
-  // contributes the same empty texts an absent artifact does, which every
-  // downstream field already renders as a stated absence.
-  if (!dir || dir.path === null) return { context: '', summary: '', plan: '', planFile: null, warnings };
-  const pull = (/** @type {string} */ name) => {
-    const { text, absent, code } = readArtifact(join(dir.path, name));
-    if (text !== null) return text;
-    if (!absent) warnings.push(`${dir.label}/${name} could not be read (${code}); it did not reach the join`);
-    return '';
-  };
+  if (!dir) return { context: '', summary: '', plan: '', planFile: null, warnings };
+  const pull = artifactReader(dir, repoDir, warnings);
 
   const key = String(planCell || '').trim();
   const names = key && key !== '1' ? [`PLAN-${key}.md`] : [`PLAN-${key || '1'}.md`, 'PLAN.md'];
@@ -295,35 +328,54 @@ const COMMIT_ID = /^[0-9a-fA-F]{4,40}$/;
  * phases have none. A record that will not parse contributes a warning naming
  * the file and the issue CODE the pure reader returned, and no findings.
  *
- * @param {{label: string, path: string}} dir
+ * @param {any} dir @param {string} [repoDir]
  * @returns {{records: any[], warnings: string[]}}
  */
-export function readAdjudications(dir) {
+export function readAdjudications(dir, repoDir) {
   /** @type {string[]} */
   const warnings = [];
   /** @type {any[]} */
   const records = [];
-  // A recovered directory is not on disk; task 4 reads its records out of the
-  // tree instead.
-  if (!dir || dir.path === null) return { records, warnings };
-  let names;
-  try {
-    names = readdirSync(dir.path, { encoding: 'utf8' });
-  } catch {
-    return { records, warnings };
-  }
-  for (const name of names.filter((n) => n.startsWith(ADJ_PREFIX) && n.endsWith(ADJ_SUFFIX)).sort()) {
-    const { text, absent, code } = readArtifact(join(dir.path, name));
-    if (absent) continue;
-    if (text === null) {
-      warnings.push(`${dir.label}/${name} could not be read (${code}); its findings did not reach the join`);
-      continue;
-    }
+  if (!dir) return { records, warnings };
+  const pull = artifactReader(dir, repoDir, warnings);
+  for (const name of listRecordNames(dir, repoDir)) {
+    // The name came from a listing, so the entry IS there; an empty read means
+    // the reader already said why, and its warning is the whole answer.
+    const before = warnings.length;
+    const text = pull(name);
+    if (warnings.length > before) continue;
     const parsed = parseAdjudication(text);
     for (const issue of parsed.issues) warnings.push(`${dir.label}/${name}: ${issue}`);
     records.push({ ...parsed, name });
   }
   return { records, warnings };
+}
+
+/**
+ * The adjudication record names in one phase directory, sorted, from whichever
+ * source holds it. The recovered side LISTS the tree rather than guessing
+ * filenames: `ADJUDICATION-<trigger>-<discriminator>[-rN].json` carries a
+ * discriminator no caller can predict, so the only way to find the records is
+ * to ask what is there.
+ * @param {any} dir @param {string|undefined} repoDir @returns {string[]}
+ */
+function listRecordNames(dir, repoDir) {
+  /** @type {string[]} */
+  let names = [];
+  if (dir.path === null) {
+    const at = dir.recovered;
+    if (!at || !repoDir) return [];
+    const out = git(repoDir, ['ls-tree', '--name-only', `${at.parent}:${at.tree}`]);
+    if (!out.ok) return [];
+    names = out.stdout.split('\n').map((n) => n.trim()).filter(Boolean);
+  } else {
+    try {
+      names = readdirSync(dir.path, { encoding: 'utf8' });
+    } catch {
+      return [];
+    }
+  }
+  return names.filter((n) => n.startsWith(ADJ_PREFIX) && n.endsWith(ADJ_SUFFIX)).sort();
 }
 
 /**

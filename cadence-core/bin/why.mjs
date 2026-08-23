@@ -152,7 +152,7 @@ function joinChain(dir, path, index, raws) {
   /** The survivors of one phase directory, read once. */
   const reviewsIn = (/** @type {any} */ d) => {
     if (!reviews.has(d.label)) {
-      const read = readAdjudications(d);
+      const read = readAdjudications(d, dir);
       for (const w of read.warnings) warnings.add(w);
       reviews.set(d.label, read.records);
     }
@@ -191,8 +191,8 @@ function joinChain(dir, path, index, raws) {
 
     const key = `${join.label}\x1f${join.plan}`;
     if (!memo.has(key)) {
-      const dir = index.dirs.find((/** @type {any} */ d) => d.label === join.label);
-      memo.set(key, readPhaseRecords(dir, join.plan));
+      const phaseDir = index.dirs.find((/** @type {any} */ d) => d.label === join.label);
+      memo.set(key, readPhaseRecords(phaseDir, join.plan, dir));
     }
     const records = memo.get(key);
     for (const w of records.warnings) warnings.add(w);

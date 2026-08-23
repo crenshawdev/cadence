@@ -19,9 +19,9 @@ import { fileURLToPath } from 'node:url';
 import {
   buildCommitIndex, resolveCommit, readArtifact, readAdjudications, rangeMembers,
   findPruneCommits, parsePruneRecords, PRUNE_ARGV,
-  buildRecoveredIndex, mergeCommitIndexes,
+  buildRecoveredIndex, mergeCommitIndexes, readPhaseRecords,
 } from './lib/why-corpus.mjs';
-import { parseCommitRows } from './lib/why-record.mjs';
+import { decisionsFor, parseCommitRows, parseDeviations } from './lib/why-record.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** This repository's own planning root: bin -> cadence-core -> root. */
@@ -362,7 +362,7 @@ test('a close older than ARCHIVE.md itself reports an ABSENT label rather than g
  * @param {string[]} labels
  * @returns {string}
  */
-function repoWithCloses(labels, summaryFor = (label, phase) => `# ${label} phase ${phase}\n`) {
+function repoWithCloses(labels, summaryFor = (label, phase) => `# ${label} phase ${phase}\n`, extraFiles = () => ({})) {
   const dir = mkdtempSync(join(tmpdir(), 'cad-why-prune-'));
   gitIn(dir, ['init', '-q', '-b', 'main']);
   let archive = '# Archive\n';
@@ -371,6 +371,9 @@ function repoWithCloses(labels, summaryFor = (label, phase) => `# ${label} phase
     const pdir = join(dir, '.planning', 'phases', phase);
     mkdirSync(pdir, { recursive: true });
     writeFileSync(join(pdir, 'SUMMARY.md'), summaryFor(label, phase));
+    for (const [name, body] of Object.entries(extraFiles(label, phase))) {
+      writeFileSync(join(pdir, name), body);
+    }
     gitIn(dir, ['add', '-A']);
     execFileSync('git', ['-C', dir, 'commit', '-q', '-m', `feat: ${label} phase ${phase}`],
       { env: { ...GIT_ENV, GIT_AUTHOR_DATE: `2026-01-0${i + 1}T00:00:00-05:00`, GIT_COMMITTER_DATE: `2026-01-0${i + 1}T00:00:00-05:00` }, stdio: 'ignore' });
@@ -516,4 +519,67 @@ test('a recovered row naming a sha this clone does not have is stated absent, ne
   assert.equal(row.dir.milestone, 'v9.0.0');
   assert.equal(row.dir.phase, '1');
   assert.deepEqual(index.warnings, []);
+});
+
+// --- The recovered artifacts behind the remaining edges (plan 3, task 4) ---
+
+test('a pruned phase carrying a CONTEXT.md and no record resolves the decision edge and states the review absence', () => {
+  const summary = (label, phase) => [
+    `# ${label} phase ${phase}`, '', '## Commits', '',
+    '| Plan | Task | Commit | Description |',
+    '|---|---|---|---|',
+    '| 1 | 1 | aaaaaaa | the only task |',
+    '', '## Deviations', '', '- the plan said two, it was one', '',
+  ].join('\n');
+  const extras = () => ({
+    'CONTEXT.md': ['# Context', '', '## Durable decisions', '',
+      '- D-01 (the one decision): recovered out of a tree, not off a disk', ''].join('\n'),
+    'PLAN.md': ['---', 'phase: 1', 'plan: 1', '---', '', '# a plan', '',
+      '### Task 1: the only task', '', '- **Files:** src/a.mjs', ''].join('\n'),
+  });
+  const dir = repoWithCloses(['v9.2.0'], summary, extras);
+  const index = buildRecoveredIndex(dir);
+  const recovered = index.dirs[0];
+  assert.equal(recovered.path, null, 'the directory is gone; only the tree is left');
+
+  const records = readPhaseRecords(recovered, '1', dir);
+  assert.deepEqual(records.warnings, []);
+  assert.equal(records.planFile, 'PLAN.md');
+  assert.match(records.context, /D-01 \(the one decision\)/);
+  assert.deepEqual(parseDeviations(records.summary), ['the plan said two, it was one']);
+
+  const decision = decisionsFor({
+    planText: records.plan, contextText: records.context, taskCell: '1',
+  });
+  assert.equal(decision.scope, 'phase', 'no cite in this plan, so the phase set is printed and labelled');
+  assert.deepEqual(decision.ids, [], 'the phase arm names no cited id, because none was cited');
+  assert.match(decision.lines[0], /^D-01 \(the one decision\)/);
+
+  const review = readAdjudications(recovered, dir);
+  assert.deepEqual(review, { records: [], warnings: [] },
+    'the tree carries no record - an absence, never a failure of the entry');
+});
+
+test('a recovered adjudication record is found by listing the tree, not by guessing its name', () => {
+  // The discriminator in `ADJUDICATION-<trigger>-<discriminator>.json` is not
+  // predictable, so the read has to ask the tree what is there.
+  const summary = (label, phase) => [
+    `# ${label} phase ${phase}`, '', '## Commits', '',
+    '| Plan | Task | Commit | Description |', '|---|---|---|---|',
+    '| 1 | 1 | aaaaaaa | the only task |', '',
+  ].join('\n');
+  const extras = () => ({
+    'ADJUDICATION-risk_surface-plan-e7c1f09.json': JSON.stringify({
+      base_id: 'a'.repeat(40),
+      head_id: 'b'.repeat(40),
+      entries: [{ ruling: 'survived', claim: 'kept out of a tree', failure_scenario: 'why', severity: 'high' }],
+    }),
+    'REVIEW-risk_surface-plan-e7c1f09.md': 'not a record',
+  });
+  const dir = repoWithCloses(['v9.3.0'], summary, extras);
+  const recovered = buildRecoveredIndex(dir).dirs[0];
+  const { records, warnings } = readAdjudications(recovered, dir);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(records.map((r) => r.name), ['ADJUDICATION-risk_surface-plan-e7c1f09.json']);
+  assert.equal(records[0].survivors[0].claim, 'kept out of a tree');
 });
