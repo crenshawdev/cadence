@@ -149,7 +149,7 @@ not a convenience.*
 |---|---|---|---|---|---|
 | `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | blocking | adjudicated |
 | `diff` | `/cad-execute` | the diff for one completed plan | off | off | blocking |
-| `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff, once per plan on the committed range | blocking | blocking | blocking |
+| `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff - once per plan on the committed range in `/cad-execute`, once per run elsewhere | blocking | blocking | blocking |
 | `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | off | adjudicated |
 
 > **Two risk detectors, reading different things**
@@ -168,8 +168,9 @@ not a convenience.*
 > alone.
 >
 > The commit-time filter drops exactly two things, and only on evidence: a
-> destructive target proven ephemeral by both `git check-ignore` and an empty
-> `git ls-files`, and a secret proven to be a placeholder by both a
+> destructive target proven ephemeral by `git check-ignore` - and, for a
+> DIRECTORY target, an empty `git ls-files` as well - and a secret proven to
+> be a placeholder by both a
 > template-shaped file and a stub value. Either half alone still fires. When
 > unsure, it fires and says why.
 

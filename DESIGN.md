@@ -151,6 +151,11 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
    (CONTEXT.md optional, written by cad-context when a discussion ran; cad-plan reads it if present).
    Nothing else — cut all derived/analytics files. (PROJECT.md + REQUIREMENTS.md stay because
    `cad-new-project` writes them and `cad-milestone`/`cad-audit` consume them.)
+   **The shipped set has grown past this, each addition its own decision, none of them an
+   analytics file:** `trace.jsonl` (the run record), `CAPTURE.md` (gitignored),
+   `phases/<N>/{REVIEW-*.md,ADJUDICATION-*.json,FINDINGS.json,verifier-findings.json}`
+   and `phases/<N>/reports/` (the review and verify record), and — v3.6.0, phase 3 —
+   `tasks/<slug>/RECORD.md`, an off-roadmap `/cad-task` run's own record.
    `health` → ~20-line "is ROADMAP/cursor parseable".
    `forensics` → cut (self-obsoletes once worktree-waves are opt-in), handle ad hoc via git + review.
 3. pause/resume → **SETTLED:** `/cad-pause` = tiny skill (WIP commit + write cursor + one-line
@@ -171,7 +176,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
 - **Positioning:** public distribution eventually; a trimmed **single-developer** distillation descended from GSD,
   properly licensed. Trim anything team/multi-author.
 - **Distribution model:** **SUPERSEDED (shipped as a Claude Code plugin).** User install =
-  `/plugin marketplace add https://github.com/crenshawdev/cadence.git` then
+  `/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git` then
   `/plugin install cadence@cadence`; update/uninstall are the matching `/plugin` commands.
   The plugin runtime carries the tree, so the npm copy-installer described below was never
   built. Dev/contributor flow = clone the repo. *(Original 2026-07-10 decision, kept for
@@ -579,7 +584,7 @@ rewritten.
   every Bash call and fails OPEN, so a sufficiently long command line turned the guard
   off and let the push inside it run unprompted. A widener that can be switched off by
   its own input is not widening anything. `cadence-core/bin/lib/git-segments.mjs`
-  replaces 2,251 lines with about thirty: a segment counts only when its command word is
+  replaces 2,251 lines with eighty-five: a segment counts only when its command word is
   `git`. R2's rule finally applied to R2's own successor.
 
 **Sequence (with R3, §7).** These reconcile with R3 — the `git.auto_push` config switch cut
@@ -588,7 +593,7 @@ contradicting the then-absolute "never push" rail; `auto_close` then reintroduce
 *sanctioned* push, gated behind an explicit opt-in and routed through the guarded
 git-publish seam, not a free-standing config flag.
 
-## 7. Final Cadence config.json (~110 GSD keys → ~50 leaves)
+## 7. Final Cadence config.json (~110 GSD keys → 78 leaves)
 
 The shipped default IS the spec: `cadence-core/templates/config.json`,
 validated against `cadence-core/config.schema.json` (the source of truth for
@@ -605,8 +610,8 @@ cruft, local-server review hosts) is gone.
 
 **Canonical shape + validation:** the block above is illustrative; the source of truth for keys,
 types, enums, and defaults is `cadence-core/config.schema.json`, enforced by the `bin/config.mjs`
-seam (`validate | check | set | keys`). `cad-config` writes only through it. `mode` is
-`interactive`-only for v1 (autonomous/audit-fix cut, §3); `review.reviewers[]` is the live
+seam (`validate | check | set | get | keys`). `cad-config` writes only through it.
+`review.reviewers[]` is the live
 reviewer selector (`review.backend` was removed as dead); `review.mode` is `single|panel|adjudicated`.
 
 **Review block shape (step 5):** each trigger picks a *gate* + a cognitive *tier*
