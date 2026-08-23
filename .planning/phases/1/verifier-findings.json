@@ -1,0 +1,100 @@
+{
+  "status": "needs_human",
+  "score": "9/10",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A bare path emits exactly one JSON object on stdout carrying a `text` chain of the commits touching that path, newest first, with no model-authored prose",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "`node cadence-core/bin/why.mjs cadence-core/bin/lib/why-corpus.mjs` -> stdout is 1 line (wc -l = 1), parses to keys ok,path,result,text,shown,total,entries,warnings with ok:true result:\"chain\" shown:10 total:11 warnings:[]. `--top 30` on cadence-core/bin/planning.mjs: entry dates are monotonically non-increasing (newest-first assertion true over 30 entries). Every rendered line is either a git field or a byte-exact quote from a .planning artifact; the only fixed prose is the named constants MARKER_GAP and GAP in cadence-core/bin/lib/why-record.mjs:389 and cadence-core/bin/lib/why-render.mjs:133. WHY-01 is traced: .planning/REQUIREMENTS.md:26 and its Traceability row at :304 (`| WHY-01 | Phase 1 | Pending |`) - mapped, not orphaned."
+    },
+    {
+      "n": 2,
+      "truth": "The /cad-why skill's printed output is byte-identical to the seam's `text` field",
+      "status": "UNCERTAIN",
+      "uat_item": 2,
+      "evidence": "skills/cad-why/SKILL.md step 3 instructs `print the `text` field VERBATIM and nothing else`, and the bytes live in the seam per D-02, so the mechanism is right. The skill's prescribed invocation runs clean: `node cadence-core/bin/why.mjs 'cadence-core/bin/lib/seam-io.mjs' --dir .` exits 0 with the same one-object shape, and `--dir` is declared on the `'*'` row of the why.mjs CONTRACTS entry (cadence-core/bin/lib/arg-contract.mjs:1063-1069). What is unobserved is a model actually relaying it: no probe available to this pass can invoke a slash command."
+    },
+    {
+      "n": 3,
+      "truth": "Each chain entry names all six record edges - commit, phase, plan task, D-NN decision, deviation, surviving review finding - each quoted in the record's own words",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Observed on the real corpus, entry 37fd1694 in the chain for cadence-core/bin/report-rotation.test.mjs: commit+date+subject, `phase: v3.5.6 phase 3 (recovered from 5238db32:.planning/phases/3)`, `plan task: plan 1, task 3 - State the rotated-report name test once, in the rotation module`, `decision: cited by this task (D-08, D-07)` with the CONTEXT D-NN lines, `deviation:` with the SUMMARY bullets, and `review: 1 surviving finding(s) cover this commit` printing `[high] cadence-core/bin/lib/risk-diff.mjs:326 (ADJUDICATION-risk_surface-plan-1.json)` with verbatim `claim:` and `failure_scenario:` text, plus a seventh `declared by:` edge. All five edge readers are wired through cadence-core/bin/lib/why-corpus.mjs and reached from cadence-core/bin/why.mjs. NOTE on fidelity: a wrapped SUMMARY/CONTEXT bullet is quoted at its FIRST LINE only, so long bullets render as a byte-exact but mid-sentence fragment (deliberate and documented at cadence-core/bin/lib/why-record.mjs:400, matching parseSummarySnippets' existing convention, and cross-checked against `git show 5238db32^:.planning/phases/3/SUMMARY.md`). Verbatim: yes. Complete: no."
+    },
+    {
+      "n": 4,
+      "truth": "A phase-level join carries a phase-scoped label, and the absent `corrected by` deviation marker is named as a write-side gap rather than reported as \"none\"",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Observed on entry c5d38c3a (chain for cadence-core/bin/arg-contract.test.mjs): `decision: PHASE-SCOPED - cited by the plan's ## Context, not by this task (D-08, D-03, D-07, D-10, D-04)`; and on 22899038 in this phase's own chain. Every resolved entry renders `deviation: PHASE-SCOPED - the \\`corrected by plan-<k> deviation:\\` marker \\`workflows/execute.md\\` prescribes for a deviation that refutes a decision is absent from the whole record, so no deviation below is joined to a decision - the edge is missing on the WRITE side, not empty here` (constant MARKER_GAP, cadence-core/bin/lib/why-record.mjs:389-392). A phase with no deviations renders `(this phase's SUMMARY records no deviation)` under the same gap sentence, so the gap is never collapsed into \"none\"."
+    },
+    {
+      "n": 5,
+      "truth": "`<path>:<line>` narrows the chain to the commits that touched that line, the bare path is unchanged, and neither exits non-zero for a path at HEAD",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`node cadence-core/bin/why.mjs 'cadence-core/bin/lib/why-corpus.mjs:94'` -> exit 0, shown 2 / total 2: b5f49bad, 2d9ffbc5. Independent cross-check `git log -L 94,94:cadence-core/bin/lib/why-corpus.mjs -s` returns exactly those two shas in the same order. The bare arm on the same path is unchanged at total 11, exit 0. Bad line forms are stated results, not crashes: `:0` -> {\"ok\":false,\"reason\":\"bad-query\",\"detail\":\"zero-line\"}."
+    },
+    {
+      "n": 6,
+      "truth": "A commit behind a pruned milestone resolves its phase, plan task and decision through the reverse commit-to-phase map, never off the commit's (N-M) scope",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Falsifying probe: commit 7a360b62, subject `feat(1-2): detect-surfaces returns the option list...`, resolves to plan 1 / task 2 with `recovered: {prune: 783fe9dc, parent: 7f0e4961, tree: .planning/phases/1}` and milestone v3.5.7. Reading the scope would have produced plan 2; `git show 7f0e4961:.planning/phases/1/SUMMARY.md` carries the row `| 1 | 2 | 7a360b6 | ...`, so the value provably came from the recovered artifact. That row also proves D-17's prefix match across abbreviation eras (7-char `7a360b6` matched to the full 40-char sha). Further recovered resolutions observed on cadence-core/bin/lib/release-decision.mjs (`v3.5.9 phase 1 (recovered from d3313bf7:.planning/phases/1)`) and on an unlabelled close (`an unlabelled close (f7e25a94) phase 3 (recovered from 3cb68c46:.planning/phases/3)`), each printing the recovered plan task and D-NN decision."
+    },
+    {
+      "n": 7,
+      "truth": "An unresolved pruned commit names the gap and its milestone label, still prints what git history and ARCHIVE.md carry, and guesses no phase number",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "Commit 7ee05c8e (chain for cadence-core/bin/lib/milestone-prune.mjs): `phase: NOT RESOLVED - no phase directory on disk and no summary recovered from git history names this commit...` / `the gap sits under the close at 581dc82a, labelled v3.5.5` / `.planning/ARCHIVE.md keeps 127 residue row(s) under that label, bound to the label and to no commit (D-04):` with three quoted rows and `... and 124 more`, plus the git path list. Labels also observed as v3.5.9 (close 72940906) and v3.5.3 (close bc04ef6c). The pre-ARCHIVE.md era degrades by name: 71d2e92b renders `the gap sits under the close at e9410516, which bound no milestone label`. No guessed number reaches output - the scope is rendered as `commit-message scope: seams - read off the subject line as corroboration and explicitly NOT a resolved phase, because those numbers reset every milestone (D-06)`, and across every unresolved entry probed the `phase` field is the NOT RESOLVED sentence, never a digit."
+    },
+    {
+      "n": 8,
+      "truth": "The two no-join arms return stated results - never an empty chain, never a raw git `fatal:` on stdout",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "Never-seen path: `why.mjs no/such/path.txt` -> {\"ok\":true,...,\"result\":\"not-in-history\",\"text\":\"No commits: git has never seen \\\"no/such/path.txt\\\" in this repository's history.\"}, exit 0. In-history-no-join path: `why.mjs cadence-core/bin/lib/seam-io.mjs` -> a 1-entry chain whose five join fields each render the stated absence `not yet joined` (constant NOT_JOINED, cadence-core/bin/lib/why-render.mjs:95, rationale at :83-85) alongside the named gap - a shorter entry is never emitted. The `-L` fatal CONTEXT flagged: a path deleted from HEAD (`cadence-core/bin/design-brief.test.mjs:1`) returns the stated `not-in-history` result, exit 0, no `fatal:`; the bare arm on that same path still returns its chain, so the two arms answer differently for a deleted path (the flagged assumption's predicted interaction, outside AC3's \"present at HEAD\" scope). `/etc/passwd` -> {\"ok\":false,\"reason\":\"git-failed\",\"detail\":\"the not-in-history probe\"}. No probe put `fatal:` on stdout."
+    },
+    {
+      "n": 9,
+      "truth": "The join is deterministic across two runs over an unchanged tree, a test in cadence-core/bin/ asserts it, and the run dispatches no subagent and writes nothing",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "Direct probe: two runs of `why.mjs cadence-core/bin/lib/why-corpus.mjs` into separate files, `cmp` reports byte-identical (99,726 B each). Named tests exist and pass: cadence-core/bin/why.test.mjs:148 'two runs over an unchanged tree write byte-identical stdout', :245 (with the index in place), :448 (all six edges joined), :478 (recovered tier in place), :624 (gap arm); cadence-core/bin/why-render.test.mjs:16 pins reversal-invariance of the sort. All 127 tests across the five why*.test.mjs suites pass (`node --test` over why.test.mjs, why-query, why-render, why-record, why-corpus: 127 dots, no failures). No subagent and no write: the only child process in why.mjs and the four libs is `git`, via `execFileSync('git', [...])` argv arrays with no shell (cadence-core/bin/why.mjs:76, cadence-core/bin/lib/why-corpus.mjs:391,488,674); grep for writeFile/appendFile/mkdir/rename/unlink/rmSync/openSync across all five files returns only comment-text hits."
+    },
+    {
+      "n": 10,
+      "truth": "self-verify returns ok:true with problems: [] and the full suite reports 0 failures",
+      "status": "VERIFIED",
+      "uat_item": 10,
+      "evidence": "`node cadence-core/bin/self-verify.mjs --root .` -> {\"ok\":true,\"checked\":\"config-keys, invocations, paths, ... scratch-path\",\"problems\":[]} (25 checks). `node cadence-core/bin/test.mjs` -> tests 2809, pass 2808, fail 0, cancelled 0, skipped 1, todo 0. The single skip is not in the why suites (grep for `skip` across why*.test.mjs matches only two test-name strings). Surface registration that self-verify gates is present: skills/cad-why/SKILL.md, its weight row cadence-core/bin/weight-budgets.json:113, the /cad-why row cadence-core/references/COMMANDS.md:55, and the CONTRACTS row cadence-core/bin/lib/arg-contract.mjs:1063."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "Bare path emits one JSON object with a newest-first chain", "evidence": "why.mjs on cadence-core/bin/lib/why-corpus.mjs: stdout is one line, ok:true result:\"chain\", shown 10 / total 11; dates monotonically non-increasing over a 30-entry planning.mjs chain." },
+    { "k": 3, "name": "Each chain entry names all six record edges, quoted verbatim", "evidence": "Entry 37fd1694 carries commit, phase (recovered v3.5.6 phase 3), plan task, D-08/D-07 CONTEXT lines, SUMMARY deviation bullets and a `[high]` surviving finding with verbatim claim + failure_scenario from ADJUDICATION-risk_surface-plan-1.json. Wrapped bullets are quoted at their first line only - byte-exact but partial, documented at cadence-core/bin/lib/why-record.mjs:400." },
+    { "k": 4, "name": "A phase-level join is labelled phase-scoped, and the missing deviation marker is named as a gap", "evidence": "`decision: PHASE-SCOPED - cited by the plan's ## Context, not by this task (D-08, D-03, ...)` on c5d38c3a; every resolved entry renders MARKER_GAP (cadence-core/bin/lib/why-record.mjs:389-392) naming the absent `corrected by plan-<k> deviation:` marker as a write-side gap, including when the phase records no deviation." },
+    { "k": 5, "name": "`<path>:<line>` narrows to the commits that touched that line", "evidence": "`why-corpus.mjs:94` -> exactly b5f49bad and 2d9ffbc5 (2 of the bare arm's 11), identical to `git log -L 94,94:cadence-core/bin/lib/why-corpus.mjs -s`; both arms exit 0." },
+    { "k": 6, "name": "A commit behind a pruned milestone resolves through the recovered map", "evidence": "7a360b62 (`feat(1-2)`) resolves to plan 1 task 2 from `7f0e4961:.planning/phases/1/SUMMARY.md`'s row `| 1 | 2 | 7a360b6 |` - the scope would have said plan 2, so the value came from the artifact, not the subject line." },
+    { "k": 7, "name": "An unresolved pruned commit names the gap and its milestone label", "evidence": "7ee05c8e: `the gap sits under the close at 581dc82a, labelled v3.5.5` plus 127 ARCHIVE.md residue rows and the git path list; the pre-ARCHIVE era says `which bound no milestone label`. The scope is printed as corroboration explicitly NOT a phase (D-06); no digit ever appears in a NOT RESOLVED phase field." },
+    { "k": 8, "name": "The two no-join arms return stated results, never an empty chain or a raw fatal", "evidence": "`no/such/path.txt` -> result:\"not-in-history\"; `lib/seam-io.mjs` -> a 1-entry chain with all five join fields rendered `not yet joined`; a HEAD-deleted path with `:1` returns a stated not-in-history instead of the `-L` fatal. No probe put `fatal:` on stdout." },
+    { "k": 9, "name": "A determinism test proves byte-identical stdout across two runs", "evidence": "`cmp` on two independent runs: byte-identical (99,726 B). Tests at cadence-core/bin/why.test.mjs:148,245,448,478,624 and why-render.test.mjs:16; all 127 why-suite tests pass. Only child process is `git` via execFileSync argv arrays; no fs write call in any of the five files." },
+    { "k": 10, "name": "Self-verify is clean and the full suite is green", "evidence": "self-verify --root . -> ok:true, problems:[] over 25 checks. test.mjs -> 2809 tests, pass 2808, fail 0, skipped 1 (not a why test)." }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "In a live session, run `/cad-why cadence-core/bin/lib/seam-io.mjs`, capture what the session prints, and diff it against the `text` field of `node cadence-core/bin/why.mjs cadence-core/bin/lib/seam-io.mjs --dir .`",
+      "expected": "Byte-identical: the same 15 lines, no summary before, no commentary after, no reformatting, no dropped `not yet joined` line.",
+      "why_human": "Out of reach for this pass, not merely unexercised: the thing under test is a model relaying the field, and a slash command cannot be invoked from a verification subagent - the seam side is already proved byte-stable (cmp on two runs), so only the relay half is open. SUMMARY.md carries this as its own HUMAN-VERIFY open item and warns its recorded comparand is stale by one line (plan 3 replaced the `phase:` placeholder with the named gap), so compare against a freshly captured `text`, not against the plan-1 report."
+    },
+    {
+      "name": "In a live session, run `/cad-why` with a query containing a single quote (for example `README.md'x`) and confirm the skill refuses rather than composing the shell word",
+      "expected": "The session refuses the query outright and runs nothing, per skills/cad-why/SKILL.md step 1.",
+      "why_human": "Out of reach: the guard exists only as prose in SKILL.md and no code enforces it - the seam accepts such a query happily (`why.mjs \"cadence-core/bin/why.mjs'x\"` returns ok:true not-in-history), and self-verify's text-transport check cannot see a positional site, which the phase's own plan-1 deviation records as making that clean answer vacuous. Only a session can show whether the model obeys the prose. The blast radius is bounded: the seam itself spawns `git` through execFileSync argv arrays with no shell."
+    }
+  ]
+}

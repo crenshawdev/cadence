@@ -35,7 +35,7 @@ Phases are added with `/cad-phase add`.
 
 ## Phases
 
-- [ ] **Phase 1: The corpus, read back at a file and line** - `/cad-why` joins a path to the decision that put it there, and reports the gap rather than guessing
+- [x] **Phase 1: The corpus, read back at a file and line** - `/cad-why` joins a path to the decision that put it there, and reports the gap rather than guessing
 
 ## Phase Details
 
