@@ -114,8 +114,29 @@ the single dispatch and neither depends on the other, which is the only thing
 that would serialize them.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-plan-XXXXXX")" && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
+  && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>" > "$D/surfaced.json" \
+  && cat "$D/surfaced.json" \
+  && echo "scratch dir: $D  run token: $T"
 ```
+
+The query and the block below are unchanged; the FILE beside them is new, and
+it is the surfaced set `count_planned` and `count_committed` read. The query is
+model-authored, so re-running the search there from re-typed terms returns a
+different top 5 and a plan that cited every real hit would report zero -
+indistinguishable from a genuine zero, the false signal this count exists to
+remove (D-03). The `cat` is chained on the write with `&&` because this step
+still needs the results in hand to build the block; the response measures
+8,617 B, under the transport threshold, so a redirect that left the step blind
+would buy a second round trip for nothing.
+
+**The directory and the token are ECHOED** because those two count steps run in
+DIFFERENT Bash invocations, where `$D` is empty - the tool persists the working
+directory and not shell state. Carry both printed values there as LITERALS,
+never a fresh `mktemp` and never a `$(...)`; a fixed name under `/tmp` is one
+file two runs in two repositories both write, and the token is what makes a
+carried path safe
+(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the rule).
 
 Parse its JSON line (`{ok, results:[{score, source, phase?, snippet}]}`) and
 append a `<recalled_memory>` block at the END of the `<planning_context>` below
