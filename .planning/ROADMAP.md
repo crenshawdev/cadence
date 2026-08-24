@@ -72,6 +72,7 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 - [x] **Phase 1: Pick a forge** - detect the installed forge CLIs, let the user choose the provider and name the repository to create or link, and persist that choice
 - [ ] **Phase 2: CAPTURE is transient** - CAPTURE holds only the phase in flight, phase close empties it, and anything worth keeping becomes an issue on the repository's own tracker
 - [ ] **Phase 3: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
+- [ ] **Phase 4: Split planning.mjs by command** - the 32 `cmd*` handlers move to per-command modules, leaving a shared core, so a dispatch touching one command stops paying a whole-file read
 
 ## Phase Details
 
@@ -170,3 +171,14 @@ routed into it.
 2. Whether `2.0` is a legal spelling of phase 2 is decided and stated once in `cadence-core/references/roadmap-phases.md`, and `PHASE_DIR_NAME`, `phaseDirGrammarDrift`'s printed detail and the two `phases/` listing filters each match that statement or carry a comment naming why they deliberately differ (D-09 is the standing example).
 3. Every `planning.mjs` command that resolves `--phase` to a `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal`: for each such command, `--phase 1.10` against a tree holding `phases/1.1/` returns `ok:false` with a `bad-args` reason naming both fixes, rather than acting on phase 1.1.
 4. A census test pins the guarded-callsite count against the `requirePhaseArg` callsite count in `planning.mjs`, so an unguarded path-resolving callsite fails the suite with a message naming it.
+
+### Phase 4: Split planning.mjs by command
+**Goal:** No dispatch pays a whole-file read to reach one command. The 32 `cmd*` handlers move out of `planning.mjs` into per-command modules, leaving a shared core of roughly 1,600 lines, so an agent touching one command reads about 2,400 tokens instead of paying the read cap twice on a 104k-token file and still not holding it.
+**Depends on:** Nothing, and it should run BEFORE phases 2 and 3 rather than after. Both of those write into `planning.mjs`: phase 3 wires `phaseSpellingRefusal` at roughly 28 `requirePhaseArg` callsites there and its criteria cite `planning.mjs:278`, `:612` and `:2586` by line. Splitting afterwards would move every one of them, so the split goes first and the later phases land in the new layout.
+**Requirements:** LOD-02
+**Success Criteria:**
+1. `planning.mjs` retains dispatch and the shared top-level helpers and nothing else: every `cmd*` handler lives in its own module, and the entry file measures under 2,000 lines.
+2. No command's behaviour changes. The full suite is green, `self-verify.mjs` reports zero problems across all 26 checks, and `npx tsc -p tsconfig.ci.json` still exits 0.
+3. Every citation moves with the code it names. A `planning.mjs:<line>` reference anywhere under `skills/`, `cadence-core/workflows/`, `cadence-core/references/` or `.planning/` either points at the new module or is rewritten, and a census test pins the count so a stale citation fails the suite naming it. This is the LOD-01 discipline applied to code.
+4. The test file is addressed rather than left behind: `planning.test.mjs` (418,298 chars) is either split alongside the handlers or the phase records why it was not, since a 105k-token test file reproduces the same read cost it set out to remove.
+5. The saving is measured, not asserted. The phase records the before and after token cost of reaching one representative handler, using the same `wc -c` method the requirement was measured with.

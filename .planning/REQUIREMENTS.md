@@ -57,6 +57,17 @@ Traceability row as its phase is planned; rows are never hand-populated here.
   (`planning.mjs:278`). It is wired at 2 of roughly 28 `requirePhaseArg`
   callsites today, `cursor set` (`:612`) and `seed-reqs` (`:2586`); the rest
   take the normalized number and never mention the spelling they discarded.
+- **LOD-02** - `cadence-core/bin/planning.mjs` is split so that no dispatch pays
+  a whole-file read to reach one command. Measured 2026-08-24: the file is
+  417,009 chars (~104k tokens, 7,853 lines), and of those, 6,033 lines are the
+  32 `cmd*` handlers while only 1,574 are shared top-level helpers, so the
+  handlers are near-independent leaves rather than an entangled core. It is
+  touched by 158 of the last 400 commits, and `planning.test.mjs` (418,298
+  chars) by 117, so this is the file the executor reads most and the most
+  expensive one to read. Against a 15,000-token read cap a single handler
+  cannot be reached without seven windowed reads or a truncated one. LOD-01
+  (`git.md` -> `git-guard.md` + `git-publish.md`) is the standing precedent for
+  a split that moves every citation with it.
 
 ## Shipped
 
