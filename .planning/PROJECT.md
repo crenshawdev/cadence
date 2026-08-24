@@ -195,7 +195,11 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `/cad-phase add` opens the next one.
+**`v3.7.1 - one spelling, one phase`, opened 2026-08-24.** One phase over the
+last two live pieces of the sub-phase-identity cluster: `PHASE_DIR_NAME`
+accepts a zero-padded fraction while its own diagnostic forbids one, and
+`phaseSpellingRefusal` is wired at 2 of roughly 28 `requirePhaseArg` callsites.
+Ids seeded at the open: `SPL-01`, `SPL-02`.
 
 **`v3.7.0 - the refusal that names the next step` closed 2026-08-24.** Two
 phases, 36 commits off `v3.6.1`, three ids seeded at the open and all three

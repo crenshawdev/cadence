@@ -1,64 +1,89 @@
-# Roadmap: v3.7.0 - the refusal that names the next step
+# Roadmap: v3.7.1 - one spelling, one phase
 
 ## Overview
 
-**`v3.7.0`, opened 2026-08-23.** A minor cycle over one theme: a seam that
-refuses hands the user a kebab-case token and nothing else, so the token IS the
-error message. Filed as #238, reassigned here from `v3.6.1` because it is a
-named theme rather than a defect, and it ships alongside #249, a scope rule the
-config write face has never enforced.
+**`v3.7.1`, opened 2026-08-24.** A patch cycle over one theme: a phase number
+written two ways is two names for one phase, and Cadence should say so at the
+door rather than resolve it silently to whichever one it rounded to.
 
-**The theme is one sentence: Cadence tells the user what went wrong in its own
-vocabulary and never tells them what to do about it.** Measured 2026-08-23
-across `cadence-core/bin/`, tests excluded: **186 sites set a literal `reason`
-and 13 set a literal `hint`**, and 40 of the 42 non-test files that refuse
-carry zero hints. Every hint in the tree is in `planning.mjs` (15) or
-`skim.mjs` (2); `release-decision.mjs` sets 14 reasons and no hint,
-`text-transport.mjs` 16 and none, `bulk-output.mjs` 14 and none, `route.mjs` 9
-and none. The workflows correctly say "relay reason/hint", which is exactly why
-a missing hint reaches the user unmediated.
+The guard already exists. `phaseSpellingRefusal`
+(`cadence-core/bin/planning.mjs:278`) compares the caller's raw `--phase`
+spelling against `String(parsed.value)` and refuses when they differ, naming
+both fixes - retype the flag, or rename the directory. It is the right shape and
+it is wired at **two** of the roughly twenty-eight `requirePhaseArg` callsites
+in that file: `cursor set` (`:612`) and `seed-reqs` (`:2586`). Those two were
+wired because D-07 caught them writing a lossy value into a durable artifact -
+the STATE cursor and a Traceability row. Every other command that resolves
+`--phase` to a `phases/<N>/` path takes the normalized number and never
+mentions that it discarded a spelling.
 
-The ratio is getting worse, not better. #238 counted 130 reason sites against
-10 hints when it was filed; `v3.6.0` and `v3.6.1` added seam surface faster
-than they added hints, and the same measurement today reads 186 against 13.
-That drift is the argument for the second half of phase 1: a sweep fixes the
-count once, and a self-verify check is what stops the 187th refusal shipping
-without a next step.
+**The directory grammar contradicts its own diagnostic.** `PHASE_DIR_NAME`
+(`planning.mjs:343`) is `/^[1-9]\d*(?:\.\d+)?$/`. The leading `[1-9]` makes
+`08` a violation, which is what D-08 wanted, but nothing guards the fraction:
+verified on this tree, `1.01`, `1.00` and `2.0` all test true, so
+`phases/1.01` is silently legal and never reported as `phase-dir-grammar`
+drift - while the detail `phaseDirGrammarDrift` prints for the entries it does
+catch reads "bare integer or N.M, no zero-padding, no slug". The check says one
+thing and enforces another, and `phases/1.01` beside a legal `phases/1.1` is
+exactly the collision that kind of drift entry exists to name.
 
-**Why this surface and not the other one.** There are two prose surfaces in
-this tree and only one should get simpler. Model-facing prose - `workflows/`,
-the agent contracts, `references/` - is weight-budgeted and load-bearing;
-`workflows/plan.md` sits at its 22,638 B budget with zero headroom and
-self-verify fails the build on overrun. Simplifying that prose makes it longer
-and strips the precision that makes gates falsifiable. Hints live in `bin/`,
-which is not weight-budgeted, so this theme costs no context bytes on any
-surface.
+**Why now and why small.** These are the last two live pieces of the
+sub-phase-identity cluster; the rest of it closed in `v3.6.x` and `v3.7.0`.
+The work is a regex tightened by one character class, a guard called at the
+sites that already parse the argument, and a census test so the twenty-ninth
+callsite cannot ship unguarded. No new command, no new artifact, no reason
+token renamed - the tokens are matched by tests and by callers, and renaming
+one is a breaking change dressed as a wording fix.
 
-**Phase 2 is the same defect one layer over.** `config.mjs set` applies whatever
-it is passed at whatever layer. `checkPairs` (`cadence-core/bin/config.mjs:151`)
-validates retired keys, unknown keys and value types, and nothing about layer
-scope, so a repo-scoped key written into the user-global layer draws no
-complaint at write time. `git.auto_close` is the sharp case: the user learns the
-repository never opted in when the close refuses at land time, which is correct
-and far too late. The schema already carries the marker the fix reads - 33 keys
-tagged `"src": "repo"` in `config.schema.json` - and `lib/global-only-keys.mjs`
-is the same rule already enforced in the opposite direction, at the merge rather
-than at the write.
+**What this cycle is not.** It does not make the cursor hold a raw spelling.
+`parseCursor` returns a Number that `renumber`'s shift arithmetic,
+`cmdStatus`' `parsed.phase === current` agreement test and `phase-plans.mjs`'
+`cursorPhase` all consume; D-07 decided that refusing a lossy spelling at the
+write face beats carrying a half-raw one through three readers, and that
+decision stands. It also does not widen `PHASE_LINE` or the two `phases/`
+listing filters - `references/roadmap-phases.md` states why the phase-list
+grammar is deliberately narrow, and D-09 states why the listing filters are
+deliberately looser than `PHASE_DIR_NAME`.
 
-**What this cycle is not.** No reason token changes: they are matched by tests
-and by callers, and renaming one is a breaking change dressed as a wording fix.
-No behavior change in phase 1 - purely additive text plus one new check. No
-rewrite of model-facing prose. The two accessibility gaps #238 names as deferred
-stay deferred: the ask-user register rail needs a seam rule rather than a code
-change, and the done-step report field lists are model-facing.
-
-This cycle seeds ids up front - `HNT-01`, `HNT-02`, `SCP-01` - so every one is
-either traced to a phase or visibly `unpicked` in `/cad-audit`.
+This cycle seeds ids up front - `SPL-01`, `SPL-02` - so every one is either
+traced to a phase or visibly `unpicked` in `/cad-audit`.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned.
 Phases are added with `/cad-phase add`.
 
 ## Phases
 
+- [ ] **Phase 1: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
 
 ## Phase Details
+
+### Phase 1: One spelling, one phase
+**Goal:** A phase spelling that would be silently normalized is refused where
+it is written, and a phase directory whose name would collide with another
+phase is reported as drift. One rule, stated once, enforced everywhere it
+applies.
+**Depends on:** Nothing (first phase)
+**Requirements:** SPL-01, SPL-02
+**Success Criteria:**
+1. `PHASE_DIR_NAME` rejects a zero-padded fraction: with `phases/1.01`,
+   `phases/1.00` and `phases/2.0` on disk, `planning.mjs status` reports a
+   `phase-dir-grammar` drift entry naming each of them, and names the legal
+   directory it collides with when one is present. `phases/1.1`, `phases/1.10`
+   and `phases/8` stay legal and produce no entry.
+2. Whether `2.0` is a legal spelling of phase 2 is DECIDED and stated once, in
+   `cadence-core/references/roadmap-phases.md`, and `PHASE_DIR_NAME`,
+   `phaseDirGrammarDrift`'s printed detail and the two `phases/` listing
+   filters each match that statement or carry a comment naming why they
+   deliberately differ (D-09 is the standing example).
+3. Every `planning.mjs` command that resolves `--phase` to a `phases/<N>/`
+   path refuses a lossy spelling through `phaseSpellingRefusal`, not just
+   `cursor set` and `seed-reqs`: for each such command, `--phase 1.10` against
+   a tree holding `phases/1.1/` returns `ok:false` with a `bad-args` reason
+   that names both fixes, rather than acting on phase 1.1.
+4. A census test pins the guarded-callsite count against the
+   `requirePhaseArg` callsite count in `planning.mjs`, so adding an unguarded
+   path-resolving callsite fails the suite with a message naming the new
+   callsite rather than passing silently.
+5. The full suite is green and no `reason` token changed: a diff of the
+   literal `reason` strings in `cadence-core/bin/` before and after the phase
+   is empty.

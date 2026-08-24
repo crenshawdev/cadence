@@ -5,9 +5,29 @@
 
 ## Active
 
-No cycle open. `/cad-phase add` opens the next one, and ids are seeded here at
-that open - the practice `v3.5.7` established. `/cad-plan` seeds each
+`v3.7.1 - one spelling, one phase` opened 2026-08-24, one phase, two ids seeded
+at the open - the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
+
+- **SPL-01** - A `phases/` directory whose name would be normalized to a
+  DIFFERENT phase is reported as `phase-dir-grammar` drift. `PHASE_DIR_NAME`
+  (`cadence-core/bin/planning.mjs:343`) guards the integer part with a leading
+  `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are
+  all silently legal (verified on this tree 2026-08-24) while the detail
+  `phaseDirGrammarDrift` prints says "no zero-padding". The check contradicts
+  its own diagnostic, and `phases/1.01` beside a legal `phases/1.1` is the
+  collision that drift kind exists to name. Whether `2.0` is legal at all is
+  decided once in `references/roadmap-phases.md` and the enforcing sites match
+  that statement or say why they differ (D-09 is the standing example).
+- **SPL-02** - Every `planning.mjs` command that resolves `--phase` to a
+  `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal`
+  (`planning.mjs:278`), which already names both fixes - retype the flag, or
+  rename the directory. It is wired at 2 of roughly 28 `requirePhaseArg`
+  callsites today, `cursor set` (`:612`) and `seed-reqs` (`:2586`), because
+  D-07 caught those two writing a lossy value into a durable artifact; the rest
+  take the normalized number and never mention the spelling they discarded. A
+  census test pins the guarded count against the callsite count so the
+  twenty-ninth callsite cannot ship unguarded.
 
 `v3.7.0 - the refusal that names the next step` closed 2026-08-24. Its three
 ids - `HNT-01`, `HNT-02` (#238) and `SCP-01` (#249) - are under `## Shipped`
