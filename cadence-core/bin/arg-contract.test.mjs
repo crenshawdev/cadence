@@ -300,7 +300,7 @@ test('every flag in every row declares a complete grammar', () => {
     }
   }
   // The walk reached the whole table, so no arm above is vacuous.
-  assert.equal(entries, 178, `the table declares ${entries} flag entries`);
+  assert.equal(entries, 179, `the table declares ${entries} flag entries`);
   assert.equal(Object.keys(CONTRACTS).length, 17, 'one row per top-level bin script');
 });
 
