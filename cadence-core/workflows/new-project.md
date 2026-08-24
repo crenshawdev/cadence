@@ -148,6 +148,50 @@ line):
      writer here on purpose, so `checkPairs`, `retiredKeyError` and the
      repo-layer-only refusal on `git.forge_repo` all still apply to this write.
 
+     **Then offer to CREATE it, when there is nothing to create it beside.**
+     Only on the arm where `git remote get-url origin` names nothing - a
+     directory just `git init`ed has no origin, and a repository that already
+     has one already exists on a forge. Ask through the ask-user seam as a plain
+     confirm, so no option carries `(recommended)`, and put all four facts in
+     the question itself:
+
+       "Create <owner>/<name> on <provider> now? It will be created PRIVATE."
+
+     Those four - the provider, the owner, the repository name and the
+     visibility - are the confirmation, and nothing else in this run states them
+     together. Visibility is not a question and is never asked: every repository
+     Cadence creates is private, because `gh` with no visibility flag drops to
+     an interactive prompt that would hang, `glab` silently defaults to
+     `internal`, and three different defaults are not a choice worth putting to
+     a user.
+
+     Only on a yes, and never ahead of one:
+
+     ```
+     node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" create \
+       --provider <provider> --repo <owner/name> --confirmed \
+       --remote-url <url> --dir .
+     ```
+
+     `--confirmed` is what the user's answer buys. The seam cannot ask - it
+     would hang blocking on stdin inside a Bash call - so the flag is this
+     step's assertion that the question was put and answered, and passing it
+     ahead of the answer is the one thing that would make the whole gate a
+     formality.
+
+     `--remote-url` is passed on `forgejo` and `github` and OMITTED on `gitlab`.
+     Those two providers' create commands wire no git remote, so the seam adds
+     `origin` itself and needs the URL to point it at; `glab` wires its own. It
+     is not a fourth question and neither host is guessed: on `forgejo` build it
+     from the `git.forge_host` just confirmed above, and on `github` from the
+     fixed `github.com`, each with the answered slug -
+     `https://<host>/<owner>/<name>.git`.
+
+     On an `ok:false`, print the envelope's `reason` and `hint`, one line each,
+     and stop the forge step. Do not continue as though a repository exists, and
+     do not re-run the create: a `created:true` on that envelope means the
+     repository IS there and only the remote is missing.
+
 7. Brownfield check: if the repo already contains source code (anything
    beyond dotfiles and `.planning/`), note it briefly ("Existing [language]
    code detected: [one-line shape]"). During questioning, treat existing
