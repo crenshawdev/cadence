@@ -12,8 +12,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  PROVIDER_TABLE, decideForge, forgeRecordComplete, installedProviders,
-  isForgeSlug, originDefaults,
+  CREATE_TABLE, PROVIDER_TABLE, decideForge, forgeRecordComplete, installedProviders,
+  isForgeSlug, originDefaults, splitSlug,
 } from './lib/forge-decision.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -284,5 +284,78 @@ test('originDefaults drops a slug that fails the grammar rather than passing it 
 test('originDefaults is TOTAL over anything a caller hands it', () => {
   for (const bad of [undefined, null, 'github', 42, {}]) {
     assert.deepEqual(originDefaults(bad), { provider: null, repo: null });
+  }
+});
+
+// --- the owner/name split: one grammar, two halves ---------------------------
+
+test('splitSlug takes the two halves apart at the LAST separator', () => {
+  assert.deepEqual(splitSlug('crenshawdev/cadence'), { owner: 'crenshawdev', name: 'cadence' });
+  // GitLab's nested subgroups: the owner is everything above the repository.
+  assert.deepEqual(splitSlug('g/sub/r'), { owner: 'g/sub', name: 'r' });
+});
+
+test('splitSlug refuses everything the slug grammar refuses, rather than re-deriving one', () => {
+  // ONE predicate decides what a repository reference may be: a value that gets
+  // no default at setup must get no creation target either.
+  for (const bad of ['cadence', '-flag/repo', 'org/../etc', 'org/repo; id', '', null, 42, {}]) {
+    assert.equal(splitSlug(bad), null, `splitSlug accepted ${JSON.stringify(bad)}`);
+  }
+});
+
+// --- the creation table: three grammars for one operation (AC6) --------------
+
+test('the create table names the same three providers as the provider table', () => {
+  assert.deepEqual(Object.keys(CREATE_TABLE), Object.keys(PROVIDER_TABLE));
+  assert.ok(Object.isFrozen(CREATE_TABLE));
+  for (const row of Object.values(CREATE_TABLE)) assert.ok(Object.isFrozen(row));
+});
+
+test('the create table repeats no binary name - PROVIDER_TABLE is the one spelling', () => {
+  for (const [provider, row] of Object.entries(CREATE_TABLE)) {
+    assert.equal(row.bin, undefined, `${provider}: a second copy of the binary name`);
+    assert.deepEqual(Object.keys(row).sort(), ['argv', 'wiresRemote'],
+      `${provider}: a third field is a rule this table would state in two places`);
+  }
+});
+
+test('each provider builds the ONE argv measured for it, element for element', () => {
+  // AC6's three pinned argvs, verbatim. Element for element rather than joined,
+  // because a joined string cannot tell one argument carrying a space from two.
+  assert.deepEqual(CREATE_TABLE.github.argv('o', 'r'),
+    ['repo', 'create', 'o/r', '--private']);
+  assert.deepEqual(CREATE_TABLE.gitlab.argv('o', 'r'),
+    ['repo', 'create', 'o/r', '--private', '--remoteName', 'origin']);
+  assert.deepEqual(CREATE_TABLE.forgejo.argv('o', 'r'),
+    ['repos', 'create', '--name', 'r', '--owner', 'o', '--private']);
+});
+
+test('the two positional grammars rejoin a nested owner, and tea keeps it split', () => {
+  const { owner, name } = splitSlug('g/sub/r');
+  assert.deepEqual(CREATE_TABLE.gitlab.argv(owner, name),
+    ['repo', 'create', 'g/sub/r', '--private', '--remoteName', 'origin']);
+  assert.deepEqual(CREATE_TABLE.forgejo.argv(owner, name),
+    ['repos', 'create', '--name', 'r', '--owner', 'g/sub', '--private']);
+});
+
+test('EVERY row pins --private, so a fourth provider cannot be added without one', () => {
+  // CONTEXT D-04: the value is pinned, not defaulted. `gh` with no visibility
+  // flag drops to an interactive prompt that would hang a Bash tool call, and
+  // `glab` silently defaults to `internal`.
+  for (const [provider, row] of Object.entries(CREATE_TABLE)) {
+    assert.ok(row.argv('o', 'r').includes('--private'), `${provider} does not pin visibility`);
+    assert.equal(row.argv.length, 2, `${provider}'s builder takes a visibility parameter`);
+  }
+});
+
+test('the row flagged as wiring its own remote is exactly the one whose argv wires it', () => {
+  // The flag is read off the argv beside it, never off a provider's reputation:
+  // this is the pair that would drift silently if the flag were hand-set.
+  const wiring = Object.entries(CREATE_TABLE).filter(([, r]) => r.wiresRemote).map(([p]) => p);
+  assert.deepEqual(wiring, ['gitlab']);
+  assert.ok(CREATE_TABLE.gitlab.argv('o', 'r').includes('--remoteName'));
+  for (const [provider, row] of Object.entries(CREATE_TABLE)) {
+    assert.equal(row.argv('o', 'r').includes('--remoteName'), row.wiresRemote,
+      `${provider}: the wiresRemote flag disagrees with the argv it describes`);
   }
 });

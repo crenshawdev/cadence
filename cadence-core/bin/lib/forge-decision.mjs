@@ -287,3 +287,86 @@ export function decideForge({ provider, repo, host, installed } = {}) {
     hint: 'install the CLI for the forge you use - tea for a Forgejo or Gitea instance, gh for GitHub, glab for GitLab - then re-run this setup step',
   };
 }
+
+/**
+ * The `owner` and `name` halves of a repository selector, or null when the
+ * selector is not one this phase will hand to a forge CLI.
+ *
+ * ONE predicate decides what a repository reference may be: this splitter runs
+ * `isForgeSlug` first rather than re-deriving a grammar of its own, so a value
+ * refused as a setup-time default cannot be accepted as a creation target. The
+ * split is at the LAST separator, which is what makes GitLab's nested subgroups
+ * come apart correctly - `g/sub/r` is owner `g/sub` and name `r`, the two
+ * strings `tea repos create --owner/--name` wants and the two halves `gh` and
+ * `glab` want rejoined.
+ *
+ * @param {unknown} slug @returns {{owner: string, name: string}|null}
+ */
+export function splitSlug(slug) {
+  if (!isForgeSlug(slug)) return null;
+  const s = /** @type {string} */ (slug);
+  const at = s.lastIndexOf('/');
+  return { owner: s.slice(0, at), name: s.slice(at + 1) };
+}
+
+/**
+ * How each provider's CLI is told to create a repository - one row per
+ * provider, in the shape `HOST_TABLE` in lib/issue-decision.mjs already uses
+ * (CONTEXT D-14): a builder that returns the argv, and a stated fact about what
+ * that argv does to the git remote.
+ *
+ * THE BINARY IS NOT REPEATED HERE. `PROVIDER_TABLE` above already says which
+ * binary drives which provider, and a second copy is a second thing to keep in
+ * step - the caller reads the name from there and the argv from here.
+ *
+ * THREE DIFFERENT GRAMMARS FOR ONE OPERATION, measured 2026-08-24 on gh 2.98.0,
+ * glab 1.114.0 and tea 0.15.1. `gh` and `glab` take the slug as one positional;
+ * `tea` takes the two halves as separate flags and has no positional form. This
+ * is why the table is data rather than a formatted string: there is no shape
+ * the three share to be parameterized.
+ *
+ * VISIBILITY IS PINNED, NOT DEFAULTED (CONTEXT D-04). Every row carries
+ * `--private` and no row takes a visibility parameter, because the three CLIs
+ * disagree about what happens without one: `gh` with no `--public`/`--private`/
+ * `--internal` drops to an INTERACTIVE PROMPT, which would hang inside a Bash
+ * tool call; `glab` silently defaults to `internal`; `tea` defaults private.
+ * Three different defaults is not a choice worth putting to a user, so the
+ * value is a fact of the row and the confirmation states it.
+ *
+ * `wiresRemote` IS READ OFF THE ARGV BESIDE IT, NEVER OFF A PROVIDER'S
+ * REPUTATION. It says one thing: does the argv on THIS row leave a git `origin`
+ * pointing at the created repository?
+ *   glab   TRUE  - `--remoteName origin` sits in the argv, and `glab repo
+ *                  create --help` calls it "Remote name for the Git repository
+ *                  you're in".
+ *   tea    FALSE - `tea repos create --help` mentions no remote at all
+ *                  (CONTEXT D-15).
+ *   gh     FALSE - the pinned argv carries no `--source`, and `gh repo create
+ *                  --help` scopes `-r, --remote` to a create made FROM a local
+ *                  source directory. CONTEXT D-15's sentence groups `gh` with
+ *                  `glab`; AC6's pinned argv is a measured recording and is
+ *                  what this row follows, because flagging `gh` as wiring a
+ *                  remote would ship a row contradicting the argv printed
+ *                  beside it. See PLAN-2's Notes for what amending AC6 instead
+ *                  would have cost.
+ * The follow-up that ACTS on the flag is bin/forge.mjs's, not this module's:
+ * nothing here spawns anything.
+ */
+export const CREATE_TABLE = Object.freeze({
+  forgejo: Object.freeze({
+    wiresRemote: false,
+    /** @param {string} owner @param {string} name @returns {string[]} */
+    argv: (owner, name) => ['repos', 'create', '--name', name, '--owner', owner, '--private'],
+  }),
+  github: Object.freeze({
+    wiresRemote: false,
+    /** @param {string} owner @param {string} name @returns {string[]} */
+    argv: (owner, name) => ['repo', 'create', `${owner}/${name}`, '--private'],
+  }),
+  gitlab: Object.freeze({
+    wiresRemote: true,
+    /** @param {string} owner @param {string} name @returns {string[]} */
+    argv: (owner, name) => ['repo', 'create', `${owner}/${name}`, '--private',
+      '--remoteName', 'origin'],
+  }),
+});
