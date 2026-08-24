@@ -66,10 +66,17 @@ writes will go.
   provider only for the `github.com`/`gitlab.com` hostname suffixes or a
   `tea login list` record naming the host
   (`cadence-core/bin/lib/issue-decision.mjs:354-378`).
-- **D-08** The persisted record is provider + slug, NOT host. On a split SSH
-  endpoint the classifier's host is the SSH hostname
+- **D-08** The persisted record is provider + slug, and on Forgejo a third key
+  carrying the instance host. The host is never DERIVED from the origin URL: on
+  a split SSH endpoint the classifier's host is the SSH hostname
   (`ssh.jcrenshaw.dev`), not the instance the user knows
-  (`git.jcrenshaw.dev`) - the shape this repository itself has.
+  (`git.jcrenshaw.dev`) - the shape this repository itself has. It is ASKED at
+  setup and confirmed by the user, which is what separates it from the
+  classifier's guess. Amended 2026-08-24: the original provider+slug-only record
+  could not meet phase 1 success criterion 4 on Forgejo, because `tea` addresses
+  an instance through `--remote origin` and a repository that has lost its
+  origin then has no way to name one. `gh` and `glab` need no such key - their
+  hosts are fixed - so the key is Forgejo-only and null elsewhere.
 - **D-09** Persistence is new `git.*` keys in `cadence-core/config.schema.json`
   written by the existing `config.mjs set` against `.planning/config.json`. No
   new writer seam, so `checkPairs`, `retiredKeyError` and the `repo_only`
