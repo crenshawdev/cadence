@@ -895,7 +895,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | NEW-PROJECT-04 | cadence-core/workflows/new-project.md | 42 | `planning.mjs trace ignore --root .` exists as a seam call. | accurate | accurate | 2 |
 | NEW-PROJECT-05 | cadence-core/workflows/new-project.md | 47 | A re-run returns `written:false` with `reason:"already-ignored"`. | accurate | accurate | 2 |
 | NEW-PROJECT-06 | cadence-core/workflows/new-project.md | 48 | A project ignoring `.planning/` wholesale is detected and left alone. | accurate | accurate | 1 |
-| NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 56 | `cadence-core/templates/config.json` is the engine template. | accurate | accurate | 2 |
+| NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 56, 59 | `cadence-core/templates/config.json` is the engine template, copied verbatim, and setup asks no configuration questions - with ONE stated exception, the forge in item 6, because a forge is a precondition no template can default. | accurate | accurate | 2 |
 | NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 61 | Defaults are research off, plan check on, verifier on. | stale | corrected - ee0199b - the same sentence - the written default for `workflow.plan_check` is reported as off | 1 |
 | NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 66-68 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate | 2 |
 | NEW-PROJECT-10 | cadence-core/workflows/new-project.md | 161 | `cadence-core/templates/PROJECT.md` exists. | accurate | accurate | 2 |
@@ -1122,7 +1122,7 @@ mistake.
 | ADOPT-05 | cadence-core/workflows/adopt.md | 40, 47-48 | `planning.mjs trace ignore --root .` and it is the only thing in Cadence that writes the rule | accurate | accurate | 2 |
 | ADOPT-06 | cadence-core/workflows/adopt.md | 49-51 | /cad-health reports `ignored:false` and `tracked:true` as separate issues with different remedies | accurate | accurate | 2 |
 | ADOPT-07 | cadence-core/workflows/adopt.md | 50-51 | Append-if-absent, so a brownfield `.gitignore` keeps every line and a re-run adds no second line | accurate | accurate | 2 |
-| ADOPT-08 | cadence-core/workflows/adopt.md | 41, 53 | The config template is copied VERBATIM from `cadence-core/templates/config.json` | accurate | accurate | 2 |
+| ADOPT-08 | cadence-core/workflows/adopt.md | 41, 54 | The config template is copied VERBATIM from `cadence-core/templates/config.json`, and adopt asks no configuration questions - with ONE stated exception, the forge in item 4, because a forge is a precondition no template can default. | accurate | accurate | 2 |
 | ADOPT-09 | cadence-core/workflows/adopt.md | 54-56 | "Config written with defaults (standard granularity, shipped stakes, research off, plan check and verifier on)" | stale | corrected - ee0199b - the same fix, byte-identical sentence in `adopt.md` | 2 |
 | ADOPT-10 | cadence-core/workflows/adopt.md | 42-44 | The five keys read: `planning.commit_docs`, `granularity`, `git.protected_branches`, `git.on_protected`, `git.base_branch` | accurate | accurate | 2 |
 | ADOPT-11 | cadence-core/workflows/adopt.md | 61-62 | `planning.mjs detect-commands` is neither required nor extended for this | accurate | accurate | 2 |

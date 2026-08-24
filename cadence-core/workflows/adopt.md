@@ -42,6 +42,7 @@ Two stops first, before anything is written.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
      planning.commit_docs granularity \
      git.protected_branches git.on_protected git.base_branch
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .
    ```
 
    The ignore line is not optional: `.planning/trace.jsonl` is ONE MACHINE's
@@ -50,10 +51,67 @@ Two stops first, before anything is written.
    with different remedies. Append-if-absent, so a brownfield `.gitignore` keeps
    every line it had and a re-run adds no second line.
 
-   The config template is copied VERBATIM - ask no configuration questions. When
-   it was written, say so in one line: "Config written with defaults (standard
-   granularity, shipped stakes, research and plan check off, verifier on).
-   /cad-config changes any of it."
+   The config template is copied VERBATIM - ask no configuration questions, with
+   ONE deliberate exception, and it is item 4 below: the forge. A forge is a
+   PRECONDITION rather than an option (FRG-02), and no template can carry a
+   default for it, because which forge hosts a repository is a fact about that
+   repository and not about Cadence. So it is asked, once, and a repository that
+   has answered is never asked again. Every other key keeps the template's
+   value. When the config was written, say so in one line: "Config written with
+   defaults (standard granularity, shipped stakes, research and plan check off,
+   verifier on). /cad-config changes any of it."
+
+4. **Pick a forge**, from the `forge.mjs detect` line in that same script - it
+   rides the existing script rather than taking a turn of its own, because it
+   reads a config and PATH and this item is prose over what it already printed.
+   Branch on `action` alone, the way /cad-land step 1 branches on
+   `issue-check`'s:
+
+   - `configured` - this repository has already answered. Say NOTHING and ask
+     nothing. This is what makes a second run of /cad-adopt silent on the
+     subject.
+   - `refuse` - print the envelope's `reason` and its `hint`, one line each, and
+     stop the forge step here. A forge is a precondition (FRG-02): do not invent
+     a no-tracker mode, and do not fall through to the questions below.
+   - `ask` - put the questions to the user through the ask-user seam
+     (`references/seams.md`), in this order:
+
+     a. **Which forge**, as a structured choice over the envelope's `installed`
+        entries - one option per entry, naming the provider and the binary that
+        drives it. When `defaults.provider` names one of those providers, put
+        that option FIRST and label it `(recommended)`; when it is null, offer
+        them in the order the envelope lists and label NOTHING. That is the
+        seam's own rule that a recommendation must fall out of analysis the step
+        already did, and no analysis here recommends a forge for a host the
+        origin URL cannot classify.
+     b. **Which repository**, as `owner/name`. Pre-fill it from `defaults.repo`
+        when the envelope offers one, so the user CONFIRMS rather than retypes;
+        ask it outright when it does not. An adopted repository usually HAS an
+        origin, so this is usually a confirmation.
+     c. **Which Forgejo instance** - asked ONLY when the chosen provider is
+        `forgejo` and the envelope's `host` is null. Open-ended per the ask-user
+        seam, because the value is typed rather than picked from a set, and with
+        NO default offered. Ask for the instance the user reaches in a BROWSER -
+        `forge.example.com` - and NOT the SSH endpoint the remote URL carries,
+        which is often a different name (`ssh.example.com`); that split is a
+        normal deployment rather than a misconfiguration, this repository is one,
+        and only the browser host resolves a `tea` login. `github` and `gitlab`
+        are never asked this; their hosts are fixed.
+
+     Persist the answers in ONE call, against this repository's own
+     `.planning/config.json` (the default target - no `--file`, no `--global`):
+
+     ```
+     node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set \
+       git.forge_provider=<provider> git.forge_repo=<owner/name>
+     ```
+
+     On the forgejo arm that same call carries `git.forge_host=<host>` as a
+     third pair. On `github` and `gitlab` the pair is OMITTED entirely rather
+     than written empty: null there means "fixed host, nothing to name", and an
+     empty string would read back as an answered question. There is no new
+     writer here on purpose, so `checkPairs`, `retiredKeyError` and the
+     repo-layer-only refusal on `git.forge_repo` all still apply to this write.
 </step>
 
 <step name="survey">
