@@ -1,0 +1,39 @@
+{
+  "phase": "4",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "66ce9bd5",
+  "head": "52068a0b",
+  "base_id": "66ce9bd5410aa218b5217b636676c595481ab410",
+  "head_id": "52068a0b114e86e7e505aeba915e8dea0dcaee4e",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning/core.mjs",
+      "line": 36,
+      "severity": "blocker",
+      "claim": "`HERE` calls `fileURLToPath(import.meta.url)`, but this new module never imports `fileURLToPath` from `node:url`.",
+      "failure_scenario": "Every invocation of `planning.mjs` statically imports `planning/core.mjs`; evaluating core throws `ReferenceError: fileURLToPath is not defined` while initializing `HERE`, before dispatch or the catch-all can produce an `ok:false` envelope. Consequently all planning commands fail at startup.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/planning/core.mjs",
+        "line": 25,
+        "note": "Line 25 is `import { fileURLToPath } from 'node:url';` - the exact import the finding says is absent. HERE is at core.mjs:93, not :36. `node cadence-core/bin/planning.mjs status` exits 0 and returns its envelope, so no ReferenceError is thrown at module evaluation. The reviewer read a NARROWED artifact with verbatim-moved lines and line numbers stripped, so the import block was not in what it saw."
+      },
+      "base_id": "66ce9bd5410aa218b5217b636676c595481ab410",
+      "head_id": "52068a0b114e86e7e505aeba915e8dea0dcaee4e"
+    }
+  ]
+}

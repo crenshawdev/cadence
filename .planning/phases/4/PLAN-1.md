@@ -8,6 +8,8 @@ files:
   - cadence-core/bin/helper-census.test.mjs
   - cadence-core/bin/prose-agreement.test.mjs
   - cadence-core/bin/planning.test.mjs
+  - cadence-core/bin/trace.test.mjs
+  - cadence-core/bin/self-verify.test.mjs
 ---
 
 # Phase 4: Split planning.mjs by command - Plan 1 (the source split)

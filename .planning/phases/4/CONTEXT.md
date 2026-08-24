@@ -72,7 +72,7 @@ parallelize.
   `ORIGIN_EXEMPT` (`:1776`) and `LEGACY_REASON` (`:1784`) sit inside `cmdAudit`'s
   span but are used only by `cmdCriteriaCoverage`. Of 31 module constants, 25 are
   single-handler; only `DISPATCH_WINDOW_DEFAULTS` (`:3831`) and
-  `RISK_DIFF_MAX_BUFFER` (`:4583`) are genuinely shared.
+  `RISK_DIFF_MAX_BUFFER` (`:4583`) are genuinely shared. [corrected by plan-1 deviation: `DISPATCH_WINDOW_DEFAULTS` is not shared - measured over comment-stripped source its only reader is `cmdTrace`, so the by-use rule would have placed it in `planning/trace.mjs`, not the core]
 - D-07 (families): `trace` and `risk-check` co-locate rather than splitting into
   one file per handler. These are the ONLY two handler-to-handler call edges in the
   file: `cmdTrace` (`:4035`) calls `cmdTraceIgnore` (`:3690`), and `cmdRiskCheck`
