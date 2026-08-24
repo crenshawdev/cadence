@@ -5,79 +5,42 @@
 
 ## Active
 
-`v3.7.1 - one spelling, one phase` opened 2026-08-24, one phase, two ids seeded
-at the open - the practice `v3.5.7` established. `/cad-plan` seeds each
+`v3.7.1 - the tracker is the record` opened 2026-08-24, two phases, five ids
+seeded at the open - the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
 
+- **CAP-01** - `.planning/CAPTURE.md` is scoped to the phase in flight and
+  empties at phase close. The item grammar has two states today, `- [ ]` and
+  `- [x]`, and `[x]` means done, so a decision NOT to do something has no
+  representation and stays `[ ]` looking like live work. With no way to record
+  a rejection, rejections were written into the bullets instead - the
+  `KEPT <date>` / `recorded not fixed` annotations, 12 of them in this
+  repository - so adjudicating an item made it longer rather than removing it.
+  Resolution is removal, never annotation.
+- **CAP-02** - Anything worth keeping beyond the phase becomes an issue on the
+  repository's OWN tracker, derived from its `origin` remote (Forgejo, GitHub,
+  GitLab) with no host, org or username hardcoded. This project's own history
+  already points there - CAPTURE bullets cite `#238`, `#249`, `#69`, `#29`. A
+  `## Archive` heading inside CAPTURE is not the record and leaves the
+  contract: this repository has 185 such bullets proving that moving items
+  within the file fixes the recall walk and nothing about the 251,968 bytes.
+- **CAP-03** - A bound on the walked bullet count that fails loud in
+  `/cad-health`. The 2026-08-08 sweep took the queue to zero and it regrew to
+  276 walked items in sixteen days, because no workflow drains the file:
+  `workflows/milestone.md` never mentions CAPTURE and the only two workflows
+  that reference it, `plan.md` and `execute.md`, are readers. A sweep without a
+  bound restarts the clock.
 - **SPL-01** - A `phases/` directory whose name would be normalized to a
   DIFFERENT phase is reported as `phase-dir-grammar` drift. `PHASE_DIR_NAME`
   (`cadence-core/bin/planning.mjs:343`) guards the integer part with a leading
   `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are
-  all silently legal (verified on this tree 2026-08-24) while the detail
-  `phaseDirGrammarDrift` prints says "no zero-padding". The check contradicts
-  its own diagnostic, and `phases/1.01` beside a legal `phases/1.1` is the
-  collision that drift kind exists to name. Whether `2.0` is legal at all is
-  decided once in `references/roadmap-phases.md` and the enforcing sites match
-  that statement or say why they differ (D-09 is the standing example).
+  all silently legal (verified 2026-08-24) while the detail
+  `phaseDirGrammarDrift` prints says "no zero-padding".
 - **SPL-02** - Every `planning.mjs` command that resolves `--phase` to a
   `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal`
-  (`planning.mjs:278`), which already names both fixes - retype the flag, or
-  rename the directory. It is wired at 2 of roughly 28 `requirePhaseArg`
-  callsites today, `cursor set` (`:612`) and `seed-reqs` (`:2586`), because
-  D-07 caught those two writing a lossy value into a durable artifact; the rest
-  take the normalized number and never mention the spelling they discarded. A
-  census test pins the guarded count against the callsite count so the
-  twenty-ninth callsite cannot ship unguarded.
-
-`v3.7.0 - the refusal that names the next step` closed 2026-08-24. Its three
-ids - `HNT-01`, `HNT-02` (#238) and `SCP-01` (#249) - are under `## Shipped`
-with the rest of this project's delivered scope. The two accessibility gaps
-#238 names as deferred stay deferred: the ask-user register rail is a seam rule
-rather than a code change, and the done-step report field lists are
-model-facing.
-
-The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted, and `BCH-01` stays in `## Deferred`
-carrying the spike verdict that invalidated it rather than dropped. The
-2026-08-18 caveats on the first four are still undecided: `CTX-02`'s stated
-basis no longer holds, since both its issues (#69, #29) are closed and #29's ask
-shipped as `/cad-minimalism-review`; and `RCL-06` carries no deferral reason and
-no promotion trigger, so nothing can ever re-ask it. Both want a decision before
-either is scoped.
-
-Unassigned and carried across closes: the open items filed at the `v3.5.1`
-close, the proposals filed at the `v3.5.2` close, and the medium `risk_surface`
-survivors carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6` closes.
-`v3.5.8`'s own two survivors are `low` and sit in
-`.planning/REVIEW-risk_surface-v3.5.8.md`.
-
-`v3.5.8`'s two open items worth a decision before a later cycle inherits them:
-the `partial-flip` and `partial-bump` envelopes ship with no committed regression
-test, and `planning.mjs`'s `read(reqFile)` still accepts any existing filesystem
-object, so a FIFO at `.planning/REQUIREMENTS.md` hangs `phase-done` before its
-refusal can run.
-
-`v3.5.9`'s three: `plan-overlap` still reports `overlaps: []` when one of two
-colliding declarations is decorated (by design - the diagnostic routes the phase
-sequential, it does not repair the comparison); the decoration rule's residual
-over-fire is a path that legitimately opens and closes on the same emphasis byte,
-`__main__`; and `DOCS-CLAIMS.md` rows `MILESTONE-04` and `MILESTONE-05` cite
-stale line ranges against `milestone.md`.
-
-`v3.6.0`'s three `risk_surface` survivors (one medium, two low) and its open
-items are recorded in `PROJECT.md`'s `### Active`, which is where they live now
-that the phase directories are pruned.
-
-`v3.6.1`'s own outstanding work, none of it scoped: the entry cap bounds entry
-count and not bytes, so 63 of 548 tracked paths still render over the
-10,000-byte line (worst 30,825 B) and relocating the bytes the way
-`lib/bulk-output.mjs` does is the fix that would bound it; the `risk_surface`
-survivor at `lib/why-render.mjs:225`, ruled `low`, where the queried path is
-interpolated verbatim into terminal-facing `text`; and the two prompt-cache
-issues filed on the origin, which are ordered - issue 242 records cache figures
-on the dispatch bracket first, and only then does issue 241 move the rung label
-below the contract reference, since the latter's benefit is argued from byte
-layout and the former is what would make it measurable.
+  (`planning.mjs:278`). It is wired at 2 of roughly 28 `requirePhaseArg`
+  callsites today, `cursor set` (`:612`) and `seed-reqs` (`:2586`); the rest
+  take the normalized number and never mention the spelling they discarded.
 
 ## Shipped
 
