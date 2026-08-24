@@ -1,0 +1,8 @@
+PLAN CHECKPOINT: structural
+Plan: .planning/phases/1/PLAN-1.md
+Tasks: 0 of 7
+| Task | Commit | Note |
+|---|---|---|
+| 1: Add the three forge config keys and every surface they drag | none | Implemented in the working tree, UNCOMMITTED. Schema, template, reach rows, catalog rows and the three re-pinned budgets all land; every command in the task's own `Verify:` passes EXCEPT `test.mjs routing prose`, which reddens on two census assertions in files this plan does not lease. |
+Deviations: [deviation] Task 1's `Verify:` asserts `node cadence-core/bin/test.mjs routing prose` passes. It does not, and cannot, from inside this plan's `files:` lease. Two hand-maintained census tests enumerate the schema and are invalidated by construction the moment the three keys land: (1) `cadence-core/bin/config.test.mjs:874` - `SCP-01: exactly one SHIPPED key carries the marker` asserts `Object.keys(shipped).filter(k => shipped[k].repo_only === true)` deepEquals `['git.auto_close']`, and CONTEXT D-02 requires `git.forge_repo` to carry `repo_only: true`, so the list is now `['git.auto_close','git.forge_repo']`; (2) `cadence-core/bin/self-verify.test.mjs:314-343` - `placeholder keys expand: <t> prose covers every trigger key` builds a fixture whose prose hand-enumerates every schema key, so the three new keys report `inert-config-key` and the fixture run is no longer `ok:true`. Neither file is in PLAN-1's `files:` list, and neither is in PLAN-2's, so adding them creates no plan overlap. Nothing was committed; `lease-check` would refuse the commit and the contract routes an out-of-lease need to a structural checkpoint rather than to a widened commit.
+Open items: none

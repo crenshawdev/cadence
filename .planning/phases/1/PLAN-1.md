@@ -14,6 +14,8 @@ files:
   - cadence-core/bin/forge.test.mjs
   - cadence-core/bin/lib/arg-contract.mjs
   - cadence-core/bin/arg-contract.test.mjs
+  - cadence-core/bin/config.test.mjs
+  - cadence-core/bin/self-verify.test.mjs
   - cadence-core/bin/issue-check.mjs
   - cadence-core/bin/lib/issue-decision.mjs
   - cadence-core/bin/issue-check.test.mjs
