@@ -1,0 +1,21 @@
+{
+  "auto_passed": 6,
+  "gaps": 2,
+  "added": 2,
+  "skipped": 0,
+  "rejected": 0,
+  "rejected_entries": [],
+  "skipped_entries": [
+    {
+      "list": "human_checks",
+      "reason": "already-recorded",
+      "item": 7,
+      "status": "pending",
+      "entry": {
+        "name": "A real repository is created end to end on Forgejo",
+        "expected": "One real repository created through the shipped path on a live Forgejo instance, private, with origin wired AND reachable - `git ls-remote origin` in the new directory succeeds against the URL that was wired, which is the clause no earlier run settled.",
+        "why_human": "Out of reach, not merely unexercised: it needs a live forge account and an authenticated `tea`, plus an interactive TTY to accept the instance's SSH host key - the exact thing that stopped the previous run (`Host key verification failed`, recorded at SUMMARY.md:50). The throwaway repositories from that run were deleted, so no artifact remains to inspect, and the creation/visibility/origin half rests on the orchestrator's observation with no transcript in .planning/phases/1/reports/. Everything a stub CAN prove about this path is already proven (item 6)."
+      }
+    }
+  ]
+}
