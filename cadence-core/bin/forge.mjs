@@ -196,9 +196,20 @@ function readOrigin(dir) {
  * the one land time uses. The host handed in is lowercased already, because it
  * comes from `classifyOrigin`, which lowercases every hostname it parses.
  *
+ * THE PORT GOES WITH THE HOST, and both come off the SAME classification. A
+ * hostname alone cannot tell two Forgejo instances on one machine apart -
+ * `https://forge.example:3000` and `https://forge.example:3001` - so a login on
+ * the wrong one could answer the owner question and then be pinned into the
+ * create with `--login`, putting the repository on one instance while `origin`
+ * was set to the other. The port lives in `loginNamesHost` for the reason its
+ * header states, so this seam still asks ONE question and states no host rule
+ * of its own; here it only passes the second half of what it was already given.
+ *
  * FIRST USABLE RECORD, in tea's own list order, which is `teaLoginNameForHost`'s
  * rule and for its reason: two logins can name one host and any preference
- * between them would be invented. "Usable" is doing work rather than tidying -
+ * between them would be invented - which the port is NOT, being a real
+ * difference between two instances rather than a preference between two
+ * accounts on one. "Usable" is doing work rather than tidying -
  * a record whose `name` is empty or opens on `-` cannot go into an argument
  * vector without reading as a FLAG, and these are bytes a CLI printed at us.
  * Such a record is SKIPPED rather than accepted-and-sanitized: it is not the
@@ -210,9 +221,10 @@ function readOrigin(dir) {
  * an envelope field, never a reason, never a hint.
  *
  * @param {string} bin @param {string} dir @param {string} host
+ * @param {string|null} httpPort the classification's port, or null
  * @returns {{name: string, user: string}|null}
  */
-function teaLoginFor(bin, dir, host) {
+function teaLoginFor(bin, dir, host, httpPort) {
   const probe = run(bin, ['login', 'list', '--output', 'json'],
     { cwd: dir, timeout: LOGIN_TIMEOUT_MS });
   if (!probe.ok) return null;
@@ -220,7 +232,7 @@ function teaLoginFor(bin, dir, host) {
   try { records = JSON.parse(probe.stdout); } catch { return null; }
   if (!Array.isArray(records)) return null;
   for (const rec of records) {
-    if (!loginNamesHost(rec, host)) continue;
+    if (!loginNamesHost(rec, host, httpPort)) continue;
     const name = typeof rec.name === 'string' ? rec.name.trim() : '';
     const user = typeof rec.user === 'string' ? rec.user.trim() : '';
     if (name === '' || user === '' || name.startsWith('-')) continue;
@@ -402,13 +414,16 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
   // instance (`GetOrgByName`, measured live 2026-08-24) while omitting it
   // creates under the login user. A row that cannot answer that question has no
   // argv, so this refuses instead of falling back - the fallback is the argv
-  // that already failed. The host comes from the `--remote-url` this arm has
-  // just required, which is the instance the user named and confirmed at setup;
-  // nothing here parses a host out of anything else.
+  // that already failed. The host AND ITS PORT come from the `--remote-url`
+  // this arm has just required, which is the instance the user named and
+  // confirmed at setup; nothing here parses either out of anything else, and
+  // the port travels because a hostname on its own cannot say which of two
+  // instances on one machine the user meant.
   const { owner, name } = parts;
   let login = null;
   if (row.needsLogin) {
-    login = classified.host === null ? null : teaLoginFor(bin, dir, classified.host);
+    login = classified.host === null
+      ? null : teaLoginFor(bin, dir, classified.host, classified.httpPort);
     if (!login) {
       emit({ ok: false, reason: `no ${bin} login serves ${classified.host ?? 'that instance'}, so there is no way to tell whether ${owner} is your own account or an organization there`,
         detail: null,

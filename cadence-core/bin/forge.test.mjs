@@ -457,6 +457,92 @@ test('create: a repository under the LOGIN USER is created with no --owner at al
   ]);
 });
 
+/** Two Forgejo instances on ONE hostname, told apart by nothing but the port
+ *  inside each login's API `url` - a second instance on `:3001` beside the
+ *  first on `:3000`, which is what a machine running two of them looks like.
+ *  Every other field a login identifies its forge by names the same host. */
+const TEA_LOGINS_TWO_PORTS = [
+  { name: 'prod-3000', url: 'https://forge.example.com:3000', ssh_host: 'forge.example.com', user: 'jc' },
+  { name: 'prod-3001', url: 'https://forge.example.com:3001', ssh_host: 'forge.example.com', user: 'jc' },
+];
+
+test('create: two logins on ONE hostname are told apart by the PORT the url names', () => {
+  // The login pick used to be made on the hostname alone, so BOTH of these
+  // records named the instance and tea's own list order decided - which meant a
+  // `--remote-url` naming `:3001` could be created on `:3000` and then have
+  // `origin` set to `:3001`: a repository on an instance the user never asked
+  // for, and a checkout pointing somewhere else. The port is real
+  // distinguishing information, so it decides; list order is asserted BOTH ways
+  // so a pass cannot come from the wanted login happening to be first.
+  for (const port of ['3000', '3001']) {
+    for (const order of ['as printed', 'reversed']) {
+      const records = order === 'reversed'
+        ? TEA_LOGINS_TWO_PORTS.slice().reverse() : TEA_LOGINS_TWO_PORTS;
+      const log = argvLog();
+      const dir = planningRoot();
+      const url = `https://forge.example.com:${port}/jc/r.git`;
+      const { envelope } = run(
+        ['create', '--provider', 'forgejo', '--repo', 'jc/r', '--confirmed',
+          '--remote-url', url, '--dir', dir],
+        { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: JSON.stringify(records) } } },
+      );
+      assert.equal(envelope.ok, true, `${port} / ${order}`);
+      assert.deepEqual(calls(log), [
+        'tea login list --output json',
+        `tea repos create --name r --login prod-${port} --private`,
+        `git -C ${dir} remote add origin ${url}`,
+      ], `${port} / ${order}`);
+    }
+  }
+});
+
+test('create: the scheme default port is the SAME endpoint, never a mismatch', () => {
+  // `https://forge.example.com` and `https://forge.example.com:443` are one
+  // instance written two ways. A rule that read the unspelled one as "no port"
+  // would refuse the login that spells it - or take the `:3000` neighbour
+  // sitting first in the list, which is the same defect wearing a default.
+  const records = [
+    { name: 'other-3000', url: 'https://forge.example.com:3000', ssh_host: 'forge.example.com', user: 'jc' },
+    { name: 'web', url: 'https://forge.example.com:443', ssh_host: 'forge.example.com', user: 'jc' },
+  ];
+  const log = argvLog();
+  const dir = planningRoot();
+  const url = 'https://forge.example.com/jc/r.git';
+  const { envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'jc/r', '--confirmed',
+      '--remote-url', url, '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: JSON.stringify(records) } } },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(calls(log), [
+    'tea login list --output json',
+    'tea repos create --name r --login web --private',
+    `git -C ${dir} remote add origin ${url}`,
+  ]);
+});
+
+test('create: an SSH remote still resolves its login - its port is not an API port', () => {
+  // The split endpoint this repository itself has: the login's `ssh_host` is
+  // the SSH hostname and its `url` is the web one. `:2222` is an SSH port and
+  // has nothing to be compared against on the login record, so the hostname
+  // decides alone exactly as it did before ports were carried at all - reading
+  // 2222 as a mismatch against the API's 443 would refuse the shape that works.
+  const log = argvLog();
+  const dir = planningRoot();
+  const url = 'ssh://git@ssh.example.com:2222/jc/r.git';
+  const { envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'jc/r', '--confirmed',
+      '--remote-url', url, '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: TEA_LOGINS } } },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(calls(log), [
+    'tea login list --output json',
+    'tea repos create --name r --login forge.example.com --private',
+    `git -C ${dir} remote add origin ${url}`,
+  ]);
+});
+
 test('create: no tea login for the instance refuses, and creates NOTHING', () => {
   // The login is what the argv depends on, so an unresolvable one is a refusal
   // rather than a fallback - the fallback is the argv that already failed live.
