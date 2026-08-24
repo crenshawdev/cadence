@@ -38,6 +38,17 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 - **OQ-2 - RESOLVED 2026-08-24: one manual sweep.** This repository's existing
   276 walked items are cleaned up by hand, once, outside the phase work.
 
+- **OQ-3 (blocks phase 2 planning): issue volume on a public tracker.** Filing
+  at each deferral means every review gate can put issues on a repository
+  strangers browse. The 2026-08-24 sweep filed 163 in one run and they were all
+  closed again within the hour, because a small tool showing 163 open issues
+  reads as a project in trouble and costs adoption - the count on the landing
+  page is the signal, and labels and milestones do not change it. Most were
+  also not user-facing defects: test-coverage gaps, ledger drift, hardening
+  notes. Decide before planning: whether a deferral files by default at all,
+  whether it asks, whether low-severity classes are held back, and whether the
+  default target is the public tracker or something the user opts into.
+
 ## Phases
 
 - [ ] **Phase 1: Pick a forge** - detect the installed forge CLIs, let the user choose the provider and name the repository to create or link, and persist that choice
@@ -82,37 +93,47 @@ that choice. This is the precondition phase 2's roll-out depends on.
    already uses, with no test-only override honoured in production (EXP-01).
 
 ### Phase 2: CAPTURE is transient
-**Goal:** `.planning/CAPTURE.md` is a working buffer for the current phase and
-nothing else. Every item leaves it at phase close - resolved and closed, or
-written out as an issue on the repository's tracker. The file cannot
-accumulate, because its scope is one phase rather than the project.
-**Depends on:** Phase 1 (the resolved forge is where roll-out writes)
+**Goal:** A finding leaves `.planning/CAPTURE.md` at the moment a gate DEFERS
+it, not at phase close. The deferral is what files the issue, so the user sees
+the finding when it is raised rather than in a batch later. CAPTURE holds only
+the phase in flight and cannot accumulate, because nothing durable is ever
+routed into it.
+**Depends on:** Phase 1 (the resolved forge is where a deferral writes)
 **Requirements:** CAP-01, CAP-02, CAP-03
 **Success Criteria:**
-1. Phase close empties the walked sections: after the close step runs on a
-   phase whose CAPTURE held items, `planning.mjs capture-sections` reports `0`
-   bullets across `Todos`, `Seeds` and `Notes` for that phase, and every item
-   is accounted for as either closed or filed - none silently dropped.
-2. An item is RESOLVED by removal, never by annotation. The prose rule is
+1. **A deferral files an issue at the deferral.** When a gate defers a finding
+   - the blocking arm's below-blocker/high remainder, the adjudicated arm's
+   non-survivors, any `recorded not fixed` disposition - the issue is created
+   in that same step, and the finding is NOT written into CAPTURE. Verified by
+   running a gate that defers and asserting an issue exists before the phase
+   closes, with CAPTURE unchanged.
+2. Phase close ASSERTS empty rather than performing the roll-out:
+   `planning.mjs capture-sections` reports `0` bullets across `Todos`, `Seeds`
+   and `Notes`, and a non-empty walked section at close is a reported problem
+   naming each item. Close is the check; the deferral is the mechanism.
+3. An item is RESOLVED by removal, never by annotation. The prose rule is
    stated in the triage reference, and a check fails when a walked bullet
    carries a re-verification annotation (the `KEPT <date>` / `recorded not
-   fixed` shapes this repository already holds 12 of).
-3. Roll-out writes to the tracker phase 1 resolved, verified against Forgejo,
+   fixed` shapes the 2026-08-24 sweep found 12 of).
+4. The write targets the tracker phase 1 resolved, verified against Forgejo,
    GitHub and GitLab. No host, org or username appears as a literal anywhere in
    the implementation - a grep for `jcrenshaw` over `cadence-core/` returns
    nothing outside test fixtures.
-4. A write that does not land - auth failure, offline, tracker unreachable -
-   REFUSES the close and leaves the item in place, reporting what could not be
-   filed and why. It never empties the file on a failed write, and never kills
-   an item because the network was down.
-5. `## Archive` is no longer part of the CAPTURE contract: absent from the
+5. A write that does not land - auth failure, offline, tracker unreachable -
+   REFUSES the deferral rather than dropping the finding or silently parking it
+   in CAPTURE, and reports what could not be filed and why. It never kills a
+   finding because the network was down.
+6. `## Archive` is no longer part of the CAPTURE contract: absent from the
    template, and a CAPTURE.md still carrying one is reported by `/cad-health`
    rather than walked or ignored.
-6. `/cad-health` fails when the walked bullet count crosses a configured
-   bound, so a roll-out that silently stops working surfaces at that bound
-   instead of at 276. Verified by a fixture over the bound failing and one
+7. `/cad-health` fails when the walked bullet count crosses a configured
+   bound, so a deferral path that silently stops filing surfaces at that bound
+   instead of at 235. Verified by a fixture over the bound failing and one
    under it passing.
-7. Full suite green, and no `reason` token renamed: a diff of the literal
+8. The answer decided for OQ-3 is implemented: a deferral cannot put an
+   unbounded stream of issues on a public tracker without the user having
+   agreed to it.
+9. Full suite green, and no `reason` token renamed: a diff of the literal
    `reason` strings in `cadence-core/bin/` before and after the phase is empty.
 
 ### Phase 3: One spelling, one phase

@@ -22,8 +22,10 @@ Traceability row as its phase is planned; rows are never hand-populated here.
   tags a version. No provider detected or none selected refuses with a reason
   naming what was looked for and a hint naming the install, under the
   no-third-party-output discipline `issue-check.mjs` already holds.
-- **CAP-01** - `.planning/CAPTURE.md` is scoped to the phase in flight and
-  empties at phase close. The item grammar has two states today, `- [ ]` and
+- **CAP-01** - A finding leaves `.planning/CAPTURE.md` at the moment a gate
+  DEFERS it, not at phase close - the deferral is what files it, so the user
+  sees a finding when it is raised rather than in a batch. Phase close only
+  ASSERTS the file is empty. The item grammar has two states today, `- [ ]` and
   `- [x]`, and `[x]` means done, so a decision NOT to do something has no
   representation and stays `[ ]` looking like live work. With no way to record
   a rejection, rejections were written into the bullets instead - the
