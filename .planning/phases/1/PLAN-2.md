@@ -13,6 +13,8 @@ files:
   - cadence-core/workflows/new-project.md
   - cadence-core/bin/weight-budgets.json
   - .planning/DOCS-CLAIMS.md
+  - .planning/phases/1/CONTEXT.md
+  - cadence-core/bin/lib/issue-decision.mjs
 ---
 
 # Phase 1: Pick a forge - Plan 2
