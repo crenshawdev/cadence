@@ -4443,7 +4443,11 @@ test('source: the nested-repository probe reads the filesystem, not entry names'
   // an admin directory stored as `.GIT` on APFS or NTFS still resolves for git
   // and gets scanned past, while `gitDirAbove` - which has always probed with
   // lstat - matches it. One guard, two halves, and only one of them open.
-  const src = readFileSync(PLANNING, 'utf8');
+  //
+  // The probe lives in the renumber command module now (phase 4), so this reads
+  // THAT file: the entry file only dispatches, and a read of it would find no
+  // `function gitDirUnder(` at all and fail saying the probe was renamed.
+  const src = readFileSync(join(PLANNING_DIR, 'renumber.mjs'), 'utf8');
   const start = src.indexOf('function gitDirUnder(');
   assert.ok(start > 0, 'the nested-repository probe is no longer under this name');
   const body = src.slice(start, src.indexOf('\n}', start));
@@ -4463,7 +4467,11 @@ test('source: the renumber rm fallback\'s recursive delete is gated by the .git 
   // is that the guard cannot be dropped back to the shipped one-liner
   // `catch { rmSync(..., { recursive: true }) }`, which read an unreadable git
   // state as a clean one and deleted the phase directory whole.
-  const src = readFileSync(PLANNING, 'utf8');
+  //
+  // The apply loop lives in the renumber command module now (phase 4), and this
+  // reads that file rather than the entry file for the reason the row above
+  // states.
+  const src = readFileSync(join(PLANNING_DIR, 'renumber.mjs'), 'utf8');
   // Sliced from the rm step's own op literal to the move loop that follows it,
   // so this reads the ONE fallback that deletes a phase directory and not the
   // unrelated recursive rmSync in milestone-prune's delete mode.
