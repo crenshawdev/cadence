@@ -61,7 +61,7 @@ Phases are added with `/cad-phase add`.
 ## Phases
 
 - [x] **Phase 1: Every refusal names its next step** - a plain-language hint at every reason site in `bin/`, plus the self-verify check that makes a hintless reason a reported problem
-- [ ] **Phase 2: A repo-scoped key refuses at the layer that cannot honour it** - `config.mjs set` reads the schema's `"src": "repo"` marker and complains at write time instead of at land time
+- [ ] **Phase 2: A repo-scoped key refuses at the layer that cannot honour it** - `config.mjs set` reads the schema's `repo_only` marker and complains at write time instead of at land time
 
 ## Phase Details
 
@@ -151,9 +151,15 @@ This phase shares no files with phase 1 and carries no ordering against it.
 1. `node cadence-core/bin/config.mjs set git.auto_close=true --global` refuses
    with a reason naming the key's scope, and the same pair at the repo layer
    still applies.
-2. The refusal covers all 33 `"src": "repo"` keys and no `"src": "global"` key,
-   demonstrated by a test that enumerates from the schema rather than from a
-   literal list.
+2. The refused set is DERIVED from a schema marker rather than from a literal
+   list of key names, demonstrated by a test that substitutes a schema fixture
+   marking a different key and shows it refused with no line of the rule
+   changed. (Superseded premise, corrected by CONTEXT D-01: this criterion was
+   originally written as "covers all 33 `\"src\": \"repo\"` keys", on the
+   assumption that `src` was the layer-scope marker. The schema's own legend
+   defines `"src": "repo"` as "settable in either layer", so the phase shipped a
+   new `repo_only` field instead. The derivation is what this criterion was
+   asking for; the count rested on the wrong field.)
 3. The check runs inside `checkPairs`, so `config.mjs check` reports the same
    scope error `set` refuses on, and the refusal stays atomic - no partial write.
 4. Adding a new `"src": "repo"` key to `config.schema.json` requires no edit to
