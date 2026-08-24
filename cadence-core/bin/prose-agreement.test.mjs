@@ -2374,3 +2374,83 @@ test('every frontmatter grammar code has a row in plan-frontmatter.md (D-12)', (
       + 'documented meaning and no stated remedy');
   }
 });
+
+// --- setup: a provider question with no answer is a stop, not a fall-through -
+
+/**
+ * The forge step of one entry workflow: everything from `**Pick a forge**` on.
+ * A region rather than the whole file, so an option or an arm found anywhere
+ * else in the document cannot satisfy the check.
+ * @param {string} text @returns {string}
+ */
+function forgeStep(text) {
+  const at = text.indexOf('**Pick a forge**');
+  return at > -1 ? text.slice(at) : '';
+}
+
+/**
+ * The property: the provider question offers a none-of-these option, the file
+ * states a stop arm for it carrying BOTH a reason and a hint, and that arm sits
+ * at an EARLIER offset than the invocation that persists the answers.
+ *
+ * OFFSETS IN THE FILE'S OWN TEXT, never line numbers: an inserted paragraph
+ * moves every line below it and would redden a check about ORDER that nothing
+ * about the order changed. Order and not presence, for the reason the cad-land
+ * 3(b) case above is: an arm that sits after the write has already persisted a
+ * provider by the time it refuses, which is the failure it exists to stop.
+ *
+ * Exported as a function taking TEXT so the falsifier below can hand it a
+ * scratch copy with the arm removed. A check that can only read the live tree
+ * cannot be shown to fail.
+ * @param {string} name @param {string} text
+ */
+function assertNoneArm(name, text) {
+  const step = forgeStep(text);
+  assert.ok(step, `${name}: no forge step at all`);
+  assert.match(step, /\*\*None of these\*\*/,
+    `${name}: the provider question offers no none-of-these option, so a user who uses `
+    + 'none of the installed forges has no answer to give');
+
+  const stopAt = step.indexOf('On "None of these" the step REFUSES and stops');
+  assert.ok(stopAt > -1,
+    `${name}: no arm for a declined provider question - setup would run on past a `
+    + 'question it never got an answer to');
+  const arm = step.slice(stopAt);
+  assert.match(arm.slice(0, 1200), /REASON naming what was looked for/,
+    `${name}: the none-of-these arm states no reason`);
+  assert.match(arm.slice(0, 1200), /HINT naming how to set one later/,
+    `${name}: the none-of-these arm states no hint`);
+  assert.match(arm.slice(0, 1200), /run NO `config\.mjs set` on this arm/,
+    `${name}: the none-of-these arm does not forbid a half-persisted write`);
+
+  // The persist invocation, by the pair only that arm's own inline `config.mjs
+  // set` never spells: the two-key form is what task 4's step writes.
+  const persistAt = step.indexOf('git.forge_repo=<owner/name>');
+  assert.ok(persistAt > -1, `${name}: the forge step no longer persists the answers`);
+  assert.ok(stopAt < persistAt,
+    `${name}: the none-of-these arm sits AFTER the config.mjs set that persists the `
+    + 'answers, so a declined question has already written a provider');
+}
+
+test('setup: a declined provider question stops both entry points before any write', () => {
+  for (const wf of ['new-project.md', 'adopt.md']) {
+    assertNoneArm(wf, doc('cadence-core', 'workflows', wf));
+  }
+});
+
+test('setup: the none-of-these check FAILS when the arm is deleted', () => {
+  // The falsifier. Without it the case above is a check that has never been
+  // shown to be able to fail - the species of green this file exists to refuse.
+  // A scratch COPY in memory, not on disk: the rule reads text, so a temp file
+  // would prove the same thing one syscall later.
+  for (const wf of ['new-project.md', 'adopt.md']) {
+    const live = doc('cadence-core', 'workflows', wf);
+    const armAt = live.indexOf('On "None of these" the step REFUSES and stops');
+    const persistAt = live.indexOf('Persist the answers in ONE call');
+    assert.ok(armAt > -1 && persistAt > armAt, `${wf}: fixture assumption broken`);
+    const without = live.slice(0, armAt) + live.slice(persistAt);
+    assert.throws(() => assertNoneArm(wf, without),
+      /no arm for a declined provider question/,
+      `${wf}: deleting the none-of-these arm does not redden the check`);
+  }
+});

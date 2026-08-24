@@ -97,7 +97,11 @@ line):
         them in the order the envelope lists and label NOTHING. That is the
         seam's own rule that a recommendation must fall out of analysis the step
         already did, and no analysis here recommends a forge for a host the
-        origin URL cannot classify.
+        origin URL cannot classify. Always offer one more option than there are
+        providers - **None of these**, last in the list. The ask-user seam
+        states that an always-present option consumes one of the four slots a
+        question has, and three providers plus NONE is exactly four, so this
+        question never splits however many resolved.
      b. **Which repository**, as `owner/name`. Pre-fill it from `defaults.repo`
         when the envelope offers one, so the user CONFIRMS rather than retypes;
         ask it outright when it does not.
@@ -110,6 +114,24 @@ line):
         normal deployment rather than a misconfiguration, this repository is one,
         and only the browser host resolves a `tea` login. `github` and `gitlab`
         are never asked this; their hosts are fixed.
+
+     **On "None of these" the step REFUSES and stops** - it does not fall
+     through. Say it in the same shape the `refuse` action uses, two lines: a
+     REASON naming what was looked for, reading the binaries off the envelope's
+     `installed` ("tea and gh are installed; no provider was picked"), and a
+     HINT naming how to set one later - `config.mjs set
+     git.forge_provider=<provider>` against this repository's own
+     `.planning/config.json`. Then stop the forge step: do not ask questions b
+     and c, and run NO `config.mjs set` on this arm, so nothing is half
+     persisted for the next run to read back as an answered question.
+
+     Do not re-ask inside this run and do not invent a no-forge mode: a forge is
+     a precondition (FRG-02), and the fix is to re-run this entry point once a
+     provider is picked. This arm has to be written down because a declined
+     question has no answer at all - `references/seams.md` forbids fabricating
+     or defaulting an answer the seam was supposed to collect - so prose that
+     does not say what happens next lets setup run on past a question it never
+     got.
 
      Persist the answers in ONE call, against this repository's own
      `.planning/config.json` (the default target - no `--file`, no `--global`):
