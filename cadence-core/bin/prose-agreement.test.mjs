@@ -2454,3 +2454,76 @@ test('setup: the none-of-these check FAILS when the arm is deleted', () => {
       `${wf}: deleting the none-of-these arm does not redden the check`);
   }
 });
+
+// --- setup: the confirmation comes BEFORE the create, not beside it ----------
+
+/**
+ * The property AC6 states about the half no seam can hold: `forge.mjs create`
+ * refuses without `--confirmed`, which proves a caller passed a FLAG. Only the
+ * prose can say the flag follows a question the user actually answered, and
+ * only its ORDER can say it was answered FIRST.
+ *
+ * The invocation is spelled `forge.mjs" create` because every seam call in this
+ * tree carries the plugin-root quote between the filename and the subcommand
+ * (`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" create`), which is
+ * the same shape self-verify's invocation check reads.
+ *
+ * OFFSETS IN THE FILE'S OWN TEXT, never line numbers, for the reason the
+ * none-of-these case above states: an inserted paragraph moves every line below
+ * it and would redden a check about ORDER that nothing about the order changed.
+ *
+ * Exported as a function taking TEXT so the falsifier below can hand it a
+ * scratch copy with the invocation moved above the question.
+ * @param {string} name @param {string} text
+ */
+function assertConfirmBeforeCreate(name, text) {
+  const step = forgeStep(text);
+  assert.ok(step, `${name}: no forge step at all`);
+
+  const createAt = step.indexOf('forge.mjs" create');
+  assert.ok(createAt > -1, `${name}: the forge step no longer invokes forge.mjs create`);
+  assert.equal(step.indexOf('forge.mjs" create', createAt + 1), -1,
+    `${name}: more than one forge.mjs create invocation - AC6 scopes creation to one arm, `
+    + 'and a second one is a path the ordering below has not been asserted about');
+
+  // The confirmation is the SENTENCE, not the word: four facts in the question
+  // itself, because nothing else in the run states them together.
+  const confirmAt = step.indexOf('Create <owner>/<name> on <provider> now?');
+  assert.ok(confirmAt > -1,
+    `${name}: no confirmation naming the provider, the owner and the repository name - `
+    + 'AC6 requires the question itself to state what is about to be created');
+  const question = step.slice(confirmAt, confirmAt + 200);
+  assert.match(question, /PRIVATE/,
+    `${name}: the confirmation does not state that the repository will be PRIVATE`);
+
+  assert.ok(confirmAt < createAt,
+    `${name}: the forge.mjs create invocation sits BEFORE the confirmation - the ordering `
+    + 'is the property, since --confirmed proves only that a flag was passed and the prose '
+    + 'is the only thing that can say a user answered first');
+
+  // The flag itself, in the invocation's own block: an invocation that reached
+  // the right ORDER without carrying --confirmed would be refused by the seam.
+  assert.match(step.slice(createAt, createAt + 400), /--confirmed/,
+    `${name}: the forge.mjs create invocation does not carry --confirmed`);
+}
+
+test('setup: the create confirmation is put BEFORE the create runs', () => {
+  assertConfirmBeforeCreate('new-project.md', doc('cadence-core', 'workflows', 'new-project.md'));
+});
+
+test('setup: the confirmation-order check FAILS when the create is moved above it', () => {
+  // The falsifier, on a scratch COPY in memory: the rule reads text, so a temp
+  // file would prove the same thing one syscall later. The invocation LINE is
+  // moved to sit above the question, which is exactly the tree this check
+  // exists to redden and is otherwise indistinguishable from the live one.
+  const live = doc('cadence-core', 'workflows', 'new-project.md');
+  const confirmAt = live.indexOf('Create <owner>/<name> on <provider> now?');
+  const createAt = live.indexOf('forge.mjs" create');
+  assert.ok(confirmAt > -1 && createAt > confirmAt, 'fixture assumption broken');
+  const line = live.slice(createAt, live.indexOf('\n', createAt) + 1);
+  const moved = live.slice(0, confirmAt) + line
+    + live.slice(confirmAt, createAt) + live.slice(createAt + line.length);
+  assert.throws(() => assertConfirmBeforeCreate('new-project.md', moved),
+    /sits BEFORE the confirmation/,
+    'moving the create above the confirmation does not redden the check');
+});
