@@ -25,12 +25,18 @@ hand-populated here.
   invariant survives the next seam rather than being re-measured after it. The
   ratio has drifted twice already - 130/10 at filing, 186/13 today - which is
   why this is a check and not a sweep (#238).
-- **SCP-01**: `config.mjs set` refuses a repo-scoped key written at the
-  user-global layer, at write time, reading the schema's `"src": "repo"` marker
-  rather than naming keys. 33 keys carry that marker; `checkPairs`
-  (`bin/config.mjs:151`) validates retired, unknown and type and nothing about
-  layer scope, so `git.auto_close` written globally is silent until the close
-  refuses at land time (#249).
+- **SCP-01**: `config.mjs set` refuses a repo-layer-only key written at the
+  user-global layer, at write time, reading a schema marker rather than naming
+  keys. That marker is NEW: `"src": "repo"` is explicitly not it, since the
+  schema's own `_meta.note` defines it as "settable in either layer" and its 33
+  keys include `stakes` and `granularity`, which `workflows/config.md:124` tells
+  the user to set globally. The test the new marker encodes is whether a
+  user-global value authorizes a change to a repository that never opted in;
+  `git.auto_close` is the only key that passes it today, its own `purpose`
+  string and `lib/repo-auto-close.mjs` already saying so at land time.
+  `checkPairs` (`bin/config.mjs:151`) validates retired, unknown and type and
+  nothing about layer scope, so `git.auto_close` written globally is silent
+  until the close refuses at land time (#249).
 
 Explicitly out of scope: no `reason` token string changes (tests and callers
 match them), no behavior change in phase 1, and no rewrite of model-facing
