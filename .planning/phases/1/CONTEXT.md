@@ -99,7 +99,8 @@ writes will go.
 - **D-14** Repository creation has no single argv shape; each provider needs its
   own row, the way `HOST_TABLE` already carries a per-provider `argv`
   (`cadence-core/bin/lib/issue-decision.mjs:208-248`). Measured 2026-08-24 on
-  gh 2.98.0, glab 1.114.0, tea 0.15.1.
+  gh 2.98.0, glab 1.114.0, tea 0.15.1. [corrected by plan-2 deviation: tea
+  resolves --owner as an organization, so the flag is wrong for a personal repo]
 - **D-15** `tea` wires no git remote (zero occurrences of "remote" in its help),
   so the Forgejo arm needs an explicit `git remote add origin` after creation
   where `gh` and `glab` do it through a flag.
@@ -132,8 +133,16 @@ writes will go.
   `detail` is null on every forge arm. `refusal-hints` passes.
 - [ ] AC6: The recorded argv per provider is
   `gh repo create <owner>/<repo> --private`,
-  `glab repo create <owner>/<repo> --private --remoteName origin`, and
-  `tea repos create --name <repo> --owner <owner> --private`. The `tea` arm is
+  `glab repo create <owner>/<repo> --private --remoteName origin`, and on
+  Forgejo a `tea login list --output json` read followed by ONE of two argvs -
+  `tea repos create --name <repo> --login <login> --private` when `<owner>` is
+  that login's own user, or `tea repos create --name <repo> --owner <owner>
+  --login <login> --private` when it is not. tea resolves `--owner` as an
+  ORGANIZATION (measured live 2026-08-24: `--owner <the login user>` exits 1
+  with `Error: GetOrgByName`, the same create without it exits 0), so a single
+  pinned tea argv was wrong for every personal repository; `--login` names the
+  login the owner question was answered about, so the question and the create
+  cannot be about different accounts. The `tea` arm is
   followed by a recorded `git remote add origin`. No creation argv is recorded
   without a prior confirmation naming provider, owner, name and visibility.
 - [ ] AC7: (human-verify: needs a live forge account) One real repository is

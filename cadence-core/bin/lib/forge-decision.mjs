@@ -27,11 +27,15 @@
 // that is not on PATH.
 //
 // "INSTALLED" IS `onPath` AND NOTHING ELSE (CONTEXT D-06). No `--version`
-// call, no `tea login list`, no auth probe: this phase resolves WHERE issue
+// call, no `tea login list`, no auth probe: DETECTION resolves WHERE issue
 // writes will go and never asks whether the user is logged in. That is what
 // keeps AC1's "no subprocess is spawned during detection" assertion true, and
 // it is why this module takes a PREDICATE rather than doing the lookup - the
 // production resolver stays `lib/on-path.mjs`, one rule with one implementation.
+// CREATION is the one place that reading changed: `CREATE_TABLE`'s forgejo row
+// cannot be built without knowing who tea is logged in as (see the row), so
+// bin/forge.mjs reads a login list on THAT arm. Still nothing here spawns it -
+// the seam passes the record in, exactly as it passes `onPath` in.
 'use strict';
 
 /**
@@ -297,7 +301,7 @@ export function decideForge({ provider, repo, host, installed } = {}) {
  * refused as a setup-time default cannot be accepted as a creation target. The
  * split is at the LAST separator, which is what makes GitLab's nested subgroups
  * come apart correctly - `g/sub/r` is owner `g/sub` and name `r`, the two
- * strings `tea repos create --owner/--name` wants and the two halves `gh` and
+ * strings the `tea` row weighs `--owner` against and the two halves `gh` and
  * `glab` want rejoined.
  *
  * @param {unknown} slug @returns {{owner: string, name: string}|null}
@@ -307,6 +311,66 @@ export function splitSlug(slug) {
   const s = /** @type {string} */ (slug);
   const at = s.lastIndexOf('/');
   return { owner: s.slice(0, at), name: s.slice(at + 1) };
+}
+
+/**
+ * Is `owner` this login's OWN user account, rather than an organization on the
+ * same instance?
+ *
+ * THE QUESTION EXISTS BECAUSE `tea` HAS NO SINGLE CREATE GRAMMAR. Measured
+ * 2026-08-24 against a live Forgejo instance on tea 0.15.1, logged in as the
+ * user `john`: `tea repos create --name r --owner john --private` exits 1 with
+ * `Error: GetOrgByName`, because `--owner` resolves as an ORGANIZATION and
+ * never as a user account, while the same call with no `--owner` at all exits 0
+ * and creates `john/r` under the login user. So the flag is not a spelling of
+ * "who owns this" - it is a spelling of "which org", and passing it for a
+ * personal repository is the common case failing.
+ *
+ * The comparison is CASE-INSENSITIVE and trimmed: Gitea resolves an account
+ * name without regard to case, so `John` and `john` are one account and a
+ * case-sensitive test here would pass `--owner John` at a login named `john`
+ * and fail the create for a difference the server does not have.
+ *
+ * A LOGIN THAT IS NOT A RECORD IS "NOT THE USER", never a throw: this module's
+ * standing rule is that unknown or missing inputs answer rather than raise, and
+ * the answer that keeps `--owner` in the argv is the one that changes nothing
+ * about what shipped before. bin/forge.mjs refuses ahead of the builder when it
+ * cannot resolve a login at all, so that arm is unreachable in production.
+ *
+ * @param {unknown} owner @param {unknown} login @returns {boolean}
+ */
+export function ownerIsLoginUser(owner, login) {
+  if (!login || typeof login !== 'object') return false;
+  const user = /** @type {Record<string, unknown>} */ (login).user;
+  if (typeof owner !== 'string' || typeof user !== 'string') return false;
+  const a = owner.trim().toLowerCase();
+  return a !== '' && a === user.trim().toLowerCase();
+}
+
+/**
+ * `['--login', <name>]` for a usable login record, or `[]`.
+ *
+ * WHY THE LOGIN IS NAMED AT ALL. Without `--login`, tea picks a login from its
+ * own config - the default one, or the first in file order when none is flagged
+ * default (measured here: a single login prints `default` as the STRING
+ * `'false'`, so "the default login" is not a value that can be relied on). This
+ * argv is built by asking ONE login whether the owner is its user; the create
+ * has to then run as THAT login, or the answer was about an account the create
+ * never used. Naming it is what makes the question and the call the same login.
+ *
+ * A NAME OPENING ON `-` IS DROPPED, not passed. The record is third-party bytes
+ * from a CLI's stdout, and a value reading as a flag in an argument vector is
+ * the one way an untrusted string changes what a command means. The seam
+ * refuses such a record outright; this is the second door on the same rule.
+ *
+ * @param {unknown} login @returns {string[]}
+ */
+function loginFlag(login) {
+  if (!login || typeof login !== 'object') return [];
+  const name = /** @type {Record<string, unknown>} */ (login).name;
+  if (typeof name !== 'string') return [];
+  const trimmed = name.trim();
+  return trimmed === '' || trimmed.startsWith('-') ? [] : ['--login', trimmed];
 }
 
 /**
@@ -324,6 +388,28 @@ export function splitSlug(slug) {
  * `tea` takes the two halves as separate flags and has no positional form. This
  * is why the table is data rather than a formatted string: there is no shape
  * the three share to be parameterized.
+ *
+ * AND THE `tea` ROW HAS NO SINGLE ARGV EITHER (corrected 2026-08-24, after the
+ * first live run of AC7 failed). `--owner` resolves as an ORGANIZATION, so it
+ * is wrong for a personal repository - the whole common case - and right only
+ * when the owner genuinely is an org. `ownerIsLoginUser` above carries the
+ * measurement and `needsLogin` below carries the consequence: this is the one
+ * row whose argv cannot be built from the selector alone, because it needs to
+ * know who the instance thinks you are. What is measured is the personal arm
+ * (no `--owner`, exit 0) and the user arm through `--owner` (exit 1,
+ * `GetOrgByName`). What is NOT measured, and is therefore stated as unverified
+ * rather than asserted: whether `--owner <org>` succeeds when the owner really
+ * IS an organization. That arm ships as the best reading of tea's own error -
+ * a flag that looks a name up as an org is a flag for an org - and the first
+ * live create into an org is what would confirm or refute it.
+ *
+ * `needsLogin` IS THE ROW SAYING WHAT IT CANNOT ANSWER ALONE. It does not mean
+ * "this forge needs authentication" - all three do. It means the argv on THIS
+ * row depends on a login record the seam has to go and read, so bin/forge.mjs
+ * must resolve one and refuse before the spawn when it cannot. Reading that off
+ * `provider === 'forgejo'` instead would be a rule about a provider's name
+ * rather than about the argv beside it, which is the same mistake `wiresRemote`
+ * exists to avoid.
  *
  * VISIBILITY IS PINNED, NOT DEFAULTED (CONTEXT D-04). Every row carries
  * `--private` and no row takes a visibility parameter, because the three CLIs
@@ -355,16 +441,26 @@ export function splitSlug(slug) {
 export const CREATE_TABLE = Object.freeze({
   forgejo: Object.freeze({
     wiresRemote: false,
-    /** @param {string} owner @param {string} name @returns {string[]} */
-    argv: (owner, name) => ['repos', 'create', '--name', name, '--owner', owner, '--private'],
+    needsLogin: true,
+    /** @param {string} owner @param {string} name
+     *  @param {unknown} login the `{name, user}` record for this instance
+     *  @returns {string[]} */
+    argv: (owner, name, login) => ['repos', 'create', '--name', name,
+      // `--owner` NAMES AN ORGANIZATION AND NOTHING ELSE - see the header. It
+      // is present only when the owner is NOT this login's own account.
+      ...(ownerIsLoginUser(owner, login) ? [] : ['--owner', owner]),
+      ...loginFlag(login),
+      '--private'],
   }),
   github: Object.freeze({
     wiresRemote: false,
+    needsLogin: false,
     /** @param {string} owner @param {string} name @returns {string[]} */
     argv: (owner, name) => ['repo', 'create', `${owner}/${name}`, '--private'],
   }),
   gitlab: Object.freeze({
     wiresRemote: true,
+    needsLogin: false,
     /** @param {string} owner @param {string} name @returns {string[]} */
     argv: (owner, name) => ['repo', 'create', `${owner}/${name}`, '--private',
       '--remoteName', 'origin'],

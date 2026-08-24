@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   CREATE_TABLE, PROVIDER_TABLE, decideForge, forgeRecordComplete, installedProviders,
-  isForgeSlug, originDefaults, splitSlug,
+  isForgeSlug, originDefaults, ownerIsLoginUser, splitSlug,
 } from './lib/forge-decision.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -314,37 +314,126 @@ test('the create table names the same three providers as the provider table', ()
 test('the create table repeats no binary name - PROVIDER_TABLE is the one spelling', () => {
   for (const [provider, row] of Object.entries(CREATE_TABLE)) {
     assert.equal(row.bin, undefined, `${provider}: a second copy of the binary name`);
-    assert.deepEqual(Object.keys(row).sort(), ['argv', 'wiresRemote'],
-      `${provider}: a third field is a rule this table would state in two places`);
+    // THREE fields and no fourth. Both flags say something the argv beside them
+    // cannot say about itself - does it wire a remote, can it be built without
+    // a login - and anything else is a rule this table would state twice.
+    assert.deepEqual(Object.keys(row).sort(), ['argv', 'needsLogin', 'wiresRemote'],
+      `${provider}: a fourth field is a rule this table would state in two places`);
   }
 });
 
+/** The tea login record for `forge.example.com`, as tea prints it: `user` is
+ *  the account the instance has authenticated, and `name` is the only string
+ *  `tea --login` accepts. An ORG's repository is one whose owner is not that
+ *  user; a PERSONAL one is one whose owner is. */
+const LOGIN = Object.freeze({ name: 'forge.example.com', user: 'jc' });
+
 test('each provider builds the ONE argv measured for it, element for element', () => {
-  // AC6's three pinned argvs, verbatim. Element for element rather than joined,
+  // AC6's pinned argvs, verbatim. Element for element rather than joined,
   // because a joined string cannot tell one argument carrying a space from two.
   assert.deepEqual(CREATE_TABLE.github.argv('o', 'r'),
     ['repo', 'create', 'o/r', '--private']);
   assert.deepEqual(CREATE_TABLE.gitlab.argv('o', 'r'),
     ['repo', 'create', 'o/r', '--private', '--remoteName', 'origin']);
-  assert.deepEqual(CREATE_TABLE.forgejo.argv('o', 'r'),
-    ['repos', 'create', '--name', 'r', '--owner', 'o', '--private']);
+  // tea has TWO, and which one is right is a question about the owner: this is
+  // the org arm, where `--owner` is what the flag actually means.
+  assert.deepEqual(CREATE_TABLE.forgejo.argv('o', 'r', LOGIN),
+    ['repos', 'create', '--name', 'r', '--owner', 'o', '--login', 'forge.example.com', '--private']);
+});
+
+test('the tea row DROPS --owner when the owner is the login user (the personal case)', () => {
+  // The defect the first live AC7 run found, as a case: measured 2026-08-24 on
+  // tea 0.15.1 against a live instance, `--owner <the login user>` exits 1 with
+  // `Error: GetOrgByName` because the flag resolves an ORGANIZATION, while the
+  // same create with no `--owner` exits 0 and lands under the login user. A
+  // builder that always passes the flag is wrong for every personal repository,
+  // which is the common case, and no argv-recording stub can catch it because a
+  // stub never reaches a server.
+  assert.deepEqual(CREATE_TABLE.forgejo.argv('jc', 'r', LOGIN),
+    ['repos', 'create', '--name', 'r', '--login', 'forge.example.com', '--private']);
+  assert.equal(CREATE_TABLE.forgejo.argv('jc', 'r', LOGIN).includes('--owner'), false);
+  // Case-insensitively, because Gitea resolves an account name without regard
+  // to case and a case-sensitive test here would fail a create for a difference
+  // the server does not have.
+  assert.equal(CREATE_TABLE.forgejo.argv('JC', 'r', LOGIN).includes('--owner'), false);
+  assert.equal(CREATE_TABLE.forgejo.argv(' jc ', 'r', LOGIN).includes('--owner'), false);
+  // And an owner that is NOT the user keeps it - the org arm is not collapsed.
+  assert.ok(CREATE_TABLE.forgejo.argv('someorg', 'r', LOGIN).includes('--owner'));
+});
+
+test('the tea row NAMES the login it was asked about', () => {
+  // The argv is built by asking one login whether the owner is its user, so the
+  // create has to run as that login. Without `--login`, tea picks the default
+  // or the first in config file order - and a single login here prints
+  // `default` as the string 'false', so "the default" is not a value to rely on.
+  assert.deepEqual(CREATE_TABLE.forgejo.argv('jc', 'r', { name: 'other.example.com', user: 'jc' }),
+    ['repos', 'create', '--name', 'r', '--login', 'other.example.com', '--private']);
+  // A record that cannot go into an argument vector contributes nothing rather
+  // than an empty flag value: the bytes came off a CLI's stdout, and a name
+  // reading as a FLAG is the one way an untrusted string changes the command.
+  for (const bad of [null, undefined, {}, { name: '', user: 'jc' }, { name: '-x', user: 'jc' },
+    { name: 42, user: 'jc' }]) {
+    assert.equal(CREATE_TABLE.forgejo.argv('o', 'r', bad).includes('--login'), false,
+      `a login of ${JSON.stringify(bad)} reached the argv`);
+    // ...and the owner stays named, because nothing said it was the user.
+    assert.ok(CREATE_TABLE.forgejo.argv('o', 'r', bad).includes('--owner'));
+  }
+});
+
+test('ownerIsLoginUser answers rather than throwing on anything it is handed', () => {
+  assert.equal(ownerIsLoginUser('jc', LOGIN), true);
+  assert.equal(ownerIsLoginUser('JC', LOGIN), true);
+  assert.equal(ownerIsLoginUser('someorg', LOGIN), false);
+  // An empty owner is nobody, not "matches an empty user".
+  assert.equal(ownerIsLoginUser('', { name: 'n', user: '' }), false);
+  assert.equal(ownerIsLoginUser('   ', { name: 'n', user: '' }), false);
+  for (const bad of [null, undefined, 42, {}, [], 'jc']) {
+    assert.equal(ownerIsLoginUser('jc', bad), false, `login ${JSON.stringify(bad)}`);
+  }
+  for (const bad of [null, undefined, 42, {}, []]) {
+    assert.equal(ownerIsLoginUser(bad, LOGIN), false, `owner ${JSON.stringify(bad)}`);
+  }
 });
 
 test('the two positional grammars rejoin a nested owner, and tea keeps it split', () => {
   const { owner, name } = splitSlug('g/sub/r');
   assert.deepEqual(CREATE_TABLE.gitlab.argv(owner, name),
     ['repo', 'create', 'g/sub/r', '--private', '--remoteName', 'origin']);
-  assert.deepEqual(CREATE_TABLE.forgejo.argv(owner, name),
-    ['repos', 'create', '--name', 'r', '--owner', 'g/sub', '--private']);
+  // A nested owner can never be the login user - a tea account name holds no
+  // separator - so this arm always keeps `--owner`.
+  assert.deepEqual(CREATE_TABLE.forgejo.argv(owner, name, LOGIN),
+    ['repos', 'create', '--name', 'r', '--owner', 'g/sub', '--login', 'forge.example.com', '--private']);
 });
 
 test('EVERY row pins --private, so a fourth provider cannot be added without one', () => {
   // CONTEXT D-04: the value is pinned, not defaulted. `gh` with no visibility
   // flag drops to an interactive prompt that would hang a Bash tool call, and
   // `glab` silently defaults to `internal`.
+  //
+  // The arity check is the same guard it always was - no row takes a VISIBILITY
+  // parameter - stated per row now that one row takes a third input that is not
+  // one. `needsLogin` is what says which row that is, so the two cannot drift:
+  // a row asking for a third argument without declaring why is caught here.
   for (const [provider, row] of Object.entries(CREATE_TABLE)) {
-    assert.ok(row.argv('o', 'r').includes('--private'), `${provider} does not pin visibility`);
-    assert.equal(row.argv.length, 2, `${provider}'s builder takes a visibility parameter`);
+    for (const login of [LOGIN, { name: 'n', user: 'o' }]) {
+      assert.ok(row.argv('o', 'r', login).includes('--private'), `${provider} does not pin visibility`);
+      assert.equal(row.argv('o', 'r', login).includes('--public'), false, provider);
+      assert.equal(row.argv('o', 'r', login).includes('--internal'), false, provider);
+    }
+    assert.equal(row.argv.length, row.needsLogin ? 3 : 2,
+      `${provider}'s builder takes a parameter its needsLogin flag does not account for`);
+  }
+});
+
+test('exactly one row says it cannot build an argv without a login, and it is tea', () => {
+  // Same discipline as `wiresRemote`: the flag is true of the ARGV beside it,
+  // never of a provider's reputation. `--owner` is the flag that needs the
+  // answer, so the row carrying it is the row that needs a login.
+  const needing = Object.entries(CREATE_TABLE).filter(([, r]) => r.needsLogin).map(([p]) => p);
+  assert.deepEqual(needing, ['forgejo']);
+  for (const [provider, row] of Object.entries(CREATE_TABLE)) {
+    assert.equal(row.argv('someorg', 'r', LOGIN).includes('--owner'), row.needsLogin,
+      `${provider}: the needsLogin flag disagrees with the argv it describes`);
   }
 });
 

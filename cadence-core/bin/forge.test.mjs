@@ -404,20 +404,142 @@ test('create: the gitlab arm records its own grammar, --remoteName and all', () 
   assert.deepEqual(calls(log), ['glab repo create g/sub/r --private --remoteName origin']);
 });
 
-test('create: the forgejo arm records the flag-only grammar tea has', () => {
+/** A `tea login list --output json` reading naming `forge.example.com`, whose
+ *  authenticated account is `jc`. It is the shape tea 0.15.1 actually prints -
+ *  measured against a live instance - including the `default` field arriving as
+ *  the STRING 'false' rather than a boolean, which is why nothing here reads it.
+ *  `stub`'s `login` arm answers it for `tea login ...` and lets the same stub
+ *  answer `tea repos create` on the next line. */
+const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.com",'
+  + '"ssh_host":"ssh.example.com","user":"jc","default":"false"}]';
+
+test('create: the forgejo arm asks tea who it is, then records the org grammar', () => {
+  // The owner here is NOT the login user, so `--owner` is what the flag means:
+  // tea resolves it as an ORGANIZATION. The login list comes first, because the
+  // argv cannot be built without it, and `--login` names the same login the
+  // question was answered about.
   const log = argvLog();
   const dir = planningRoot();
   const url = 'https://forge.example.com/o/r.git';
   const { envelope } = run(
     ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
       '--remote-url', url, '--dir', dir],
-    { stubs: ['tea', 'git'], dir, argvLog: log },
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: TEA_LOGINS } } },
   );
   assert.equal(envelope.ok, true);
   assert.deepEqual(calls(log), [
-    'tea repos create --name r --owner o --private',
+    'tea login list --output json',
+    'tea repos create --name r --owner o --login forge.example.com --private',
     `git -C ${dir} remote add origin ${url}`,
   ]);
+});
+
+test('create: a repository under the LOGIN USER is created with no --owner at all', () => {
+  // The defect the first live AC7 run exposed, at the seam. Measured 2026-08-24
+  // on tea 0.15.1 against a live Forgejo: `--owner <the login user>` exits 1
+  // with `Error: GetOrgByName`, and the same create without the flag exits 0.
+  // An argv-recording stub cannot fail that way - it never reaches a server -
+  // so the assertion has to be about the argv the login answer produces.
+  const log = argvLog();
+  const dir = planningRoot();
+  const url = 'https://forge.example.com/jc/r.git';
+  const { envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'jc/r', '--confirmed',
+      '--remote-url', url, '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: TEA_LOGINS } } },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.owner, 'jc');
+  assert.deepEqual(calls(log), [
+    'tea login list --output json',
+    'tea repos create --name r --login forge.example.com --private',
+    `git -C ${dir} remote add origin ${url}`,
+  ]);
+});
+
+test('create: no tea login for the instance refuses, and creates NOTHING', () => {
+  // The login is what the argv depends on, so an unresolvable one is a refusal
+  // rather than a fallback - the fallback is the argv that already failed live.
+  // The probe DID run; the create did not, which is what the log proves.
+  const log = argvLog();
+  const dir = planningRoot();
+  const elsewhere = '[{"name":"other.example.com","url":"https://other.example.com",'
+    + '"ssh_host":"other.example.com","user":"jc"}]';
+  const { status, envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'jc/r', '--confirmed',
+      '--remote-url', 'https://forge.example.com/jc/r.git', '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: elsewhere } } },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.detail, null);
+  assert.ok(envelope.hint && envelope.hint.length > 0);
+  assert.match(envelope.reason, /forge\.example\.com/);
+  assert.deepEqual(calls(log), ['tea login list --output json']);
+});
+
+test('create: an UNREADABLE login list refuses the same way, leaking none of it', () => {
+  // CONTEXT D-16 over the one stdout this seam reads: the reading is parsed
+  // into a decision and never carried out. A login list that is not JSON at all
+  // is the same answer as one naming another host - there is no login to build
+  // an argv from - and neither the bytes nor a credential inside them reach the
+  // envelope.
+  const log = argvLog();
+  const dir = planningRoot();
+  const secret = 'ghp_DEADBEEFCAFE01234567';
+  const bodies = [
+    `not json at all - token: ${secret}`,
+    `[{"name":"forge.example.com","user":"","token":"${secret}"}]`,
+  ];
+  for (const body of bodies) {
+    const { status, envelope } = run(
+      ['create', '--provider', 'forgejo', '--repo', 'jc/r', '--confirmed',
+        '--remote-url', 'https://forge.example.com/jc/r.git', '--dir', dir],
+      { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: body } } },
+    );
+    assert.equal(status, 1, body);
+    assert.equal(envelope.ok, false, body);
+    assert.equal(envelope.detail, null, body);
+    const serialized = JSON.stringify(envelope);
+    for (const token of [secret, 'token']) {
+      assert.equal(serialized.includes(token), false, `the login list reached the envelope: ${token}`);
+    }
+  }
+});
+
+test('create: a login NAME that would read as a flag is skipped, not sanitized', () => {
+  // These are bytes a CLI printed at us, and a value opening on `-` is the one
+  // way an untrusted string changes what an argument vector means. No login is
+  // usable here, so the refusal fires and the create never runs.
+  const log = argvLog();
+  const dir = planningRoot();
+  const hostile = '[{"name":"--config=/tmp/x","url":"https://forge.example.com","user":"jc"}]';
+  const { envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'jc/r', '--confirmed',
+      '--remote-url', 'https://forge.example.com/jc/r.git', '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: hostile } } },
+  );
+  assert.equal(envelope.ok, false);
+  assert.deepEqual(calls(log), ['tea login list --output json']);
+});
+
+test('create: the two arms that need no login never ask for one', () => {
+  // `needsLogin` is a fact of the row's own argv: `gh` and `glab` take the slug
+  // as a positional and have no owner flag to get wrong, so no probe is bought
+  // on either. The absence of a `login list` line is the assertion.
+  for (const [provider, bin, extra] of [
+    ['github', 'gh', ['--remote-url', 'https://github.com/o/r.git']],
+    ['gitlab', 'glab', []],
+  ]) {
+    const log = argvLog();
+    const dir = planningRoot();
+    const { envelope } = run(
+      ['create', '--provider', provider, '--repo', 'o/r', '--confirmed', '--dir', dir, ...extra],
+      { stubs: [bin, 'git'], dir, argvLog: log, stubOpts: { [bin]: { login: TEA_LOGINS } } },
+    );
+    assert.equal(envelope.ok, true, provider);
+    assert.equal(calls(log).some((c) => c.includes('login list')), false, provider);
+  }
 });
 
 test('create: WITHOUT --confirmed nothing is spawned at all', () => {
@@ -609,7 +731,8 @@ test('create: a failed `git remote add` says the repository EXISTS', () => {
     ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
       '--remote-url', url, '--dir', dir],
     { stubs: ['tea', 'git'], dir, argvLog: log,
-      stubOpts: { git: { code: 1, stderr: 'fatal: remote origin already exists.', body: '' } } },
+      stubOpts: { tea: { login: TEA_LOGINS },
+        git: { code: 1, stderr: 'fatal: remote origin already exists.', body: '' } } },
   );
   assert.equal(status, 1);
   assert.equal(envelope.ok, false);
@@ -620,8 +743,9 @@ test('create: a failed `git remote add` says the repository EXISTS', () => {
   assert.equal(JSON.stringify(envelope).includes('fatal'), false,
     "git's own text reached the envelope");
   // The create DID happen, which is exactly why the reason may not read as one
-  // that did not.
-  assert.equal(calls(log).length, 2);
+  // that did not. Three calls on this arm: the login probe, the create, the
+  // failed `git remote add`.
+  assert.equal(calls(log).length, 3);
 });
 
 test('create: the gitlab arm is never asked for a --remote-url', () => {

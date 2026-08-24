@@ -20,16 +20,19 @@
 // NO SUBPROCESS RUNS DURING DETECTION (CONTEXT D-06, AC1). "Installed" means
 // the bare name resolves as an executable on the CHILD's PATH through
 // `lib/on-path.mjs`, which is pure fs. No `--version` call, no `tea login list`,
-// no auth check: this phase resolves WHERE issue writes will go, and whether
+// no auth check: DETECTION resolves WHERE issue writes will go, and whether
 // the user is logged in is a question land time already has its own named line
 // for. That module reads no Cadence environment override, which is what makes a
 // PATH-injected stub exercise the PRODUCTION resolver rather than a test-only
 // branch beside it - the discipline issue-check.mjs's header states at length.
 //
 // NO THIRD-PARTY OUTPUT REACHES THE ENVELOPE (CONTEXT D-16). `detect` spawns no
-// forge CLI at all; `create` spawns exactly one and DISCARDS its stderr at the
-// spawn while never reading its stdout, so neither has third-party bytes to
-// leak. `detail` is null on every arm of both, which keeps that true by
+// forge CLI at all; `create` spawns one on every arm and, on the forgejo arm, a
+// login probe ahead of it. Every one of them DISCARDS its stderr at the spawn,
+// and the ONE stdout that is read - the login list - is parsed into a decision
+// and never carried out: not the login name, not its user, not one byte of it
+// appears on any envelope this file emits, so an instance URL with a credential
+// in it has no path to the transcript. `detail` is null on every arm, which keeps that true by
 // construction rather than by whichever spawns happen to exist today. A refusal
 // names what was looked for and what was asked of it, never what was read
 // back - the reason already says what failed, and a failing CLI's own text
@@ -53,6 +56,21 @@
 // commit` alone - so a raw Bash `gh repo create` would pass the hook unseen.
 // Every value that reaches the vector went through this phase's own slug
 // grammar first, so no segment can arrive reading as a flag.
+//
+// THE FORGEJO ARM ASKS TEA WHO IT IS LOGGED IN AS, AND IT IS NOT AN AUTH CHECK.
+// `tea repos create --owner <name>` looks `<name>` up as an ORGANIZATION - a
+// personal repository passed that flag fails with `GetOrgByName`, measured live
+// 2026-08-24 on tea 0.15.1 - so the argv for that row depends on whether the
+// owner the user named is their own account or an org. Nothing in the persisted
+// record answers that, and no argument can honestly be asked for it either: the
+// user knows their own username, not which of two lookup tables their forge
+// keeps it in. So this seam reads `tea login list --output json` on that arm
+// alone, matches a login to the instance host the `--remote-url` already
+// carries, and builds the argv from its `user`. The same login is then NAMED in
+// the create argv, because a question answered about one login and a create run
+// as another is not an answer. When no login serves that host the seam refuses
+// BEFORE the create, with the install-and-log-in step in the hint: guessing the
+// argv is what already cost one live run.
 //
 // A CREATED REPOSITORY IS ALWAYS REACHABLE (CONTEXT D-15, AC6). Only `glab`'s
 // pinned argv wires `origin` - through the `--remoteName origin` in it - so on
@@ -84,8 +102,9 @@
 //     Creates that repository, PRIVATE, through the CLI the provider names.
 //     --dir is the directory the CLI is run in. --remote-url is REQUIRED on the
 //     providers whose create argv wires no git remote (forgejo and github), and
-//     unread on the one that wires its own (gitlab). Every refusal precedes the
-//     spawn, so a refused create has created nothing.
+//     unread on the one that wires its own (gitlab); on forgejo it names the
+//     instance the login is matched against as well. Every refusal precedes the
+//     CREATE, so a refused create has created nothing.
 'use strict';
 
 import { execFileSync } from 'node:child_process';
@@ -95,7 +114,7 @@ import { emit } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
-import { classifyOrigin } from './lib/issue-decision.mjs';
+import { classifyOrigin, loginNamesHost } from './lib/issue-decision.mjs';
 import {
   CREATE_TABLE, PROVIDER_TABLE, decideForge, installedProviders, originDefaults, splitSlug,
 } from './lib/forge-decision.mjs';
@@ -113,6 +132,14 @@ const GIT_TIMEOUT_MS = 10000;
  * the one outcome with no honest report - the repository may or may not exist.
  * Bounded all the same, because a wedged CLI must not hang project setup. */
 const CREATE_TIMEOUT_MS = 60000;
+
+/** The bound on the `tea login list` read the forgejo create arm makes. Sized
+ * with the `git` read rather than with the create: `tea login list` reads tea's
+ * own config file and contacts no server, so this guards a wedged filesystem
+ * and not a slow instance. A separate constant from GIT_TIMEOUT_MS because it
+ * bounds a different command for a different reason, and a shared number is
+ * what makes one of two callers impossible to retune. */
+const LOGIN_TIMEOUT_MS = 10000;
 
 /**
  * Run a command, bounded, and never throw - `run` in issue-check.mjs, verbatim
@@ -151,6 +178,55 @@ function run(bin, args, { cwd, timeout }) {
 function readOrigin(dir) {
   return run('git', ['-C', dir, 'remote', 'get-url', 'origin'],
     { cwd: dir, timeout: GIT_TIMEOUT_MS }).stdout.trim();
+}
+
+/**
+ * The login serving `host` as `{name, user}`, or null when none does.
+ *
+ * WHAT THIS IS FOR, and what it is NOT. It is not an auth check and it does not
+ * gate the create: it answers ONE question, "is the owner this user named their
+ * own account or an organization", which `CREATE_TABLE`'s forgejo row cannot
+ * build an argv without (see its header). A null answer is a refusal upstream,
+ * not a fallback, because the fallback IS the argv that already failed live.
+ *
+ * THE PREDICATE IS `loginNamesHost`, NOT A SECOND SPELLING OF IT. That function
+ * is the one statement of how a tea login identifies its forge - its own name,
+ * its API url's hostname, its ssh_host, compared lowercased and exactly - and
+ * re-deriving it here would give this seam a host rule that could disagree with
+ * the one land time uses. The host handed in is lowercased already, because it
+ * comes from `classifyOrigin`, which lowercases every hostname it parses.
+ *
+ * FIRST USABLE RECORD, in tea's own list order, which is `teaLoginNameForHost`'s
+ * rule and for its reason: two logins can name one host and any preference
+ * between them would be invented. "Usable" is doing work rather than tidying -
+ * a record whose `name` is empty or opens on `-` cannot go into an argument
+ * vector without reading as a FLAG, and these are bytes a CLI printed at us.
+ * Such a record is SKIPPED rather than accepted-and-sanitized: it is not the
+ * login the user means, and repairing a hostile name into a plausible one is
+ * how the wrong instance gets written to.
+ *
+ * NOTHING IT READS IS CARRIED OUT (CONTEXT D-16). The child's stdout is parsed
+ * here and the two strings that survive reach an argv and a comparison - never
+ * an envelope field, never a reason, never a hint.
+ *
+ * @param {string} bin @param {string} dir @param {string} host
+ * @returns {{name: string, user: string}|null}
+ */
+function teaLoginFor(bin, dir, host) {
+  const probe = run(bin, ['login', 'list', '--output', 'json'],
+    { cwd: dir, timeout: LOGIN_TIMEOUT_MS });
+  if (!probe.ok) return null;
+  let records;
+  try { records = JSON.parse(probe.stdout); } catch { return null; }
+  if (!Array.isArray(records)) return null;
+  for (const rec of records) {
+    if (!loginNamesHost(rec, host)) continue;
+    const name = typeof rec.name === 'string' ? rec.name.trim() : '';
+    const user = typeof rec.user === 'string' ? rec.user.trim() : '';
+    if (name === '' || user === '' || name.startsWith('-')) continue;
+    return { name, user };
+  }
+  return null;
 }
 
 /**
@@ -218,11 +294,16 @@ function detect(dir) {
 /**
  * Create the repository the caller named, through the CLI its provider names.
  *
- * EVERY REFUSAL PRECEDES THE SPAWN. That ordering is the property, not a
+ * EVERY REFUSAL PRECEDES THE CREATE. That ordering is the property, not a
  * tidiness: a check made after the create would report a failure about a
  * repository that now exists on somebody's instance, and there is no undo for
- * that from here. So the confirmation, the provider, the selector and the
- * binary are all settled before anything is run.
+ * that from here. So the confirmation, the provider, the selector, the remote
+ * URL, the binary and - on the forgejo row - which account the instance has
+ * logged in are all settled before the create is run. The login PROBE is the
+ * one command that runs ahead of that line, and it is a read of tea's own
+ * config file: it creates nothing, so a refusal after it has still created
+ * nothing. `$CAD_ARGV_LOG` in the tests is what holds that distinction to
+ * account rather than the wording here.
  *
  * WHAT `--confirmed` MEANS, and why the seam takes a flag for it. This module
  * cannot ask - a seam blocking on stdin inside a Bash tool call would hang the
@@ -294,8 +375,8 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
   // opening on `-` is refused outright: it would read as a FLAG the moment it
   // sits in the `git remote add` vector, and no forge serves such a URL, so
   // there is nothing honest to repair it into.
+  const classified = classifyOrigin(remoteUrl);
   if (!row.wiresRemote) {
-    const classified = classifyOrigin(remoteUrl);
     const usable = typeof remoteUrl === 'string' && !remoteUrl.startsWith('-')
       && classified.host !== null && classified.slug !== null;
     if (!usable) {
@@ -314,8 +395,29 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
     return;
   }
 
+  // WHO THE INSTANCE THINKS YOU ARE, on the one row whose argv needs it. This
+  // is the LAST thing settled before the create, and it is settled by asking
+  // rather than by assuming: `tea repos create --owner <name>` looks the name
+  // up as an ORGANIZATION, so passing it for a personal repository fails on the
+  // instance (`GetOrgByName`, measured live 2026-08-24) while omitting it
+  // creates under the login user. A row that cannot answer that question has no
+  // argv, so this refuses instead of falling back - the fallback is the argv
+  // that already failed. The host comes from the `--remote-url` this arm has
+  // just required, which is the instance the user named and confirmed at setup;
+  // nothing here parses a host out of anything else.
   const { owner, name } = parts;
-  if (!run(bin, row.argv(owner, name), { cwd: dir, timeout: CREATE_TIMEOUT_MS }).ok) {
+  let login = null;
+  if (row.needsLogin) {
+    login = classified.host === null ? null : teaLoginFor(bin, dir, classified.host);
+    if (!login) {
+      emit({ ok: false, reason: `no ${bin} login serves ${classified.host ?? 'that instance'}, so there is no way to tell whether ${owner} is your own account or an organization there`,
+        detail: null,
+        hint: `run \`${bin} login add\` for that instance and re-run this step - ${bin} needs a login on it before a repository can be created with the right owner` });
+      return;
+    }
+  }
+
+  if (!run(bin, row.argv(owner, name, login), { cwd: dir, timeout: CREATE_TIMEOUT_MS }).ok) {
     // The child's own text is NOT carried (CONTEXT D-16): the reason already
     // names the provider and the operation, and a forge CLI's stderr is exactly
     // where a token or an authenticated URL turns up.
