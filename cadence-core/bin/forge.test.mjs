@@ -68,11 +68,15 @@ const GIT_ONLY = (() => {
 
 /** A PATH holding the stubs named in `stubs`, the real `git`, and NOTHING else
  *  that resolves. `node` is invoked by absolute path for the same reason. */
-function run(args, { stubs = [], gitConfig = null, dir = null, marker = null } = {}) {
+function run(args, { stubs = [], gitConfig = null, dir = null, marker = null,
+  argvLog = null, stubOpts = {} } = {}) {
   const stubDir = mkdtempSync(join(tmpdir(), 'cad-fg-bin-'));
-  for (const name of stubs) stub(stubDir, name, { body: 'stub' });
+  for (const name of stubs) stub(stubDir, name, { body: 'stub', ...(stubOpts[name] || {}) });
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, PATH: stubDir + ':' + GIT_ONLY };
   if (marker) env.CAD_SPAWN_MARKER = marker;
+  // Every stub written by issue-check.test.mjs's `stub` appends `<name> $*` here,
+  // so what the seam ACTUALLY called is a file on disk rather than a claim.
+  if (argvLog) env.CAD_ARGV_LOG = argvLog;
   const root = dir || planningRoot(gitConfig || {});
   try {
     return {
@@ -245,11 +249,12 @@ test('detect: a VALUELESS --dir refuses the same way', () => {
   assert.equal(envelope.reason, 'missing-flag-value');
 });
 
-test('an unknown subcommand prints the usage line naming the one it has', () => {
+test('an unknown subcommand prints the usage line naming both it has', () => {
   const { status, envelope } = run(['frobnicate'], { stubs: ['gh'] });
   assert.equal(status, 1);
   assert.equal(envelope.reason, 'usage');
   assert.match(envelope.detail, /detect/);
+  assert.match(envelope.detail, /create/);
 });
 
 test('no subcommand at all is the same usage refusal', () => {
@@ -348,4 +353,173 @@ test('detect: NO forge CLI is spawned while the defaults are derived (AC1)', () 
   const { envelope } = run(['detect', '--dir', dir], { stubs: ['gh', 'tea', 'glab'], dir, marker: mk });
   assert.equal(envelope.defaults.provider, 'github');
   assert.equal(spawned(mk), '');
+});
+
+// --- create: the argv is the property, and it never runs unconfirmed (AC6) --
+
+/** The lines a stub recorded, `<name> <args...>` each, or [] when nothing ran. */
+function calls(log) {
+  return existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : [];
+}
+
+const argvLog = () => join(mkdtempSync(join(tmpdir(), 'cad-fg-log-')), 'argv');
+
+test('create: the github arm records exactly the pinned argv', () => {
+  // AC6, against a stub that records what it was called with - the only form
+  // of this assertion that survives a change to how the seam composes the call.
+  const log = argvLog();
+  const dir = planningRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed', '--dir', dir],
+    { stubs: ['gh'], dir, argvLog: log },
+  );
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.provider, 'github');
+  assert.equal(envelope.owner, 'o');
+  assert.equal(envelope.repo, 'o/r');
+  assert.equal(envelope.visibility, 'private');
+  assert.deepEqual(calls(log), ['gh repo create o/r --private']);
+});
+
+test('create: the gitlab arm records its own grammar, --remoteName and all', () => {
+  const log = argvLog();
+  const dir = planningRoot();
+  const { envelope } = run(
+    ['create', '--provider', 'gitlab', '--repo', 'g/sub/r', '--confirmed', '--dir', dir],
+    { stubs: ['glab'], dir, argvLog: log },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(calls(log), ['glab repo create g/sub/r --private --remoteName origin']);
+});
+
+test('create: the forgejo arm records the flag-only grammar tea has', () => {
+  const log = argvLog();
+  const dir = planningRoot();
+  const { envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed', '--dir', dir],
+    { stubs: ['tea'], dir, argvLog: log },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(calls(log), ['tea repos create --name r --owner o --private']);
+});
+
+test('create: WITHOUT --confirmed nothing is spawned at all', () => {
+  // The property AC6 states: no creation argv is recorded without a prior
+  // confirmation. The seam cannot see the question, so it refuses the flag's
+  // absence - and it refuses BEFORE the spawn, which is what the empty log
+  // proves.
+  const log = argvLog();
+  const mk = marker();
+  const dir = planningRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'github', '--repo', 'o/r', '--dir', dir],
+    { stubs: ['gh'], dir, argvLog: log, marker: mk },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.ok(envelope.hint && envelope.hint.length > 0, JSON.stringify(envelope));
+  assert.equal(envelope.detail, null);
+  assert.deepEqual(calls(log), []);
+  assert.equal(spawned(mk), '');
+});
+
+test('create: a CLI that fails leaks none of its own text and nulls detail', () => {
+  // CONTEXT D-16. The stub prints a credential-shaped line on stderr and exits
+  // nonzero; the envelope says what failed and carries not one byte of it.
+  const secret = 'fatal: Authorization: Bearer glpat-DEADBEEFCAFE';
+  const dir = planningRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed', '--dir', dir],
+    { stubs: ['gh'], dir, stubOpts: { gh: { code: 1, stderr: secret, body: '' } } },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.detail, null);
+  assert.ok(envelope.hint && envelope.hint.length > 0);
+  const serialized = JSON.stringify(envelope);
+  for (const token of ['Bearer', 'glpat-DEADBEEFCAFE', 'fatal']) {
+    assert.equal(serialized.includes(token), false, `the child's stderr reached the envelope: ${token}`);
+  }
+  assert.match(envelope.reason, /o\/r/);
+});
+
+test('create: a provider whose CLI is absent refuses, naming the install', () => {
+  const log = argvLog();
+  const dir = planningRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed', '--dir', dir],
+    { stubs: ['gh'], dir, argvLog: log },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.match(envelope.reason, /\btea\b/);
+  assert.match(envelope.hint, /install tea/);
+  assert.deepEqual(calls(log), []);
+});
+
+test('create: a provider outside the table refuses before any lookup', () => {
+  const log = argvLog();
+  const dir = planningRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'bitbucket', '--repo', 'o/r', '--confirmed', '--dir', dir],
+    { stubs: ['gh', 'tea', 'glab'], dir, argvLog: log },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.detail, null);
+  for (const p of ['forgejo', 'github', 'gitlab']) assert.match(envelope.hint, new RegExp(p));
+  assert.deepEqual(calls(log), []);
+});
+
+test('create: a --repo failing the slug grammar refuses rather than reaching an argv', () => {
+  // The selector is caller-derived text that lands in an argument VECTOR. A
+  // segment reading as a flag, a traversal segment and a single bare name are
+  // all refused by the one grammar the setup defaults already use.
+  const log = argvLog();
+  const dir = planningRoot();
+  for (const bad of ['repo', '-x/repo', 'o/../etc', 'o/r; id']) {
+    const { status, envelope } = run(
+      ['create', '--provider', 'github', '--repo', bad, '--confirmed', '--dir', dir],
+      { stubs: ['gh'], dir, argvLog: log },
+    );
+    assert.equal(status, 1, bad);
+    assert.equal(envelope.ok, false, bad);
+    assert.ok(envelope.hint && envelope.hint.length > 0, bad);
+  }
+  assert.deepEqual(calls(log), []);
+});
+
+test('create: --provider and --repo refuse a valueless spelling, before anything runs', () => {
+  const log = argvLog();
+  const dir = planningRoot();
+  for (const args of [
+    ['create', '--provider', '--repo', 'o/r', '--confirmed', '--dir', dir],
+    ['create', '--provider', 'github', '--repo', '', '--confirmed', '--dir', dir],
+  ]) {
+    const { status, envelope } = run(args, { stubs: ['gh'], dir, argvLog: log });
+    assert.equal(status, 1);
+    assert.equal(envelope.reason, 'missing-flag-value');
+  }
+  assert.deepEqual(calls(log), []);
+});
+
+test('create: an ABSENT selector is answered by the seam, not by the argument door', () => {
+  // The one row in the table with TWO required flags. The door is a VALUE door
+  // (review-provider.mjs's rule), so a caller who omitted a flag is told what
+  // create needs rather than which flag the door read first.
+  const log = argvLog();
+  const dir = planningRoot();
+  for (const [args, flag] of [
+    [['create', '--repo', 'o/r', '--confirmed', '--dir', dir], '--provider'],
+    [['create', '--provider', 'github', '--confirmed', '--dir', dir], '--repo'],
+  ]) {
+    const { status, envelope } = run(args, { stubs: ['gh'], dir, argvLog: log });
+    assert.equal(status, 1);
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.detail, null);
+    assert.match(envelope.reason, new RegExp(`create needs ${flag}`));
+    assert.ok(envelope.hint && envelope.hint.length > 0);
+  }
+  assert.deepEqual(calls(log), []);
 });

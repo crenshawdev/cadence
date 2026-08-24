@@ -983,7 +983,27 @@ export const CONTRACTS = {
     '*': {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // `detect` stays the FIRST non-`*` key: arg-contract-adoption.test.mjs's
+    // census exercises the script-global `--dir` through the first face it
+    // finds, and `detect` is the one that spawns no forge CLI at all.
     detect: {},
+    // The create face. Both selectors REFUSE on both axes: a valueless
+    // `--provider` would fall through to a table lookup on `undefined`, and a
+    // valueless `--repo` would name no repository at all - and this subcommand
+    // is the one place in the phase that MUTATES a forge.
+    //
+    // `--confirmed` is `boolean`, so its whole grammar is presence and neither
+    // disposition can fire; both are declared `fallback` rather than omitted,
+    // per this file's own rule about an omitted field. Its required-ness is
+    // `false` HERE and enforced in the seam, which is the same split
+    // `issue-check.mjs` keeps for `--timeout-ms`'s positivity: a
+    // `missing-flag-value` refusal would name the flag and stop, where the
+    // seam's own refusal names the CONFIRMATION the caller owes the user.
+    create: {
+      '--provider': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--repo': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--confirmed': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
   },
   'issue-check.mjs': {
     '*': {
