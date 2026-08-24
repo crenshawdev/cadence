@@ -5,12 +5,16 @@
 
 ## Active
 
-No cycle open. `/cad-phase add` opens the next one.
+No cycle open. `/cad-phase add` opens the next one, and ids are seeded here at
+that open - the practice `v3.5.7` established. `/cad-plan` seeds each
+Traceability row as its phase is planned; rows are never hand-populated here.
 
-`v3.6.1 - the gaps v3.6.0 named` closed 2026-08-23. Its three ids - `WHY-02`,
-`WHY-03`, `WHY-04` - are under `## Shipped`, tagged `v3.6.1`, all Complete.
-Nothing is promoted here to fill the section: ids are seeded at a cycle's open,
-the practice `v3.5.7` established, and there is no open cycle to seed.
+`v3.7.0 - the refusal that names the next step` closed 2026-08-24. Its three
+ids - `HNT-01`, `HNT-02` (#238) and `SCP-01` (#249) - are under `## Shipped`
+with the rest of this project's delivered scope. The two accessibility gaps
+#238 names as deferred stay deferred: the ask-user register rail is a seam rule
+rather than a code change, and the done-step report field lists are
+model-facing.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted, and `BCH-01` stays in `## Deferred`
@@ -260,6 +264,9 @@ parses only the Traceability table).
 | WHY-02 (`/cad-why`'s bare-path arm reaches the commits git's default history simplification hides, so a path's chain is not silently short (measured 7 of 10 on `lib/release-decision.mjs`)) | 1 | Complete | v3.6.1 |
 | WHY-03 (the renderer's entry cap carries a byte reason that measurement supports, or a number that does (measured 15,637 B at a cap claiming under 10,000)) | 1 | Complete | v3.6.1 |
 | WHY-04 (`closeOver` orders commits by parsed instants rather than by `%cI` string comparison, so a mixed-offset pair straddling a prune attaches to the right close) | 1 | Complete | v3.6.1 |
+| HNT-02 (a reason site in scope with no hint is a reported problem, so the invariant survives the next seam rather than being re-measured after it. The ratio has drifted twice already - 130/10 at filing, 186/13 today - which is why this is a check and not a sweep (#238).) | 1 | Complete | v3.7.0 |
+| HNT-01 (every seam refusal the cycle declares in scope sets a companion hint that names, in the user's terms, what to do next. In scope spans BOTH refusal spellings under `cadence-core/bin/`, tests excluded: the `reason:` object literal (186 sites, 13 hinted, measured 2026-08-23) and the positional `fail('token', detail, hint)` call (196 sites, 13 hinted, 183 not), with only 5 tokens appearing in both forms. Those counts are provenance, not the denominator - the in-scope population is fixed by phase 1's boundary decision, which keys on the site emitting an `ok:false` envelope. The kebab-case token is what the user reads today (#238).) | 1 | Complete | v3.7.0 |
+| SCP-01 (`config.mjs set` refuses a repo-layer-only key written at the user-global layer, at write time, reading a schema marker rather than naming keys. That marker is NEW: `"src": "repo"` is explicitly not it, since the schema's own `_meta.note` defines it as "settable in either layer" and its 33 keys include `stakes` and `granularity`, which `workflows/config.md:124` tells the user to set globally. The test the new marker encodes is whether a user-global value authorizes a change to a repository that never opted in; `git.auto_close` is the only key that passes it today, its own `purpose` string and `lib/repo-auto-close.mjs` already saying so at land time. `checkPairs` (`bin/config.mjs:151`) validates retired, unknown and type and nothing about layer scope, so `git.auto_close` written globally is silent until the close refuses at land time (#249).) | 2 | Complete | v3.7.0 |
 
 ## Deferred
 

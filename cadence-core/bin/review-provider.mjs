@@ -136,7 +136,13 @@ function beginProviderCall(command, subject) {
   return activeMeta;
 }
 
-function fail(reason, detail) {
+// `hint` is the third argument and rides as a conditional key, so an absent
+// hint adds no key and no shipped assertion moves (phase-1 D-09/D-10). It is
+// deliberately NOT passed to `traceProvider`: the trace records the
+// degradation for whoever reads the bracket instead of the envelope, and its
+// three arguments are the shipped record's shape - a hint is advice to the
+// person at the terminal, not a fact about what happened.
+function fail(reason, detail, hint) {
   // The degradation is recorded before the envelope is emitted, and never
   // instead of it: `traceProvider` never throws and never speaks, so this line
   // cannot change what the caller reads or when.
@@ -146,7 +152,7 @@ function fail(reason, detail) {
     // first, so this renders a real string or falls back to the reason.
     traceProvider(activeMeta, reason, typeof detail === 'string' && detail ? detail : reason);
   }
-  emit({ ok: false, reason, detail: detail || null });
+  emit({ ok: false, reason, detail: detail || null, ...(hint ? { hint } : {}) });
   throw DONE;
 }
 
@@ -428,7 +434,8 @@ function assertUnderCap(...parts) {
   const est = estimatePromptTokens(...parts);
   const cap = maxPromptTokens();
   if (est > cap) {
-    fail('over-cap', `payload is ~${est} estimated tokens, over review.max_prompt_tokens (${cap})`);
+    fail('over-cap', `payload is ~${est} estimated tokens, over review.max_prompt_tokens (${cap})`,
+      'send this reviewer less - a narrower diff or one file rather than the whole range - or raise review.max_prompt_tokens for this repo, then re-run');
   }
 }
 
@@ -679,10 +686,27 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
  * @param {any} meta @param {any} e
  */
 function failRequest(meta, e) {
-  const reason = e && e[OVER_RESPONSE] ? 'over-response' : 'transport';
+  const over = !!(e && e[OVER_RESPONSE]);
+  const reason = over ? 'over-response' : 'transport';
   traceProvider(meta, reason, e.message);
-  fail(reason, e.message);
+  // The hint splits where the two words split: one condition is retryable and
+  // the other says this provider is returning something that is not a review,
+  // and a single sentence covering both would name neither recovery.
+  fail(reason, e.message, over
+    ? 'this provider sent back more than the seam will read - ask it for less (a smaller artifact, or a lower effort), or name a different model for this reviewer, then re-run'
+    : 'check the network reaches this provider and re-run - a transport failure is worth one retry, and one that repeats on a slow model wants review.request_timeout_ms raised');
 }
+
+/**
+ * The next step for an `http` refusal, written once because both commands that
+ * issue a request reach it. It reads the STATUS back to the user as an action
+ * rather than restating the number the envelope already carries: the status is
+ * the only part of an HTTP failure that says which of the three things is
+ * wrong, and a caller who cannot map 401 to "the key" is exactly who this
+ * phase exists for.
+ */
+const HTTP_HINT = 'the provider refused the request: 401 or 403 means the key, '
+  + '404 means the model id, 429 or a 5xx is worth re-running in a minute';
 
 /**
  * The `body` of every `http` failure envelope: a sanitized, capped STRING.
@@ -1055,7 +1079,8 @@ async function readPayload(opts) {
     if (!src || src === '-') return JSON.parse(fs.readFileSync(0, 'utf8'));
     return JSON.parse(fs.readFileSync(src, 'utf8'));
   } catch (e) {
-    fail('bad-payload', e.message);
+    fail('bad-payload', e.message,
+      'the --payload file (or the stdin piped in its place) must hold parseable JSON - fix that file and re-run');
   }
 }
 
@@ -1063,10 +1088,13 @@ async function readPayload(opts) {
 function resolveProvider(opts, cmdName) {
   const provider = opts.provider;
   const adapter = ADAPTERS[provider];
-  if (!adapter) fail('bad-provider', `unknown provider: ${provider}`);
-  if (!opts.model) fail('bad-args', `${cmdName} needs --model`);
+  if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
+    `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
+  if (!opts.model) fail('bad-args', `${cmdName} needs --model`,
+    'pass --model with an id this provider serves - `review-provider.mjs detect-models --provider <name>` lists them');
   const { key, where } = resolveKey(provider, opts['key-file']);
-  if (!key) fail('no-key', `set ${where}`);
+  if (!key) fail('no-key', `set ${where}`,
+    'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
   return { provider, adapter, key };
 }
 
@@ -1089,18 +1117,21 @@ async function callStructured(adapter, key, reqSpec, meta) {
   }
   if (res.status < 200 || res.status >= 300) {
     traceProvider(meta, 'http', `HTTP ${res.status}`);
-    fail('http', { status: res.status, body: bodyExcerpt(res.raw) });
+    fail('http', { status: res.status, body: bodyExcerpt(res.raw) },
+      HTTP_HINT);
   }
   const text = adapter.extractText(res.json);
   if (typeof text !== 'string') {
     traceProvider(meta, 'no-output', 'no text in provider response');
-    fail('no-output', 'no text in provider response');
+    fail('no-output', 'no text in provider response',
+      'the provider answered with no text at all - re-run once, and name a different model for this reviewer if it repeats');
   }
   try {
     return JSON.parse(text);
   } catch (e) {
     traceProvider(meta, 'bad-json', e.message);
-    fail('bad-json', e.message);
+    fail('bad-json', e.message,
+      'this model returned prose where JSON was asked for - name a model that honours structured output for this reviewer, then re-run');
   }
 }
 
@@ -1115,7 +1146,8 @@ async function cmdReview(opts) {
   const { provider, adapter, key } = resolveProvider(opts, 'review');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.instruction !== 'string' || typeof payload.artifact !== 'string') {
-    fail('bad-payload', 'payload needs {instruction, artifact}, both strings');
+    fail('bad-payload', 'payload needs {instruction, artifact}, both strings',
+      'fix the file --payload names so it holds both keys as strings, then re-run - a caller that hand-built this file is the usual cause');
   }
   assertUnderCap(payload.instruction, payload.artifact);
   const parsed = await callStructured(adapter, key, adapter.structuredRequest({
@@ -1126,7 +1158,8 @@ async function cmdReview(opts) {
   const bad = validateFindings(parsed);
   if (bad) {
     traceProvider(meta, 'bad-shape', bad);
-    fail('bad-shape', bad);
+    fail('bad-shape', bad,
+      'the provider parsed as JSON but not as a findings list - re-run once, and name a different model for this reviewer if it repeats');
   }
   // An EMPTY findings set is `ok` and carries no `degraded` flag (D-22):
   // a reviewer that legitimately found nothing is not a drop-out.
@@ -1140,7 +1173,8 @@ async function cmdConsult(opts) {
   const { provider, adapter, key } = resolveProvider(opts, 'consult');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.situation !== 'string') {
-    fail('bad-payload', 'payload needs {situation}, a string');
+    fail('bad-payload', 'payload needs {situation}, a string',
+      'fix the file --payload names so it holds that key as a string, then re-run - a caller that hand-built this file is the usual cause');
   }
   assertUnderCap(payload.situation);
   const system =
@@ -1157,7 +1191,8 @@ async function cmdConsult(opts) {
   const bad = validateConsult(parsed);
   if (bad) {
     traceProvider(meta, 'bad-shape', bad);
-    fail('bad-shape', bad);
+    fail('bad-shape', bad,
+      'the provider parsed as JSON but not as an angles list - re-run once, and name a different model for this consult if it repeats');
   }
   traceProvider(meta, 'ok');
   ok({ provider, model: opts.model, angles: parsed.angles });
@@ -1171,10 +1206,12 @@ async function cmdDetect(opts) {
   // a `--model` this command never sends.
   const meta = beginProviderCall('detect-models', { provider, model: null, effort: null });
   const adapter = ADAPTERS[provider];
-  if (!adapter) fail('bad-provider', `unknown provider: ${provider}`);
+  if (!adapter) fail('bad-provider', `unknown provider: ${provider}`,
+    `pass --provider as one of: ${Object.keys(ADAPTERS).join(', ')}`);
 
   const { key, where } = resolveKey(provider, opts['key-file']);
-  if (!key) fail('no-key', `set ${where}`);
+  if (!key) fail('no-key', `set ${where}`,
+    'write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config');
 
   const { path: p, method } = adapter.detectRequest();
   let res;
@@ -1185,7 +1222,8 @@ async function cmdDetect(opts) {
   }
   if (res.status < 200 || res.status >= 300) {
     traceProvider(meta, 'http', `HTTP ${res.status}`);
-    fail('http', { status: res.status, body: bodyExcerpt(res.raw) });
+    fail('http', { status: res.status, body: bodyExcerpt(res.raw) },
+      HTTP_HINT);
   }
   const ids = adapter.extractModels(res.json);
   traceProvider(meta, 'ok');
@@ -1258,11 +1296,13 @@ async function main(argv) {
   // The argument-shape refusal comes first: a flag present with nothing usable
   // after it is a malformed CALL, and answering it as a domain problem
   // (`bad-provider: unknown provider: undefined`) is what this closes.
-  if (badArg) fail('bad-args', badArg);
+  if (badArg) fail('bad-args', badArg,
+    'the detail names the flag and the form it takes - supply it and re-run the command');
   else if (cmd === 'review') await cmdReview(opts);
   else if (cmd === 'consult') await cmdConsult(opts);
   else if (cmd === 'detect-models') await cmdDetect(opts);
-  else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`);
+  else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`,
+    'name one of those three as the FIRST argument, before any flag, and re-run');
 }
 
 /**

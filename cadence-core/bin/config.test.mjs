@@ -66,6 +66,88 @@ test('set on a missing repo file refuses (only --global auto-creates)', () => {
   assert.equal(r.reason, 'read');
 });
 
+// --- a repo-layer-only key refused at the user-global layer (SCP-01) ---------
+
+// The shape every arm below asserts: the per-pair entry rides the existing
+// reason:"invalid" detail array (no new reason token), names the key, and names
+// the next step rather than only the refusal.
+function assertScopeRefusal(r, label) {
+  assert.equal(r.ok, false, label);
+  assert.equal(r.reason, 'invalid', `${label}: ${JSON.stringify(r)}`);
+  assert.equal(r.detail.length, 1, label);
+  assert.equal(r.detail[0].key, 'git.auto_close', label);
+  assert.match(r.detail[0].error, /--file/, label);     // the next step, not just the no
+  assert.match(r.detail[0].error, /authorize/, label);  // and WHY the layer cannot honour it
+  assert.equal(typeof r.hint, 'string', label);
+  assert.ok(r.hint.length > 0, label);
+}
+
+test('set --global refuses a repo-layer-only key and writes nothing', () => {
+  // #249: git.auto_close is honoured from the repo layer alone (its own purpose
+  // says so, and lib/repo-auto-close.mjs enforces it), but the refusal only
+  // arrived at LAND time - after the user had already written the value.
+  const gpath = join(dir, 'scope-global-refuse.json');
+  const r = run(['set', '--global', 'git.auto_close=true'], gpath);
+  assertScopeRefusal(r, '--global');
+  assert.equal(existsSync(gpath), false); // --global auto-creates, so this proves nothing was written
+});
+
+test('the refusal follows the resolved target FILE, not the --global flag', () => {
+  // --file <the global config's own path> returns global:false from optFile and
+  // wrote straight through a flag-only rule; the /./ spelling is what forced the
+  // realpath hardening the first time (8063832d).
+  const gpath = join(dir, 'scope-by-file.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'solo' }));
+  const before = readFileSync(gpath, 'utf8');
+  assertScopeRefusal(run(['set', '--file', gpath, 'git.auto_close=true'], gpath), '--file <global>');
+  assertScopeRefusal(
+    run(['set', '--file', join(dir, '.', 'scope-by-file.json'), 'git.auto_close=true'], gpath),
+    '--file <global-dir>/./config.json');
+  assert.equal(readFileSync(gpath, 'utf8'), before); // neither spelling touched it
+});
+
+test('the same repo-layer-only pair aimed at a REPO config is written', () => {
+  // The rule is about the LAYER, never about the key being unsettable.
+  const gpath = join(dir, 'scope-repo-global.json');
+  const repo = join(dir, 'scope-repo-target.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['set', '--file', repo, 'git.auto_close=true'], gpath);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(JSON.parse(readFileSync(repo, 'utf8')).git.auto_close, true);
+});
+
+test('a multi-pair global set carrying one marked key leaves the file byte-identical', () => {
+  // The scope check runs inside checkPairs, ahead of every read and every write
+  // in set(), so the acceptable pair beside it is not written either.
+  const gpath = join(dir, 'scope-atomic.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'solo' }, null, 2) + '\n');
+  const before = readFileSync(gpath, 'utf8');
+  const r = run(['set', '--global', 'git.auto_close=true', 'stakes=critical'], gpath);
+  assertScopeRefusal(r, 'multi-pair');
+  assert.equal(readFileSync(gpath, 'utf8'), before);
+});
+
+test('a marked key that is ALSO type-invalid reports the type, not the layer (D-11)', () => {
+  const gpath = join(dir, 'scope-type-first.json');
+  const r = run(['set', '--global', 'git.auto_close=nonsense'], gpath);
+  assert.equal(r.ok, false);
+  assert.equal(r.detail[0].key, 'git.auto_close');
+  assert.match(r.detail[0].error, /expected true or false/);
+  assert.doesNotMatch(r.detail[0].error, /--file/); // the type is wrong in EITHER layer
+});
+
+test('no "src": "repo" key is refused at the user-global layer', () => {
+  // The marker is repo_only, not src. 33 keys carry src:"repo" - stakes and
+  // granularity among them - and workflows/config.md tells the user to set those
+  // globally, so a rule keyed on src would refuse exactly the wrong set.
+  const gpath = join(dir, 'scope-src-repo-allowed.json');
+  const r = run(['set', '--global', 'stakes=critical', 'granularity=coarse'], gpath);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const written = JSON.parse(readFileSync(gpath, 'utf8'));
+  assert.equal(written.stakes, 'critical');
+  assert.equal(written.granularity, 'coarse');
+});
+
 test('validate --global reads the global file and reports the payload', () => {
   const gpath = join(dir, 'valid.json');
   writeFileSync(gpath, JSON.stringify({ stakes: 'shipped', granularity: 'fine' }));
@@ -541,7 +623,9 @@ test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it o
   // no longer expressible. Deleting the row below stops `get --global`
   // answering `source: "global"` - watched failing.
   const declared = { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' };
-  for (const cmd of ['validate', 'set', 'get']) {
+  // `check` joined the list when it learned the flag (SCP-01): the inspect face
+  // has to be able to ASK about the layer the write face refuses at.
+  for (const cmd of ['validate', 'set', 'get', 'check']) {
     assert.deepEqual(CONTRACTS['config.mjs'][cmd]['--global'], declared,
       `${cmd} takes --global, so ${cmd} must declare it - with the same grammar its siblings carry`);
   }
@@ -550,6 +634,27 @@ test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it o
   const r = run(['get', '--global', 'stakes'], gpath);
   assert.equal(r.source, 'global');
   assert.equal(r.values['stakes'], 'critical');
+});
+
+test('check --global reports the scope refusal the write face gives', () => {
+  // Before this, `check --global git.auto_close=true` answered `--global is not
+  // a key=value pair`: the inspect face could not be asked about the layer at
+  // all, so it could not agree or disagree with what `set` would do.
+  const gpath = join(dir, 'check-global.json');
+  const refused = run(['check', '--global', 'git.auto_close=true'], gpath);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'invalid');
+  // Byte-identical to the write face's entry, which is the whole point.
+  const written = run(['set', '--global', 'git.auto_close=true'], gpath);
+  assert.deepEqual(refused.detail[0], written.detail[0]);
+  assert.equal(existsSync(gpath), false); // check never writes, and neither did the refused set
+
+  // A src:"repo" key is accepted at that same layer...
+  assert.deepEqual(run(['check', '--global', 'stakes=critical'], gpath), { ok: true });
+  // ...and with no --global the marked key is the ordinary repo-layer question.
+  assert.deepEqual(run(['check', 'git.auto_close=true'], gpath), { ok: true });
+  // ...and the flag is consumed, never read as a pair.
+  assert.deepEqual(run(['check', '--global'], gpath), { ok: true });
 });
 
 test('get --global: the one file it reads by construction is the GLOBAL layer', () => {
@@ -718,6 +823,64 @@ test('CADENCE_CONFIG_SCHEMA without the sentinel is ignored; `keys` is the shipp
   const opened = JSON.parse(execFileSync('node', [CONFIG, 'keys'],
     { encoding: 'utf8', env: { ...env, CADENCE_TEST_SEAM: '1' } }));
   assert.deepEqual(Object.keys(opened.keys), ['not.a.real.key']);
+});
+
+// --- the refused set is DERIVED from the marker, not from a key name --------
+
+test('SCP-01: a fixture schema marking a DIFFERENT key refuses that key', () => {
+  // AC5. Both fixture keys are ordinary bools the shipped schema has never
+  // held, so a rule written against `git.auto_close` by name passes nothing
+  // here; the only difference between the two is the marker. runWithSchema sets
+  // CADENCE_TEST_SEAM as well as CADENCE_CONFIG_SCHEMA - without the sentinel
+  // the override is ignored silently and this would pass against the shipped
+  // schema (see the gate test above).
+  const fixture = join(dir, 'repo-only-derivation-schema.json');
+  const body = JSON.stringify({
+    _meta: { note: 'fixture: exactly one key carries the marker' },
+    keys: {
+      'granularity': { type: 'bool', default: false, repo_only: true, purpose: 'the marked one' },
+      'stakes': { type: 'bool', default: false, purpose: 'the unmarked sibling' },
+    },
+  });
+  assert.doesNotMatch(body, /auto_close/); // the assertion is about the MARKER, never the name
+  writeFileSync(fixture, body);
+
+  const refused = JSON.parse(runWithSchema(['set', '--global', 'granularity=true'], fixture).stdout);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'invalid');
+  assert.equal(refused.detail.length, 1);
+  assert.equal(refused.detail[0].key, 'granularity');
+  assert.match(refused.detail[0].error, /--file/);
+  assert.match(refused.detail[0].error, /authorize/);
+
+  // The unmarked sibling is accepted at the SAME layer, so what refuses is the
+  // marker and not the layer. Asked through `check`, whose scope rule is the
+  // same call, so an accepted fixture pair leaves no file behind for the next
+  // test to inherit.
+  assert.deepEqual(
+    JSON.parse(runWithSchema(['check', '--global', 'stakes=true'], fixture).stdout), { ok: true });
+  // ...and the marked one refuses through that face with the same entry.
+  const inspected = JSON.parse(runWithSchema(['check', '--global', 'granularity=true'], fixture).stdout);
+  assert.deepEqual(inspected.detail[0], refused.detail[0]);
+  // The refused --global set auto-creates nothing: no write happened at all.
+  assert.equal(existsSync(join(dir, 'no-global-schema.json')), false);
+});
+
+test('SCP-01: exactly one SHIPPED key carries the marker, and `src` never implies it', () => {
+  // AC4's negative control, derived in-process rather than by 33 subprocess
+  // runs: the property is about the SCHEMA, and each subprocess would only
+  // re-prove the rule the test above pins.
+  const shipped = JSON.parse(readFileSync(join(dirname(CONFIG), '..', 'config.schema.json'), 'utf8')).keys;
+  assert.deepEqual(Object.keys(shipped).filter((k) => shipped[k].repo_only === true), ['git.auto_close']);
+
+  // `src: "repo"` means "settable in either layer" and 33 keys carry it -
+  // `stakes` and `granularity` among them, which workflows/config.md tells the
+  // user to set globally - so no key may inherit the refusal from it.
+  const srcRepo = Object.keys(shipped).filter((k) => shipped[k].src === 'repo');
+  for (const k of ['stakes', 'granularity', 'git.auto_close']) {
+    assert.ok(srcRepo.includes(k), `${k} carries src:"repo"`);
+  }
+  assert.deepEqual(srcRepo.filter((k) => shipped[k].repo_only !== undefined), ['git.auto_close']);
 });
 
 // --- model.effort.<role>: the per-role start rung, refused by key (RNG-02) ---

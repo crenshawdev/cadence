@@ -11,7 +11,10 @@ Type key: `bool` = true/false · `int` = free-typed number (Other) · `str|null`
 fixed options. The `[src]` marker is CONFIG-LAYER SCOPE: `[repo]` = settable in
 either layer; `[global]` = the user-global layer only, and a repo layer setting
 it is stripped at the merge and named in the read face's warnings; no marker =
-repo-settable. **Purpose** is the question text; each **Value → Explanation**
+repo-settable. `[repo-layer-only]` is a DIFFERENT marker from `[repo]` and not
+a stronger reading of it: `bin/config.mjs set` REFUSES that key at the
+user-global layer, because a user-global value cannot authorize a change to the
+one repository that has to honour it. **Purpose** is the question text; each **Value → Explanation**
 pair is one selectable option and its `description`.
 
 | Key `[src]` | Type | Purpose (question) | Value → Explanation (option → description) | Default |
@@ -44,7 +47,7 @@ pair is one selectable option and its `description`.
 | `git.create_tag` | bool | At the end of a land, cut the release tag on the pulled base once the merge confirms? | `true`→tag · `false`→don't | true |
 | `git.on_land_cleanup` | bool | After a land/merge, return to base, pull, reap the merged integration branch? | `true`→return + pull + reap · `false`→leave in place | true |
 | `git.issue_check` | bool | When a land starts, show which issues this branch's commits mention and which are still open? | `true`→show it, read-only, and say in one line when the tracker cannot be reached · `false`→skip it, and never call the hosting CLI | true |
-| `git.auto_close` | bool | Run the whole close unattended (audit → tag → PR → merge → reset) with no prompts? | `true`→run it start to finish, stopping only if a serious review finding is still unresolved · `false`→stop before publishing - you run `/cad-land` yourself | false |
+| `git.auto_close` `[repo-layer-only]` | bool | Run the whole close unattended (audit → tag → PR → merge → reset) with no prompts? | `true`→run it start to finish, stopping only if a serious review finding is still unresolved · `false`→stop before publishing - you run `/cad-land` yourself | false |
 | **Planning** |||||
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
 | **Memory** |||||

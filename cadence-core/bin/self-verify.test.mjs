@@ -2433,3 +2433,32 @@ test('check 21: the LIVE tree is clean of all three per-run scratch codes', () =
   assert.deepEqual(p.filter((x) => x.kind === 'scratch-fixed-target'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'scratch-unguarded-readback'), []);
 });
+
+// --- check 22: every refusal names its next step ------------------------------
+// The rule's own fixtures - both spellings, the register, the comment strip and
+// the injected substitute register - live in refusal-hints.test.mjs. This side
+// owns the WIRING: that the rule reaches `problems` through the CLI at all, and
+// that `checked` says so. Until the phase's sweep lands, the live-tree
+// assertion at the head of this file is EXPECTED to fail on `hintless-refusal`
+// entries and nothing else; that failure is the phase's AC1 evidence, so
+// weakening it or filtering this kind out of it would delete the only thing
+// proving the check reaches the shipped tree.
+
+const HINTLESS_KIND = 'hintless-refusal';
+
+test('check 22: a hintless refusal reaches problems through the CLI, and a hinted one does not', () => {
+  const head = "// @ts-check\n// seam.mjs - a fixture seam.\n'use strict';\n";
+  const root = binFixture({
+    'bare.mjs': `${head}if (!a) fail('no-input', 'nothing to read');\n`,
+    'hinted.mjs': `${head}if (!a) fail('no-input', 'nothing to read', 'point --root at a repo');\n`
+      + "if (!b) emit({ ok: false, reason: 'no-target', detail: 'x', hint: 'name a target' });\n",
+  });
+  const hits = run(['--root', root]).problems.filter((p) => p.kind === HINTLESS_KIND);
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].file, join('cadence-core', 'bin', 'bare.mjs'));
+  assert.match(hits[0].detail, /^line 4: no-input$/);
+});
+
+test('check 22: the CLI names refusal-hints in `checked`', () => {
+  assert.match(run(['--root', binFixture({})]).checked, /refusal-hints/);
+});

@@ -6,6 +6,70 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-08-24
+
+Cadence stated its failures in its own vocabulary and never stated the remedy.
+A seam that refused handed you a kebab-case token, so the token WAS the error
+message. At the open this was measured across `cadence-core/bin/` with tests
+excluded: 186 sites set a literal `reason` and 13 set a literal `hint`, and all
+13 of those lived in two files. The ratio had also been getting worse rather
+than better, 130 against 10 when the issue was filed, which is why this cycle
+ships a check and not only a sweep.
+
+Two phases, 34 commits off `v3.6.1`, three requirement ids seeded at the open
+and all three traced to a verified phase: `HNT-01`, `HNT-02` and `SCP-01`.
+`/cad-audit` PASS on both arms, 13 of 13 acceptance criteria covered.
+
+### Added
+
+- **A hintless refusal is now a build failure.** `self-verify.mjs` check 22
+  (`refusal-hints`) walks every refusal site under `cadence-core/bin/` and
+  reports any in-scope one carrying no `hint`, naming the file and the reason
+  token. The rule and its exclusion register live in
+  `cadence-core/bin/lib/refusal-hints.mjs`, and the register is a PARAMETER
+  rather than a constant, so a test hands the check a substitute register and
+  the reported set changes with it. A sweep fixes a count once; this is what
+  stops the 187th refusal shipping without a next step (`HNT-02`).
+- **A repo-scoped config key refuses at the layer that cannot honour it.**
+  `config.mjs set git.auto_close=true --global` now returns `ok:false` at WRITE
+  time, naming the key's scope and telling you to use `--file <repo config>`
+  instead. Previously it applied silently and the repository, which never opted
+  in, only complained when the close refused at land time. The rule reads a new
+  `repo_only` schema marker rather than a list of key names, proved by a test
+  that substitutes a schema fixture marking a different key and shows it refused
+  with no line of the rule changed. It resolves the layer from the target FILE
+  rather than the flag, so `--file $CADENCE_GLOBAL_CONFIG` and the same path
+  spelled with `/./` refuse identically, and it runs inside `checkPairs` ahead
+  of every read and write, so a multi-pair set carrying one marked key leaves
+  the target byte-identical (`SCP-01`).
+- **`config.mjs check --global`** reports the same per-pair scope error the
+  write face refuses on, so the inspect face can answer what `set` will do
+  before you run it (`SCP-01`).
+
+### Fixed
+
+- **Every in-scope refusal names its next step.** 243 in-scope refusal sites
+  under `cadence-core/bin/` now carry a plain-language hint, down from 215
+  hintless when check 22 first went in. `planning.mjs` alone accounts for 154 of
+  them, the largest user-facing refusal surface in the plugin. The `fail`
+  wrappers in `config.mjs`, `route.mjs` and `review-provider.mjs` widened from
+  `(reason, detail)` to `(reason, detail, hint)` to carry them. No reason token
+  string changed: they are matched by tests and by callers, and renaming one is
+  a breaking change dressed as a wording fix (`HNT-01`).
+
+### Known
+
+- **The new scope check is not bound to the file it clears.** `config.mjs`
+  resolves the layer identity from a pathname, then re-resolves that same
+  pathname for the read and again for the atomic write, so a directory or
+  symlink swap landing in that window writes through a path the check already
+  cleared. This is not a regression, since before this release `set` applied the
+  pair with no layer check at all, but it does mean the refusal is defeatable by
+  a local attacker who can win the race. It was raised by the blocking
+  risk-surface gate, confirmed against the code by the phase verifier, and
+  accepted deliberately rather than missed. Binding the check to an opened
+  descriptor through a temp-and-rename write is its own piece of work.
+
 ## [3.6.1] - 2026-08-23
 
 `v3.6.0` shipped `/cad-why` and then wrote down three things wrong with it. This
@@ -3722,6 +3786,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.7.0
 [3.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.1
 [3.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.0
 [3.5.9]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.9

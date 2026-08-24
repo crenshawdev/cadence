@@ -422,7 +422,9 @@ function cmdStatus(dir) {
   // is not a canonical entry is reported per line with its own code.
   const classified = classifyPhaseList(roadmapText);
   if (classified.state === 'no-section') {
-    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md');
+    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md',
+      'add a `## Phases` heading to ROADMAP.md, outside any code fence - a closed milestone'
+      + ' is that heading with nothing under it, never a missing heading');
   }
   if (classified.state === 'out-of-grammar') {
     // Emitted directly rather than through fail(), which has no channel for
@@ -433,6 +435,8 @@ function cmdStatus(dir) {
       ok: false, reason: 'unparseable-roadmap',
       detail: `line ${first.line}: ${first.text}`,
       issues: classified.issues,
+      hint: 'rewrite each line listed in `issues` as `- [ ] **Phase <n>: <name>** - <description>`'
+        + ' under `## Phases`, or move it out of that section',
     });
   }
   const closed = classified.state === 'closed';
@@ -570,15 +574,26 @@ function cmdStatus(dir) {
 // ---------------------------------------------------------------------------
 function cmdCursorGet(dir) {
   const text = read(join(dir, 'STATE.md'));
-  if (text === null) return fail('no-cursor', `${join(dir, 'STATE.md')} not found`);
+  if (text === null) {
+    return fail('no-cursor', `${join(dir, 'STATE.md')} not found`,
+      'run /cad-progress, which derives where the project is from the phase artifacts and writes'
+      + ' the cursor; /cad-new-project if this project has no .planning/ yet');
+  }
   const c = parseCursor(text);
-  if (!c) return fail('unparseable-cursor', 'STATE.md does not match the 4-line schema');
+  if (!c) {
+    return fail('unparseable-cursor', 'STATE.md does not match the 4-line schema',
+      'run /cad-progress to rewrite the cursor from the phase artifacts - STATE.md is written'
+      + ' through `cursor set` and is never hand-edited');
+  }
   ok(c);
 }
 
 function cmdCursorSet(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
-  if (!opts.phase) return fail('bad-args', 'cursor set needs --phase <N>');
+  if (!opts.phase) {
+    return fail('bad-args', 'cursor set needs --phase <N>',
+      'pass --phase <N> for the phase this cursor points at, then re-run');
+  }
   // The shared reader, for the refusal WORDING - and the cursor keeps holding
   // the numeric value on purpose. `parseCursor` returns a Number that
   // `renumber`'s shift arithmetic, `cmdStatus`'s `parsed.phase === current`
@@ -591,10 +606,16 @@ function cmdCursorSet(dir, opts) {
   // the reads in this file that are not these two write faces.
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
-    return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
+    return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)',
+      'send a plain phase number - 3, or 3.1 for a phase inserted between two others - then re-run');
   }
   const spelling = phaseSpellingRefusal(parsedPhase);
-  if (spelling) return fail('bad-args', `cursor set ${spelling}`);
+  if (spelling) {
+    return fail('bad-args', `cursor set ${spelling}`,
+      'take one of the two fixes the detail names - retype the flag, or rename the directory - then'
+      + ' re-run; the cursor stores the phase NUMBER, so only a spelling that survives that round'
+      + ' trip can be written');
+  }
   const phase = parsedPhase.value;
   // `--next-file` is the path transport for a resume pointer the CALLER
   // composed - /cad-pause and `progress` build theirs from what the run was
@@ -602,9 +623,17 @@ function cmdCursorSet(dir, opts) {
   // (lib/text-flag-file.mjs, references/conventions.md). The seven sites that
   // pass a literal `/cad-<command> N` keep the inline form; nothing is deleted.
   const resolvedNext = resolveTextFlag(opts, 'next', 'cursor set');
-  if (!resolvedNext.ok) return fail('bad-args', resolvedNext.detail);
+  if (!resolvedNext.ok) {
+    return fail('bad-args', resolvedNext.detail,
+      'pass --next or --next-file, never both, and point --next-file at a readable, non-empty file,'
+      + ' then re-run');
+  }
   const next = resolvedNext.value !== undefined ? resolvedNext.value : opts.next;
-  if (!opts.status || !next) return fail('bad-args', 'cursor set needs --status and --next');
+  if (!opts.status || !next) {
+    return fail('bad-args', 'cursor set needs --status and --next',
+      `pass both: --status <one of ${CURSOR_STATUSES.join(' | ')}> and --next "<the command to run`
+      + ' next>", then re-run');
+  }
   // ONE refusal the inline form never needed: `renderCursor` writes `next` into
   // the cursor's `Next:` line unflattened, and references/conventions.md states
   // the cursor is always exactly four lines - a wrapped resume pointer would
@@ -615,10 +644,14 @@ function cmdCursorSet(dir, opts) {
   // term: a malformed value is a malformed CALL and nothing is written.
   if (typeof next === 'string' && /[\r\n]/.test(next)) {
     return fail('bad-args',
-      'cursor set --next cannot contain a newline - the cursor is exactly four lines');
+      'cursor set --next cannot contain a newline - the cursor is exactly four lines',
+      'put the resume pointer on ONE line and re-run; a wrapped one writes a fifth line the next'
+      + ' `cursor get` cannot read back');
   }
   if (!CURSOR_STATUSES.includes(opts.status)) {
-    return fail('bad-status', `"${opts.status}" is not in the lifecycle: ${CURSOR_STATUSES.join(' | ')}`);
+    return fail('bad-status', `"${opts.status}" is not in the lifecycle: ${CURSOR_STATUSES.join(' | ')}`,
+      'send one of the statuses the detail lists, spelled exactly as it appears there - the words'
+      + ' are the lifecycle, not free text');
   }
 
   // name/total: explicit flag > ROADMAP derivation > existing cursor > fail.
@@ -626,7 +659,11 @@ function cmdCursorSet(dir, opts) {
   let total;
   if ('total' in opts) {
     const parsed = requireCursorNumber(opts.total);
-    if (!parsed.ok) return fail('bad-args', 'cursor set --total needs a non-negative integer');
+    if (!parsed.ok) {
+      return fail('bad-args', 'cursor set --total needs a non-negative integer',
+        'send --total as the number of phases in this milestone, or drop the flag and let'
+        + " ROADMAP.md's phase list supply the count");
+    }
     total = parsed.value;
   }
   if (name === undefined || total === undefined) {
@@ -670,7 +707,9 @@ function cmdCursorSet(dir, opts) {
     }
   }
   if (name === undefined || total === undefined) {
-    return fail('cannot-derive', 'phase name/total not in flags, ROADMAP.md, or the existing cursor');
+    return fail('cannot-derive', 'phase name/total not in flags, ROADMAP.md, or the existing cursor',
+      'pass --name and --total explicitly, or add this phase to the `## Phases` list in ROADMAP.md'
+      + ' so both can be derived from it');
   }
 
   const cursor = {
@@ -696,7 +735,11 @@ function cmdPhaseDone(dir, opts) {
   // the unknown-phase message all take a number, and the raw spelling would
   // regress `--n 02` to unknown-phase while `--n 2.1` must keep boxing Phase 2.1.
   const parsedPhase = requirePhaseArg(opts.n);
-  if (!parsedPhase.ok) return fail('bad-args', 'phase-done needs --n <phase>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'phase-done needs --n <phase>',
+      'pass --n <phase> naming the phase to close, then re-run; a `--n "$PHASE"` with the variable'
+      + ' unset reaches here as a flag with no value');
+  }
   const n = parsedPhase.value;
   // An explicit --reqs means "exactly these rows". An empty one is almost
   // always an unset variable (`--reqs "$IDS"`), and treating it as "flag
@@ -705,19 +748,31 @@ function cmdPhaseDone(dir, opts) {
   let namedReqs = null;
   if ('reqs' in opts) {
     if (typeof opts.reqs !== 'string') {
-      return fail('bad-args', 'phase-done --reqs needs a comma-separated id list');
+      return fail('bad-args', 'phase-done --reqs needs a comma-separated id list',
+        'spell it --reqs "ABC-01,ABC-02", or drop the flag to close every non-Deferred row of'
+        + ' this phase');
     }
     namedReqs = opts.reqs.split(',').map((s) => s.trim()).filter(Boolean);
     if (!namedReqs.length) {
-      return fail('bad-args', 'phase-done --reqs is empty; omit it to close the whole phase');
+      return fail('bad-args', 'phase-done --reqs is empty; omit it to close the whole phase',
+        'name the ids you mean, or drop --reqs entirely - an empty value here is almost always an'
+        + ' unset shell variable, and guessing which you meant would flip rows you never named');
     }
   }
   const undo = 'undo' in opts;
   const roadmapFile = join(dir, 'ROADMAP.md');
   const roadmapText = read(roadmapFile);
-  if (roadmapText === null) return fail('no-roadmap', `${roadmapFile} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${roadmapFile} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md, or run /cad-new-project if'
+      + ' this project has no roadmap yet');
+  }
   const boxed = setPhaseBox(roadmapText, n, !undo);
-  if (!boxed) return fail('unknown-phase', `no "**Phase ${n}:**" line under ## Phases`);
+  if (!boxed) {
+    return fail('unknown-phase', `no "**Phase ${n}:**" line under ## Phases`,
+      "re-run with a phase number that appears in ROADMAP.md's `## Phases` list, or add the phase"
+      + ' there first');
+  }
 
   // REQUIREMENTS.md as a THREE-state fact - absent, present-but-unreadable,
   // present-and-read - because `read()` answers `null` for the first two alike
@@ -790,7 +845,11 @@ function cmdPhaseDone(dir, opts) {
       satisfied: () => !reqUnreadable,
     }],
   });
-  if (applied.refused !== null) return fail('unreadable-requirements', applied.refused);
+  if (applied.refused !== null) {
+    return fail('unreadable-requirements', applied.refused,
+      'make REQUIREMENTS.md a readable regular file and re-run - nothing was written, so ROADMAP.md'
+      + ' is byte-identical and the close starts over cleanly');
+  }
   if (!applied.ok) {
     // The shapes that reach here are the ones NO readability check can see - an
     // EACCES on `.planning` itself, a symlink planted at atomicWrite's derived
@@ -854,25 +913,41 @@ function readJsonPayload(file) {
     // parseArgs gives a valueless flag the boolean `true`, so `--payload` with
     // no path must be refused here rather than reaching readFileSync.
     if (typeof file !== 'string' || !file.trim()) {
-      fail('no-payload', '--payload needs a file path');
+      fail('no-payload', '--payload needs a file path',
+        'write the payload JSON to a file and name it: --payload <path>; this flag reads a file'
+        + ' and never a value typed on the command line');
       return { ok: false };
     }
     where = file;
     text = read(file);
     if (text === null) {
-      fail('no-payload', `${file} not found or unreadable`);
+      fail('no-payload', `${file} not found or unreadable`,
+        'write the payload JSON to that path before re-running, or point --payload at the file that'
+        + ' already holds it');
       return { ok: false };
     }
   } else {
     try { text = readFileSync(0, 'utf8'); }
-    catch (e) { fail('no-payload', `stdin: ${e.message}`); return { ok: false }; }
+    catch (e) {
+      fail('no-payload', `stdin: ${e.message}`,
+        'pipe the payload JSON into this command, or send it as a file with --payload <path> where'
+        + ' the subcommand takes one');
+      return { ok: false };
+    }
   }
   if (!text.trim()) {
-    fail('no-payload', `${where} is empty`);
+    fail('no-payload', `${where} is empty`,
+      'put the payload JSON there and re-run - an empty payload is what a truncated or'
+      + ' never-written findings file looks like, so check the step that was supposed to write it');
     return { ok: false };
   }
   try { return { ok: true, value: JSON.parse(text) }; }
-  catch (e) { fail('bad-payload', e.message); return { ok: false }; }
+  catch (e) {
+    fail('bad-payload', e.message,
+      'repair the JSON at the position the detail names - in the file, or in the step that wrote'
+      + ' it - then re-run');
+    return { ok: false };
+  }
 }
 
 /**
@@ -900,7 +975,12 @@ function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }
 
 function loadUat(dir, n) {
   const text = read(uatFile(dir, n));
-  if (text === null) { fail('no-uat', `${uatFile(dir, n)} not found`); return null; }
+  if (text === null) {
+    fail('no-uat', `${uatFile(dir, n)} not found`,
+      'create this phase\'s checklist first with `uat init --phase <N>`, which /cad-verify runs as'
+      + ' its own first step');
+    return null;
+  }
   return parseUat(text);
 }
 
@@ -933,7 +1013,10 @@ function cmdUat(dir, sub, opts) {
   // FINDINGS.json path) or a label (`fm.phase`), never arithmetic, so
   // `--phase 1.10` reads `phases/1.10` instead of phase 1.1's checklist.
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'uat needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'uat needs --phase <N>',
+      'pass --phase <N> naming the phase whose checklist this call touches, then re-run');
+  }
   const n = parsedPhase.raw;
 
   if (sub === 'init' || sub === 'refresh') {
@@ -944,7 +1027,9 @@ function cmdUat(dir, sub, opts) {
     if (!payload.ok) return;
     const items = payload.value;
     if (!Array.isArray(items) || items.some((i) => !i || !i.name || !i.expected)) {
-      return fail('bad-payload', 'expected a JSON array of {name, expected}');
+      return fail('bad-payload', 'expected a JSON array of {name, expected}',
+        'send an ARRAY, and give every element both a `name` and an `expected` - fix the step that'
+        + ' composed the payload and send it again');
     }
     // The traceability fields are OPTIONAL but validated before any write, so a
     // typo lands as a named refusal rather than as an item whose `criterion`
@@ -952,11 +1037,15 @@ function cmdUat(dir, sub, opts) {
     // `unknown_criterion` on a file already on disk).
     const badCriterion = items.find((i) => i.criterion !== undefined && !/^AC\d+$/.test(i.criterion));
     if (badCriterion) {
-      return fail('bad-payload', `criterion must be AC<N> (got: ${badCriterion.criterion})`);
+      return fail('bad-payload', `criterion must be AC<N> (got: ${badCriterion.criterion})`,
+        "spell that item's criterion as an acceptance-criterion id from this phase's CONTEXT.md"
+        + ' - AC1, AC2 - or leave the field off the item; nothing was written');
     }
     const badOrigin = items.find((i) => i.origin !== undefined && !UAT_ORIGINS.includes(i.origin));
     if (badOrigin) {
-      return fail('bad-payload', `origin must be one of: ${UAT_ORIGINS.join(' | ')} (got: ${badOrigin.origin})`);
+      return fail('bad-payload', `origin must be one of: ${UAT_ORIGINS.join(' | ')} (got: ${badOrigin.origin})`,
+        'use one of the values the detail lists, or leave `origin` off the item - it records where'
+        + ' the item came from, so a guessed value misreports its provenance');
     }
     // Carried onto the item by BOTH arms. `origin` is never derived from the
     // presence of `criterion`: a present `criterion` is itself the
@@ -967,7 +1056,11 @@ function cmdUat(dir, sub, opts) {
       ...(it.origin ? { origin: it.origin } : {}),
       status: 'pending', ...(it.source ? { source: it.source } : {}) });
     if (sub === 'init') {
-      if (existsSync(uatFile(dir, n))) return fail('uat-exists', 'use refresh, or remove the file deliberately');
+      if (existsSync(uatFile(dir, n))) {
+        return fail('uat-exists', 'use refresh, or remove the file deliberately',
+          'run `uat refresh --phase <N>` to append the new items to the checklist already on disk;'
+          + ' deleting UAT.md instead throws away every result already recorded in it');
+      }
       const today = new Date().toISOString().slice(0, 10);
       const uat = {
         // `fields_version` is written unconditionally, before any item is
@@ -1008,12 +1101,22 @@ function cmdUat(dir, sub, opts) {
     // today's `unknown-item` answer: "you named no item" and "that item is not
     // here" are different repairs.
     const parsedItem = requireInt(opts.item);
-    if (!parsedItem.ok) return fail('bad-args', 'uat record needs --item <k>');
+    if (!parsedItem.ok) {
+      return fail('bad-args', 'uat record needs --item <k>',
+        "pass --item <k> using the item's number from this phase's UAT.md, then re-run; a"
+        + ' `--item "$K"` with the variable unset arrives here as a flag with no value');
+    }
     const k = parsedItem.value;
     const item = uat.items.find((i) => Number(i.k) === k);
-    if (!item) return fail('unknown-item', `no item ${k} in UAT.md`);
+    if (!item) {
+      return fail('unknown-item', `no item ${k} in UAT.md`,
+        "re-run with a number that appears in this phase's UAT.md; if the item you meant was never"
+        + ' added, `uat refresh --phase <N>` appends it first');
+    }
     if (!UAT_RESULTS.includes(opts.result)) {
-      return fail('bad-result', `--result must be one of: ${UAT_RESULTS.join(' | ')}`);
+      return fail('bad-result', `--result must be one of: ${UAT_RESULTS.join(' | ')}`,
+        'send one of the results the detail lists; a failure you have since fixed goes back to'
+        + ' `pending` so the walk retests it');
     }
     const source = opts.source || 'user';
     // Validated BEFORE any write, same shape as the `--origin` guard below:
@@ -1022,7 +1125,9 @@ function cmdUat(dir, sub, opts) {
     // nothing reported the drop. An out-of-enum value must leave the file
     // byte-unchanged rather than silently discard the provenance.
     if (opts.source !== undefined && !UAT_SOURCES.includes(String(opts.source))) {
-      return fail('bad-args', `--source must be one of: ${UAT_SOURCES.join(' | ')}`);
+      return fail('bad-args', `--source must be one of: ${UAT_SOURCES.join(' | ')}`,
+        "send one of the values the detail lists, or drop --source to record this as the user's own"
+        + ' answer; nothing was written');
     }
     // Invariant: a verifier result only ever fills a pending item.
     //
@@ -1030,13 +1135,17 @@ function cmdUat(dir, sub, opts) {
     // answer at the item the walk is standing on, and widening the guard to it
     // would refuse the retest re-record `route_failures` depends on.
     if (source === 'verifier' && item.status !== 'pending') {
-      return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`);
+      return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`,
+        'leave the recorded result standing - it is a human answer this seam will not overwrite. If'
+        + ' it is genuinely wrong, re-record the item yourself without --source verifier');
     }
     // Validated BEFORE any write: `--origin` is the after-the-fact repair for
     // an item whose provenance was never declared, so an out-of-enum value must
     // leave the file byte-unchanged rather than record a marker nothing reads.
     if (opts.origin !== undefined && !UAT_ORIGINS.includes(opts.origin)) {
-      return fail('bad-args', `--origin must be one of: ${UAT_ORIGINS.join(' | ')}`);
+      return fail('bad-args', `--origin must be one of: ${UAT_ORIGINS.join(' | ')}`,
+        'send one of the values the detail lists, or drop --origin; nothing was written, so UAT.md'
+        + ' is byte-unchanged');
     }
     // `--criterion` is the repair for a link that was never written or was lost,
     // and it is where the `fieldless-checklist` diagnostic routes users. Same
@@ -1052,7 +1161,9 @@ function cmdUat(dir, sub, opts) {
     // which disqualifies the phase from the legacy rule, converts zero breaks
     // into one per criterion, and leaves no seam able to add `criterion` back.
     if (opts.criterion !== undefined && !/^AC\d+$/.test(String(opts.criterion))) {
-      return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`);
+      return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`,
+        "spell it --criterion AC<N>, matching an acceptance-criterion id in this phase's CONTEXT.md"
+        + ' - a flag given with no value arrives here as `true` and is refused the same way');
     }
     // `--fields-file`: the FREE-TEXT fields through the path transport, because
     // every one of them is caller-derived - a failing item's reason, what the
@@ -1072,7 +1183,11 @@ function cmdUat(dir, sub, opts) {
     // lands BEFORE any mutation of the item, so a rejected call leaves UAT.md
     // byte-unchanged - the standing posture at those same guards.
     const resolvedFields = resolveTextFlag(opts, 'fields', 'uat record');
-    if (!resolvedFields.ok) return fail('bad-args', resolvedFields.detail);
+    if (!resolvedFields.ok) {
+      return fail('bad-args', resolvedFields.detail,
+        'pass the free-text fields inline or through --fields-file <path>, never both, and point'
+        + ' --fields-file at a readable, non-empty file');
+    }
     /** @type {Record<string, string>} */
     let fileFields = {};
     if (resolvedFields.value !== undefined) {
@@ -1081,26 +1196,36 @@ function cmdUat(dir, sub, opts) {
         payload = JSON.parse(resolvedFields.value);
       } catch (e) {
         return fail('bad-args',
-          `uat record --fields-file is not JSON: ${e && e.message ? e.message : String(e)}`);
+          `uat record --fields-file is not JSON: ${e && e.message ? e.message : String(e)}`,
+          'repair the JSON in that file at the position the detail names, then re-run - the file is'
+          + ' the transport here, so nothing is fixed by retyping the value on the command line');
       }
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         return fail('bad-args',
-          `uat record --fields-file must hold a JSON object of ${UAT_TEXT_FIELDS.join(' | ')}`);
+          `uat record --fields-file must hold a JSON object of ${UAT_TEXT_FIELDS.join(' | ')}`,
+          'rewrite the file as one JSON object keyed by those field names, e.g.'
+          + ' {"reason": "...", "fix": "..."}');
       }
       for (const [key, value] of Object.entries(payload)) {
         if (!UAT_TEXT_FIELDS.includes(key)) {
           return fail('bad-args', `uat record --fields-file carries "${key}", which is not one of:`
-            + ` ${UAT_TEXT_FIELDS.join(' | ')}`);
+            + ` ${UAT_TEXT_FIELDS.join(' | ')}`,
+            'drop that key from the file, or pass it as its own flag - the fields the detail lists'
+            + ' are the only ones this transport carries, and the rest are enum-checked at their'
+            + ' own flags');
         }
         if (typeof value !== 'string') {
-          return fail('bad-args', `uat record --fields-file "${key}" must be a string`);
+          return fail('bad-args', `uat record --fields-file "${key}" must be a string`,
+            'quote that value as a JSON string in the file, then re-run');
         }
         // The same refusal the reader makes for one flag's two forms, per FIELD:
         // a precedence rule would silently discard one of two values the caller
         // believes was recorded.
         if (opts[key] !== undefined) {
           return fail('bad-args',
-            `uat record takes "${key}" inline or in --fields-file, never both`);
+            `uat record takes "${key}" inline or in --fields-file, never both`,
+            'remove the key from --fields-file, or drop the inline flag - keeping both would'
+            + ' silently discard one of the two values you believe was recorded');
         }
       }
       fileFields = payload;
@@ -1155,12 +1280,16 @@ function cmdUat(dir, sub, opts) {
     const f = payload.value;
     if (f === null || typeof f !== 'object' || Array.isArray(f)) {
       return fail('bad-payload',
-        'expected a JSON object carrying passes, gaps or human_checks');
+        'expected a JSON object carrying passes, gaps or human_checks',
+        'send an OBJECT like {"passes": [...], "gaps": [...]}, not an array or a bare value - fix'
+        + ' the findings payload and re-run; UAT.md is byte-unchanged');
     }
     if (!Array.isArray(f.passes) && !Array.isArray(f.gaps)
       && !Array.isArray(f.human_checks)) {
       return fail('bad-payload',
-        'payload carries none of passes, gaps, human_checks as an array');
+        'payload carries none of passes, gaps, human_checks as an array',
+        'add at least one of those three to the findings payload as an array - an object with none'
+        + ' of them would merge nothing while reporting a clean deep pass');
     }
     // ...and every list that IS present must be an array. The disjunction above
     // only proves ONE of them is, so a sibling holding a string used to reach
@@ -1172,7 +1301,9 @@ function cmdUat(dir, sub, opts) {
     // legitimately omit a list, and `undefined` is not a malformed one.
     for (const key of ['passes', 'gaps', 'human_checks']) {
       if (f[key] !== undefined && !Array.isArray(f[key])) {
-        return fail('bad-payload', `${key} is present but not an array`);
+        return fail('bad-payload', `${key} is present but not an array`,
+          'make that key an array in the findings payload, or remove it - anything else there is'
+          + ' iterated per character and would report a merge that never happened');
       }
     }
     const uat = loadUat(dir, n);
@@ -1383,9 +1514,17 @@ function listPlanFiles(pdir) {
 // ---------------------------------------------------------------------------
 function cmdAudit(dir) {
   const reqText = read(join(dir, 'REQUIREMENTS.md'));
-  if (reqText === null) return fail('no-requirements', `${join(dir, 'REQUIREMENTS.md')} not found`);
+  if (reqText === null) {
+    return fail('no-requirements', `${join(dir, 'REQUIREMENTS.md')} not found`,
+      'point --dir at the .planning/ directory that holds REQUIREMENTS.md, or run /cad-new-project'
+      + ' if this project has none yet - the audit reads its `## Traceability` table');
+  }
   const roadmapText = read(join(dir, 'ROADMAP.md'));
-  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md, or run /cad-new-project if'
+      + ' this project has no roadmap yet');
+  }
   const roadmap = new Map(parseRoadmapPhases(roadmapText).map((p) => [p.n, p]));
 
   // requirement id -> the plan file that carries it, per phase dir.
@@ -1675,7 +1814,11 @@ function readCoverageContext(file) {
 
 function cmdCriteriaCoverage(dir) {
   const roadmapText = read(join(dir, 'ROADMAP.md'));
-  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md - the phase list there is what'
+      + ' says which phases have criteria to cover');
+  }
   // The same phase list `cmdAudit` walks - no new source of truth for which
   // phases exist. `milestone.md` step 3 prunes completed phases out of the live
   // `## Phases` list, so this only ever holds the current cycle's phases.
@@ -1901,7 +2044,10 @@ function cmdCriteriaCoverage(dir) {
 // resolved ceiling to disagree with the one the planner was handed.
 function cmdPlanSize(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'plan-size needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'plan-size needs --phase <N>',
+      'pass --phase <N> naming the phase whose plans should be sized, then re-run');
+  }
   const n = parsedPhase.value;
 
   // Resolved to plain numbers at the boundary, never carried as the
@@ -1910,13 +2056,20 @@ function cmdPlanSize(dir, opts) {
   let maxTasks = null;
   if (opts['max-tasks'] !== undefined) {
     const parsed = requireInt(opts['max-tasks']);
-    if (!parsed.ok) return fail('bad-args', '--max-tasks must be an integer');
+    if (!parsed.ok) {
+      return fail('bad-args', '--max-tasks must be an integer',
+        'send --max-tasks as a plain integer, or drop it to size without a task ceiling - this seam'
+        + ' reads no config, so the value is the one the caller already resolved');
+    }
     maxTasks = parsed.value;
   }
   let maxReqs = null;
   if (opts['max-reqs'] !== undefined) {
     const parsed = requireInt(opts['max-reqs']);
-    if (!parsed.ok) return fail('bad-args', '--max-reqs must be an integer');
+    if (!parsed.ok) {
+      return fail('bad-args', '--max-reqs must be an integer',
+        'send --max-reqs as a plain integer, or drop it to size without a requirement ceiling');
+    }
     maxReqs = parsed.value;
   }
 
@@ -2023,12 +2176,19 @@ function cmdCriteriaSize(dir, opts) {
     ceiling[c.name] = null;
     if (opts[c.flag] === undefined) continue;
     const parsed = requireInt(opts[c.flag]);
-    if (!parsed.ok) return fail('bad-args', `--${c.flag} must be an integer`);
+    if (!parsed.ok) {
+      return fail('bad-args', `--${c.flag} must be an integer`,
+        `send --${c.flag} as a plain integer, or drop it to report the counts without that bound`);
+    }
     ceiling[c.name] = parsed.value;
   }
 
   const roadmapText = read(join(dir, 'ROADMAP.md'));
-  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md - with no --phase this walks'
+      + ' the phase list there, so it cannot run without one');
+  }
 
   // `--phase` present scopes to one phase, in the CALLER's spelling (D-02);
   // absent walks every phase the roadmap declares, through the same
@@ -2038,7 +2198,11 @@ function cmdCriteriaSize(dir, opts) {
   let targets;
   if (opts.phase !== undefined) {
     const parsedPhase = requirePhaseArg(opts.phase);
-    if (!parsedPhase.ok) return fail('bad-args', 'criteria-size --phase needs a phase number');
+    if (!parsedPhase.ok) {
+      return fail('bad-args', 'criteria-size --phase needs a phase number',
+        'send a plain phase number - 3, or 3.1 for an inserted phase - or drop --phase to check'
+        + ' every phase the roadmap declares in one call');
+    }
     targets = [{ n: parsedPhase.value, raw: parsedPhase.raw }];
   } else {
     targets = parseRoadmapPhases(roadmapText).map((p) => ({ n: p.n, raw: String(p.n) }));
@@ -2106,13 +2270,20 @@ function cmdCriteriaSize(dir, opts) {
 
 function cmdPlanOverlap(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'plan-overlap needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'plan-overlap needs --phase <N>',
+      "pass --phase <N> naming the phase whose plans should be compared, then re-run");
+  }
   const n = parsedPhase.value;
   // The DIRECTORY is the caller's spelling; only the echoed `phase` below is
   // the number (D-02).
   const pdir = join(dir, 'phases', parsedPhase.raw);
   const { plans: planFiles, nonconforming, missing } = listPlanFiles(pdir);
-  if (missing) return fail('no-phase-dir', `${pdir} not found`);
+  if (missing) {
+    return fail('no-phase-dir', `${pdir} not found`,
+      'run /cad-plan <N> to write this phase\'s plans first - the overlap check compares the'
+      + ' `files:` lists in the PLAN files that directory holds');
+  }
 
   // Parsed BEFORE the fewer-than-two-plans early return, so a one-plan
   // phase's grammar diagnostic still reaches this envelope instead of being
@@ -2218,12 +2389,17 @@ const CITE_POINTS = ['planned', 'committed'];
 
 function cmdCiteCount(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'cite-count needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'cite-count needs --phase <N>',
+      'pass --phase <N> naming the phase whose plans should be counted, then re-run');
+  }
   const n = parsedPhase.value;
 
   if (opts.point !== undefined) {
     if (typeof opts.point !== 'string' || !CITE_POINTS.includes(opts.point)) {
-      return fail('bad-args', `cite-count --point must be one of ${CITE_POINTS.join(' | ')}`);
+      return fail('bad-args', `cite-count --point must be one of ${CITE_POINTS.join(' | ')}`,
+        'send one of the two points the detail lists, naming which moment in /cad-plan this count'
+        + ' was taken at, or drop --point');
     }
   }
   const point = typeof opts.point === 'string' ? opts.point : undefined;
@@ -2256,7 +2432,9 @@ function cmdCiteCount(dir, opts) {
   if (!off && opts.payload === undefined) {
     return fail('bad-args',
       'cite-count needs --payload <file> - the surfaced set is a FILE, never inline '
-      + 'JSON and never stdin');
+      + 'JSON and never stdin',
+      "write the recall envelope to a file and pass --payload <path>; with `memory.backend` set to"
+      + ' `none` there is no surfaced set and the flag is not needed at all');
   }
   const payload = off ? { ok: true, value: {} } : readJsonPayload(opts.payload);
   if (!payload.ok) return;
@@ -2266,7 +2444,11 @@ function cmdCiteCount(dir, opts) {
   // so this seam and that one cannot disagree about what a plan file is.
   const pdir = join(dir, 'phases', parsedPhase.raw);
   const { plans: planFiles, missing } = listPlanFiles(pdir);
-  if (missing) return fail('no-phase-dir', `${pdir} not found`);
+  if (missing) {
+    return fail('no-phase-dir', `${pdir} not found`,
+      'run /cad-plan <N> first - this counts citations in the PLAN files that directory holds, so'
+      + ' there is nothing to count until they exist');
+  }
 
   const { rows, unkinded, malformed } = surfacedRows(payload.value, parsedPhase.raw);
   const mentions = [];
@@ -2395,11 +2577,18 @@ function cmdCiteCount(dir, opts) {
 // ---------------------------------------------------------------------------
 function cmdSeedReqs(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'seed-reqs needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'seed-reqs needs --phase <N>',
+      'pass --phase <N> naming the phase whose requirement ids should be seeded, then re-run');
+  }
   // Before any read and before any write: the two halves of the phase argument
   // must agree here, because this face uses BOTH.
   const spelling = phaseSpellingRefusal(parsedPhase);
-  if (spelling) return fail('bad-args', `seed-reqs ${spelling}`);
+  if (spelling) {
+    return fail('bad-args', `seed-reqs ${spelling}`,
+      `send --phase ${parsedPhase.value}, or rename the directory to match it - 2, 2.1 and 10 are`
+      + ' spellings this face accepts; 02, 1.0 and 1.10 are not');
+  }
   const n = parsedPhase.value;
   // The caller's own spelling, for the directory and for every diagnostic that
   // names one (D-02). The Traceability rows and the echoed `phase` below stay
@@ -2414,12 +2603,20 @@ function cmdSeedReqs(dir, opts) {
   // #42/#45 rail: the flag is validated before any read.
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
-  if (reqText === null) return fail('no-requirements', `${reqFile} not found`);
+  if (reqText === null) {
+    return fail('no-requirements', `${reqFile} not found`,
+      'point --dir at the .planning/ directory that holds REQUIREMENTS.md, or run /cad-new-project'
+      + ' to write one - the seeded rows go in its `## Traceability` table');
+  }
 
   const pdir = join(dir, 'phases', pname);
   let planFiles = [];
   try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
-  catch { return fail('no-phase-dir', `${pdir} not found`); }
+  catch {
+    return fail('no-phase-dir', `${pdir} not found`,
+      'run /cad-plan <N> first - the ids seeded here come from the `requirements:` lines of the'
+      + ' PLAN files in that directory');
+  }
   if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${pname}`);
 
   // Ids in plan-file order, union first-occurrence-wins across the phase's
@@ -2448,7 +2645,11 @@ function cmdSeedReqs(dir, opts) {
   }
 
   const res = insertReqRows(reqText, rows);
-  if (res.error) return fail('no-traceability-table', `${reqFile} has no "## Traceability" table with a header separator`);
+  if (res.error) {
+    return fail('no-traceability-table', `${reqFile} has no "## Traceability" table with a header separator`,
+      'add a `## Traceability` heading to REQUIREMENTS.md with a markdown table under it - a header'
+      + ' row and its `| --- |` separator - then re-run; nothing was written');
+  }
   if (res.inserted.length) atomicWrite(reqFile, res.text);
 
   // seeded/skipped are ALWAYS present, even empty - contrary to the
@@ -2476,7 +2677,10 @@ function cmdSeedReqs(dir, opts) {
 // spine, so it is safe to call before any phase has produced artifacts.
 // ---------------------------------------------------------------------------
 function cmdRecall(dir, query, opts) {
-  if (!query) return fail('bad-args', 'recall needs a query');
+  if (!query) {
+    return fail('bad-args', 'recall needs a query',
+      'put the search words after the subcommand: `recall "<what you are looking for>"`');
+  }
 
   // --top bounds the RETURNED set, default 5. Unbounded was the original
   // shape and it is what makes this seam expensive to call: a real query on
@@ -2490,7 +2694,8 @@ function cmdRecall(dir, query, opts) {
   if (opts.top !== undefined) {
     const parsed = requireInt(opts.top);
     if (!parsed.ok || parsed.value < 1) {
-      return fail('bad-args', '--top must be a positive integer');
+      return fail('bad-args', '--top must be a positive integer',
+        'send --top as a whole number of 1 or more, or drop it to take the default 5 results');
     }
     top = parsed.value;
   }
@@ -2784,9 +2989,15 @@ function parseStagedNameStatus(out) {
 
 function cmdLeaseCheck(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'lease-check needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'lease-check needs --phase <N>',
+      'pass --phase <N> for the phase the plan being committed belongs to, then re-run');
+  }
   const parsedPlan = requireInt(opts.plan);
-  if (!parsedPlan.ok) return fail('bad-args', 'lease-check needs --plan <k>');
+  if (!parsedPlan.ok) {
+    return fail('bad-args', 'lease-check needs --plan <k>',
+      'pass --plan <k>, the number in PLAN-<k>.md - 1 for a bare PLAN.md - then re-run');
+  }
   const n = parsedPhase.value;
   const k = parsedPlan.value;
 
@@ -2821,12 +3032,17 @@ function cmdLeaseCheck(dir, opts) {
       { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     return fail('no-staged-set',
-      `could not read the staged set: ${redactUrl(e && e.message ? e.message : String(e))}`);
+      `could not read the staged set: ${redactUrl(e && e.message ? e.message : String(e))}`,
+      'run this from inside the git repository holding the staged commit - the lease is checked'
+      + ' against `git diff --cached`, and this gate is not saying the commit is clean');
   }
   const parsed = parseStagedNameStatus(stagedOut);
   if (parsed === null) {
     return fail('no-staged-set',
-      'the staged set could not be parsed: git --name-status -z returned a truncated record');
+      'the staged set could not be parsed: git --name-status -z returned a truncated record',
+      'inspect what is staged by hand with `git diff --cached --name-status` and compare it against'
+      + " the plan's files: list - the gate could not read it, so it is not saying the commit is"
+      + ' clean');
   }
   if (parsed.unrepresentable.length) {
     // Fail CLOSED, and name the path rather than guess at it: neither the
@@ -2958,7 +3174,9 @@ function cmdDetectCommands(root) {
   try {
     entries = readdirSync(root, { encoding: 'utf8' });
   } catch (e) {
-    return fail('no-root', `${root} cannot be listed (${e.code || e.message})`);
+    return fail('no-root', `${root} cannot be listed (${e.code || e.message})`,
+      'point --root at a directory this process can list - the lint and typecheck commands are read'
+      + ' from the project manifests sitting at its top level');
   }
   const has = (/** @type {string} */ name) => entries.includes(name);
 
@@ -3235,12 +3453,16 @@ function cmdDetectSurfaces(root, answeredArg) {
     const raw = typeof answeredArg === 'string' ? answeredArg : '';
     const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
     if (!tokens.length) {
-      return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>');
+      return fail('bad-args', 'detect-surfaces --answered needs a comma-separated list after it: --answered <a,b,c>',
+        'list the surfaces already answered as one comma-separated value, or leave --answered off'
+        + ' entirely when none have been');
     }
     const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
     if (unknown.length) {
       return fail('bad-args',
-        `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
+        `detect-surfaces --answered names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`,
+        'correct the token(s) the detail names against the list beside them, then re-run - dropping'
+        + ' one instead would offer a narrower option list built from an answer nobody gave');
     }
     answered = tokens;
   }
@@ -3305,7 +3527,11 @@ function cmdDetectSurfaces(root, answeredArg) {
   };
 
   const roots = level(root, '');
-  if (roots === null) return fail('no-root', `${root} cannot be listed (${rootError})`);
+  if (roots === null) {
+    return fail('no-root', `${root} cannot be listed (${rootError})`,
+      'point --root at a directory this process can list - the surface scan walks the tree down'
+      + ' from there');
+  }
   for (const sub of roots) level(join(root, sub), sub);
 
   const scan = scanTree({ dirs, files, extensions: [...extensions], dependencies });
@@ -3462,7 +3688,11 @@ function gitignoreCarriesLine(root) {
  * @param {string} root @param {any} opts
  */
 function cmdTraceIgnore(root, opts) {
-  if (!existsSync(root)) return fail('no-root', `${root} not found`);
+  if (!existsSync(root)) {
+    return fail('no-root', `${root} not found`,
+      'point --root at the PROJECT root, the directory holding .gitignore - it is deliberately not'
+      + ' --dir, which names .planning/');
+  }
   const file = join(root, '.gitignore');
   const git = gitIgnoreState(root);
   const ignored = git.method === 'git' ? git.travels : gitignoreCarriesLine(root);
@@ -3540,7 +3770,11 @@ function cmdReads(dir, opts) {
   // of that arm: swallowing an EACCES here would change `reads`'s contract with
   // nothing red, and `/cad-report`'s Reading line would go quiet as though the
   // project had opened no files at all.
-  if (status === 'unreadable') return fail('read-failed', `cannot read ${file}`);
+  if (status === 'unreadable') {
+    return fail('read-failed', `cannot read ${file}`,
+      'make that file readable, or move it aside if it is corrupt - until then this seam has no'
+      + ' figures at all, and it is not reporting that the project opened no files');
+  }
   const summary = summarizeReads(records);
   // Without `--join` the envelope is what it has always been, including the
   // `no reads recorded yet` arm above, which returns before this line: a
@@ -3813,7 +4047,11 @@ function cmdTrace(dir, sub, opts) {
   // close half is exactly where the token figure lands.
   if (sub === 'append' || sub === 'close') {
     const parsedPhase = requirePhaseArg(opts.phase);
-    if (!parsedPhase.ok) return fail('bad-args', `trace ${sub} needs --phase <N>`);
+    if (!parsedPhase.ok) {
+      return fail('bad-args', `trace ${sub} needs --phase <N>`,
+        `pass --phase <N> for the phase this event belongs to, then re-run the ${sub} - nothing was`
+        + ' appended, so exactly one event lands');
+    }
     // `--detail-file` is the SAFE transport for a detail the CALLER derived -
     // a reviewer's verdict, a checkpoint's reason - and the reasoning lives in
     // lib/text-flag-file.mjs and references/conventions.md, not restated here.
@@ -3821,7 +4059,11 @@ function cmdTrace(dir, sub, opts) {
     // left on `opts.detail` alone, every converted checkpoint site would bill
     // as a clean `return`, the one arm the record exists to keep separate.
     const resolvedDetail = resolveTextFlag(opts, 'detail', `trace ${sub}`);
-    if (!resolvedDetail.ok) return fail('bad-args', resolvedDetail.detail);
+    if (!resolvedDetail.ok) {
+      return fail('bad-args', resolvedDetail.detail,
+        'pass --detail or --detail-file, never both, and point --detail-file at a readable,'
+        + ' non-empty file - nothing was appended');
+    }
     const detail = resolvedDetail.value !== undefined ? resolvedDetail.value : opts.detail;
     let family;
     let event;
@@ -3846,10 +4088,16 @@ function cmdTrace(dir, sub, opts) {
     } else {
       family = typeof opts.family === 'string' ? opts.family : '';
       if (!FAMILIES.includes(family)) {
-        return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`);
+        return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`,
+          'send one of the families the detail lists; a coordinator closing a bracket calls `trace'
+          + ' close` instead, which picks the family itself - nothing was appended');
       }
       event = typeof opts.event === 'string' && opts.event ? opts.event : '';
-      if (!event) return fail('bad-args', 'trace append needs --event <name>');
+      if (!event) {
+        return fail('bad-args', 'trace append needs --event <name>',
+          'add --event <name> for what happened - dispatch, outcome, adjudication - or call `trace'
+          + ' close`, which names the event itself; nothing was appended');
+      }
     }
 
     // --tokens: what the dispatch COST, read by the orchestrator off the
@@ -3874,7 +4122,10 @@ function cmdTrace(dir, sub, opts) {
         : opts.tokens;
       const parsed = requireInt(raw);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --tokens needs a non-negative integer`);
+        return fail('bad-args', `trace ${sub} --tokens needs a non-negative integer`,
+          "copy the token figure off the worker's return as a whole number - grouped as this plugin"
+          + ' prints it (146,405) or plain; nothing was appended, so a corrected re-run writes'
+          + ' exactly one event');
       }
       tokens = parsed.value;
     }
@@ -3900,7 +4151,9 @@ function cmdTrace(dir, sub, opts) {
     if ('turns' in opts) {
       const parsed = requireInt(opts.turns);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --turns needs a non-negative integer`);
+        return fail('bad-args', `trace ${sub} --turns needs a non-negative integer`,
+          "copy the tool-call count off the worker's return as a plain whole number, ungrouped;"
+          + ' nothing was appended, so a corrected re-run writes exactly one event');
       }
       turns = parsed.value;
     }
@@ -3922,7 +4175,9 @@ function cmdTrace(dir, sub, opts) {
     if ('raised' in opts) {
       const parsed = requireInt(opts.raised);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --raised needs a non-negative integer`);
+        return fail('bad-args', `trace ${sub} --raised needs a non-negative integer`,
+          'send the number of findings the reviewers raised before adjudication as a plain whole'
+          + ' number, ungrouped; nothing was appended');
       }
       raised = parsed.value;
     }
@@ -3946,7 +4201,9 @@ function cmdTrace(dir, sub, opts) {
       if (!(flag in opts)) continue;
       const parsed = requireInt(opts[flag]);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', `trace ${sub} --${flag} needs a non-negative integer`);
+        return fail('bad-args', `trace ${sub} --${flag} needs a non-negative integer`,
+          `send --${flag} as a plain whole number, ungrouped - the settled figures come off the`
+          + " adjudication seam's own return rather than being typed; nothing was appended");
       }
       settled[flag] = parsed.value;
     }
@@ -3963,7 +4220,9 @@ function cmdTrace(dir, sub, opts) {
       const parsed = requireInt(opts.round);
       if (!parsed.ok || parsed.value < 1) {
         return fail('bad-args',
-          `trace ${sub} --round needs the re-arm round after it, a whole number of at least 1`);
+          `trace ${sub} --round needs the re-arm round after it, a whole number of at least 1`,
+          'send --round as the re-arm round this event belongs to - 2 for the first re-arm - or'
+          + ' leave it off for an ordinary round-1 fire; nothing was appended');
       }
       round = parsed.value;
     }
@@ -3989,7 +4248,11 @@ function cmdTrace(dir, sub, opts) {
     // disagree about what an element is.
     let read;
     const resolvedRead = resolveTextFlag(opts, 'read', `trace ${sub}`);
-    if (!resolvedRead.ok) return fail('bad-args', resolvedRead.detail);
+    if (!resolvedRead.ok) {
+      return fail('bad-args', resolvedRead.detail,
+        'pass --read or --read-file, never both, and point --read-file at a readable, non-empty'
+        + ' file - nothing was appended');
+    }
     if ('read' in opts || 'read-file' in opts) {
       const raw = resolvedRead.value !== undefined ? resolvedRead.value : opts.read;
       const list = typeof raw === 'string'
@@ -4002,7 +4265,10 @@ function cmdTrace(dir, sub, opts) {
       // whitespace-only file is already refused by the reader as empty.
       if (!list.length) {
         return fail('bad-args',
-          `trace ${sub} --read${'read-file' in opts ? '-file' : ''} needs a comma-separated path list`);
+          `trace ${sub} --read${'read-file' in opts ? '-file' : ''} needs a comma-separated path list`,
+          'list what this site caused the worker to read as one comma-separated value - paths,'
+          + ' globs, or a <base>..<head> range - or leave the flag off; a bare one is almost always'
+          + ' an unset "$PATHS", and nothing was appended');
       }
       read = list;
     }
@@ -4053,7 +4319,11 @@ function cmdTrace(dir, sub, opts) {
       // composes from, so `trace append --role` (bare) answers with the same
       // sentence whichever of the two refuses it first - the door for the flags
       // the resolved row declares, this loop for the ones only the UNION does.
-      if (!parsedFlag.ok) return fail('bad-args', argRefusal(`trace ${sub}`, flag));
+      if (!parsedFlag.ok) {
+        return fail('bad-args', argRefusal(`trace ${sub}`, flag),
+          'give the flag the detail names a value, or leave it off entirely - nothing was appended,'
+          + ' so a corrected re-run writes exactly one event');
+      }
       flags[flag] = parsedFlag.value;
     }
     // Trimmed for the four that refuse, because a stored name is a JOIN KEY and
@@ -4142,7 +4412,11 @@ function cmdTrace(dir, sub, opts) {
     let phase;
     if (opts.phase !== undefined) {
       const parsedPhase = requirePhaseArg(opts.phase);
-      if (!parsedPhase.ok) return fail('bad-args', 'trace suggest --phase must be a phase number');
+      if (!parsedPhase.ok) {
+        return fail('bad-args', 'trace suggest --phase must be a phase number',
+          "send a plain phase number, or drop --phase to read the whole record - a milestone's"
+          + ' evidence spans every phase it shipped');
+      }
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
@@ -4185,7 +4459,10 @@ function cmdTrace(dir, sub, opts) {
     let phase;
     if (opts.phase !== undefined) {
       const parsedPhase = requirePhaseArg(opts.phase);
-      if (!parsedPhase.ok) return fail('bad-args', 'trace render --phase must be a phase number');
+      if (!parsedPhase.ok) {
+        return fail('bad-args', 'trace render --phase must be a phase number',
+          'send a plain phase number, or drop --phase to render the whole record');
+      }
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
@@ -4238,7 +4515,11 @@ function cmdTrace(dir, sub, opts) {
     let phase;
     if (opts.phase !== undefined) {
       const parsedPhase = requirePhaseArg(opts.phase);
-      if (!parsedPhase.ok) return fail('bad-args', 'trace window --phase must be a phase number');
+      if (!parsedPhase.ok) {
+        return fail('bad-args', 'trace window --phase must be a phase number',
+          'send a plain phase number, or drop --phase to argue the window ceilings off the whole'
+          + ' record');
+      }
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
@@ -4361,7 +4642,10 @@ function resolveRange(base, head) {
 
 function cmdRiskCheckRun(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'risk-check run needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'risk-check run needs --phase <N>',
+      'pass --phase <N> for the phase whose committed range is being checked, then re-run');
+  }
   const n = parsedPhase.value;
 
   // THE WORKER KEY, through the one grammar both faces read (RSK-03, D-02).
@@ -4377,7 +4661,9 @@ function cmdRiskCheckRun(dir, opts) {
     const parsedPlan = requirePlanKey(opts.plan);
     if (!parsedPlan.ok) {
       return fail('bad-args', 'risk-check run --plan needs the worker key after it - a plan number '
-        + 'or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+        + 'or the key the dispatch was bracketed under (`1-fix`): --plan <k>',
+      'send the key this dispatch was bracketed under - the number for PLAN-<k>.md, or the'
+      + ' non-numeric key a fix pass used - then re-run');
     }
     plan = parsedPlan.key;
   }
@@ -4387,7 +4673,9 @@ function cmdRiskCheckRun(dir, opts) {
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   if (!base || !head) {
-    return fail('bad-args', 'risk-check run needs --base <ref> and --head <ref>, neither opening with `-`');
+    return fail('bad-args', 'risk-check run needs --base <ref> and --head <ref>, neither opening with `-`',
+      'name both ends of the range this check covers, as refs this repository can resolve, then'
+      + ' re-run this check');
   }
 
   // The scope of the check, narrowed only by what the caller named. A token
@@ -4406,7 +4694,9 @@ function cmdRiskCheckRun(dir, opts) {
   const { config: surfaceConfig, warnings: surfaceWarnings } = mergeLayers(join(dir, 'config.json'));
   if (surfaceWarnings.length) {
     return fail('surfaces-unanswered',
-      `a config layer did not parse, so the surface question cannot be read as answered: ${surfaceWarnings.join('; ')}`);
+      `a config layer did not parse, so the surface question cannot be read as answered: ${surfaceWarnings.join('; ')}`,
+      'repair the config layer the detail names so it parses as JSON, then re-run - this gate is'
+      + ' blocking and there is no arm that proceeds while the answer cannot be read');
   }
   const surfaceTriggers = isPlainObject(surfaceConfig.review)
     && isPlainObject(surfaceConfig.review.triggers) ? surfaceConfig.review.triggers : {};
@@ -4418,12 +4708,16 @@ function cmdRiskCheckRun(dir, opts) {
     const raw = typeof opts.surfaces === 'string' ? opts.surfaces : '';
     const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
     if (!tokens.length) {
-      return fail('bad-args', 'risk-check run --surfaces needs a comma-separated list after it: --surfaces <a,b,c>');
+      return fail('bad-args', 'risk-check run --surfaces needs a comma-separated list after it: --surfaces <a,b,c>',
+        "list this run's scope as one comma-separated value, or drop --surfaces to use the set the"
+        + ' project already answered');
     }
     const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
     if (unknown.length) {
       return fail('bad-args',
-        `risk-check run --surfaces names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
+        `risk-check run --surfaces names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`,
+        'correct the token(s) the detail names against the list beside them, then re-run - dropping'
+        + ' one instead would narrow a blocking gate to a scope nobody chose');
     }
     categories = [...new Set(tokens)];
   } else {
@@ -4450,7 +4744,10 @@ function cmdRiskCheckRun(dir, opts) {
         'no config layer answered review.triggers.risk_surface.surfaces, so detection would run '
         + `on the ${CATEGORIES.length} categories nobody chose. Run \`detect-surfaces --root .\` `
         + 'and put the choice to the user (references/review-triggers.md), or pass '
-        + '--surfaces <a,b,c> to state this run\'s scope explicitly');
+        + '--surfaces <a,b,c> to state this run\'s scope explicitly',
+        'do one of the two the detail names: put the question to the user and save the answer at'
+        + ' review.triggers.risk_surface.surfaces, or pass --surfaces for this run alone. Answering'
+        + ' it is what clears this gate - there is no arm that skips the scan');
     }
     categories = [...new Set(decided.surfaces)];
   }
@@ -4557,7 +4854,9 @@ function cmdRiskCheckRun(dir, opts) {
   // A range that could not be READ is never ok: a caller must not be able to
   // take "git refused" for "clean".
   if (diffError !== null) {
-    return emit({ ok: false, reason: 'no-diff', detail: diffError, ...envelope });
+    return emit({ ok: false, reason: 'no-diff', detail: diffError, ...envelope,
+      hint: 'name a --base and --head this repository can resolve, then re-run this check - git'
+        + ' could not read the range, so nothing here says the diff is clean' });
   }
   return ok(envelope);
 }
@@ -4598,7 +4897,9 @@ function cmdTaskRecord(dir, opts) {
   if (!isTaskSlug(opts.slug)) {
     return fail('bad-args',
       'task-record --slug must be ONE path segment of lowercase letters, digits and '
-      + `single hyphens, at most ${MAX_SLUG_LENGTH} characters: --slug <name>`);
+      + `single hyphens, at most ${MAX_SLUG_LENGTH} characters: --slug <name>`,
+      'send a short kebab-case name for the task - `fix-login-redirect` - with no slashes, dots or'
+      + ' spaces; it becomes the directory this record is written into');
   }
   const slug = String(opts.slug);
 
@@ -4609,7 +4910,9 @@ function cmdTaskRecord(dir, opts) {
   const head = riskRef(opts.head);
   if (!base || !head) {
     return fail('bad-args',
-      'task-record needs --base <ref> and --head <ref>, neither opening with `-`');
+      'task-record needs --base <ref> and --head <ref>, neither opening with `-`',
+      'name both ends of what this task shipped, as refs this repository can resolve, then re-run'
+      + ' this record');
   }
 
   // The prose, through the ONE reader every `--<field>-file` flag goes through.
@@ -4617,7 +4920,10 @@ function cmdTaskRecord(dir, opts) {
   // puts caller-derived prose inside a double-quoted shell word, where a `$(...)`
   // executes before Node starts - and `--text` stays for a human at a shell.
   const resolvedText = resolveTextFlag(opts, 'text', 'task-record');
-  if (!resolvedText.ok) return fail('bad-args', resolvedText.detail);
+  if (!resolvedText.ok) {
+    return fail('bad-args', resolvedText.detail,
+      'pass --text or --text-file, never both, and point --text-file at a readable, non-empty file');
+  }
   const text = resolvedText.value !== undefined
     ? resolvedText.value
     // parseArgs mints the boolean `true` for a valueless flag, so a bare
@@ -4625,7 +4931,9 @@ function cmdTaskRecord(dir, opts) {
     : (typeof opts.text === 'string' ? opts.text.trim() : '');
   if (!text) {
     return fail('bad-args', 'task-record needs what shipped: --text-file <path> '
-      + '(workflows) or --text "<text>" (typed by hand)');
+      + '(workflows) or --text "<text>" (typed by hand)',
+      'write a sentence or two saying what this task changed and pass it through --text-file, or'
+      + ' --text at a shell - it is what a later /cad-why reads back off this range');
   }
 
   // ONE git call per figure, never one per commit. `%x1f` separates the fields
@@ -4768,11 +5076,15 @@ function cmdTaskRecord(dir, opts) {
   // nothing".
   if (rangeError !== null) {
     return emit({ ok: false, reason: 'no-range', detail: rangeError, slug, base, head,
-      written: false, trace });
+      written: false, trace,
+      hint: 'name a --base and --head this repository can resolve, then re-run this record - no'
+        + ' record was written, and this is not saying the task touched nothing' });
   }
   if (writeError !== null) {
     return emit({ ok: false, reason: 'no-record', detail: writeError, slug, base, head,
-      written: false, trace });
+      written: false, trace,
+      hint: 'fix what the detail names about the path and re-run - the commits are in git either'
+        + ' way, but nothing has been recorded about them yet' });
   }
   ok({
     slug,
@@ -4841,7 +5153,10 @@ const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override', 'deferr
 
 function cmdRiskCheckStatus(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) return fail('bad-args', 'risk-check status needs --phase <N>');
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'risk-check status needs --phase <N>',
+      'pass --phase <N> for the phase whose fires are being reported, then re-run');
+  }
   const n = parsedPhase.value;
 
   // The triple is all three or none. A plan number alone is NOT a range
@@ -4854,7 +5169,9 @@ function cmdRiskCheckStatus(dir, opts) {
   if (given.length) {
     if (given.length !== 3) {
       return fail('bad-args',
-        'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three');
+        'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three',
+        'send all three to ask about ONE range, or none of them for the phase-wide answer - two of'
+        + ' the three would report on a record some other range left');
     }
     // The SAME predicate `risk-check run` reads (D-02). One consultation each,
     // so the face that enforces the question and the face that reports it
@@ -4862,12 +5179,16 @@ function cmdRiskCheckStatus(dir, opts) {
     const parsedPlan = requirePlanKey(opts.plan);
     if (!parsedPlan.ok) {
       return fail('bad-args', 'risk-check status --plan needs the worker key after it - a plan '
-        + 'number or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+        + 'number or the key the dispatch was bracketed under (`1-fix`): --plan <k>',
+      'send the key the dispatch was bracketed under - the number for PLAN-<k>.md, or the'
+      + ' non-numeric key a fix pass used - then re-run');
     }
     const base = riskRef(opts.base);
     const head = riskRef(opts.head);
     if (!base || !head) {
-      return fail('bad-args', 'risk-check status needs --base <ref> and --head <ref>, neither opening with `-`');
+      return fail('bad-args', 'risk-check status needs --base <ref> and --head <ref>, neither opening with `-`',
+        'name both ends of the range you are asking about, as refs this repository can resolve,'
+        + ' then re-run this check');
     }
     // The COMMIT PAIR is the identity, not the spelling (see resolveRange), so
     // the asked range is resolved here and compared as ids below. A ref that
@@ -5593,7 +5914,11 @@ function groundCitations(top, headId, entries) {
  */
 function fireIdentity(face, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
-  if (!parsedPhase.ok) { fail('bad-args', `${face} needs --phase <N>`); return null; }
+  if (!parsedPhase.ok) {
+    fail('bad-args', `${face} needs --phase <N>`,
+      `pass --phase <N> for the phase this fire belongs to, then re-run the ${face}`);
+    return null;
+  }
   // The caller's OWN spelling, the way `uatFile` addresses a phase: every use
   // of it is a path or a label, never arithmetic.
   const n = parsedPhase.raw;
@@ -5605,7 +5930,9 @@ function fireIdentity(face, opts) {
       fail('bad-args',
         `${face} ${flag} reaches a FILENAME, so it takes letters, digits, _ and - `
         + 'only, opening with a letter or a digit and at most 64 characters - got '
-        + `${typeof raw === 'string' ? JSON.stringify(raw) : 'nothing'}`);
+        + `${typeof raw === 'string' ? JSON.stringify(raw) : 'nothing'}`,
+        `re-send ${flag} spelled with those characters only - it becomes part of this artifact's`
+        + ' filename, so nothing else can be stored; nothing was written');
       return null;
     }
   }
@@ -5621,7 +5948,10 @@ function fireIdentity(face, opts) {
     if (!parsedRound.ok || parsedRound.value < 1) {
       fail('bad-args',
         `${face} --round needs the re-arm round after it, a whole number of at `
-        + 'least 1: --round 2');
+        + 'least 1: --round 2',
+        'send --round 2 for the first re-arm of this trigger, or leave the flag off for a first'
+        + " fire - without it a re-arm would overwrite round one's record, which is the one an"
+        + ' auditor reads');
       return null;
     }
     round = parsedRound.value;
@@ -5633,7 +5963,9 @@ function fireIdentity(face, opts) {
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
   if (!base || !head) {
-    fail('bad-args', `${face} needs --base <ref> and --head <ref>, neither opening with \`-\``);
+    fail('bad-args', `${face} needs --base <ref> and --head <ref>, neither opening with \`-\``,
+      `name both ends of the range this fire reviewed, as refs this repository can resolve, then`
+      + ` re-run the ${face}`);
     return null;
   }
 
@@ -5683,7 +6015,10 @@ function fireHome(dir, n, what) {
   fail('no-phase-dir',
     `neither phases/${n}/ nor deferred/${n}/ is a directory under ${dir} - the ${what} is `
     + 'written BESIDE the sibling REVIEW file, or beside the queue member a milestone close '
-    + 'carried out of that phase, so one of the two has to exist already');
+    + 'carried out of that phase, so one of the two has to exist already',
+    `check the --phase spelling first - it addresses phases/${n}/ verbatim. If the milestone close `
+    + `already carried this phase's queue out, run \`deferred carry --phase ${n}\`, which is what `
+    + 'creates the second home');
   return null;
 }
 
@@ -5699,12 +6034,18 @@ function cmdAdjudication(dir, opts) {
   if (opts.payload === undefined) {
     return fail('bad-args',
       'adjudication needs --payload <file> - the composed payload is a FILE, never '
-      + 'inline JSON and never stdin');
+      + 'inline JSON and never stdin',
+      'write the composed rulings to a file and pass --payload <path> - reviewer text carries'
+      + ' arbitrary quoting, which is why it never rides the command line');
   }
   const payload = readJsonPayload(opts.payload);
   if (!payload.ok) return;
   const built = buildEntries(payload.value);
-  if (!built.ok) return fail('bad-payload', built.detail);
+  if (!built.ok) {
+    return fail('bad-payload', built.detail,
+      'repair the payload file at the point the detail names, then re-run - nothing was written,'
+      + ' so the fire is still unrecorded');
+  }
 
   const range = resolveRange(base, head);
   if (!range.ok) {
@@ -5847,12 +6188,18 @@ function cmdDeferredRecord(dir, opts) {
   if (opts.payload === undefined) {
     return fail('bad-args',
       'deferred record needs --payload <file> - the reviewer\'s returned object is a '
-      + 'FILE, never inline JSON and never stdin');
+      + 'FILE, never inline JSON and never stdin',
+      'pass --payload <path> naming the file the fire already wrote - the same object that went'
+      + ' into the sibling REVIEW-<trigger>-<discriminator>.md');
   }
   const payload = readJsonPayload(opts.payload);
   if (!payload.ok) return;
   const queued = buildQueue(payload.value);
-  if (!queued.ok) return fail('bad-payload', queued.detail);
+  if (!queued.ok) {
+    return fail('bad-payload', queued.detail,
+      'repair the payload file at the point the detail names, then re-run - nothing was queued, and'
+      + ' an unqueued finding is one /cad-land will never see');
+  }
 
   // RESOLVED, never the caller's spelling (D-08): a queue member is read at
   // land time, in another session, and `HEAD` will name a different commit by
@@ -6081,7 +6428,9 @@ function cmdDeferredList(dir, opts) {
   if ('phase' in opts) {
     const parsed = requirePhaseArg(opts.phase);
     if (!parsed.ok) {
-      return fail('bad-args', 'deferred list --phase needs a phase number (N or N.M)');
+      return fail('bad-args', 'deferred list --phase needs a phase number (N or N.M)',
+        'send a plain phase number, or drop --phase to list every finding still queued across the'
+        + ' milestone');
     }
     // The caller's OWN spelling, the way every other phase-addressed read in
     // this file works: the value is a directory component before it is
@@ -6142,7 +6491,11 @@ function cmdDeferredList(dir, opts) {
 // ---------------------------------------------------------------------------
 function cmdDeferredCarry(dir, opts) {
   const parsed = requirePhaseArg(opts.phase);
-  if (!parsed.ok) return fail('bad-args', 'deferred carry needs --phase <N>');
+  if (!parsed.ok) {
+    return fail('bad-args', 'deferred carry needs --phase <N>',
+      'pass --phase <N> for the phase whose queue is being carried out, then re-run - this runs'
+      + ' BEFORE milestone-prune, which deletes the directory the members sit in');
+  }
   const n = parsed.raw;
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
 
@@ -6168,7 +6521,9 @@ function cmdDeferredCarry(dir, opts) {
     return fail('carry-dest-unusable',
       'deferred/ exists and is not a real directory'
       + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-      + ' - move or remove it, then re-run');
+      + ' - move or remove it, then re-run',
+      'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
+      + ' are still in the phase directory the prune deletes');
   }
 
   const dest = join(dir, 'deferred', n);
@@ -6177,7 +6532,9 @@ function cmdDeferredCarry(dir, opts) {
     return fail('carry-dest-unusable',
       `deferred/${n} exists and is not a real directory`
       + `${destStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-      + ' - move or remove it, then re-run');
+      + ' - move or remove it, then re-run',
+      'clear that path and re-run BEFORE milestone-prune - nothing has moved yet, and the members'
+      + ' are still in the phase directory the prune deletes');
   }
 
   const q = readQueue(dir, n);
@@ -6384,9 +6741,18 @@ function cmdRenumber(dir, sub, opts) {
   if (sub !== 'insert' && sub !== 'remove') return fail('usage', 'renumber <insert --at N | remove --n N> [--dry-run]');
   const roadmapFile = join(dir, 'ROADMAP.md');
   const roadmapText = read(roadmapFile);
-  if (roadmapText === null) return fail('no-roadmap', `${roadmapFile} not found`);
+  if (roadmapText === null) {
+    return fail('no-roadmap', `${roadmapFile} not found`,
+      'point --dir at the .planning/ directory that holds ROADMAP.md - renumbering is computed FROM'
+      + ' the roadmap, so there is nothing to renumber against without it');
+  }
   const phases = parseRoadmapPhases(roadmapText);
-  if (!phases.length) return fail('unparseable-roadmap', 'no phase lines under ## Phases');
+  if (!phases.length) {
+    return fail('unparseable-roadmap', 'no phase lines under ## Phases',
+      'give ROADMAP.md at least one phase line spelled'
+      + ' `- [ ] **Phase <n>: <name>** - <description>` under `## Phases`, then re-run - nothing was'
+      + ' moved');
+  }
   const total = phases.length;
   // Dir-move ceiling: integer phases only. Decimals are never shifted (see
   // below), and a decimal ceiling would walk fractional ks (2.1, 1.1, ...)
@@ -6412,10 +6778,22 @@ function cmdRenumber(dir, sub, opts) {
   // at the dispatch door, decimal wording included (see `decimalRefusal`), so
   // the well-formed-decimal re-test that used to sit here can no longer be
   // reached and is not left behind as a second home for that sentence.
-  if (!parsedAt.ok) return fail('bad-args', `renumber ${sub} needs --${flag} <N>`);
+  if (!parsedAt.ok) {
+    return fail('bad-args', `renumber ${sub} needs --${flag} <N>`,
+      `pass --${flag} <N> as a whole phase number, then re-run - nothing was moved; a valueless`
+      + ' flag arrives here as `true` and would otherwise have meant phase 1');
+  }
   const at = parsedAt.value;
-  if (sub === 'insert' && (at < 1 || at > total + 1)) return fail('out-of-range', `--at must be 1..${total + 1}`);
-  if (sub === 'remove' && !phases.some((p) => p.n === at)) return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`);
+  if (sub === 'insert' && (at < 1 || at > total + 1)) {
+    return fail('out-of-range', `--at must be 1..${total + 1}`,
+      `pick a position inside that range - ${total + 1} appends after the last phase - then re-run;`
+      + ' nothing was moved');
+  }
+  if (sub === 'remove' && !phases.some((p) => p.n === at)) {
+    return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`,
+      "re-run with a phase number that appears in ROADMAP.md's `## Phases` list; nothing was"
+      + ' moved');
+  }
 
   const delta = sub === 'insert' ? 1 : -1;
   const shiftFrom = sub === 'insert' ? at : at + 1;
@@ -6670,7 +7048,9 @@ function cmdCapture(dir, opts) {
   const kind = typeof opts.kind === 'string' ? opts.kind.trim() : '';
   if (!CAPTURE_KINDS.includes(kind)) {
     return fail('bad-args', `capture --kind must be one of ${CAPTURE_KINDS.join(' | ')}`
-      + ` (got: ${kind || 'none'})`);
+      + ` (got: ${kind || 'none'})`,
+      'send one of the kinds the detail lists - it decides which heading of CAPTURE.md the item is'
+      + ' filed under, and the recall walk reads them differently');
   }
   // `--text-file` is the SAFE transport and the one the workflows prescribe.
   // `--text "<item>"` puts caller-derived prose inside a double-quoted shell
@@ -6679,10 +7059,14 @@ function cmdCapture(dir, opts) {
   // names the file here. `--text` stays for a human typing at a shell, where
   // the text is the user's own.
   if ('text-file' in opts && (typeof opts['text-file'] !== 'string' || opts['text-file'].trim() === '')) {
-    return fail('bad-args', 'capture --text-file needs a path after it: --text-file <path>');
+    return fail('bad-args', 'capture --text-file needs a path after it: --text-file <path>',
+      'write the sentence to a file and name it after the flag - nothing was captured, so the'
+      + ' sentence is not in the queue yet');
   }
   if ('text' in opts && 'text-file' in opts) {
-    return fail('bad-args', 'capture takes --text or --text-file, never both');
+    return fail('bad-args', 'capture takes --text or --text-file, never both',
+      'drop one of the two and re-run - keeping both would silently discard one of the sentences'
+      + ' you believe was captured');
   }
   let text;
   if (typeof opts['text-file'] === 'string') {
@@ -6690,9 +7074,15 @@ function cmdCapture(dir, opts) {
       text = readFileSync(opts['text-file'].trim(), 'utf8').trim();
     } catch (e) {
       return fail('bad-args',
-        `capture --text-file could not be read: ${e && e.message ? e.message : String(e)}`);
+        `capture --text-file could not be read: ${e && e.message ? e.message : String(e)}`,
+        'write the sentence to that path, or point --text-file at the file that already holds it -'
+        + ' nothing was captured');
     }
-    if (!text) return fail('bad-args', 'capture --text-file names an empty file');
+    if (!text) {
+      return fail('bad-args', 'capture --text-file names an empty file',
+        'put the sentence in that file before re-running - nothing was captured, and an empty file'
+        + ' is what a write that never landed looks like');
+    }
   } else {
     // parseArgs hands a VALUELESS flag the boolean `true`, so a bare `--text`
     // has to be refused here - written through, it captures the literal word
@@ -6700,7 +7090,10 @@ function cmdCapture(dir, opts) {
     text = typeof opts.text === 'string' ? opts.text.trim() : '';
     if (!text) {
       return fail('bad-args',
-        'capture needs the sentence: --text-file <path> (workflows) or --text "<text>" (typed by hand)');
+        'capture needs the sentence: --text-file <path> (workflows) or --text "<text>" (typed by hand)',
+        'write what should be remembered as one sentence and pass it through --text-file, or --text'
+        + ' at a shell - a bare --text arrives here as the word "true" and is refused rather than'
+        + ' filed');
     }
   }
   /** @type {string|undefined} */
@@ -6711,10 +7104,17 @@ function cmdCapture(dir, opts) {
     // so the flag is refused rather than dropped.
     if (kind !== 'todo') {
       return fail('bad-args', 'capture --phase is admitted only with --kind todo'
-        + ' - a seed and a note carry no phase tag');
+        + ' - a seed and a note carry no phase tag',
+      'drop --phase, or file this as --kind todo if the phase tag is the point - nothing was'
+      + ' captured, and dropping the flag silently would have left you believing it tagged'
+      + ' something');
     }
     const parsed = requirePhaseArg(opts.phase);
-    if (!parsed.ok) return fail('bad-args', 'capture --phase needs a phase number: --phase <N>');
+    if (!parsed.ok) {
+      return fail('bad-args', 'capture --phase needs a phase number: --phase <N>',
+        'send a plain phase number, or drop --phase to file the item untagged - nothing was'
+        + ' captured');
+    }
     // The caller's OWN spelling, so `--phase 1.10` tags `(phase 1.10)`.
     phase = parsed.raw;
   }
@@ -6722,11 +7122,17 @@ function cmdCapture(dir, opts) {
   // nothing usable after it is never silently answered about the default path,
   // which would write a different file than the caller named (#42/#45).
   if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
-    return fail('bad-args', 'capture --file needs a path after it: --file <path to CAPTURE.md>');
+    return fail('bad-args', 'capture --file needs a path after it: --file <path to CAPTURE.md>',
+      'name the CAPTURE.md to append to, or drop --file to use the one under --dir - nothing was'
+      + ' captured');
   }
   const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
   const res = appendCapture(file, kind, text, phase);
-  if (res.ok === false) return fail(res.reason, res.detail);
+  if (res.ok === false) {
+    return fail(res.reason, res.detail,
+      'nothing was captured, so the sentence is not in the queue - make the file the detail names'
+      + ' writable and re-run; if another run is holding its lock, let that one finish first');
+  }
   ok({ file, kind, bullet: res.bullet, heading: res.heading, created: res.created });
 }
 
@@ -6745,7 +7151,8 @@ function cmdCaptureSections(dir, opts) {
   // flag with nothing usable after it is never silently answered about the
   // default path, which would report on a different file than the caller named.
   if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
-    return fail('bad-args', 'capture-sections --file needs a path after it: --file <path to CAPTURE.md>');
+    return fail('bad-args', 'capture-sections --file needs a path after it: --file <path to CAPTURE.md>',
+      'name the CAPTURE.md to report on, or drop --file to use the one under --dir');
   }
   const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
   /** @type {string} */
@@ -6761,7 +7168,9 @@ function cmdCaptureSections(dir, opts) {
     if (e && /** @type {any} */ (e).code === 'ENOENT') {
       return ok({ file, exists: false, walk: CAPTURE_WALK_SECTIONS, sections: [] });
     }
-    return fail('unreadable-capture', `${file}: ${e && e.message ? e.message : String(e)}`);
+    return fail('unreadable-capture', `${file}: ${e && e.message ? e.message : String(e)}`,
+      'make that file readable and re-run - the queue is PRESENT and could not be opened, so this'
+      + ' is not a report that no items are filed outside the recall walk');
   }
   ok({
     file,
@@ -6788,7 +7197,11 @@ const DEBT_MAX_FILE_BYTES = 1048576;
 const DEBT_HEADING = '## Debt markers';
 
 function cmdDebtHarvest(root) {
-  if (!existsSync(root)) return fail('no-root', `${root} not found`);
+  if (!existsSync(root)) {
+    return fail('no-root', `${root} not found`,
+      'point --root at the project root - the harvest walks the tracked files git lists from'
+      + ' there');
+  }
   /** @type {string} */
   let listing;
   try {
@@ -6799,7 +7212,9 @@ function cmdDebtHarvest(root) {
     // answer a caller acts on, and it has to mean "none planted", never "the
     // walk did not happen".
     return fail('no-git', `${root} could not be enumerated with git ls-files`
-      + ` (${e && e.message ? e.message.split('\n')[0] : String(e)})`);
+      + ` (${e && e.message ? e.message.split('\n')[0] : String(e)})`,
+      'run this inside a git repository whose index git can read, then re-run - the walk did not'
+      + ' happen, so this is not a report that no debt markers are planted');
   }
 
   const entries = [];
@@ -6866,11 +7281,17 @@ function cmdDebtHarvest(root) {
       return true;
     });
   } catch (e) {
-    return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`);
+    return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`,
+      'make that file and its directory writable, then re-run - the markers were found and none of'
+      + ' them reached CAPTURE.md');
   }
   // A refused lock is reported through the EXISTING failure path, not a new
   // one: every caller of this seam already branches on `write-failed`.
-  if (guarded.ok === false) return fail('write-failed', `${captureFile}: ${guarded.detail}`);
+  if (guarded.ok === false) {
+    return fail('write-failed', `${captureFile}: ${guarded.detail}`,
+      'let the run holding the lock finish and re-run, or clear a stale lock the detail names - the'
+      + ' harvest is idempotent, so a second pass costs nothing');
+  }
   const written = guarded.value;
   const malformed = entries.filter((e) => e.malformed)
     .map((e) => ({ path: e.path, line: e.line, missing: e.malformed }));
@@ -6904,10 +7325,18 @@ function cmdMilestonePrune(dir, opts) {
   // value, in the same order, before any read, mkdir or rename and in both
   // modes.
   const resolvedLabel = resolveTextFlag(opts, 'label', 'milestone-prune');
-  if (!resolvedLabel.ok) return fail('bad-args', resolvedLabel.detail);
+  if (!resolvedLabel.ok) {
+    return fail('bad-args', resolvedLabel.detail,
+      'pass --label or --label-file, never both, and point --label-file at a readable, non-empty'
+      + ' file - nothing was pruned');
+  }
   const raw = resolvedLabel.value !== undefined ? resolvedLabel.value : opts.label;
   const label = typeof raw === 'string' ? raw.trim() : '';
-  if (!label) return fail('bad-args', 'milestone-prune needs --label <version or milestone name>');
+  if (!label) {
+    return fail('bad-args', 'milestone-prune needs --label <version or milestone name>',
+      "name the milestone this close is archiving under - the released version, or PROJECT.md's"
+      + ' milestone name for an untagged close; nothing was pruned');
+  }
   // Two independent terms, both here at the point the label is read - before
   // any read, mkdir or rename, and in BOTH modes: `--mode delete` builds no
   // archive root but still writes the label into every shipped requirement row.
@@ -6921,7 +7350,9 @@ function cmdMilestonePrune(dir, opts) {
   //    markdown table cell, where either character silently rewrites the row.
   if (/[|\r\n]/.test(label)) {
     return fail('bad-args',
-      'milestone-prune --label cannot contain "|" or a newline - it is written into a REQUIREMENTS.md table cell');
+      'milestone-prune --label cannot contain "|" or a newline - it is written into a REQUIREMENTS.md table cell',
+      'take those characters out of the label and re-run - nothing was pruned, and either one would'
+      + ' silently rewrite the shipped requirement rows it is written into');
   }
   // 2. The containment term. `_archive-<label>` is handed to mkdirSync and
   //    renameSync below, so `--label '../../../outside-tree'` moved phases/1
@@ -6933,11 +7364,15 @@ function cmdMilestonePrune(dir, opts) {
   const archiveRoot = join(dir, `_archive-${label}`);
   if (!resolvePath(archiveRoot).startsWith(resolvePath(dir) + sep)) {
     return fail('bad-args',
-      `milestone-prune --label must stay inside the planning root: "_archive-${label}" resolves outside ${dir}`);
+      `milestone-prune --label must stay inside the planning root: "_archive-${label}" resolves outside ${dir}`,
+      'use a plain milestone name with no path separators or `..` segments - the label names an'
+      + ' archive directory inside the planning root; nothing was pruned');
   }
   const mode = opts.mode;
   if (mode !== 'delete' && mode !== 'archive') {
-    return fail('bad-args', 'milestone-prune needs --mode <delete|archive> (tagged release: delete - the tag is the archive; untagged: archive)');
+    return fail('bad-args', 'milestone-prune needs --mode <delete|archive> (tagged release: delete - the tag is the archive; untagged: archive)',
+      'pick the mode from the evidence: --mode delete when this milestone was tagged, since the tag'
+      + ' keeps the history, and --mode archive when it was not; nothing was pruned');
   }
   // 3. The TYPE term, and the reason the lexical test above cannot stand alone:
   //    `resolve()` is pure string arithmetic, so a pre-existing `_archive-<label>`
@@ -6957,13 +7392,17 @@ function cmdMilestonePrune(dir, opts) {
       return fail('archive-root-unusable',
         `${archiveRoot} exists and is not a real directory`
         + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
-        + ' - move or remove it, then re-run');
+        + ' - move or remove it, then re-run',
+        'clear that path first - nothing was pruned and no phase directory moved, so the tree is'
+        + ' exactly as it was');
     }
   }
   const roadmapFile = join(dir, 'ROADMAP.md');
   let roadmapText;
   try { roadmapText = readFileSync(roadmapFile, 'utf8'); } catch {
-    return fail('no-roadmap', `${roadmapFile} is missing or unreadable`);
+    return fail('no-roadmap', `${roadmapFile} is missing or unreadable`,
+      'make ROADMAP.md readable at that path and re-run - the checked phase boxes there are what'
+      + ' says which phases this close may prune, and nothing was pruned');
   }
   const completed = completedPhases(roadmapText);
   if (!completed.length) {
@@ -7064,7 +7503,11 @@ function cmdMilestonePrune(dir, opts) {
   // A refused lock stops the close BEFORE any directory moves. Proceeding would
   // remove the phases whose residue this run could not write, which is the exact
   // permanent loss the lock exists to prevent.
-  if (archiveGuard.ok === false) return fail(archiveGuard.reason, archiveGuard.detail);
+  if (archiveGuard.ok === false) {
+    return fail(archiveGuard.reason, archiveGuard.detail,
+      'nothing was pruned and no phase directory moved - let the run holding the lock finish, or'
+      + ' clear a stale one the detail names, then re-run the close');
+  }
 
   // Directories FIRST, and the documents describe only what this pass actually
   // accomplished.
@@ -7395,7 +7838,13 @@ try {
   // `internal`.
   const args = evaluateRow(ARGV, CONTRACTS['planning.mjs'], subcommandKey(words));
   const handler = COMMANDS[cmd];
-  if (!args.ok) fail('bad-args', argRefusal(subcommandKey(words), args.detail));
+  if (!args.ok) {
+    fail('bad-args', argRefusal(subcommandKey(words), args.detail),
+      'correct the flag the detail names and re-run - nothing was written. A value that itself'
+      + ' starts with `--` cannot be protected by a bare `--` separator here: every `--`-prefixed'
+      + ' word is read as a flag that consumes the next one, so send such a value through the'
+      + ' matching `--<name>-file` flag where one exists');
+  }
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
   else handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
 } catch (e) {

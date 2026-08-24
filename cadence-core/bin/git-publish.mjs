@@ -136,6 +136,35 @@ function branchExists(dir, branch) {
   } catch { return false; }
 }
 
+/** The next step per GATE, keyed on the ARM and then on the reason
+ * lib/publish-decision.mjs decided. A table rather than one sentence because
+ * the gates have different remedies and a hint covering all of them would name
+ * none of them - and keyed on the arm as well because three tokens mean
+ * different things on the two: `no-branch` is a detached HEAD when publishing
+ * and an unnamed `--branch` when reaping. `gateHint` falls back to a general
+ * line, so a gate added to the pure core later still says something rather than
+ * emitting a bare `undefined`. */
+const GATE_HINTS = Object.freeze({
+  publish: Object.freeze({
+    'auto-close-off': 'this REPOSITORY has not authorized an unattended publish: run `config.mjs set --file <repo>/.planning/config.json git.auto_close=true` in the repo itself, because a user-global true does not speak for it - or push by hand',
+    'no-branch': 'check out a branch first - a detached HEAD names nothing to publish',
+    'bad-branch': 'rename the branch to plain characters (no leading `-`, no `:`, no shell metacharacters) and re-run',
+    'protected-branch': 'publish the integration branch instead, or take this name off `git.protected_branches` if it was never meant to be protected',
+    'bad-remote': 'pass --remote a bare remote NAME, never a URL or a path',
+    'remote-not-configured': 'run `git remote` and pass --remote one of the names it lists',
+  }),
+  reap: Object.freeze({
+    'no-branch': 'pass --branch the name of the branch to delete',
+    'bad-branch': 'this seam only deletes plainly-named branches (no leading `-`, no `:`, no shell metacharacters) - delete this one by hand if the name is really what you want',
+    'protected-branch': 'this repository protects that branch: take the name off `git.protected_branches` if it was never meant to be protected, or delete it by hand',
+    'current-branch': 'switch to another branch first - this one cannot be deleted while it is checked out',
+  }),
+});
+
+/** @param {'publish'|'reap'} arm @param {string} reason */
+const gateHint = (arm, reason) => (GATE_HINTS[arm] || {})[reason]
+  || 'the reason names the gate that stopped this - put the repository into a state that gate accepts, then re-run';
+
 function publish(dir, remote) {
   const currentBranch = readCurrentBranch(dir);
   const configuredRemotes = readRemotes(dir);
@@ -150,7 +179,7 @@ function publish(dir, remote) {
     // `detail` is undefined on every gate but the auto-close one, and
     // JSON.stringify drops an undefined value, so those envelopes are unchanged.
     emit({ ok: false, reason: decision.reason, branch: decision.branch, remote: decision.remote,
-      detail: decision.detail, warnings });
+      detail: decision.detail, hint: gateHint('publish', decision.reason), warnings });
     return;
   }
 
@@ -163,7 +192,9 @@ function publish(dir, remote) {
   const tornPublish = tornLayerRefusal({ warnings, tornLayers });
   if (tornPublish) {
     emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
-      remote: decision.remote, detail: tornPublish, warnings });
+      remote: decision.remote, detail: tornPublish,
+      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - nothing is pushed while that list is unprovable',
+      warnings });
     return;
   }
 
@@ -179,7 +210,10 @@ function publish(dir, remote) {
     // git's stderr names the remote URL, and on the transports it does not
     // anonymize that URL still carries its userinfo - this is the one site a
     // credential actually reaches an envelope through (lib/redact-url.mjs).
-    emit({ ok: false, reason: 'push-failed', detail: redactUrl(e && e.message ? e.message : String(e)), warnings });
+    emit({ ok: false, reason: 'push-failed',
+      detail: redactUrl(e && e.message ? e.message : String(e)),
+      hint: 'git itself refused: pull and rebase if it names a non-fast-forward, or fix the credentials for this remote, then re-run',
+      warnings });
   }
 }
 
@@ -198,7 +232,8 @@ function reap(dir, branch) {
     return;
   }
   if (decision.action !== 'reap') {
-    emit({ ok: false, reason: decision.reason, branch: decision.branch, warnings });
+    emit({ ok: false, reason: decision.reason, branch: decision.branch,
+      hint: gateHint('reap', decision.reason), warnings });
     return;
   }
 
@@ -210,7 +245,9 @@ function reap(dir, branch) {
   const tornReap = tornLayerRefusal({ warnings, tornLayers });
   if (tornReap) {
     emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
-      detail: tornReap, warnings });
+      detail: tornReap,
+      hint: 'repair the config layer the detail names so the protected-branch list can be read, then re-run - no branch is deleted while that list is unprovable',
+      warnings });
     return;
   }
 
@@ -229,7 +266,10 @@ function reap(dir, branch) {
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     emit({ ok: true, action: 'reaped', branch: decision.branch, warnings });
   } catch (e) {
-    emit({ ok: false, reason: 'reap-failed', branch: decision.branch, detail: redactUrl(e && e.message ? e.message : String(e)), warnings });
+    emit({ ok: false, reason: 'reap-failed', branch: decision.branch,
+      detail: redactUrl(e && e.message ? e.message : String(e)),
+      hint: 'git itself refused the delete - an unmerged branch is the usual cause, so confirm it merged before deleting it by hand',
+      warnings });
   }
 }
 
@@ -263,7 +303,8 @@ function authorized(dir) {
     emit({ ok: true, action: 'repo-authorized', requested: autoCloseRequested, warnings });
     return;
   }
-  emit({ ok: false, reason: 'auto-close-off', requested: autoCloseRequested, detail, warnings });
+  emit({ ok: false, reason: 'auto-close-off', requested: autoCloseRequested, detail,
+    hint: gateHint('publish', 'auto-close-off'), warnings });
 }
 
 // --- dispatch ----------------------------------------------------------------
@@ -303,6 +344,7 @@ try {
   // {"ok":false,"reason":"internal","detail":"[object Object]"}. It goes out
   // through emit on stdout like every other verdict (D-02) - stderr is a
   // channel no workflow reading this seam parses.
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
+    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
 }

@@ -330,6 +330,13 @@ function positionalQuery(argv) {
   return undefined;
 }
 
+/** The next step for a `git-failed` refusal, written once because both the
+ * probe and the chain query reach it. Neither knows WHICH git fact failed -
+ * `classifyResult` collapses every non-clean exit into this one outcome - so
+ * the hint names the repository state the command needs rather than guessing
+ * at a cause. */
+const GIT_FAILED_HINT = 'this query needs a readable git repository: run it inside one, or point --dir at a working tree where `git log` answers, then re-run';
+
 const argv = process.argv.slice(2);
 const ROWS = CONTRACTS['why.mjs'];
 /** One flag, read through its DECLARED row - the `''` row wins when it
@@ -345,7 +352,8 @@ try {
   // (arg-contract.mjs's own header measures the same TS2339 on this pattern).
   const parsed = /** @type {any} */ (parseQuery(query));
   if (!parsed.ok) {
-    emit({ ok: false, reason: 'bad-query', detail: parsed.reason });
+    emit({ ok: false, reason: 'bad-query', detail: parsed.reason,
+      hint: 'pass ONE path, optionally with a line after a colon - `why.mjs cadence-core/bin/route.mjs:144` - and re-run' });
   } else {
     const { path, line } = parsed;
 
@@ -363,7 +371,8 @@ try {
         text: `No commits: git has never seen "${path}" in this repository's history.`,
       });
     } else if (probeResult.outcome === 'git-failed') {
-      emit({ ok: false, reason: 'git-failed', detail: 'the not-in-history probe' });
+      emit({ ok: false, reason: 'git-failed', detail: 'the not-in-history probe',
+        hint: GIT_FAILED_HINT });
     } else {
       const chain = line === undefined ? runGit(dir, bareArgv(path)) : runGit(dir, lineArgv(path, line));
       const result = classifyResult({
@@ -381,7 +390,9 @@ try {
           text: `Line ${line} is past the end of "${path}" (or the path is absent at the commit this query resolves against) - no diffs to report.`,
         });
       } else if (result.outcome === 'git-failed') {
-        emit({ ok: false, reason: 'git-failed', detail: line === undefined ? 'the bare-path chain query' : 'the line-scoped chain query' });
+        emit({ ok: false, reason: 'git-failed',
+          detail: line === undefined ? 'the bare-path chain query' : 'the line-scoped chain query',
+          hint: GIT_FAILED_HINT });
       } else {
         // ONE merged index per invocation, over four tiers: the live phase
         // directories, the `_archive-v<ver>/` trees, the off-roadmap
@@ -411,6 +422,7 @@ try {
   }
 } catch (e) {
   const err = /** @type {any} */ (e);
-  if (err && err.seam) emit({ ok: false, reason: err.seam, detail: err.detail });
+  if (err && err.seam) emit({ ok: false, reason: err.seam, detail: err.detail,
+    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: String(err && err.message ? err.message : err) });
 }

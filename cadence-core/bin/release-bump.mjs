@@ -235,6 +235,23 @@ function readChangelog(file) {
   catch { return { state: 'unreadable', text: null }; }
 }
 
+/** The next step per VERDICT CODE, keyed on what lib/release-decision.mjs
+ * decided about the primary manifest. Those verdicts already carry a prose
+ * `reason` naming the refusal, but a relayed reason is one the check cannot see
+ * through, and the four codes have four different remedies: a table says which
+ * one, where a single sentence would say none. The fallback keeps a code added
+ * to the pure core later from emitting a bare `undefined`. */
+const VERSION_HINTS = Object.freeze({
+  'no-target-version': 'pass --version with the version this release ships, then re-run the bump',
+  'unparseable-version': 'give both --version and the manifest a plain MAJOR.MINOR.PATCH number - the detail quotes the one that is not - then re-run',
+  downgrade: 'this seam only moves a version forward: pass a --version above the one the manifest already carries, or leave the release where it is',
+  'not-an-upgrade': 'pass a --version that differs in MAJOR, MINOR or PATCH - build metadata alone is not a new release',
+});
+
+/** @param {string} code */
+const versionHint = (code) => VERSION_HINTS[code]
+  || 'the reason names what this seam decided about the target version - give --version a value it accepts, then re-run';
+
 function bump(dir, versionArg, dateArg) {
   const date = dateArg || new Date().toISOString().slice(0, 10);
   const pluginPath = join(dir, PRIMARY_MANIFEST);
@@ -274,7 +291,8 @@ function bump(dir, versionArg, dateArg) {
   if (read.state === 'unreadable') {
     emit({ ok: false, action: 'refuse', reason: 'unreadable-manifest', target,
       manifest: { from: null, to: target, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
-      detail: '.claude-plugin/plugin.json is present but not parseable JSON: refusing to bump a manifest this seam cannot read, wrote nothing' });
+      detail: '.claude-plugin/plugin.json is present but not parseable JSON: refusing to bump a manifest this seam cannot read, wrote nothing',
+      hint: 'repair that file\'s JSON and re-run the bump - the tree is exactly as it was' });
     return;
   }
   const manifest = read.manifest;
@@ -285,7 +303,7 @@ function bump(dir, versionArg, dateArg) {
   if (primary.action === 'refuse') {
     emit({ ok: false, action: 'refuse', reason: primary.code, target,
       manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
-      detail: primary.reason });
+      detail: primary.reason, hint: versionHint(primary.code) });
     return;
   }
 
@@ -301,7 +319,8 @@ function bump(dir, versionArg, dateArg) {
   if (primary.code === 'no-version-field') {
     emit({ ok: false, action: 'refuse', reason: 'no-version-field', target,
       manifest: { from: primary.from, to: primary.to, bumped: false }, siblings: [], changelog: { changed: false, state: 'not-examined' },
-      detail: `the primary manifest ${PRIMARY_MANIFEST} carries no \`version\` field, so this release would ship unbumped: repair the manifest or close without a version bump. Wrote nothing.` });
+      detail: `the primary manifest ${PRIMARY_MANIFEST} carries no \`version\` field, so this release would ship unbumped: repair the manifest or close without a version bump. Wrote nothing.`,
+      hint: `add a "version" field to ${PRIMARY_MANIFEST} naming the version this release ships from, then re-run the bump` });
     return;
   }
 
@@ -344,7 +363,8 @@ function bump(dir, versionArg, dateArg) {
       emit({ ok: false, action: 'refuse', reason: 'unreadable-sibling-manifest', target,
         manifest: { from: primary.from, to: primary.to, bumped: false },
         siblings: [], changelog: { changed: false, state: 'not-examined' },
-        detail: `${rel} is present but not parseable JSON: refusing to ship a release whose sibling manifest this seam cannot read, wrote nothing. Repair ${rel} and re-run the bump.` });
+        detail: `${rel} is present but not parseable JSON: refusing to ship a release whose sibling manifest this seam cannot read, wrote nothing. Repair ${rel} and re-run the bump.`,
+        hint: `repair that sibling's JSON and re-run - the primary manifest was deliberately left at its old version, so the tree is consistent` });
       return;
     }
     if (siblingRead.state !== 'ok') continue;
@@ -398,7 +418,8 @@ function bump(dir, versionArg, dateArg) {
       emit({ ok: false, action: 'refuse', reason: 'unreadable-changelog', target,
         manifest: { from: primary.from, to: primary.to, bumped: false },
         siblings: [], changelog: { changed: false, state: 'unreadable' },
-        detail: `${CHANGELOG_FILE} is present but cannot be read: refusing to scaffold a fresh changelog over a release history this seam cannot see, wrote nothing. Repair ${CHANGELOG_FILE} and re-run the bump.` });
+        detail: `${CHANGELOG_FILE} is present but cannot be read: refusing to scaffold a fresh changelog over a release history this seam cannot see, wrote nothing. Repair ${CHANGELOG_FILE} and re-run the bump.`,
+        hint: `make ${CHANGELOG_FILE} readable and re-run - moving it aside would lose the release history this seam refuses to write over` });
       return;
     }
     // ABSENT keeps its own behaviour: no changelog step, changed:false, ok:true
@@ -459,7 +480,10 @@ function bump(dir, versionArg, dateArg) {
       manifest: { from: primary.from, to: primary.to, bumped: landed(PRIMARY_MANIFEST) },
       siblings: siblings.map((s) => ({ ...s, bumped: landed(s.file) })),
       changelog: { ...changelog, changed: landed(CHANGELOG_FILE) },
-      detail: error && error.message ? error.message : String(error) });
+      detail: error && error.message ? error.message : String(error),
+      // Deliberately NOT "re-run": this is the one halt where a retry compounds
+      // the damage, so the hint sends the operator to read the tree first.
+      hint: 'read the `bumped` and `changed` flags in this envelope - they name which files landed and which did not - and reconcile the tree by hand BEFORE any re-run, because a second bump over a half-written tree moves the ones that already landed again' });
     return;
   }
 
@@ -555,7 +579,8 @@ try {
     // in-bump() refusals fill those from a manifest read; filling them here
     // would fabricate them.
     if (badDate) {
-      emit({ ok: false, action: 'refuse', reason: 'bad-date', detail: badDate });
+      emit({ ok: false, action: 'refuse', reason: 'bad-date', detail: badDate,
+        hint: 'pass --date one YYYY-MM-DD value, or drop the flag entirely to date today, then re-run' });
     } else {
       bump(dir, arg('bump', '--version'), dateArg);
     }
@@ -568,6 +593,7 @@ try {
   // (D-08/D-09): the raised refusal object carries no `message`, so without it
   // a valueless --dir emits detail "[object Object]". One JSON line on stdout
   // like every other verdict (D-02).
-  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail,
+    hint: 'the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command' });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
