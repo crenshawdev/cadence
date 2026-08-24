@@ -60,7 +60,7 @@ Phases are added with `/cad-phase add`.
 
 ## Phases
 
-- [ ] **Phase 1: Every refusal names its next step** - a plain-language hint at every reason site in `bin/`, plus the self-verify check that makes a hintless reason a reported problem
+- [x] **Phase 1: Every refusal names its next step** - a plain-language hint at every reason site in `bin/`, plus the self-verify check that makes a hintless reason a reported problem
 - [ ] **Phase 2: A repo-scoped key refuses at the layer that cannot honour it** - `config.mjs set` reads the schema's `"src": "repo"` marker and complains at write time instead of at land time
 
 ## Phase Details
