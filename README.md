@@ -15,7 +15,7 @@ Cadence is a Claude Code plugin. Add the marketplace, then install:
 /plugin install cadence@cadence
 ```
 
-Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support, plus `node` and `git` on your PATH. The scripts inside are zero-dependency: there is no npm install, ever.
+Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support, plus `node`, `git` and one forge CLI - `tea`, `gh` or `glab` - on your PATH, because Cadence resolves a forge and an issue tracker when it sets a project up. Those are host prerequisites: the scripts inside are zero-dependency, and there is no npm install, ever.
 
 ## The loop
 

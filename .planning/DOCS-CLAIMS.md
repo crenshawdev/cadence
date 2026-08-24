@@ -520,7 +520,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-01 | README.md | 36 | An OpenAI, Gemini **or DeepSeek** key runs the identical review job "with the provider enforcing the output schema". | stale | corrected - b2bad1a | 1 |
 | README-02 | README.md | 38 | `docs/WORKFLOW.md` is "six figures and the three tables behind them". | stale | corrected - b2bad1a | 1 |
 | README-03 | README.md | 14-15 | Install adds marketplace `https://git.jcrenshaw.dev/crenshawdev/cadence.git` then `/plugin install cadence@cadence`. | accurate | accurate | 2 |
-| README-04 | README.md | 18 | Runtime scripts are zero-dependency; "there is no npm install, ever". | accurate | accurate | 2 |
+| README-04 | README.md | 18 | Prerequisites are Claude Code with plugin support plus `node`, `git` and one forge CLI (`tea`, `gh` or `glab`) on PATH; those are HOST prerequisites and the runtime scripts are still zero-dependency, "there is no npm install, ever". | accurate | amended - v3.7.1 phase 1 (FRG-02) makes a forge a precondition rather than an option, so the sentence names a forge CLI; the zero-dependency claim is unchanged and still true | 2 |
 | README-05 | README.md | 30 | All durable state lives in `.planning/` and git, incl. a four-line state cursor. | accurate | accurate | 1 |
 | README-06 | README.md | 67 | Verifier scores every claim verified/failed/uncertain and uncertain counts toward neither side. | accurate | accurate | 1 |
 | README-07 | README.md | 67 | The coverage audit reads assertions rather than counting test files. | accurate | accurate | 1 |
