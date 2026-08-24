@@ -15,7 +15,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, realp
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PLANNING, makeTree, run, taskRepo, runIn, TASK_COMMITS } from './planning.test.mjs';
+import { PLANNING, makeTree, run } from './planning.test.mjs';
+// The tasks tier is read back out of a record the task-record seam wrote, so
+// its fixtures come from the arms that own that seam rather than a second
+// copy of them here.
+import { taskRepo, runIn, TASK_COMMITS } from './planning-task-record.test.mjs';
 
 /** True iff this module is what node was told to run; realpath on both sides so
  * a symlinked checkout still matches (config-seams.test.mjs D-19). */
