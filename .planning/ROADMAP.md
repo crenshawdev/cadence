@@ -53,9 +53,19 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
     stream for a severity filter to hold back.
   - The target is simply the forge phase 1 resolved (sub-question 3); the user
     is deciding per fire, so no separate private staging tracker is needed.
-  - The cost of a decline is accepted and stated: the finding is gone, and
-    re-finding it means the next review raising it again. That is the intended
-    trade against a file nobody reads.
+  - A DECLINE IS RECORDED ON THE TRACKER, not locally. The finding is filed and
+    immediately closed `wontfix`, so a closed issue is the decline record and no
+    local file grows. Closed issues do not appear in the open count, so this
+    costs nothing on the landing page. "Has this already been declined" is then
+    ONE query per gate fire against closed issues - never a walk of N local
+    entries, and never a call per finding. Without this the same finding is
+    re-raised every cycle and the user is asked forever, which is the accumulation
+    problem wearing a different coat.
+  - The fingerprint is `(file path, symbol or anchor)`, not prose - prose will
+    not match across two independent review runs. This is deliberately COARSE
+    and its cost is stated: a genuinely new finding in an already-declined
+    function can be suppressed. Preferred over asking the user the same question
+    every cycle, and the failure is recoverable (reopen the closed issue).
 
 ## Phases
 
@@ -142,7 +152,13 @@ routed into it.
    under it passing.
 8. The ask is BATCHED per gate fire: a gate deferring fifteen findings
    produces ONE prompt, not fifteen. Verified against a multi-finding fire.
-9. Full suite green, and no `reason` token renamed: a diff of the literal
+9. A declined finding is filed and immediately closed `wontfix`, and a later
+   fire carrying the same `(file, symbol)` fingerprint does NOT ask again.
+   Verified by declining a finding, re-running the gate on the same code, and
+   asserting no second prompt and no second open issue. The decline lookup is
+   ONE query per fire regardless of how many findings it carries - asserted by
+   counting forge calls on a multi-finding fire.
+10. Full suite green, and no `reason` token renamed: a diff of the literal
    `reason` strings in `cadence-core/bin/` before and after the phase is empty.
 
 ### Phase 3: One spelling, one phase
