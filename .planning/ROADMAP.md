@@ -72,7 +72,7 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 - [x] **Phase 1: Pick a forge** - detect the installed forge CLIs, let the user choose the provider and name the repository to create or link, and persist that choice
 - [ ] **Phase 2: CAPTURE is transient** - CAPTURE holds only the phase in flight, phase close empties it, and anything worth keeping becomes an issue on the repository's own tracker
 - [ ] **Phase 3: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
-- [ ] **Phase 4: Split planning.mjs by command** - the 32 `cmd*` handlers move to per-command modules, leaving a shared core, so a dispatch touching one command stops paying a whole-file read
+- [x] **Phase 4: Split planning.mjs by command** - the 32 `cmd*` handlers move to per-command modules, leaving a shared core, so a dispatch touching one command stops paying a whole-file read
 
 ## Phase Details
 
