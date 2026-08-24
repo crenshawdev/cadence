@@ -93,6 +93,39 @@ export function installedProviders(resolves) {
 }
 
 /**
+ * WHICH forge keys are still unanswered, spelled as the config keys a user
+ * would set - the list `bin/issue-check.mjs` names in its not-configured line,
+ * and the question `forgeRecordComplete` below answers as a boolean.
+ *
+ * ONE statement of what a complete forge record is, with TWO readers, for the
+ * reason `lib/on-path.mjs`'s header gives about "reachable": the setup step
+ * decides whether to ask and the land-time tracker report decides whether to
+ * call, and a tree where those two disagree either re-asks a settled question
+ * or calls a forge it has no selector for. So the rule lives here and
+ * `lib/issue-decision.mjs` imports it rather than restating it.
+ *
+ * In SCHEMA ORDER, provider first, so the sentence a user reads names the key
+ * they have to set first. `git.forge_host` appears only on a `forgejo`
+ * provider, because `github` and `gitlab` have fixed hosts and a null there is
+ * not a gap.
+ *
+ * @param {{provider?: unknown, repo?: unknown, host?: unknown}} record
+ * @returns {string[]} `git.`-prefixed key names, empty when nothing is missing
+ */
+export function missingForgeKeys({ provider, repo, host } = {}) {
+  const p = text(provider);
+  const known = p !== null && Object.prototype.hasOwnProperty.call(PROVIDER_TABLE, p);
+  const out = [];
+  if (!known) out.push('git.forge_provider');
+  if (!text(repo)) out.push('git.forge_repo');
+  // Only a provider we RECOGNIZE can tell us whether the host is required, and
+  // only `forgejo` requires it. An unknown provider spelling reports the
+  // provider key alone rather than guessing a third key it might also need.
+  if (p === 'forgejo' && !text(host)) out.push('git.forge_host');
+  return out;
+}
+
+/**
  * Is the persisted forge record COMPLETE - is there nothing left to ask?
  *
  * Provider and slug always; on `forgejo`, the instance host as well (CONTEXT
@@ -112,12 +145,8 @@ export function installedProviders(resolves) {
  * @param {{provider?: unknown, repo?: unknown, host?: unknown}} record
  * @returns {boolean}
  */
-export function forgeRecordComplete({ provider, repo, host } = {}) {
-  const p = text(provider);
-  if (!p || !Object.prototype.hasOwnProperty.call(PROVIDER_TABLE, p)) return false;
-  if (!text(repo)) return false;
-  if (p === 'forgejo' && !text(host)) return false;
-  return true;
+export function forgeRecordComplete(record) {
+  return missingForgeKeys(record).length === 0;
 }
 
 /**

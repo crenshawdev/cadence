@@ -131,11 +131,12 @@ function detect(dir) {
   // them. There is no question to pre-fill on either of the other two, so
   // reading the origin there would be a spawn bought for an unused field - and
   // AC1's assertion is about forge CLIs, which `git` is not and which nothing
-  // on this path runs. `classifyOrigin` is handed NO tea logins: this phase
-  // probes no login (CONTEXT D-06), which is also what makes the provider
-  // default available for `github` and `gitlab` alone (CONTEXT D-07).
+  // on this path runs. `classifyOrigin` takes the URL and nothing else - this
+  // phase probes no login (CONTEXT D-06), and that is why the provider default
+  // is available for `github` and `gitlab` alone (CONTEXT D-07): those are the
+  // two the hostname identifies without asking anybody.
   const defaults = decision.action === 'ask'
-    ? originDefaults(classifyOrigin(readOrigin(dir), null))
+    ? originDefaults(classifyOrigin(readOrigin(dir)))
     : null;
 
   emit({

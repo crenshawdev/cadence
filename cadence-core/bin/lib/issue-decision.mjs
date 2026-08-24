@@ -9,6 +9,14 @@
 // supplies the live readings, and cad-land prose prints the sentence. Mirrors
 // close-decision.mjs's discipline: unknown or missing inputs never throw.
 //
+// ONE IMPORT, AND IT IS THE FORGE RECORD'S OWN RULE. `missingForgeKeys` says
+// which of `git.forge_provider`, `git.forge_repo` and `git.forge_host` are
+// still unanswered, and it is imported from lib/forge-decision.mjs rather than
+// restated here: the setup step decides whether to ASK on that rule and this
+// file decides whether to CALL on it, and a tree where those two disagree
+// either re-asks a settled question or calls a forge it has no selector for.
+// Same discipline as lib/on-path.mjs - one rule, two callers, no way to drift.
+//
 // NOTHING HERE WRITES. The whole surface answers questions about a tracker; no
 // row's argv closes, reopens, comments on or edits an issue, and there is no
 // function that could. Landing reports; closing stays an explicit ask.
@@ -52,6 +60,10 @@
 // per-issue `resolve`: at `--state all` a real tracker fills the 50-row page,
 // so the honest incomplete read was the only thing this seam ever produced on
 // the repository it was built in. See HOST_TABLE's own header.
+
+'use strict';
+
+import { missingForgeKeys } from './forge-decision.mjs';
 
 /** open / closed, normalized across the three CLIs' spellings.
  * @param {string} raw @returns {'open'|'closed'|null} */
@@ -189,6 +201,30 @@ function readOneIssue(text, number) {
  * so. `gh` and `glab` need no equivalent: neither is multi-account-ambiguous
  * the way tea's `--repo` fallback is.
  *
+ * THE FORGEJO ROW NAMES ITS INSTANCE WITH `--login`, NOT `--remote origin`
+ * (phase 1 D-01, D-08, AC4). It carried `--remote origin` until the persisted
+ * forge record existed: that flag hands the login pick to tea, which reads the
+ * CHECKOUT's own remote - so a repository that has lost `origin`, or that is
+ * being reported on from a tree where the remote was never added, had no way to
+ * name an instance at all and the report degraded. The persisted
+ * `git.forge_host` is what replaces it, turned into a login NAME by
+ * `teaLoginNameForHost` below and handed to every call this row builds.
+ *
+ * Measured on the installed tea 0.15.1, because no source states it: `--login`
+ * takes a configured login's NAME and nothing else (`--login git.example.com`
+ * against a config holding that URL under another name answers `login name
+ * 'git.example.com' does not exist`), `--repo` carries no host in any spelling
+ * (`host/owner/repo` is read as owner `host`), and `--remote` names a git
+ * remote. So a host reaches tea only by way of the `tea login list --output
+ * json` record whose `url` names it.
+ *
+ * `login` is REQUIRED on this row, never optional and never omitted when null:
+ * an unqualified `--repo` falls back to config FILE ORDER, which is how a
+ * stranger's tracker gets reported as this repository's, and the caller's job
+ * is to skip rather than to call without one. `github` and `gitlab` take no
+ * third argument - their hosts are fixed and neither is multi-account-ambiguous
+ * the way tea's `--repo` is.
+ *
  * THE FORGEJO ROW ALONE LISTS `--state open` AND CARRIES A `resolve`. The
  * server clamps `tea issues list` at 50 rows whatever `--limit` asks for
  * (`--limit 50`, `100` and `200` each returned exactly 50 against this repo's
@@ -227,20 +263,21 @@ export const HOST_TABLE = Object.freeze({
   forgejo: Object.freeze({
     bin: 'tea',
     limit: 50,
-    /** @param {string} slug @param {number} limit @returns {string[]} */
-    argv: (slug, limit) => ['issues', 'list', '--repo', slug,
-      '--remote', 'origin', '--state', 'open',
+    /** @param {string} slug @param {number} limit @param {string} login
+     * @returns {string[]} */
+    argv: (slug, limit, login) => ['issues', 'list', '--repo', slug,
+      '--login', login, '--state', 'open',
       '--fields', 'index,state', '--output', 'json', '--limit', String(limit)],
     /** @param {unknown} text @param {number} limit */
     normalize: (text, limit) => normalizeList(text, limit, 'index'),
-    // All five flags exist on the installed tea, and `--remote` on the
+    // All five flags exist on the installed tea, and `--login` on the
     // single-issue form as well as on `list` (`tea issues --help` and
-    // `tea issues list --help`, 2026-08-15). No `--state`: the number is named
-    // directly.
+    // `tea issues list --help`). No `--state`: the number is named directly.
     resolve: Object.freeze({
-      /** @param {string} slug @param {number} number @returns {string[]} */
-      argv: (slug, number) => ['issues', String(number), '--repo', slug,
-        '--remote', 'origin', '--fields', 'index,state', '--output', 'json'],
+      /** @param {string} slug @param {number} number @param {string} login
+       * @returns {string[]} */
+      argv: (slug, number, login) => ['issues', String(number), '--repo', slug,
+        '--login', login, '--fields', 'index,state', '--output', 'json'],
       /** @param {unknown} text @param {number} number */
       read: (text, number) => readOneIssue(text, number),
     }),
@@ -277,58 +314,6 @@ function splitOrigin(url) {
 }
 
 /**
- * Classify the origin URL into the forge whose tracker can be read, using a
- * `tea login list` reading for everything that is not github or gitlab.
- *
- * THE FORGEJO-VS-NO-LOGIN RULE IS A COUNT, NOT A HOST COMPARISON. A reading
- * that names at least one login answers `forgejo`; a reading that names none
- * answers `no-login`; no reading at all answers `unrecognized`. WHICH of the
- * configured logins serves this origin is tea's own question, and tea is the
- * one asked it: every call HOST_TABLE's forgejo row makes carries
- * `--remote origin`, so tea reads the checkout's own remote and picks the login
- * from it. That header states the binding and the one limit of delegating it.
- *
- * This file used to answer that question itself, by matching the origin host
- * against each login's hosts - first by equality, then by a shared registrable
- * domain guarded with a curated public-suffix denylist - and it was wrong in
- * both shapes. Under equality this repository (`ssh://git@ssh.jcrenshaw.dev:
- * 2222/...` against a login named `git.jcrenshaw.dev`; a web host and an SSH
- * endpoint under different names is a normal deployment, not a
- * misconfiguration) took the `no-login` arm on every land, so the report
- * shipped in v3.4.0 never once ran on the repository it was built in. Under the
- * widening, any second-level registry the denylist missed - `git.acme.co.ke`
- * against `git.other.co.ke` - read two unrelated companies as one forge. Being
- * right about that needs the public suffix list a zero-dep repo refuses to
- * vendor (D-07), so the rule is deleted rather than tuned a third time.
- *
- * The verdicts are FIVE, not three, because the degradations are not
- * interchangeable (LND-01, criterion 3):
- *   github / gitlab / forgejo  a tracker this seam can read
- *   no-remote      no origin URL at all
- *   no-login       a host `tea` could serve, where the login list names no
- *                  login for it. Distinct from `unrecognized` on purpose: a
- *                  Forgejo origin with `tea` installed but unauthenticated must
- *                  not be reported as an unknown host, because the fix is a
- *                  login and the line has to say so.
- *   unrecognized   neither github nor gitlab, and no `tea` reading exists to
- *                  recognize it (the CLI is absent, or the URL did not parse,
- *                  or the path names no owner/repo). Without a reading there is
- *                  no evidence the host serves a tracker at all.
- *
- * github and gitlab are matched on the HOSTNAME (`github.com` / `gitlab.com`
- * and their subdomains) and nothing else. A self-hosted GitLab at
- * `gitlab.example.com` therefore lands on `unrecognized` and degrades in one
- * line; guessing a forge from a hostname's first label would be a heuristic
- * this file has no way to be right about.
- *
- * @param {unknown} originUrl the `git remote get-url origin` text, or ''/null
- * @param {unknown[]|null|undefined} teaLogins the logins a `tea login list`
- *   reading named, consulted for ONE fact - whether any of them NAMES this
- *   origin's host - or null/undefined when tea could not be consulted
- * @returns {{verdict:'github'|'gitlab'|'forgejo'|'no-login'|'no-remote'|'unrecognized',
- *   host:string|null, slug:string|null}}
- */
-/**
  * Does one `tea login list` record NAME this host? The three fields a login
  * identifies its forge by - its own `name`, its API `url`'s hostname and its
  * `ssh_host` - compared lowercased and EXACTLY. No suffix, subdomain or
@@ -337,7 +322,7 @@ function splitOrigin(url) {
  * have in common.
  * @param {unknown} login @param {string} host @returns {boolean}
  */
-function loginNamesHost(login, host) {
+export function loginNamesHost(login, host) {
   if (!login || typeof login !== 'object') return false;
   const rec = /** @type {Record<string, unknown>} */ (login);
   for (const field of ['name', 'ssh_host']) {
@@ -351,30 +336,100 @@ function loginNamesHost(login, host) {
   return false;
 }
 
-export function classifyOrigin(originUrl, teaLogins) {
+/**
+ * Classify the origin URL into a SETUP-TIME DEFAULT: which forge the origin
+ * suggests, and which `owner/name` selector it carries.
+ *
+ * ITS JOB CHANGED IN PHASE 1 (D-01), AND IT HAS ONE CALLER. `bin/forge.mjs
+ * detect` calls it to offer the two defaults the user CONFIRMS at project
+ * setup; `bin/issue-check.mjs` no longer calls it at all. The persisted
+ * `git.forge_provider` / `git.forge_repo` / `git.forge_host` record is what the
+ * land-time tracker report resolves, so a repository that temporarily loses its
+ * remote does not silently change behaviour - which is the failure that made
+ * config authoritative and demoted this function to a default builder.
+ *
+ * WHAT WENT WITH THAT DEMOTION. It used to take a `tea login list` reading and
+ * answer `forgejo` or `no-login` from it. Both arms are gone: setup probes no
+ * login at all (D-06), so there was no reading to pass and those arms were
+ * reachable from nothing. The `no-login` LINE still exists - it moved to
+ * `decideIssueCheck`, where it now means that no tea login serves the instance
+ * host the user CONFIRMED, which is a question about a value a human typed
+ * rather than about a hostname parsed off an SSH endpoint.
+ *
+ * The verdicts are FOUR:
+ *   github / gitlab  a forge the hostname identifies, so a provider default
+ *                    can be offered
+ *   no-remote        no origin URL at all - no defaults to offer
+ *   unrecognized     anything else. NOT a failure: the slug is still returned
+ *                    when the path parsed, and the caller offers it as a
+ *                    default with no provider recommendation beside it. A
+ *                    self-hosted forge is the ordinary case here, not an error.
+ *
+ * github and gitlab are matched on the HOSTNAME (`github.com` / `gitlab.com`
+ * and their subdomains) and nothing else. A self-hosted GitLab at
+ * `gitlab.example.com` therefore lands on `unrecognized` and is offered no
+ * provider default; guessing a forge from a hostname's first label would be a
+ * heuristic this file has no way to be right about, and the user is being asked
+ * the question anyway.
+ *
+ * @param {unknown} originUrl the `git remote get-url origin` text, or ''/null
+ * @returns {{verdict:'github'|'gitlab'|'no-remote'|'unrecognized',
+ *   host:string|null, slug:string|null}}
+ */
+export function classifyOrigin(originUrl) {
   const url = typeof originUrl === 'string' ? originUrl.trim() : '';
   if (!url) return { verdict: 'no-remote', host: null, slug: null };
   const parts = splitOrigin(url);
   if (!parts) return { verdict: 'unrecognized', host: null, slug: null };
   const segments = parts.path.replace(/\.git$/, '').replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
-  // Two segments minimum: without owner AND name there is no repo selector to
-  // bind the call to, and an unbound call reports another project's tracker.
+  // Two segments minimum: without owner AND name there is no repo selector, so
+  // there is no slug worth offering as a default.
   const slug = segments.length >= 2 ? segments.join('/') : null;
   const host = parts.hostname;
   if (!slug) return { verdict: 'unrecognized', host, slug: null };
   if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, slug };
   if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, slug };
-  if (!Array.isArray(teaLogins)) return { verdict: 'unrecognized', host, slug };
-  // The GUARD, not a picker: unless some login names this host exactly, tea
-  // would fall back to config order and answer for a repository it has never
-  // heard of, exit 0, with its NOTE on the stderr this seam discards. Equality
-  // is the whole rule - it is the same condition tea falls back on, and it
-  // guesses at nothing, which is what the two deleted host rules could not say.
-  // WHICH login serves this remote stays tea's answer, via `--remote origin`.
-  if (!teaLogins.some((login) => loginNamesHost(login, host))) {
-    return { verdict: 'no-login', host, slug };
+  return { verdict: 'unrecognized', host, slug };
+}
+
+/**
+ * The NAME of the first `tea login list` record that names `host`, or null.
+ *
+ * The other half of what phase 1 did to the login probe: the probe stays and
+ * its job changes. It used to guard a CLASSIFICATION - "does any login name
+ * this origin's host, and may I therefore call tea at all". It now turns the
+ * persisted `git.forge_host` into the login NAME `tea --login` requires, which
+ * is the only way a host reaches tea (see HOST_TABLE's forgejo row). A null
+ * answer is the caller's cue to skip on the `no-login` line rather than to call
+ * without a login and let tea fall back to config order.
+ *
+ * FIRST IN TEA'S OWN LIST ORDER, deliberately. Two logins can name one host -
+ * two accounts on one instance - and any rule that picked between them would be
+ * inventing a preference the user never stated. Taking the first the list names
+ * is arbitrary but STABLE: the same land resolves the same login every time,
+ * which is the property that matters when the alternative is a pick that moves.
+ *
+ * The predicate's vocabulary is UNCHANGED and stays exact equality over the
+ * three fields a login identifies its forge by. Equality is what needs no
+ * public suffix list - it never asks what two hosts have in COMMON - and the
+ * host it is handed here was confirmed by a human at setup rather than parsed
+ * off an SSH endpoint, which is the failure `loginNamesHost`'s own header
+ * records.
+ *
+ * @param {unknown} logins the `tea login list --output json` reading, or null
+ * @param {unknown} host the persisted instance host
+ * @returns {string|null} the login's `name`, or null when none matches
+ */
+export function teaLoginNameForHost(logins, host) {
+  if (!Array.isArray(logins)) return null;
+  if (typeof host !== 'string' || !host.trim()) return null;
+  const wanted = host.trim().toLowerCase();
+  for (const login of logins) {
+    if (!loginNamesHost(login, wanted)) continue;
+    const name = login && typeof login === 'object' ? login.name : null;
+    if (typeof name === 'string' && name) return name;
   }
-  return { verdict: 'forgejo', host, slug };
+  return null;
 }
 
 /**
@@ -448,6 +503,26 @@ export function partitionIssues(numbers, fetched) {
 }
 
 /**
+ * A value safe to interpolate into a degradation line, or a stand-in phrase.
+ *
+ * The `no-login` reason names the persisted `git.forge_host`, and that value is
+ * a `string_or_null` a user can set to anything - so the same NOT_ONE_LINE
+ * classes `splitOrigin` rejects a hostname for would let a configured host
+ * print two lines, or an ANSI sequence, where /cad-land promises exactly one.
+ * The origin-parsing guard used to be what stopped that, and it no longer sits
+ * between config and this sentence.
+ *
+ * REPLACED WHOLE, never stripped: a cleaned host printed back would read as
+ * what the user configured, and no forge serves such a host anyway, so there is
+ * no honest repaired form. The phrase still points at the right fix.
+ * @param {unknown} host @returns {string}
+ */
+function oneLine(host) {
+  if (typeof host !== 'string' || !host.trim()) return 'the configured Forgejo instance';
+  return NOT_ONE_LINE.test(host) ? 'the configured Forgejo instance' : host;
+}
+
+/**
  * Should the seam query the tracker, and if not, WHY - in the one line
  * `/cad-land` step 1 prints and then continues past.
  *
@@ -471,22 +546,37 @@ export function partitionIssues(numbers, fetched) {
  * key-off arm is reached before anything is spawned. Only an explicit `false`
  * or an explicit incomplete fetch stops the run.
  *
+ * WHAT THE FORGE ARMS ASK NOW (phase 1 D-01). The two arms that classified an
+ * origin URL - `no-remote` and `unrecognized` - are gone, replaced by ONE arm
+ * asking whether this repository has a forge CONFIGURED, naming the keys that
+ * are still unset. That is the whole point of making config authoritative: a
+ * repository whose remote is temporarily gone reports the same thing it
+ * reported yesterday, and the sentence names a key the user can set rather than
+ * a hostname the seam could not classify. The `no-login` arm SURVIVES and is
+ * rebound: the host it names is the persisted `git.forge_host`, and it still
+ * means that no `tea` login serves that instance, so the fix it points at is
+ * still a login.
+ *
  * The eight reasons, in the order they are asked (1 rides the `off` action,
  * 2-8 ride `skip`):
- *   1 the key is off        6 the resolved binary is absent from PATH
- *   2 no origin remote      7 the CLI was killed at the bound, or exited
- *   3 unrecognized host       nonzero - two lines, because "it hung" and "it
- *   4 no tea login for it     refused" are different things to go fix
- *   5 the ref scan failed   8 the CLI exited zero carrying a response the
+ *   1 the key is off        5 the resolved binary is absent from PATH
+ *   2 no forge configured   6 the CLI was killed at the bound, or exited
+ *   3 no tea login for the    nonzero - two lines, because "it hung" and "it
+ *     configured instance     refused" are different things to go fix
+ *   4 the ref scan failed   7 the CLI exited zero carrying a response the
  *                             normalizer could not read as complete
+ * Seven now, not eight, and that subtraction is the point: two degradations
+ * that differed only in how the origin URL failed became one that says what to
+ * set.
  *
  * @param {{enabled?:boolean,
- *   classification?:{verdict:string, host:string|null, slug:string|null},
+ *   forge?:{provider?:unknown, repo?:unknown, host?:unknown},
+ *   loginName?:string|null,
  *   logOk?:boolean, bin?:string, cliPresent?:boolean, exitOk?:boolean,
  *   timedOut?:boolean, fetched?:{complete?:boolean, detail?:string|null}|null}} args
  * @returns {{action:'query'|'skip'|'off', reason:string}}
  */
-export function decideIssueCheck({ enabled, classification, logOk, bin, cliPresent, exitOk, timedOut, fetched } = {}) {
+export function decideIssueCheck({ enabled, forge, loginName, logOk, bin, cliPresent, exitOk, timedOut, fetched } = {}) {
   const skip = (reason) => ({ action: /** @type {'skip'} */ ('skip'), reason });
   // Anything that is not the literal `true` is the off arm, including an
   // absent argument: this is asked before a single subprocess is started.
@@ -496,17 +586,18 @@ export function decideIssueCheck({ enabled, classification, logOk, bin, cliPrese
       reason: 'git.issue_check is off: no tracker report, and no forge CLI was run',
     };
   }
-  const host = classification && classification.host ? classification.host : 'the origin host';
-  if (classification) {
-    if (classification.verdict === 'no-remote') {
-      return skip('no origin remote is configured: there is no tracker to report on');
+  if (forge) {
+    const missing = missingForgeKeys(forge);
+    if (missing.length) {
+      return skip(`this repository has no forge configured (${missing.join(', ')} unset - `
+        + '/cad-adopt or /cad-new-project asks for them): no tracker report');
     }
-    if (classification.verdict === 'unrecognized') {
-      return skip(`${host} is neither github nor gitlab and no tea login list could name it: no tracker report`);
-    }
-    if (classification.verdict === 'no-login') {
-      return skip(`tea holds no login for ${host}: no tracker report`);
-    }
+  }
+  // `null` means the login list was READ and named none; `undefined` means it
+  // has not been read yet, which is not a reason to stop - the same staging
+  // every field below follows.
+  if (loginName === null) {
+    return skip(`tea holds no login for ${oneLine(forge && forge.host)}: no tracker report`);
   }
   if (logOk === false) {
     return skip('the commits on this branch could not be read, so no issue reference could be scanned: no tracker report');

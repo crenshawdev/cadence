@@ -40,9 +40,9 @@ price one, and it ends by offering to route the tweaks you accept to
 `/cad-config` rather than writing any of them itself. To publish, `/cad-land`
 asks how you want to ship, push, MR or PR, tag, or leave it local, with no
 preselected default, and does exactly that. Before it asks, it names the issues
-this branch's commits reference and which of them are still open on the host
-your origin points at, so you decide to ship knowing what the work did and did
-not answer; it closes nothing, and `git.issue_check: false` turns the report
+this branch's commits reference and which of them are still open on the forge
+you picked when the project was set up, so you decide to ship knowing what the
+work did and did not answer; it closes nothing, and `git.issue_check: false` turns the report
 off.
 
 That's the whole shape of it: define once, then loop `context -> plan -> execute
