@@ -20,32 +20,104 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 
 ## Open Questions
 
-- **OQ-1 (blocks phase 1 planning): a repo with no usable tracker.** A repository with no `origin`, an `origin` on a forge with issues disabled, or no credentials for it, has nowhere to roll an item out to. Phase 1 must not silently drop the item and must not silently retain it forever. Decide the behaviour before planning.
-- **OQ-2 (blocks phase 1 planning): this repository's existing 276 walked items.** The mechanism fix does not disposition them. Decide whether they are filed as issues, dropped, or handled as a separate phase, and who adjudicates them - noting that two sampled today came back one dead, one live, so a blanket call in either direction is unevidenced.
+- **OQ-1 - RESOLVED 2026-08-24: Cadence requires a forge.** A repository hosted
+  on a platform with an issue tracker - Forgejo/Gitea, GitHub, GitLab - is a
+  precondition, not an option. The tool already assumes one nearly everywhere:
+  `/cad-land` offers MR and PR, two mechanisms that exist only on a forge;
+  `git.integration_branch: milestone` creates a branch whose purpose is that
+  parallel work merges back into it; `/cad-milestone` cuts and tags a version;
+  the ROADMAP template says git is the archive; and this project's own planning
+  docs cite `#238`, `#249`, `#69`, `#29`. A no-tracker mode would be a second
+  disposition set, a second close path and a config nobody sets - what
+  `/cad-minimalism-review` exists to delete. The fresh-directory gap at
+  `/cad-new-project` is handled by phase 1's setup step, not by a permanent
+  second mode.
+  - Auth failure and offline are NOT "no forge": the item was filable and the
+    write did not land. Those refuse the close rather than empty the file.
+
+- **OQ-2 - RESOLVED 2026-08-24: one manual sweep.** This repository's existing
+  276 walked items are cleaned up by hand, once, outside the phase work.
 
 ## Phases
 
-- [ ] **Phase 1: CAPTURE is transient** - CAPTURE holds only the phase in flight, phase close empties it, and anything worth keeping becomes an issue on the repository's own tracker
-- [ ] **Phase 2: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
+- [ ] **Phase 1: Pick a forge** - detect the installed forge CLIs, let the user choose the provider and name the repository to create or link, and persist that choice
+- [ ] **Phase 2: CAPTURE is transient** - CAPTURE holds only the phase in flight, phase close empties it, and anything worth keeping becomes an issue on the repository's own tracker
+- [ ] **Phase 3: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
 
 ## Phase Details
 
-### Phase 1: CAPTURE is transient
-**Goal:** `.planning/CAPTURE.md` is a working buffer for the current phase and nothing else. Every item leaves it at phase close - resolved and closed, or written out to the repository's issue tracker. The file cannot accumulate, because its scope is one phase rather than the project.
-**Depends on:** Nothing (first phase). OQ-1 and OQ-2 are answered before this phase is planned.
+### Phase 1: Pick a forge
+**Goal:** Cadence resolves a forge and an issue tracker when it sets a project
+up - new or adopted - by detecting which forge CLIs are installed, asking the
+user which provider to use and what the repository is called, and persisting
+that choice. This is the precondition phase 2's roll-out depends on.
+**Depends on:** Nothing (first phase)
+**Requirements:** FRG-01, FRG-02
+**Success Criteria:**
+1. Setup detects the installed forge CLIs by PATH resolution through the
+   existing `lib/on-path.mjs` - `tea` (Forgejo/Gitea), `gh` (GitHub), `glab`
+   (GitLab) - and reports which are present. All three are present on the
+   development machine, so the multi-candidate case is the normal one, not the
+   edge: detecting several offers a choice rather than silently taking the
+   first.
+2. Both entry points are covered: `/cad-new-project` on a fresh directory and
+   `/cad-adopt` on an existing repository each reach this step, and an
+   already-configured repository is not re-asked.
+3. The user selects the provider and names the repository; nothing guesses.
+   Where `origin` already resolves, the existing remote classifier in
+   `issue-check.mjs` supplies the default and the user confirms rather than
+   retypes.
+4. The choice is persisted in Cadence config and every later forge call reads
+   it, so a repository that temporarily loses its remote does not silently
+   change behaviour.
+5. No provider detected, or none selected, refuses with a reason naming what
+   was looked for and a hint naming the install or the flag - the same
+   discipline `issue-check.mjs` already holds: no third-party stdout or stderr
+   reaches the envelope, and `redactUrl` covers credentials in URL position.
+6. Repository creation is driven through the selected CLI and is never
+   attempted without an explicit confirmation naming the provider, the owner
+   and the repository name that will be created.
+7. Full suite green; forge calls are tested against argv-recording stubs
+   injected by prepending to the child's PATH, the pattern `issue-check.mjs`
+   already uses, with no test-only override honoured in production (EXP-01).
+
+### Phase 2: CAPTURE is transient
+**Goal:** `.planning/CAPTURE.md` is a working buffer for the current phase and
+nothing else. Every item leaves it at phase close - resolved and closed, or
+written out as an issue on the repository's tracker. The file cannot
+accumulate, because its scope is one phase rather than the project.
+**Depends on:** Phase 1 (the resolved forge is where roll-out writes)
 **Requirements:** CAP-01, CAP-02, CAP-03
 **Success Criteria:**
-1. Phase close empties the walked sections: after the close step runs on a phase whose CAPTURE held items, `planning.mjs capture-sections` reports `0` bullets across `Todos`, `Seeds` and `Notes` for that phase, and every item that was there is accounted for as either closed or filed - none silently dropped.
-2. An item is RESOLVED by removal, never by annotation. The prose rule is stated in the triage reference, and a check fails when a walked bullet carries a re-verification annotation (the `KEPT <date>` / `recorded not fixed` shapes this repository already holds 12 of).
-3. Roll-out targets the tracker derived from the repository's own `origin` remote, verified against a Forgejo, a GitHub and a GitLab remote URL each resolving to their own API host. No host, org or username appears as a literal anywhere in the implementation - a grep for `jcrenshaw` and for `git.jcrenshaw.dev` over `cadence-core/` returns nothing outside test fixtures.
-4. The behaviour decided for OQ-1 is implemented and observable: on a repository with no usable tracker, phase close reports what it could not file, by name, with a next step - and does not silently drop the item or silently leave it in the file.
-5. `## Archive` is no longer part of the CAPTURE contract: it is absent from the template, and a CAPTURE.md still carrying one is reported by `/cad-health` rather than walked or ignored.
-6. `/cad-health` fails when the walked bullet count crosses a configured bound, so a roll-out that silently stops working surfaces at that bound instead of at 276. Verified by a fixture over the bound failing and one under it passing.
-7. Full suite green, and no `reason` token renamed: a diff of the literal `reason` strings in `cadence-core/bin/` before and after the phase is empty.
+1. Phase close empties the walked sections: after the close step runs on a
+   phase whose CAPTURE held items, `planning.mjs capture-sections` reports `0`
+   bullets across `Todos`, `Seeds` and `Notes` for that phase, and every item
+   is accounted for as either closed or filed - none silently dropped.
+2. An item is RESOLVED by removal, never by annotation. The prose rule is
+   stated in the triage reference, and a check fails when a walked bullet
+   carries a re-verification annotation (the `KEPT <date>` / `recorded not
+   fixed` shapes this repository already holds 12 of).
+3. Roll-out writes to the tracker phase 1 resolved, verified against Forgejo,
+   GitHub and GitLab. No host, org or username appears as a literal anywhere in
+   the implementation - a grep for `jcrenshaw` over `cadence-core/` returns
+   nothing outside test fixtures.
+4. A write that does not land - auth failure, offline, tracker unreachable -
+   REFUSES the close and leaves the item in place, reporting what could not be
+   filed and why. It never empties the file on a failed write, and never kills
+   an item because the network was down.
+5. `## Archive` is no longer part of the CAPTURE contract: absent from the
+   template, and a CAPTURE.md still carrying one is reported by `/cad-health`
+   rather than walked or ignored.
+6. `/cad-health` fails when the walked bullet count crosses a configured
+   bound, so a roll-out that silently stops working surfaces at that bound
+   instead of at 276. Verified by a fixture over the bound failing and one
+   under it passing.
+7. Full suite green, and no `reason` token renamed: a diff of the literal
+   `reason` strings in `cadence-core/bin/` before and after the phase is empty.
 
-### Phase 2: One spelling, one phase
+### Phase 3: One spelling, one phase
 **Goal:** A phase spelling that would be silently normalized is refused where it is written, and a phase directory whose name would collide with another phase is reported as drift.
-**Depends on:** Nothing (independent of phase 1; ordered second because it is the smaller change)
+**Depends on:** Nothing (independent of phases 1 and 2; ordered last because it is the smallest change)
 **Requirements:** SPL-01, SPL-02
 **Success Criteria:**
 1. `PHASE_DIR_NAME` rejects a zero-padded fraction: with `phases/1.01`, `phases/1.00` and `phases/2.0` on disk, `planning.mjs status` reports a `phase-dir-grammar` drift entry naming each, and names the legal directory it collides with when one is present. `phases/1.1`, `phases/1.10` and `phases/8` stay legal and produce no entry.

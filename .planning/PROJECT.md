@@ -195,15 +195,16 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v3.7.1 - the tracker is the record`, opened 2026-08-24.** Two phases.
-CAPTURE.md becomes a transient buffer for the phase in flight and the
-repository's own issue tracker becomes the record; the sub-phase spelling fix
-rides along as phase 2. Measured at the open: 276 walked bullets in 251,968
+**`v3.7.1 - the tracker is the record`, opened 2026-08-24.** Three phases.
+Phase 1 resolves a forge at project setup, phase 2 makes CAPTURE.md a transient
+buffer for the phase in flight with the repository's own issue tracker as the
+record, and the sub-phase spelling fix rides along as phase 3. Measured at the open: 276 walked bullets in 251,968
 bytes, read by `/cad-plan` on every planning pass, after a hand sweep to zero
 on 2026-08-08 that regrew in sixteen days. Ids seeded at the open: `CAP-01`,
-`CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`. Two open questions gate phase 1
-planning: what a repo with no usable tracker does, and how this repository's
-existing 276 items are dispositioned.
+`CAP-02`, `CAP-03`, `FRG-01`, `FRG-02`, `SPL-01`, `SPL-02`. Both open questions
+are resolved at the open: a forge is a precondition rather than an option, and
+this repository's existing 276 items are swept by hand once, outside the phase
+work.
 
 **`v3.7.0 - the refusal that names the next step` closed 2026-08-24.** Two
 phases, 36 commits off `v3.6.1`, three ids seeded at the open and all three

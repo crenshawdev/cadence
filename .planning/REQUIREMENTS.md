@@ -5,10 +5,23 @@
 
 ## Active
 
-`v3.7.1 - the tracker is the record` opened 2026-08-24, two phases, five ids
+`v3.7.1 - the tracker is the record` opened 2026-08-24, three phases, seven ids
 seeded at the open - the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
 
+- **FRG-01** - Cadence resolves a forge when it sets a project up, new or
+  adopted: it detects which forge CLIs are installed (`tea`, `gh`, `glab`)
+  through the existing `lib/on-path.mjs`, asks the user which provider to use
+  and what the repository is called, and persists that choice so a repository
+  that temporarily loses its remote does not silently change behaviour. All
+  three CLIs are present on the development machine, so offering a choice is
+  the normal case rather than the edge.
+- **FRG-02** - A forge is a PRECONDITION, not an option (OQ-1). `/cad-land`
+  offers MR and PR, which exist only on a forge; `git.integration_branch`
+  creates a branch for parallel work to merge into; `/cad-milestone` cuts and
+  tags a version. No provider detected or none selected refuses with a reason
+  naming what was looked for and a hint naming the install, under the
+  no-third-party-output discipline `issue-check.mjs` already holds.
 - **CAP-01** - `.planning/CAPTURE.md` is scoped to the phase in flight and
   empties at phase close. The item grammar has two states today, `- [ ]` and
   `- [x]`, and `[x]` means done, so a decision NOT to do something has no
