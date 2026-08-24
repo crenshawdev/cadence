@@ -91,12 +91,19 @@ export function isPlainObject(v) {
 }
 
 /**
- * Filesystem identity of a layer path, mirroring config.mjs's `fsIdentity` on
- * the write face: the realpath, else the realpath'd parent joined with the
- * basename (the file may not exist - an absent layer is ordinary here), else a
- * plain absolute resolve. That is what lets the comparison below see through a
- * symlink, a relative spelling, a `.`/`..` segment and a trailing slash alike,
- * rather than comparing two rendered strings.
+ * Filesystem identity of a layer path: the realpath, else the realpath'd parent
+ * joined with the basename (the file may not exist - an absent layer is
+ * ordinary here), else a plain absolute resolve. That is what lets the
+ * comparison below see through a symlink, a relative spelling, a `.`/`..`
+ * segment and a trailing slash alike, rather than comparing two rendered
+ * strings.
+ *
+ * EXPORTED for config.mjs's write face, which asks the identical "is this one
+ * file wearing both layer names" question before it refuses a repo-layer-only
+ * key at the user-global layer. That copy existed here once as `fsIdentity`
+ * inside config.mjs and was deleted with the risk floor (8063832d); a second
+ * copy is how the write face and the merge come to disagree about which file
+ * they are looking at.
  *
  * TOTAL, and never-matching for a non-string or EMPTY path: GLOBAL_CONFIG is
  * deliberately '' where homedir() throws, and '' must never match a real target
@@ -105,7 +112,7 @@ export function isPlainObject(v) {
  * @param {any} p
  * @returns {string|null}
  */
-function layerIdentity(p) {
+export function layerIdentity(p) {
   if (typeof p !== 'string' || p === '') return null;
   try { return realpathSync(p); } catch { /* absent - fall through */ }
   try { return join(realpathSync(dirname(p)), basename(p)); } catch { /* dir absent too */ }

@@ -66,6 +66,88 @@ test('set on a missing repo file refuses (only --global auto-creates)', () => {
   assert.equal(r.reason, 'read');
 });
 
+// --- a repo-layer-only key refused at the user-global layer (SCP-01) ---------
+
+// The shape every arm below asserts: the per-pair entry rides the existing
+// reason:"invalid" detail array (no new reason token), names the key, and names
+// the next step rather than only the refusal.
+function assertScopeRefusal(r, label) {
+  assert.equal(r.ok, false, label);
+  assert.equal(r.reason, 'invalid', `${label}: ${JSON.stringify(r)}`);
+  assert.equal(r.detail.length, 1, label);
+  assert.equal(r.detail[0].key, 'git.auto_close', label);
+  assert.match(r.detail[0].error, /--file/, label);     // the next step, not just the no
+  assert.match(r.detail[0].error, /authorize/, label);  // and WHY the layer cannot honour it
+  assert.equal(typeof r.hint, 'string', label);
+  assert.ok(r.hint.length > 0, label);
+}
+
+test('set --global refuses a repo-layer-only key and writes nothing', () => {
+  // #249: git.auto_close is honoured from the repo layer alone (its own purpose
+  // says so, and lib/repo-auto-close.mjs enforces it), but the refusal only
+  // arrived at LAND time - after the user had already written the value.
+  const gpath = join(dir, 'scope-global-refuse.json');
+  const r = run(['set', '--global', 'git.auto_close=true'], gpath);
+  assertScopeRefusal(r, '--global');
+  assert.equal(existsSync(gpath), false); // --global auto-creates, so this proves nothing was written
+});
+
+test('the refusal follows the resolved target FILE, not the --global flag', () => {
+  // --file <the global config's own path> returns global:false from optFile and
+  // wrote straight through a flag-only rule; the /./ spelling is what forced the
+  // realpath hardening the first time (8063832d).
+  const gpath = join(dir, 'scope-by-file.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'solo' }));
+  const before = readFileSync(gpath, 'utf8');
+  assertScopeRefusal(run(['set', '--file', gpath, 'git.auto_close=true'], gpath), '--file <global>');
+  assertScopeRefusal(
+    run(['set', '--file', join(dir, '.', 'scope-by-file.json'), 'git.auto_close=true'], gpath),
+    '--file <global-dir>/./config.json');
+  assert.equal(readFileSync(gpath, 'utf8'), before); // neither spelling touched it
+});
+
+test('the same repo-layer-only pair aimed at a REPO config is written', () => {
+  // The rule is about the LAYER, never about the key being unsettable.
+  const gpath = join(dir, 'scope-repo-global.json');
+  const repo = join(dir, 'scope-repo-target.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['set', '--file', repo, 'git.auto_close=true'], gpath);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(JSON.parse(readFileSync(repo, 'utf8')).git.auto_close, true);
+});
+
+test('a multi-pair global set carrying one marked key leaves the file byte-identical', () => {
+  // The scope check runs inside checkPairs, ahead of every read and every write
+  // in set(), so the acceptable pair beside it is not written either.
+  const gpath = join(dir, 'scope-atomic.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'solo' }, null, 2) + '\n');
+  const before = readFileSync(gpath, 'utf8');
+  const r = run(['set', '--global', 'git.auto_close=true', 'stakes=critical'], gpath);
+  assertScopeRefusal(r, 'multi-pair');
+  assert.equal(readFileSync(gpath, 'utf8'), before);
+});
+
+test('a marked key that is ALSO type-invalid reports the type, not the layer (D-11)', () => {
+  const gpath = join(dir, 'scope-type-first.json');
+  const r = run(['set', '--global', 'git.auto_close=nonsense'], gpath);
+  assert.equal(r.ok, false);
+  assert.equal(r.detail[0].key, 'git.auto_close');
+  assert.match(r.detail[0].error, /expected true or false/);
+  assert.doesNotMatch(r.detail[0].error, /--file/); // the type is wrong in EITHER layer
+});
+
+test('no "src": "repo" key is refused at the user-global layer', () => {
+  // The marker is repo_only, not src. 33 keys carry src:"repo" - stakes and
+  // granularity among them - and workflows/config.md tells the user to set those
+  // globally, so a rule keyed on src would refuse exactly the wrong set.
+  const gpath = join(dir, 'scope-src-repo-allowed.json');
+  const r = run(['set', '--global', 'stakes=critical', 'granularity=coarse'], gpath);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const written = JSON.parse(readFileSync(gpath, 'utf8'));
+  assert.equal(written.stakes, 'critical');
+  assert.equal(written.granularity, 'coarse');
+});
+
 test('validate --global reads the global file and reports the payload', () => {
   const gpath = join(dir, 'valid.json');
   writeFileSync(gpath, JSON.stringify({ stakes: 'shipped', granularity: 'fine' }));

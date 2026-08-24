@@ -22,7 +22,7 @@
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
+import { GLOBAL_CONFIG, layerIdentity, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
@@ -158,7 +158,14 @@ function validate(file) {
 }
 
 // Validate key=value pairs. Returns {pairs, errors}.
-function checkPairs(tokens) {
+//
+// `targetsGlobal` is the RESOLVED target layer, never a flag: the caller has
+// already asked whether the file it is about to write IS the user-global layer
+// (`set` below), so a `--file <that same path>` spelling reaches the scope
+// check exactly as `--global` does. `check` passes what its own `--global`
+// says, which is how the inspect face reports what the write face refuses.
+/** @param {string[]} tokens @param {boolean} [targetsGlobal] */
+function checkPairs(tokens, targetsGlobal) {
   const pairs = [];
   const errors = [];
   for (const tok of tokens) {
@@ -183,6 +190,31 @@ function checkPairs(tokens) {
     const value = parseToken(raw);
     const msg = checkValue(spec, value);
     if (msg) { errors.push({ key, error: msg, value }); continue; }
+    // AFTER checkValue, deliberately, and unlike the retired-key check above: a
+    // pair that is both out-of-scope and type-invalid reports the TYPE, because
+    // the type is wrong in either layer while the layer is only wrong in this
+    // one (D-11).
+    //
+    // The marker is `repo_only`, never `src`. `src: "repo"` means "settable in
+    // either layer" and 33 keys carry it, `stakes` and `granularity` among them
+    // - the keys workflows/config.md tells the user to set globally - so keying
+    // a layer refusal on `src` would refuse exactly the wrong set. `repo_only`
+    // asks the narrower question config.schema.json's _meta.note states: would a
+    // user-global value AUTHORIZE a change to a repository that never opted in.
+    // Read off the SCHEMA object the dispatch loaded, through the same
+    // `Object.hasOwn` guard `spec` came through six lines up - never a
+    // hand-maintained key list, so a second marked key is a schema edit and no
+    // line of this rule moves.
+    if (targetsGlobal && spec.repo_only === true) {
+      errors.push({
+        key,
+        error: `"${key}" can only be set in a repository's own config layer: a `
+          + 'user-global value cannot authorize a change to the repository that '
+          + 'has to honour it - set it with --file <repo config> instead, e.g. '
+          + '--file .planning/config.json',
+      });
+      continue;
+    }
     pairs.push({ key, value });
   }
   return { pairs, errors };
@@ -230,7 +262,24 @@ function setInto(obj, dotted, value) {
 // `create` (the --global path) starts from an empty config and makes the parent
 // dir if the file does not exist yet; a corrupt existing file still fails.
 function set(file, tokens, create) {
-  const { pairs, errors } = checkPairs(tokens);
+  // WHICH LAYER this write lands in, resolved off the target FILE and not off
+  // the flag (D-04). `create` is optFile's `global`, so `--global` is direct;
+  // the second arm is `--file <the user-global config's own path>`, which
+  // returns `global:false` and wrote straight through a flag-only rule.
+  // Identity, not string equality: `--file <global-dir>/./config.json` is what
+  // forced the realpath hardening the first time (8063832d), and a symlink, a
+  // relative spelling or a trailing slash open the same door. It is
+  // `layerIdentity` from the merge lib rather than a local copy, because that
+  // is the same "one file, both layers" question the read face answers and two
+  // copies of it drift. An UNRESOLVABLE identity (null) equals nothing,
+  // including another null, and GLOBAL_CONFIG is deliberately '' where
+  // homedir() throws - '' must never match a real target.
+  const fileId = layerIdentity(file);
+  const targetsGlobal = create
+    || (Boolean(GLOBAL_CONFIG) && fileId !== null && fileId === layerIdentity(GLOBAL_CONFIG));
+  // Ahead of every read and every write below, so a multi-pair set carrying one
+  // marked key leaves the target file untouched.
+  const { pairs, errors } = checkPairs(tokens, targetsGlobal);
   if (errors.length) fail('invalid', errors,
     'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts');
   let cfg;
