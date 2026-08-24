@@ -38,16 +38,24 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 - **OQ-2 - RESOLVED 2026-08-24: one manual sweep.** This repository's existing
   276 walked items are cleaned up by hand, once, outside the phase work.
 
-- **OQ-3 (blocks phase 2 planning): issue volume on a public tracker.** Filing
-  at each deferral means every review gate can put issues on a repository
-  strangers browse. The 2026-08-24 sweep filed 163 in one run and they were all
-  closed again within the hour, because a small tool showing 163 open issues
-  reads as a project in trouble and costs adoption - the count on the landing
-  page is the signal, and labels and milestones do not change it. Most were
-  also not user-facing defects: test-coverage gaps, ledger drift, hardening
-  notes. Decide before planning: whether a deferral files by default at all,
-  whether it asks, whether low-severity classes are held back, and whether the
-  default target is the public tracker or something the user opts into.
+- **OQ-3 - RESOLVED 2026-08-24: a deferral ASKS, and a decline is final.**
+  Nothing files automatically. When a gate defers findings the user is asked,
+  and a finding the user declines is DROPPED - not parked, not annotated, not
+  written to CAPTURE, not carried to the next phase. There is no long-living
+  residue by construction, which is what makes "CAPTURE cannot accumulate" true
+  rather than aspirational.
+  - The ask is BATCHED per gate fire, not per finding: one prompt listing what
+    the gate deferred, the user picks which become issues. A gate that defers
+    fifteen findings must not produce fifteen prompts - that friction is what
+    made the old silent-write path attractive in the first place.
+  - Severity classes need no separate rule (the original sub-question 2): the
+    user sees each finding before anything is written, so there is no automatic
+    stream for a severity filter to hold back.
+  - The target is simply the forge phase 1 resolved (sub-question 3); the user
+    is deciding per fire, so no separate private staging tracker is needed.
+  - The cost of a decline is accepted and stated: the finding is gone, and
+    re-finding it means the next review raising it again. That is the intended
+    trade against a file nobody reads.
 
 ## Phases
 
@@ -101,12 +109,14 @@ routed into it.
 **Depends on:** Phase 1 (the resolved forge is where a deferral writes)
 **Requirements:** CAP-01, CAP-02, CAP-03
 **Success Criteria:**
-1. **A deferral files an issue at the deferral.** When a gate defers a finding
-   - the blocking arm's below-blocker/high remainder, the adjudicated arm's
-   non-survivors, any `recorded not fixed` disposition - the issue is created
-   in that same step, and the finding is NOT written into CAPTURE. Verified by
-   running a gate that defers and asserting an issue exists before the phase
-   closes, with CAPTURE unchanged.
+1. **A deferral ASKS, in that same step, and never writes to CAPTURE.** When a
+   gate defers findings - the blocking arm's below-blocker/high remainder, the
+   adjudicated arm's non-survivors, any `recorded not fixed` disposition - the
+   user is asked once for that fire, with the deferred findings listed. Accepted
+   findings become issues immediately; declined findings are DROPPED. Verified
+   by running a gate that defers and asserting: an issue exists for each
+   accepted finding before the phase closes, no artifact anywhere holds a
+   declined one, and CAPTURE is unchanged either way.
 2. Phase close ASSERTS empty rather than performing the roll-out:
    `planning.mjs capture-sections` reports `0` bullets across `Todos`, `Seeds`
    and `Notes`, and a non-empty walked section at close is a reported problem
@@ -130,9 +140,8 @@ routed into it.
    bound, so a deferral path that silently stops filing surfaces at that bound
    instead of at 235. Verified by a fixture over the bound failing and one
    under it passing.
-8. The answer decided for OQ-3 is implemented: a deferral cannot put an
-   unbounded stream of issues on a public tracker without the user having
-   agreed to it.
+8. The ask is BATCHED per gate fire: a gate deferring fifteen findings
+   produces ONE prompt, not fifteen. Verified against a multi-finding fire.
 9. Full suite green, and no `reason` token renamed: a diff of the literal
    `reason` strings in `cadence-core/bin/` before and after the phase is empty.
 

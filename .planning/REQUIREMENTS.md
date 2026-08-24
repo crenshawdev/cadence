@@ -32,7 +32,8 @@ Traceability row as its phase is planned; rows are never hand-populated here.
   `KEPT <date>` / `recorded not fixed` annotations, 12 of them in this
   repository - so adjudicating an item made it longer rather than removing it.
   Resolution is removal, never annotation.
-- **CAP-02** - Anything worth keeping beyond the phase becomes an issue on the
+- **CAP-02** - A deferral ASKS (batched per gate fire) and a declined finding
+  is DROPPED, with no residue anywhere. Accepted findings become an issue on the
   repository's OWN tracker, derived from its `origin` remote (Forgejo, GitHub,
   GitLab) with no host, org or username hardcoded. This project's own history
   already points there - CAPTURE bullets cite `#238`, `#249`, `#69`, `#29`. A
