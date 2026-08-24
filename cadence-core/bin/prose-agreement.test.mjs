@@ -364,7 +364,13 @@ test('the lockfile lease: both contracts name the same lockfiles and the reason 
   // than telling a planner to avoid a code the seam no longer returns.
   const planner = doc('skills', 'cad-planner-contract', 'SKILL.md');
   const checker = doc('skills', 'cad-plan-checker-contract', 'SKILL.md');
-  const seam = doc('cadence-core', 'bin', 'planning.mjs');
+  // The EMITTING site, which phase 4 moved out of planning.mjs into the command
+  // module that owns the subcommand. Read the emitter and not the entry file:
+  // planning.mjs now only dispatches, so matching there would have gone red
+  // announcing that lease-check stopped emitting the reason - a defect that did
+  // not happen - and matching anywhere under the tree would stop pinning the
+  // quote to the emitter, which is the whole of this row.
+  const seam = doc('cadence-core', 'bin', 'planning', 'lease-check.mjs');
 
   assert.match(seam, /reason: 'undeclared-files'/,
     'lease-check no longer emits undeclared-files - both contracts quote that reason');
