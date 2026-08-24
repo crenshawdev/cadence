@@ -9,20 +9,20 @@
 seeded at the open - the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
 
-- **FRG-01** - Cadence resolves a forge when it sets a project up, new or
+- **FRG-01**: Cadence resolves a forge when it sets a project up, new or
   adopted: it detects which forge CLIs are installed (`tea`, `gh`, `glab`)
   through the existing `lib/on-path.mjs`, asks the user which provider to use
   and what the repository is called, and persists that choice so a repository
   that temporarily loses its remote does not silently change behaviour. All
   three CLIs are present on the development machine, so offering a choice is
   the normal case rather than the edge.
-- **FRG-02** - A forge is a PRECONDITION, not an option (OQ-1). `/cad-land`
+- **FRG-02**: A forge is a PRECONDITION, not an option (OQ-1). `/cad-land`
   offers MR and PR, which exist only on a forge; `git.integration_branch`
   creates a branch for parallel work to merge into; `/cad-milestone` cuts and
   tags a version. No provider detected or none selected refuses with a reason
   naming what was looked for and a hint naming the install, under the
   no-third-party-output discipline `issue-check.mjs` already holds.
-- **CAP-01** - A finding leaves `.planning/CAPTURE.md` at the moment a gate
+- **CAP-01**: A finding leaves `.planning/CAPTURE.md` at the moment a gate
   DEFERS it, not at phase close - the deferral is what files it, so the user
   sees a finding when it is raised rather than in a batch. Phase close only
   ASSERTS the file is empty. The item grammar has two states today, `- [ ]` and
@@ -32,7 +32,7 @@ Traceability row as its phase is planned; rows are never hand-populated here.
   `KEPT <date>` / `recorded not fixed` annotations, 12 of them in this
   repository - so adjudicating an item made it longer rather than removing it.
   Resolution is removal, never annotation.
-- **CAP-02** - A deferral ASKS (batched per gate fire) and a declined finding
+- **CAP-02**: A deferral ASKS (batched per gate fire) and a declined finding
   is DROPPED, with no residue anywhere. Accepted findings become an issue on the
   repository's OWN tracker, derived from its `origin` remote (Forgejo, GitHub,
   GitLab) with no host, org or username hardcoded. This project's own history
@@ -40,24 +40,24 @@ Traceability row as its phase is planned; rows are never hand-populated here.
   `## Archive` heading inside CAPTURE is not the record and leaves the
   contract: this repository has 185 such bullets proving that moving items
   within the file fixes the recall walk and nothing about the 251,968 bytes.
-- **CAP-03** - A bound on the walked bullet count that fails loud in
+- **CAP-03**: A bound on the walked bullet count that fails loud in
   `/cad-health`. The 2026-08-08 sweep took the queue to zero and it regrew to
   276 walked items in sixteen days, because no workflow drains the file:
   `workflows/milestone.md` never mentions CAPTURE and the only two workflows
   that reference it, `plan.md` and `execute.md`, are readers. A sweep without a
   bound restarts the clock.
-- **SPL-01** - A `phases/` directory whose name would be normalized to a
+- **SPL-01**: A `phases/` directory whose name would be normalized to a
   DIFFERENT phase is reported as `phase-dir-grammar` drift. `PHASE_DIR_NAME`
   (`cadence-core/bin/planning.mjs:343`) guards the integer part with a leading
   `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are
   all silently legal (verified 2026-08-24) while the detail
   `phaseDirGrammarDrift` prints says "no zero-padding".
-- **SPL-02** - Every `planning.mjs` command that resolves `--phase` to a
+- **SPL-02**: Every `planning.mjs` command that resolves `--phase` to a
   `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal`
   (`planning.mjs:278`). It is wired at 2 of roughly 28 `requirePhaseArg`
   callsites today, `cursor set` (`:612`) and `seed-reqs` (`:2586`); the rest
   take the normalized number and never mention the spelling they discarded.
-- **LOD-02** - `cadence-core/bin/planning.mjs` is split so that no dispatch pays
+- **LOD-02**: `cadence-core/bin/planning.mjs` is split so that no dispatch pays
   a whole-file read to reach one command. Measured 2026-08-24: the file is
   417,009 chars (~104k tokens, 7,853 lines), and of those, 6,033 lines are the
   32 `cmd*` handlers while only 1,574 are shared top-level helpers, so the
