@@ -3,11 +3,16 @@
 // from under a citation fails this suite instead of quietly sending the next
 // reader to the wrong code.
 //
-// TWO GRAMMARS (D-04, phase 4 plan 3). Grammar one, checked here: inline
+// TWO GRAMMARS (D-04, phase 4 plan 3). Grammar one: inline
 // `` `<path>planning.mjs:<line>` `` or `` `<path>planning/<module>.mjs:<line>` ``
-// prose citations, a bare range (`123-456`) included. Grammar two -
-// `.planning/DOCS-CLAIMS.md`'s separate line-range table COLUMN, invisible to
-// a grep for grammar one - is added in phase 4 plan 3's task 2.
+// prose citations, a bare range (`123-456`) included. Grammar two:
+// `.planning/DOCS-CLAIMS.md`'s claim table carries its own `doc` and `line`
+// COLUMNS, invisible to a grep for grammar one's inline form, and needs its
+// own arm rather than a wider regex over the same pattern - only the rows
+// whose `doc` cell names this seam (`cadence-core/bin/planning.mjs` or, after
+// the split, `cadence-core/bin/planning/<module>.mjs`) are in scope; a claim
+// about `lib/trace.mjs` or `self-verify.mjs` is a different seam's record and
+// stays out of this census.
 //
 // THE GUARDED SET is the surfaces that INSTRUCT: `skills/`,
 // `cadence-core/workflows/`, `cadence-core/references/`, and the `## Active`
@@ -169,4 +174,108 @@ test('grammar one: each pinned citation resolves to the code it names', () => {
       `${c.surface}'s citation "${c.citation}" is pinned to carry \`${c.symbol}\` at ${c.file}:${c.start}, `
       + `but that line reads: ${JSON.stringify(lineText)}`);
   }
+});
+
+// --- grammar two: DOCS-CLAIMS.md's own doc/line columns --------------------
+
+/**
+ * Every row of `.planning/DOCS-CLAIMS.md`'s claim table (both Run 1's and Run
+ * 2's - the file carries two), as `{id, doc, line}`. Parsed from the FIRST
+ * three cells only, by finding each cell boundary in turn rather than
+ * splitting the whole line on `|`: 22 claim/resolution cells in this file
+ * carry an escaped `\|`, which a naive `line.split('|')` would cut on,
+ * shredding every column after it. The claim/verdict/resolution/run cells are
+ * never read here - this census pins LOCATION, not content.
+ */
+function docsClaimsRows() {
+  const text = readFileSync(join(ROOT, '.planning/DOCS-CLAIMS.md'), 'utf8');
+  const rowRe = /^\|\s*([A-Za-z][A-Za-z0-9-]*)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|/gm;
+  const out = [];
+  let m;
+  while ((m = rowRe.exec(text))) {
+    if (m[2] === 'doc' && m[3] === 'line') continue; // the header row itself
+    out.push({ id: m[1], doc: m[2], line: m[3] });
+  }
+  return out;
+}
+
+/** This seam's `doc` cell, before or after the split: `planning.mjs` itself,
+ * or a module under `planning/`. */
+function namesThisSeam(doc) {
+  return doc === 'cadence-core/bin/planning.mjs' || doc.startsWith('cadence-core/bin/planning/');
+}
+
+/**
+ * The pinned set for grammar two. One row per `DOCS-CLAIMS.md` id whose `doc`
+ * cell names this seam, carrying the file and line/range the row's `line`
+ * cell must resolve to and the SYMBOL its first line must carry - the same
+ * rule grammar one's table states, applied to a different column.
+ */
+const DOCS_CLAIMS_CITATIONS = [
+  {
+    id: 'EXECUTE-10',
+    doc: 'cadence-core/bin/planning/lease-check.mjs',
+    line: '331-334',
+    start: 331,
+    end: 334,
+    symbol: "'undeclared-files'",
+  },
+  {
+    id: 'EXECUTE-22',
+    doc: 'cadence-core/bin/planning/trace.mjs',
+    line: '197-199',
+    start: 197,
+    end: 199,
+    symbol: 'TRACE_IGNORE_LINE',
+  },
+  {
+    id: 'VERIFY-11',
+    doc: 'cadence-core/bin/planning/uat.mjs',
+    line: '113-117',
+    start: 113,
+    end: 117,
+    symbol: 'fields_version',
+  },
+  {
+    id: 'VERIFY-12',
+    doc: 'cadence-core/bin/planning/criteria-coverage.mjs',
+    line: '57-59',
+    start: 57,
+    end: 59,
+    symbol: 'LEGACY_REASON',
+  },
+];
+
+test('grammar two: every this-seam DOCS-CLAIMS row has exactly one pinned row', () => {
+  const found = docsClaimsRows().filter((r) => namesThisSeam(r.doc));
+  const foundKeys = found.map((r) => `${r.id}::${r.doc}::${r.line}`).sort();
+  const declaredKeys = DOCS_CLAIMS_CITATIONS.map((r) => `${r.id}::${r.doc}::${r.line}`).sort();
+  assert.deepEqual(foundKeys, declaredKeys,
+    "every DOCS-CLAIMS.md row whose doc cell names planning.mjs or a planning/ module must be exactly"
+    + ' the rows DOCS_CLAIMS_CITATIONS declares - an extra row is unpinned, a missing one is a dead row');
+});
+
+test('grammar two: each pinned row resolves to the code it names', () => {
+  assert.ok(DOCS_CLAIMS_CITATIONS.length >= 4, `only ${DOCS_CLAIMS_CITATIONS.length} rows declared`);
+  for (const c of DOCS_CLAIMS_CITATIONS) {
+    const lines = readFileSync(join(ROOT, c.doc), 'utf8').split('\n');
+    const lineText = lines[c.start - 1];
+    assert.ok(typeof lineText === 'string',
+      `DOCS-CLAIMS.md's ${c.id} points at ${c.doc}:${c.start}, past the end of the file`);
+    assert.ok(lineText.includes(c.symbol),
+      `DOCS-CLAIMS.md's ${c.id} is pinned to carry \`${c.symbol}\` at ${c.doc}:${c.start}, `
+      + `but that line reads: ${JSON.stringify(lineText)}`);
+  }
+});
+
+test('the census reports how many citations each grammar checked', () => {
+  // A census whose arm silently matched zero is a census that can be emptied
+  // without anyone noticing (D-13's self-claim class, applied to itself).
+  const grammarOneCount = extractGrammarOne().length;
+  const grammarTwoCount = docsClaimsRows().filter((r) => namesThisSeam(r.doc)).length;
+  console.log(`citation census: grammar one (inline planning.mjs:<line> citations on a guarded`
+    + ` surface) checked ${grammarOneCount}; grammar two (DOCS-CLAIMS.md rows naming this seam)`
+    + ` checked ${grammarTwoCount}.`);
+  assert.ok(grammarOneCount > 0 && grammarTwoCount > 0,
+    'both grammars must have matched at least one live citation');
 });
