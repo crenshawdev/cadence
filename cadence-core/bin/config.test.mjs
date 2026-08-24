@@ -825,6 +825,64 @@ test('CADENCE_CONFIG_SCHEMA without the sentinel is ignored; `keys` is the shipp
   assert.deepEqual(Object.keys(opened.keys), ['not.a.real.key']);
 });
 
+// --- the refused set is DERIVED from the marker, not from a key name --------
+
+test('SCP-01: a fixture schema marking a DIFFERENT key refuses that key', () => {
+  // AC5. Both fixture keys are ordinary bools the shipped schema has never
+  // held, so a rule written against `git.auto_close` by name passes nothing
+  // here; the only difference between the two is the marker. runWithSchema sets
+  // CADENCE_TEST_SEAM as well as CADENCE_CONFIG_SCHEMA - without the sentinel
+  // the override is ignored silently and this would pass against the shipped
+  // schema (see the gate test above).
+  const fixture = join(dir, 'repo-only-derivation-schema.json');
+  const body = JSON.stringify({
+    _meta: { note: 'fixture: exactly one key carries the marker' },
+    keys: {
+      'granularity': { type: 'bool', default: false, repo_only: true, purpose: 'the marked one' },
+      'stakes': { type: 'bool', default: false, purpose: 'the unmarked sibling' },
+    },
+  });
+  assert.doesNotMatch(body, /auto_close/); // the assertion is about the MARKER, never the name
+  writeFileSync(fixture, body);
+
+  const refused = JSON.parse(runWithSchema(['set', '--global', 'granularity=true'], fixture).stdout);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'invalid');
+  assert.equal(refused.detail.length, 1);
+  assert.equal(refused.detail[0].key, 'granularity');
+  assert.match(refused.detail[0].error, /--file/);
+  assert.match(refused.detail[0].error, /authorize/);
+
+  // The unmarked sibling is accepted at the SAME layer, so what refuses is the
+  // marker and not the layer. Asked through `check`, whose scope rule is the
+  // same call, so an accepted fixture pair leaves no file behind for the next
+  // test to inherit.
+  assert.deepEqual(
+    JSON.parse(runWithSchema(['check', '--global', 'stakes=true'], fixture).stdout), { ok: true });
+  // ...and the marked one refuses through that face with the same entry.
+  const inspected = JSON.parse(runWithSchema(['check', '--global', 'granularity=true'], fixture).stdout);
+  assert.deepEqual(inspected.detail[0], refused.detail[0]);
+  // The refused --global set auto-creates nothing: no write happened at all.
+  assert.equal(existsSync(join(dir, 'no-global-schema.json')), false);
+});
+
+test('SCP-01: exactly one SHIPPED key carries the marker, and `src` never implies it', () => {
+  // AC4's negative control, derived in-process rather than by 33 subprocess
+  // runs: the property is about the SCHEMA, and each subprocess would only
+  // re-prove the rule the test above pins.
+  const shipped = JSON.parse(readFileSync(join(dirname(CONFIG), '..', 'config.schema.json'), 'utf8')).keys;
+  assert.deepEqual(Object.keys(shipped).filter((k) => shipped[k].repo_only === true), ['git.auto_close']);
+
+  // `src: "repo"` means "settable in either layer" and 33 keys carry it -
+  // `stakes` and `granularity` among them, which workflows/config.md tells the
+  // user to set globally - so no key may inherit the refusal from it.
+  const srcRepo = Object.keys(shipped).filter((k) => shipped[k].src === 'repo');
+  for (const k of ['stakes', 'granularity', 'git.auto_close']) {
+    assert.ok(srcRepo.includes(k), `${k} carries src:"repo"`);
+  }
+  assert.deepEqual(srcRepo.filter((k) => shipped[k].repo_only !== undefined), ['git.auto_close']);
+});
+
 // --- model.effort.<role>: the per-role start rung, refused by key (RNG-02) ---
 
 test('check: a rung the role HAS is accepted', () => {
