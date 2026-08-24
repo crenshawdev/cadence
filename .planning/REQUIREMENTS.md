@@ -48,14 +48,15 @@ Traceability row as its phase is planned; rows are never hand-populated here.
   bound restarts the clock.
 - **SPL-01**: A `phases/` directory whose name would be normalized to a
   DIFFERENT phase is reported as `phase-dir-grammar` drift. `PHASE_DIR_NAME`
-  (`cadence-core/bin/planning.mjs:343`) guards the integer part with a leading
+  (`cadence-core/bin/planning/status.mjs:28`) guards the integer part with a leading
   `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are
   all silently legal (verified 2026-08-24) while the detail
   `phaseDirGrammarDrift` prints says "no zero-padding".
 - **SPL-02**: Every `planning.mjs` command that resolves `--phase` to a
   `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal`
-  (`planning.mjs:278`). It is wired at 2 of roughly 28 `requirePhaseArg`
-  callsites today, `cursor set` (`:612`) and `seed-reqs` (`:2586`); the rest
+  (`planning/core.mjs:77`). It is wired at 2 of roughly 28 `requirePhaseArg`
+  callsites today, `cursor set` (`planning/cursor-set.mjs`, `:42`) and
+  `seed-reqs` (`planning/seed-reqs.mjs`, `:28`); the rest
   take the normalized number and never mention the spelling they discarded.
 - **LOD-02**: `cadence-core/bin/planning.mjs` is split so that no dispatch pays
   a whole-file read to reach one command. Measured 2026-08-24: the file is
