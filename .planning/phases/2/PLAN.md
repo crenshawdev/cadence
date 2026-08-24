@@ -10,6 +10,7 @@ files:
   - cadence-core/bin/config.test.mjs
   - cadence-core/references/config-catalog.md
   - cadence-core/bin/weight-budgets.json
+  - cadence-core/bin/arg-contract.test.mjs
 ---
 
 # Phase 2: A repo-scoped key refuses at the layer that cannot honour it - Plan
