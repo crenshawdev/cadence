@@ -195,20 +195,43 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v3.7.0 - the refusal that names the next step` opened 2026-08-23.** Two
-phases, three ids seeded - `HNT-01`, `HNT-02` (#238) and `SCP-01` (#249). The
-theme: Cadence states a failure in its own vocabulary and never states the
-remedy. Measured at the open across `cadence-core/bin/`, tests excluded, 186
-sites set a literal `reason` and 13 set a literal `hint`, all 13 of them in
-`planning.mjs` or `skim.mjs`. Phase 1 writes the missing hints and adds the
-self-verify check that keeps them; phase 2 makes `config.mjs set` refuse a
-repo-scoped key at the user-global layer, reading the schema's `"src": "repo"`
-marker across all 33 keys that carry it. The two phases share no files and carry
-no ordering.
+No cycle open. `/cad-phase add` opens the next one.
 
-#238 was filed against `v3.6.1` and reassigned to this cycle on 2026-08-23: a
-theme with a thesis, not a patch-cycle defect. Its own deferred siblings - the
-ask-user register rail and the done-step report field lists - stay deferred.
+**`v3.7.0 - the refusal that names the next step` closed 2026-08-24.** Two
+phases, 36 commits off `v3.6.1`, three ids seeded at the open and all three
+traced to a verified phase: `HNT-01`, `HNT-02` (#238) and `SCP-01` (#249).
+`/cad-audit` PASS on both arms - 3 of 3 requirements traced, 13 of 13
+acceptance criteria covered. Manifest bumped to `3.7.0`.
+
+The theme: Cadence stated a failure in its own vocabulary and never stated the
+remedy. Phase 1 wrote hints at every in-scope refusal under `cadence-core/bin/`
+- 243 sites, 0 hintless, down from 215 hintless when the check went in - and
+added `self-verify.mjs` check 22 (`refusal-hints`), which is what makes it a
+property of the tree rather than a number that drifts back. Phase 2 made
+`config.mjs set` refuse a repo-scoped key at the user-global layer at WRITE
+time, reading a new `repo_only` schema marker.
+
+One premise was disproved mid-cycle and is recorded rather than quietly
+dropped: the open assumed `"src": "repo"` was the layer-scope marker and that
+the refusal would cover all 33 keys carrying it. The schema's own legend
+defines `"src": "repo"` as "settable in either layer", so phase 2 shipped a new
+`repo_only` field instead, carried by one key today (CONTEXT D-01). The
+derivation off a schema marker, not the count, was what the criterion wanted.
+
+Shipped requirement rows live under `## Shipped` in REQUIREMENTS.md; the
+narrative is the `3.7.0` CHANGELOG entry; the phase residue - SUMMARY
+deviations, UAT items, CONTEXT decisions, 41 rows - is in `.planning/ARCHIVE.md`
+under this label, which is what `recall` reads now that the phase directories
+are pruned.
+
+Outstanding. The merge and the release tag are `/cad-land`'s, cut on the pulled
+base after the merge confirms. One accepted limitation ships with it: phase 2's
+scope check resolves layer identity from a pathname and re-resolves that same
+pathname for the read and the write, so a symlink swap in that window defeats
+the refusal. Raised by the blocking risk-surface gate, confirmed by the phase
+verifier, explicitly overridden on the record, and queued rather than fixed.
+#238's own deferred siblings - the ask-user register rail and the done-step
+report field lists - stay deferred.
 
 **`v3.6.1 - the gaps v3.6.0 named` closed 2026-08-23.** A patch cycle over the
 three gaps the `v3.6.0` changelog stated about its own work, and nothing else.

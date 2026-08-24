@@ -5,20 +5,16 @@
 
 ## Active
 
-Committed scope for **`v3.7.0 - the refusal that names the next step`**, opened
-2026-08-23 from the tracker's #238 and #249. #238 was filed 2026-08-23 against
-`v3.6.1` and reassigned here the same day: it is a named theme, not a defect.
-Ids are seeded here at the open, the practice `v3.5.7` established. `/cad-plan`
-seeds each Traceability row as its phase is planned; rows are never
-hand-populated here.
+No cycle open. `/cad-phase add` opens the next one, and ids are seeded here at
+that open - the practice `v3.5.7` established. `/cad-plan` seeds each
+Traceability row as its phase is planned; rows are never hand-populated here.
 
-
-Explicitly out of scope: no `reason` token string changes (tests and callers
-match them), no behavior change in phase 1, and no rewrite of model-facing
-prose - `workflows/plan.md` sits at its 22,638 B budget with zero headroom. The
-two accessibility gaps #238 names as deferred stay deferred: the ask-user
-register rail is a seam rule rather than a code change, and the done-step report
-field lists are model-facing.
+`v3.7.0 - the refusal that names the next step` closed 2026-08-24. Its three
+ids - `HNT-01`, `HNT-02` (#238) and `SCP-01` (#249) - are under `## Shipped`
+with the rest of this project's delivered scope. The two accessibility gaps
+#238 names as deferred stay deferred: the ask-user register rail is a seam rule
+rather than a code change, and the done-step report field lists are
+model-facing.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted, and `BCH-01` stays in `## Deferred`
