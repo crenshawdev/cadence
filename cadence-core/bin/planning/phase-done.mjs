@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { fail, ok, read } from './core.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
-  atomicWrite, parseRequirements, setPhaseBox, setReqStatus
+  atomicWrite, parseRequirements, setPhaseBox, setReqStatus,
 } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';

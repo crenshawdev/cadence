@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { fail, ok, phaseSpellingRefusal, read } from './core.mjs';
 import {
   CLOSED_CYCLE_NAME, CURSOR_STATUSES, atomicWrite, classifyPhaseList, parseCursor,
-  renderCursor
+  renderCursor,
 } from '../lib/planning-files.mjs';
 import { requireCursorNumber, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
