@@ -20,7 +20,10 @@
     "create_tag": true,
     "on_land_cleanup": true,
     "issue_check": true,
-    "auto_close": false
+    "auto_close": false,
+    "forge_provider": null,
+    "forge_repo": null,
+    "forge_host": null
   },
   "planning": { "commit_docs": true },
   "memory": { "backend": "builtin" },

@@ -142,6 +142,9 @@ purpose test runs against the reach the author just replaced.
 | `git.create_tag` | universal | `skills/cad-land/SKILL.md` - the release tag cut in its cleanup step, on the pulled base after the merge confirms (tag-after-merge); no other site reads it |
 | `git.on_land_cleanup` | universal | `bin/land-cleanup.mjs` - return, pull, reap after a merge |
 | `git.issue_check` | universal | `bin/issue-check.mjs` - the read-only tracker report `/cad-land` step 1 prints |
+| `git.forge_provider` | universal | `bin/forge.mjs` `detect` - the setup step reads it back to decide whether the forge question is already answered; `bin/issue-check.mjs` - the provider row the tracker report is made against, in place of classifying the origin URL |
+| `git.forge_repo` | universal | `bin/forge.mjs` `detect` - the persisted slug the setup step reads back; `bin/issue-check.mjs` - the `--repo` selector the tracker report addresses |
+| `git.forge_host` | universal | `bin/forge.mjs` `detect` - a `forgejo` record is not complete without it, so the setup step re-asks the instance host alone; `bin/issue-check.mjs` - turned into the `tea` login NAME the call is made under |
 | `git.auto_close` | repo config layer only for the unattended publish | `bin/git-publish.mjs` `publish` AND `authorized` read the repo layer alone, through `bin/lib/repo-auto-close.mjs` - a user-global value authorizes no push (D-08) and no `glab mr create`, which `skills/cad-land/SKILL.md` step 3(b) consults `authorized` before, since on GitLab the create is itself the publish; `bin/land-cleanup.mjs` gate, `skills/cad-land/SKILL.md` and `cadence-core/workflows/milestone.md` read the MERGED value, because the triage ask and the gate's halt are a matched pair and must agree |
 | `planning.commit_docs` | universal | `references/git-guard.md` and `workflows/task.md` - whether `.planning/` docs are committed |
 | `memory.backend` | universal | `bin/planning.mjs recall` - `builtin` BM25 or `none` |
