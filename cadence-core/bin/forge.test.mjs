@@ -364,14 +364,18 @@ function calls(log) {
 
 const argvLog = () => join(mkdtempSync(join(tmpdir(), 'cad-fg-log-')), 'argv');
 
-test('create: the github arm records exactly the pinned argv', () => {
-  // AC6, against a stub that records what it was called with - the only form
+test('create: the github arm records the pinned argv, then wires origin itself', () => {
+  // AC6, against stubs that record what they were called with - the only form
   // of this assertion that survives a change to how the seam composes the call.
+  // `gh`'s pinned argv carries no `--source`, so it wires no remote and the
+  // seam runs the `git remote add` after it, in that order.
   const log = argvLog();
   const dir = planningRoot();
+  const url = 'https://github.com/o/r.git';
   const { status, envelope } = run(
-    ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed', '--dir', dir],
-    { stubs: ['gh'], dir, argvLog: log },
+    ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed',
+      '--remote-url', url, '--dir', dir],
+    { stubs: ['gh', 'git'], dir, argvLog: log },
   );
   assert.equal(status, 0);
   assert.equal(envelope.ok, true);
@@ -379,7 +383,11 @@ test('create: the github arm records exactly the pinned argv', () => {
   assert.equal(envelope.owner, 'o');
   assert.equal(envelope.repo, 'o/r');
   assert.equal(envelope.visibility, 'private');
-  assert.deepEqual(calls(log), ['gh repo create o/r --private']);
+  assert.equal(envelope.remote_wired, true);
+  assert.deepEqual(calls(log), [
+    'gh repo create o/r --private',
+    `git -C ${dir} remote add origin ${url}`,
+  ]);
 });
 
 test('create: the gitlab arm records its own grammar, --remoteName and all', () => {
@@ -387,21 +395,29 @@ test('create: the gitlab arm records its own grammar, --remoteName and all', () 
   const dir = planningRoot();
   const { envelope } = run(
     ['create', '--provider', 'gitlab', '--repo', 'g/sub/r', '--confirmed', '--dir', dir],
-    { stubs: ['glab'], dir, argvLog: log },
+    { stubs: ['glab', 'git'], dir, argvLog: log },
   );
   assert.equal(envelope.ok, true);
+  assert.equal(envelope.remote_wired, true);
+  // The one row that wires its own: no `git` line at all, and it is never asked
+  // for a --remote-url.
   assert.deepEqual(calls(log), ['glab repo create g/sub/r --private --remoteName origin']);
 });
 
 test('create: the forgejo arm records the flag-only grammar tea has', () => {
   const log = argvLog();
   const dir = planningRoot();
+  const url = 'https://forge.example.com/o/r.git';
   const { envelope } = run(
-    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed', '--dir', dir],
-    { stubs: ['tea'], dir, argvLog: log },
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
+      '--remote-url', url, '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log },
   );
   assert.equal(envelope.ok, true);
-  assert.deepEqual(calls(log), ['tea repos create --name r --owner o --private']);
+  assert.deepEqual(calls(log), [
+    'tea repos create --name r --owner o --private',
+    `git -C ${dir} remote add origin ${url}`,
+  ]);
 });
 
 test('create: WITHOUT --confirmed nothing is spawned at all', () => {
@@ -430,8 +446,9 @@ test('create: a CLI that fails leaks none of its own text and nulls detail', () 
   const secret = 'fatal: Authorization: Bearer glpat-DEADBEEFCAFE';
   const dir = planningRoot();
   const { status, envelope } = run(
-    ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed', '--dir', dir],
-    { stubs: ['gh'], dir, stubOpts: { gh: { code: 1, stderr: secret, body: '' } } },
+    ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed',
+      '--remote-url', 'https://github.com/o/r.git', '--dir', dir],
+    { stubs: ['gh', 'git'], dir, stubOpts: { gh: { code: 1, stderr: secret, body: '' } } },
   );
   assert.equal(status, 1);
   assert.equal(envelope.ok, false);
@@ -448,7 +465,8 @@ test('create: a provider whose CLI is absent refuses, naming the install', () =>
   const log = argvLog();
   const dir = planningRoot();
   const { status, envelope } = run(
-    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed', '--dir', dir],
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
+      '--remote-url', 'https://forge.example.com/o/r.git', '--dir', dir],
     { stubs: ['gh'], dir, argvLog: log },
   );
   assert.equal(status, 1);
@@ -522,4 +540,99 @@ test('create: an ABSENT selector is answered by the seam, not by the argument do
     assert.ok(envelope.hint && envelope.hint.length > 0);
   }
   assert.deepEqual(calls(log), []);
+});
+
+// --- the arms whose argv wires no remote wire origin themselves --------------
+
+test('create: no --remote-url on an arm that wires none creates NOTHING', () => {
+  // The refusal has to precede the spawn: refusing afterwards would leave a
+  // real repository on the instance with no way to reach it. The empty argv log
+  // is what proves the ordering rather than the wording.
+  const dir = planningRoot();
+  for (const [provider, bin] of [['forgejo', 'tea'], ['github', 'gh']]) {
+    const log = argvLog();
+    const mk = marker();
+    const { status, envelope } = run(
+      ['create', '--provider', provider, '--repo', 'o/r', '--confirmed', '--dir', dir],
+      { stubs: [bin, 'git'], dir, argvLog: log, marker: mk },
+    );
+    assert.equal(status, 1, provider);
+    assert.equal(envelope.ok, false, provider);
+    assert.equal(envelope.detail, null, provider);
+    assert.match(envelope.hint, /--remote-url/, provider);
+    assert.deepEqual(calls(log), [], provider);
+    assert.equal(spawned(mk), '', provider);
+  }
+});
+
+test('create: a --remote-url the origin grammar cannot read refuses before the spawn', () => {
+  // ONE grammar decides what a remote URL may be, here and at setup: a value
+  // classifyOrigin cannot resolve to a host AND a slug is not a repository URL.
+  // A value opening on `-` is refused outright - it would read as a FLAG the
+  // moment it sat in the `git remote add` vector.
+  const dir = planningRoot();
+  for (const bad of ['not a url', 'https://forge.example.com/onlyowner', '',
+    '--upload-pack=id', '-o/r']) {
+    const log = argvLog();
+    const { status, envelope } = run(
+      ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed',
+        '--remote-url', bad, '--dir', dir],
+      { stubs: ['gh', 'git'], dir, argvLog: log },
+    );
+    assert.equal(status, 1, bad);
+    assert.equal(envelope.ok, false, bad);
+    assert.ok(envelope.hint && envelope.hint.length > 0, bad);
+    assert.deepEqual(calls(log), [], bad);
+  }
+});
+
+test('create: a VALUELESS --remote-url refuses at the declared row', () => {
+  const dir = planningRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'github', '--repo', 'o/r', '--confirmed',
+      '--dir', dir, '--remote-url'],
+    { stubs: ['gh', 'git'], dir },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'missing-flag-value');
+  assert.match(envelope.detail, /--remote-url/);
+});
+
+test('create: a failed `git remote add` says the repository EXISTS', () => {
+  // A caller told "created" that finds no origin has been told the wrong thing,
+  // and re-running the create would be the wrong repair - the reason and the
+  // hint both have to say the repository is already there.
+  const log = argvLog();
+  const dir = planningRoot();
+  const url = 'https://forge.example.com/o/r.git';
+  const { status, envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
+      '--remote-url', url, '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log,
+      stubOpts: { git: { code: 1, stderr: 'fatal: remote origin already exists.', body: '' } } },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.created, true);
+  assert.equal(envelope.remote_wired, false);
+  assert.equal(envelope.detail, null);
+  assert.ok(envelope.hint && envelope.hint.length > 0);
+  assert.equal(JSON.stringify(envelope).includes('fatal'), false,
+    "git's own text reached the envelope");
+  // The create DID happen, which is exactly why the reason may not read as one
+  // that did not.
+  assert.equal(calls(log).length, 2);
+});
+
+test('create: the gitlab arm is never asked for a --remote-url', () => {
+  // Its row wires its own, so the flag is not required there and passing none
+  // reaches a successful create.
+  const log = argvLog();
+  const dir = planningRoot();
+  const { envelope } = run(
+    ['create', '--provider', 'gitlab', '--repo', 'o/r', '--confirmed', '--dir', dir],
+    { stubs: ['glab', 'git'], dir, argvLog: log },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(calls(log), ['glab repo create o/r --private --remoteName origin']);
 });

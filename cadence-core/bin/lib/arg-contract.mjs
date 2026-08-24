@@ -999,10 +999,17 @@ export const CONTRACTS = {
     // `issue-check.mjs` keeps for `--timeout-ms`'s positivity: a
     // `missing-flag-value` refusal would name the flag and stop, where the
     // seam's own refusal names the CONFIRMATION the caller owes the user.
+    //
+    // `--remote-url` is REQUIRED BY THE PROVIDER, not by the row: the two
+    // providers whose pinned create argv wires no git remote need it and the
+    // one that wires its own does not, so the row states `false` and the seam
+    // states which arm. It refuses on both axes for the reason the selectors
+    // do, sharpened: a valueless one would point `origin` at nothing.
     create: {
       '--provider': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--repo': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--confirmed': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+      '--remote-url': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
   },
   'issue-check.mjs': {

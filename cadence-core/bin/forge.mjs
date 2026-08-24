@@ -54,6 +54,17 @@
 // Every value that reaches the vector went through this phase's own slug
 // grammar first, so no segment can arrive reading as a flag.
 //
+// A CREATED REPOSITORY IS ALWAYS REACHABLE (CONTEXT D-15, AC6). Only `glab`'s
+// pinned argv wires `origin` - through the `--remoteName origin` in it - so on
+// the other two arms this seam runs `git remote add origin <url>` itself after
+// the create. The URL is the CALLER's to supply and this seam's to validate:
+// `create` reads no config and is given no host of its own, and `tea repos
+// create`'s pinned argv carries no `--output json` to read a clone URL back
+// from, which reading the child's stdout for would sit against D-16. So the
+// missing-URL refusal fires BEFORE the create rather than after it - refusing
+// afterwards would leave a real repository on the instance with no way to reach
+// it, which is the one outcome worse than not creating it.
+//
 // AND IT NEVER RUNS WITHOUT `--confirmed`. The flag is what the user's own
 // answer buys: the seam cannot ask (see above), so it refuses until a caller
 // says the question was put and answered. That is half the property - the seam
@@ -68,9 +79,12 @@
 //     as issue-check.mjs's is - the two seams are read by the same prose and a
 //     flag that refuses in one and defaults in the other is how a caller learns
 //     the wrong rule.
-//   create --provider <p> --repo <owner/name> --confirmed [--dir <path>]
+//   create --provider <p> --repo <owner/name> --confirmed [--remote-url <url>]
+//          [--dir <path>]
 //     Creates that repository, PRIVATE, through the CLI the provider names.
-//     --dir is the directory the CLI is run in. Every refusal precedes the
+//     --dir is the directory the CLI is run in. --remote-url is REQUIRED on the
+//     providers whose create argv wires no git remote (forgejo and github), and
+//     unread on the one that wires its own (gitlab). Every refusal precedes the
 //     spawn, so a refused create has created nothing.
 'use strict';
 
@@ -222,9 +236,10 @@ function detect(dir) {
  * pass and nothing for a caller to get wrong.
  *
  * @param {string} dir the directory the CLI is run in
- * @param {{provider: string, repo: string, confirmed: boolean}} args
+ * @param {{provider: string, repo: string, confirmed: boolean,
+ *   remoteUrl: string|undefined}} args
  */
-function create(dir, { provider, repo, confirmed }) {
+function create(dir, { provider, repo, confirmed, remoteUrl }) {
   if (!confirmed) {
     emit({ ok: false, reason: 'this create was not confirmed: no repository is created without the user answering the question first',
       detail: null,
@@ -267,6 +282,30 @@ function create(dir, { provider, repo, confirmed }) {
       hint: 'pass --repo as owner/name - letters, digits, dot, underscore and dash, no leading dash on any segment, and a nested GitLab subgroup path is allowed' });
     return;
   }
+  // THE REMOTE, DECIDED BEFORE THE CREATE. `wiresRemote` is a fact of the row's
+  // own argv, so the question "does this run need a URL" is answered off the
+  // table rather than off a provider's name. Both halves of the refusal sit
+  // here, ahead of the spawn: a run with nowhere for `origin` to point must
+  // create nothing at all.
+  //
+  // ONE GRAMMAR JUDGES THE URL, and it is `classifyOrigin` - the same reader
+  // that turns an existing `origin` into the setup-time defaults. A value it
+  // cannot resolve to a host AND a slug is not a repository URL, and a value
+  // opening on `-` is refused outright: it would read as a FLAG the moment it
+  // sits in the `git remote add` vector, and no forge serves such a URL, so
+  // there is nothing honest to repair it into.
+  if (!row.wiresRemote) {
+    const classified = classifyOrigin(remoteUrl);
+    const usable = typeof remoteUrl === 'string' && !remoteUrl.startsWith('-')
+      && classified.host !== null && classified.slug !== null;
+    if (!usable) {
+      emit({ ok: false, reason: `${provider} does not wire a git remote when it creates a repository, and no usable --remote-url was given to wire one with`,
+        detail: null,
+        hint: 'pass --remote-url as the URL this repository will be reached at - https://<host>/<owner>/<name>.git or git@<host>:<owner>/<name>.git - so origin can be set once the repository exists' });
+      return;
+    }
+  }
+
   const bin = PROVIDER_TABLE[provider];
   if (!onPath(bin)) {
     emit({ ok: false, reason: `${provider} was selected but ${bin} does not resolve on PATH, so there is nothing to create the repository with`,
@@ -286,8 +325,24 @@ function create(dir, { provider, repo, confirmed }) {
     return;
   }
 
+  // The repository EXISTS from here on, which changes what a failure means: the
+  // reason below says so rather than reading as a create that did not happen,
+  // because a caller told "created" that finds no `origin` has been told the
+  // wrong thing. `git` is spawned through the same bounded path, stderr
+  // discarded, and only on the arms whose row wires nothing - `glab` runs no
+  // `git` command at all.
+  if (!row.wiresRemote) {
+    if (!run('git', ['-C', dir, 'remote', 'add', 'origin', remoteUrl],
+      { cwd: dir, timeout: GIT_TIMEOUT_MS }).ok) {
+      emit({ ok: false, reason: `${owner}/${name} was created on ${provider}, but git remote add origin failed: the repository exists and this checkout cannot reach it`,
+        detail: null, created: true, remote_wired: false,
+        hint: 'add the remote yourself - `git remote add origin <url>` in this directory - the repository is already there and must not be created again' });
+      return;
+    }
+  }
+
   emit({ ok: true, provider, owner, repo: `${owner}/${name}`,
-    visibility: 'private', remote_wired: row.wiresRemote, detail: null });
+    visibility: 'private', remote_wired: true, detail: null });
 }
 
 const argv = process.argv.slice(2);
@@ -323,6 +378,7 @@ try {
       provider: value('--provider'),
       repo: value('--repo'),
       confirmed: value('--confirmed'),
+      remoteUrl: value('--remote-url'),
     });
   } else {
     emit({ ok: false, reason: 'usage',
