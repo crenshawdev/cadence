@@ -448,9 +448,20 @@ try {
   }
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') {
+    // `--global` read off its DECLARED row, exactly as optFile reads the same
+    // flag - but never THROUGH optFile: that function falls through to
+    // `CONTRACTS['config.mjs'][cmd]['--file']` the moment a `--file` token
+    // appears, and `check` declares no such row, so it would hand `undefined`
+    // to evaluateFlag and reach the user as reason:"internal". The row is
+    // `boolean`, whose whole grammar is presence, so the flag token is dropped
+    // from what checkPairs is handed rather than read as a pair.
+    const gi = rest.indexOf('--global');
+    const asGlobal = evaluateFlag(rest, '--global', CONTRACTS['config.mjs'].check['--global']).value === true;
     // The same failure contract `set` speaks (and workflows/config.md
-    // documents): one shape for both faces, so a caller reads `detail` once.
-    const { errors } = checkPairs(rest);
+    // documents): one shape for both faces, so a caller reads `detail` once -
+    // and now the same per-pair entry, so the inspect face reports the scope
+    // refusal the write face gives rather than blessing a pair `set` refuses.
+    const { errors } = checkPairs(asGlobal ? rest.filter((_, j) => j !== gi) : rest, asGlobal);
     if (errors.length) out({ ok: false, reason: 'invalid', detail: errors,
       hint: 'each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts' });
     else out({ ok: true });

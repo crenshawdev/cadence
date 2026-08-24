@@ -914,7 +914,14 @@ export const CONTRACTS = {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    check: {},
+    // `check` takes `--global` for the same reason `set` does, and answers about
+    // the same layer: it is the INSPECT face of the write-time refusal, so a
+    // caller can ask what a global write would be told before it is told. Same
+    // grammar as its three siblings. It takes no `--file` row on purpose - the
+    // question is the user-global LAYER, not an arbitrary path.
+    check: {
+      '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
     set: {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },

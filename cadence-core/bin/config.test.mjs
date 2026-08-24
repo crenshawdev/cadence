@@ -623,7 +623,9 @@ test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it o
   // no longer expressible. Deleting the row below stops `get --global`
   // answering `source: "global"` - watched failing.
   const declared = { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' };
-  for (const cmd of ['validate', 'set', 'get']) {
+  // `check` joined the list when it learned the flag (SCP-01): the inspect face
+  // has to be able to ASK about the layer the write face refuses at.
+  for (const cmd of ['validate', 'set', 'get', 'check']) {
     assert.deepEqual(CONTRACTS['config.mjs'][cmd]['--global'], declared,
       `${cmd} takes --global, so ${cmd} must declare it - with the same grammar its siblings carry`);
   }
@@ -632,6 +634,27 @@ test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it o
   const r = run(['get', '--global', 'stakes'], gpath);
   assert.equal(r.source, 'global');
   assert.equal(r.values['stakes'], 'critical');
+});
+
+test('check --global reports the scope refusal the write face gives', () => {
+  // Before this, `check --global git.auto_close=true` answered `--global is not
+  // a key=value pair`: the inspect face could not be asked about the layer at
+  // all, so it could not agree or disagree with what `set` would do.
+  const gpath = join(dir, 'check-global.json');
+  const refused = run(['check', '--global', 'git.auto_close=true'], gpath);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'invalid');
+  // Byte-identical to the write face's entry, which is the whole point.
+  const written = run(['set', '--global', 'git.auto_close=true'], gpath);
+  assert.deepEqual(refused.detail[0], written.detail[0]);
+  assert.equal(existsSync(gpath), false); // check never writes, and neither did the refused set
+
+  // A src:"repo" key is accepted at that same layer...
+  assert.deepEqual(run(['check', '--global', 'stakes=critical'], gpath), { ok: true });
+  // ...and with no --global the marked key is the ordinary repo-layer question.
+  assert.deepEqual(run(['check', 'git.auto_close=true'], gpath), { ok: true });
+  // ...and the flag is consumed, never read as a pair.
+  assert.deepEqual(run(['check', '--global'], gpath), { ok: true });
 });
 
 test('get --global: the one file it reads by construction is the GLOBAL layer', () => {
