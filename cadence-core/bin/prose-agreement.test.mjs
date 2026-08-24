@@ -1666,7 +1666,7 @@ test('PLN-01: the max_plan_tasks decision reads the same off the schema and the 
 
 // --- SGT-01: the suggest seam's unset-layer defaults, against the schema -----
 //
-// `planning.mjs`'s `SUGGEST_KEY_DEFAULTS` is what `/cad-suggest` prints as a
+// `planning/trace.mjs`'s `SUGGEST_KEY_DEFAULTS` is what `/cad-suggest` prints as a
 // key's `current` when no config layer holds one, and it is a hand-copied
 // mirror of `config.schema.json` by decision (D-15: the schema is not parsed at
 // runtime, the duplication `DISPATCH_WINDOW_DEFAULTS` and `route.mjs`'s
@@ -1675,7 +1675,7 @@ test('PLN-01: the max_plan_tasks decision reads the same off the schema and the 
 // a value against it, and `/cad-config` shows a different row.
 //
 // The subject is AGREEMENT, never presence: both sides are EXTRACTED - one out
-// of `planning.mjs`'s own source bytes, one out of the schema's `default`
+// of the trace command module's own source bytes, one out of the schema's `default`
 // fields - and compared, the same shape the PLN-01 arm above uses. Scoped to
 // the keys the literal carries; `DISPATCH_WINDOW_DEFAULTS` is a separate map
 // with its own row set and is not widened onto here.
@@ -1687,7 +1687,7 @@ test('PLN-01: the max_plan_tasks decision reads the same off the schema and the 
  */
 function suggestKeyDefaults(text) {
   const block = text.match(/const SUGGEST_KEY_DEFAULTS = Object\.freeze\(\{\n([\s\S]*?)\n\}\);/);
-  assert.ok(block, 'planning.mjs carries no SUGGEST_KEY_DEFAULTS literal to compare');
+  assert.ok(block, 'planning/trace.mjs carries no SUGGEST_KEY_DEFAULTS literal to compare');
   /** @type {Record<string, any>} */
   const out = {};
   for (const line of block[1].split('\n')) {
@@ -1698,7 +1698,11 @@ function suggestKeyDefaults(text) {
 }
 
 test("SGT-01: the suggest seam's unset-layer defaults are config.schema.json's own", () => {
-  const literal = suggestKeyDefaults(doc('cadence-core', 'bin', 'planning.mjs'));
+  // The literal is single-use for the `suggest` arm, so phase 4 moved it into the
+  // trace command module with the handler that reads it. The extraction follows
+  // the bytes: it still parses the literal out of source and still deep-equals it
+  // against config.schema.json's own `default` fields, key by key.
+  const literal = suggestKeyDefaults(doc('cadence-core', 'bin', 'planning', 'trace.mjs'));
   assert.ok(Object.keys(literal).length >= 2,
     `SUGGEST_KEY_DEFAULTS extracted ${Object.keys(literal).length} keys - the literal's `
     + 'shape moved out from under this extraction, so it is checking nothing');
@@ -1710,7 +1714,7 @@ test("SGT-01: the suggest seam's unset-layer defaults are config.schema.json's o
     schema[k] = keys[k].default;
   }
   assert.deepEqual(literal, schema,
-    "planning.mjs's SUGGEST_KEY_DEFAULTS and config.schema.json's defaults disagree - one "
+    "planning/trace.mjs's SUGGEST_KEY_DEFAULTS and config.schema.json's defaults disagree - one "
     + 'was edited alone, so /cad-suggest prints a `current` for an unset key that the row '
     + '/cad-config shows contradicts');
 });
