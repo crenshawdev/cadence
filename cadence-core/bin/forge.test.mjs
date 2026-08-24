@@ -14,7 +14,7 @@
 // why that file binds `test` to a no-op unless it is itself the entry file.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, statSync, symlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -36,14 +36,42 @@ function planningRoot(gitConfig = {}) {
   return dir;
 }
 
-/** A PATH holding the stubs named in `stubs` and NOTHING else that resolves -
- *  `gh` and `tea` are installed at /usr/bin on this dev box, so inheriting the
- *  real PATH would make "none installed" unprovable. `node` is invoked by
- *  absolute path for the same reason. */
+/** `planningRoot` plus a real git repository whose `origin` is `originUrl` -
+ *  the only shape that exercises the origin-derived defaults, since the seam
+ *  reads them through `git remote get-url origin` and not from a fixture. */
+function repoWithOrigin(originUrl, gitConfig = {}) {
+  const dir = planningRoot(gitConfig);
+  const g = (...a) => execFileSync('git', ['-C', dir, ...a], {
+    stdio: 'ignore',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+  });
+  g('init', '-q');
+  if (originUrl) g('remote', 'add', 'origin', originUrl);
+  return dir;
+}
+
+/** A directory holding ONLY a symlink to the real `git`. The child's PATH is
+ *  built out of the stub dir plus this one and nothing else, because `gh` and
+ *  `tea` are installed at /usr/bin on this dev box and inheriting the real PATH
+ *  would make "none installed" unprovable - while a PATH with no `git` at all
+ *  would make the origin-derived defaults unprovable in the other direction.
+ *  issue-check.test.mjs builds the same directory for the same reason. */
+const GIT_ONLY = (() => {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-fg-git-'));
+  for (const d of (process.env.PATH || '').split(':')) {
+    if (!d) continue;
+    try { statSync(join(d, 'git')); symlinkSync(join(d, 'git'), join(dir, 'git')); return dir; }
+    catch { /* next */ }
+  }
+  throw new Error('no git on PATH to link');
+})();
+
+/** A PATH holding the stubs named in `stubs`, the real `git`, and NOTHING else
+ *  that resolves. `node` is invoked by absolute path for the same reason. */
 function run(args, { stubs = [], gitConfig = null, dir = null, marker = null } = {}) {
   const stubDir = mkdtempSync(join(tmpdir(), 'cad-fg-bin-'));
   for (const name of stubs) stub(stubDir, name, { body: 'stub' });
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, PATH: stubDir };
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, PATH: stubDir + ':' + GIT_ONLY };
   if (marker) env.CAD_SPAWN_MARKER = marker;
   const root = dir || planningRoot(gitConfig || {});
   try {
@@ -196,7 +224,7 @@ test('detect: an ABSENT --dir reads the process cwd', () => {
   const stubDir = mkdtempSync(join(tmpdir(), 'cad-fg-bin-'));
   const envelope = JSON.parse(execFileSync(process.execPath, [SEAM, 'detect'], {
     encoding: 'utf8', cwd: root,
-    env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, PATH: stubDir },
+    env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, PATH: stubDir + ':' + GIT_ONLY },
   }));
   assert.equal(envelope.action, 'configured');
   assert.equal(envelope.repo, 'o/r');
@@ -227,4 +255,97 @@ test('an unknown subcommand prints the usage line naming the one it has', () => 
 test('no subcommand at all is the same usage refusal', () => {
   const { envelope } = run([], { stubs: ['gh'] });
   assert.equal(envelope.reason, 'usage');
+});
+
+// --- the two defaults the user CONFIRMS rather than retypes (AC3) -----------
+
+test('detect: a split SSH endpoint offers the slug and NO provider', () => {
+  // The shape this repository itself has. `classifyOrigin` parses the slug off
+  // any origin that carries two path segments, but it recognizes a provider for
+  // the github.com and gitlab.com suffixes alone (CONTEXT D-07), so a
+  // self-hosted forge offers a slug to confirm and nothing marked
+  // `(recommended)`.
+  const dir = repoWithOrigin('ssh://git@ssh.jcrenshaw.dev:2222/crenshawdev/cadence.git');
+  const { envelope } = run(['detect', '--dir', dir], { stubs: ['tea'], dir });
+  assert.equal(envelope.action, 'ask');
+  assert.equal(envelope.defaults.repo, 'crenshawdev/cadence');
+  assert.equal(envelope.defaults.provider, null);
+});
+
+test('detect: a gitlab origin offers BOTH defaults, subgroup path intact', () => {
+  const dir = repoWithOrigin('https://gitlab.com/g/sub/r.git');
+  const { envelope } = run(['detect', '--dir', dir], { stubs: ['glab'], dir });
+  assert.equal(envelope.defaults.provider, 'gitlab');
+  assert.equal(envelope.defaults.repo, 'g/sub/r');
+});
+
+test('detect: a github origin offers both defaults', () => {
+  const dir = repoWithOrigin('git@github.com:org/repo.git');
+  const { envelope } = run(['detect', '--dir', dir], { stubs: ['gh'], dir });
+  assert.equal(envelope.defaults.provider, 'github');
+  assert.equal(envelope.defaults.repo, 'org/repo');
+});
+
+test('detect: NO host default is ever offered', () => {
+  // CONTEXT D-08. The classifier holds a host on this very origin - the SSH
+  // endpoint - and the envelope must not carry it as an answer to confirm.
+  const dir = repoWithOrigin('ssh://git@ssh.jcrenshaw.dev:2222/crenshawdev/cadence.git');
+  const { envelope } = run(['detect', '--dir', dir], { stubs: ['tea'], dir });
+  assert.deepEqual(Object.keys(envelope.defaults).sort(), ['provider', 'repo']);
+  assert.equal(envelope.host, null);
+  assert.equal(JSON.stringify(envelope).includes('ssh.jcrenshaw.dev'), false,
+    'the SSH endpoint never reaches the envelope in any field');
+});
+
+test('detect: a slug failing the grammar yields NO slug default, not raw text', () => {
+  // The value comes off `.git/config` and the setup step interpolates it into
+  // the shell line that persists it. A hostile origin gets no pre-filled
+  // answer, and it is not repaired into one either.
+  const dir = repoWithOrigin('https://github.com/org/repo;$(id)');
+  const { envelope } = run(['detect', '--dir', dir], { stubs: ['gh'], dir });
+  assert.equal(envelope.action, 'ask');
+  assert.equal(envelope.defaults.repo, null);
+  assert.equal(envelope.defaults.provider, 'github', 'the two defaults are independent');
+  assert.equal(JSON.stringify(envelope).includes('$(id)'), false);
+});
+
+test('detect: a repository with NO origin offers no defaults and still asks', () => {
+  const dir = repoWithOrigin(null);
+  const { status, envelope } = run(['detect', '--dir', dir], { stubs: ['gh'], dir });
+  assert.equal(status, 0);
+  assert.equal(envelope.action, 'ask');
+  assert.deepEqual(envelope.defaults, { provider: null, repo: null });
+});
+
+test('detect: a directory that is not a repository at all still asks', () => {
+  // The git read never throws: a default is an offer, not a reading, so there
+  // is nothing here to degrade.
+  const dir = planningRoot();
+  const { status, envelope } = run(['detect', '--dir', dir], { stubs: ['gh'], dir });
+  assert.equal(status, 0);
+  assert.equal(envelope.action, 'ask');
+  assert.deepEqual(envelope.defaults, { provider: null, repo: null });
+});
+
+test('detect: the `configured` and `refuse` arms carry no defaults at all', () => {
+  // There is no question to pre-fill on either, so reading the origin there
+  // would be a spawn bought for an unused field.
+  const done = repoWithOrigin('https://github.com/org/repo.git',
+    { forge_provider: 'github', forge_repo: 'org/repo' });
+  assert.equal(run(['detect', '--dir', done], { stubs: ['gh'], dir: done }).envelope.defaults, undefined);
+
+  const bare = repoWithOrigin('https://github.com/org/repo.git');
+  const refused = run(['detect', '--dir', bare], { stubs: [], dir: bare }).envelope;
+  assert.equal(refused.action, 'refuse');
+  assert.equal(refused.defaults, undefined);
+});
+
+test('detect: NO forge CLI is spawned while the defaults are derived (AC1)', () => {
+  // The stubs are on PATH and would each append their own name to the marker.
+  // `git` is not a forge CLI and writes nothing there.
+  const mk = marker();
+  const dir = repoWithOrigin('https://github.com/org/repo.git');
+  const { envelope } = run(['detect', '--dir', dir], { stubs: ['gh', 'tea', 'glab'], dir, marker: mk });
+  assert.equal(envelope.defaults.provider, 'github');
+  assert.equal(spawned(mk), '');
 });

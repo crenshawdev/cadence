@@ -121,6 +121,98 @@ export function forgeRecordComplete({ provider, repo, host } = {}) {
 }
 
 /**
+ * The longest `owner/name` a forge serves, as a byte bound rather than a taste.
+ *
+ * GitHub caps an owner at 39 characters and a repository name at 100; GitLab's
+ * subgroup nesting is capped at 20 levels. 200 is comfortably above every real
+ * slug and far below anything a hostile origin URL would need to be
+ * interesting, and a bound stated here is one the grammar below does not have
+ * to reason about by way of a quantifier.
+ */
+const SLUG_MAX = 200;
+
+/** One path segment of a slug: at least one character, and never opening on a
+ * `-`, which is the character that turns a value into a FLAG the moment it is
+ * interpolated into a command line. */
+const SLUG_SEGMENT = /^[A-Za-z0-9_.][A-Za-z0-9._-]*$/;
+
+/**
+ * Is `slug` a repository selector this seam will hand back as a default?
+ *
+ * WHY THIS IS VALIDATED AT ALL, and why here (CONTEXT D-12, `untrusted_input`).
+ * The value comes off REPOSITORY CONTENT - `git remote get-url origin`, which
+ * is whatever `.git/config` says - and the setup step interpolates the default
+ * it is handed into the shell line that runs `config.mjs set
+ * git.forge_repo=<slug>`. A validated slug is what makes that interpolation
+ * safe, and validating it in the SEAM rather than in the prose is the half of
+ * D-12 that says this module detects, validates and persists nothing: prose
+ * cannot hold a grammar, and every caller re-deriving one is how a rule comes
+ * to be enforced in three different strengths. This is the same hazard class
+ * `references/conventions.md` states for caller-derived text.
+ *
+ * TWO OR MORE SEGMENTS, not exactly two. GitLab nests subgroups, so
+ * `group/subgroup/repo` is an ordinary selector there and `glab --repo` takes
+ * it whole; requiring exactly two would refuse a real repository and hand the
+ * user a blank field on the one forge that needs the longest one.
+ *
+ * WHAT IS REFUSED, and why each one is not a stylistic choice:
+ *   a leading `-` on any segment    a value that reads as a FLAG once it is
+ *                                   interpolated onto a command line
+ *   `.` or `..` as a whole segment  a path traversal in selector position
+ *   anything outside [A-Za-z0-9._-] whitespace, quotes, `$`, backticks, `;`,
+ *                                   newlines - the characters that end an
+ *                                   argument and start something else
+ *   over SLUG_MAX bytes             no forge serves it
+ * A refused slug yields NO default rather than a repaired one: there is no
+ * honest repair for a selector nobody typed, and a cleaned-up value offered as
+ * a pre-filled answer is exactly the shape a user confirms without reading.
+ *
+ * @param {unknown} slug @returns {boolean}
+ */
+export function isForgeSlug(slug) {
+  if (typeof slug !== 'string' || !slug || slug.length > SLUG_MAX) return false;
+  const segments = slug.split('/');
+  if (segments.length < 2) return false;
+  return segments.every((seg) => seg !== '.' && seg !== '..' && SLUG_SEGMENT.test(seg));
+}
+
+/**
+ * The two defaults the setup step offers for the user to CONFIRM, derived from
+ * an origin classification.
+ *
+ * THE TWO HAVE DIFFERENT AVAILABILITIES (CONTEXT D-07), which is why they are
+ * one function returning two independently-null fields rather than one nullable
+ * pair. `classifyOrigin` supplies a slug for any origin that parses into two or
+ * more path segments, but it supplies a PROVIDER only for the `github.com` and
+ * `gitlab.com` hostname suffixes - guessing a forge from a hostname's first
+ * label is a heuristic that file has no way to be right about. So the common
+ * self-hosted case offers a slug to confirm and no provider recommendation at
+ * all, and the setup step marks nothing `(recommended)` there.
+ *
+ * NO HOST DEFAULT IS OFFERED, EVER (CONTEXT D-08). The Forgejo instance host is
+ * asked outright and confirmed by the user, because on a split SSH endpoint the
+ * classifier's host is the SSH hostname (`ssh.jcrenshaw.dev`) and not the
+ * instance the user reaches in a browser (`git.jcrenshaw.dev`) - the shape this
+ * repository itself has, so a derived default would be wrong on the first
+ * repository that read it. That is what separates the asked value from the
+ * classifier's guess, and offering the guess as a pre-filled answer would erase
+ * the distinction the key exists for.
+ *
+ * @param {unknown} classification a `classifyOrigin` verdict, or anything at
+ *   all - an unreadable origin is no defaults, never a throw
+ * @returns {{provider: string|null, repo: string|null}}
+ */
+export function originDefaults(classification) {
+  const c = classification && typeof classification === 'object'
+    ? /** @type {Record<string, unknown>} */ (classification) : {};
+  const verdict = c.verdict;
+  return {
+    provider: verdict === 'github' || verdict === 'gitlab' ? verdict : null,
+    repo: isForgeSlug(c.slug) ? /** @type {string} */ (c.slug) : null,
+  };
+}
+
+/**
  * What should the setup step do about the forge?
  *
  * Modelled on `decideIssueCheck`'s return, which the workflows already branch

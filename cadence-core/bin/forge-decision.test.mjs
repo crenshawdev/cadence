@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   PROVIDER_TABLE, decideForge, forgeRecordComplete, installedProviders,
+  isForgeSlug, originDefaults,
 } from './lib/forge-decision.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -193,5 +194,95 @@ test('lib/forge-decision.mjs does no I/O and touches no process state', () => {
   for (const token of ['process.', 'readFileSync(', 'writeFileSync(', 'execFileSync(',
     'spawnSync(', 'console.', 'emit(', 'require(', 'node:']) {
     assert.ok(!body.includes(token), `lib/forge-decision.mjs must stay pure; found ${token}`);
+  }
+});
+
+
+// --- the slug grammar: what a caller-derived selector may be ----------------
+
+test('isForgeSlug accepts the two and three segment shapes forges serve', () => {
+  // Two or more, not exactly two: GitLab nests subgroups and `glab --repo`
+  // takes the whole path.
+  for (const ok of ['crenshawdev/cadence', 'g/sub/r', 'a/b/c/d', 'org.name/repo.js',
+    'Some_Org/my-repo', '0/1']) {
+    assert.equal(isForgeSlug(ok), true, ok);
+  }
+});
+
+test('isForgeSlug refuses a single segment - there is no repository selector', () => {
+  assert.equal(isForgeSlug('cadence'), false);
+  assert.equal(isForgeSlug(''), false);
+  assert.equal(isForgeSlug('/'), false);
+});
+
+test('isForgeSlug refuses a segment that reads as a FLAG once interpolated', () => {
+  // The value is interpolated into `config.mjs set git.forge_repo=<slug>`.
+  assert.equal(isForgeSlug('-rf/repo'), false);
+  assert.equal(isForgeSlug('org/--force'), false);
+});
+
+test('isForgeSlug refuses traversal segments in selector position', () => {
+  assert.equal(isForgeSlug('../etc'), false);
+  assert.equal(isForgeSlug('org/../../root'), false);
+  assert.equal(isForgeSlug('./org/repo'), false);
+});
+
+test('isForgeSlug refuses every character that could end an argument', () => {
+  // The whole reason the grammar exists: this value is interpolated into the
+  // shell line that persists it, and it came off repository content.
+  const hostile = ['org/repo; rm -rf /', 'org/$(id)', 'org/`id`', 'org/re po',
+    'org/repo\nowner/other', 'org/repo"x', "org/repo'x", 'org/repo&x', 'org/repo|x',
+    'org/repo>x', 'org/repo\\x', 'org/re\tpo'];
+  for (const bad of hostile) assert.equal(isForgeSlug(bad), false, JSON.stringify(bad));
+});
+
+test('isForgeSlug refuses a slug longer than any forge serves', () => {
+  assert.equal(isForgeSlug('o/' + 'r'.repeat(199)), false);
+  assert.equal(isForgeSlug('o/' + 'r'.repeat(197)), true);
+});
+
+test('isForgeSlug refuses a non-string rather than throwing', () => {
+  for (const bad of [null, undefined, 42, {}, ['o/r']]) assert.equal(isForgeSlug(bad), false);
+});
+
+// --- originDefaults: two defaults, two availabilities -----------------------
+
+test('originDefaults offers a provider for github and gitlab and for nothing else', () => {
+  // CONTEXT D-07: `classifyOrigin` only recognizes those two hostname suffixes,
+  // and guessing a forge from a hostname's first label is a heuristic nothing
+  // here can be right about.
+  assert.equal(originDefaults({ verdict: 'github', slug: 'o/r' }).provider, 'github');
+  assert.equal(originDefaults({ verdict: 'gitlab', slug: 'g/sub/r' }).provider, 'gitlab');
+  for (const verdict of ['unrecognized', 'no-remote', 'forgejo', 'no-login']) {
+    assert.equal(originDefaults({ verdict, slug: 'o/r' }).provider, null, verdict);
+  }
+});
+
+test('originDefaults offers the slug whenever one parsed, provider or not', () => {
+  assert.equal(originDefaults({ verdict: 'unrecognized', slug: 'crenshawdev/cadence' }).repo,
+    'crenshawdev/cadence');
+  assert.equal(originDefaults({ verdict: 'github', slug: 'o/r' }).repo, 'o/r');
+});
+
+test('originDefaults offers NO host default under any verdict', () => {
+  // CONTEXT D-08: the instance host is asked outright, never derived - on a
+  // split SSH endpoint the classifier's host is the SSH hostname and not the
+  // instance the user reaches in a browser.
+  for (const verdict of ['github', 'gitlab', 'forgejo', 'unrecognized', 'no-remote']) {
+    const d = originDefaults({ verdict, slug: 'o/r', host: 'ssh.jcrenshaw.dev' });
+    assert.deepEqual(Object.keys(d).sort(), ['provider', 'repo'], verdict);
+  }
+});
+
+test('originDefaults drops a slug that fails the grammar rather than passing it through', () => {
+  assert.equal(originDefaults({ verdict: 'github', slug: 'org/repo; id' }).repo, null);
+  assert.equal(originDefaults({ verdict: 'github', slug: null }).repo, null);
+  // The provider survives independently: the two defaults are independent.
+  assert.equal(originDefaults({ verdict: 'github', slug: 'org/repo; id' }).provider, 'github');
+});
+
+test('originDefaults is TOTAL over anything a caller hands it', () => {
+  for (const bad of [undefined, null, 'github', 42, {}]) {
+    assert.deepEqual(originDefaults(bad), { provider: null, repo: null });
   }
 });

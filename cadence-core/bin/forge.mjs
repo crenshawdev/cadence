@@ -31,6 +31,16 @@
 // than by the current absence of a spawn. The refusal names the binaries it
 // looked for and nothing it read.
 //
+// ONE SUBPROCESS, AND IT IS `git`. The `ask` arm reads `git remote get-url
+// origin` to offer the repository slug as a default the user CONFIRMS rather
+// than retypes. That read is bounded, discards the child's stderr and never
+// throws, so a directory that is not a repository and a missing `origin` are
+// both simply "no default to offer" - a default is an offer, not a reading,
+// and there is nothing there to degrade. Its OUTPUT never reaches the envelope
+// raw either: it goes through `classifyOrigin` and then through this phase's
+// own slug grammar, and a value failing that grammar yields no default rather
+// than passing repository content into the shell line that persists it.
+//
 // Subcommand (one, printing one JSON line):
 //   detect [--dir <path>]
 //     --dir is the planning root AND the repository the answer is about.
@@ -41,13 +51,39 @@
 //     the wrong rule.
 'use strict';
 
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
-import { decideForge, installedProviders } from './lib/forge-decision.mjs';
+import { classifyOrigin } from './lib/issue-decision.mjs';
+import { decideForge, installedProviders, originDefaults } from './lib/forge-decision.mjs';
+
+/** The bound on the ONE `git` read this seam makes. `git remote get-url` is a
+ * local config read that cannot hang on a network, so this is a guard against a
+ * wedged filesystem rather than a latency budget - and it is a constant rather
+ * than a flag because there is no caller that would ever want a different one.
+ * issue-check.mjs's own constant is the same figure for the same reason. */
+const GIT_TIMEOUT_MS = 10000;
+
+/**
+ * The origin URL as `git` reports it, or '' - NEVER a throw and never a byte of
+ * the child's stderr, the way `run` in issue-check.mjs works. A repository with
+ * no `origin`, a directory that is not a repository at all, and a `git` that is
+ * not installed are all the same answer here: no default to offer. There is
+ * nothing to degrade, because a default is an offer and not a reading.
+ * @param {string} dir @returns {string}
+ */
+function readOrigin(dir) {
+  try {
+    return execFileSync('git', ['-C', dir, 'remote', 'get-url', 'origin'], {
+      cwd: dir, timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL', encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch { return ''; }
+}
 
 /**
  * The one reading, and the one answer.
@@ -90,9 +126,22 @@ function detect(dir) {
   // needs them most: a partly answered record - a forgejo provider and a slug
   // with no instance host yet - must leave the setup step asking only the
   // missing question rather than re-asking the two that are already settled.
+  //
+  // DEFAULTS RIDE THE `ask` ARM ALONE, and so does the `git` read that produces
+  // them. There is no question to pre-fill on either of the other two, so
+  // reading the origin there would be a spawn bought for an unused field - and
+  // AC1's assertion is about forge CLIs, which `git` is not and which nothing
+  // on this path runs. `classifyOrigin` is handed NO tea logins: this phase
+  // probes no login (CONTEXT D-06), which is also what makes the provider
+  // default available for `github` and `gitlab` alone (CONTEXT D-07).
+  const defaults = decision.action === 'ask'
+    ? originDefaults(classifyOrigin(readOrigin(dir), null))
+    : null;
+
   emit({
     ok: true, action: decision.action, reason: decision.reason,
     installed, provider, repo, host,
+    ...(defaults ? { defaults } : {}),
     detail: null, warnings,
   });
 }
