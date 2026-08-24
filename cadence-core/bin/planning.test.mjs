@@ -13,6 +13,19 @@ import { classifyAcceptanceCriteria } from './lib/planning-files.mjs';
 import { DEBT_TOKEN } from './lib/debt-markers.mjs';
 
 const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
+const PLANNING_DIR = join(dirname(fileURLToPath(import.meta.url)), 'planning');
+
+/**
+ * The seam's WHOLE source - the entry file plus every command module under
+ * `planning/` - as one string. The source-byte census below counts detail sites
+ * in the code this seam ships, and phase 4 spread that code over one module per
+ * subcommand without changing a line of it. Reading `planning.mjs` alone after
+ * that split would count the handlers that stayed and silently stop counting
+ * the ones that moved, which is a census that passes while it measures less.
+ */
+const seamSource = () => [PLANNING, ...readdirSync(PLANNING_DIR)
+  .filter((f) => f.endsWith('.mjs')).sort().map((f) => join(PLANNING_DIR, f))]
+  .map((f) => readFileSync(f, 'utf8')).join('\n');
 
 // ---------------------------------------------------------------------------
 // Fixture builder: fabricate a .planning tree from a compact spec.
@@ -5950,8 +5963,8 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // `capture --text-file` and phase-done's partial-flip already sit in.
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
-  const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 14, 'planning.mjs gained or lost a detail site');
+  const src = seamSource();
+  assert.equal((src.match(IDIOM) || []).length, 14, 'the planning seam gained or lost a detail site');
   assert.equal((src.match(WRAPPED) || []).length, 6,
     'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch, '
     + 'task-record\'s range read or groundCitations\' probe) or readQueue\'s '
