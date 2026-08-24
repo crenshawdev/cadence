@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 1 (One spelling, one phase)
-Status: ready to plan
-Next: /cad-context 1
+Phase: 1 of 3 (Pick a forge)
+Status: context gathered
+Next: /cad-plan 1
 Updated: 2026-08-24
