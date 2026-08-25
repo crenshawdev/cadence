@@ -74,6 +74,7 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 - [x] **Phase 3: CAPTURE is transient** - CAPTURE holds only the phase in flight, the gate that declines a finding files it on the repository's own tracker at that moment, and phase close asserts the file is empty rather than emptying it
 - [x] **Phase 4: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
 - [x] **Phase 5: Split planning.mjs by command** - the 32 `cmd*` handlers move to per-command modules, leaving a shared core, so a dispatch touching one command stops paying a whole-file read
+- [ ] **Phase 6: Close the plan-time lease gate** - register the one census phase 2 left out, and make `lease-check --plan-time` fail closed on a lease it could not read, so the gate refuses the case it was built for
 
 ## Phase Details
 
@@ -305,3 +306,15 @@ step is the failure mode this seam has no timeout story for.
 3. Every citation moves with the code it names. A `planning.mjs:<line>` reference on a surface that INSTRUCTS - `skills/`, `cadence-core/workflows/`, `cadence-core/references/`, and `.planning/REQUIREMENTS.md`'s `## Active` section plus `.planning/DOCS-CLAIMS.md` - either points at the new module or is rewritten, and a census test pins the count so a stale citation fails the suite naming it. This is the LOD-01 discipline applied to code. Amended 2026-08-24 after the plan review: the original wording said "anywhere under `.planning/`", which the executor cannot satisfy - `ROADMAP.md` is a surface its own contract forbids writing, and `ARCHIVE.md`, `REQUIREMENTS.md`'s `## Shipped` rows and the `phases/*/` records are records of what was true when written, not instructions to follow. `ROADMAP.md`'s phase 4 entry (the spelling phase, phase 3 before the 2026-08-25 insert) cites `planning.mjs:278`, `:612` and `:2586`; those are a HAND edit after the split, tracked as an open item rather than a task.
 4. The test file is addressed rather than left behind: `planning.test.mjs` (418,298 chars) is either split alongside the handlers or the phase records why it was not, since a 105k-token test file reproduces the same read cost it set out to remove.
 5. The saving is measured, not asserted. The phase records the before and after token cost of reaching one representative handler, using the same `wc -c` method the requirement was measured with.
+
+### Phase 6: Close the plan-time lease gate
+**Goal:** The plan-time lease gate refuses the two cases phase 2's UAT found it passing: a hand-maintained census that is not in the registry, and a PLAN whose `files:` list could not be read at all.
+**Depends on:** Phase 2 (this completes its two open UAT failures, items 9 and 10). Independent of phases 1, 3, 4 and 5, all closed.
+**Requirements:** CEN-01, CEN-02
+**Success Criteria:**
+1. `cadence-core/bin/seam-calls.test.mjs` has a registry row in `lib/census-registry.mjs` and carries a `CADENCE-CENSUS` marker, so `grep -c CADENCE-CENSUS cadence-core/bin/seam-calls.test.mjs` returns at least 1 and the discovery arm finds it. Its row names the holder, the per-workflow seam-invocation counts, the generated "instructs exactly N seam invocations" assertions, and subjects `cadence-core/workflows/plan.md` and `context.md`. Row, marker and header are ONE commit.
+2. `lib/census-registry.mjs`'s header no longer carries the pre-correction D-05 text naming `seam-calls.test.mjs` as the worked example of what is NOT a census. A grep for "deliberately absent from this table" returns zero hits in that file.
+3. `lease-check --plan-time` fails CLOSED on a lease it could not read. Against a PLAN whose frontmatter holds a garbage line, and against a PLAN whose key is misspelled `filez:`, it returns `ok:false` naming the unread lease rather than the `{"ok":true,"declared":0}` phase 2's UAT recorded. A plan that legitimately declares files and puts no census at risk still passes, so the change is not a blanket refusal.
+4. The two gates read one signal the same way: `workflows/execute.md`'s `choose_path` already treats a `frontmatter_issues` entry as grounds to refuse, and the plan-time arm now does too. A test pins both readings against the same fixture.
+5. Phase 2's UAT items 9 and 10 re-test green, and `planning.mjs uat status --phase 2` reports `result: complete`.
+6. `node cadence-core/bin/test.mjs` runs green, `npx tsc -p tsconfig.ci.json` exits 0, and `self-verify.mjs --root .` reports `problems []`.
