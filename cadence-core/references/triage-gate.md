@@ -38,7 +38,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
   FAIL, halt and surface the findings; resume only after they are fixed or the
   user explicitly overrides. A reviewer that could not run does not silently
   PASS - report that the gate could not be evaluated and ask. The re-arm on that
-  fix is CAPPED - see below.
+  fix is CAPPED - see below. Its below-blocker/high REMAINDER - the findings it
+  reports and moves past - is settled in the same step, by "What happens to a
+  finding this fire will not fix" below.
 
 **Every blocking settle leaves a JOINABLE receipt.** `planning.mjs risk-check
 status` refuses a range its detector matched until an outcome event says the
@@ -228,7 +230,9 @@ still surviving round two is the terminal STOP-and-ask, never a round three.
   `<returns>` block specifies is not that state at all: the gate
   could not be evaluated - say so and ask, the same arm the `blocking` bullet
   states, and never present it as adjudication having killed everything. Here
-  too the test is the return's SHAPE, never a host-side stop signal.
+  too the test is the return's SHAPE, never a host-side stop signal. The
+  NON-SURVIVORS, and every survivor the user did not name, are settled in the
+  same step, by "What happens to a finding this fire will not fix" below.
 
 **Two caps, two different numbers.** One question carries at most four options
 and NONE occupies one of them, so N survivors become `ceil(N/3)` questions - at
@@ -236,6 +240,63 @@ most three survivors per question, NONE first in every one. Those questions then
 batch at most four per `AskUserQuestion` call. Options per question and questions
 per call are separate caps; collapsing them is what produces the wrong batch
 size.
+
+## What happens to a finding this fire will not fix
+
+**Stated once, here, and both arms above point at it.** A gate that produces
+findings it will not fix NOW asks the user about them IN THE STEP THAT DECIDED,
+and every answer becomes an issue on this repository's own tracker. Nothing is
+written to `.planning/CAPTURE.md` on either answer, nothing is annotated, and
+nothing is carried to a later batch.
+
+**The set is READ, never judged.** It is not a list the model assembles and it
+is never re-parsed out of the REVIEW file's prose. Run:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" unfixed --payload <path>
+```
+
+`<path>` is THE SAME composed payload file the adjudication record was written
+from - the `{voices: [...]}` object, not the rendered findings. What comes back
+is exactly the same set on all three arms that reach here: the `blocking` arm's
+below-blocker/high remainder, the `adjudicated` arm's non-survivors, and any
+`recorded not fixed` disposition. A survived `blocker` or `high` is NOT in it -
+that one is what the gate is halting over. A finding already declined on a
+previous fire is not in it either, so the same question is never asked twice.
+
+**ONE ask STEP for the fire, however many findings it holds.** Present what
+comes back through `AskUserQuestion` under the two caps this file already states
+above and does not restate here. Fifteen findings are not fifteen prompts: the
+friction of asking per finding is exactly what made the old silent-write path
+attractive, and it is the thing this replaces.
+
+**Say plainly what each answer does**, in the question itself:
+
+- a finding the user NAMES becomes an issue on the tracker;
+- a finding the user does NOT name is filed carrying the decline label, which is
+  what stops a later fire asking the same question forever;
+- either way NOTHING is written to `.planning/CAPTURE.md`, and no finding is
+  annotated, parked or carried.
+
+Then make ONE call with the dispositions and report what was filed:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" file --payload <path>
+```
+
+`<path>` here holds `{"entries": [{"finding": ..., "disposition": "accept" |
+"decline"}, ...]}` - the findings the call above returned, each paired with what
+the user chose. A refusal from EITHER call is reported and the findings are
+STILL IN HAND: an unreachable tracker is not a reason to drop a finding, and a
+refusal names which ones were not filed. Add no receipt and no trace event -
+this is a step inside a fire that already leaves one.
+
+**An item is RESOLVED BY REMOVAL - filed on the tracker or dropped - never by
+annotation and never by relocation within the file.** A queue where the way to
+settle an item is to write more text into it cannot shrink: adjudicating an item
+makes it longer. The `KEPT <date>` and `recorded not fixed` shapes are what
+adjudication-by-annotation looks like, and both are refused. There is no third
+answer where an item stays and gains a note.
 
 **A contradictory answer re-asks, once.** A multi-select question can come back
 with NONE selected TOGETHER with one or more survivors. That answer is
