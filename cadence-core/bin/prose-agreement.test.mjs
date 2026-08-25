@@ -563,15 +563,15 @@ test('the turn bound: every rung file and the spawn-agent seam name one maxTurns
     `these rung files disagree with agents/${firstFile}=${bound}: ${drifted.join(', ')}`);
 
   // Direction 2: a sentence naming a value no rung file carries.
-  const seam = doc('cadence-core', 'references', 'seams.md')
+  const seam = doc('cadence-core', 'references', 'seam-spawn-agent.md')
     .split('## Seam: spawn-agent')[1];
-  assert.ok(seam, 'seams.md has no spawn-agent seam section');
+  assert.ok(seam, 'seam-spawn-agent.md has no spawn-agent seam section');
   const stated = [...seam.split(/\n## /)[0].matchAll(/maxTurns: (\d+)/g)].map((m) => m[1]);
   assert.ok(stated.length,
     'the spawn-agent seam states no maxTurns value, so it is back to describing a seam with no bound');
   const wrong = [...new Set(stated.filter((v) => v !== bound))];
   assert.deepEqual(wrong, [],
-    `references/seams.md's spawn-agent bullet states maxTurns ${wrong.join('/')}, `
+    `references/seam-spawn-agent.md's spawn-agent bullet states maxTurns ${wrong.join('/')}, `
     + `which no rung file carries - the 19 rung files carry ${bound}`);
 });
 
@@ -654,7 +654,10 @@ test('WIR-01: the recovery arm names its producers in both documents, and the de
   // never parsed the count), and it passes exactly the tree this exists to
   // catch.
   const execute = doc('cadence-core', 'workflows', 'execute.md');
-  const seams = doc('cadence-core', 'references', 'seams.md');
+  // Two seam files since the LOD-06 cold split: the producer clause travels
+  // with the spawn-agent seam, the `is exempt` sentence with the provider one.
+  const spawnFile = doc('cadence-core', 'references', 'seam-spawn-agent.md');
+  const providerFile = doc('cadence-core', 'references', 'seam-review-provider.md');
   const triggers = doc('cadence-core', 'references', 'review-triggers.md');
 
   // The arms of the return-handling list, read positionally: the recovery arm
@@ -675,13 +678,13 @@ test('WIR-01: the recovery arm names its producers in both documents, and the de
   // 2. The producer wording is one fact copied into two documents. Compare the
   //    two EXTRACTIONS, so rewording either one alone reddens this.
   const fromExecute = producerClause(recovery, 'execute.md\'s recovery arm');
-  const spawnSeam = seams.split('## Seam: spawn-agent')[1];
-  assert.ok(spawnSeam, 'seams.md has no spawn-agent seam section');
-  const fromSeams = producerClause(spawnSeam.split(/\n## /)[0], 'seams.md\'s spawn-agent seam');
+  const spawnSeam = spawnFile.split('## Seam: spawn-agent')[1];
+  assert.ok(spawnSeam, 'seam-spawn-agent.md has no spawn-agent seam section');
+  const fromSeams = producerClause(spawnSeam.split(/\n## /)[0], 'seam-spawn-agent.md\'s spawn-agent seam');
   assert.equal(fromExecute, fromSeams,
-    'execute.md and references/seams.md state different producers for the state that arm recovers from:\n'
-    + `  execute.md: ${fromExecute}\n`
-    + `  seams.md:   ${fromSeams}`);
+    'execute.md and references/seam-spawn-agent.md state different producers for the state that arm recovers from:\n'
+    + `  execute.md:           ${fromExecute}\n`
+    + `  seam-spawn-agent.md:  ${fromSeams}`);
 
   // 3. The recovery itself survived the relabel: the report file on disk is
   //    still what the arm reads.
@@ -692,9 +695,9 @@ test('WIR-01: the recovery arm names its producers in both documents, and the de
   //    and where the trigger reference introduces it. Both against the rung
   //    files' own figure - a literal typed here goes stale the day they move.
   const bound = frontmatterBound();
-  const exempt = sentenceAround(seams, 'is exempt', 'references/seams.md');
+  const exempt = sentenceAround(providerFile, 'is exempt', 'references/seam-review-provider.md');
   assert.match(exempt, new RegExp(`maxTurns: ${bound}\\b`),
-    `seams.md's exemption sentence names no maxTurns ${bound} bound, so \`claude-subagent\` `
+    `seam-review-provider.md's exemption sentence names no maxTurns ${bound} bound, so \`claude-subagent\` `
     + `still reads as the unbounded path beside over-cap: ${exempt}`);
   const bullet = triggers.split(/\n- /).find((b) => b.startsWith('`claude-subagent`'));
   assert.ok(bullet, 'review-triggers.md has no `claude-subagent` backend bullet');
@@ -1339,7 +1342,7 @@ test('GAT-04: every fenced outcome receipt names its trigger, plan and both rang
     'the five settle points no longer print one fenced receipt command each');
 });
 
-// --- MSR-01: the close-half turn rule is stated ONCE, in seams.md ------------
+// --- MSR-01: the close-half turn rule is stated ONCE, in the spawn seam ------
 //
 // `--turns` is dead the moment its ONE statement stops naming it: nothing in
 // the tree can make a coordinator read a tool-call count off a subagent return
@@ -1352,10 +1355,10 @@ test('GAT-04: every fenced outcome receipt names its trigger, plan and both rang
 // never by the shape of the sentences around it, so a rewrap that changed no
 // fact stays green.
 
-test('MSR-01: seams.md\'s close-half rule states the turn count, its omission and its own counter', () => {
-  const text = doc('cadence-core', 'references', 'seams.md');
+test('MSR-01: the spawn seam\'s close-half rule states the turn count, its omission and its own counter', () => {
+  const text = doc('cadence-core', 'references', 'seam-spawn-agent.md');
   const start = text.indexOf('**The bracket rides the resolve.**');
-  assert.ok(start >= 0, 'seams.md has no `The bracket rides the resolve.` paragraph');
+  assert.ok(start >= 0, 'seam-spawn-agent.md has no `The bracket rides the resolve.` paragraph');
   // To the end of the paragraph: the ONE statement is a single block, and a
   // rule that drifted into a paragraph of its own is exactly what this refuses.
   const end = text.indexOf('\n\n', start);
@@ -1375,7 +1378,7 @@ test('MSR-01: seams.md\'s close-half rule states the turn count, its omission an
   // ...and it is still ONE statement. A second paragraph restating any of the
   // three is how a rule starts disagreeing with itself across two sites.
   assert.equal((text.match(/ONE statement/g) || []).length, 1,
-    'seams.md now holds more than one `ONE statement` marker - the rule was copied, not extended');
+    'seam-spawn-agent.md now holds more than one `ONE statement` marker - the rule was copied, not extended');
 });
 
 // --- MSR-02: the report's spend line and the seam make ONE claim ------------
@@ -1961,11 +1964,11 @@ test('IVW-01: the prose and scanTree state one `recommended`, and only the reaso
 // the recommended option first and labelled, and that the label is a display
 // convention and never a pre-selection - and the two sites that ask the
 // risk-surface question restate them, because a workflow that pointed at
-// seams.md and stopped would leave the rules a step away at the moment the
+// the ask-user seam and stopped would leave the rules a step away at the moment the
 // question is put. Restatement is what makes them droppable one site at a
 // time, silently, so THIS check is the enforcement.
 //
-// The cap is read off seams.md rather than written here, so raising the seam's
+// The cap is read off seam-ask-user.md rather than written here, so raising the seam's
 // cap moves both sites' requirement and the builder's ceiling together instead
 // of leaving three numbers to drift.
 
@@ -1976,15 +1979,15 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
     return after.split(/\n## /)[0];
   };
 
-  const askUser = section(doc('cadence-core', 'references', 'seams.md'),
-    '## Seam: ask-user', 'references/seams.md');
+  const askUser = section(doc('cadence-core', 'references', 'seam-ask-user.md'),
+    '## Seam: ask-user', 'references/seam-ask-user.md');
 
   const CAP = /at most (\w+) options per question/;
   // Flattened: every one of these sentences wraps, and a regex over raw lines
   // would read a rewrap as a deleted rule.
   const capStated = flat(askUser).match(CAP);
-  assert.ok(capStated, 'references/seams.md `## Seam: ask-user`: no option cap per question');
-  const cap = countWord(capStated[1], 'references/seams.md `## Seam: ask-user`');
+  assert.ok(capStated, 'references/seam-ask-user.md `## Seam: ask-user`: no option cap per question');
+  const cap = countWord(capStated[1], 'references/seam-ask-user.md `## Seam: ask-user`');
 
   // Each rule as the CLAIM it makes, never the sentence shape around it: these
   // are three prose surfaces with no stated grammar, and a rewrap that changed
@@ -1999,7 +2002,7 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
   ];
 
   const SITES = [
-    { where: 'references/seams.md `## Seam: ask-user`', text: askUser },
+    { where: 'references/seam-ask-user.md `## Seam: ask-user`', text: askUser },
     {
       where: 'references/review-triggers.md `## risk_surface detection`',
       text: section(doc('cadence-core', 'references', 'review-triggers.md'),
@@ -2019,13 +2022,13 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
       assert.ok(found, `${site.where}: dropped ${rule.id}`);
       if (rule.cap) {
         assert.equal(countWord(found[1], site.where), cap,
-          `${site.where} states a cap of ${found[1]} options per question, seams.md states ${cap}`);
+          `${site.where} states a cap of ${found[1]} options per question, seam-ask-user.md states ${cap}`);
       }
     }
   }
 
   // Scoped to the `--surfaces` arm alone, which is why it cannot join RULES
-  // above: RULES runs against all three sites, and neither seams.md nor
+  // above: RULES runs against all three sites, and neither seam-ask-user.md nor
   // review-triggers.md states this. The arm's whole reason for existing is
   // that a project which added Stripe six months after answering has no other
   // way to see it, and nothing else holds the sentence - /code/cadence returns
