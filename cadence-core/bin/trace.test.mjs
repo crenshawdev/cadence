@@ -1611,6 +1611,92 @@ test('render: two closes differing ONLY in their turn count are two closes', () 
     { 'cad-executor': { dispatches: 1, turns: 4, unrecorded: 1 } });
 });
 
+// --- two writers, one bracket: the worker-key dedup (TRC-03) -----------------
+//
+// The host's `SubagentStop` hook and the orchestrator's hand-written `trace
+// close` both close a dispatch, and neither may assume it ran first. The replay
+// guard cannot fold them - it keys on the millisecond, which two independent
+// writers never share - so the dedup is on the worker key.
+
+const DISP = '2026-08-20T10:00:00.000Z';
+const SHUT = '2026-08-20T10:05:00.000Z';
+/** The figureless writer's close: a bracket and nothing else. */
+const bare = { phase: 5, family: 'lifecycle', event: 'return', plan: 'p', role: 'cad-executor', ts: SHUT };
+/** The writer that read the return: every figure, and the checkpoint arm. */
+const rich = {
+  phase: 5, family: 'lifecycle', event: 'checkpoint', plan: 'p', role: 'cad-executor', ts: SHUT,
+  tokens: 1200, turns: 9, duration_ms: 83000, detail: 'needs a decision',
+};
+
+/** One dispatch closed twice, in the order the two closes are given. */
+function twice(first, second) {
+  const dir = root();
+  appendEvent(dir, { phase: 5, family: 'lifecycle', event: 'dispatch', plan: 'p', role: 'cad-executor', ts: DISP });
+  appendEvent(dir, first);
+  appendEvent(dir, second);
+  return renderTrace(dir, 5);
+}
+
+test('render: a dispatch closed by BOTH writers is exactly one bracket', () => {
+  const r = twice(bare, rich);
+  assert.equal(r.brackets.length, 1, 'two closes, one dispatch, one row');
+  const [b] = r.brackets;
+  // Every figure the second writer carried landed on the row the first opened.
+  assert.equal(b.tokens, 1200);
+  assert.equal(b.turns, 9);
+  assert.equal(b.duration_ms, 83000);
+  // The checkpoint arm SURVIVES the figureless writer that ran first. A
+  // downgrade here would bill a worker that came back unusable as a clean
+  // return, the one arm the record exists to keep separate.
+  assert.equal(b.event, 'checkpoint');
+  assert.deepEqual(r.unpaired, [], 'the second close consumed no other dispatch');
+  // Billed for ONE dispatch and ONE token figure, with nothing unrecorded.
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 1200, turns: 9 } });
+});
+
+test('render: the two closes render identically in EITHER arrival order', () => {
+  // Neither writer may assume it ran first: the hook fires when the host
+  // decides and the hand-written close when the orchestrator reaches its step.
+  //
+  // Everything the render DERIVES is compared, which is the whole of what the
+  // dedup decides. `file` is a scratch path and `events` is the file's own
+  // line order echoed back - the render reports the record rather than editing
+  // it - so those two are the one pair that can never match across two
+  // orderings, and asserting on them would be asserting the fixture.
+  const derived = (r) => ({
+    brackets: r.brackets, unpaired: r.unpaired, mismatched: r.mismatched,
+    roles: r.roles, counts: r.counts, corr: r.corr,
+  });
+  assert.deepEqual(derived(twice(rich, bare)), derived(twice(bare, rich)));
+});
+
+test('render: two genuine dispatches on ONE worker key are still two brackets', () => {
+  const dir = root();
+  const ev = (event, ts) => appendEvent(dir,
+    { phase: 5, family: 'lifecycle', event, plan: 'p', role: 'cad-executor', ts });
+  ev('dispatch', '2026-08-20T10:00:00.000Z');
+  ev('return', '2026-08-20T10:05:00.000Z');
+  ev('dispatch', '2026-08-20T11:00:00.000Z');
+  ev('return', '2026-08-20T11:05:00.000Z');
+  const r = renderTrace(dir, 5);
+  // What the dedup collapses is a repeat CLOSE, never a repeat DISPATCH: the
+  // second close found a dispatch pending and paired with it.
+  assert.equal(r.brackets.length, 2);
+  assert.deepEqual(r.unpaired, []);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, unrecorded: 2 } });
+});
+
+test('render: a close whose dispatch was never read still bills its own role', () => {
+  const dir = root();
+  // A close whose dispatch fell outside the `--phase` filter or above the read
+  // cap is a DIFFERENT input from a repeat close: there is no row to fold into,
+  // so today's behaviour stands - it bills its own role and opens no bracket.
+  appendEvent(dir, { phase: 5, family: 'lifecycle', event: 'return', plan: 'q', role: 'cad-verifier', tokens: 42 });
+  const r = renderTrace(dir, 5);
+  assert.deepEqual(r.brackets, []);
+  assert.deepEqual(r.roles, { 'cad-verifier': { dispatches: 0, tokens: 42 } });
+});
+
 test('render: a non-numeric turn figure contributes NOTHING', () => {
   const dir = root();
   appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });

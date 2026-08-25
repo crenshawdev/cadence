@@ -349,6 +349,13 @@ export function appendEvent(planningRoot, event) {
  *   close carried no tool-call count has no `turns` key and one whose close
  *   carried no wall clock has no `duration_ms` key at all - so a record written
  *   before either flag existed renders byte-identically.
+ *
+ *   ONE ROW PER DISPATCH, not per close. Two writers close one bracket - the
+ *   host's `SubagentStop` hook and the orchestrator's own `trace close` - and
+ *   whichever arrives second folds its figures into the row the first opened.
+ *   Two genuine dispatches on one worker key, each with its own close, are
+ *   still two rows: what is collapsed is a repeat CLOSE, never a repeat
+ *   DISPATCH.
  * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
  * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched
  *   paired brackets whose terminal named a role its dispatch did not
@@ -613,10 +620,42 @@ export function renderTrace(planningRoot, phase) {
   // across all six prose close sites - the same six a `trace close` subcommand
   // is scheduled to absorb, so it is that seam's to make, not this reader's.
   //
+  // The TWO-WRITER hazard this guard could not answer - a hook close and a
+  // hand-written close of one dispatch, which never share a millisecond - is
+  // answered by the worker-key dedup below rather than by widening this
+  // identity. Widening it would have to drop the millisecond, and then two
+  // genuine dispatches on one worker key with equal figures would fold into
+  // one bracket.
+  //
   // TERMINALS only. A duplicated DISPATCH is a different hazard (it inflates a
   // count rather than funding a bracket) and is deliberately not folded in here.
   /** @type {Set<string>} */
   const seenTerminals = new Set();
+
+  // THE DEDUP, and it is a different rule from the replay guard above.
+  //
+  // Two writers now close one bracket: the host's `SubagentStop` hook and the
+  // orchestrator's own hand-written `trace close`, kept as the fallback for the
+  // dispatches no subagent stands behind. Neither may assume it ran first, and
+  // the guard above cannot fold them - it keys on the MILLISECOND, and two
+  // independent writers never agree to the millisecond, so the FIFO
+  // `pending.shift()` below would hand the second close a different open
+  // dispatch: one bracket becomes two, a genuinely open worker vanishes out of
+  // `unpaired`, and the role is billed for a dispatch that never happened.
+  //
+  // The rule, and it holds in EITHER arrival order: the first terminal to find
+  // a pending dispatch for a worker key PAIRS and owns the row's identity. A
+  // later terminal for that same key that finds NO pending dispatch is a REPEAT
+  // CLOSE of that row - it adds no bracket and no `unpaired` row, its figures
+  // fill fields the row left empty, and it funds nothing the row was already
+  // funded for.
+  //
+  // A terminal that never had a pending dispatch AT ALL is a different input
+  // and keeps today's behaviour: a close whose dispatch fell outside the
+  // `--phase` filter or above the read cap still bills its own role and opens
+  // no bracket. Collapsing the two would drop figures the record keeps.
+  /** @type {Map<string, {row: any, entry: any}>} worker key -> the row it opened */
+  const pairedRows = new Map();
   for (const e of out.events) {
     // Every family feeds the RUN's end-of-record mark, not the lifecycle one
     // alone: the coordinator's last step is still running while the routing and
@@ -703,14 +742,22 @@ export function renderTrace(planningRoot, phase) {
       seenTerminals.add(identity);
 
       const pending = open.get(worker);
-      const matched = pending && pending.length ? pending.shift() : null;
+      let matched = pending && pending.length ? pending.shift() : null;
+      // A REPEAT CLOSE: nothing left open on this worker key, but a row this
+      // key already opened is on the record, so this is the second writer
+      // closing the same bracket rather than a stray terminal. It adopts the
+      // first writer's pending entry, which is what makes the `funded` and
+      // `turnsFunded` flags below bill the dispatch exactly once whichever
+      // writer arrived first.
+      const repeat = matched ? null : pairedRows.get(worker);
+      if (repeat) matched = repeat.entry;
       // A bracket contributes its span to the residue only once it has PAIRED,
       // which is why the span is taken here and not from the dispatch half: an
       // unpaired dispatch (the fixture's 13:51:44 `cad-reviewer` is one) has no
       // known end, and inventing one - the phase's last event, say - would
       // subtract a worker's whole tail from the coordinator's bill and hide the
       // gap the marker exists to show.
-      if (matched) {
+      if (matched && !repeat) {
         const a = millis(matched.ts);
         if (a !== null && t !== null && t > a) coordRow(e.corr).spans.push({ a, b: t });
         // The bracket ROW, taken here because this is the one place the two
@@ -720,7 +767,7 @@ export function renderTrace(planningRoot, phase) {
         // figure already takes. `tokens` prefers the terminal's figure and
         // falls back to one the dispatch half carried, which is exactly what
         // the per-role accounting below bills.
-        out.brackets.push({
+        const bracketRow = {
           corr: e.corr, phase: e.phase, plan: e.plan, role: matched.role,
           event: e.event, ts: matched.ts, end: e.ts,
           ms: a !== null && t !== null ? t - a : null,
@@ -741,7 +788,14 @@ export function renderTrace(planningRoot, phase) {
           // from the two timestamps - `ms` one clause above already is that
           // quantity, and it measures the step rather than the worker.
           ...(duration !== null ? { duration_ms: duration } : {}),
-        });
+        };
+        out.brackets.push(bracketRow);
+        // The row this worker key now owns, so a SECOND close of it folds in
+        // here instead of opening a row of its own. Overwritten by a later
+        // genuine pairing on the same key, which is what keeps a real
+        // dispatch/close/dispatch/close sequence two brackets: the dedup
+        // collapses a repeat CLOSE, never a repeat DISPATCH.
+        pairedRows.set(worker, { row: bracketRow, entry: matched });
         // REPORTED, never billed. The accounting below is unchanged - the
         // dispatch is still the authority for whose bill this is - but a
         // bracket whose two halves name two different roles is a prose defect
@@ -760,6 +814,27 @@ export function renderTrace(planningRoot, phase) {
             dispatched: matched.role, closed,
           });
         }
+      } else if (repeat) {
+        // The FOLD. Each figure fills a field the row left empty and never
+        // overwrites one the first writer already supplied: the two closes are
+        // describing one dispatch, and the writer that had a figure is the one
+        // that read it off the return.
+        const b = repeat.row;
+        if (b.tokens === null && tokens !== null) b.tokens = tokens;
+        if (!('turns' in b) && turns !== null) b.turns = turns;
+        if (!('duration_ms' in b) && duration !== null) b.duration_ms = duration;
+        // The arm upgrades in ONE direction and never back. A figureless writer
+        // that happened to run first would otherwise turn every checkpoint into
+        // a clean `return` - billing a worker that came back unusable as a
+        // clean close, the one arm this record exists to keep separate (the
+        // TERMINAL contract at the top of this file). `e.event` is already
+        // known to be a terminal, so "not `return`" is exactly "`checkpoint` or
+        // `escalation`" without re-enumerating them.
+        if (b.event === 'return' && e.event !== 'return') b.event = e.event;
+        // No `mismatched` row and no coordinator span: both are the PAIRING's
+        // to report, and today a terminal with nothing pending contributes
+        // neither. A repeat close reporting a second span would subtract one
+        // worker's time from the coordinator's bill twice.
       }
       if (tokens !== null) {
         // Bill the DISPATCH's role. An unmatched terminal has no dispatch to
