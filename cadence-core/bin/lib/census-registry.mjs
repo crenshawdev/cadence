@@ -65,6 +65,8 @@
 // `lib/*.mjs`: they are modules prose never invokes.
 'use strict';
 
+import { covers, intersects } from './lease-grammar.mjs';
+
 /**
  * @typedef {object} CensusEntry
  * @property {string} id stable join key between a marked site and its row
@@ -363,4 +365,63 @@ export function censusIssues(path, markers) {
       + `${m.asserts || '(unstated)'}. Add the row, or delete the marker and the `
       + 'count with it.',
   }));
+}
+
+// --- the lease predicate: what a declared file list puts at risk -------------
+//
+// D-10. Path intersection is the ONLY relation available at plan time. Nothing
+// in a PLAN declares what it will CHANGE other than paths:
+// `cadence-core/references/plan-frontmatter.md` documents the whole frontmatter
+// grammar and `files:` is its only path-bearing key, unioned by `parsePlanFiles`
+// with the `- **Files:**` task lines. Reading the plan's Action prose, or
+// opening a census test to see what it scans, both reach past "the lease and
+// the registry only" - so neither is reachable from here by construction.
+//
+// Both halves go through `lib/lease-grammar.mjs`. Re-implementing either would
+// redden `helper-census.test.mjs`'s `covers` row, and would be the
+// two-readers-one-rule divergence that module exists to close, reproduced
+// inside the phase meant to close it.
+
+/**
+ * @typedef {object} CensusAtRisk
+ * @property {string} id the registry row
+ * @property {string} missing the file the lease does not declare
+ * @property {string} counts what that file's count is a count of
+ * @property {string} asserted_by the site that asserts it
+ */
+
+/**
+ * The registered censuses a declared file list puts at risk.
+ *
+ * An entry qualifies on two conditions together: some declaration INTERSECTS
+ * one of its subject paths - the work will reach what the count is taken over -
+ * and no declaration COVERS the entry's own holding file, so nothing in the
+ * plan can move the number back into agreement. Declaring the holder is
+ * therefore the whole remedy, which is what makes the refusal actionable rather
+ * than merely correct.
+ *
+ * Intersection is the right half on the subject side and containment on the
+ * holder side, and they are not interchangeable: a declaration may be a
+ * DIRECTORY lease that contains a subject, or a subject may be a directory
+ * lease containing the declaration, and either reaches the count - while the
+ * holder is one named file, and a lease amendment has to actually reach it.
+ *
+ * Pure: no `fs`, no git, no envelope, no throw. The caller owns those and owns
+ * the verdict. Living here rather than in the seam is what lets a replay ask
+ * the question once per historical plan without a seam invocation each time.
+ *
+ * @param {readonly string[]} declared the plan's declared file list
+ * @returns {CensusAtRisk[]}
+ */
+export function censusesAtRisk(declared) {
+  const decls = Array.isArray(declared) ? declared : [];
+  return CENSUSES
+    .filter((e) => e.subjects.some((s) => decls.some((d) => intersects(d, s)))
+      && !decls.some((d) => covers(d, e.holder)))
+    .map((e) => ({
+      id: e.id,
+      missing: e.holder,
+      counts: e.counts,
+      asserted_by: e.asserted_by,
+    }));
 }
