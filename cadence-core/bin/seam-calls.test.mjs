@@ -26,7 +26,7 @@
 //                        `criteria-size` call at the end of write_context is a
 //                        NEW invocation (+1).
 //
-// One derivation has been made FROM those figures since, and it is stated the
+// Derivations have been made FROM those figures since, and each is stated the
 // same way rather than folded into them - a row that absorbed later arithmetic
 // would stop showing which phase spent which call:
 //
@@ -36,6 +36,15 @@
 //                        count_committed. The `--inline` path adds NEITHER - it
 //                        references those two steps instead of restating their
 //                        calls, which is what keeps this +2 and not +4.
+//   plan.md    11 -> 12  CEN-02's plan-time census gate is a NEW invocation
+//                        (+1): `lease-check --phase {N} --plan <k> --plan-time`
+//                        at check_census, fired after the plan is on disk and
+//                        before any executor is dispatched, so a plan whose
+//                        `files:` lease would invalidate a hand-maintained
+//                        count is refused while the lease is still cheap to
+//                        amend. The `--inline` path adds NOTHING - it
+//                        references that step instead of restating the call,
+//                        which is what keeps this +1 and not +2.
 //
 // PLAN-2 task 6 stated 5 for `context.md`. That figure omits the +1 its own
 // task 3 mandates - the criteria-ceilings call - and 5 is unreachable while
@@ -83,17 +92,20 @@ const CENSUS = [
   },
   {
     file: join('cadence-core', 'workflows', 'plan.md'),
-    calls: 11,
+    calls: 12,
     note: 'status, config.mjs get, plan-size x2, recall, trace close x2, '
       + 'seed-reqs, cursor set (9), plus RBK-01\'s two read-back count points - '
       + '`cite-count --point planned` at count_planned and `cite-count --point '
-      + 'committed` at count_committed (+2). Two, not one: a checker revision '
-      + 'and an applied adjudicated survivor both edit the plan between them, so '
-      + 'one count would describe a plan that no longer exists. And not four: '
-      + 'inline_plan REFERENCES those two steps rather than restating their '
-      + 'calls. A twelfth means a call came back - most likely a restated count '
-      + 'in inline_plan, or a `trace append` beside the seam\'s own in-code '
-      + 'outcome event.',
+      + 'committed` at count_committed (+2) - plus CEN-02\'s plan-time census '
+      + 'gate, `lease-check --plan-time` at check_census (+1). Two read-back '
+      + 'points, not one: a checker revision and an applied adjudicated '
+      + 'survivor both edit the plan between them, so one count would describe '
+      + 'a plan that no longer exists. And one census gate, not two: '
+      + 'inline_plan REFERENCES check_census and those two count steps rather '
+      + 'than restating their calls, which is what holds this at 12 and not 15. '
+      + 'A thirteenth means a call came back - most likely a restated count or '
+      + 'a restated census call in inline_plan, or a `trace append` beside the '
+      + 'seam\'s own in-code outcome event.',
   },
 ];
 
