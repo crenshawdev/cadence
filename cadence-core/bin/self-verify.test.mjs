@@ -2473,3 +2473,40 @@ test('check 22: a hintless refusal reaches problems through the CLI, and a hinte
 test('check 22: the CLI names refusal-hints in `checked`', () => {
   assert.match(run(['--root', binFixture({})]).checked, /refusal-hints/);
 });
+
+// --- check 23: who may write the transient queue ------------------------------
+// The rule's own fixtures - the replay of the retired close step, the two
+// shapes that count as issuing a write, the redirect kind and the mention that
+// instructs nothing - live in capture-writers.test.mjs. This side owns the
+// WIRING: that the rule reaches `problems` through the CLI at all, that
+// `checked` says so, and that the LIVE tree passes it. The last is the half a
+// fixture cannot state, and it is what makes an open-items filing call put back
+// into a close step redden the suite as well as the linter.
+
+test('check 23: an unregistered CAPTURE write reaches problems, naming the surface', () => {
+  const root = fixture('File each open item into the queue:\n'
+    + '`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind todo --text-file <path> --phase <N>`\n');
+  const j = run(['--root', root]);
+  assert.match(j.checked, /capture-writers/);
+  const hits = j.problems.filter((p) => p.kind === 'capture-writer-unregistered');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'cadence-core/workflows/x.md');
+  assert.match(hits[0].detail, /## Open items/);
+});
+
+test('check 23: a shell redirect at the capture path reaches problems through the CLI', () => {
+  const hits = run(['--root', fixture('`printf \'%s\\n\' "<item>" >> .planning/CAPTURE.md`\n')])
+    .problems.filter((p) => p.kind === 'capture-writer-redirect');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].file, 'cadence-core/workflows/x.md');
+});
+
+test('check 23: the LIVE tree is clean of all three capture-writer codes', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it: every prose surface that still writes the file is a
+  // register row, and no surface routes a phase's open items there.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-unregistered'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-durable'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-redirect'), []);
+});

@@ -174,6 +174,15 @@ export const CENSUSES = Object.freeze([
     subjects: ['cadence-core/bin/lib/text-transport.mjs'],
   }),
   entry({
+    id: 'capture-writers-register',
+    holder: 'cadence-core/bin/capture-writers.test.mjs',
+    counts: "the register's 4 rows, none of them durable - a durable row is a "
+      + 'reported problem on the live tree, so the second figure is the '
+      + "classification's own floor rather than a tally",
+    asserted_by: 'the test named `the register pins its row count`',
+    subjects: ['cadence-core/bin/lib/capture-writers.mjs'],
+  }),
+  entry({
     id: 'bulk-output-register',
     holder: 'cadence-core/bin/bulk-output.test.mjs',
     counts: "the register's row count and its two transport splits - 17, 4 "
