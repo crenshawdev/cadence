@@ -21,8 +21,8 @@
   },
   "git": {
     "auto_close": true,
-    "forge_provider": "forgejo",
+    "forge_provider": "github",
     "forge_repo": "crenshawdev/cadence",
-    "forge_host": "git.jcrenshaw.dev"
+    "forge_host": null
   }
 }
