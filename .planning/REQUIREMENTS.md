@@ -72,10 +72,13 @@ Traceability row as its phase is planned; rows are never hand-populated here.
   `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are
   all silently legal (verified 2026-08-24) while the detail
   `phaseDirGrammarDrift` prints says "no zero-padding".
-- **SPL-02**: Every `planning.mjs` command that resolves `--phase` to a
+- **SPL-02**: Every command that resolves `--phase` to a
   `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal`
-  (`planning/core.mjs:77`). It is wired at 2 of roughly 28 `requirePhaseArg`
-  callsites today, `cursor set` (`planning/cursor-set.mjs`, `:42`) and
+  (`planning/core.mjs:77`). Re-measured 2026-08-25, after phase 5's split: 22
+  live `requirePhaseArg` invocations remain outside tests, spread across 14
+  `cadence-core/bin/planning/` modules plus `lib/arg-contract.mjs`, and NONE in
+  `cadence-core/bin/planning.mjs`, which retains only a comment. It is wired at
+  2 of those 22 today, `cursor set` (`planning/cursor-set.mjs`, `:42`) and
   `seed-reqs` (`planning/seed-reqs.mjs`, `:28`); the rest
   take the normalized number and never mention the spelling they discarded.
 - **LOD-02**: `cadence-core/bin/planning.mjs` is split so that no dispatch pays
