@@ -74,7 +74,7 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 - [x] **Phase 3: CAPTURE is transient** - CAPTURE holds only the phase in flight, the gate that declines a finding files it on the repository's own tracker at that moment, and phase close asserts the file is empty rather than emptying it
 - [x] **Phase 4: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
 - [x] **Phase 5: Split planning.mjs by command** - the 32 `cmd*` handlers move to per-command modules, leaving a shared core, so a dispatch touching one command stops paying a whole-file read
-- [ ] **Phase 6: Close the plan-time lease gate** - register the one census phase 2 left out, and make `lease-check --plan-time` fail closed on a lease it could not read, so the gate refuses the case it was built for
+- [x] **Phase 6: Close the plan-time lease gate** - register the one census phase 2 left out, and make `lease-check --plan-time` fail closed on a lease it could not read, so the gate refuses the case it was built for
 
 ## Phase Details
 

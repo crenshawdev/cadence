@@ -1,0 +1,122 @@
+{
+  "status": "gaps",
+  "score": "8/9",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "The seam-invocation census is registered and the row is wired into the live gate, not merely present in a table",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "grep -c CADENCE-CENSUS cadence-core/bin/seam-calls.test.mjs = 1 (marker at seam-calls.test.mjs:139, `CADENCE-CENSUS: seam-call-counts | asserts: ...`); row at cadence-core/bin/lib/census-registry.mjs:243-260 with holder cadence-core/bin/seam-calls.test.mjs and subjects exactly ['cadence-core/workflows/plan.md','cadence-core/workflows/context.md']. End-to-end trace: a scratch PLAN declaring cadence-core/workflows/plan.md alone drove `planning.mjs lease-check --plan-time` to ok:false reason census-at-risk with a censuses_at_risk entry id seam-call-counts, missing cadence-core/bin/seam-calls.test.mjs, carrying its counts and asserted_by, exit 1. Row+marker+header landed in ONE commit (ac01bcc7 touches only census-registry.mjs and seam-calls.test.mjs)."
+    },
+    {
+      "n": 2,
+      "truth": "No unregistered census remains, and the replay record states what a fresh replay actually measures",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "node --test cadence-core/bin/census-registry.test.mjs = 7 pass / 0 fail, including the live-tree arm 'every marked census site in the live tree has a registry row'. Independent replay of the shipped censusesAtRisk predicate over every PLAN.md/PLAN-<k>.md under .planning (script run from /tmp, repo untouched) returned walked 56, under cadence-core/bin/ 48, bound 24, and per-entry counts planning-detail-sites 15, seam-call-counts 9, self-verify-merge-layers 6, trace-refusal-sentences 6, phase-spelling-callsites 4, weight-budgets 2, deferred-reads-register 2, and five entries at 0 - matching .planning/phases/2/census-replay.md's Corpus table and per-entry table row for row, including the new seam-call-counts row at 9 (19%). No entry is over half."
+    },
+    {
+      "n": 3,
+      "truth": "The pre-correction D-05 worked example is gone from the registry header",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "grep -c \"deliberately absent from this table\" cadence-core/bin/lib/census-registry.mjs = 0. The rewritten paragraph at census-registry.mjs:44-53 keeps the derived-vs-typed rule ('a count a human TYPED into the test is a census however carefully the test's header derives it') and names no contradicting example."
+    },
+    {
+      "n": 4,
+      "truth": "workflows/plan.md's check_census prose names every refusal the seam now returns, and plan.md is inside its weight budget",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "cadence-core/workflows/plan.md:331-345 reads 'It answers ok:true, or it refuses one of three ways' and names census-at-risk (with censuses_at_risk), unparsed-lease (with frontmatter_issues) and empty-lease, plus the distinct remedy: 'The remedy for those is to repair that plan's frontmatter, NOT to add a file'. wc -c cadence-core/workflows/plan.md = 33749 and weight-budgets.json:71 = 33749 (exact). node cadence-core/bin/self-verify.mjs --root . returned problems []."
+    },
+    {
+      "n": 5,
+      "truth": "The plan-time gate fails CLOSED on both signals of a lease it could not read, each with its own reason token and a hint",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "Live runs on a scratch .planning tree via planning.mjs --dir: garbage frontmatter line -> {\"ok\":false,\"reason\":\"unparsed-lease\",...,\"frontmatter_issues\":[{\"line\":6,\"code\":\"unknown-line\"}],\"hint\":\"repair ...'s frontmatter ...\"} exit 1; misspelled key filez: -> {\"ok\":false,\"reason\":\"empty-lease\",...,\"declared\":0,\"hint\":\"declare this plan's files ...\"} exit 1. Implementation is cadence-core/bin/planning/lease-check.mjs:302-321, both arms direct emits above the censusesAtRisk(declared) call at :322, frontmatter signal checked first."
+    },
+    {
+      "n": 6,
+      "truth": "The change is fail-closed, not a blanket refusal - a good plan still passes",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Same scratch tree with a valid files: list declaring src/a.mjs -> {\"ok\":true,\"phase\":1,\"plan\":1,\"plan_file\":\"...\",\"declared\":1}, exit 0. Test arm 'lease-check --plan-time: two plans that declare real paths are a PASS on both' (planning-lease-check.test.mjs:728-743) asserts ok:true, declared 1, frontmatter_issues undefined and exit 0 on both plan numbers."
+    },
+    {
+      "n": 7,
+      "truth": "One fixture directory with two PLAN files pins both gates on both signals, and removing either implementation half reddens it",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "planning-lease-check.test.mjs:699-727 builds ONE tree via planTimeTree/writePlanTimePlan holding PLAN-1.md (garbage line + real files: entry) and PLAN-2.md (filez:), asserts plan-overlap's frontmatter_issues == ['PLAN-1.md'] with code unknown-line AND undeclared == ['PLAN-2.md'], then asserts lease-check --plan-time refuses plan 1 unparsed-lease and plan 2 empty-lease, each with a non-empty hint and _exit 1. Named run: 1 pass / 0 fail. Mutation-sensitivity checked on a scratch COPY of the tree at /tmp/cadmut (repo files never modified): baseline 1 pass; deleting only the unparsed-lease arm (lease-check.mjs:302-311) -> 0 pass / 1 fail; restoring and deleting only the empty-lease arm (:312-321) -> 0 pass / 1 fail; deleting both -> 0 pass / 1 fail; restored -> 1 pass."
+    },
+    {
+      "n": 8,
+      "truth": "Phase 2's UAT items 9 and 10 re-test green with fail:0, item 11 stays pending and phase 2's UAT stays partial",
+      "status": "FAILED",
+      "uat_item": 8,
+      "evidence": "GOVERNING CONTRACT: ROADMAP.md phase 6 criterion 5 (line 319) demands exactly 'fail: 0 with both recorded pass ... Item 11 stays pending and phase 2's UAT stays partial'. Ground truth: node cadence-core/bin/planning.mjs uat status --phase 2 -> {\"status\":\"testing\",\"counts\":{\"pass\":10,\"fail\":0,\"pending\":1,...},\"result\":\"partial\",\"first_pending\":{\"k\":11,...}}. Items 9 and 10 are status: pass with source verifier and evidence naming ac01bcc7 / 3bf5264e / 6db19be9; git diff over .planning/phases/2/UAT.md across the phase touches items 9 and 10 and the summary counters only, leaving item 11's block untouched. So the governing criterion is MET. What FAILS is this UAT item's own text, which was generated from CONTEXT.md AC5 (line 179) demanding 'result: complete' plus item 11 'recorded from this phase's own live /cad-plan run'. CONTEXT.md landed at eb8698b8 (2026-08-25 14:15) and the ROADMAP amendment at 6010920e (14:35), so CONTEXT AC5 and D-05 are the SUPERSEDED text; PLAN.md:64-66 and SUMMARY.md's open item both record the amendment. As written, item 8 can only be satisfied by recording an observation nobody made."
+    },
+    {
+      "n": 9,
+      "truth": "The whole-tree gate is green",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "node cadence-core/bin/test.mjs -> tests 3267, pass 3267, fail 0. npx tsc -p tsconfig.ci.json -> exit 0. node cadence-core/bin/self-verify.mjs --root . -> {\"ok\":true,\"checked\":\"...27 checks...\",\"problems\":[]}. Debt-marker scan over the phase's touched code files (planning/lease-check.mjs, lib/census-registry.mjs, seam-calls.test.mjs, planning-lease-check.test.mjs, workflows/plan.md) found no unreferenced TODO/FIXME/XXX/HACK/placeholder - the two grep hits are a mktemp template at plan.md:132 and prose about literal placeholders at plan.md:376."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Seam-invocation census is registered",
+      "evidence": "grep -c CADENCE-CENSUS cadence-core/bin/seam-calls.test.mjs = 1 (marker at :139); row at cadence-core/bin/lib/census-registry.mjs:243-260, holder cadence-core/bin/seam-calls.test.mjs, subjects exactly cadence-core/workflows/plan.md and cadence-core/workflows/context.md. Wired end to end: a scratch PLAN declaring workflows/plan.md alone drives lease-check --plan-time to ok:false census-at-risk naming seam-call-counts with its counts and asserted_by, exit 1. Row, marker and header are one commit (ac01bcc7)."
+    },
+    {
+      "k": 2,
+      "name": "No unregistered census remains",
+      "evidence": "census-registry.test.mjs 7/7 including the live-tree discovery arm. An independent replay of censusesAtRisk over all 56 PLAN files under .planning returned 48 declaring under cadence-core/bin/, bound 24, and per-entry counts identical to .planning/phases/2/census-replay.md row for row - seam-call-counts 9 (19%), worst entry planning-detail-sites 15 (31%), five entries at 0. Corpus figures 56/48/24 match the file's Corpus table."
+    },
+    {
+      "k": 3,
+      "name": "Pre-correction D-05 header text is gone",
+      "evidence": "grep -c \"deliberately absent from this table\" cadence-core/bin/lib/census-registry.mjs = 0; the rewritten paragraph at :44-53 keeps the derived-number rule without the contradicting example."
+    },
+    {
+      "k": 4,
+      "name": "check_census prose names every refusal",
+      "evidence": "cadence-core/workflows/plan.md:331-345 names census-at-risk, unparsed-lease and empty-lease with the frontmatter-repair remedy distinguished from adding a file. wc -c plan.md = 33749 = weight-budgets.json:71; self-verify.mjs --root . reports problems [] so no budget-overrun."
+    },
+    {
+      "k": 5,
+      "name": "Plan-time gate refuses an unreadable lease",
+      "evidence": "Live: garbage frontmatter line -> ok:false reason unparsed-lease with frontmatter_issues[{line:6,code:unknown-line}] and a hint, exit 1; filez: -> ok:false reason empty-lease, declared 0, with a hint, exit 1. Arms at cadence-core/bin/planning/lease-check.mjs:302-321, both above the censusesAtRisk call at :322."
+    },
+    {
+      "k": 6,
+      "name": "A good plan still passes",
+      "evidence": "Live: a PLAN declaring src/a.mjs returns {\"ok\":true,...,\"declared\":1} exit 0. Test arm at planning-lease-check.test.mjs:728-743 pins ok:true on both plan numbers of a two-plan fixture."
+    },
+    {
+      "k": 7,
+      "name": "One fixture pins both gates on both signals",
+      "evidence": "planning-lease-check.test.mjs:699-727 - one directory, PLAN-1.md (garbage line) and PLAN-2.md (filez:); asserts plan-overlap's frontmatter_issues ['PLAN-1.md'] and undeclared ['PLAN-2.md'], and lease-check --plan-time refusing plan 1 unparsed-lease and plan 2 empty-lease, each with a hint and exit 1. Mutation-checked on a scratch copy at /tmp/cadmut with the repo untouched: dropping either arm alone, or both, turns that named test red; restoring makes it green."
+    },
+    {
+      "k": 9,
+      "name": "Whole-tree gate is green",
+      "evidence": "test.mjs 3267 pass / 0 fail; npx tsc -p tsconfig.ci.json exit 0; self-verify.mjs --root . problems [] across all 27 checks. No unreferenced debt markers on the phase's touched files."
+    }
+  ],
+  "gaps": [
+    {
+      "k": 8,
+      "name": "Phase 2's UAT closes",
+      "reason": "behavior wrong - the item's own expected text is unsatisfiable and contradicts the criterion that governs this phase. It demands `uat status --phase 2` report `result: complete` with item 11 recorded from this phase's live /cad-plan run. ROADMAP.md phase 6 criterion 5 (line 319) demands the opposite: fail:0 with items 9 and 10 pass, item 11 STAYS pending and phase 2's UAT STAYS partial, because item 11 needs a planning run that genuinely under-declares and this phase's own run declared every holder. The ROADMAP is the contract and it is also the later text - CONTEXT.md landed 2026-08-25 14:15 (eb8698b8), the ROADMAP amendment 14:35 (6010920e) - so CONTEXT.md AC5 and its D-05 are superseded, and the UAT item was generated from the stale wording. Recording item 8 a pass as written would mean recording an observation nobody made; recording it a fail would punish the phase for obeying its governing criterion. The state on the ground satisfies the governing criterion in full.",
+      "evidence": "Ground truth: `node cadence-core/bin/planning.mjs uat status --phase 2` -> {\"status\":\"testing\",\"counts\":{\"pass\":10,\"fail\":0,\"pending\":1,\"skipped\":0,\"blocked\":0},\"result\":\"partial\",\"first_pending\":{\"k\":11,...}}. .planning/phases/2/UAT.md items 9 and 10 are `status: pass`, `source: verifier`, evidence naming ac01bcc7 / 3bf5264e / 6db19be9 / badcb33e; item 11 is `status: pending` with its why_human intact and byte-untouched (git diff ac01bcc7~1..HEAD over that file changes only items 9 and 10 and the summary counters). Conflicting texts: .planning/ROADMAP.md:319 vs .planning/phases/6/CONTEXT.md:179-181 (AC5) and :86-96 (D-05). .planning/phases/6/PLAN.md:64-66 and .planning/phases/6/SUMMARY.md:67-71 both already state the ROADMAP wording.",
+      "severity": "minor",
+      "missing": "No code or test change is owed - the seam behaves correctly. Amend the stale record so it stops asking for something the contract forbids: rewrite .planning/phases/6/CONTEXT.md AC5 (and D-05's 'Rejected: narrowing AC5' clause) to the amended ROADMAP criterion 5 wording, and reword this UAT item's `expected` to 'uat status --phase 2 reports fail: 0 with items 9 and 10 pass; item 11 stays pending and result stays partial'. Then re-record item 8 against that text, where it passes on the output already captured above. The open question for the user is only whether to amend the phase-6 CONTEXT record after the fact or to leave item 8 pending with this finding attached."
+    }
+  ],
+  "human_checks": []
+}
