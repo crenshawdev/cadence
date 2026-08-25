@@ -105,6 +105,48 @@ function phaseSpellingRefusal(parsed) {
 // untrue, measured 2026-08-25: it matches `08`, `1.01` and `2.0`, and both
 // sites key by `Number(...)`, so `phases/08/` landed under phase 8 (D-04).
 const PHASE_DIR_NAME = /^[1-9]\d*(?:\.[1-9]\d*)?$/;
+
+/**
+ * The `--phase` spellings a PATH-RESOLVING face cannot honour on THIS tree, as
+ * a refusal detail - or null when the spelling is one it can.
+ *
+ * The harm is the MIXED callsite, not a wholesale misread (D-06). Every command
+ * that opens a phase directory builds `join(dir, 'phases', parsed.raw)`, so
+ * `--phase 1.10` reads `phases/1.10/` and never touches `phases/1.1/` content -
+ * but the SAME command reports `parsed.value` in its envelope's `phase:` key.
+ * On a tree carrying both, that answer says `phase: 1.1` over bytes read out of
+ * `phases/1.10/`, and the reader has no way to see which half is which.
+ *
+ * So the rule is TREE-AWARE, and deliberately not `phaseSpellingRefusal`'s pure
+ * one (D-07): it refuses only when the caller's spelling is not the canonical
+ * one AND the canonical one names something already on disk. `--phase 1.10`
+ * refuses against a tree holding `phases/1.1/` and RESOLVES against a tree
+ * holding only `phases/1.10/`, which keeps the sub-phase-ten capability
+ * `lib/require-int.mjs` deliberately built. Wiring the pure refusal at these
+ * twenty-odd faces instead would make `phases/1.10/` a legal directory name no
+ * command can address - the cost stated above for two callsites, generalized.
+ *
+ * A SYMLINK at the canonical path counts as present, the same disposition
+ * `phaseDirGrammarDrift` takes: what matters is that a reader would find
+ * something there, not what it resolves to. The detail carries BOTH spellings
+ * because the caller's fix is exactly one of two things - retype the flag, or
+ * rename the directory - and nothing else in the envelope says which.
+ *
+ * @param {string} dir the planning directory (`--dir`)
+ * @param {{raw: string, value: number}} parsed a `requirePhaseArg` success
+ * @returns {string|null}
+ */
+function phaseSpellingCollision(dir, parsed) {
+  const canonical = String(parsed.value);
+  if (canonical === parsed.raw) return null;
+  let stat = null;
+  try { stat = lstatSync(join(dir, 'phases', canonical)); }
+  catch { /* absent is the answer, never a throw */ }
+  if (!stat || !(stat.isDirectory() || stat.isSymbolicLink())) return null;
+  return `--phase "${parsed.raw}" is written here as phase ${canonical}, and phases/${canonical}/`
+    + ` already exists on this tree - two different phases - send --phase "${canonical}" for that`
+    + ` one, or rename phases/${parsed.raw}/ to a spelling that does not normalize onto ${canonical}`;
+}
 // `cadence-core/bin`, deliberately NOT this file's own directory. Both
 // consumers below walk UP from it - `MANIFEST_PATH` with two `'..'` segments,
 // `routeLadder` with one - and both swallow their own read failure, so a `HERE`
@@ -462,15 +504,26 @@ const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
  * already takes: the caller's arm is `if (!id) return;`.
  *
  * @param {string} face the subcommand's spelling, for every refusal's wording
+ * @param {string} dir the planning directory, for the tree-aware spelling check
  * @param {any} opts
  * @returns {{n: string, trigger: string, discriminator: string, round: number,
  *            base: string, head: string} | null}
  */
-function fireIdentity(face, opts) {
+function fireIdentity(face, dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
     fail('bad-args', `${face} needs --phase <N>`,
       `pass --phase <N> for the phase this fire belongs to, then re-run the ${face}`);
+    return null;
+  }
+  // AHEAD of the token rails and well ahead of `fireHome`, because this is a
+  // question about the FLAG and the rails below are questions about other
+  // flags. `fireHome`'s `no-phase-dir` is not a substitute even where it would
+  // also fire: it names the right directory but neither of the two fixes.
+  const collision = phaseSpellingCollision(dir, parsedPhase);
+  if (collision) {
+    fail('bad-args', `${face} ${collision}`,
+      `re-run the ${face} with one of those two spellings - nothing was written`);
     return null;
   }
   // The caller's OWN spelling, the way `uatFile` addresses a phase: every use
@@ -818,6 +871,7 @@ export {
   listPlanFiles,
   memoryBackend,
   ok,
+  phaseSpellingCollision,
   phaseSpellingRefusal,
   planKey,
   pluginVersion,

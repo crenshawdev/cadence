@@ -36,7 +36,7 @@ import { emit } from '../lib/seam-io.mjs';
 // fire time is impossible by construction rather than by convention.
 // ---------------------------------------------------------------------------
 function cmdDeferredRecord(dir, opts) {
-  const id = fireIdentity('deferred record', opts);
+  const id = fireIdentity('deferred record', dir, opts);
   if (!id) return;
   const { n, trigger, discriminator, round, base, head } = id;
 

@@ -109,7 +109,7 @@ function groundCitations(top, headId, entries) {
 }
 
 function cmdAdjudication(dir, opts) {
-  const id = fireIdentity('adjudication', opts);
+  const id = fireIdentity('adjudication', dir, opts);
   if (!id) return;
   const { n, trigger, discriminator, round, base, head } = id;
 
