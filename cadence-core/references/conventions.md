@@ -235,6 +235,10 @@ earlier answer stay sequential.
 
 ## Subagents and reviews
 
+- Host-runtime specifics live in the three portability seams and nowhere else:
+  `references/seams.md` is the router that names them and the one file each
+  call Reads. No workflow or skill inlines a host-specific alternative beside
+  a seam's binding.
 - Spawn agents only through the spawn-agent seam
   (references/seam-spawn-agent.md).
 - Every second opinion goes through the review trigger interface
