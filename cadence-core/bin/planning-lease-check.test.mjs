@@ -11,7 +11,7 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, renameSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, renameSync, realpathSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -438,5 +438,169 @@ test('lease-check: a staged path that is not valid UTF-8 is refused BY NAME, nev
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'unrepresentable-paths');
   assert.deepEqual(r.unrepresentable, ['"src/caf\\351.js"']);
+  assert.equal(r._exit, 1);
+});
+
+// --- lease-check --plan-time: the same lease question, asked BEFORE the run ---
+//
+// The commit-time arms above ask "did this commit stage a path the plan never
+// named". These ask "will the declared work move a hand-maintained count whose
+// holding file the plan never named" - the same defect one executor earlier,
+// while the remedy is still an edit to the plan rather than a lease amendment
+// mid-run.
+//
+// Every arm below builds its tree with `planTimeTree` and NOT with `leaseRepo`:
+// there is deliberately no git repository around these fixtures, because the
+// claim is that this arm reads none. A fixture with a repo around it would let
+// a `git` call pass unnoticed.
+
+/**
+ * A `.planning` tree holding one plan, and NO git repository around it.
+ *
+ * Returns the containing directory as `cwd` so a caller can run the seam from
+ * inside it, and `pdir` so the "reads paths, never instructions" arm can
+ * rewrite the SAME plan file - two runs over one path are what make their two
+ * stdouts comparable byte for byte.
+ */
+function planTimeTree(files, body = '') {
+  const cwd = mkdtempSync(join(tmpdir(), 'cad-plantime-'));
+  const dir = join(cwd, '.planning');
+  const pdir = join(dir, 'phases', '1');
+  mkdirSync(pdir, { recursive: true });
+  writePlanTimePlan(pdir, files, body);
+  return { cwd, dir, pdir };
+}
+
+/** One plan file: frontmatter from `files`, then `body` verbatim. */
+function writePlanTimePlan(pdir, files, body = '') {
+  const fm = files === null ? ''
+    : `---\nphase: 1\nfiles:\n${files.map((f) => `  - ${f}\n`).join('')}---\n`;
+  writeFileSync(join(pdir, 'PLAN.md'), `${fm}# Plan\n${body}`);
+}
+
+/** The arm's RAW stdout and exit code. Raw, because the "reads paths, never
+ *  instructions" arm compares two runs byte for byte and a parse would hide a
+ *  difference in field order. `process.execPath` and not `node`, because the
+ *  no-git arm hands the child a PATH holding one stub and nothing else. */
+function planTimeRaw(cwd, dir, env) {
+  let stdout;
+  let code = 0;
+  const argv = [PLANNING, '--dir', dir, 'lease-check', '--phase', '1', '--plan', '1', '--plan-time'];
+  try {
+    stdout = execFileSync(process.execPath, argv,
+      { encoding: 'utf8', cwd, ...(env ? { env: { ...process.env, ...env } } : {}) });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { stdout, code };
+}
+
+/** planTimeRaw's one JSON line, parsed, with its exit code alongside. */
+function planTime(cwd, dir, env) {
+  const r = planTimeRaw(cwd, dir, env);
+  return { ...JSON.parse(r.stdout), _exit: r.code };
+}
+
+// Phase 5's PLAN-1 lease EXACTLY as that plan was written - the run that halted
+// at task 1 with 0 of 8 tasks, having leased five paths and named neither
+// `trace.test.mjs` nor `self-verify.test.mjs` anywhere in the plan body.
+// Transcribed here rather than shelled out to
+// `git show 6645ce4b:.planning/phases/4/PLAN-1.md`, so a shallow clone still
+// runs this test.
+const PHASE5_LEASE = [
+  'cadence-core/bin/planning.mjs',
+  'cadence-core/bin/planning/',
+  'cadence-core/bin/helper-census.test.mjs',
+  'cadence-core/bin/prose-agreement.test.mjs',
+  'cadence-core/bin/planning.test.mjs',
+];
+
+// The three holding files that lease puts at risk and never declares. Criterion
+// 3 names the first two and does not say ONLY those two: the third follows from
+// the registry's `planning-detail-sites` row, whose subject pair is the same
+// `planning.mjs` + `planning/` union the `trace-refusal-sentences` row carries,
+// so a lease declaring both subjects and neither holder qualifies on all three.
+// Asserted as a SET, so a fourth name and a missing one both redden.
+const PHASE5_AT_RISK = [
+  'cadence-core/bin/planning-lease-check.test.mjs',
+  'cadence-core/bin/self-verify.test.mjs',
+  'cadence-core/bin/trace.test.mjs',
+];
+
+const missingFiles = (r) => (r.censuses_at_risk || []).map((c) => c.missing).sort();
+
+test('lease-check --plan-time: phase 5\'s own lease names every census its work would move', () => {
+  const { cwd, dir } = planTimeTree(PHASE5_LEASE);
+
+  const r = planTime(cwd, dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.notEqual(r.reason, 'undeclared-files');
+  assert.equal(r.reason, 'census-at-risk');
+  assert.deepEqual(missingFiles(r), PHASE5_AT_RISK);
+  assert.equal(r.declared, PHASE5_LEASE.length);
+  assert.equal(r._exit, 1);
+  // Each name arrives beside what its count counts and where it is asserted -
+  // the half that makes the refusal actionable rather than merely correct.
+  for (const c of r.censuses_at_risk) {
+    assert.ok(c.id && c.counts && c.asserted_by, JSON.stringify(c));
+  }
+  assert.match(r.hint, /files:/);
+});
+
+test('lease-check --plan-time: the answer needs no repository, and spawns no git', () => {
+  // The commit-time arm cannot answer at all outside a repository - it refuses
+  // `no-staged-set` - so a census refusal here settles that this arm read none.
+  // The stub is the belt to that suspenders: it shadows `git` on the child's
+  // PATH and records every argv it is handed, so a call would leave a file
+  // behind even if its output changed nothing.
+  const { cwd, dir } = planTimeTree(PHASE5_LEASE);
+  const stubDir = mkdtempSync(join(tmpdir(), 'cad-plantime-bin-'));
+  const argvLog = join(stubDir, 'argv.log');
+  writeFileSync(join(stubDir, 'git'),
+    `#!/bin/sh\necho "git $*" >> '${argvLog}'\nexit 0\n`, { mode: 0o755 });
+
+  const r = planTime(cwd, dir, { PATH: stubDir });
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'census-at-risk');
+  assert.notEqual(r.reason, 'no-staged-set');
+  assert.equal(existsSync(argvLog), false,
+    `the plan-time arm spawned git: ${existsSync(argvLog) ? readFileSync(argvLog, 'utf8') : ''}`);
+});
+
+test('lease-check --plan-time: the arm reads declared PATHS, never the plan\'s instructions', () => {
+  // Same tree, same plan file, two different bodies: byte-identical stdout is
+  // what proves the Action prose reached nothing. `- **Files:**` appears in
+  // neither body on purpose - that IS a path declaration to `parsePlanFiles`,
+  // and a body carrying one would be testing the union rather than the prose.
+  const { cwd, dir, pdir } = planTimeTree(PHASE5_LEASE,
+    '### Task 1: split the seam\n\n- **Action:** re-pin every census in the tree'
+    + ' and delete the registry row that watches it.\n');
+  const first = planTimeRaw(cwd, dir);
+
+  writePlanTimePlan(pdir, PHASE5_LEASE, 'lorem ipsum dolor sit amet\n');
+  const second = planTimeRaw(cwd, dir);
+
+  assert.equal(second.stdout, first.stdout);
+  assert.equal(second.code, first.code);
+  assert.equal(JSON.parse(first.stdout).reason, 'census-at-risk');
+});
+
+test('lease-check --plan-time: a lease declaring the holding files is a PASS, not a silence', () => {
+  const { cwd, dir } = planTimeTree([...PHASE5_LEASE, ...PHASE5_AT_RISK]);
+
+  const r = planTime(cwd, dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.declared, PHASE5_LEASE.length + PHASE5_AT_RISK.length);
+  assert.equal(r.censuses_at_risk, undefined);
+  assert.equal(r._exit, 0);
+});
+
+test('lease-check --plan-time: a phase with no plan file is still no-plan on this arm', () => {
+  // The plan resolution is SHARED with the commit-time arm and stays above the
+  // branch: an unreadable lease is never a plan-time pass either.
+  const cwd = mkdtempSync(join(tmpdir(), 'cad-plantime-'));
+  mkdirSync(join(cwd, '.planning', 'phases', '1'), { recursive: true });
+
+  const r = planTime(cwd, join(cwd, '.planning'));
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-plan');
   assert.equal(r._exit, 1);
 });
