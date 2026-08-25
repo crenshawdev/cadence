@@ -1,0 +1,62 @@
+{
+  "phase": "2",
+  "trigger": "plan",
+  "discriminator": "cad-plan-5407d3ed",
+  "round": 1,
+  "base": "36e726c0",
+  "head": "5407d3ed",
+  "base_id": "36e726c025859989f19549caaed4ede8350803b5",
+  "head_id": "5407d3ed6fd47285d5e56dc2ae2bee158793a327",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/2/PLAN-1.md",
+      "line": 54,
+      "severity": "high",
+      "claim": "The registry task limits itself to four rows even though CEN-01 requires every hand-maintained census in the repository to be registered.",
+      "failure_scenario": "The plan itself identifies existing hand-maintained counts in `lib/bulk-output.mjs`, `lib/text-transport.mjs`, `lib/rung-agent.mjs`, `lib/deferred-reads.mjs`, and `planning-lease-check.test.mjs` as remaining outside the registry. None receives a marker or registry row. Edits that invalidate any of those counts will therefore never be identified by the plan-time check, and their unregistered sites will not fail the suite, violating CEN-01 and Success Criterion 1's stated completeness.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "5407d3ed",
+      "base_id": "36e726c025859989f19549caaed4ede8350803b5",
+      "head_id": "5407d3ed6fd47285d5e56dc2ae2bee158793a327"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/2/PLAN-1.md",
+      "line": 119,
+      "severity": "medium",
+      "claim": "The registry immutability verification does not prove the required deeply frozen table: it checks the outer table and subject lists, but not entry objects.",
+      "failure_scenario": "An implementation can `Object.freeze` the exported array and each `subjects` array while leaving entries mutable. Both Task 1 one-liners (push and subject-list mutation) and Task 4's stated assertions pass, yet a consumer can change `REGISTRY[0].holdingFile`, `id`, `what`, or `assertingSite` at runtime. That violates Task 1's required deeply frozen registry and permits the imported plan-time predicate to be silently corrupted.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "base_id": "36e726c025859989f19549caaed4ede8350803b5",
+      "head_id": "5407d3ed6fd47285d5e56dc2ae2bee158793a327"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/2/PLAN-2.md",
+      "line": 153,
+      "severity": "high",
+      "claim": "The `/cad-plan` wiring task has no falsifiable verification that the gate runs before dispatch, halts on refusal, or covers the inline path.",
+      "failure_scenario": "Task 6 verifies only that `plan-time` appears once in `plan.md` and that self-verify accepts the invocation. A workflow can contain that one command after an executor dispatch, describe it as non-blocking, or omit the effective inline-path pointer while satisfying both checks. The phase would then pass its listed verification even though CEN-02 and Success Criterion 4's central guarantee-refuse after PLAN creation and before any executor on both paths-fails.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "5407d3ed",
+      "base_id": "36e726c025859989f19549caaed4ede8350803b5",
+      "head_id": "5407d3ed6fd47285d5e56dc2ae2bee158793a327"
+    }
+  ]
+}
