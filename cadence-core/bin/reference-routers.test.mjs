@@ -43,13 +43,13 @@ const kinds = (issues) => issues.map((i) => i.kind).sort();
 
 // --- the register itself ------------------------------------------------------
 
-// CADENCE-CENSUS: reference-router-branches | asserts: the register is 6 rows over 2 routers
+// CADENCE-CENSUS: reference-router-branches | asserts: the register is 7 rows over 2 routers
 test('the register pins its row count and its router count', () => {
   // Two numbers, not one. The row count alone passes a register whose four rows
   // all landed on one router, which is the shape a copy-paste produces; the
   // router count is what says these are two independent cold splits. Both move
   // in the commit that makes the cut and never on their own.
-  assert.equal(ROUTERS.length, 6);
+  assert.equal(ROUTERS.length, 7);
   assert.equal(new Set(ROUTERS.map((r) => r.router)).size, 2);
 });
 

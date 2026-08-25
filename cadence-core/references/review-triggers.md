@@ -129,8 +129,8 @@ reviewer set never does. Per backend:
   nothing refuses it (step 3). Pass it on the close too - a bracket half that
   drops it says the return came from somewhere else.
 
-  `<N>` follows the rule the adjudication append in step 5 already states: the
-  phase in hand, or the STATE cursor's phase for a milestone-scoped trigger.
+  `<N>` is the phase in hand, or the STATE cursor's phase for a
+  milestone-scoped trigger.
 
   Then dispatch the `agent` and `model` the step-1 resolve
   returned, through the spawn-agent seam, with the payload as its prompt. It
@@ -191,29 +191,18 @@ reviewer set never does. Per backend:
   "fix" it by editing the config or by pretending the effort applied.
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): an API
   call runs nothing, so this is the one backend that cannot resolve a reference
-  itself. **This arm gets NO lifecycle bracket and no token field, deliberately.**
-  It is the one place a real API-reported usage figure could exist rather than a
-  host-reported one, and no adapter extracts one today. State the consequence
-  rather than let a reader infer completeness: under a panel, `cad-reviewer`'s
-  per-role total in `trace render` covers the claude-subagent voice ONLY, and the
-  provider call that ran beside it is unmeasured, so that number is short by an
-  unstated amount.
-  This trigger's tier and effort come off the STEP-1 LINE -
-  `reviewer_tiers[<trigger>]` and `reviewer_efforts[<trigger>]` - and the tier
-  indexes the provider's own map
-  (`model = review.providers.<name>.tiers[<the resolved tier>]`), never a
-  config read at this site.
-  An `ok:false` reviewer is NAMED in one visible line before it is dropped - the
-  reviewer and its `reason` (`no-key` names where to set the key), e.g.
-  "cross-model reviewer `openai` unavailable: no-key (set $OPENAI_API_KEY) -
-  dropping it from the reviewer set". Do not swallow the reason silently. If
-  dropping it EMPTIES the set, fall back to `claude-subagent` (step 3 rule)
-  rather than return nothing.
-  The procedure is one Read away and reached only on this branch - composing the
-  payload FILE inside THIS RUN's own scratch directory, the echoed-directory and
-  run-token discipline, the `--payload <file>` seam call and the request-timeout
-  rule that call runs under:
-  Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-cross-model.md`.
+  itself. Four rules bind whether or not you read the procedure below.
+  **This arm gets NO lifecycle bracket and no token field, deliberately** - no
+  adapter extracts the API's own usage figure today - and the cost is that under
+  a panel, `cad-reviewer`'s per-role total in `trace render` covers the
+  claude-subagent voice ONLY and is short by the unmeasured provider call beside
+  it. This trigger's tier and effort come off the STEP-1 LINE, and the tier
+  indexes the provider's own `tiers` map, never a config read here. An `ok:false`
+  reviewer is NAMED in one visible line, with its `reason`, before it is dropped.
+  And if dropping it EMPTIES the set, fall back to `claude-subagent` (step 3
+  rule) rather than return nothing.
+  The procedure is reached only on this branch: Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-cross-model.md`.
 
 ### 5. Combine (review.mode)
 - `single` - use the first available reviewer only; its findings are the result.
@@ -240,104 +229,25 @@ the stronger signal). Adjudication is the same discipline the panel-review skill
 uses: reviewers critique, the main model grounds and owns the verdict.
 
 Once the survivor list is settled, record the outcome. The trace append and the
-reported line below it are the ADJUDICATED arm's alone: advisory and blocking
+reported line under it are the ADJUDICATED arm's alone: advisory and blocking
 fires keep writing exactly what they write today, and the stated cost is that
 at `solo`, where `plan` stays advisory, `trace suggest` gets no rows about the
-gate that fires most often there. The ADJUDICATION RECORD further down is NOT
-scoped that way: it is written on the BLOCKING arm as well, at the settle point
+gate that fires most often there. The ADJUDICATION RECORD is NOT scoped that
+way: it is written on the BLOCKING arm as well, at the settle point
 `references/triage-gate.md` names. The ADVISORY arm writes neither, and the
 reason is not tidiness - its reviewer writes the findings file and closes its
 own bracket, and this session may end before the return lands, so nothing is
 positioned to rule. An advisory fire reads as unrecorded.
 
-Write the detail - `<trigger>: <n> survivors; voices <the reviewers that
-actually ran>` - to a scratch file and pass its path; the voice list is composed
-from what actually ran (caller-derived text - references/conventions.md):
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --plan <k> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] --detail-file <path>
-```
+Both writes settle here, and their MECHANICS - the
+`trace append --family outcome --event adjudication` line with every flag rule
+around it, and the `planning.mjs adjudication` call that writes the
+ADJUDICATION RECORD - are one Read away. Read
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-record.md` at this point.
 
 Then report `<n> survivors of <m> raised` to the user at this step - the line
 that makes a nine-findings-all-killed fire visible in the session and not only
 in the record.
-
-`--plan <k>` is required whenever the fire was per-plan: `risk-check status`
-joins a receipt to a record on the run AND the plan, so a receipt written
-without it keys to no plan and joins nothing, leaving a range that WAS fired and
-adjudicated reading as never fired. Omit it only for a fire that is not per-plan
-(`/cad-debug`, `/cad-task`, `/cad-verify`).
-
-`--base <base> --sha <head>` name the RANGE this adjudication settled - BOTH
-ends, since two ranges can share a head and differ at the base and are then
-different diffs over different surfaces. That is what lets `risk-check status`
-tell an adjudication of THIS range from one of an earlier, narrower range for
-the same plan. A receipt missing either end settles nothing, so omitting one
-leaves a matched range reading as never fired.
-
-The RAISED count travels on the `--raised` FLAG and never inside `--detail`: a
-figure parsed back out of that free-text slot would be exactly as trustworthy
-as the voice-list substitution the slot is already condemned for, so do not
-helpfully fold it back in. The three SETTLED counts travel the same way, on
-`--survivors`, `--downgraded` and `--refuted`, and they are the figures the
-record seam DERIVED and returned on its envelope - never a number you counted
-by hand off the survivor list, and never folded into `--detail` either. The
-seam recounts the record's rulings against them and REFUSES a receipt that
-disagrees, which is what makes the survivor count recomputable instead of
-asserted. `--round <round>` is omitted on an ordinary fire and carries the
-round on a re-armed one, because that is the record the recount has to read:
-without it a round-two settle is checked against round one's stale rulings and
-passes whenever the two counts happen to coincide. The TRIGGER travels the same way, on `--trigger`,
-and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
-range to its receipt on those two structured fields and never on the detail
-(`references/triage-gate.md` states the rule at all four settle points).
-
-`<N>` is the phase in hand, or the STATE cursor's phase for a trigger whose
-range spans phases. The VOICE LIST is load-bearing, not decoration: a
-`claude-subagent` voice never passes through `review-provider.mjs`, so it has no
-provider event of its own, and the survivor count alone cannot show a panel
-silently reduced to one voice while the gate reports clean - the dropped
-cross-model reviewer is only half of it. Name the set that RAN, never the set
-the trigger asked for.
-
-Then WRITE THE ADJUDICATION RECORD: the rulings themselves, not a count of them.
-An adjudicated-only rule would record nothing at all on most projects -
-`route.mjs resolve` returns `plan: blocking` and `risk_surface: blocking` at
-`shipped` stakes - and would exclude the sharpest case there is, a gate that
-passed with everything killed.
-
-YOU compose the payload, because you are the only actor holding both the raised
-finding bodies and the ruling: `review-provider.mjs` returns `findings` on
-stdout and never persists them, its own record carries provider, model, effort,
-tier, duration and outcome with no finding field, and
-`skills/cad-reviewer-contract/SKILL.md` specifies a return shape only. Compose
-it as a FILE in THIS RUN's own scratch directory, the way the provider payload
-is composed above, and NEVER hand-assemble that JSON with `echo` or a heredoc:
-the record's whole content is verbatim reviewer text with arbitrary quoting, so
-one unescaped quote makes the payload unparseable after the adjudication is
-already done and cannot be redone.
-
-The payload carries, PER VOICE, the reviewer's returned findings object
-VERBATIM, that voice's model, and one ruling per returned finding -
-`{voices: [{voice, model, returned, rulings: [...]}]}`, one entry per finding
-RAISED per raising voice. A `ruling` is `survived`, `downgraded` or `refuted`
-and there is no fourth value. Each ruling RESTATES the claim and the failure
-scenario it rules on, and the seam REFUSES the payload when a restatement
-differs from the returned text by one byte: the entry is stored from the
-reviewer's own words, so a paraphrase is refused rather than recorded. A
-`refuted` ruling names the contradicting code in its counter-evidence; a
-`survived` one names the fix commit.
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload <path>
-```
-
-It lands at `.planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json`,
-beside the sibling `REVIEW-<trigger>-<discriminator>.md` and on the same
-discriminator grammar, which this step states once at its end. It does NOT go
-inside `<plandir>/reports/`: the lease check
-exempts exactly one path under that directory by byte equality, so anything else
-staged from there answers `undeclared-files`.
 
 A RE-ARM PASSES `--round 2`, and the fire site is the only actor that knows
 which round it is on. A capped re-arm (`references/triage-gate.md`, ONE round)
@@ -348,13 +258,12 @@ a re-arm is REFUSED - never merged and never overwritten - because round one's
 record is what an auditor reads to see the finding a fix was claimed to close.
 
 **A `risk_surface` fire PERSISTS its settled survivors, at every gate.** Unlike
-the append above, this is not the adjudicated ARM's alone: `risk_surface` is
+the trace append, this is not the adjudicated ARM's alone: `risk_surface` is
 `blocking` at every level, and the default `review.mode` still settles a
 survivor list here. `/cad-land`'s unattended close is the ONLY consumer that
 halt has - it fires no review of its own - so skipping the write lets an
-autonomous close merge over a blocker nobody halted on. Where the list is
-written, and the two properties that keep its union honest, are in
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`.
+autonomous close merge over a blocker nobody halted on. Where it is written is
+in `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`.
 
 **The discriminator grammar, stated ONCE here** because both the record above
 and the survivor write use it: `plan-<k>` for a per-plan fire,
@@ -410,15 +319,14 @@ gate and drops the loop.
 
 ## The `risk_surface` trigger's own contract
 
-Everything specific to this trigger is one Read away, and no other branch of
-this file needs it: the `risk-check run` seam call, the two `surface`-named
-libraries, the eight categories, the one-time surfaces ask and how it is
-persisted, the resolved-set scoping, the two pre-filter drops, and the survivor
-write step 5 names.
+Everything specific to this trigger - the `risk-check run` seam call, the eight
+categories, the one-time surfaces ask, the resolved-set scoping, the two
+pre-filter drops and the survivor write step 5 names - is one Read away, and no
+other branch of this file needs it.
 
-TWO ways in, one file. Either this fire's trigger IS `risk_surface`; or this
-site runs detection without necessarily firing anything at all - `/cad-execute`'s
-`risk_check` step, `/cad-task`, `/cad-debug` and `/cad-verify` each do, and a
-range that matches nothing fires no review and reads nothing else here.
+TWO ways in, one file: this fire's trigger IS `risk_surface`, or this site runs
+detection without firing anything at all (`/cad-execute`'s `risk_check`,
+`/cad-task`, `/cad-debug`, `/cad-verify`), where a range that matches nothing
+reads nothing else here.
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`.

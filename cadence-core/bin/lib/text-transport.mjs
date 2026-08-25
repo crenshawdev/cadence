@@ -170,8 +170,10 @@ export const TEXT_TRANSPORT = Object.freeze([
   }),
   Object.freeze({
     // The composite the phase exists for: a trigger name and a count, joined to
-    // a voice list the MODEL composes from which reviewers actually ran.
-    surface: 'cadence-core/references/review-triggers.md',
+    // a voice list the MODEL composes from which reviewers actually ran. The
+    // receipt cold-split out of `review-triggers.md` step 5 in LOD-06; the row
+    // moved with the prescription rather than being re-derived.
+    surface: 'cadence-core/references/review-record.md',
     flag: '--detail',
     value: '<trigger>: <n> survivors; voices <the reviewers that actually ran>',
     derived: true,

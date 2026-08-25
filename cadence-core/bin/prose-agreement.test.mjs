@@ -1291,7 +1291,8 @@ test('PAR-01: both parallel risk-check calls name that plan\'s OWN merge range',
 // Watched FAILING at dd3920e, where three of the four fenced `trace append`
 // blocks - `gate_pass`, `override` and `rearm` in
 // cadence-core/references/triage-gate.md - carried no `--plan <k>`, against
-// cadence-core/references/review-triggers.md's `adjudication`, which did.
+// cadence-core/references/review-record.md's `adjudication`, which did (it sat
+// in review-triggers.md step 5 until the LOD-06 cold split).
 // `risk-check status` joins a receipt to a record on `rowKey(corr, plan)`, so
 // a receipt appended exactly as those blocks read keys to no plan and settles
 // nothing: the range stays `unfired` and the blocking gate cannot be cleared
@@ -1309,7 +1310,10 @@ test('PAR-01: both parallel risk-check calls name that plan\'s OWN merge range',
 test('GAT-04: every fenced outcome receipt names its trigger, plan and both range ends', () => {
   const files = [
     ['cadence-core', 'references', 'triage-gate.md'],
-    ['cadence-core', 'references', 'review-triggers.md'],
+    // The `adjudication` receipt cold-split out of `review-triggers.md` step 5
+    // in LOD-06 and the row travels with the command, the way BRACKETING's
+    // rows in trace.test.mjs do.
+    ['cadence-core', 'references', 'review-record.md'],
   ];
   /** @type {string[]} */
   const seen = [];
@@ -1333,7 +1337,7 @@ test('GAT-04: every fenced outcome receipt names its trigger, plan and both rang
     }
   }
   // All five settle points, so a receipt block DELETED fails here too rather
-  // than passing vacuously: adjudication (review-triggers.md) plus the four
+  // than passing vacuously: adjudication (review-record.md) plus the four
   // in triage-gate.md - `gate_pass`, `override`, `rearm` and the `deferred`
   // arm's `deferral`, which settles by QUEUING rather than by ruling and needs
   // the same joinable receipt to keep `risk-check status` from reading its

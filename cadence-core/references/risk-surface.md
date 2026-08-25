@@ -104,7 +104,7 @@ costs nothing on a project that never trips this trigger.
 the resolved `surfaces` set does NOT fire the trigger. That set comes from the
 step-1 resolve, never from a config read at this site (D-13): a cost key whose
 enforcement is a model remembering to read a value is the same substitution
-shape step 3 closed for `review.reviewers`. With the key unset the resolve
+shape `references/review-triggers.md` step 3 closed for `review.reviewers`. With the key unset the resolve
 returns all eight, so every category fires exactly as today and no existing
 project's coverage shrinks on upgrade.
 
