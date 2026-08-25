@@ -202,3 +202,165 @@ export const CENSUSES = Object.freeze([
     subjects: ['cadence-core/bin/planning.mjs', 'cadence-core/bin/planning/'],
   }),
 ]);
+
+// --- discovery: the marker grammar, and the one rule over it -----------------
+//
+// D-06. A census that lives in a test but has no row above is invisible, and
+// inferring censushood from assertion shape is what the measurement in this
+// file's header rules out. So the census site carries a LEXICAL MARKER, on the
+// `CADENCE-DEBT` model, and the suite fails on any marked site with no row.
+//
+// The stated cost, which is real: a census written WITHOUT the marker stays
+// invisible. That is a statement about counts nobody has found yet, not a
+// licence to skip a known one - every census this tree carries as of 2026-08-24
+// is above, and each one is marked.
+//
+// ONE DIRECTION ONLY. A marked site with no row is an issue; a row whose marker
+// someone deleted is not checked here. The reverse direction would need this
+// module to know where every asserting site is, which is the disk half the
+// caller owns.
+//
+// Pure over TEXT, the split `lib/debt-markers.mjs` states: no `fs`, no walk, no
+// throw. The caller owns the tree walk, the file reads and the envelope; this
+// owns the grammar.
+
+/**
+ * The marker token. Namespaced so it cannot collide with another tool's, and
+ * distinct from `DEBT_TOKEN` so the debt harvest cannot pick these up. Verified
+ * 2026-08-24: `git grep -w` finds it nowhere else in this tree.
+ */
+export const CENSUS_TOKEN = 'CADENCE-CENSUS';
+
+// Built rather than written as a literal so this file does not itself contain
+// the token-followed-by-a-colon sequence it recognizes. The walk in
+// census-registry.test.mjs reads every `.mjs` under cadence-core/bin/, this one
+// included, so a spelled-out head here would be ingested as a real marked site
+// and would need an exclusion list to undo - the second-list failure
+// `lib/merge-warnings.mjs` and `helper-census.test.mjs` both refuse.
+const MARKER_HEAD = `${CENSUS_TOKEN}:`;
+
+/** The one named field a marker carries after its id. */
+const ASSERTS = 'asserts';
+
+/**
+ * @typedef {object} CensusMarker
+ * @property {number} line 1-based line number within the file
+ * @property {string} id the registry row this site claims
+ * @property {string|null} asserts one line naming what the assertion pins
+ * @property {string[]} [malformed] the REQUIRED parts that are missing
+ */
+
+/**
+ * Every census marker in one file's contents, in line order.
+ *
+ * The grammar: the token followed IMMEDIATELY by a colon, then the registry
+ * `id`, then ` | `, then `asserts` and a colon, then one line naming what the
+ * assertion pins. The immediate colon is what keeps documentation ABOUT the
+ * convention from being ingested - prose naming the token in backticks is not a
+ * marker and never becomes one.
+ *
+ * A marker missing its id or its `asserts` field is RETURNED with `malformed`
+ * naming the part, never dropped, for `lib/debt-markers.mjs`'s stated reason:
+ * dropping it makes an incomplete marker invisible, which is strictly worse
+ * than the marker - the site is still a census and now nothing says so. An
+ * empty id also matches no registry row, so it reaches `censusIssues` as an
+ * issue rather than passing as registered.
+ *
+ * @param {string} text @returns {CensusMarker[]}
+ */
+export function censusMarkersIn(text) {
+  if (typeof text !== 'string' || !text.includes(MARKER_HEAD)) return [];
+  const out = [];
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    for (const seg of markerBodies(lines[i])) {
+      const parts = seg.split('|');
+      const id = parts[0].trim();
+      let asserts = null;
+      for (let j = 1; j < parts.length; j++) {
+        const m = parts[j].trim().match(/^asserts\s*:\s*([\s\S]*)$/i);
+        if (m) asserts = stripTrailer(m[1]);
+      }
+      const malformed = [];
+      if (!id) malformed.push('id');
+      if (!asserts) malformed.push(ASSERTS);
+      out.push({
+        line: i + 1,
+        id,
+        asserts: asserts || null,
+        ...(malformed.length ? { malformed } : {}),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * One line's marker bodies, in order: everything after each marker head up to
+ * the next one's head, or the end of the line for the last.
+ *
+ * Bounded at the next head rather than read to end of line, for the reason
+ * `lib/debt-markers.mjs` records as reproduced rather than theorised: an
+ * unbounded read lets a second marker's `asserts` overwrite the first's, and
+ * one entry comes back carrying another census's claim. A wrong claim is a
+ * wrong answer; a missing entry is only a gap.
+ *
+ * The head is not spelled out here for the same reason it is not spelled out
+ * above.
+ * @param {string} line @returns {string[]}
+ */
+function markerBodies(line) {
+  /** @type {number[]} */
+  const heads = [];
+  for (let at = line.indexOf(MARKER_HEAD); at >= 0;
+    at = line.indexOf(MARKER_HEAD, at + MARKER_HEAD.length)) heads.push(at);
+  return heads.map((at, k) => line.slice(at + MARKER_HEAD.length,
+    k + 1 < heads.length ? heads[k + 1] : line.length));
+}
+
+// Trailing comment closers, stripped from the LAST field only: a marker in a
+// `/* ... */` or `<!-- ... -->` comment would otherwise carry `*/` into the
+// assertion text and report it that way.
+const TRAILERS = [/\s*\*\/\s*$/, /\s*-->\s*$/, /\s*}}\s*$/];
+
+/** @param {string} s @returns {string} */
+function stripTrailer(s) {
+  let out = s;
+  for (const re of TRAILERS) out = out.replace(re, '');
+  return out.trim();
+}
+
+/**
+ * @typedef {object} CensusIssue
+ * @property {string} path the file the marked site lives in
+ * @property {number} line 1-based line of the marker
+ * @property {string} id the id the marker claimed, `''` when it stated none
+ * @property {string|null} asserts the marker's own one-line claim
+ * @property {string} message the whole finding, renderable as-is
+ */
+
+/**
+ * The marked sites in one file that no registry row accounts for.
+ *
+ * A marker whose `id` matches a row is NOT an issue - the row is the record and
+ * the marker is the site claiming it. Everything else is: an id no row uses, an
+ * id someone deleted the row for, and a marker that stated no id at all.
+ *
+ * @param {string} path the file's own path, repo-relative
+ * @param {CensusMarker[]} markers what `censusMarkersIn` returned for it
+ * @returns {CensusIssue[]}
+ */
+export function censusIssues(path, markers) {
+  if (!Array.isArray(markers)) return [];
+  const known = new Set(CENSUSES.map((e) => e.id));
+  return markers.filter((m) => !known.has(m.id)).map((m) => ({
+    path,
+    line: m.line,
+    id: m.id,
+    asserts: m.asserts || null,
+    message: `${path}:${m.line} marks a census as \`${m.id || '(no id)'}\`, `
+      + `which no row in lib/census-registry.mjs names. It asserts: `
+      + `${m.asserts || '(unstated)'}. Add the row, or delete the marker and the `
+      + 'count with it.',
+  }));
+}
