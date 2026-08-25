@@ -159,7 +159,7 @@ const READBACKS = [
     // `scratch-unreadable`: a file it cannot open, and an artifact that is
     // EMPTY - which is what a failed or colliding redirect leaves behind, and
     // is this script's equivalent of a wrong-shaped file.
-    surface: 'cadence-core/references/review-triggers.md',
+    surface: 'cadence-core/references/review-cross-model.md',
     cases: [
       {
         name: 'a brief path that does not resolve', reason: 'scratch-unreadable',

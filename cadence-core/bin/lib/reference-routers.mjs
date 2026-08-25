@@ -109,6 +109,11 @@ export const ROUTERS = Object.freeze([
   }),
   Object.freeze({
     router: 'cadence-core/references/review-triggers.md',
+    branch: "cross-model (step 3's resolved set holds a non-claude-subagent provider)",
+    cold: 'cadence-core/references/review-cross-model.md',
+  }),
+  Object.freeze({
+    router: 'cadence-core/references/review-triggers.md',
     branch: 'risk_surface (the trigger contract, and any site running detection)',
     cold: 'cadence-core/references/risk-surface.md',
   }),

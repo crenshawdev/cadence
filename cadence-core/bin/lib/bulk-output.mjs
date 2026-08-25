@@ -35,10 +35,14 @@
 // with a redirect at its payload composition and DESCRIBES
 // `git diff <pre-plan HEAD>..HEAD` as a file another workflow already wrote,
 // and a per-shape key would have to call both the same thing. Two occurrences
-// of an IDENTICAL call in one surface (`review-triggers.md` names
-// `git diff --cached` at shape (b) and again where shape (b) redirects it) are
-// one row: they are one prescription written twice, and a second row would be
-// a duplicate no reader could tell from a mistake.
+// of an IDENTICAL call in ONE surface are one row: they are one prescription
+// written twice, and a second row would be a duplicate no reader could tell
+// from a mistake. `git diff --cached` was that case until LOD-06 -
+// `review-triggers.md` named it at shape (b) and again where shape (b)
+// redirects it - and the cold split put the two occurrences in DIFFERENT files,
+// so it is two rows now. That is the key doing its job rather than an
+// exception to it: the key is `{surface, shape, call}`, and a check that reads
+// per surface has nothing to settle the second file's occurrence with.
 //
 // A ROW OUTLIVES ITS OCCURRENCE. Once a site is converted, its inline form is
 // gone from the prose and the row it left behind matches only the redirected
@@ -231,7 +235,10 @@ export const BULK_OUTPUT = Object.freeze([
 
   // --- git diff: the four that already write to a file -----------------------
   Object.freeze({
-    surface: 'cadence-core/references/review-triggers.md',
+    // The cross-model arm cold-split out of `review-triggers.md` step 4 in
+    // LOD-06 and took its composition block with it; the row moved rather than
+    // being re-measured, because the prescription is byte-identical.
+    surface: 'cadence-core/references/review-cross-model.md',
     shape: 'git diff', call: 'git diff <base_ref>..<head_ref>',
     bytes: 'unbounded', measured: '2026-08-17', transport: 'redirect',
   }),
@@ -264,7 +271,19 @@ export const BULK_OUTPUT = Object.freeze([
     surface: 'cadence-core/references/review-triggers.md',
     shape: 'git diff', call: 'git diff --cached',
     bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
-    reason: 'shape (b) names the command the REVIEWER re-runs in the cwd it inherits, so this surface issues nothing; the second occurrence, where shape (b) redirects the same command into the payload scratch file, is that one prescription written twice',
+    reason: 'shape (b) names the command the REVIEWER re-runs in the cwd it inherits, so this surface issues nothing; the second occurrence moved to references/review-cross-model.md with the cold split and carries its own row there',
+  }),
+  Object.freeze({
+    // The SECOND half of what used to be one row's two occurrences. The
+    // LOD-06 cold split moved the sentence describing shape (b)'s redirect
+    // into `review-cross-model.md` while shape (b)'s own definition stayed in
+    // `review-triggers.md` step 2, so one prescription written twice now spans
+    // two files - and the key is `{surface, shape, call}`, so each file needs
+    // its own row.
+    surface: 'cadence-core/references/review-cross-model.md',
+    shape: 'git diff', call: 'git diff --cached',
+    bytes: 'unbounded', measured: '2026-08-17', transport: 'none',
+    reason: 'the arm names the command the REVIEWER re-runs in the cwd it inherits, and where shape (b) redirects it into the payload scratch file it is that same prescription written again, so this surface issues nothing of its own',
   }),
   Object.freeze({
     surface: 'cadence-core/workflows/debug.md',
