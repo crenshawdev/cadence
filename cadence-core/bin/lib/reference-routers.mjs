@@ -206,6 +206,12 @@ export function referenceRouterIssues(root, rows = ROUTERS) {
     // rather than collapsed into one `null`.
     if (!existsSync(join(root, ...router.split('/')))) continue;
     const text = readRel(root, router);
+    // Both arms below read the router's PROSE, never its fenced blocks. A cold
+    // path inside a fence is a command's argument, not a branch a reader
+    // follows, so it can neither satisfy arm 2's Read nor escape arm 3's
+    // register. Arm 2 read the raw text until a fenced example was found to
+    // satisfy it with the prose Read deleted.
+    const prose = text === null ? null : outsideFences(text);
 
     for (const row of branches) {
       // Arm 1: the cold file itself. Reported against the COLD path, not the
@@ -229,7 +235,7 @@ export function referenceRouterIssues(root, rows = ROUTERS) {
         });
         continue;
       }
-      if (!text.includes(`\${CLAUDE_PLUGIN_ROOT}/${row.cold}`)) {
+      if (!prose.includes(`\${CLAUDE_PLUGIN_ROOT}/${row.cold}`)) {
         issues.push({
           kind: CODES.unread,
           file: router,
@@ -245,7 +251,7 @@ export function referenceRouterIssues(root, rows = ROUTERS) {
     // that escaped the register. The router naming ITSELF is not a branch.
     const declared = new Set(branches.map((b) => b.cold));
     const seen = new Set();
-    for (const m of outsideFences(text).matchAll(BRANCH_RE)) {
+    for (const m of prose.matchAll(BRANCH_RE)) {
       const rel = m[1];
       if (rel === router || declared.has(rel) || seen.has(rel)) continue;
       seen.add(rel);

@@ -114,6 +114,25 @@ test('a bare `references/<file>` citation is NOT a Read', () => {
   assert.deepEqual(kinds(referenceRouterIssues(root, ROW)), [CODES.unread]);
 });
 
+test('a plugin-root path inside a FENCE is not a Read', () => {
+  // The gap this closes: arm 3 read the prose and arm 2 read the raw text, so a
+  // cold file whose only mention was a fenced command argument satisfied the
+  // Read check with no branch a reader could follow.
+  const root = fixtureRoot();
+  put(root, COLD, '# cold\n');
+  put(root, ROUTER, [
+    '# router',
+    '',
+    'The branch is named and never Read in prose.',
+    '',
+    '```',
+    'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/references/cold.md"',
+    '```',
+    '',
+  ].join('\n'));
+  assert.deepEqual(kinds(referenceRouterIssues(root, ROW)), [CODES.unread]);
+});
+
 test('an unreadable ROUTER reports one unread branch per row, and never throws', (t) => {
   // Skipped as root, where the mode bits do not deny the read at all and the
   // fixture would silently test nothing.
