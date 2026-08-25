@@ -1,0 +1,20 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "plan-1",
+  "round": 2,
+  "base": "5103e5558a3b75411689615b81cc456df61bbe00",
+  "head": "d629fb9e6bf9667bbd78028beb548c17d1ca5df4",
+  "base_id": "5103e5558a3b75411689615b81cc456df61bbe00",
+  "head_id": "d629fb9e6bf9667bbd78028beb548c17d1ca5df4",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": []
+}

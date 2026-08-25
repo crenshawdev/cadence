@@ -1,0 +1,53 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "5103e5558a3b75411689615b81cc456df61bbe00",
+  "head": "d629fb9e6bf9667bbd78028beb548c17d1ca5df4",
+  "base_id": "5103e5558a3b75411689615b81cc456df61bbe00",
+  "head_id": "d629fb9e6bf9667bbd78028beb548c17d1ca5df4",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN.md",
+      "line": 198,
+      "severity": "blocker",
+      "claim": "Tasks 4–6 split only the risk_surface section and two provider/outcome sub-arms; no task makes the existing plan, diff, and phase_diff trigger contracts into cold branches or supplies a complete review-trigger branch index.",
+      "failure_scenario": "A normal plan, diff, or phase_diff fire still has to read the remaining trigger-specific prose in review-triggers.md, including the contracts for the other normal triggers. It therefore continues to load branches it did not select, violating Success Criteria 1 and 2 and the phase goal even if the risk, cross-model, and record extractions all succeed.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/references/review-triggers.md",
+        "line": 17,
+        "note": "False premise: cadence-core/references/review-triggers.md is organised by FIRE STEP, not by trigger, so there are no per-trigger contracts to cold-split. Measured section sizes at HEAD (60b29859), 40,413 B total: '# Review subsystem: fire(trigger)' 777 B; '## fire(trigger)' 18 B; '### 1. Gate' 2,154 B; '### 2. Payload' 1,213 B; '### 3. Take the reviewer set' 1,488 B; '### 4. Run the reviewers' 14,373 B; '### 5. Combine (review.mode)' 10,118 B; '### 6. Consequence (gate)' 632 B; '## Wiring (which skill fires what)' 2,345 B; '## risk_surface detection' 7,295 B. Every fire of every trigger runs all six steps. The only per-trigger prose in the file is the 2,345 B Wiring table, which the plan keeps HOT deliberately because every fire needs it to pick a payload shape and a gate. The plan's three review-triggers cuts target the three largest blocks - task 5 takes the cross-model arm out of step 4 (14,373 B), task 6 the outcome record out of step 5 (10,118 B), task 4 the whole risk_surface detection section (7,295 B) - which is 31,786 B of 40,413."
+      },
+      "base_id": "5103e5558a3b75411689615b81cc456df61bbe00",
+      "head_id": "d629fb9e6bf9667bbd78028beb548c17d1ca5df4"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN.md",
+      "line": 204,
+      "severity": "high",
+      "claim": "Task 4 promises that a detection-only site reaches risk-surface.md, but it repoints only execute.md and config.md; it does not update the other detection sites identified in the plan context, such as references/execute-parallel.md step 6 and the listed task/debug workflows.",
+      "failure_scenario": "A detection caller that still cites or reads review-triggers.md to obtain the risk-surface contract will continue opening the 40 KB router (or will retain a stale reference after the section moves). Consequently, the required no-match risk-surface path cannot be shown to read risk-surface.md alone and never open review-triggers.md.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "d629fb9e6bf9667bbd78028beb548c17d1ca5df4",
+      "base_id": "5103e5558a3b75411689615b81cc456df61bbe00",
+      "head_id": "d629fb9e6bf9667bbd78028beb548c17d1ca5df4"
+    }
+  ]
+}
