@@ -22,7 +22,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -372,4 +372,177 @@ test('trace render: --phase 1.10 still renders on a tree holding phases/1.1/', (
   const r = seam(['trace', 'render', '--phase', '1.10'], dir);
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.corr, '1.10', JSON.stringify(r));
+});
+
+
+// --- the census: every `--phase` reader under planning/, dispositioned -------
+//
+// WHAT IT PINS. The wire above is a property of TWENTY-ONE callsites, and the
+// way it stops being true is the twenty-second: someone adds a command that
+// resolves `phases/<N>/` from a caller's spelling and never calls the check.
+// Nothing else in this tree would notice, so the count and the disposition of
+// every callsite are written down here and re-derived by a walk.
+//
+// KEYED BY FILE + ENCLOSING FUNCTION + ORDINAL, never by line. A line-keyed
+// table would redden this suite on every unrelated edit to these fifteen
+// modules - a rail that fires wrong gets deleted rather than tuned - while the
+// function name is what a reader is actually sent to. The LINE is still
+// reported in the failure message, because that is what a reader opens.
+//
+// `lib/arg-contract.mjs:184` is deliberately outside the walk and gets this
+// sentence instead of a row: it is the reader that PRODUCES a parse result
+// rather than a consumer that resolves a path from one. Scoping the walk to
+// exactly what this census's registry subjects cover
+// (`cadence-core/bin/planning/`) is what keeps the count from moving inside a
+// file no lease refusal watches.
+//
+// THE ENCLOSING-FUNCTION SCAN is top-level `function` declarations only. A
+// callsite moved inside a top-level arrow-assigned const would be attributed to
+// the function above it and redden the set-equality below, which is the safe
+// direction: the census reports rather than guesses.
+
+const PLANNING_DIR = join(BIN, 'planning');
+
+/** Every top-level `function` in one module's lines, as `{name, start, end}`
+ * 0-based half-open spans. */
+function functionSpans(lines) {
+  const spans = [];
+  for (let i = 0; i < lines.length; i++) {
+    const decl = /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/.exec(lines[i]);
+    if (!decl) continue;
+    if (spans.length) spans[spans.length - 1].end = i;
+    spans.push({ name: decl[1], start: i, end: lines.length });
+  }
+  return spans;
+}
+
+/** Every phase-argument parse under `planning/`, as
+ * `{file, fn, ordinal, line, body}` - `body` being its enclosing function's
+ * source, which is what the disposition assertions read. */
+function phaseArgCallsites() {
+  const call = `requirePhaseArg${'('}`;
+  const out = [];
+  for (const file of readdirSync(PLANNING_DIR).filter((n) => n.endsWith('.mjs')).sort()) {
+    const lines = readFileSync(join(PLANNING_DIR, file), 'utf8').split('\n');
+    const spans = functionSpans(lines);
+    const seen = new Map();
+    for (let i = 0; i < lines.length; i++) {
+      const text = lines[i].trim();
+      // Comments never count: this census is over invocations, and a sentence
+      // naming the function is documentation, not a callsite.
+      if (text.startsWith('//') || text.startsWith('*')) continue;
+      if (!text.includes(call)) continue;
+      const span = spans.find((sp) => i >= sp.start && i < sp.end);
+      const fn = span ? span.name : '(top level)';
+      const ordinal = (seen.get(fn) || 0) + 1;
+      seen.set(fn, ordinal);
+      out.push({
+        file,
+        fn,
+        ordinal,
+        line: i + 1,
+        body: span ? lines.slice(span.start, span.end).join('\n') : '',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The hand-written disposition of every callsite the walk finds.
+ *
+ * `tree-aware` calls `phaseSpellingCollision`, `unconditional` calls
+ * `phaseSpellingRefusal`, and `exempt` calls neither and states why in the same
+ * row. The two guarded dispositions are ASSERTED against the source below; an
+ * exempt row is a claim a reader can check, which is the most a census can be
+ * about a callsite that does nothing.
+ */
+const CALLSITES = [
+  { file: 'capture.mjs', fn: 'cmdCapture', ordinal: 1, disposition: 'exempt',
+    why: 'the raw spelling is a TAG appended to CAPTURE.md and no phases/<N>/ path is resolved (D-08)' },
+  { file: 'cite-count.mjs', fn: 'cmdCiteCount', ordinal: 1, disposition: 'tree-aware',
+    why: 'reads the phase directory plans and echoes phase: <value> beside them' },
+  { file: 'core.mjs', fn: 'fireIdentity', ordinal: 1, disposition: 'tree-aware',
+    why: 'the one callsite adjudication and deferred record share; fireHome joins the phase directory' },
+  { file: 'core.mjs', fn: 'decimalRefusal', ordinal: 1, disposition: 'exempt',
+    why: 'wording over a raw token - it decides whether a refusal sentence mentions the decimal form' },
+  { file: 'criteria-size.mjs', fn: 'cmdCriteriaSize', ordinal: 1, disposition: 'tree-aware',
+    why: 'the --phase branch reads that phase CONTEXT.md and echoes phase: <value>' },
+  { file: 'cursor-set.mjs', fn: 'cmdCursorSet', ordinal: 1, disposition: 'unconditional',
+    why: 'a WRITE face: the cursor it sets is read back as a phase identity, so a lossy spelling is'
+      + ' refused whatever is on disk (D-07)' },
+  { file: 'deferred-carry.mjs', fn: 'cmdDeferredCarry', ordinal: 1, disposition: 'tree-aware',
+    why: 'renames committed queue members out of the phase directory' },
+  { file: 'deferred-list.mjs', fn: 'cmdDeferredList', ordinal: 1, disposition: 'tree-aware',
+    why: 'wantPhase selects a directory under phases/ by exact name inside readQueue' },
+  { file: 'lease-check.mjs', fn: 'cmdLeaseCheck', ordinal: 1, disposition: 'tree-aware',
+    why: 'resolves the plan file under the phase directory and echoes phase: <value>' },
+  { file: 'phase-done.mjs', fn: 'cmdPhaseDone', ordinal: 1, disposition: 'exempt',
+    why: 'value only - it flips ROADMAP and STATE rows and opens no phase directory' },
+  { file: 'plan-overlap.mjs', fn: 'cmdPlanOverlap', ordinal: 1, disposition: 'tree-aware',
+    why: 'lists the phase directory plans and echoes phase: <value>' },
+  { file: 'plan-size.mjs', fn: 'cmdPlanSize', ordinal: 1, disposition: 'tree-aware',
+    why: 'lists the phase directory plans and echoes phase: <value>' },
+  { file: 'risk-check.mjs', fn: 'cmdRiskCheckRun', ordinal: 1, disposition: 'exempt',
+    why: 'the raw spelling scopes a .planning/trace.jsonl filter through renderTrace and reaches no path' },
+  { file: 'risk-check.mjs', fn: 'cmdRiskCheckStatus', ordinal: 1, disposition: 'exempt',
+    why: 'the raw spelling scopes a .planning/trace.jsonl filter through renderTrace and reaches no path' },
+  { file: 'seed-reqs.mjs', fn: 'cmdSeedReqs', ordinal: 1, disposition: 'unconditional',
+    why: 'a WRITE face: the traceability rows it seeds carry the phase, so a lossy spelling is refused'
+      + ' whatever is on disk (D-07)' },
+  { file: 'trace.mjs', fn: 'checkpointPlanTasks', ordinal: 1, disposition: 'exempt',
+    why: 'the phase comes off a RECORD line, not off a flag - there is no caller to send back to a'
+      + ' different spelling' },
+  { file: 'trace.mjs', fn: 'cmdTrace', ordinal: 1, disposition: 'tree-aware',
+    why: 'the append/close body: its raw spelling reaches recountReceipt and then recordForFire' },
+  { file: 'trace.mjs', fn: 'cmdTrace', ordinal: 2, disposition: 'exempt',
+    why: 'the suggest arm scopes a .planning/trace.jsonl filter and resolves no phases/<N>/ path' },
+  { file: 'trace.mjs', fn: 'cmdTrace', ordinal: 3, disposition: 'exempt',
+    why: 'the render arm scopes a .planning/trace.jsonl filter and resolves no phases/<N>/ path' },
+  { file: 'trace.mjs', fn: 'cmdTrace', ordinal: 4, disposition: 'exempt',
+    why: 'the window arm scopes a .planning/trace.jsonl filter and resolves no phases/<N>/ path' },
+  { file: 'uat.mjs', fn: 'cmdUat', ordinal: 1, disposition: 'tree-aware',
+    why: 'reads the phase UAT.md and echoes phase: <value>' },
+];
+
+const keyOf = (c) => `${c.file} ${c.fn} #${c.ordinal}`;
+
+test('census: every phase-argument callsite under planning/ carries a disposition', () => {
+  const found = phaseArgCallsites();
+  const foundKeys = new Set(found.map(keyOf));
+  const tableKeys = new Set(CALLSITES.map(keyOf));
+
+  const unlisted = found.filter((c) => !tableKeys.has(keyOf(c)));
+  assert.deepEqual(unlisted.map((c) => `${c.file}:${c.line} (${c.fn} #${c.ordinal})`), [],
+    'a phase-argument callsite under cadence-core/bin/planning/ has no row in CALLSITES. Add a row'
+    + ' naming its disposition and why: `tree-aware` if it resolves a phases/<N>/ path from the'
+    + " caller's spelling and takes phaseSpellingCollision, `unconditional` for a write face taking"
+    + ' phaseSpellingRefusal, `exempt` only if it resolves no phase directory at all.');
+
+  const gone = [...tableKeys].filter((k) => !foundKeys.has(k));
+  assert.deepEqual(gone, [],
+    'CALLSITES names a callsite the walk no longer finds - delete the row if the callsite is gone,'
+    + ' or re-key it if its enclosing function was renamed.');
+
+  // CADENCE-CENSUS: phase-spelling-callsites | asserts: 21 phase-argument callsites under cadence-core/bin/planning/, 12 of them resolving a phases/<N>/ path - 10 through the tree-aware check and 2 through the unconditional one
+  assert.equal(found.length, 21, `callsite count moved: ${found.length}`);
+  const by = (d) => CALLSITES.filter((c) => c.disposition === d).length;
+  assert.equal(by('tree-aware'), 10);
+  assert.equal(by('unconditional'), 2);
+  assert.equal(by('exempt'), 9);
+});
+
+test('census: every path-resolving callsite actually calls its check', () => {
+  const found = phaseArgCallsites();
+  const CHECK = { 'tree-aware': 'phaseSpellingCollision', unconditional: 'phaseSpellingRefusal' };
+  for (const row of CALLSITES) {
+    const check = CHECK[row.disposition];
+    if (!check) continue;
+    const site = found.find((c) => keyOf(c) === keyOf(row));
+    assert.ok(site, `${keyOf(row)} is in CALLSITES but not on disk`);
+    assert.ok(site.body.includes(`${check}${'('}`),
+      `${site.file}:${site.line} is dispositioned ${row.disposition}, but ${site.fn} never calls`
+      + ` ${check} - a phases/<N>/ path resolved from the caller's spelling with no check in front`
+      + ' of it is exactly what this census exists to stop');
+  }
 });

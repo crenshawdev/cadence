@@ -569,13 +569,17 @@ const PHASE5_LEASE = [
   'cadence-core/bin/planning.test.mjs',
 ];
 
-// The three holding files that lease puts at risk and never declares. Criterion
-// 3 names the first two and does not say ONLY those two: the third follows from
-// the registry's `planning-detail-sites` row, whose subject pair is the same
-// `planning.mjs` + `planning/` union the `trace-refusal-sentences` row carries,
-// so a lease declaring both subjects and neither holder qualifies on all three.
-// Asserted as a SET, so a fourth name and a missing one both redden.
+// The holding files that lease puts at risk and never declares. Criterion 3
+// names the first two of them and does not say ONLY those two: the others
+// follow from registry rows whose subjects that lease also covers -
+// `planning-detail-sites`, whose subject pair is the same `planning.mjs` +
+// `planning/` union the `trace-refusal-sentences` row carries, and
+// `phase-spelling-callsites`, whose single subject `cadence-core/bin/planning/`
+// that lease declares outright. Asserted as a SET, so an extra name and a
+// missing one both redden - which is how a newly registered census reaches this
+// row rather than sliding past it.
 const PHASE5_AT_RISK = [
+  'cadence-core/bin/phase-spelling.test.mjs',
   'cadence-core/bin/planning-lease-check.test.mjs',
   'cadence-core/bin/self-verify.test.mjs',
   'cadence-core/bin/trace.test.mjs',

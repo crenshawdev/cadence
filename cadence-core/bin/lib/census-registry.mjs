@@ -221,6 +221,22 @@ export const CENSUSES = Object.freeze([
     // against the same bound every other row answers to rather than assumed.
     subjects: ['cadence-core/bin/planning.mjs', 'cadence-core/bin/planning/'],
   }),
+  entry({
+    id: 'phase-spelling-callsites',
+    holder: 'cadence-core/bin/phase-spelling.test.mjs',
+    counts: 'the 21 phase-argument callsites under `cadence-core/bin/planning/` and the 12 '
+      + 'of them that resolve a `phases/<N>/` path, each with its disposition',
+    asserted_by: 'the test named `census: every phase-argument callsite under planning/ '
+      + 'carries a disposition`',
+    // NARROW on purpose, and measured. The two rows above carry
+    // `planning.mjs` beside the directory because their assertions are taken
+    // over the concatenated seam; this one walks the directory alone, and no
+    // phase-argument callsite lives in `planning.mjs` at all. Adding
+    // `planning.mjs` for symmetry was replayed against the live corpus on
+    // 2026-08-25 and moves this row from 4 of 46 plans refused to 18, against
+    // the half-the-plans rail's bound of 23 - a cost paid for nothing (D-11).
+    subjects: ['cadence-core/bin/planning/'],
+  }),
 ]);
 
 // --- discovery: the marker grammar, and the one rule over it -----------------
