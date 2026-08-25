@@ -25,6 +25,9 @@ phase-close assertion that the queue is empty rather than a roll-out that emptie
 - The close ASSERTS the queue is empty - `capture` field on `cmdPhaseDone`'s close arm, `cadence-core/bin/planning/phase-done.mjs:112-128`
 - `/cad-health` prints the verdict - `skills/cad-health/SKILL.md`
 - `## Archive` left the capture contract - `cadence-core/references/capture-grammar.md`
+- The phase close stops filing open items into the transient queue - `summary` and `state` steps of `cadence-core/workflows/execute.md`
+- The check that would have caught it - `cadence-core/bin/lib/capture-writers.mjs`, wired as self-verify check 23 (`capture-writers`)
+- The capture contract names who may write the file - `## Who may write this file` in `cadence-core/references/capture-grammar.md`
 
 ## Commits
 
@@ -48,8 +51,15 @@ phase-close assertion that the queue is empty rather than a roll-out that emptie
 | 2 | 4 | 87b157d5 | The close asserts the queue is empty |
 | 2 | 5 | b4c857b2 | /cad-health prints the verdict |
 | 2 | 6 | 0169ef62 | `## Archive` leaves the capture contract |
+| 3 | 1 | 312e8cbf | The phase close stops filing open items into the transient queue |
+| 3 | 2 | d04e7605 | self-verify reports a prose surface that writes the transient queue |
+| 3 | 3 | 61683a20 | The capture contract names who may write the file |
+| 3 | (repair) | 59a8c728 | Re-pin plan.md's seam census at 14 - orchestrator, outside every plan's lease |
 
-17 commits, `b157ccdc..0169ef62`.
+21 commits across two runs: plans 1-2 at `b157ccdc..0169ef62` (17), plan 3 at
+`08100808..59a8c728` (4). Plan 3 was authored after the first run closed and
+executed under `/cad-execute 3 --rerun`; that rerun re-executed nothing, since
+plans 1 and 2 were already committed.
 
 ## Deviations
 
@@ -92,18 +102,32 @@ phase-close assertion that the queue is empty rather than a roll-out that emptie
   and never a refusal"), the raced entry stays in CAPTURE.md, and the next
   `capture-check` reads it. Full record at
   `.planning/phases/3/ADJUDICATION-risk_surface-plan-2.json`.
-- **`risk-check status` scopes `--base/--head` phase-wide, not per plan.** With
-  `--plan 2 --base 56d40eb9 --head 0169ef62` it evaluates plan 1 against plan 2's range
-  and reports plan 1 `unfired`, `ok:false`, `missing:["1"]`; with plan 1's own range it
-  returns `ok:true` and both plans `recorded`. Both plans really are settled - the
-  refusal is the flag scope, not a missing fire.
-- **CAPTURE.md holds 30 substantive bullets against a bound of 40** (`capture-check`
-  on this tree: Todos 21, Seeds 9, Notes 0). The goal says CAPTURE "cannot accumulate";
-  the machinery to stop it accumulating shipped, but nothing drained what is already
-  there, so `/cad-phase done` will report a non-empty queue.
-- **`workflows/execute.md`'s summary step still routes open items into CAPTURE.md.**
-  It is not in either plan's lease and was not changed, so the workflow that closes a
-  phase still writes durably into the file this phase declared transient.
+- **`risk-check status` cannot be brought to `ok:true` on this phase by any range.**
+  The first run recorded this as a `--base/--head` scoping quirk with a workaround
+  ("with plan 1's own range it returns `ok:true` and both plans `recorded`"). That
+  workaround is FALSE on the tree as it now stands, re-checked 2026-08-25: `--plan 1
+  --base b157ccdc --head 56d40eb9` returns `ok:false`, `missing:["1","1"]`, with plan 1
+  listed TWICE - once `completed 1, records 2` and once `completed 0, records 2`. The
+  count is the mechanism: plan 1's gate was re-armed, so its range carries TWO
+  `risk_check` records (heads `57f71bd2` and `56d40eb9`) but only ONE counted
+  completion, and a re-armed plan can therefore never satisfy the join. Plan 1's gate
+  IS settled on the evidence - `rearm` and `gate_pass` (round 2) both present under
+  corr `3-b157ccdc`, `ADJUDICATION-risk_surface-plan-1-r2.json` carrying `entries: []`,
+  and `REVIEW-risk_surface-plan-1.md` carrying `findings: []`. No synthetic receipt was
+  appended to silence the refusal, because that would erase the evidence of the defect.
+  Plan 3's own row is `recorded` with `matches: []`.
+- **CAPTURE.md holds 31 substantive bullets against a bound of 40** (`capture-check`
+  after plan 3: Todos 21, Seeds 10, Notes 0, `over_bound: false`). Plan 3 removed the
+  seven `(phase 3)` bullets its own close had copied out of `## Open items`, each proved
+  present in this SUMMARY first; a Seed captured the same day (the `review-triggers.md`
+  split) is the net difference from 30. The goal says CAPTURE "cannot accumulate" and
+  the durable write is now gone, but nothing drained the pre-existing queue, so
+  `/cad-phase done` will still report a non-empty one.
+- ~~**`workflows/execute.md`'s summary step still routes open items into
+  CAPTURE.md.**~~ RESOLVED by plan 3 task 1 (`312e8cbf`). `grep -c "capture --kind"
+  cadence-core/workflows/execute.md` now returns 0; the `summary` step states that an
+  open item lives in `phases/<N>/SUMMARY.md` and nowhere else, and the `state` step
+  stages `.planning/CAPTURE.md` only when the debt harvest reported `written`.
 - Five of this phase's new refusal tokens (`no-forge`, `no-cli`, `no-login`,
   `lookup-failed`, `incomplete-lookup`) are set in helper RETURNS and emitted through
   an interpolated `reason`, so `refusalSites` does not see them as sites and the token
@@ -113,6 +137,25 @@ phase-close assertion that the queue is empty rather than a roll-out that emptie
 - Six `jcrenshaw` hits survive outside tests and fixtures (`lib/redact-url.mjs:66`,
   `lib/forge-decision.mjs:139,140,227,228`, `self-verify.mjs:516`). All six are comment
   lines predating this phase; recorded as the pre-run baseline for task 8.
+- **The capture-writer register carries FOUR live write sites, not the three plan 3's
+  task 2 named.** `cadence-core/references/conventions.md:49` has its own
+  `planning.mjs debt-harvest --root .` invocation beside the `CADENCE-DEBT` marker
+  grammar. Registered with the same wholesale-rewrite reason. Proved by running the
+  rule over the walked tree against an EMPTY row set: exactly four surfaces report, and
+  zero report against the shipped register.
+- **The capture-writer scan reads a write instruction in two shapes only** - an
+  executed `planning.mjs <capture|debt-harvest>` and a shell redirect at
+  `.planning/CAPTURE.md`. Prose instructing a hand write in English words alone
+  ("append the item to CAPTURE.md") stays invisible. Declined deliberately in plan 3
+  task 2 as the unbounded-grammar problem; the module header states the cost rather
+  than the code chasing it.
+- **`cadence-core/workflows/plan.md`'s seam census was left un-re-pinned by
+  `08100808`**, which put the suite at 3214/3215 red from that hand commit until
+  `59a8c728`. Neither `workflows/plan.md` nor `bin/seam-calls.test.mjs` was in any
+  phase 3 plan's lease, so plan 3 halted `structural` on it and the repair was carried
+  by the orchestrator. Worth noting as a pattern rather than a one-off: a hand commit
+  that edits a censused prose surface has no gate reminding it to re-pin the row, and
+  the cost lands on whatever plan runs next.
 
 ## Goal check
 
@@ -142,3 +185,55 @@ neither plan's lease, unchanged) still writes open items into it. The suite is g
 was cleared by three fixes with a narrowed second round returning zero findings
 (`ADJUDICATION-risk_surface-plan-1.json`, `-r2.json`). Verification should not treat
 CAP-01 as demonstrated until task 8 runs.
+
+**Plan 3 (rerun, `08100808..59a8c728`).** The gap the paragraph above names as
+outstanding is now closed, and it is the one the goal's second half turned on.
+`workflows/execute.md`'s summary step no longer writes into the file this phase
+declares transient: `grep -c "capture --kind" cadence-core/workflows/execute.md`
+returns 0, the step now states that an open item lives in
+`phases/<N>/SUMMARY.md` and nowhere else, and the `state` step stages
+`.planning/CAPTURE.md` only when the debt harvest reported `written` (this run's
+harvest answered `written: false`, so it was not staged). The reason is recorded
+in the code rather than as a preference: `parseSummarySnippets`
+(`lib/planning-files.mjs`) already indexes `## Open items` into the recall
+corpus, and the measured pair is 42.4677 for the SUMMARY row against 31.1468 for
+the CAPTURE duplicate on the same query. So "cannot accumulate" is now a
+property of the tree and not only of a bound: the durable write is gone, and
+`capture-check` answers `substantive: 31, bound: 40, over_bound: false` after
+plan 3 removed the seven `(phase 3)` bullets its own close had copied out of
+this file, each proved present here first.
+
+What stops it returning silently is check 23. `lib/capture-writers.mjs` is a
+pure rule over a frozen register, wired into `self-verify.mjs`'s per-surface
+loop, and `self-verify.mjs` now reports `capture-writers` in its `checked` list
+with `problems: []`. Its own test replays the retired `execute.md` block
+verbatim from `0169ef62` and confirms it is reported against an empty row set -
+so the check is proved to catch the exact defect that motivated it, not merely
+to pass on a clean tree.
+
+Two honest limits. The register carries four live write sites where the plan
+named three (`references/conventions.md:49` was the fourth), and the scan reads
+only two syntactic shapes, so prose instructing a hand write in English alone is
+invisible - both recorded above as open items and stated in the module header.
+
+The suite is green at 3215 tests / 3215 pass / 0 fail (`node
+cadence-core/bin/test.mjs`) and `self-verify.mjs` reports `problems: []`.
+Reaching that took one repair outside every plan's lease: `08100808`, a hand
+commit, added the two `route.mjs resolve` blocks to `workflows/plan.md` without
+re-pinning `seam-calls.test.mjs:125`, leaving the suite at 3214/3215 before this
+rerun began. Plan 3 halted `structural` on it rather than editing outside its
+lease, which is the contract working. The re-pin (`59a8c728`, 12 -> 14) carries
+the measurement the row's own failure message demands: `git show 08100808 --
+cadence-core/workflows/plan.md` shows both sites already instructed the resolve
+in prose and already carried `--bracket-read` inline, so no round-trip was added
+and only the spelling became literal.
+
+Plan 3's `risk_surface` gate did not fire: `risk-check run --phase 3 --plan 3
+--base 08100808 --head HEAD` answered `matches: []`, `inconclusive: false`.
+`risk-check status` still refuses phase-wide on plan 1 of the first run, which
+is the join defect recorded in the open items above and not a missing fire; no
+synthetic receipt was written to clear it.
+
+Nothing in this rerun touches the first half of the goal. CAP-01 is still not
+demonstrated until plan 1 task 8 runs against a live forge, and verification
+should treat it exactly as the paragraph above says.
