@@ -74,26 +74,26 @@ evidence: Nine rows, nine markers, ids one-to-one: self-verify.test.mjs:1622, ar
 ### 9. A tenth census - seam-calls.test.mjs - has no registry row and no marker
 expected: missing - ROADMAP criterion 1 and CEN-01 both say EVERY hand-maintained census is registered, and one known census is not. It is invisible to the discovery arm because it also carries no marker, and the module header still documents the opposite rule.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
 source: verifier
-evidence: cadence-core/bin/seam-calls.test.mjs asserts `seamCalls(text)` against a hand-written literal at :128, over rows whose `calls:` values are hand-pinned (:95 was re-pinned 11 to 12 by this phase's own commit 6e7fca8b). `grep -c CADENCE-CENSUS cadence-core/bin/seam-calls.test.mjs` returns 0, and lib/census-registry.mjs names it only in header prose at :47. That header paragraph at :44-49 still carries the pre-correction D-05 - "It is deliberately absent from this table and owes no marker" - contradicting the corrected D-05 in .planning/phases/2/CONTEXT.md:98-102. Concretely: a plan editing cadence-core/workflows/plan.md or context.md is still not refused at plan time for the count it will move, which is exactly what happened to this phase's PLAN-2 at task 6.
+evidence: Retested at badcb33e. `lib/census-registry.mjs` now carries the `seam-call-counts` row - holder `cadence-core/bin/seam-calls.test.mjs`, subjects `cadence-core/workflows/plan.md` and `cadence-core/workflows/context.md` - and that file carries the matching CADENCE-CENSUS marker at its asserting loop, so `grep -c CADENCE-CENSUS cadence-core/bin/seam-calls.test.mjs` returns 1. The header's pre-correction D-05 paragraph is rewritten: `grep -c "deliberately absent from this table" cadence-core/bin/lib/census-registry.mjs` returns 0. census-registry.test.mjs 7/7 including the live-tree discovery arm, which reports no unregistered census. Live: a scratch PLAN.md declaring cadence-core/workflows/plan.md alone now returns ok:false, reason census-at-risk, naming cadence-core/bin/seam-calls.test.mjs with its counts and asserted_by, exit 1. .planning/phases/2/census-replay.md re-measured over the current corpus: the row refuses 9 of 48 plans against a bound of 24. Commit ac01bcc7.
 reported: missing - ROADMAP criterion 1 and CEN-01 both say EVERY hand-maintained census is registered, and one known census is not. It is invisible to the discovery arm because it also carries no marker, and the module header still documents the opposite rule.
 severity: major
 cause: The registry was authored under the pre-correction D-05, which named seam-calls.test.mjs as the worked example of what is NOT a census. D-05 was corrected mid-phase (plan 2 task 7), but lib/census-registry.mjs is plan 1's module and PLAN-2 never leases it, so the correction could not reach the registry inside this phase without editing outside a lease - the exact act the phase exists to prevent. Row, marker, and the module header at :44-49 are one commit.
-fix: left open - filed in CAPTURE.md, row+marker+header are one follow-up commit
+fix: ac01bcc7, retest
 
 ### 10. lease-check --plan-time passes any lease it could not read
 expected: behavior wrong - the plan-time gate fails OPEN on an empty or unparsed declared set, where the commit-time arm on the same file fails closed.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
 source: verifier
-evidence: cadence-core/bin/planning/lease-check.mjs:267 `if (!atRisk.length) return ok(base);` - censusesAtRisk([]) is always empty. Probed live: a PLAN.md with a garbage frontmatter line returned `{"ok":true,"declared":0,"frontmatter_issues":[...]}` exit 0, and a PLAN.md whose key is misspelled `filez:` returned `{"ok":true,"declared":0}` exit 0 with no signal at all that the lease was never read - a case wider than the one .planning/phases/2/SUMMARY.md:48 records. Contrast planning-lease-check.test.mjs:181, where the commit-time arm refuses an empty files: list, and workflows/execute.md's choose_path, which already treats a frontmatter_issues entry as grounds to refuse.
+evidence: Retested at badcb33e. The plan-time arm refuses on two signals above `censusesAtRisk`. Live on a scratch tree: a PLAN.md with a garbage frontmatter line returns ok:false, reason unparsed-lease, with frontmatter_issues and a hint, exit 1; a PLAN.md whose key is misspelled `filez:` returns ok:false, reason empty-lease, declared:0, with a hint, exit 1; a PLAN.md declaring src/a.mjs returns ok:true, declared:1, exit 0, so this is fail-closed and not a blanket refusal. Two signals because a misspelled key is a structurally valid key line producing zero frontmatter_issues. One fixture directory holds two plans and pins both gates on the same two signals: plan-overlap reports frontmatter_issues naming PLAN-1.md and undeclared naming PLAN-2.md, and lease-check --plan-time refuses PLAN-1 as unparsed-lease and PLAN-2 as empty-lease (planning-lease-check.test.mjs, 31/31). Reverting either arm alone, or both, reddens that test and nothing else. workflows/plan.md's check_census now names all three refusal outcomes. Commits 3bf5264e, 6db19be9.
 reported: behavior wrong - the plan-time gate fails OPEN on an empty or unparsed declared set, where the commit-time arm on the same file fails closed.
 severity: major
 cause: lease-check.mjs:267 `if (!atRisk.length) return ok(base)` is reached whenever parsePlanFiles() yields declared:[], and censusesAtRisk([]) is empty by construction, so an unread lease is indistinguishable from a lease that puts nothing at risk. frontmatter_issues is carried as informational output and never consulted by the plan-time arm. The commit-time arm on the same file fails closed on the same signal, and execute.md's choose_path already treats a frontmatter_issues entry as grounds to refuse - two gates, one signal, two readings.
-fix: left open - filed in CAPTURE.md; ruled downgraded on reach by the risk_surface review, no such plan in the 43-plan replay
+fix: 3bf5264e, retest
 
 ### 11. Run /cad-plan on a phase whose PLAN under-declares a census subject and watch what the orchestrator does with the refusal
 expected: check_census emits `census-at-risk`, the orchestrator says the missing files out loud beside the census each holds, amends the plan's files: list, re-runs until ok:true, and reaches neither count_planned nor any dispatch while it refuses.
@@ -104,8 +104,8 @@ status: pending
 ## Summary
 
 total: 11
-passed: 8
-failed: 2
+passed: 10
+failed: 0
 pending: 1
 skipped: 0
 blocked: 0
