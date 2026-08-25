@@ -13,6 +13,7 @@ files:
   - .planning/DOCS-CLAIMS.md
   - cadence-core/bin/citation-census.test.mjs
   - .planning/phases/2/census-replay.md
+  - cadence-core/bin/seam-calls.test.mjs
 ---
 
 # Phase 2: Census registry and plan-time lease check - Plan 2 (the plan-time arm)

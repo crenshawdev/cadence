@@ -95,6 +95,11 @@ the first and does not edit it.
   the test computes from the tree at run time is a measurement and no plan can
   invalidate it. Evidence: `cadence-core/bin/seam-calls.test.mjs:12-27` states
   its own numbers are "DERIVED, never baselined" and carries the arithmetic.
+  [corrected by plan-2 deviation: that self-description covers the header
+  arithmetic and NOT the assertion, which compares `seamCalls(text)` against a
+  literal `calls: 11` at `cadence-core/bin/seam-calls.test.mjs:86` - a
+  hand-written count the code must keep true, so the file IS a census by this
+  phase's own definition and belongs in the registry.]
 
 - D-06 (discovery): Criterion 1's "a census live in a test but absent from the
   registry fails the suite" is satisfied by a LEXICAL MARKER the census site

@@ -1,0 +1,39 @@
+{
+  "phase": "2",
+  "trigger": "risk_surface",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "54520d22",
+  "head": "6e7fca8b",
+  "base_id": "54520d2232cd6abb2af3f2507b3a0367e3b46c3c",
+  "head_id": "6e7fca8bea13257ca94322a6f37b846b61e2e37b",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning/lease-check.mjs",
+      "line": 265,
+      "severity": "medium",
+      "claim": "The new plan-time arm returns `ok:true` when `parsePlanFiles()` reports malformed or missing lease frontmatter, because `frontmatter_issues` is included only as informational output and an empty `declared` list produces no at-risk entries.",
+      "failure_scenario": "Run `lease-check --phase 1 --plan 1 --plan-time` against a readable `PLAN.md` with no `files:` declaration (or malformed frontmatter such that `parsePlanFiles()` returns issues and `files: []`). `censusesAtRisk([])` returns no entries, so this branch emits a successful result with `frontmatter_issues` despite having no valid lease to inspect. The workflow is instructed to continue when this check answers `ok:true`, allowing a plan that changes a census subject to bypass the intended pre-execution lease gate.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/planning/lease-check.mjs",
+        "line": 267,
+        "note": "The mechanism is accurate: line 267's `if (!atRisk.length) return ok(base)` is a PASS, and `base` spreads `...frontmatter`, so a lease whose frontmatter did not parse yields declared:[] -> censusesAtRisk([]) -> [] -> ok:true with frontmatter_issues carried as informational output only. Downgraded rather than survived on reach, not on truth: it takes a malformed or files-less PLAN to arrive at, and no such plan exists in the 43-plan replay this phase ran. It is below the blocking gate's blocker/high fix bar, so it is filed as an open item for a follow-up that makes this arm match execute.md's choose_path, which already treats a frontmatter_issues entry as grounds to refuse."
+      },
+      "base_id": "54520d2232cd6abb2af3f2507b3a0367e3b46c3c",
+      "head_id": "6e7fca8bea13257ca94322a6f37b846b61e2e37b"
+    }
+  ]
+}
