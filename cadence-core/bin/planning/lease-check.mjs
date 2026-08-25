@@ -48,8 +48,11 @@ import { emit } from '../lib/seam-io.mjs';
 // `declaredPhaseFiles` is the wrong reader: it unions across the PHASE, which
 // would let plan 2 stage a file only plan 1 declared.
 //
-// An unprovable lease is never a pass: a missing plan and an unreadable staged
-// set are both ok:false.
+// An unprovable lease is never a pass: a missing plan, an unreadable staged set
+// and a `files:` list that could not be read are all ok:false. The last of
+// those is the plan-time arm's own pair of refusals below - a lease nobody can
+// read licenses nothing, and answering ok:true over it reports a gate that
+// examined an empty list as a gate that found nothing wrong.
 //
 // Why the CLEAN-STARTING-INDEX check is not here either (moved out of
 // `workflows/execute.md`'s git_guard step, v2.6.2): the orchestrator is the only
@@ -262,9 +265,33 @@ function cmdLeaseCheck(dir, opts) {
   // `lib/lease-grammar.mjs`: the replay in `planning-lease-check.test.mjs` asks
   // the same predicate once per historical plan without a seam invocation, and
   // a second copy here is how the two readers come to disagree.
+  //
+  // IT FAILS CLOSED ON A LEASE IT COULD NOT READ, on TWO signals, because
+  // `censusesAtRisk([])` is empty by construction: an unread lease and a lease
+  // that puts nothing at risk arrive here as the same value, so without these
+  // two arms the gate answers ok:true precisely when it read nothing. Two
+  // signals and not one, measured over `parsePlanFiles`: a garbage frontmatter
+  // line returns a NON-EMPTY file list beside one `unknown-line` issue, while a
+  // misspelled `filez:` key is a structurally valid key line that returns an
+  // empty list with ZERO issues - `parseFrontmatter` has no unknown-key
+  // diagnostic - so each signal catches exactly the case the other misses. The
+  // frontmatter signal is read FIRST: a plan can carry both, and that one names
+  // WHY the lease could not be read.
+  //
+  // Two NEW reason tokens rather than one token with a field naming which fired,
+  // because `workflows/execute.md`'s `choose_path` already reads
+  // `frontmatter_issues` and an empty declared set as two separate clauses - two
+  // tokens is what makes both gates read the signal the same way. Neither
+  // existing token fits: the census refusal below is DEFINED by a non-empty
+  // `censuses_at_risk` list, empty here by construction, and `undeclared-files`
+  // is a statement about the staged side this arm never reads.
+  //
+  // Refusing an empty declared set is not a blanket refusal: of the 55 plans in
+  // this repository's own record on 2026-08-25, the 2 declaring nothing are
+  // `/cad-task` plans with no YAML frontmatter at all, which `check_census`
+  // never runs against, and 0 of 55 carry a frontmatter issue.
   if (opts['plan-time']) {
     const planPath = planFile.split(sep).join('/');
-    const atRisk = censusesAtRisk(declared);
     const base = {
       phase: n,
       plan: k,
@@ -272,6 +299,27 @@ function cmdLeaseCheck(dir, opts) {
       declared: declared.length,
       ...frontmatter,
     };
+    if (issues.length) {
+      return emit({
+        ok: false,
+        reason: 'unparsed-lease',
+        ...base,
+        hint: `repair ${planPath}'s frontmatter - each entry in frontmatter_issues`
+          + ' names a line that could not be read, and the files: list this gate'
+          + ' measures is whatever survived it - then re-run this check',
+      });
+    }
+    if (declared.length === 0) {
+      return emit({
+        ok: false,
+        reason: 'empty-lease',
+        ...base,
+        hint: `declare this plan's files in ${planPath}'s files: list - a missing`
+          + ' or misspelled key reads as a lease of nothing, and no census can be'
+          + ' measured against nothing - then re-run this check',
+      });
+    }
+    const atRisk = censusesAtRisk(declared);
     // A clean lease is a PASS and not a silence: the caller needs to be able to
     // tell "the check ran and found nothing" from "the check never ran".
     if (!atRisk.length) return ok(base);
