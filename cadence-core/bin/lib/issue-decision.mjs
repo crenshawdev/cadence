@@ -36,8 +36,14 @@
 //        list.md, read 2026-08-15): `-A/--all` (both states), `-O/--output
 //        json`, `-P/--per-page int (default 30)`, `-R/--repo OWNER/REPO`. The
 //        json arm prints the API issue objects, whose number is `iid` and whose
-//        state is `opened`/`closed`. No `glab` on this machine, so this row is
-//        proved by a captured sample and a PATH-injected stub, never a spawn.
+//        state is `opened`/`closed`. Corrected 2026-08-25: `glab` IS installed
+//        here - `/usr/bin/glab`, version 1.114.0 - and the four flags above are
+//        confirmed against its own `--help`, so the row is no longer proved by
+//        a captured sample alone. What is UNCHANGED is the discipline: this row
+//        is proved by a PATH-injected stub and never by a spawn, the same way
+//        the `gh` and `tea` rows are. That was never a consequence of the
+//        binary being absent - a live spawn would put a real tracker inside a
+//        unit test - so nothing about the row moves now that it is present.
 //
 // WHY EACH ROW CARRIES A PAGING FLAG. All three CLIs cap a bare `issue list` at
 // 30 rows. This repo's own tracker holds over 170, so an unbounded call would
@@ -238,8 +244,13 @@ function readOneIssue(text, number) {
  * the caller's own constant. Paging the list was rejected: it widens the seam
  * past its stated one bounded call per land and puts more network latency on
  * the land path. `github` and `gitlab` keep `--state all` and get no resolve -
- * `gh` pages internally to its `--limit`, and inventing argv for a `glab` that
- * is absent from this machine would ship an untestable change.
+ * `gh` pages internally to its `--limit`, and `glab` pages to its `--per-page`
+ * (100, the GitLab API's own ceiling), so both rows' reads are COMPLETE and
+ * there is nothing for a `resolve` to resolve. Corrected 2026-08-25: the reason
+ * given here used to be that `glab` was not installed here and that inventing
+ * its argv would therefore ship an untestable change. It is installed - `/usr/bin/glab`, version
+ * 1.114.0 - so that reason was false as well as beside the point; the paging
+ * behaviour is what the row turns on.
  */
 export const HOST_TABLE = Object.freeze({
   github: Object.freeze({
