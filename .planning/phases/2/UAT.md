@@ -99,14 +99,15 @@ fix: 3bf5264e, retest
 expected: check_census emits `census-at-risk`, the orchestrator says the missing files out loud beside the census each holds, amends the plan's files: list, re-runs until ok:true, and reaches neither count_planned nor any dispatch while it refuses.
 origin: verifier
 why_human: Out of reach from here, not merely unexercised: /cad-plan is an orchestrator workflow that dispatches a cad-planner subagent and writes real PLAN files, and nothing in code stops a workflow reading prose - D-07's whole premise is this project's record of two refusals committed rather than obeyed. The seam's exit code and payload are verified; whether the workflow halts on them can only be observed in a live planning run.
-status: pending
+status: skipped
+reason: Orchestrator halt unobservable this cycle: no unplanned phase remains in v3.7.1 to run /cad-plan against. The seam arm it depends on is verified - item 3 (replay names the right censuses, no git subprocess) and item 10 (fail-closed on unparsed-lease and empty-lease, live on a scratch tree, planning-lease-check.test.mjs 31/31). What is unobserved is only whether the /cad-plan workflow obeys the refusal; that carries to the first /cad-plan of the next cycle.
 
 ## Summary
 
 total: 11
 passed: 10
 failed: 0
-pending: 1
-skipped: 0
+pending: 0
+skipped: 1
 blocked: 0
 reworked: 2

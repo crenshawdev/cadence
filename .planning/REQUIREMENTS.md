@@ -354,8 +354,8 @@ section only, bounded at the next `## ` heading.
 | FRG-01 | Phase 1 | Complete |
 | FRG-02 | Phase 1 | Complete |
 | LOD-02 | Phase 5 | Complete |
-| CEN-01 | Phase 2 | Pending |
-| CEN-02 | Phase 2 | Pending |
+| CEN-01 | Phase 2 | Complete |
+| CEN-02 | Phase 2 | Complete |
 | CAP-01 | Phase 3 | Complete |
 | CAP-02 | Phase 3 | Complete |
 | CAP-03 | Phase 3 | Complete |
