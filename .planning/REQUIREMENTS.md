@@ -345,6 +345,9 @@ section only, bounded at the next `## ` heading.
 | LOD-02 | Phase 5 | Complete |
 | CEN-01 | Phase 2 | Pending |
 | CEN-02 | Phase 2 | Pending |
+| CAP-01 | Phase 3 | Pending |
+| CAP-02 | Phase 3 | Pending |
+| CAP-03 | Phase 3 | Pending |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
