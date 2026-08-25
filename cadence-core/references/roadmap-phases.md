@@ -109,6 +109,14 @@ A directory outside the grammar is unsupported and REPORTED, never migrated:
 the legal directory it collides with, `/cad-health` reports every such entry as
 an issue, and renaming it is the user's call, never an auto-fix.
 
+Two names that are both LEGAL can still parse to one number: `Number` maps
+`1.1` and `1.10` onto the same value. Neither is preferable and neither is
+refusable, so `status` reports the pair as `phase-dir-collision` drift - its own
+kind, since folding it into `phase-dir-grammar` would tell a user to fix a
+spelling the grammar accepts. A `phase-dir` entry therefore carries the
+directory NAME in `dir` beside the parsed `phase`, and a `recall` result carries
+it in `source`: that is what says which of the two a record describes.
+
 ## The four states
 
 | State | When | `status` does | `cursor set` does |

@@ -76,6 +76,45 @@ function phaseDirGrammarDrift(dir) {
   return out;
 }
 
+/**
+ * The legal phase-directory names on this tree that PARSE TO THE SAME NUMBER,
+ * one drift entry per colliding group.
+ *
+ * `roadmap-phases.md` makes `1.1` and `1.10` both legal and DIFFERENT phases -
+ * sub-phase one and sub-phase ten - while `Number` collapses them onto `1.1`.
+ * Every reader that reports a phase identity numerically is therefore ambiguous
+ * on a tree holding both, and the ambiguity is not fixable inside any one
+ * reader: the two directories are equally legal, so there is nothing to prefer
+ * and nothing to refuse. What is left is to REPORT it, which is the same answer
+ * `phase-dir-grammar` gives an illegal name - unsupported and named, never
+ * migrated, and renaming is the user's call.
+ *
+ * Distinct from `phase-dir-grammar` on purpose: every name here is LEGAL, so
+ * folding these into that kind would tell a user to fix a spelling the grammar
+ * accepts. A tree with no collision produces nothing.
+ * @param {string[]} legalNames @returns {Array<{kind: string, phase: number, entries: string[], detail: string}>}
+ */
+function phaseDirNumericCollisions(legalNames) {
+  /** @type {Map<number, string[]>} */
+  const byNumber = new Map();
+  for (const name of legalNames) {
+    const n = Number(name);
+    byNumber.set(n, [...(byNumber.get(n) || []), name]);
+  }
+  const out = [];
+  for (const [n, names] of [...byNumber.entries()].sort((a, b) => a[0] - b[0])) {
+    if (names.length < 2) continue;
+    const entries = names.slice().sort();
+    out.push({
+      kind: 'phase-dir-collision', phase: n, entries,
+      detail: `${entries.map((e) => `phases/${e}`).join(', ')} are different phases that `
+        + `both parse to ${n}, so a numeric phase identity cannot tell them apart; `
+        + 'rename one to a sub-phase ordinal that is unique',
+    });
+  }
+  return out;
+}
+
 // Which cursor statuses are consistent with a derived phase status.
 const AGREE = {
   unplanned: ['ready to plan', 'context gathered'],
@@ -141,15 +180,24 @@ function cmdStatus(dir) {
     // both carrying `phase: 8`, since `Number` collapses the padding the filter
     // let through. An illegal name is reported by `phaseDirGrammarDrift` under
     // its own kind and is not a surviving phase directory (D-04).
+    // The tie-break is NOT decoration: `Number('1.1') === Number('1.10')`, so a
+    // numeric-only comparator leaves two legal siblings in whatever order the
+    // filesystem handed them back, and a drift list that reshuffles between runs
+    // is unreadable as a diff. The name breaks the tie the number cannot.
     const surviving = entries.filter((e) => PHASE_DIR_NAME.test(e))
-      .sort((a, b) => Number(a) - Number(b));
+      .sort((a, b) => (Number(a) - Number(b)) || (a < b ? -1 : a > b ? 1 : 0));
     for (const e of surviving) {
       const { plans } = listPlanFiles(join(dir, 'phases', e));
       drift.push({
-        kind: 'phase-dir', phase: Number(e),
+        // `dir` is the SPELLING, `phase` the number it parses to, and they are
+        // two facts rather than one: `1.1` and `1.10` are different phases that
+        // parse to the same number, so a record carrying only `phase` cannot say
+        // which directory it describes. The collision itself is reported below.
+        kind: 'phase-dir', phase: Number(e), dir: e,
         detail: `phases/${e}/ survives the milestone close (${plans.length} plan files)`,
       });
     }
+    drift.push(...phaseDirNumericCollisions(surviving));
   }
 
   // The phase-directory grammar, checked in EVERY state and not only after a

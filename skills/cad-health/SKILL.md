@@ -94,7 +94,9 @@ Check, then report - do not fix without asking.
    `phase-dir-grammar` entry
    `planning.mjs status` returns as an issue naming the entries it lists -
    Cadence resolves no other spelling, so those directories are unsupported, and
-   renaming them is the user's call and never an auto-fix. A phase
+   renaming them is the user's call and never an auto-fix. Report a
+   `phase-dir-collision` entry too, but say the other thing: both names are
+   LEGAL and parse to one number, so no spelling is wrong - only ambiguous. A phase
    marked `- [x]` in ROADMAP whose mapped REQUIREMENTS rows are not all
    `Complete` (or a `Complete` requirement whose phase is still `- [ ]`) is a
    status-drift issue - flag it. This is the cheap structural check that a

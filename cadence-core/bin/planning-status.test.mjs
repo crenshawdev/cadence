@@ -97,7 +97,7 @@ test('status: an interrupted close reports the closed state AND a phase-dir drif
   assert.equal(r.ok, true);
   assert.equal(r.cycle, 'none');
   assert.deepEqual(r.drift, [{
-    kind: 'phase-dir', phase: 2,
+    kind: 'phase-dir', phase: 2, dir: '2',
     detail: 'phases/2/ survives the milestone close (1 plan files)',
   }]);
 });
@@ -401,6 +401,9 @@ test('status: 08 beside 8 survives the close as ONE phase-dir entry, on the lega
 });
 
 // `phases/1.10/` is a legal sub-phase name and the tightened filter keeps it.
+// `phase` is the number the name parses to and `dir` is the name: `Number` maps
+// `1.10` onto `1.1`, so the record has to carry the spelling to say which
+// directory it describes.
 test('status: a legal sub-phase directory still survives the close', () => {
   const dir = makeTree({ roadmap: [], phases: { '1.10': { plan: true } } });
   const r = run(['status'], dir);
@@ -408,5 +411,36 @@ test('status: a legal sub-phase directory still survives the close', () => {
   const survivors = (r.drift || []).filter((d) => d.kind === 'phase-dir');
   assert.equal(survivors.length, 1, JSON.stringify(survivors));
   assert.equal(survivors[0].phase, 1.1);
+  assert.equal(survivors[0].dir, '1.10');
   assert.deepEqual(grammarDrift(r), []);
+});
+
+// Two LEGAL names that parse to one number. Neither is grammar drift and
+// neither is preferable, so the collision is reported under its own kind rather
+// than resolved - the same answer an illegal name gets, one step over.
+test('status: two legal sub-phases that parse to one number are reported', () => {
+  const dir = makeTree({
+    roadmap: [], phases: { 1.1: { plan: true }, '1.10': { plan: true } },
+  });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const survivors = (r.drift || []).filter((d) => d.kind === 'phase-dir');
+  assert.deepEqual(survivors.map((d) => d.dir), ['1.1', '1.10'], JSON.stringify(survivors));
+  const collisions = (r.drift || []).filter((d) => d.kind === 'phase-dir-collision');
+  assert.equal(collisions.length, 1, JSON.stringify(collisions));
+  assert.equal(collisions[0].phase, 1.1);
+  assert.deepEqual(collisions[0].entries, ['1.1', '1.10']);
+  assert.match(collisions[0].detail, /both parse to 1\.1/);
+  // Every name here is legal, so the grammar walk stays silent.
+  assert.deepEqual(grammarDrift(r), []);
+});
+
+// A tree with no collision produces no entry of that kind at all.
+test('status: distinct sub-phase numbers report no collision', () => {
+  const dir = makeTree({
+    roadmap: [], phases: { 1.1: { plan: true }, 1.2: { plan: true }, 8: { plan: true } },
+  });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual((r.drift || []).filter((d) => d.kind === 'phase-dir-collision'), []);
 });

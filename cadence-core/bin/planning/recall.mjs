@@ -71,11 +71,20 @@ function cmdRecall(dir, query, opts) {
     // a `phases/08/` the loose filter admitted indexed its snippets under
     // `phase: 8` - a DIFFERENT phase's evidence returned as this phase's
     // (D-04). `phases/1.10/` is legal and stays in the corpus.
+    // The name breaks the tie the number cannot: `Number('1.1') === Number('1.10')`,
+    // so a numeric-only comparator orders two legal siblings by whatever the
+    // filesystem returned.
     const entries = readdirSync(phasesDir)
       .filter((e) => PHASE_DIR_NAME.test(e))
-      .sort((a, b) => Number(a) - Number(b));
+      .sort((a, b) => (Number(a) - Number(b)) || (a < b ? -1 : a > b ? 1 : 0));
     for (const n of entries) {
       const pdir = join(phasesDir, n);
+      // `phase` is the number the name parses to and `dir` is the name itself.
+      // Both are carried because `1.1` and `1.10` are DIFFERENT phases that parse
+      // to the same number (roadmap-phases.md), so `phase` alone would label
+      // sub-phase ten's evidence as sub-phase one's. `status` reports the
+      // collision as `phase-dir-collision` drift; here it is enough that the
+      // record says which directory the snippet came out of.
       const phase = Number(n);
       const summary = read(join(pdir, 'SUMMARY.md'));
       if (summary) for (const text of parseSummarySnippets(summary)) {
