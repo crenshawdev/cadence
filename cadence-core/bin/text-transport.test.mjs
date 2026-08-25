@@ -37,6 +37,7 @@ test('the register is frozen, rows and all', () => {
   }
 });
 
+// CADENCE-CENSUS: text-transport-register | asserts: the register is 36 rows, 20 of them derived
 test('the register pins its row count', () => {
   // The count is the enumeration's own claim: the phase examined these sites
   // and no others. Adding a site without deciding whether it is caller-derived

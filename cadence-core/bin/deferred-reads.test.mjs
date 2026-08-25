@@ -150,6 +150,7 @@ test('register: the surviving cut rows are byte-identical, and the register is e
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
+  // CADENCE-CENSUS: deferred-reads-register | asserts: the register is exactly 10 rows, byte-identical to the export's own source
   assert.equal(DEFERRED_READS.length, 10);
 });
 

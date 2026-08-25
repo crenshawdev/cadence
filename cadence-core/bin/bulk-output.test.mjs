@@ -46,6 +46,7 @@ test('the register and the shape list are frozen, rows and all', () => {
   for (const s of BULK_SHAPES) assert.equal(Object.isFrozen(s), true, `${s.shape} is a mutable shape`);
 });
 
+// CADENCE-CENSUS: bulk-output-register | asserts: the register is 17 rows, 4 redirect and 3 file
 test('the register pins its row count', () => {
   // The count is the enumeration's own claim: this phase examined these sites
   // and no others. Adding a site without deciding whether it owes the file

@@ -1619,6 +1619,7 @@ test('check 12: *.test.mjs is off the walk - a test may write any shape', () => 
   assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
 });
 
+// CADENCE-CENSUS: self-verify-merge-layers | asserts: sixteen mergeLayers callsites over twelve files, each in one of the two warning-surfacing arms
 test('check 12: the live tree is SIXTEEN callsites over TWELVE files, each in an arm', () => {
   // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
   // miscount in either direction fails rather than passing quietly, and a

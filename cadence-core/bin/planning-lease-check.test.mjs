@@ -307,6 +307,7 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // run`'s, and its `mkdirSync`/`atomicWrite` catch is NOT - that detail is an
   // `fs` error over the path `--dir` just named, the caller-named-path class
   // `capture --text-file` and phase-done's partial-flip already sit in.
+  // CADENCE-CENSUS: planning-detail-sites | asserts: 14 error-detail sites across the whole planning seam, 6 of them wrapped in redactUrl
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = seamSource();

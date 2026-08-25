@@ -2422,6 +2422,7 @@ test('falsifier: every step window closes inside the corr that opened it (MSR-04
 
 // --- one sentence per refusal, not two -----------------------------------------
 
+// CADENCE-CENSUS: trace-refusal-sentences | asserts: each of the four refusing trace flags carries exactly one sentence across the whole planning seam
 test('the four refusing trace flags carry ONE sentence each, in one map', () => {
   // The trap this pins. The dispatch door refuses these four for `trace
   // append` off the declared row, and the shared `append|close` body refuses
