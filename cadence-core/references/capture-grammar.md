@@ -21,7 +21,7 @@ in `cadence-core/bin/capture-file.test.mjs`.
 
 | Section | Walked | Written by |
 |---|---|---|
-| `## Todos` | yes | `/cad-capture --kind todo`, `/cad-execute`'s open items |
+| `## Todos` | yes | `/cad-capture --kind todo` |
 | `## Seeds` | yes | `/cad-capture --kind seed` |
 | `## Notes` | yes | `/cad-capture --kind note` |
 | `## Debt markers` | NO | `planning.mjs debt-harvest`, rewritten wholesale |
@@ -56,6 +56,32 @@ prevent. What belongs here is the grammar half: the two shapes that make an
 annotation are `KEPT <date>` and `recorded not fixed`, `capture-check` returns
 every walked bullet carrying one with its section and line, and `/cad-health`
 prints them as issues.
+
+## Who may write this file
+
+The writer set has ONE home and it is the frozen register in
+`cadence-core/bin/lib/capture-writers.mjs`. `self-verify.mjs` (check 23) reports
+any prose surface in the plugin that issues a write face no row settles, and
+reports a shell redirect at this path outright - `lib/capture-file.mjs` is the
+one owner of the format, so a write that goes around it belongs on the seam or
+nowhere.
+
+**The test for a row is whether the write can ACCUMULATE.** A user's deliberate
+one-bullet capture cannot: it happens once, because the user asked for it. A
+wholesale section rewrite cannot: it replaces its section from the tree on every
+run. A per-item append at a phase boundary CAN, and that is the shape this file
+refuses - it was `workflows/execute.md`'s summary step filing every open item at
+every close, one call per item, into the file the close then reports on.
+
+**A phase's open items live in `.planning/phases/<N>/SUMMARY.md`'s
+`## Open items`**, written by that same summary step, and nowhere else.
+`parseSummarySnippets` in `cadence-core/bin/lib/planning-files.mjs` already
+indexes those bullets into the recall corpus, so the item reaches `/cad-plan`
+from the SUMMARY without a second copy here - the copy was a lower-scoring row
+for the same sentence, measured on this repository 2026-08-25 at 31.1468 against
+the SUMMARY row's 42.4677. An item that must outlive its phase leaves the queue
+the way every other item does, at the close, by the removal the rule above
+names.
 
 ## The bullet
 
