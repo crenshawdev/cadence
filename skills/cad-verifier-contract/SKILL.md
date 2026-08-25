@@ -160,7 +160,7 @@ single `Write` call.
 
 The name is NOT `FINDINGS.json`: `uat merge` atomically overwrites
 `.planning/phases/<N>/FINDINGS.json` with its own counters envelope on every
-successful merge (`planning/uat.mjs:489-491`), so a verifier
+successful merge (`planning/uat.mjs:499-501`), so a verifier
 writing that name would have its input destroyed by the merge it feeds.
 
 ```json
