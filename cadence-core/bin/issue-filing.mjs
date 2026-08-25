@@ -126,7 +126,8 @@ function resolveForge(dir) {
     return { ok: false, reason: 'no-forge', warnings,
       detail: `this repository has no forge to file on: ${missing.join(', ')} `
         + `${missing.length === 1 ? 'is' : 'are'} unset`,
-      hint: 'run the forge setup step for this repository - `/cad-setup` persists '
+      hint: 'run the forge setup step this repository never answered - it is part of '
+        + '`/cad-new-project` and `/cad-adopt`, and it is what persists '
         + 'git.forge_provider, git.forge_repo and git.forge_host - then re-run this step' };
   }
 
