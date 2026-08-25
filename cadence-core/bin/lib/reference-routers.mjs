@@ -108,6 +108,11 @@ export const ROUTERS = Object.freeze([
     cold: 'cadence-core/references/seam-review-provider.md',
   }),
   Object.freeze({
+    router: 'cadence-core/references/review-triggers.md',
+    branch: 'risk_surface (the trigger contract, and any site running detection)',
+    cold: 'cadence-core/references/risk-surface.md',
+  }),
+  Object.freeze({
     // Not a cut this phase made - step 6's RE-READ predates it. Registering it
     // is what makes "every gate arm is one Read away from the router" a
     // machine-checked property instead of a sentence: the ONE-round cap on a

@@ -121,7 +121,7 @@ enumerate.
 ## 4. Risk surfaces
 
 At commit time, if the diff matches a risk surface (list in
-references/review-triggers.md), fire the `risk_surface` review trigger before
+references/risk-surface.md), fire the `risk_surface` review trigger before
 landing the commit. That gate is `blocking` at every level and the re-arm on
 the fix that clears it is CAPPED at ONE narrowed round - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before the fix

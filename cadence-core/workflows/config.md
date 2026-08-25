@@ -198,7 +198,7 @@ The one configuration question Cadence asks on its own - which of the eight risk
 surfaces the blocking `risk_surface` trigger fires on - reached deliberately,
 with the evidence beside it, and answerable again after the repository has
 changed shape. The first fire asks it once
-(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`); this arm
+(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`); this arm
 is the way back to it, and re-entering it must never cost the user the answer
 they already gave.
 

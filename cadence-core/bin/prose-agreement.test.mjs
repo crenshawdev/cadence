@@ -189,15 +189,15 @@ test('risk-surface categories: the schema enum, the route table and the detectio
   assert.ok(spec, 'config.schema.json defines no review.triggers.risk_surface.surfaces');
   const table = JSON.parse(doc('cadence-core', 'route-table.json')).risk_surface_categories;
 
-  const after = doc('cadence-core', 'references', 'review-triggers.md')
+  const after = doc('cadence-core', 'references', 'risk-surface.md')
     .split('## risk_surface detection')[1];
-  assert.ok(after, 'review-triggers.md has no risk_surface detection section');
+  assert.ok(after, 'risk-surface.md has no risk_surface detection section');
   const prose = [...after.split(/\n## /)[0].matchAll(/^- `([a-z_]+)` - /gm)].map((m) => m[1]);
 
   assert.deepEqual(table, spec.values,
     `route-table.json states [${table}], config.schema.json states [${spec.values}]`);
   assert.deepEqual(prose, spec.values,
-    `review-triggers.md's detection list states [${prose}], config.schema.json states [${spec.values}]`);
+    `risk-surface.md's detection list states [${prose}], config.schema.json states [${spec.values}]`);
 
   // D-12: no default ARRAY. A default of all eight would make "the user chose
   // everything" indistinguishable from "nobody has answered", and the
@@ -1894,7 +1894,7 @@ test('AC6: report.md renders its Gates line from the record, states the unrecord
  * @param {Record<string, string[]>} arms - `recommended`, keyed by scan arm.
  */
 function pinRecommended(section, arms) {
-  const where = 'review-triggers.md `## risk_surface detection`';
+  const where = 'risk-surface.md `## risk_surface detection`';
   // Flattened first: the sentence wraps, and a regex over raw lines would read
   // a rewrap as a deleted claim.
   const stated = flat(section).match(/`recommended` array, which is all (\w+) categories/);
@@ -1918,9 +1918,9 @@ function pinRecommended(section, arms) {
 }
 
 test('IVW-01: the prose and scanTree state one `recommended`, and only the reason moves', () => {
-  const section = doc('cadence-core', 'references', 'review-triggers.md')
+  const section = doc('cadence-core', 'references', 'risk-surface.md')
     .split('## risk_surface detection')[1];
-  assert.ok(section, 'review-triggers.md has no risk_surface detection section');
+  assert.ok(section, 'risk-surface.md has no risk_surface detection section');
 
   const blind = scanTree({});
   const seeing = scanTree({ dependencies: ['stripe'] });
@@ -2004,9 +2004,9 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
   const SITES = [
     { where: 'references/seam-ask-user.md `## Seam: ask-user`', text: askUser },
     {
-      where: 'references/review-triggers.md `## risk_surface detection`',
-      text: section(doc('cadence-core', 'references', 'review-triggers.md'),
-        '## risk_surface detection', 'references/review-triggers.md'),
+      where: 'references/risk-surface.md `## risk_surface detection`',
+      text: section(doc('cadence-core', 'references', 'risk-surface.md'),
+        '## risk_surface detection', 'references/risk-surface.md'),
     },
     {
       where: 'workflows/config.md `## Risk surfaces (`--surfaces`)`',
@@ -2029,7 +2029,7 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
 
   // Scoped to the `--surfaces` arm alone, which is why it cannot join RULES
   // above: RULES runs against all three sites, and neither seam-ask-user.md nor
-  // review-triggers.md states this. The arm's whole reason for existing is
+  // risk-surface.md states this. The arm's whole reason for existing is
   // that a project which added Stripe six months after answering has no other
   // way to see it, and nothing else holds the sentence - /code/cadence returns
   // `inconclusive: true` with `evidenced: []`, so the callout cannot fire on

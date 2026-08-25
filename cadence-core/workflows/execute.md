@@ -188,7 +188,7 @@ successive executors in the phase share a cached prefix: phase-level context
   answer and not a general reading of the flag: the executor is being told what
   bar to write to, where all eight is the safe direction. The FIRE is the
   opposite - `risk-check run` refuses `surfaces-unanswered` rather than
-  detecting on a set nobody chose (`references/review-triggers.md`). One flag,
+  detecting on a set nobody chose (`references/risk-surface.md`). One flag,
   two moments, and the difference is which direction is safe in each.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
