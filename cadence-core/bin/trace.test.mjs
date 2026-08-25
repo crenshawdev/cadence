@@ -1545,6 +1545,51 @@ test('render: a bracket falls back to a turn figure the DISPATCH half carried', 
     { 'cad-executor': { dispatches: 1, turns: 7, unrecorded: 1 } });
 });
 
+test('render: a bracket carries the wall clock its close reported, beside ms', () => {
+  const dir = root();
+  const a = '2026-08-16T10:00:00.000Z';
+  const b = '2026-08-16T10:05:00.000Z';
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: a });
+  appendEvent(dir, {
+    phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', ts: b,
+    tokens: 10, duration_ms: 83000,
+  });
+  const [row] = renderTrace(dir, 4).brackets;
+  assert.equal(row.duration_ms, 83000);
+  // TWO figures that measure different things, which is the whole reason both
+  // are on the row: `ms` is dispatch-to-close and includes the orchestrator's
+  // own time between the two writes, `duration_ms` is what the host reported
+  // for the worker itself. A reader that could not tell them apart would price
+  // a worker with the step's clock.
+  assert.equal(row.ms, 300000);
+  assert.notEqual(row.ms, row.duration_ms);
+});
+
+test('render: a bracket whose close carried no duration has NO duration_ms key', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 10 });
+  const [row] = renderTrace(dir, 4).brackets;
+  // ABSENT, not null: a `duration_ms: null` would put a new key on every
+  // bracket of every trace written before the flag existed.
+  assert.equal('duration_ms' in row, false, JSON.stringify(row));
+  assert.equal(row.tokens, 10, 'the rest of the row is untouched');
+});
+
+test('render: a non-numeric duration_ms contributes NOTHING to the bracket', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  // A hand-edited or foreign-producer line. The guard is the one `tokens` and
+  // `turns` already carry: the field is a number a caller sums, and the string
+  // form must never be concatenated onto it.
+  appendEvent(dir, {
+    phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    duration_ms: '1m 23s',
+  });
+  const [row] = renderTrace(dir, 4).brackets;
+  assert.equal('duration_ms' in row, false, JSON.stringify(row));
+});
+
 test('render: two closes differing ONLY in their turn count are two closes', () => {
   const dir = root();
   const at1 = '2026-08-16T10:00:00.000Z';

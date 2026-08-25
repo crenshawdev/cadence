@@ -327,17 +327,28 @@ export function appendEvent(planningRoot, event) {
  *   counter appear only where at least one figure of that kind landed on the
  *   role, so a record written before either flag existed renders unchanged.
  * @property {Record<string, any>[]} events
- * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number}[]} brackets
+ * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number}[]} brackets
  *   every dispatch that PAIRED, one row each, in the order its terminal was
  *   read. The pairing was already computed here for the accounting; exposing it
  *   is what lets a caller print per-worker rows without re-deriving `open` and
  *   `seenTerminals` for itself - and re-deriving them is how two readers of one
  *   record start disagreeing about which bracket closed. `role` is the
  *   DISPATCH's, the same authority `roles` bills on; `event` is the terminal's,
- *   so a `checkpoint` row is distinguishable from a `return` one. `turns` is
- *   the one OPTIONAL key: `ms` and `tokens` are on every row (null where they
- *   could not be computed), while a bracket whose close carried no tool-call
- *   count has no `turns` key at all.
+ *   so a `checkpoint` row is distinguishable from a `return` one.
+ *
+ *   TWO ELAPSED FIGURES, and they measure different things. `ms` is
+ *   DISPATCH-TO-CLOSE wall clock, derived here off the two timestamps, so it
+ *   includes whatever the orchestrator did between writing the two halves.
+ *   `duration_ms` is what the HOST reported for the worker's own run, copied
+ *   onto the close by `--duration-ms` and never computed. A reader pricing a
+ *   worker wants `duration_ms`; a reader asking how long a step held the run
+ *   wants `ms`.
+ *
+ *   `turns` and `duration_ms` are the OPTIONAL keys: `ms` and `tokens` are on
+ *   every row (null where they could not be computed), while a bracket whose
+ *   close carried no tool-call count has no `turns` key and one whose close
+ *   carried no wall clock has no `duration_ms` key at all - so a record written
+ *   before either flag existed renders byte-identically.
  * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
  * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched
  *   paired brackets whose terminal named a role its dispatch did not
@@ -646,6 +657,12 @@ export function renderTrace(planningRoot, phase) {
     // on a hand-edited or foreign-producer line contributes NOTHING and is
     // never string-concatenated onto a total.
     const turns = typeof e.turns === 'number' && Number.isFinite(e.turns) ? e.turns : null;
+    // And again for the wall clock the host reported. Guarded identically
+    // because the hazard is identical: a hand-edited or foreign-producer line
+    // carrying `"duration_ms": "1m 23s"` must contribute NOTHING rather than be
+    // string-concatenated onto a numeric field a caller sums.
+    const duration = typeof e.duration_ms === 'number' && Number.isFinite(e.duration_ms)
+      ? e.duration_ms : null;
 
     const worker = `${key(e.corr)}\0${key(e.phase)}\0${key(e.plan)}`;
     if (e.event === DISPATCH) {
@@ -718,6 +735,12 @@ export function renderTrace(planningRoot, phase) {
           ...(turns !== null || matched.turns !== null
             ? { turns: turns !== null ? turns : matched.turns }
             : {}),
+          // OMITTED for the reason `turns` is, and taken off the TERMINAL
+          // alone: `--duration-ms` is declared on the close row only, so a
+          // dispatch half has no wall clock to fall back to. It is NOT derived
+          // from the two timestamps - `ms` one clause above already is that
+          // quantity, and it measures the step rather than the worker.
+          ...(duration !== null ? { duration_ms: duration } : {}),
         });
         // REPORTED, never billed. The accounting below is unchanged - the
         // dispatch is still the authority for whose bill this is - but a
