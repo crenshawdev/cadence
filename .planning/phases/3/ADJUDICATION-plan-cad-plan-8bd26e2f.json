@@ -1,0 +1,85 @@
+{
+  "phase": "3",
+  "trigger": "plan",
+  "discriminator": "cad-plan-8bd26e2f",
+  "round": 1,
+  "base": "2c350905ea453220d8e010ee8e03d53d301e87b0",
+  "head": "8bd26e2f5dd40c3dca89817d469e6878ee54993b",
+  "base_id": "2c350905ea453220d8e010ee8e03d53d301e87b0",
+  "head_id": "8bd26e2f5dd40c3dca89817d469e6878ee54993b",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/3/PLAN-1.md",
+      "line": 150,
+      "severity": "blocker",
+      "claim": "The planned decline path contradicts CAP-02 and the ROADMAP's resolved OQ-3: declined findings are created with a label and then appended to local `.planning/FILED.md`, but are never immediately closed `wontfix` and are explicitly retained locally.",
+      "failure_scenario": "A user declines a finding. `file` creates an open labeled issue and Task 4 appends its fingerprint and title to FILED.md. The declined finding therefore remains both in the tracker’s open issue count and in a growing local artifact, rather than being dropped with no local residue; repeat fires may be suppressed, but the required disposition is not delivered.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "8bd26e2f5dd40c3dca89817d469e6878ee54993b",
+      "base_id": "2c350905ea453220d8e010ee8e03d53d301e87b0",
+      "head_id": "8bd26e2f5dd40c3dca89817d469e6878ee54993b"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/3/PLAN-1.md",
+      "line": 70,
+      "severity": "high",
+      "claim": "No executable task delivers the required `recorded not fixed` branch of Success Criterion 1. Task 1 deliberately accepts only the adjudication payload and selects solely from `ruling` and `severity`; it has no disposition/annotation input, while Task 5 merely states that recorded-not-fixed items are in the set.",
+      "failure_scenario": "A gate/fire has a finding represented as `recorded not fixed` rather than as a qualifying adjudication entry. `issue-filing unfixed --payload` cannot see that state under the specified payload-only selection, so it never reaches the ask or tracker filing path. Plan 2 will report the annotation, but it does not route it through the gate, leaving the criterion unimplemented.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/references/triage-gate.md",
+        "line": 263,
+        "note": "The phrase `recorded not fixed` appears nowhere under cadence-core/ - grep returns zero hits - so it names no live gate disposition; it is the CAPTURE bullet ANNOTATION shape criterion 4 targets and PLAN-2 checks by fixture. The one producer the finding posits is cad-verify, and this line routes its fix list through fire() and triages it by the adjudicated rule, so its non-survivors ARE adjudication entries and do reach `unfixed --payload`. There is no producer of the state outside a payload."
+      },
+      "base_id": "2c350905ea453220d8e010ee8e03d53d301e87b0",
+      "head_id": "8bd26e2f5dd40c3dca89817d469e6878ee54993b"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/3/PLAN-1.md",
+      "line": 171,
+      "severity": "high",
+      "claim": "The verification for the same-step gate ask is vacuous with respect to the gate: Task 8 invokes `issue-filing.mjs file` and `unfixed` directly, rather than firing either gate arm and exercising the triage reference's AskUserQuestion step.",
+      "failure_scenario": "A gate firing site fails to invoke the new triage section, invokes it after its step ends, or still writes CAPTURE through its old route. All seam tests can pass, and the proposed live check can create five issues via direct subcommands, without proving that a real gate asks once, files accepted findings before its step ends, or leaves CAPTURE byte-identical.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "8bd26e2f5dd40c3dca89817d469e6878ee54993b",
+      "base_id": "2c350905ea453220d8e010ee8e03d53d301e87b0",
+      "head_id": "8bd26e2f5dd40c3dca89817d469e6878ee54993b"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/3/PLAN-1.md",
+      "line": 151,
+      "severity": "medium",
+      "claim": "Task 4 makes the CAP-01 recall mirror dependent on a local append after issue creation but specifies neither a refusal nor recovery behavior if the FILED.md lock/read/atomic write fails; its verification covers only successful writes.",
+      "failure_scenario": "The tracker create exits zero, then FILED.md cannot be locked or written (for example, permissions, a conflicting lock, or filesystem failure). The issue has landed, but the recall mirror does not. The plan has no stated outcome that preserves/retries this obligation, so Success Criterion 13 can silently regress exactly when the tracker write succeeds.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": ".planning/phases/3/PLAN-1.md",
+        "line": 225,
+        "note": "Grounded but medium, not blocking. No ROADMAP criterion requires a recovery arm for the mirror write, and task 4 already routes it through withPlanningFileLock and atomicWrite, the guard lib/capture-file.mjs exports for this read-modify-write shape. The gap is a missing refusal arm on a post-create failure, which is open-item work rather than a plan defect that halts execution."
+      },
+      "base_id": "2c350905ea453220d8e010ee8e03d53d301e87b0",
+      "head_id": "8bd26e2f5dd40c3dca89817d469e6878ee54993b"
+    }
+  ]
+}
