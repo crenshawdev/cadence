@@ -6,6 +6,147 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-08-25
+
+`.planning/CAPTURE.md` was a queue nothing drained. Measured at the open: 276
+walked bullets across 584 lines and 251,968 bytes, read by `/cad-plan` on every
+planning pass, most of it long settled. It had been swept by hand once already,
+185 open items archived as a single block on 2026-08-08 after accumulating
+across nine milestones, and it regrew to 276 in sixteen days. The cause was the
+item grammar. It had two states, `- [ ]` and `- [x]`, and `[x]` meant done, so a
+decision NOT to do something had no representation and stayed indistinguishable
+from live work. Rejections got written into the bullets instead, so adjudicating
+an item made it longer rather than making it go away.
+
+This cycle makes the repository's own issue tracker the record. A gate that
+declines to fix a finding asks once, in the step that made the decision, and
+files the result on the tracker at that moment. CAPTURE holds the phase in
+flight and nothing else, and phase close now ASSERTS it is empty rather than
+performing a roll-out. Three more phases rode along: the census registry and the
+plan-time lease check that were costing half of all executor checkpoints, the
+`planning.mjs` split, and the phase-directory spelling fix.
+
+Six phases, 135 commits off `v3.7.0`, ten requirement ids all traced to a
+verified phase: `FRG-01`, `FRG-02`, `CEN-01`, `CEN-02`, `CAP-01`, `CAP-02`,
+`CAP-03`, `SPL-01`, `SPL-02`, `LOD-02`. `/cad-audit` PASS on both arms, 33 of 33
+acceptance criteria covered across five phases.
+
+### Added
+
+- **A finding this run will not fix goes to the tracker, not to a file.** When a
+  gate produces findings it declines to act on, the blocking arm's
+  below-blocker remainder, the adjudicated arm's non-survivors, any
+  `recorded not fixed` disposition, you are asked ONCE for that fire with the
+  whole set listed, and nothing is written to CAPTURE either way. Accepted
+  findings become issues immediately. A declined one is filed too, carrying the
+  `cadence-declined` label, because that labelled issue is the only thing that
+  stops a later fire asking about the same finding again. The set that reaches
+  the ask is read off the structured adjudication payload rather than re-parsed
+  out of review prose. `cadence-core/bin/issue-filing.mjs` over the pure
+  `lib/filing-decision.mjs`, with one pinned create and lookup argv per forge
+  (`CAP-01`, `CAP-02`).
+- **`.planning/FILED.md` keeps a filed finding reachable by recall.** An issue
+  number on a tracker is not searchable from inside the planning corpus, so each
+  filed finding leaves a row that `recall` walks last, ranked below live
+  material rather than absent from it (`CAP-02`).
+- **Phase close asserts the queue is empty.** `phase-done` now returns a
+  `capture` field counting SUBSTANTIVE bullets across `Todos`, `Seeds` and
+  `Notes`, and names each survivor with its section, line and text. It does not
+  count the `- None.` placeholder, so a freshly created queue reads as empty
+  rather than as three items. `/cad-health` prints the same verdict, both faces
+  reading one command (`planning.mjs capture-check`), and
+  `planning.max_capture_bullets` (default 40) is a bound that reports loudly and
+  refuses nothing (`CAP-03`).
+- **An item is resolved by REMOVAL, never by annotation.** The rule is stated in
+  the triage reference and enforced by a check that fails when a walked bullet
+  carries a re-verification annotation. Self-verify check 23
+  (`capture-writers`) is the other half: it names every code path permitted to
+  write the file, so a future workflow cannot quietly start routing durable
+  records back into it (`CAP-03`).
+- **Cadence resolves a forge when it sets a project up.** `/cad-new-project` and
+  `/cad-adopt` both detect which forge CLIs are installed, `tea`, `gh`, `glab`,
+  through the existing `lib/on-path.mjs`, ask which provider to use and what the
+  repository is called, and persist the answer in `git.forge_provider`,
+  `git.forge_repo` and `git.forge_host`. An already-configured repository is not
+  re-asked. Where `origin` resolves, it supplies the default and you confirm
+  rather than retype, and it guesses a provider only for hostnames the existing
+  classifier recognizes. Repository creation runs through the selected CLI
+  behind an explicit confirmation naming the provider, the owner and the name,
+  private on all three arms. No provider detected, or none selected, refuses
+  with a reason naming what was looked for and a hint naming the install. No
+  third-party stdout or stderr reaches the envelope (`FRG-01`, `FRG-02`).
+- **Every hand-maintained census in the repository is registered.** A census is
+  a count a human wrote down that the code must keep true, and nothing knew they
+  existed as a class, which is why a plan could omit one without noticing.
+  `lib/census-registry.mjs` carries twelve deeply frozen rows naming the file
+  holding each count, what it counts, the site that asserts it and its narrow
+  subject paths. A site carrying the `CADENCE-CENSUS` marker with no registry
+  row reddens the suite naming the file and the assertion, proved by a fixture
+  pair differing only in the id, so the registry cannot silently fall behind the
+  tree (`CEN-01`).
+- **A plan that will invalidate a census is refused BEFORE an executor starts.**
+  `lease-check --plan-time` reads a PLAN's `files:` lease against the registry
+  and names every registered census file the declared work would invalidate but
+  the lease does not declare. It reads the lease and the registry only. It
+  spawns no `git` and executes nothing from the plan. `/cad-plan` fires it after
+  PLAN.md is written and before any dispatch, so the fix is to amend the lease
+  rather than to discover the problem 150,000 tokens into a halted execution.
+  This was the single largest source of wasted executor spend on this project:
+  20 of 39 checkpoints in one phase (51%), 7 of 15 on a second repository (47%),
+  worth 14.8% and 17.4% of executor tokens respectively. Replayed against the
+  lease that halted at 0 of 8 tasks, the arm names both missing files before any
+  execution (`CEN-02`).
+- **A census refusal is distinguishable from ordinary lease noise.** The
+  commit-time arm now returns `undeclared-census-files`, carrying the
+  `census_files` list and its own trace event, beside the byte-identical
+  `undeclared-files`, so a plan-time arm that stopped firing surfaces as its own
+  signal (`CEN-02`).
+
+### Changed
+
+- **`planning.mjs` is 30 per-command modules behind a 360-line entry file.** The
+  32 `cmd*` handlers moved to `cadence-core/bin/planning/`, leaving dispatch and
+  the `COMMANDS` table, with 28 shared symbols in `planning/core.mjs`. A
+  dispatch touching one command stops paying a whole-file read. The test file
+  split the same way into 21 per-command stems, all named in the runner's
+  `GROUPS.planning`, and a new `citation-census.test.mjs` fails by name when one
+  of the seven pinned citations goes stale rather than pointing at moved code
+  (`LOD-02`).
+- **One spelling per phase, enforced at every face that resolves `--phase`.**
+  `PHASE_DIR_NAME` tightened to `/^[1-9]\d*(?:\.[1-9]\d*)?$/` and moved to one
+  home, so `1.00`, `1.01` and `2.0` are drift while `1.1`, `1.10` and `8` stay
+  legal. `phaseSpellingCollision` is wired into `fireIdentity` ahead of the
+  token rails, which reaches all 21 census-pinned callsites instead of each one
+  wiring the check by hand, and `phase-spelling.test.mjs` registers those
+  callsites as a census so an unguarded path-resolving callsite fails the suite
+  naming itself (`SPL-01`).
+- **Two legal names that parse to one number are reported rather than
+  resolved.** `phase-dir-collision` is its own drift kind in `planning/status.mjs`:
+  picking a winner silently is what makes the second directory invisible
+  (`SPL-02`).
+- **`## Archive` left the capture contract.** Moving settled items to a heading
+  in the same file keeps the recall walk clean and changes nothing about the
+  bytes, which this repository's own 185 archived bullets had already proved.
+  The phase close also stops filing open items into the transient queue.
+
+### Fixed
+
+- **`lease-check --plan-time` failed OPEN on a lease it could not read.** An
+  empty or unparsed declared set produced an empty at-risk list, which was
+  indistinguishable from a lease that genuinely puts nothing at risk, so the
+  gate passed exactly the case it was built to catch. The commit-time arm on the
+  same file failed CLOSED on the same signal. Two fail-closed arms now sit above
+  `censusesAtRisk`, `unparsed-lease` and `empty-lease`, each carrying its own
+  hint. Two signals rather than one because a misspelled key such as `filez:` is
+  a structurally valid key line producing zero `frontmatter_issues`. A lease
+  declaring one real path still passes, so this is fail-closed and not a blanket
+  refusal.
+- **The census registry left out the one file that had already stopped a
+  phase.** `seam-calls.test.mjs` was excluded as "derived, never baselined",
+  which is true of its header arithmetic and false of its assertion. Its
+  `seam-call-counts` row and marker are in, and the pre-correction worked
+  example is out of the registry header so it cannot be read as guidance.
+
 ## [3.7.0] - 2026-08-24
 
 Cadence stated its failures in its own vocabulary and never stated the remedy.
@@ -3786,6 +3927,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.7.1
 [3.7.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.7.0
 [3.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.1
 [3.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.0
