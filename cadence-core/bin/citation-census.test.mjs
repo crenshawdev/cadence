@@ -160,11 +160,25 @@ test('grammar one: every citation on a guarded surface has exactly one pinned ro
   assert.deepEqual(foundKeys, declaredKeys,
     'the citations a walk of skills/, cadence-core/workflows/, cadence-core/references/ and'
     + " REQUIREMENTS.md's ## Active section finds must be exactly the rows CITATIONS declares -"
-    + ' an extra citation is unpinned, a missing one is a dead row');
+    + ' an extra citation is unpinned, a missing one is a dead row. Three remedies, and the third'
+    + ' is the one a close reaches: pin the new citation, re-pin a moved one, or DELETE the row'
+    + " when its citation left the surface with the requirement that carried it - a `## Active`"
+    + ' row moving to `## Shipped` takes its line citations with it, because a Shipped row is a'
+    + ' one-line summary that carries none');
 });
 
 test('grammar one: each pinned citation resolves to the code it names', () => {
-  assert.ok(CITATIONS.length >= 3, `only ${CITATIONS.length} rows declared`);
+  // A NON-VACUITY floor of one, never a count. The number of rows here is not
+  // a property of this tree: a row retires with the requirement that carried
+  // it, and at the close of the cycle that seeded them, two of the three rows
+  // above leave `.planning/REQUIREMENTS.md`'s `## Active` section in the same
+  // commit - so a hand-written `>= 3` reddens the suite inside the close, the
+  // most expensive place to find it, and the only available fix there is to
+  // edit the number, which proves the number was never load-bearing. What
+  // guarantees this census is not measuring nothing is the separate
+  // `grammarOneCount > 0` assertion at the foot of this file, which counts what
+  // the WALK found rather than what the table declares.
+  assert.ok(CITATIONS.length >= 1, `only ${CITATIONS.length} rows declared`);
   for (const c of CITATIONS) {
     const lines = readFileSync(join(ROOT, c.file), 'utf8').split('\n');
     const lineText = lines[c.start - 1];
