@@ -1,0 +1,39 @@
+{
+  "phase": "3",
+  "trigger": "risk_surface",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "56d40eb9",
+  "head": "0169ef62",
+  "base_id": "56d40eb9d03a7065fa2c3ea265b7b6b24b237461",
+  "head_id": "0169ef629ad3a942a3b7c5552d6bc10d79be1d79",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning/phase-done.mjs",
+      "line": 127,
+      "severity": "high",
+      "claim": "The phase-close queue assertion is performed on an unlocked, pre-transition snapshot, so it does not assert that the queue is empty when the phase actually closes.",
+      "failure_scenario": "A concurrent `/cad-capture` (or any writer) appends an item to CAPTURE.md after `readQueue()` reads an empty file but before `runTransition` flips ROADMAP.md. `phase-done` then returns `capture: { substantive: 0, items: [] }` and closes the phase although CAPTURE.md contains a live user queue entry at close. The new report can therefore falsely certify the exact invariant this change is intended to surface.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/planning/phase-done.mjs",
+        "line": 116,
+        "note": "The ordering claim is true - the read is deliberately before the transition and takes no lock - but the severity is not high. The same block states the consequence: `a non-empty queue is a named problem and never a refusal, because a phase completion is a fact about the work, not about this file`, and the close path has no arm that reads `capture` back. So the field gates nothing, deletes nothing and truncates nothing; the raced queue entry stays in CAPTURE.md and the next capture-check or cad-health reads it. The loss is one stale report line in a single-operator CLI, not a certified-empty queue that ate an item."
+      },
+      "base_id": "56d40eb9d03a7065fa2c3ea265b7b6b24b237461",
+      "head_id": "0169ef629ad3a942a3b7c5552d6bc10d79be1d79"
+    }
+  ]
+}
