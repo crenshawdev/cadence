@@ -34,7 +34,8 @@ Its one JSON line carries everything this workflow reads:
   wrote - the one-line "where I was".
 - `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`,
   `phase-dir` (a `phases/<N>/` dir surviving a milestone close),
-  `phase-dir-grammar` (a `phases/` entry outside the directory grammar).
+  `phase-dir-grammar` (a `phases/` entry outside the directory grammar),
+  `phase-dir-collision` (two LEGAL names parsing to one number, `1.1`/`1.10`).
 - `deferred` - the unadjudicated review queue: `members[]` (each with `phase`,
   `trigger`, `discriminator`, `round`, `path` and its own `findings` count),
   the total `findings`, and `unreadable[]`. ALWAYS present, unlike `cycle` and

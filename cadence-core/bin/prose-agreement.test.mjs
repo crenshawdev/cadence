@@ -364,7 +364,13 @@ test('the lockfile lease: both contracts name the same lockfiles and the reason 
   // than telling a planner to avoid a code the seam no longer returns.
   const planner = doc('skills', 'cad-planner-contract', 'SKILL.md');
   const checker = doc('skills', 'cad-plan-checker-contract', 'SKILL.md');
-  const seam = doc('cadence-core', 'bin', 'planning.mjs');
+  // The EMITTING site, which phase 4 moved out of planning.mjs into the command
+  // module that owns the subcommand. Read the emitter and not the entry file:
+  // planning.mjs now only dispatches, so matching there would have gone red
+  // announcing that lease-check stopped emitting the reason - a defect that did
+  // not happen - and matching anywhere under the tree would stop pinning the
+  // quote to the emitter, which is the whole of this row.
+  const seam = doc('cadence-core', 'bin', 'planning', 'lease-check.mjs');
 
   assert.match(seam, /reason: 'undeclared-files'/,
     'lease-check no longer emits undeclared-files - both contracts quote that reason');
@@ -1660,7 +1666,7 @@ test('PLN-01: the max_plan_tasks decision reads the same off the schema and the 
 
 // --- SGT-01: the suggest seam's unset-layer defaults, against the schema -----
 //
-// `planning.mjs`'s `SUGGEST_KEY_DEFAULTS` is what `/cad-suggest` prints as a
+// `planning/trace.mjs`'s `SUGGEST_KEY_DEFAULTS` is what `/cad-suggest` prints as a
 // key's `current` when no config layer holds one, and it is a hand-copied
 // mirror of `config.schema.json` by decision (D-15: the schema is not parsed at
 // runtime, the duplication `DISPATCH_WINDOW_DEFAULTS` and `route.mjs`'s
@@ -1669,7 +1675,7 @@ test('PLN-01: the max_plan_tasks decision reads the same off the schema and the 
 // a value against it, and `/cad-config` shows a different row.
 //
 // The subject is AGREEMENT, never presence: both sides are EXTRACTED - one out
-// of `planning.mjs`'s own source bytes, one out of the schema's `default`
+// of the trace command module's own source bytes, one out of the schema's `default`
 // fields - and compared, the same shape the PLN-01 arm above uses. Scoped to
 // the keys the literal carries; `DISPATCH_WINDOW_DEFAULTS` is a separate map
 // with its own row set and is not widened onto here.
@@ -1681,7 +1687,7 @@ test('PLN-01: the max_plan_tasks decision reads the same off the schema and the 
  */
 function suggestKeyDefaults(text) {
   const block = text.match(/const SUGGEST_KEY_DEFAULTS = Object\.freeze\(\{\n([\s\S]*?)\n\}\);/);
-  assert.ok(block, 'planning.mjs carries no SUGGEST_KEY_DEFAULTS literal to compare');
+  assert.ok(block, 'planning/trace.mjs carries no SUGGEST_KEY_DEFAULTS literal to compare');
   /** @type {Record<string, any>} */
   const out = {};
   for (const line of block[1].split('\n')) {
@@ -1692,7 +1698,11 @@ function suggestKeyDefaults(text) {
 }
 
 test("SGT-01: the suggest seam's unset-layer defaults are config.schema.json's own", () => {
-  const literal = suggestKeyDefaults(doc('cadence-core', 'bin', 'planning.mjs'));
+  // The literal is single-use for the `suggest` arm, so phase 4 moved it into the
+  // trace command module with the handler that reads it. The extraction follows
+  // the bytes: it still parses the literal out of source and still deep-equals it
+  // against config.schema.json's own `default` fields, key by key.
+  const literal = suggestKeyDefaults(doc('cadence-core', 'bin', 'planning', 'trace.mjs'));
   assert.ok(Object.keys(literal).length >= 2,
     `SUGGEST_KEY_DEFAULTS extracted ${Object.keys(literal).length} keys - the literal's `
     + 'shape moved out from under this extraction, so it is checking nothing');
@@ -1704,7 +1714,7 @@ test("SGT-01: the suggest seam's unset-layer defaults are config.schema.json's o
     schema[k] = keys[k].default;
   }
   assert.deepEqual(literal, schema,
-    "planning.mjs's SUGGEST_KEY_DEFAULTS and config.schema.json's defaults disagree - one "
+    "planning/trace.mjs's SUGGEST_KEY_DEFAULTS and config.schema.json's defaults disagree - one "
     + 'was edited alone, so /cad-suggest prints a `current` for an unset key that the row '
     + '/cad-config shows contradicts');
 });
@@ -2373,4 +2383,157 @@ test('every frontmatter grammar code has a row in plan-frontmatter.md (D-12)', (
       + 'the stated grammar a plan author reads, so a code missing from it is a diagnostic with no '
       + 'documented meaning and no stated remedy');
   }
+});
+
+// --- setup: a provider question with no answer is a stop, not a fall-through -
+
+/**
+ * The forge step of one entry workflow: everything from `**Pick a forge**` on.
+ * A region rather than the whole file, so an option or an arm found anywhere
+ * else in the document cannot satisfy the check.
+ * @param {string} text @returns {string}
+ */
+function forgeStep(text) {
+  const at = text.indexOf('**Pick a forge**');
+  return at > -1 ? text.slice(at) : '';
+}
+
+/**
+ * The property: the provider question offers a none-of-these option, the file
+ * states a stop arm for it carrying BOTH a reason and a hint, and that arm sits
+ * at an EARLIER offset than the invocation that persists the answers.
+ *
+ * OFFSETS IN THE FILE'S OWN TEXT, never line numbers: an inserted paragraph
+ * moves every line below it and would redden a check about ORDER that nothing
+ * about the order changed. Order and not presence, for the reason the cad-land
+ * 3(b) case above is: an arm that sits after the write has already persisted a
+ * provider by the time it refuses, which is the failure it exists to stop.
+ *
+ * Exported as a function taking TEXT so the falsifier below can hand it a
+ * scratch copy with the arm removed. A check that can only read the live tree
+ * cannot be shown to fail.
+ * @param {string} name @param {string} text
+ */
+function assertNoneArm(name, text) {
+  const step = forgeStep(text);
+  assert.ok(step, `${name}: no forge step at all`);
+  assert.match(step, /\*\*None of these\*\*/,
+    `${name}: the provider question offers no none-of-these option, so a user who uses `
+    + 'none of the installed forges has no answer to give');
+
+  const stopAt = step.indexOf('On "None of these" the step REFUSES and stops');
+  assert.ok(stopAt > -1,
+    `${name}: no arm for a declined provider question - setup would run on past a `
+    + 'question it never got an answer to');
+  const arm = step.slice(stopAt);
+  assert.match(arm.slice(0, 1200), /REASON naming what was looked for/,
+    `${name}: the none-of-these arm states no reason`);
+  assert.match(arm.slice(0, 1200), /HINT naming how to set one later/,
+    `${name}: the none-of-these arm states no hint`);
+  assert.match(arm.slice(0, 1200), /run NO `config\.mjs set` on this arm/,
+    `${name}: the none-of-these arm does not forbid a half-persisted write`);
+
+  // The persist invocation, by the pair only that arm's own inline `config.mjs
+  // set` never spells: the two-key form is what task 4's step writes.
+  const persistAt = step.indexOf('git.forge_repo=<owner/name>');
+  assert.ok(persistAt > -1, `${name}: the forge step no longer persists the answers`);
+  assert.ok(stopAt < persistAt,
+    `${name}: the none-of-these arm sits AFTER the config.mjs set that persists the `
+    + 'answers, so a declined question has already written a provider');
+}
+
+test('setup: a declined provider question stops both entry points before any write', () => {
+  for (const wf of ['new-project.md', 'adopt.md']) {
+    assertNoneArm(wf, doc('cadence-core', 'workflows', wf));
+  }
+});
+
+test('setup: the none-of-these check FAILS when the arm is deleted', () => {
+  // The falsifier. Without it the case above is a check that has never been
+  // shown to be able to fail - the species of green this file exists to refuse.
+  // A scratch COPY in memory, not on disk: the rule reads text, so a temp file
+  // would prove the same thing one syscall later.
+  for (const wf of ['new-project.md', 'adopt.md']) {
+    const live = doc('cadence-core', 'workflows', wf);
+    const armAt = live.indexOf('On "None of these" the step REFUSES and stops');
+    const persistAt = live.indexOf('Persist the answers in ONE call');
+    assert.ok(armAt > -1 && persistAt > armAt, `${wf}: fixture assumption broken`);
+    const without = live.slice(0, armAt) + live.slice(persistAt);
+    assert.throws(() => assertNoneArm(wf, without),
+      /no arm for a declined provider question/,
+      `${wf}: deleting the none-of-these arm does not redden the check`);
+  }
+});
+
+// --- setup: the confirmation comes BEFORE the create, not beside it ----------
+
+/**
+ * The property AC6 states about the half no seam can hold: `forge.mjs create`
+ * refuses without `--confirmed`, which proves a caller passed a FLAG. Only the
+ * prose can say the flag follows a question the user actually answered, and
+ * only its ORDER can say it was answered FIRST.
+ *
+ * The invocation is spelled `forge.mjs" create` because every seam call in this
+ * tree carries the plugin-root quote between the filename and the subcommand
+ * (`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" create`), which is
+ * the same shape self-verify's invocation check reads.
+ *
+ * OFFSETS IN THE FILE'S OWN TEXT, never line numbers, for the reason the
+ * none-of-these case above states: an inserted paragraph moves every line below
+ * it and would redden a check about ORDER that nothing about the order changed.
+ *
+ * Exported as a function taking TEXT so the falsifier below can hand it a
+ * scratch copy with the invocation moved above the question.
+ * @param {string} name @param {string} text
+ */
+function assertConfirmBeforeCreate(name, text) {
+  const step = forgeStep(text);
+  assert.ok(step, `${name}: no forge step at all`);
+
+  const createAt = step.indexOf('forge.mjs" create');
+  assert.ok(createAt > -1, `${name}: the forge step no longer invokes forge.mjs create`);
+  assert.equal(step.indexOf('forge.mjs" create', createAt + 1), -1,
+    `${name}: more than one forge.mjs create invocation - AC6 scopes creation to one arm, `
+    + 'and a second one is a path the ordering below has not been asserted about');
+
+  // The confirmation is the SENTENCE, not the word: four facts in the question
+  // itself, because nothing else in the run states them together.
+  const confirmAt = step.indexOf('Create <owner>/<name> on <provider> now?');
+  assert.ok(confirmAt > -1,
+    `${name}: no confirmation naming the provider, the owner and the repository name - `
+    + 'AC6 requires the question itself to state what is about to be created');
+  const question = step.slice(confirmAt, confirmAt + 200);
+  assert.match(question, /PRIVATE/,
+    `${name}: the confirmation does not state that the repository will be PRIVATE`);
+
+  assert.ok(confirmAt < createAt,
+    `${name}: the forge.mjs create invocation sits BEFORE the confirmation - the ordering `
+    + 'is the property, since --confirmed proves only that a flag was passed and the prose '
+    + 'is the only thing that can say a user answered first');
+
+  // The flag itself, in the invocation's own block: an invocation that reached
+  // the right ORDER without carrying --confirmed would be refused by the seam.
+  assert.match(step.slice(createAt, createAt + 400), /--confirmed/,
+    `${name}: the forge.mjs create invocation does not carry --confirmed`);
+}
+
+test('setup: the create confirmation is put BEFORE the create runs', () => {
+  assertConfirmBeforeCreate('new-project.md', doc('cadence-core', 'workflows', 'new-project.md'));
+});
+
+test('setup: the confirmation-order check FAILS when the create is moved above it', () => {
+  // The falsifier, on a scratch COPY in memory: the rule reads text, so a temp
+  // file would prove the same thing one syscall later. The invocation LINE is
+  // moved to sit above the question, which is exactly the tree this check
+  // exists to redden and is otherwise indistinguishable from the live one.
+  const live = doc('cadence-core', 'workflows', 'new-project.md');
+  const confirmAt = live.indexOf('Create <owner>/<name> on <provider> now?');
+  const createAt = live.indexOf('forge.mjs" create');
+  assert.ok(confirmAt > -1 && createAt > confirmAt, 'fixture assumption broken');
+  const line = live.slice(createAt, live.indexOf('\n', createAt) + 1);
+  const moved = live.slice(0, confirmAt) + line
+    + live.slice(confirmAt, createAt) + live.slice(createAt + line.length);
+  assert.throws(() => assertConfirmBeforeCreate('new-project.md', moved),
+    /sits BEFORE the confirmation/,
+    'moving the create above the confirmation does not redden the check');
 });

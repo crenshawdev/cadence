@@ -604,9 +604,24 @@ export const CONTRACTS = {
     'seed-reqs': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // `--plan-time` selects the PLAN-TIME arm (CEN-02): the same operation
+    // asked before an executor runs, against the plan's declared lease and the
+    // census registry, instead of after the fact against the staged set. A
+    // FLAG and never a `lease-check plan` second word, for the reason this
+    // file's header states and the `cite-count` row above repeats:
+    // `subcommandKey` consumes a second word only for the families in
+    // `TWO_WORD`, `lease-check` is one of the one-word precedents it names,
+    // and one operation does not earn widening that Set.
+    //
+    // `--plan` stays REQUIRED on both arms, and that is not an oversight of
+    // the optional arm: both arms name a plan FILE on disk and neither can
+    // resolve `PLAN-<k>.md` without it, so a required-ness that varied by flag
+    // would state a bound one arm does not hold - the per-subcommand rule this
+    // table already applies to `risk-check run` against `risk-check status`.
     'lease-check': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--plan-time': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -896,6 +911,16 @@ export const CONTRACTS = {
     'capture-sections': {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // The health verdict over the same file, and the same `--file` override.
+    // ONE WORD, never `capture check`: `subcommandKey` consumes a second word
+    // only for the families in `TWO_WORD`, and one operation does not earn
+    // widening that Set. No flag names the BOUND, and that absence is the
+    // point - the bound is `planning.max_capture_bullets` in the config layer,
+    // so a flag here would be a second, un-layered way to set one and a run's
+    // report would stop agreeing with the project's own configured number.
+    'capture-check': {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     'debt-harvest': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
@@ -974,6 +999,44 @@ export const CONTRACTS = {
     },
     gate: {},
   },
+  // The setup-time half of the forge pair: `forge.mjs` decides where issue
+  // writes will go, `issue-check.mjs` reads that decision back at land time.
+  // `--dir` is spelled IDENTICALLY on both, deliberately - the same workflow
+  // prose invokes them and a flag that refuses in one seam and defaults in the
+  // other is how a caller learns the wrong rule.
+  'forge.mjs': {
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // `detect` stays the FIRST non-`*` key: arg-contract-adoption.test.mjs's
+    // census exercises the script-global `--dir` through the first face it
+    // finds, and `detect` is the one that spawns no forge CLI at all.
+    detect: {},
+    // The create face. Both selectors REFUSE on both axes: a valueless
+    // `--provider` would fall through to a table lookup on `undefined`, and a
+    // valueless `--repo` would name no repository at all - and this subcommand
+    // is the one place in the phase that MUTATES a forge.
+    //
+    // `--confirmed` is `boolean`, so its whole grammar is presence and neither
+    // disposition can fire; both are declared `fallback` rather than omitted,
+    // per this file's own rule about an omitted field. Its required-ness is
+    // `false` HERE and enforced in the seam, which is the same split
+    // `issue-check.mjs` keeps for `--timeout-ms`'s positivity: a
+    // `missing-flag-value` refusal would name the flag and stop, where the
+    // seam's own refusal names the CONFIRMATION the caller owes the user.
+    //
+    // `--remote-url` is REQUIRED BY THE PROVIDER, not by the row: the two
+    // providers whose pinned create argv wires no git remote need it and the
+    // one that wires its own does not, so the row states `false` and the seam
+    // states which arm. It refuses on both axes for the reason the selectors
+    // do, sharpened: a valueless one would point `origin` at nothing.
+    create: {
+      '--provider': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--repo': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--confirmed': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+      '--remote-url': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+  },
   'issue-check.mjs': {
     '*': {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -981,6 +1044,28 @@ export const CONTRACTS = {
     check: {
       '--base': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--timeout-ms': { required: false, type: 'int', value: 'fallback', bare: 'fallback' },
+    },
+  },
+  // The filing seam (CAP-01, CAP-02). Both faces take the SAME flag with the
+  // same grammar, and the row is written twice rather than hoisted into `*`:
+  // required-ness is per subcommand in this table, and `--payload` is required
+  // on both only because both faces happen to need one - a third face that did
+  // not would have to un-declare it out of `*`, which is the shape this file's
+  // own header calls a bound one face does not hold.
+  //
+  // `--payload` REFUSES on both axes. It names the FILE the whole answer is
+  // read from: a bare one would fall through to reading `undefined` as a path,
+  // and a whitespace-only one names no file at all. There is no fallback that
+  // could be right - a filing seam with no payload has nothing to file.
+  'issue-filing.mjs': {
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    unfixed: {
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    file: {
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
     },
   },
   'release-bump.mjs': {

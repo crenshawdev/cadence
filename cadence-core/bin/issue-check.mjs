@@ -35,9 +35,27 @@
 //     cleanup uses. --timeout-ms overrides DEFAULT_TIMEOUT_MS below, which
 //     bounds each subprocess AND the whole per-issue resolve loop.
 //
+// THE FORGE IS THE ONE THIS REPOSITORY CONFIGURED, NEVER ONE DETECTED HERE
+// (phase 1 D-01, AC4). `git.forge_provider` picks the HOST_TABLE row,
+// `git.forge_repo` is the `--repo` selector, and on Forgejo `git.forge_host`
+// names the instance. The origin URL is not read for classification at all, and
+// `classifyOrigin` is not called from this seam: it builds the DEFAULTS
+// `bin/forge.mjs detect` offers at project setup, and once the user has
+// confirmed them, config is the answer. A repository that temporarily loses its
+// remote therefore reports what it reported yesterday instead of silently
+// degrading, and a repository that never answered says which keys to set.
+//
+// THE `tea login list` PROBE STAYS, WITH A DIFFERENT JOB. It used to guard a
+// classification - "does any login name this origin's host". It now turns the
+// persisted `git.forge_host` into the login NAME `tea --login` requires, which
+// is the only way a host reaches tea at all (measured on tea 0.15.1; see
+// HOST_TABLE's forgejo row). It runs on the forgejo arm alone and only when
+// `tea` is on PATH, so the absent-CLI line below still fires for its own reason
+// rather than being pre-empted by a probe that could not run.
+//
 // THE CALL IS BOUND TO THE REPOSITORY --dir NAMES, TWO WAYS TOGETHER: `cwd:
-// dir` on the spawn AND the explicit `--repo owner/name` selector parsed from
-// the origin URL. Neither alone is enough. `gh` and `glab` infer the repo from
+// dir` on the spawn AND the explicit `--repo owner/name` selector the user
+// confirmed at setup. Neither alone is enough. `gh` and `glab` infer the repo from
 // the cwd's remote, so cwd alone reports another project's tracker the moment
 // --dir points elsewhere; `tea` infers nothing at all and exits `Error: remote
 // repository required: specify id via --repo` outside a configured checkout
@@ -85,7 +103,7 @@ import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
 import {
-  HOST_TABLE, classifyOrigin, scanIssueRefs, partitionIssues, decideIssueCheck,
+  HOST_TABLE, teaLoginNameForHost, scanIssueRefs, partitionIssues, decideIssueCheck,
 } from './lib/issue-decision.mjs';
 
 /**
@@ -206,40 +224,55 @@ function check(dir, baseArg, timeout) {
   let decision = decideIssueCheck({ enabled });
   if (decision.action !== 'query') return skip(decision, { warnings });
 
-  const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout });
-  const origin = gitRead(['remote', 'get-url', 'origin']);
-  // Classify with no tea reading first: github and gitlab are hostname
-  // answers, and probing tea for them would be a spawn the answer never needed.
-  let classification = classifyOrigin(origin.ok ? origin.stdout.trim() : '', null);
-  if (classification.verdict === 'unrecognized' && classification.slug && onPath('tea')) {
-    const probe = run('tea', ['login', 'list', '--output', 'json'], { cwd: dir, timeout });
-    classification = classifyOrigin(origin.stdout.trim(), probe.ok ? teaLogins(probe.stdout) : null);
+  // The persisted record, read off the merge this seam already performed - no
+  // origin URL, no classification (phase 1 D-01). The envelope's `host` is that
+  // record's own value, so it is null on `github` and `gitlab`, whose hosts are
+  // fixed and which name no instance key.
+  const forge = {
+    provider: git.forge_provider ?? null,
+    repo: git.forge_repo ?? null,
+    host: git.forge_host ?? null,
+  };
+  decision = decideIssueCheck({ enabled, forge });
+  if (decision.action !== 'query') return skip(decision, { warnings });
+
+  const host = forge.host;
+  const repo = forge.repo;
+  const row = HOST_TABLE[forge.provider];
+  const bin = row.bin;
+
+  // The forgejo arm alone needs a login NAME, and only `tea` can resolve one.
+  // Guarded on PATH so an absent `tea` reaches its own line below rather than
+  // being reported as a missing login. A probe that fails to run or to parse
+  // reads as `null` - no login serves this instance - which points at the same
+  // fix the empty-list case does.
+  let loginName;
+  if (forge.provider === 'forgejo' && onPath(bin)) {
+    const probe = run(bin, ['login', 'list', '--output', 'json'], { cwd: dir, timeout });
+    loginName = probe.ok ? teaLoginNameForHost(teaLogins(probe.stdout), host) : null;
   }
-  const host = classification.host;
-  const repo = classification.slug;
-  decision = decideIssueCheck({ enabled, classification });
+  decision = decideIssueCheck({ enabled, forge, loginName });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
-  const row = HOST_TABLE[classification.verdict];
-  const bin = row.bin;
+  const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout });
   const base = baseArg !== undefined ? baseArg : (git.base_branch || resolveProtectedBranches(git)[0]);
   const log = gitRead(['log', `${base}..HEAD`, '--format=%B']);
-  decision = decideIssueCheck({ enabled, classification, logOk: log.ok, bin });
+  decision = decideIssueCheck({ enabled, forge, loginName, logOk: log.ok, bin });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
-  decision = decideIssueCheck({ enabled, classification, logOk: true, bin, cliPresent: onPath(bin) });
+  decision = decideIssueCheck({ enabled, forge, loginName, logOk: true, bin, cliPresent: onPath(bin) });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
-  const call = run(bin, row.argv(repo, row.limit), { cwd: dir, timeout });
+  const call = run(bin, row.argv(repo, row.limit, loginName), { cwd: dir, timeout });
   decision = decideIssueCheck({
-    enabled, classification, logOk: true, bin, cliPresent: true,
+    enabled, forge, loginName, logOk: true, bin, cliPresent: true,
     exitOk: call.ok, timedOut: call.timedOut,
   });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
   const fetched = row.normalize(call.stdout, row.limit);
   decision = decideIssueCheck({
-    enabled, classification, logOk: true, bin, cliPresent: true, exitOk: true, fetched,
+    enabled, forge, loginName, logOk: true, bin, cliPresent: true, exitOk: true, fetched,
   });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
@@ -277,7 +310,7 @@ function check(dir, baseArg, timeout) {
       const left = deadline - Date.now();
       if (left <= 0) break;
       spent++;
-      const one = run(bin, row.resolve.argv(repo, n), { cwd: dir, timeout: left });
+      const one = run(bin, row.resolve.argv(repo, n, loginName), { cwd: dir, timeout: left });
       if (one.timedOut) break;
       const s = one.ok ? row.resolve.read(one.stdout, n) : null;
       if (s) resolved.set(n, s);

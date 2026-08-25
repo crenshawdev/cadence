@@ -337,7 +337,8 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
     '`git.auto_branch` `git.base_branch` `git.create_tag`\n' +
     '`git.on_land_cleanup` `git.auto_close` `git.issue_check`\n' +
-    '`planning.commit_docs` `memory.backend`\n' +
+    '`git.forge_provider` `git.forge_repo` `git.forge_host`\n' +
+    '`planning.commit_docs` `planning.max_capture_bullets` `memory.backend`\n' +
     '`risk.override.<surface>`\n');
   const r = run(['--root', root]);
   assert.equal(r.ok, true, JSON.stringify(r.problems));
@@ -1618,10 +1619,20 @@ test('check 12: *.test.mjs is off the walk - a test may write any shape', () => 
   assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
 });
 
-test('check 12: the live tree is FIFTEEN callsites over NINE files, each in an arm', () => {
+// CADENCE-CENSUS: self-verify-merge-layers | asserts: eighteen mergeLayers callsites over fourteen files, each in one of the two warning-surfacing arms
+test('check 12: the live tree is EIGHTEEN callsites over FOURTEEN files, each in an arm', () => {
   // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
   // miscount in either direction fails rather than passing quietly, and a
   // new callsite cannot be added without choosing an arm.
+  // The FILE count moves when code moves and the callsite total does not: phase
+  // 4 split planning.mjs into one module per subcommand, and its four callsites
+  // went with the code that made them - `memoryBackend`'s to planning/core.mjs,
+  // `trace`'s two and `risk-check run`'s to their own command modules. Same
+  // sixteen reads, three more files holding them.
+  // Then CAP-01 added issue-filing.mjs, which reads the persisted forge record
+  // once for BOTH of its faces: seventeen reads over thirteen files. CAP-03
+  // added planning/capture-check.mjs, which reads the capture bound once:
+  // eighteen reads over fourteen files.
   const binDir = join(REPO, 'cadence-core', 'bin');
   const skip = join(binDir, 'lib', 'config-merge.mjs');
   /** @param {string} dir @returns {string[]} */
@@ -1654,8 +1665,8 @@ test('check 12: the live tree is FIFTEEN callsites over NINE files, each in an a
       }
     }
   }
-  assert.equal(total, 15, `callsites: ${files.join(', ')}`);
-  assert.equal(files.length, 9, files.join(', '));
+  assert.equal(total, 18, `callsites: ${files.join(', ')}`);
+  assert.equal(files.length, 14, files.join(', '));
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
   assert.deepEqual(armB, [join('cadence-core', 'bin', 'review-provider.mjs')]);
@@ -2461,4 +2472,41 @@ test('check 22: a hintless refusal reaches problems through the CLI, and a hinte
 
 test('check 22: the CLI names refusal-hints in `checked`', () => {
   assert.match(run(['--root', binFixture({})]).checked, /refusal-hints/);
+});
+
+// --- check 23: who may write the transient queue ------------------------------
+// The rule's own fixtures - the replay of the retired close step, the two
+// shapes that count as issuing a write, the redirect kind and the mention that
+// instructs nothing - live in capture-writers.test.mjs. This side owns the
+// WIRING: that the rule reaches `problems` through the CLI at all, that
+// `checked` says so, and that the LIVE tree passes it. The last is the half a
+// fixture cannot state, and it is what makes an open-items filing call put back
+// into a close step redden the suite as well as the linter.
+
+test('check 23: an unregistered CAPTURE write reaches problems, naming the surface', () => {
+  const root = fixture('File each open item into the queue:\n'
+    + '`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind todo --text-file <path> --phase <N>`\n');
+  const j = run(['--root', root]);
+  assert.match(j.checked, /capture-writers/);
+  const hits = j.problems.filter((p) => p.kind === 'capture-writer-unregistered');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'cadence-core/workflows/x.md');
+  assert.match(hits[0].detail, /## Open items/);
+});
+
+test('check 23: a shell redirect at the capture path reaches problems through the CLI', () => {
+  const hits = run(['--root', fixture('`printf \'%s\\n\' "<item>" >> .planning/CAPTURE.md`\n')])
+    .problems.filter((p) => p.kind === 'capture-writer-redirect');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].file, 'cadence-core/workflows/x.md');
+});
+
+test('check 23: the LIVE tree is clean of all three capture-writer codes', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it: every prose surface that still writes the file is a
+  // register row, and no surface routes a phase's open items there.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-unregistered'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-durable'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-redirect'), []);
 });

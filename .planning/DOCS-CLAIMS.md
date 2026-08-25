@@ -520,7 +520,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-01 | README.md | 36 | An OpenAI, Gemini **or DeepSeek** key runs the identical review job "with the provider enforcing the output schema". | stale | corrected - b2bad1a | 1 |
 | README-02 | README.md | 38 | `docs/WORKFLOW.md` is "six figures and the three tables behind them". | stale | corrected - b2bad1a | 1 |
 | README-03 | README.md | 14-15 | Install adds marketplace `https://git.jcrenshaw.dev/crenshawdev/cadence.git` then `/plugin install cadence@cadence`. | accurate | accurate | 2 |
-| README-04 | README.md | 18 | Runtime scripts are zero-dependency; "there is no npm install, ever". | accurate | accurate | 2 |
+| README-04 | README.md | 18 | Prerequisites are Claude Code with plugin support plus `node`, `git` and one forge CLI (`tea`, `gh` or `glab`) on PATH; those are HOST prerequisites and the runtime scripts are still zero-dependency, "there is no npm install, ever". | accurate | amended - v3.7.1 phase 1 (FRG-02) makes a forge a precondition rather than an option, so the sentence names a forge CLI; the zero-dependency claim is unchanged and still true | 2 |
 | README-05 | README.md | 30 | All durable state lives in `.planning/` and git, incl. a four-line state cursor. | accurate | accurate | 1 |
 | README-06 | README.md | 67 | Verifier scores every claim verified/failed/uncertain and uncertain counts toward neither side. | accurate | accurate | 1 |
 | README-07 | README.md | 67 | The coverage audit reads assertions rather than counting test files. | accurate | accurate | 1 |
@@ -852,7 +852,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-07 | cadence-core/workflows/execute.md | 35-39 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | stale | corrected - v3.4.1 phase 1 | 2 |
 | EXECUTE-08 | cadence-core/workflows/execute.md | 70 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate | 1 |
 | EXECUTE-09 | cadence-core/workflows/execute.md | 59-66 | `git diff --cached --quiet` / `--name-status` and `git stash push --staged` (git 2.35+). | accurate | accurate | 2 |
-| EXECUTE-10 | cadence-core/bin/planning.mjs | 1990-1996 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
+| EXECUTE-10 | cadence-core/bin/planning/lease-check.mjs | 498-501 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
 | EXECUTE-11 | cadence-core/workflows/execute.md | 89-94 | `trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>` anchors the correlation id. | accurate | accurate | 2 |
 | EXECUTE-12 | cadence-core/workflows/execute.md | 97-100 | An append returning `written:false` (size cap, unwritable root) changes nothing on the execute path. | accurate | accurate | 2 |
 | EXECUTE-13 | cadence-core/workflows/execute.md | 112-114 | `planning.mjs plan-overlap --phase <N>` returns `overlaps`, `undeclared` and `frontmatter_issues`. | accurate | accurate | 2 |
@@ -864,7 +864,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-19 | cadence-core/workflows/execute.md | 209-214 | `--role` is a separate key from `--plan`; `--plan` pairs the bracket, `--role` groups the per-role totals. | accurate | accurate | 1 |
 | EXECUTE-20 | cadence-core/workflows/execute.md | 216-219 | `--tokens 0` would claim a dispatch that cost nothing, so the flag is omitted when no figure is returned. | accurate | accurate | 1 |
 | EXECUTE-21 | cadence-core/workflows/execute.md | 221-224 | The `phase_start` line takes no `--role`, `--tokens` or `--read`. | accurate | accurate | 2 |
-| EXECUTE-22 | cadence-core/bin/planning.mjs | 2645-2650 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate | 2 |
+| EXECUTE-22 | cadence-core/bin/planning/trace.mjs | 197-199 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate | 2 |
 | EXECUTE-23 | cadence-core/workflows/execute.md | 267-270 | The `diff` trigger's artifact is shape (a) refs `{base_ref, head_ref}` and its default at `shipped` is advisory. | accurate | accurate | 1 |
 | EXECUTE-24 | cadence-core/workflows/execute.md | 255-258 | `references/triage-gate.md` makes NONE the default and caps the blocking re-arm at ONE round. | accurate | accurate | 2 |
 | EXECUTE-25 | cadence-core/workflows/execute.md | 252-254 | The `risk_surface` checkpoint artifact is shape (c), a flagged-diff FILE path. | accurate | accurate | 1 |
@@ -895,7 +895,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | NEW-PROJECT-04 | cadence-core/workflows/new-project.md | 42 | `planning.mjs trace ignore --root .` exists as a seam call. | accurate | accurate | 2 |
 | NEW-PROJECT-05 | cadence-core/workflows/new-project.md | 47 | A re-run returns `written:false` with `reason:"already-ignored"`. | accurate | accurate | 2 |
 | NEW-PROJECT-06 | cadence-core/workflows/new-project.md | 48 | A project ignoring `.planning/` wholesale is detected and left alone. | accurate | accurate | 1 |
-| NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 56 | `cadence-core/templates/config.json` is the engine template. | accurate | accurate | 2 |
+| NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 56, 59 | `cadence-core/templates/config.json` is the engine template, copied verbatim, and setup asks no configuration questions - with ONE stated exception, the forge in item 6, because a forge is a precondition no template can default. | accurate | accurate | 2 |
 | NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 61 | Defaults are research off, plan check on, verifier on. | stale | corrected - ee0199b - the same sentence - the written default for `workflow.plan_check` is reported as off | 1 |
 | NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 66-68 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate | 2 |
 | NEW-PROJECT-10 | cadence-core/workflows/new-project.md | 161 | `cadence-core/templates/PROJECT.md` exists. | accurate | accurate | 2 |
@@ -909,7 +909,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | NEW-PROJECT-18 | cadence-core/workflows/new-project.md | 287-288 | `granularity`: coarse 3-5, standard 5-8, fine 8-12. | accurate | accurate | 2 |
 | NEW-PROJECT-19 | cadence-core/workflows/new-project.md | 297 | `cadence-core/templates/ROADMAP.md` exists. | accurate | accurate | 2 |
 | NEW-PROJECT-20 | cadence-core/workflows/new-project.md | 337-338 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` is a valid call. | accurate | accurate | 2 |
-| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 341-345 | A phase directory is `.planning/phases/<N>/` with no zero-padding and no slug suffix. | accurate | accurate | 2 |
+| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 466-470 | The workflow creates no `.planning/phases/` directory; a phase directory is `.planning/phases/<N>/`, created lazily, and the grammar for `<N>` is stated in `references/roadmap-phases.md`. | accurate | accurate | 2 |
 | NEW-PROJECT-22 | cadence-core/workflows/new-project.md | 374-375, 402 | STATE.md is a 4-line cursor. | accurate | accurate | 2 |
 | PHASE-01 | cadence-core/workflows/phase.md | 4-6 | A phase number appears in four places: ROADMAP list, `.planning/phases/<N>/`, the REQUIREMENTS Phase column, the STATE cursor. | accurate | accurate | 2 |
 | PHASE-02 | cadence-core/workflows/phase.md | 7 | The renumber mechanics live in the planning seam's `renumber` subcommand. | accurate | accurate | 2 |
@@ -1024,8 +1024,8 @@ fixed, which is what makes that link answer the only question it is asked.
 | VERIFY-08 | cadence-core/workflows/verify.md | 64-68 | An item from a CONTEXT criterion carries `"criterion":"AC<N>"`. | accurate | accurate | 2 |
 | VERIFY-09 | cadence-core/workflows/verify.md | 69-70 | /cad-audit FAILs on a criterion no item names. | accurate | accurate | 2 |
 | VERIFY-10 | cadence-core/workflows/verify.md | 72 | Other-source items carry `"origin"`; the smoke item sends `"origin":"smoke"`. | accurate | accurate | 2 |
-| VERIFY-11 | cadence-core/bin/planning.mjs | 696-700 | `uat init` writes `fields_version` before it looks at an item. | accurate | accurate | 2 |
-| VERIFY-12 | cadence-core/bin/planning.mjs | 1281-1283 | Legacy also requires a CONTEXT declaring no ids beside a fieldless checklist. | accurate | accurate | 2 |
+| VERIFY-11 | cadence-core/bin/planning/uat.mjs | 123-127 | `uat init` writes `fields_version` before it looks at an item. | accurate | accurate | 2 |
+| VERIFY-12 | cadence-core/bin/planning/criteria-coverage.mjs | 57-59 | Legacy also requires a CONTEXT declaring no ids beside a fieldless checklist. | accurate | accurate | 2 |
 | VERIFY-13 | cadence-core/workflows/verify.md | 80 | CONTEXT criteria may carry a `(human-verify: needs <tool/service>)` tag. | accurate | accurate | 1 |
 | VERIFY-14 | cadence-core/workflows/verify.md | 94-95 | `uat init --phase <N>` takes the item array on stdin. | accurate | accurate | 2 |
 | VERIFY-15 | cadence-core/workflows/verify.md | 103 | `workflow.verifier: false` always skips the deep pass. | accurate | accurate | 2 |
@@ -1109,9 +1109,9 @@ mistake.
 | id | doc | line | claim | verdict | resolution | run |
 |---|---|---|---|---|---|---|
 | COMMANDS-01 | cadence-core/references/COMMANDS.md | 40 | `/cad-land [base]` reports git state PLUS the tracker - which issues this branch's commits reference and which are still open - reads only and closes nothing, and `git.issue_check: false` turns the report off. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the row's key exists in `config.schema.json` and self-verify check 1 is clean | - |
-| README-85 | docs/EXAMPLE.md | 42-46 | Before `/cad-land` asks how to publish, it names the issues this branch's commits reference and which of them are still open on the host the origin points at; it closes nothing, and `git.issue_check: false` turns the report off. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); proved by `issue-check.test.mjs` (report arm, three hosts) and by the key-off spawn-marker case | - |
+| README-85 | docs/EXAMPLE.md | 42-46 | Before `/cad-land` asks how to publish, it names the issues this branch's commits reference and which of them are still open on the forge picked at project setup; it closes nothing, and `git.issue_check: false` turns the report off. | accurate | corrected - v3.7.1 phase 1 (FRG-01): config is authoritative, so the sentence no longer says "the host the origin points at". Proved by `issue-check.test.mjs` (report arm, three providers) and by the key-off spawn-marker case | - |
 | README-86 | README.md | — | The `## The commands` entry for `/cad-land` states the same tracker report and the same `git.issue_check` off switch. | accurate | RETIRED - the `## The commands` entry for `/cad-land` was cut in v3.5.5 (phase 5, RME-01); README-85 carries the same claim from `docs/EXAMPLE.md` | - |
-| CONFIG-CATALOG-13 | cadence-core/references/config-catalog.md | 46 | `git.issue_check` is a bool defaulting to `true`: `true` gives a read-only tracker report with one line naming the reason when it cannot be read, `false` says nothing about the tracker and runs no forge CLI. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the default is proved by `config.mjs get git.issue_check` over a config that omits it, the no-spawn half by the marker-file case in `issue-check.test.mjs` | - |
+| CONFIG-CATALOG-13 | cadence-core/references/config-catalog.md | 46 | `git.issue_check` is a bool defaulting to `true`: `true` gives a read-only tracker report - against the forge `git.forge_provider` and `git.forge_repo` name - with one line naming the reason when it cannot be read, `false` says nothing about the tracker and runs no forge CLI. | accurate | amended - v3.7.1 phase 1 (FRG-01) names the forge the report is made against; the default is proved by `config.mjs get git.issue_check` over a config that omits it, the no-spawn half by the marker-file case in `issue-check.test.mjs` | - |
 | CAD-LAND-01 | skills/cad-land/SKILL.md | 32-54 | Step 1 runs `issue-check.mjs check` before any publish ask, on both step-3 arms, and on the `skip` action prints the envelope's `reason` verbatim as ONE line and carries on - never blocking, retrying, asking, or listing an issue the seam did not read. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the one-line degradation is proved per path by the 9-case matrix in `issue-check.test.mjs`, each asserting exit 0, `ok:true`, an empty issue list and a reason unique across the matrix | - |
 | CAD-LAND-02 | skills/cad-land/SKILL.md | 55-56 | Landing closes no issue; closing one stays an explicit ask the user makes at publish time. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); no argv in `lib/issue-decision.mjs`'s host table writes to a tracker, and the seam has one subcommand and no write path | - |
 | SELFVERIFY-01 | cadence-core/bin/self-verify.mjs | 90-104 | Check 16 fails an `@`-included `cadence-core/references/*` or `cadence-core/templates/*` surface that no eager prose of the including command ever names, while `cadence-core/workflows/*` includes are exempt because the workflow IS the command's process. | accurate | accurate | 2 |
@@ -1122,7 +1122,7 @@ mistake.
 | ADOPT-05 | cadence-core/workflows/adopt.md | 40, 47-48 | `planning.mjs trace ignore --root .` and it is the only thing in Cadence that writes the rule | accurate | accurate | 2 |
 | ADOPT-06 | cadence-core/workflows/adopt.md | 49-51 | /cad-health reports `ignored:false` and `tracked:true` as separate issues with different remedies | accurate | accurate | 2 |
 | ADOPT-07 | cadence-core/workflows/adopt.md | 50-51 | Append-if-absent, so a brownfield `.gitignore` keeps every line and a re-run adds no second line | accurate | accurate | 2 |
-| ADOPT-08 | cadence-core/workflows/adopt.md | 41, 53 | The config template is copied VERBATIM from `cadence-core/templates/config.json` | accurate | accurate | 2 |
+| ADOPT-08 | cadence-core/workflows/adopt.md | 41, 54 | The config template is copied VERBATIM from `cadence-core/templates/config.json`, and adopt asks no configuration questions - with ONE stated exception, the forge in item 4, because a forge is a precondition no template can default. | accurate | accurate | 2 |
 | ADOPT-09 | cadence-core/workflows/adopt.md | 54-56 | "Config written with defaults (standard granularity, shipped stakes, research off, plan check and verifier on)" | stale | corrected - ee0199b - the same fix, byte-identical sentence in `adopt.md` | 2 |
 | ADOPT-10 | cadence-core/workflows/adopt.md | 42-44 | The five keys read: `planning.commit_docs`, `granularity`, `git.protected_branches`, `git.on_protected`, `git.base_branch` | accurate | accurate | 2 |
 | ADOPT-11 | cadence-core/workflows/adopt.md | 61-62 | `planning.mjs detect-commands` is neither required nor extended for this | accurate | accurate | 2 |
@@ -1139,7 +1139,7 @@ mistake.
 | ADOPT-22 | cadence-core/workflows/adopt.md | 200-206 | `planning.mjs criteria-size --roadmap-min 2 --roadmap-max 5`, no `--phase`, `roadmap_found: false` is not zero | accurate | accurate | 2 |
 | ADOPT-23 | cadence-core/workflows/adopt.md | 206-207 | A REPORT, not a gate, exactly as `plan-size`'s `phase-too-big` is | accurate | accurate | 2 |
 | ADOPT-24 | cadence-core/workflows/adopt.md | 229-230 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` | accurate | accurate | 2 |
-| ADOPT-25 | cadence-core/workflows/adopt.md | 233-235 | A phase directory is `.planning/phases/<N>/` with a bare integer, created lazily | accurate | accurate | 2 |
+| ADOPT-25 | cadence-core/workflows/adopt.md | 313-315 | A phase directory is `.planning/phases/<N>/`, created lazily by the first skill that needs it, with the grammar for `<N>` stated in `references/roadmap-phases.md` | accurate | accurate | 2 |
 | ADOPT-26 | cadence-core/workflows/adopt.md | 239-240 | `planning.commit_docs` false skips the commit step entirely | accurate | accurate | 2 |
 | ADOPT-27 | cadence-core/workflows/adopt.md | 242 | The protected-branch guard is `references/git-guard.md` | accurate | accurate | 2 |
 | ADOPT-28 | cadence-core/workflows/adopt.md | 247-251 | ONE commit staging exactly five files: PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json | accurate | accurate | 2 |
@@ -1388,6 +1388,7 @@ mistake.
 | NEW-PROJECT-34 | cadence-core/workflows/new-project.md | 308-309 | No `--phase`: one call walks every phase the roadmap declares | accurate | accurate | 2 |
 | NEW-PROJECT-35 | cadence-core/workflows/new-project.md | 309-311 | `roadmap_found: false` is not zero criteria | accurate | accurate | 2 |
 | NEW-PROJECT-36 | cadence-core/workflows/new-project.md | 311-312 | It is a REPORT, not a gate, exactly as `plan-size`'s `phase-too-big` is | accurate | accurate | 2 |
+| NEW-PROJECT-37 | cadence-core/workflows/new-project.md | 152-181 | Every repository Cadence creates is PRIVATE on every provider and visibility is never asked, and `forge.mjs create` is never invoked without `--confirmed`, which is what the user's answer to the confirmation naming provider, owner, repository name and visibility buys. | accurate | filed with the code, v3.7.1 phase 1 (FRG-01); every `CREATE_TABLE` row is asserted to pin `--private` by `forge-decision.test.mjs`, the seam refuses an unconfirmed create in `forge.test.mjs`, and `prose-agreement.test.mjs` asserts the confirmation sits at an earlier offset than the one `forge.mjs create` invocation | - |
 | PHASE-14 | cadence-core/workflows/phase.md | 17-18 | `add` re-writes the cursor via `cursor get` then `cursor set` | accurate | accurate | 2 |
 | PHASE-15 | cadence-core/workflows/phase.md | 37-38 | It shifts every `Phase K` token and `phases/K/` path >= N in ROADMAP/REQUIREMENTS | accurate | accurate | 2 |
 | PHASE-16 | cadence-core/workflows/phase.md | 33-34, 42-43 | `in_text_refs` are lowercase prose references the seam will NOT rewrite | accurate | accurate | 2 |

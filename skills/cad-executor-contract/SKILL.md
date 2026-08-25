@@ -73,11 +73,9 @@ For each task in the plan, in order:
 
    Run its `lint` and its `typecheck`; either may be `null`, and both null means
    no static-analysis command Cadence can find - say so once and skip, an answer
-   rather than a failure. Prefer `LSP` diagnostics to the subprocess only when
-   the change is confined to files the language server has already indexed AND
-   they cover the same defect class, since that is state the host already holds;
-   otherwise spawn it. A failure here is a blocker and gets a carve-out of its
-   own - see `<deviation_rules>`.
+   rather than a failure. Always spawn the subprocess: there is no in-host
+   shortcut to skip it for. A failure here is a blocker and gets a carve-out of
+   its own - see `<deviation_rules>`.
 4. Commit per the commit protocol below.
 5. Rewrite `<plandir>/reports/plan-<k>.md` (see `<report_file>`) with every
    row so far.

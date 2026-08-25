@@ -197,6 +197,21 @@
 //                    lib/refusal-hints.mjs; this side decides only that it
 //                    applies to the whole root. It takes no CONTRACTS row, for
 //                    the reason check 14 states about `lib/*.mjs`.
+//  23. capture      a prose surface may issue a `.planning/CAPTURE.md` write
+//      writers       only where a register row settles it, and the row has to
+//                    say why that write cannot ACCUMULATE. CAPTURE holds the
+//                    phase in flight; the defect this closes is
+//                    `workflows/execute.md`'s phase close filing every open
+//                    item into it, one call per item, which a prose edit alone
+//                    leaves reachable by the next person to write a close step
+//                    - it survived two plans' leases. A shell redirect at that
+//                    path is its own kind, because it bypasses
+//                    lib/capture-file.mjs, the one owner of the format. The
+//                    register, the discriminator and the cost it accepts live
+//                    in lib/capture-writers.mjs; this side only decides that it
+//                    applies to every prose surface, for the reason check 19
+//                    states about its own scope. It takes no CONTRACTS row, for
+//                    the reason check 14 states about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -224,6 +239,7 @@ import { refusalHintIssues } from './lib/refusal-hints.mjs';
 import { textTransportIssues } from './lib/text-transport.mjs';
 import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
+import { captureWriterIssues } from './lib/capture-writers.mjs';
 // The subcommand/flag contract table, the accessor the prose lint reads its
 // flag NAMES through, and the evaluator that applies one row's value grammar.
 // All three are DEFINED in lib/arg-contract.mjs and imported here: one table,
@@ -682,6 +698,17 @@ function run(root) {
     // only decides where they apply. It takes no CONTRACTS row, for the reason
     // check 14 states about `lib/*.mjs`.
     problems.push(...scratchPathIssues(rel, text));
+
+    // 23. capture writers: a prose site that ISSUES a `.planning/CAPTURE.md`
+    // write must be settled by a register row stating why that write cannot
+    // accumulate, and a shell redirect at that path is reported outright. Every
+    // surface this walk yields, for the reason check 19 states about its own
+    // scope: a close step in skills/ fills the queue exactly as a workflow
+    // does. The register, the two-shape discriminator and the cost it accepts
+    // live in lib/capture-writers.mjs; this side only decides that it applies
+    // to every prose surface. It takes no CONTRACTS row, for the reason check
+    // 14 states about `lib/*.mjs`.
+    problems.push(...captureWriterIssues(rel, text));
   }
 
   // 3b. INTERNALS repo-path citations: every backticked repo path in
@@ -753,6 +780,7 @@ function run(root) {
         continue;
       }
       const budget = budgets[surface];
+      // CADENCE-CENSUS: weight-budgets | asserts: weight-budgets.json holds the exact UTF-8 byte size of every budgeted prose surface
       if (bytes > budget) {
         problems.push({ kind: 'budget-overrun', file: surface,
           detail: `${bytes}B exceeds budget ${budget}B by ${bytes - budget}B` });
@@ -1298,7 +1326,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".

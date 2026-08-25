@@ -314,7 +314,16 @@ one commit:
 
 1. `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-done --n <N>` - checks the phase's
    ROADMAP box and flips its traceability rows to Complete (Deferred rows
-   exempt), reporting exactly what changed.
+   exempt), reporting exactly what changed. Its `capture` field is the CLOSE
+   ASSERTION over `.planning/CAPTURE.md`, which holds the phase in flight and
+   nothing else: print each `items[]` entry - section, line and text - and say
+   what it is. **These are items this phase did not resolve.** Resolving one
+   means REMOVING it - filed on the tracker, or dropped - never annotating it
+   in place and never moving it to another heading in the same file, which
+   leaves the bytes exactly where they were. The close already happened either
+   way; this is a list for the user, not a gate. `capture.unread` means the
+   file is present and could not be opened - run `capture-check` for the
+   reason.
 2. `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status "phase complete"
    --next "<next phase's /cad-context, or /cad-milestone if this was the last
    - the audit gate precedes any ship>"`

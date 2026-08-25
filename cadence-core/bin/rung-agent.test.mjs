@@ -75,6 +75,7 @@ test('rungFiles on an unknown role is empty, never a throw', () => {
   assert.deepEqual(rungFiles(undefined), []);
 });
 
+// CADENCE-CENSUS: rung-agent-files | asserts: RUNG_FILES names 19 file stems across the six roles, each serving exactly one rung
 test('RUNG_FILES names 19 files across the six roles, and is frozen', () => {
   const stems = Object.keys(RUNG_FILES).flatMap((r) => rungFiles(r));
   assert.equal(stems.length, 19);

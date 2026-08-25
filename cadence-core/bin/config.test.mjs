@@ -866,12 +866,30 @@ test('SCP-01: a fixture schema marking a DIFFERENT key refuses that key', () => 
   assert.equal(existsSync(join(dir, 'no-global-schema.json')), false);
 });
 
-test('SCP-01: exactly one SHIPPED key carries the marker, and `src` never implies it', () => {
+test('SCP-01: the SHIPPED keys carrying the marker are the ones that authorize, and `src` never implies it', () => {
   // AC4's negative control, derived in-process rather than by 33 subprocess
   // runs: the property is about the SCHEMA, and each subprocess would only
   // re-prove the rule the test above pins.
+  //
+  // The list is EXACT and in schema order, so a fourth key acquiring the marker
+  // reddens here rather than passing as "one more repo-scoped key". Each entry
+  // earns it under `_meta.note`'s own test - would a user-global value
+  // AUTHORIZE a change to a repository that never opted in? `git.forge_repo` is
+  // the owner/name slug every forge call addresses, so ONE global value would
+  // aim EVERY repository's forge calls at a single target. `git.auto_close`
+  // authorizes the unattended publish of one repository.
   const shipped = JSON.parse(readFileSync(join(dirname(CONFIG), '..', 'config.schema.json'), 'utf8')).keys;
-  assert.deepEqual(Object.keys(shipped).filter((k) => shipped[k].repo_only === true), ['git.auto_close']);
+  assert.deepEqual(Object.keys(shipped).filter((k) => shipped[k].repo_only === true),
+    ['git.forge_repo', 'git.auto_close']);
+
+  // The slug's two siblings are deliberately NOT here, and their absence is the
+  // half of D-02 that a "mark the whole family" edit would quietly undo: naming
+  // which forge you use and which instance serves it is a PREFERENCE, and it
+  // authorizes nothing on a repository that never named ITSELF - naming itself
+  // is the slug's job, and the slug is marked.
+  for (const k of ['git.forge_provider', 'git.forge_host']) {
+    assert.equal(shipped[k].repo_only, undefined, `${k} carries no repo_only marker`);
+  }
 
   // `src: "repo"` means "settable in either layer" and 33 keys carry it -
   // `stakes` and `granularity` among them, which workflows/config.md tells the

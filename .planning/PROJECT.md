@@ -5,10 +5,17 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v3.6.1` is the current release: the three gaps `v3.6.0` named about
-its own `/cad-why` work, closed - the chain states the reachability it does not
-have, the entry cap carries a byte claim measurement supports, and closes order
-by parsed instants. `v3.6.0` before it was everything Cadence wrote down being
+subsystem. `v3.7.1` is the current release: the queue nothing
+drained, closed at its cause - a gate that declines a finding files it on the
+repository's own issue tracker in the step that decided, CAPTURE.md holds the
+phase in flight and nothing else, and phase close asserts it empty. Riding with
+it: a census registry with a plan-time lease check, `planning.mjs` split into 30
+per-command modules, and one spelling per phase directory. `v3.7.0` before it
+was Cadence stating its failures in its own vocabulary and never stating the
+remedy, so a hintless refusal became a build failure. `v3.6.1` before that was
+the three gaps `v3.6.0` named about its own `/cad-why` work, closed - the chain
+states the reachability it does not have, the entry cap carries a byte claim
+measurement supports, and closes order by parsed instants. `v3.6.0` before it was everything Cadence wrote down being
 written by a gate and read by nobody: `/cad-why` walks the record join,
 `cite-count` measures whether recall was read, and the fast path leaves a
 record behind it. `v3.5.9` before it was the release seam and the frontmatter
@@ -197,6 +204,32 @@ context-gathering, and debugging — without any external memory system.
 
 No cycle open. `/cad-phase add` opens the next one.
 
+**`v3.7.1 - the tracker is the record` closed 2026-08-25.** Six phases, 138
+commits off `v3.7.0`, ten requirement ids all traced to a verified phase:
+`FRG-01`, `FRG-02` (the forge resolved at project setup), `CEN-01`, `CEN-02`
+(the census registry and the plan-time lease check), `CAP-01`, `CAP-02`,
+`CAP-03` (the tracker is the record; CAPTURE holds the phase in flight and
+close asserts it empty), `SPL-01`, `SPL-02` (one spelling per phase) and
+`LOD-02` (`planning.mjs` split into 30 per-command modules behind a 360-line
+entry file). `/cad-audit` PASS on both arms - 10 of 10 requirements traced, 33
+of 33 acceptance criteria covered across five phases. Manifest bumped to
+`3.7.1`.
+
+Where the cycle now lives: its requirement rows under `## Shipped` in
+REQUIREMENTS.md, its narrative in `CHANGELOG.md` under `[3.7.1]`, and 144
+residue rows - phase deviations, UAT items and CONTEXT decisions - under this
+label's heading in `.planning/ARCHIVE.md`, which is what `recall` indexes now
+that `phases/1-6/` are gone from the live tree. The phase work itself is in git
+history off `v3.7.0`.
+
+Outstanding at this close: the merge to `main` and the `v3.7.1` release tag,
+both `/cad-land`'s (the tag is cut on the pulled base after the merge
+confirms). One acceptance item carries forward rather than shipping proven -
+phase 2's UAT item 11, whether the `/cad-plan` orchestrator halts on a live
+`check_census` refusal rather than dispatching past it. The seam arm underneath
+it is verified in both directions; only the workflow's obedience is unobserved,
+and the first `/cad-plan` of the next cycle observes it.
+
 **`v3.7.0 - the refusal that names the next step` closed 2026-08-24.** Two
 phases, 36 commits off `v3.6.1`, three ids seeded at the open and all three
 traced to a verified phase: `HNT-01`, `HNT-02` (#238) and `SCP-01` (#249).
@@ -294,6 +327,7 @@ Next: `/cad-plan 1`.
 | The release tag is cut after the merge, not at the close | A tag made during `/cad-milestone` names a commit on the integration branch that base never contains as a tip; publishing is `/cad-land`'s step, and the tag rides with it | ✓ Adopted at the v1.4.0 close |
 | The routing axis asks stakes, not spend | "How much will you spend" is answerable but useless, and on a Max subscription it is not a question the user has; "what happens if this is wrong" is answerable in one second and is the only form a risk signal can auto-set. MANIFESTO's principle is value per dispatch — stakes is the numerator it was always reaching for | Adopted for v2.0.0 (STK-01); breaking, no alias |
 | The rung ladder is one contract materialized N times, not N variants | The host freezes `effort` per agent file on the Agent/Task dispatch path, so rungs need files; the contract lives in exactly one skill and a rung file that ever carries behaviour fails self-verify. Without that check this is the GSD namespace-variant sin the MANIFESTO names | Adopted for v2.0.0 (RNG-01), on the v1.5.0 contract skills |
+| Bare `#NNN` stays the Forgejo archive; GitHub issues carry `GH-` | Cadence and Verbatim move to GitHub as primary with Forgejo as the mirror. GitHub renumbers issues from 1, so the 151 existing bare `#NNN` citations (93 distinct, 109 of them in REQUIREMENTS.md) would each resolve to a different real issue - a wrong answer that looks right. Rewriting them would edit ARCHIVE.md and REQUIREMENTS.md `## Shipped`, records of what was true when written. So nothing is rewritten: a bare `#NNN` means the public Forgejo archive at git.jcrenshaw.dev/crenshawdev/cadence, and issues filed on GitHub from 2026-08-25 are written `GH-NNN`. `planning-files.mjs:330` already admits `#\d+` as a requirement-id token, so traceability is unaffected either way | Adopted 2026-08-25 |
 
 ---
 *Last updated: 2026-08-16 v3.5.3 opened from the v3.5.2 close (3 issues, phases to be added)*

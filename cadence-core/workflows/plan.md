@@ -93,12 +93,27 @@ that consumes a prior call's output is serialized.
 </step>
 
 <step name="spawn_planner">
-Dispatch cad-planner via the spawn-agent seam (references/seams.md) - resolve
-its model + agent file through the seam's routing step (first dispatch is
-`--attempt 1`), and put the dispatch bracket ON that resolve:
-`--bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"`
-- the read-set this site causes the planner to read, one comma-separated value,
-never a repeated flag. In gaps mode append `.planning/phases/{N}/UAT.md` and
+Dispatch cad-planner via the spawn-agent seam (references/seams.md). Resolve its
+model + agent file and write the dispatch bracket in ONE call:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-planner \
+  --attempt 1 --phase {N} \
+  --bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"
+```
+
+The form is written out HERE, at the site, because it is four lines and finding
+them in references/seams.md costs a grep with a window wide enough to be the
+tell that the caller is guessing - measured at ~9 KB read to recover a 4-line
+command. seams.md stays the source for what the resolve RETURNS (the retry
+rungs, the per-role pin, the `{ok:false}` arm, and the rule that every
+`warnings[]` entry reaches the user before the dispatch); this block is only the
+invocation. Relay every `warnings[]` entry the resolve returns to the user
+before dispatching, each distinct warning once per workflow run - a warning that
+reaches JSON and no human is a resolved-then-dropped value wearing a
+diagnostic's clothes. `--attempt 1` because this is the first dispatch.
+`--bracket-read` is the read-set this site causes the planner to read, one
+comma-separated value, never a repeated flag. In gaps mode append `.planning/phases/{N}/UAT.md` and
 the existing PLAN* and SUMMARY* files to that value, matching the read list the
 prompt below carries. The resolve writes the lifecycle dispatch event itself;
 only the CLOSE in handle_return stays here. Then wait - do not read, edit, or
@@ -218,6 +233,10 @@ token check. Do NOT restate either call here: a second spelling is a second seam
 invocation the census counts and a second copy that can drift from the first.
 The inline path writes `PLAN.md` from the same template, so the count reads it
 with no special case.
+
+`check_census` applies here too, on the same reasoning and under the same
+prohibition on a second spelling: run that step exactly as written once this
+step's `PLAN.md` is on disk, and do not continue while it refuses.
 </step>
 
 <step name="handle_return">
@@ -296,6 +315,56 @@ against a ceiling of 4. Two model-judgment gates missed a comparison a count
 makes exactly.
 </step>
 
+<step name="check_census">
+The plan's lease against the hand-maintained COUNTS this repository keeps - the
+numbers a human wrote down that the code must keep true. Run after
+`check_size`, once the plan is on disk and before any executor could be
+dispatched, and ahead of `count_planned` so a short lease is caught before the
+workflow pays a seam call - and long before `check_gate` pays a cad-plan-checker
+dispatch to review a lease this check already knows is short.
+
+ONCE PER PLAN FILE the phase has, because `--plan` names one plan file:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" lease-check --phase {N} --plan <k> --plan-time
+```
+
+It answers `ok:true`, or it refuses one of three ways, and the remedy differs:
+
+- `census-at-risk`, with a `censuses_at_risk` list. Each entry names the FILE
+  the lease is missing, what that file's count is a count of, and the site that
+  asserts it.
+- `unparsed-lease`, with a `frontmatter_issues` list naming the lines of the
+  plan's frontmatter that could not be read.
+- `empty-lease`, when the plan declared no files at all - usually a `files:`
+  key that is missing or misspelled.
+
+The last two say the `files:` list could not be READ, so nothing was measured
+and no census can be named. The remedy for those is to repair that plan's
+frontmatter, NOT to add a file: a path added to a list the seam cannot parse
+changes nothing it can see.
+
+It REFUSES, and that break is deliberate. `plan-size` one step above and
+`criteria-size` report because the workflow decides what to do about a size.
+A soft report HERE reproduces exactly the failure this check exists against:
+the planner is told, continues, and the count goes red inside an executor's
+commit with no plan naming the file that would re-pin it. Not hypothetical -
+this project's own record (`.planning/_archive-v3.7.1`) carries two
+`undeclared-files` refusals that were committed rather than obeyed. So this
+step offers no options and asks nothing.
+
+When it names files, the remedy, and the whole remedy: add each named file to
+that plan's `files:` list and re-run this check until it answers `ok:true`. Do
+not continue to `count_planned`, and do not dispatch anything, while it refuses. Declaring the
+file is also undertaking to re-pin its count in the same commit, which is why
+the executor needs the declaration before it starts rather than after.
+
+Say the missing files out loud, each beside the census it holds - "PLAN-2.md
+does not declare cadence-core/bin/trace.test.mjs, which holds the count of the
+four refusing trace flags' sentences". The point of this step is
+`check_size`'s point: the overrun stops being silent.
+</step>
+
 <step name="count_planned">
 The read-back count at the first of its two points (D-05): how many of the prior
 decisions, captures and deviations `spawn_planner` surfaced does the plan the
@@ -332,11 +401,20 @@ to be set against, and these two counts are what produce it.
 Skip when workflow.plan_check is false or `--skip-check` was passed.
 
 Dispatch cad-plan-checker via the spawn-agent seam, the bracket on its resolve:
-`--phase {N} --bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"`.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-plan-checker \
+  --phase {N} \
+  --bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"
+```
+
 `--phase {N}` is EXPLICIT here and not left to the cursor: this resolve runs
 while the cursor still names phase N-1, so without it the checker is routed off
 the wrong phase's plans (references/seams.md's Routing block). No `--plan` - the
-checker reviews every plan of the phase, so it floors on their union.
+checker reviews every plan of the phase, so it floors on their union. The role
+and the flags differ from spawn_planner's resolve, which is why the form is
+written out again rather than pointed at: what the call RETURNS is stated once,
+in seams.md, and is not restated here.
 Prompt:
 
 ```markdown

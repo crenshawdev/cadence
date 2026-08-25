@@ -47,9 +47,13 @@ pair is one selectable option and its `description`.
 | `git.create_tag` | bool | At the end of a land, cut the release tag on the pulled base once the merge confirms? | `true`→tag · `false`→don't | true |
 | `git.on_land_cleanup` | bool | After a land/merge, return to base, pull, reap the merged integration branch? | `true`→return + pull + reap · `false`→leave in place | true |
 | `git.issue_check` | bool | When a land starts, show which issues this branch's commits mention and which are still open? | `true`→show it, read-only, and say in one line when the tracker cannot be reached · `false`→skip it, and never call the hosting CLI | true |
+| `git.forge_provider` | enum | Which forge hosts this repository's issue tracker? Asked once at project setup, then read instead of guessing from the remote | `forgejo`→a Forgejo/Gitea instance, driven by `tea` · `github`→driven by `gh` · `gitlab`→driven by `glab` · empty→`null` (not asked yet) | null |
+| `git.forge_repo` `[repo-layer-only]` | str\|null | Which repository on that forge - the `owner/name` slug every forge call addresses | `owner/name`, or empty→`null` (not asked yet) | null |
+| `git.forge_host` | str\|null | Which Forgejo instance serves it - the host you reach in a browser, never read off the remote URL | hostname, or empty→`null` (not asked yet, and always null on `github` and `gitlab`) | null |
 | `git.auto_close` `[repo-layer-only]` | bool | Run the whole close unattended (audit → tag → PR → merge → reset) with no prompts? | `true`→run it start to finish, stopping only if a serious review finding is still unresolved · `false`→stop before publishing - you run `/cad-land` yourself | false |
 | **Planning** |||||
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
+| `planning.max_capture_bullets` | int | How many live items may sit in `.planning/CAPTURE.md` before Cadence says the queue has stopped being the phase in flight? A crossing is reported by `planning.mjs capture-check` and nothing is refused - filing never stops. The default sits above this repository's own 30 (measured 2026-08-25), so it fires on growth rather than on arrival | e.g. `40` | 40 |
 | **Memory** |||||
 | `memory.backend` `[repo]` | enum | How past planning notes are searched and resurfaced | `builtin`→built-in search over your `.planning/` docs, no setup and no dependencies · `none`→turn that search off | builtin |
 | **Review** (providers handled separately) |||||

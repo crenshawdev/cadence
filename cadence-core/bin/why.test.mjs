@@ -216,11 +216,21 @@ test('a commit an archived summary names joins to that milestone, phase, plan an
 });
 
 test('the phase printed is the archived one, never the live phases/1 that reuses the number', () => {
+  // SCOPED TO THE ARCHIVED COMMIT'S OWN ENTRY, never a global absence across the
+  // window. This path keeps taking commits from the OPEN milestone, whose phase 1
+  // legitimately renders `(phases/1)`, so a window-wide assertion reddens on work
+  // that is behaving exactly as designed - it did, on the two commits phase 1 of
+  // v3.7.1 put here. What the case is for is the COLLISION: sha 00537356 belongs
+  // to an archived phase 1 and must not be read off the live directory reusing
+  // that number, and that is a property of one entry rather than of the window.
+  const sha = '00537356bf14084f3676eeeca1c4747146979bc3';
   const { stdout } = run(['cadence-core/bin/lib/issue-decision.mjs', '--dir', REPO, '--top', '20']);
   const env = oneJsonLine(stdout);
-  assert.ok(!env.text.includes('(phases/1)'),
+  const entry = entryFor(env.text, sha);
+  assert.ok(entry, `expected a rendered entry for ${sha} in a chain of ${env.shown}`);
+  assert.ok(!entry.includes('(phases/1)'),
     'the live phase 1 is a different milestone; a scope-keyed read would print it');
-  assert.ok(env.entries.every((e) => e.join.label !== 'phases/1'));
+  assert.equal(env.entries.find((e) => e.sha === sha).join.label, '_archive-v3.4.0/1');
 });
 
 test('a commit no summary names keeps its phase and plan-task fields stated absent rather than dropped', () => {

@@ -41,9 +41,25 @@ const GROUPS = Object.freeze({
   git: ['git-guard', 'git-publish', 'git-branch', 'git-segments', 'worktree-base',
     'branch-decision', 'publish-decision', 'close-decision', 'release-decision',
     'release-bump', 'land-cleanup', 'redact-url', 'issue-check', 'issue-decision'],
-  // The .planning grammar and the run record. `planning` alone is ~11s, which
-  // is why it gets a group whose other members are cheap.
-  planning: ['planning', 'planning-files', 'trace', 'bm25', 'debt-markers'],
+  // The .planning grammar and the run record. The seam's own arms are one stem
+  // per subcommand since phase 4 split planning.test.mjs; `planning` itself is
+  // now just the shared fixture harness plus the arms that span several
+  // subcommands, and every `planning-*` stem below has to be named here or
+  // `node test.mjs planning` - the documented way to run this seam, and the CI
+  // matrix cell of that name - would run the harness and leave the bulk of the
+  // seam in `other`. `planning-files` covers lib/planning-files.mjs rather than
+  // the seam. Measured after the split: 931 arms in ~7.4s wall clock, the stems
+  // running in parallel processes, which is why its non-seam members (trace,
+  // bm25, debt-markers) stay the cheap ones.
+  planning: ['planning', 'planning-adjudication', 'planning-audit',
+    'planning-capture-sections', 'planning-cite-count',
+    'planning-criteria-coverage', 'planning-criteria-size', 'planning-cursor',
+    'planning-debt-harvest', 'planning-deferred', 'planning-detect',
+    'planning-files', 'planning-lease-check', 'planning-milestone-prune',
+    'planning-phase-done', 'planning-plans', 'planning-recall',
+    'planning-renumber', 'planning-seed-reqs', 'planning-status',
+    'planning-task-record', 'planning-trace-ignore', 'planning-uat',
+    'trace', 'bm25', 'debt-markers'],
   // The prose<->code drift linters. Slow because they read the whole tree.
   prose: ['self-verify', 'prose-agreement', 'weight', 'deferred-reads',
     'include-consumers'],

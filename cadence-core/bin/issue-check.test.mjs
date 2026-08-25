@@ -90,13 +90,39 @@ export function stub(dir, name, { body = '', login = null, issue = null, issueSl
   chmodSync(file, 0o755);
 }
 
+/** The forge record project setup would have PERSISTED for this origin, which
+ *  is what the seam resolves now (phase 1 D-01) - it reads no origin URL at
+ *  all. Derived here rather than hand-written at 40 call sites, and derived the
+ *  same way `forge.mjs detect` derives its DEFAULTS, so a fixture cannot claim
+ *  a record setup could not have produced. `forgejo` gets the origin's own
+ *  hostname as its instance host; the cases that care about a browser host
+ *  differing from an SSH endpoint pass `forge` explicitly.
+ *  @param {string|null|undefined} originUrl */
+function forgeFor(originUrl) {
+  if (!originUrl) return {};
+  const m = /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/)?(?:[^@/]*@)?([^/:]+)[:/](?::\d+\/)?(.+?)(?:\.git)?$/.exec(originUrl);
+  if (!m) return {};
+  const host = m[1].toLowerCase();
+  const slug = m[2].replace(/^\d+\//, '');
+  if (host === 'github.com') return { forge_provider: 'github', forge_repo: slug };
+  if (host === 'gitlab.com') return { forge_provider: 'gitlab', forge_repo: slug };
+  return { forge_provider: 'forgejo', forge_repo: slug, forge_host: host };
+}
+
 /** A temp git repo: `.planning/config.json` from `gitConfig`, an `origin`
  *  pointing at `originUrl`, and one commit per message in `commits` on a branch
- *  off `main`. */
-function repo({ originUrl, commits = [], gitConfig = {} }) {
+ *  off `main`.
+ *
+ *  The forge keys are DERIVED from `originUrl` unless `gitConfig` already names
+ *  a provider - so a case that wants an unconfigured repository, or a record
+ *  that disagrees with the remote, says so and every other case reads as it
+ *  always did. `forge: null` suppresses the derivation outright. */
+function repo({ originUrl, commits = [], gitConfig = {}, forge }) {
   const dir = mkdtempSync(join(tmpdir(), 'cad-ic-repo-'));
   mkdirSync(join(dir, '.planning'), { recursive: true });
-  writeFileSync(join(dir, '.planning', 'config.json'), JSON.stringify({ git: gitConfig }));
+  const derived = forge === null ? {} : (forge || forgeFor(originUrl));
+  const git = gitConfig.forge_provider !== undefined ? gitConfig : { ...derived, ...gitConfig };
+  writeFileSync(join(dir, '.planning', 'config.json'), JSON.stringify({ git }));
   const g = (...a) => execFileSync('git', ['-C', dir, ...a], {
     stdio: 'ignore',
     env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
@@ -163,9 +189,14 @@ const COMMITS = ['feat: first cut (#42)', 'fix: closes #47', 'docs: mention #42 
 
 // --- the three hosts report referenced numbers WITH their states ------------
 
+// The third cell is the envelope's `host`, which is now the PERSISTED
+// `git.forge_host` and nothing else - so it is null on github and gitlab, whose
+// hosts are fixed and which name no instance key. The seam reads no origin URL
+// at all; the URL is here because `repo()` derives the record setup would have
+// persisted from it, and because a real repository has one.
 const HOSTS = [
-  ['github', 'https://github.com/org/repo.git', 'github.com', { gh: { body: GH_BODY } }],
-  ['gitlab', 'git@gitlab.com:org/repo.git', 'gitlab.com', { glab: { body: GLAB_BODY } }],
+  ['github', 'https://github.com/org/repo.git', null, { gh: { body: GH_BODY } }],
+  ['gitlab', 'git@gitlab.com:org/repo.git', null, { glab: { body: GLAB_BODY } }],
   // The scp-shaped and ported URL forms ride here too, and the forgejo arm's
   // ONE `tea` stub answers the login probe and the issue list from one file.
   ['forgejo', 'ssh://git@forge.example.com:2222/org/repo.git', 'forge.example.com',
@@ -331,17 +362,17 @@ const DEGRADATIONS = [
     args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS, gitConfig: { issue_check: false } }), '--base', 'main'],
     opts: { stubs: ALL_STUBS },
   }), 'off'],
-  ['no origin remote', /no origin remote/, () => ({
-    args: ['check', '--dir', repo({ originUrl: null, commits: COMMITS }), '--base', 'main'],
+  // ONE arm where there were two. `no origin remote` and `unrecognized host`
+  // both said how the origin URL failed to classify, which is not a thing a
+  // user acts on; this says which keys to set (phase 1 D-01). A repository
+  // WITH a perfectly good origin lands here when the record is unset, which is
+  // the whole point: config decides, not the remote.
+  ['no forge configured', /no forge configured \(git\.forge_provider, git\.forge_repo unset/, () => ({
+    args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS, forge: null }), '--base', 'main'],
     opts: { stubs: ALL_STUBS },
   })],
-  // Neither github nor gitlab, and no tea reading exists to recognize it.
-  ['unrecognized host', /neither github nor gitlab/, () => ({
-    args: ['check', '--dir', repo({ originUrl: FORGE_REPO, commits: COMMITS }), '--base', 'main'],
-    opts: { bare: true },
-  })],
-  // The SAME host, with tea present and answering - no login for it is its own
-  // reason, because the fix is a login rather than a different remote.
+  // A CONFIGURED forgejo record with tea present and answering - no login for
+  // the persisted instance host is its own reason, because the fix is a login.
   ['no tea login', /tea holds no login/, () => ({
     args: ['check', '--dir', repo({ originUrl: FORGE_REPO, commits: COMMITS }), '--base', 'main'],
     opts: { stubs: { tea: { body: TEA_BODY, login: '[]' } }, bare: true },
@@ -446,23 +477,25 @@ test('an origin NO login names skips, and asks tea nothing about it', () => {
   assert.equal(lines.filter((l) => l.startsWith('tea login list')).length, 1, lines.join('\n'));
 });
 
-test('a split-endpoint origin a login NAMES is bound to the REMOTE, not to a login picked here', () => {
-  // The other side of the guard: it clears, and the seam still picks no login.
-  // What a PATH stub can prove is that `--remote origin` rides every call and
-  // that no login name does; that tea honours it is measured live and recorded
-  // in lib/issue-decision.mjs's HOST_TABLE header.
+test('a persisted host a login NAMES is bound with --login <that login\'s name>', () => {
+  // The other side of the guard, rebound. The persisted host here is the SSH
+  // endpoint the user confirmed; the login that serves it is named
+  // `forge.example.com` and carries that endpoint in `ssh_host`. `--login`
+  // takes a NAME and nothing else, so the argv must carry the login's name and
+  // not the host that resolved it - a distinction only an argv assertion can
+  // make, and one that a `--remote origin` call could never have got wrong
+  // because it named no login at all.
   const dir = repo({ originUrl: SPLIT_ORIGIN, commits: COMMITS });
   const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
   const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
     { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true, argvLog });
   assert.equal(status, 0);
   assert.equal(envelope.action, 'report', JSON.stringify(envelope));
-  assert.equal(envelope.host, 'ssh.example.com', 'the ORIGIN host, never a login\'s');
+  assert.equal(envelope.host, 'ssh.example.com', 'the PERSISTED host, never a login\'s name');
   const queries = readFileSync(argvLog, 'utf8').trim().split('\n').filter((l) => l.startsWith('tea issues'));
   assert.equal(queries.length, 1, queries.join('\n'));
-  assert.match(queries[0], /--remote origin(\s|$)/, queries[0]);
-  assert.ok(!queries[0].includes('--login'), queries[0]);
-  assert.ok(!queries[0].includes('forge.example.com'), queries[0]);
+  assert.match(queries[0], /--login forge\.example\.com(\s|$)/, queries[0]);
+  assert.ok(!queries[0].includes('--remote'), queries[0]);
 });
 
 // --- the open list plus a bounded per-issue resolve (the forgejo row alone) --
@@ -485,13 +518,15 @@ const TWO_LOGINS = JSON.stringify([
   { name: 'forge.example.com', url: 'https://forge.example.com', ssh_host: 'ssh.example.com', user: 't' },
 ]);
 
-test('forgejo: every call is bound with --remote origin, and none with --login', () => {
-  // Two logins configured, neither of them chosen HERE. tea resolves an
-  // unqualified `--repo <owner>/<name>` in config FILE ORDER (D-07), so an
-  // unbound query would answer from the first - another server's issues,
-  // reported as this repository's, exit 0 and all. `--remote origin` hands that
-  // pick to tea, which reads the checkout's own remote; the seam's job is to
-  // put the flag on EVERY call it makes, list and resolve alike.
+test('forgejo: every call names the login the persisted host resolves, and no other', () => {
+  // Two logins configured, and the FIRST one is a stranger. tea resolves an
+  // unqualified `--repo <owner>/<name>` in config FILE ORDER, so an unbound
+  // query would answer from `evil.example.net` - another server's issues,
+  // reported as this repository's, exit 0 and all. `--remote origin` used to
+  // hand that pick to tea by way of the checkout's remote; the persisted host
+  // hands it to `teaLoginNameForHost`, which is what lets the call be made with
+  // no remote present at all. The seam's job is to put the flag on EVERY call
+  // it makes, list and resolve alike.
   const dir = repo({
     originUrl: SPLIT_ORIGIN,
     commits: [...COMMITS, 'chore: mentions #4242, which never existed'],
@@ -507,11 +542,10 @@ test('forgejo: every call is bound with --remote origin, and none with --login',
   const queries = lines.filter((l) => l.startsWith('tea issues'));
   assert.equal(queries.length, 3, lines.join('\n'));
   for (const q of queries) {
-    assert.match(q, /--remote origin(\s|$)/, q);
-    assert.ok(!q.includes('--login'), q);
-    // Neither configured login is named: the seam picks none of them.
+    assert.match(q, /--login forge\.example\.com(\s|$)/, q);
+    assert.ok(!q.includes('--remote'), q);
+    // The stranger sitting FIRST in the config is never named.
     assert.ok(!q.includes('evil.example.net'), q);
-    assert.ok(!q.includes('forge.example.com'), q);
   }
   assert.equal(queries.filter((q) => q.startsWith('tea issues list')).length, 1, lines.join('\n'));
 });
@@ -542,8 +576,8 @@ test('forgejo: a number the open list missed resolves, or is named unresolved', 
   assert.match(list[0], /--state open/, list[0]);
   // Exactly one resolve per unanswered number, and none for an answered one.
   assert.deepEqual(lines.filter((l) => /^tea issues \d/.test(l)), [
-    'tea issues 47 --repo org/repo --remote origin --fields index,state --output json',
-    'tea issues 4242 --repo org/repo --remote origin --fields index,state --output json',
+    'tea issues 47 --repo org/repo --login forge.example.com --fields index,state --output json',
+    'tea issues 4242 --repo org/repo --login forge.example.com --fields index,state --output json',
   ], lines.join('\n'));
 });
 
@@ -739,4 +773,99 @@ test('check: a malformed --timeout-ms still runs on the default, unlike --dir', 
   assert.equal(envelope.ok, true);
   assert.equal(status, 0);
   assert.equal(envelope.action, 'report');
+});
+
+// --- AC4: the persisted record answers with NO origin remote at all ----------
+//
+// The failure this closes: the seam classified the origin URL, so a repository
+// that lost `origin` - a fresh clone mid-setup, a worktree the remote was never
+// added to, a mirror pulled by path - reported "no origin remote is configured"
+// and the land got no tracker line. Config is authoritative now (phase 1 D-01),
+// so the report is the same whether the remote is there or not.
+
+/** A login whose NAME is not its host, so the `url` field is what has to match
+ *  and `--login` carries something the persisted host does not spell. */
+const URL_MATCHED_LOGIN = '[{"name":"work","url":"https://forge.example.com","ssh_host":"ssh.example.com","user":"t"}]';
+const CONFIGURED_FORGEJO = {
+  forge_provider: 'forgejo', forge_repo: 'org/repo', forge_host: 'forge.example.com',
+};
+
+test('AC4: with the forge keys set and NO origin, forgejo still reports, bound by --login', () => {
+  const dir = repo({ originUrl: null, commits: COMMITS, forge: CONFIGURED_FORGEJO });
+  // Belt and braces: the fixture must really have no remote, or this proves
+  // nothing about a repository that lost one.
+  assert.equal(execFileSync('git', ['-C', dir, 'remote'], { encoding: 'utf8' }).trim(), '');
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: URL_MATCHED_LOGIN } }, bare: true, argvLog });
+  assert.equal(status, 0);
+  assert.equal(envelope.action, 'report', JSON.stringify(envelope));
+  assert.equal(envelope.host, 'forge.example.com');
+  assert.equal(envelope.repo, 'org/repo');
+  assert.deepEqual(envelope.referenced, [
+    { number: 42, state: 'open' }, { number: 47, state: 'closed' }, { number: 99, state: 'open' },
+  ], JSON.stringify(envelope));
+  // The proof that an instance was resolved with no `origin` present: the call
+  // names the LOGIN, and the login's name is not the persisted host.
+  const lines = readFileSync(argvLog, 'utf8').trim().split('\n');
+  const list = lines.filter((l) => l.startsWith('tea issues list'));
+  assert.equal(list.length, 1, lines.join('\n'));
+  assert.match(list[0], /--login work(\s|$)/, list[0]);
+  assert.ok(!list[0].includes('--remote'), list[0]);
+});
+
+test('AC4: the same repository whose host NO login serves skips, and asks tea nothing', () => {
+  // The guard survives the rebind: `tea` does not refuse an unqualified call,
+  // it falls back to config order and answers for a repository it has never
+  // heard of, exit 0, with its NOTE on the stderr this seam discards. So the
+  // seam declines to ask, and the line points at the fix, which is a login.
+  const dir = repo({ originUrl: null, commits: COMMITS, forge: CONFIGURED_FORGEJO });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: { body: TEA_BODY, login: '[{"name":"other","url":"https://other.example","ssh_host":"other.example"}]' } },
+    bare: true, argvLog,
+  });
+  assert.equal(status, 0, 'a missing login must not fail the land');
+  assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
+  assert.equal(envelope.reason, 'tea holds no login for forge.example.com: no tracker report');
+  assert.deepEqual(envelope.referenced, []);
+  assert.deepEqual(envelope.open, []);
+  // The login probe ran; no issue query did.
+  assert.deepEqual(readFileSync(argvLog, 'utf8').trim().split('\n'), ['tea login list --output json']);
+});
+
+test('AC4: a repository with a WORKING origin but no forge keys names the keys to set', () => {
+  // The other direction, and the one that makes "config is authoritative" a
+  // claim rather than a slogan: a perfectly classifiable github origin is not
+  // consulted at all. The old seam reported this repository's tracker.
+  const dir = repo({ originUrl: GH_REPO, commits: COMMITS, forge: null });
+  const marker = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: ALL_STUBS, marker });
+  assert.equal(status, 0);
+  assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
+  assert.match(envelope.reason,
+    /no forge configured \(git\.forge_provider, git\.forge_repo unset/, envelope.reason);
+  assert.match(envelope.reason, /: no tracker report$/);
+  assert.equal(envelope.host, null);
+  assert.equal(envelope.repo, null);
+  // And NO forge CLI ran: the not-configured arm is decided before any spawn.
+  assert.equal(existsSync(marker), false,
+    `an unconfigured repository spawned: ${existsSync(marker) ? readFileSync(marker, 'utf8') : ''}`);
+});
+
+test('AC4: a github record with NO origin reports too, and never touches tea', () => {
+  // `git.forge_host` is null here and that is not a gap - github's host is
+  // fixed - so the record is complete and the login probe never runs.
+  const dir = repo({
+    originUrl: null, commits: COMMITS,
+    forge: { forge_provider: 'github', forge_repo: 'org/repo' },
+  });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: ALL_STUBS, argvLog });
+  assert.equal(envelope.action, 'report', JSON.stringify(envelope));
+  assert.equal(envelope.host, null);
+  assert.deepEqual(readFileSync(argvLog, 'utf8').trim().split('\n'),
+    ['gh issue list --repo org/repo --state all --json number,state --limit 200']);
 });

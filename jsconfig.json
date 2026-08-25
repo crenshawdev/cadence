@@ -1,0 +1,19 @@
+{
+  "_comment": "Exists so typescript-language-server can find a project: it looks for tsconfig.json / jsconfig.json and ignores tsconfig.ci.json, which is not a name it checks, so without this it falls back to per-file inferred projects with no whole-project index. Mirrors tsconfig.ci.json's compilerOptions and differs in exactly two ways, both deliberate: checkJs is off, because this config exists for the symbol index and CI keeps owning diagnostics, and *.test.mjs is INCLUDED, because tests are leaves in the import graph so the server never reaches one by crawling, and they are exactly the files a plan under-leases. Keep those the only two divergences: 87 of the 159 files under cadence-core/bin carry an @ts-check pragma and are checked here whatever checkJs says, so a third difference makes the editor report errors CI does not.",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": [
+      "node"
+    ],
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": [
+    "cadence-core/bin/**/*.mjs"
+  ]
+}

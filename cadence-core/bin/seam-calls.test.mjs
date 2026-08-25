@@ -26,7 +26,7 @@
 //                        `criteria-size` call at the end of write_context is a
 //                        NEW invocation (+1).
 //
-// One derivation has been made FROM those figures since, and it is stated the
+// Derivations have been made FROM those figures since, and each is stated the
 // same way rather than folded into them - a row that absorbed later arithmetic
 // would stop showing which phase spent which call:
 //
@@ -36,6 +36,15 @@
 //                        count_committed. The `--inline` path adds NEITHER - it
 //                        references those two steps instead of restating their
 //                        calls, which is what keeps this +2 and not +4.
+//   plan.md    11 -> 12  CEN-02's plan-time census gate is a NEW invocation
+//                        (+1): `lease-check --phase {N} --plan <k> --plan-time`
+//                        at check_census, fired after the plan is on disk and
+//                        before any executor is dispatched, so a plan whose
+//                        `files:` lease would invalidate a hand-maintained
+//                        count is refused while the lease is still cheap to
+//                        amend. The `--inline` path adds NOTHING - it
+//                        references that step instead of restating the call,
+//                        which is what keeps this +1 and not +2.
 //
 // PLAN-2 task 6 stated 5 for `context.md`. That figure omits the +1 its own
 // task 3 mandates - the criteria-ceilings call - and 5 is unreachable while
@@ -83,17 +92,30 @@ const CENSUS = [
   },
   {
     file: join('cadence-core', 'workflows', 'plan.md'),
-    calls: 11,
+    calls: 14,
     note: 'status, config.mjs get, plan-size x2, recall, trace close x2, '
       + 'seed-reqs, cursor set (9), plus RBK-01\'s two read-back count points - '
       + '`cite-count --point planned` at count_planned and `cite-count --point '
-      + 'committed` at count_committed (+2). Two, not one: a checker revision '
-      + 'and an applied adjudicated survivor both edit the plan between them, so '
-      + 'one count would describe a plan that no longer exists. And not four: '
-      + 'inline_plan REFERENCES those two steps rather than restating their '
-      + 'calls. A twelfth means a call came back - most likely a restated count '
-      + 'in inline_plan, or a `trace append` beside the seam\'s own in-code '
-      + 'outcome event.',
+      + 'committed` at count_committed (+2) - plus CEN-02\'s plan-time census '
+      + 'gate, `lease-check --plan-time` at check_census (+1), plus the two '
+      + 'dispatch-site `route.mjs resolve` calls, one at spawn_planner and one '
+      + 'at spawn_checker (+2). Two read-back '
+      + 'points, not one: a checker revision and an applied adjudicated '
+      + 'survivor both edit the plan between them, so one count would describe '
+      + 'a plan that no longer exists. And one census gate, not two: '
+      + 'inline_plan REFERENCES check_census and those two count steps rather '
+      + 'than restating their calls, which is what holds this at 14 and not 17. '
+      + 'The resolve pair moved this row from 12 on 2026-08-25 (`08100808`) and '
+      + 'added NO round-trip, which is the measurement that justifies the '
+      + 're-pin: both sites already instructed the resolve in prose and already '
+      + 'carried their `--bracket-read` inline, and that commit only wrote the '
+      + 'four-line command form at each site so the caller stops grepping '
+      + 'seams.md to recover it. This counter reads literal command blocks, so '
+      + 'what moved the number is a call that became literal, not a call that '
+      + 'was added. '
+      + 'A fifteenth means a call came back - most likely a restated count or '
+      + 'a restated census call in inline_plan, a third resolve, or a '
+      + '`trace append` beside the seam\'s own in-code outcome event.',
   },
 ];
 
@@ -109,6 +131,12 @@ test('the census counter is not dead: it joins continuations and ignores prose',
     'a backticked mention instructs nothing and is not a call');
 });
 
+// Each row's `calls:` is a literal a human typed, so this loop is the asserting
+// site of a hand-maintained census and carries the marker lib/census-registry.mjs
+// joins to its row. The header's arithmetic is that number's provenance, not a
+// second reading of the tree - which is what makes it a census and not the
+// derived measurement the registry exempts.
+// CADENCE-CENSUS: seam-call-counts | asserts: workflows/plan.md instructs exactly 14 seam invocations and workflows/context.md exactly 6
 for (const row of CENSUS) {
   test(`${row.file} instructs exactly ${row.calls} seam invocations`, () => {
     const text = readFileSync(join(REPO, row.file), 'utf8');

@@ -2422,6 +2422,7 @@ test('falsifier: every step window closes inside the corr that opened it (MSR-04
 
 // --- one sentence per refusal, not two -----------------------------------------
 
+// CADENCE-CENSUS: trace-refusal-sentences | asserts: each of the four refusing trace flags carries exactly one sentence across the whole planning seam
 test('the four refusing trace flags carry ONE sentence each, in one map', () => {
   // The trap this pins. The dispatch door refuses these four for `trace
   // append` off the declared row, and the shared `append|close` body refuses
@@ -2431,11 +2432,20 @@ test('the four refusing trace flags carry ONE sentence each, in one map', () => 
   // subcommand accepts. Two refusers is fine; two SENTENCES is not, and a
   // second copy is what silently drifts until one side says something the
   // other does not.
-  const src = readFileSync(new URL('./planning.mjs', import.meta.url), 'utf8');
+  // The WHOLE seam, not the entry file: phase 4 moved the map into
+  // planning/core.mjs and the 32 handlers into one module per subcommand, so a
+  // read of planning.mjs alone would now find zero copies and pass by measuring
+  // nothing - and would stop seeing the second copy pasted into a command
+  // module, which is the drift this row exists to catch.
+  const dir = new URL('./planning/', import.meta.url);
+  const src = [readFileSync(new URL('./planning.mjs', import.meta.url), 'utf8')]
+    .concat(readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort()
+      .map((f) => readFileSync(new URL(f, dir), 'utf8')))
+    .join('\n');
   for (const sentence of ['needs a role name after it', 'needs a step name after it',
     'needs a reviewer name after it', 'needs a trigger name after it']) {
     const n = src.split(sentence).length - 1;
-    assert.equal(n, 1, `"${sentence}" is written ${n} times in planning.mjs; `
+    assert.equal(n, 1, `"${sentence}" is written ${n} times across the planning seam; `
       + 'the flag->sentence map beside the dispatch door is its one home');
   }
 });

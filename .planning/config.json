@@ -20,6 +20,9 @@
     "escalate_on_failure": false
   },
   "git": {
-    "auto_close": true
+    "auto_close": true,
+    "forge_provider": "github",
+    "forge_repo": "crenshawdev/cadence",
+    "forge_host": null
   }
 }

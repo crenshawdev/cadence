@@ -6,11 +6,13 @@ rather than content. It answers one question at each level, so a bullet that is
 filed but never recalled is a stated out-of-grammar row rather than a silent
 drop.
 
-Two modules implement it. `cadence-core/bin/lib/capture-file.mjs` is the WRITE
+Three modules implement it. `cadence-core/bin/lib/capture-file.mjs` is the WRITE
 side - the one owner of this file's bytes, and the reason no writer can name its
 own heading. `parseCaptureSnippets` in `cadence-core/bin/lib/planning-files.mjs`
 is the READ side, the walk that feeds the BM25 corpus behind
-`planning.mjs recall`. Every claim below about the TAG is pinned by a row in
+`planning.mjs recall`. `cadence-core/bin/lib/capture-health.mjs` is the HEALTH
+reading behind `planning.mjs capture-check`: the same bullet definition, counted
+without the `- None.` placeholder. Every claim below about the TAG is pinned by a row in
 the `CAPTURE_TAG_ROWS` table in `cadence-core/bin/planning-files.test.mjs`;
 every claim about where a written bullet LANDS is pinned by the per-kind rows
 in `cadence-core/bin/capture-file.test.mjs`.
@@ -19,10 +21,9 @@ in `cadence-core/bin/capture-file.test.mjs`.
 
 | Section | Walked | Written by |
 |---|---|---|
-| `## Todos` | yes | `/cad-capture --kind todo`, `/cad-execute`'s open items |
+| `## Todos` | yes | `/cad-capture --kind todo` |
 | `## Seeds` | yes | `/cad-capture --kind seed` |
 | `## Notes` | yes | `/cad-capture --kind note` |
-| `## Archive` | NO | the milestone triage, by hand |
 | `## Debt markers` | NO | `planning.mjs debt-harvest`, rewritten wholesale |
 | any other `## ` heading | NO | nothing - a hand-added section |
 
@@ -32,13 +33,55 @@ that list rather than restating the names, because the writer and the reader
 disagreeing about which sections are the walk is the defect this grammar exists
 to close - five filed bullets were lost to exactly that disagreement.
 
-**`## Archive` and `## Debt markers` are outside the walk deliberately (D-03).**
-The fix for a lost bullet is never "walk every section": widening the walk would
-re-admit 185 bullets that a milestone triage deliberately retired, undoing the
-v2.6.0 phase-1 reconciliation in full and putting closed work back in front of
-every `/cad-plan`. A bullet under one of those headings is invisible to recall
-BY DESIGN, and `/cad-health` names every out-of-walk section with its bullet
-count on every run so the invisibility is stated rather than discovered.
+**`## Debt markers` is outside the walk deliberately (D-03).** It is written
+wholesale by `planning.mjs debt-harvest` from the markers in the source tree and
+is not a queue: nothing files into it and nothing is resolved out of it, so
+walking it would put generated text in front of every `/cad-plan`. A bullet
+under it is invisible to recall BY DESIGN, and `/cad-health` names every
+out-of-walk section with its bullet count on every run so the invisibility is
+stated rather than discovered.
+
+**`## Archive` is NOT part of this file (CAP-03).** A CAPTURE.md carrying that
+heading is REPORTED by `planning.mjs capture-check`, neither walked nor ignored.
+This file holds the phase IN FLIGHT, and moving a settled item to a heading in
+the same document resolves nothing - the bytes stay exactly where they were,
+and 185 bullets sat under that heading here proving it while five filed bullets
+were lost under it outright.
+
+**An item is resolved by REMOVAL** - filed on the tracker or dropped - never by
+annotation and never by relocation within the file. That RULE has one home and
+it is `cadence-core/references/triage-gate.md`, at the gate that declines to fix
+a finding; a rule written down twice is the drift this grammar exists to
+prevent. What belongs here is the grammar half: the two shapes that make an
+annotation are `KEPT <date>` and `recorded not fixed`, `capture-check` returns
+every walked bullet carrying one with its section and line, and `/cad-health`
+prints them as issues.
+
+## Who may write this file
+
+The writer set has ONE home and it is the frozen register in
+`cadence-core/bin/lib/capture-writers.mjs`. `self-verify.mjs` (check 23) reports
+any prose surface in the plugin that issues a write face no row settles, and
+reports a shell redirect at this path outright - `lib/capture-file.mjs` is the
+one owner of the format, so a write that goes around it belongs on the seam or
+nowhere.
+
+**The test for a row is whether the write can ACCUMULATE.** A user's deliberate
+one-bullet capture cannot: it happens once, because the user asked for it. A
+wholesale section rewrite cannot: it replaces its section from the tree on every
+run. A per-item append at a phase boundary CAN, and that is the shape this file
+refuses - it was `workflows/execute.md`'s summary step filing every open item at
+every close, one call per item, into the file the close then reports on.
+
+**A phase's open items live in `.planning/phases/<N>/SUMMARY.md`'s
+`## Open items`**, written by that same summary step, and nowhere else.
+`parseSummarySnippets` in `cadence-core/bin/lib/planning-files.mjs` already
+indexes those bullets into the recall corpus, so the item reaches `/cad-plan`
+from the SUMMARY without a second copy here - the copy was a lower-scoring row
+for the same sentence, measured on this repository 2026-08-25 at 31.1468 against
+the SUMMARY row's 42.4677. An item that must outlive its phase leaves the queue
+the way every other item does, at the close, by the removal the rule above
+names.
 
 ## The bullet
 
@@ -108,11 +151,14 @@ in the table asserts the emitted TEXT as well as the emitted phase.
 
 ## Not in this grammar
 
-- Ordering, deduplication and triage of bullets. The queue is append-only at
-  the seam; retiring a bullet into `## Archive` is a milestone-close judgment.
+- Ordering, deduplication and triage of bullets. The queue is append-only at the
+  seam, and what takes a bullet OUT of it is a removal made at the gate that
+  settled the item (`references/triage-gate.md`), never a rewrite here.
 - The `- None.` placeholder is an ordinary bullet to this walk, unlike
   `parseSummarySnippets`, which skips the template's own prose. It costs one
   low-scoring corpus entry per empty section and removing it is a separate
-  change with its own blast radius.
+  change with its own blast radius. The SUBSTANTIVE count `capture-check`
+  reports is a second, differently-defined number that excludes it, so a
+  freshly created queue counts zero.
 - BM25 scoring and ranking, which read the text this grammar produces and know
   nothing about tags.

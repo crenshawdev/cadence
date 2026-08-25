@@ -25,7 +25,14 @@ jobs:
         node: ['22', '24']
         group: [routing, git, planning, prose, review, other]
     steps:
+      # fetch-depth: 0, not the default shallow depth-1. `why-record.test.mjs`
+      # (the `other` group) reads THIS repository's own history as its fixture
+      # corpus - archived SUMMARY tables joined to the commits they name - so a
+      # depth-1 checkout fails 23 of its arms with `invalid object name <sha>^`.
+      # The other jobs below walk no history and keep the shallow default.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}

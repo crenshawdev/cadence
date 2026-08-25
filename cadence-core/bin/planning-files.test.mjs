@@ -21,7 +21,8 @@ import {
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
   atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
-  parseArchiveRows, appendArchiveRows, parsePlanFiles, parseTaskRecordSnippets,
+  parseArchiveRows, appendArchiveRows, parseFiledRows, appendFiledRow,
+  parsePlanFiles, parseTaskRecordSnippets,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -2309,4 +2310,88 @@ test('parseTaskRecordSnippets: it stops at the next `## ` heading', () => {
   // `- **Files:**` line out of the corpus.
   const snippets = parseTaskRecordSnippets(taskRecord('- only this'));
   assert.deepEqual(snippets, ['only this']);
+});
+
+// --- the FILED.md pointer grammar (parseFiledRows / appendFiledRow) ----------
+// One row per ACCEPTED filed issue: the date, the provider, the repository
+// slug, the (file, claim) fingerprint and the issue TITLE. The writer and the
+// reader sit beside each other and share one pattern, the arrangement
+// ARCHIVE.md's own header states, because a writer/reader pair over one walk is
+// exactly where a split-brain costs filed rows.
+
+const FILED = {
+  date: '2026-08-25', provider: 'forgejo', slug: 'acme/widget',
+  fingerprint: '0123456789abcdef',
+  title: '[cadence 0123456789abcdef] the retry loop is capped at three',
+};
+
+test('filed: a row written by the appender reads back through the parser', () => {
+  const text = appendFiledRow('', FILED);
+  assert.deepEqual(parseFiledRows(text), [{
+    text: FILED.title, source: 'FILED.md', date: FILED.date,
+    provider: FILED.provider, slug: FILED.slug, fingerprint: FILED.fingerprint,
+  }]);
+});
+
+test('filed: an empty file gets the preamble, which carries no `## ` heading', () => {
+  const text = appendFiledRow('', FILED);
+  assert.match(text, /^# Filed: /);
+  // Nothing in the preamble may read as a section heading to any walk.
+  assert.deepEqual(text.split('\n').filter((l) => /^## /.test(l)), []);
+});
+
+test('filed: a second row appends and the first is byte-preserved', () => {
+  const one = appendFiledRow('', FILED);
+  const two = appendFiledRow(one, { ...FILED, fingerprint: 'ffee0011aabbccdd', title: 'a second one' });
+  assert.ok(two.startsWith(one), 'the existing text is preserved byte for byte');
+  assert.deepEqual(parseFiledRows(two).map((r) => r.fingerprint),
+    [FILED.fingerprint, 'ffee0011aabbccdd']);
+});
+
+test('filed: a title carrying a colon, a backtick and a pipe survives whole', () => {
+  // Everything before the `: ` is fully constrained, which is what lets the
+  // title need no second escaping rule - nothing after it is parsed at all.
+  const title = 'a claim: with `backticks` | pipes | and: more colons';
+  const rows = parseFiledRows(appendFiledRow('', { ...FILED, title }));
+  assert.equal(rows[0].text, title);
+});
+
+test('filed: a newline in any field is flattened on write', () => {
+  const rows = parseFiledRows(appendFiledRow('', { ...FILED, title: 'first\nsecond' }));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].text, 'first second');
+});
+
+test('filed: a row whose fixed fields are out of grammar is REFUSED, not written', () => {
+  // A line this file's own parser could not read back is not a pointer, it is
+  // noise inside the recall corpus.
+  for (const bad of [
+    { ...FILED, date: 'yesterday' },
+    { ...FILED, provider: 'Forgejo' },
+    { ...FILED, fingerprint: 'NOTHEX' },
+    { ...FILED, slug: 'acme widget' },
+  ]) {
+    assert.equal(appendFiledRow('', bad), '', JSON.stringify(bad));
+  }
+});
+
+test('filed: a line that is not a row is skipped, so a human note mints nothing', () => {
+  const text = ['# Filed', '', 'a paragraph somebody added.', '- not a row at all',
+    `- ${FILED.date} ${FILED.provider} ${FILED.slug} ${FILED.fingerprint}: ${FILED.title}`,
+    '  - 2026-08-25 github a/b 00ff: indented, so not column-0'].join('\n');
+  assert.deepEqual(parseFiledRows(text).map((r) => r.fingerprint), [FILED.fingerprint]);
+});
+
+test('filed: a row with an empty title is dropped rather than indexed', () => {
+  const text = `- ${FILED.date} ${FILED.provider} ${FILED.slug} ${FILED.fingerprint}:   \n`;
+  assert.deepEqual(parseFiledRows(text), []);
+});
+
+test('filed: a CRLF checkout indexes as its plain-LF twin', () => {
+  const lf = appendFiledRow('', FILED);
+  assert.deepEqual(parseFiledRows(lf.replace(/\n/g, '\r\n')), parseFiledRows(lf));
+});
+
+test('filed: the parser is total over junk', () => {
+  for (const junk of ['', '\n\n', '# Filed\n']) assert.deepEqual(parseFiledRows(junk), []);
 });

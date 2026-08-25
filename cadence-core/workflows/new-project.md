@@ -56,7 +56,12 @@ line):
    cp "${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/config.json" .planning/config.json
    ```
 
-   Ask no configuration questions. Tell the user in one line:
+   Ask no configuration questions - with ONE deliberate exception, and it is
+   item 6 below: the forge. A forge is a PRECONDITION rather than an option
+   (FRG-02), and no template can carry a default for it, because which forge
+   hosts a repository is a fact about that repository and not about Cadence.
+   So it is asked, once, and a repository that has answered is never asked
+   again. Every other key keeps the template's value. Tell the user in one line:
    "Config written with defaults (standard granularity, shipped stakes,
    research and plan check off, verifier on). /cad-config changes any of it."
 5. Read the keys this workflow needs through the seam (effective values,
@@ -66,8 +71,128 @@ line):
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
      workflow.research planning.commit_docs \
      granularity git.protected_branches git.on_protected git.base_branch
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" detect --dir .
    ```
-6. Brownfield check: if the repo already contains source code (anything
+
+   The `forge.mjs detect` line rides this same script rather than taking a turn
+   of its own: it reads a config and PATH, and item 6 is prose over what it
+   already printed.
+6. **Pick a forge**, from the `forge.mjs detect` line in that same script.
+   Branch on `action` alone, the way /cad-land step 1 branches on
+   `issue-check`'s:
+
+   - `configured` - this repository has already answered. Say NOTHING and ask
+     nothing. This is what makes a second run of /cad-new-project silent on the
+     subject.
+   - `refuse` - print the envelope's `reason` and its `hint`, one line each, and
+     stop the forge step here. A forge is a precondition (FRG-02): do not invent
+     a no-tracker mode, and do not fall through to the questions below.
+   - `ask` - put the questions to the user through the ask-user seam
+     (`references/seams.md`), in this order:
+
+     a. **Which forge**, as a structured choice over the envelope's `installed`
+        entries - one option per entry, naming the provider and the binary that
+        drives it. When `defaults.provider` names one of those providers, put
+        that option FIRST and label it `(recommended)`; when it is null, offer
+        them in the order the envelope lists and label NOTHING. That is the
+        seam's own rule that a recommendation must fall out of analysis the step
+        already did, and no analysis here recommends a forge for a host the
+        origin URL cannot classify. Always offer one more option than there are
+        providers - **None of these**, last in the list. The ask-user seam
+        states that an always-present option consumes one of the four slots a
+        question has, and three providers plus NONE is exactly four, so this
+        question never splits however many resolved.
+     b. **Which repository**, as `owner/name`. Pre-fill it from `defaults.repo`
+        when the envelope offers one, so the user CONFIRMS rather than retypes;
+        ask it outright when it does not.
+     c. **Which Forgejo instance** - asked ONLY when the chosen provider is
+        `forgejo` and the envelope's `host` is null. Open-ended per the ask-user
+        seam, because the value is typed rather than picked from a set, and with
+        NO default offered. Ask for the instance the user reaches in a BROWSER -
+        `forge.example.com` - and NOT the SSH endpoint the remote URL carries,
+        which is often a different name (`ssh.example.com`); that split is a
+        normal deployment rather than a misconfiguration, this repository is one,
+        and only the browser host resolves a `tea` login. `github` and `gitlab`
+        are never asked this; their hosts are fixed.
+
+     **On "None of these" the step REFUSES and stops** - it does not fall
+     through. Say it in the same shape the `refuse` action uses, two lines: a
+     REASON naming what was looked for, reading the binaries off the envelope's
+     `installed` ("tea and gh are installed; no provider was picked"), and a
+     HINT naming how to set one later - `config.mjs set
+     git.forge_provider=<provider>` against this repository's own
+     `.planning/config.json`. Then stop the forge step: do not ask questions b
+     and c, and run NO `config.mjs set` on this arm, so nothing is half
+     persisted for the next run to read back as an answered question.
+
+     Do not re-ask inside this run and do not invent a no-forge mode: a forge is
+     a precondition (FRG-02), and the fix is to re-run this entry point once a
+     provider is picked. This arm has to be written down because a declined
+     question has no answer at all - `references/seams.md` forbids fabricating
+     or defaulting an answer the seam was supposed to collect - so prose that
+     does not say what happens next lets setup run on past a question it never
+     got.
+
+     Persist the answers in ONE call, against this repository's own
+     `.planning/config.json` (the default target - no `--file`, no `--global`):
+
+     ```
+     node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set \
+       git.forge_provider=<provider> git.forge_repo=<owner/name>
+     ```
+
+     On the forgejo arm that same call carries `git.forge_host=<host>` as a
+     third pair. On `github` and `gitlab` the pair is OMITTED entirely rather
+     than written empty: null there means "fixed host, nothing to name", and an
+     empty string would read back as an answered question. There is no new
+     writer here on purpose, so `checkPairs`, `retiredKeyError` and the
+     repo-layer-only refusal on `git.forge_repo` all still apply to this write.
+
+     **Then offer to CREATE it, when there is nothing to create it beside.**
+     Only on the arm where `git remote get-url origin` names nothing - a
+     directory just `git init`ed has no origin, and a repository that already
+     has one already exists on a forge. Ask through the ask-user seam as a plain
+     confirm, so no option carries `(recommended)`, and put all four facts in
+     the question itself:
+
+       "Create <owner>/<name> on <provider> now? It will be created PRIVATE."
+
+     Those four - the provider, the owner, the repository name and the
+     visibility - are the confirmation, and nothing else in this run states them
+     together. Visibility is not a question and is never asked: every repository
+     Cadence creates is private, because `gh` with no visibility flag drops to
+     an interactive prompt that would hang, `glab` silently defaults to
+     `internal`, and three different defaults are not a choice worth putting to
+     a user.
+
+     Only on a yes, and never ahead of one:
+
+     ```
+     node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/forge.mjs" create \
+       --provider <provider> --repo <owner/name> --confirmed \
+       --remote-url <url> --dir .
+     ```
+
+     `--confirmed` is what the user's answer buys. The seam cannot ask - it
+     would hang blocking on stdin inside a Bash call - so the flag is this
+     step's assertion that the question was put and answered, and passing it
+     ahead of the answer is the one thing that would make the whole gate a
+     formality.
+
+     `--remote-url` is passed on `forgejo` and `github` and OMITTED on `gitlab`.
+     Those two providers' create commands wire no git remote, so the seam adds
+     `origin` itself and needs the URL to point it at; `glab` wires its own. It
+     is not a fourth question and neither host is guessed: on `forgejo` build it
+     from the `git.forge_host` just confirmed above, and on `github` from the
+     fixed `github.com`, each with the answered slug -
+     `https://<host>/<owner>/<name>.git`.
+
+     On an `ok:false`, print the envelope's `reason` and `hint`, one line each,
+     and stop the forge step. Do not continue as though a repository exists, and
+     do not re-run the create: a `created:true` on that envelope means the
+     repository IS there and only the remote is missing.
+
+7. Brownfield check: if the repo already contains source code (anything
    beyond dotfiles and `.planning/`), note it briefly ("Existing [language]
    code detected: [one-line shape]"). During questioning, treat existing
    behavior as given; existing capabilities become Validated requirements
@@ -339,10 +464,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
 ```
 
 Do NOT create `.planning/phases/` directories. A phase directory is
-`.planning/phases/<N>/`, where `<N>` is the bare phase integer from ROADMAP.md
-(no zero-padding, no slug suffix), created lazily by the first skill that needs
-it (cad-context or cad-plan) and matched to an existing directory's name if one
-is already present.
+`.planning/phases/<N>/`, created lazily by the first skill that needs it
+(cad-context or cad-plan) and matched to an existing directory's name if one is
+already present; the grammar for `<N>` is stated in
+`references/roadmap-phases.md`.
 
 Commit: `docs: create roadmap ([N] phases)` with `.planning/ROADMAP.md`,
 `.planning/STATE.md`, `.planning/REQUIREMENTS.md`.

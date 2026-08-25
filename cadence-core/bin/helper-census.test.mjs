@@ -92,7 +92,7 @@ const HELPERS = [
     note: 'Import { readText } from ./lib/seam-input.mjs. Two OTHER file '
       + 'readers in this tree are deliberately not it and are not exemptions: '
       + 'lib/include-consumers.mjs returns null behind an isFile() guard and '
-      + "planning.mjs's read() returns null, because both callers act on the "
+      + "planning/core.mjs's read() returns null, because both callers act on the "
       + "difference between absent and empty that '' collapses (D-04).",
   },
   {
