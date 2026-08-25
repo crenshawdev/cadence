@@ -71,7 +71,7 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 
 - [x] **Phase 1: Pick a forge** - detect the installed forge CLIs, let the user choose the provider and name the repository to create or link, and persist that choice
 - [ ] **Phase 2: Census registry and plan-time lease check** - every hand-maintained census count is registered, and a plan that will change one is refused at plan time rather than halting an executor mid-task
-- [ ] **Phase 3: CAPTURE is transient** - CAPTURE holds only the phase in flight, phase close empties it, and anything worth keeping becomes an issue on the repository's own tracker
+- [ ] **Phase 3: CAPTURE is transient** - CAPTURE holds only the phase in flight, the gate that declines a finding files it on the repository's own tracker at that moment, and phase close asserts the file is empty rather than emptying it
 - [ ] **Phase 4: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
 - [x] **Phase 5: Split planning.mjs by command** - the 32 `cmd*` handlers move to per-command modules, leaving a shared core, so a dispatch touching one command stops paying a whole-file read
 
@@ -149,55 +149,139 @@ change files carrying censuses, so they are the phases this check protects.
 7. Full suite green.
 
 ### Phase 3: CAPTURE is transient
-**Goal:** A finding leaves `.planning/CAPTURE.md` at the moment a gate DEFERS
-it, not at phase close. The deferral is what files the issue, so the user sees
-the finding when it is raised rather than in a batch later. CAPTURE holds only
-the phase in flight and cannot accumulate, because nothing durable is ever
+**Goal:** A finding leaves `.planning/CAPTURE.md` at the moment a gate declines
+to fix it, not at phase close. The decision is what files the issue, so the user
+sees the finding when it is raised rather than in a batch later. CAPTURE holds
+only the phase in flight and cannot accumulate, because nothing durable is ever
 routed into it.
-**Depends on:** Phase 1 (the resolved forge is where a deferral writes)
+**Depends on:** Phase 1 (the resolved forge is where the write lands)
 **Requirements:** CAP-01, CAP-02, CAP-03
+**Naming constraint:** `deferral` and `deferred` are already spoken for three
+ways - `'deferral'` is a `FIRE_RECEIPTS` outcome event meaning a `deferred` gate
+QUEUED what it found instead of halting (`bin/planning/risk-check.mjs:301-323`),
+`deferred` is a `review.triggers.<t>.gate` value, and
+`DEFERRED-<trigger>-<discriminator>.json` is the queue member
+(`bin/lib/deferred-queue.mjs`). This phase's act is a different one: a finding
+that will not be fixed now, filed or dropped. It takes its own word. Reusing
+these is the `git.auto_close` collision the project already paid for once.
 **Success Criteria:**
-1. **A deferral ASKS, in that same step, and never writes to CAPTURE.** When a
-   gate defers findings - the blocking arm's below-blocker/high remainder, the
-   adjudicated arm's non-survivors, any `recorded not fixed` disposition - the
-   user is asked once for that fire, with the deferred findings listed. Accepted
-   findings become issues immediately; declined findings are DROPPED. Verified
-   by running a gate that defers and asserting: an issue exists for each
-   accepted finding before the phase closes, no artifact anywhere holds a
-   declined one, and CAPTURE is unchanged either way.
-2. Phase close ASSERTS empty rather than performing the roll-out:
-   `planning.mjs capture-sections` reports `0` bullets across `Todos`, `Seeds`
-   and `Notes`, and a non-empty walked section at close is a reported problem
-   naming each item. Close is the check; the deferral is the mechanism.
-3. An item is RESOLVED by removal, never by annotation. The prose rule is
-   stated in the triage reference, and a check fails when a walked bullet
-   carries a re-verification annotation (the `KEPT <date>` / `recorded not
-   fixed` shapes the 2026-08-24 sweep found 12 of).
-4. The write targets the tracker phase 1 resolved, verified against Forgejo,
-   GitHub and GitLab. No host, org or username appears as a literal anywhere in
-   the implementation - a grep for `jcrenshaw` over `cadence-core/` returns
-   nothing outside test fixtures.
-5. A write that does not land - auth failure, offline, tracker unreachable -
-   REFUSES the deferral rather than dropping the finding or silently parking it
-   in CAPTURE, and reports what could not be filed and why. It never kills a
-   finding because the network was down.
-6. `## Archive` is no longer part of the CAPTURE contract: absent from the
-   template, and a CAPTURE.md still carrying one is reported by `/cad-health`
-   rather than walked or ignored.
-7. `/cad-health` fails when the walked bullet count crosses a configured
-   bound, so a deferral path that silently stops filing surfaces at that bound
-   instead of at 235. Verified by a fixture over the bound failing and one
-   under it passing.
-8. The ask is BATCHED per gate fire: a gate deferring fifteen findings
-   produces ONE prompt, not fifteen. Verified against a multi-finding fire.
-9. A declined finding is filed and immediately closed `wontfix`, and a later
-   fire carrying the same `(file, symbol)` fingerprint does NOT ask again.
-   Verified by declining a finding, re-running the gate on the same code, and
-   asserting no second prompt and no second open issue. The decline lookup is
-   ONE query per fire regardless of how many findings it carries - asserted by
-   counting forge calls on a multi-finding fire.
-10. Full suite green, and no `reason` token renamed: a diff of the literal
-   `reason` strings in `cadence-core/bin/` before and after the phase is empty.
+1. **The decision ASKS, in that same step, and never writes to CAPTURE.** When a
+   gate produces findings it will not fix now - the blocking arm's
+   below-blocker/high remainder, the adjudicated arm's non-survivors, any
+   `recorded not fixed` disposition - the user is asked once for that fire with
+   those findings listed. Accepted findings become issues immediately; declined
+   findings are DROPPED. Verified by running a gate that produces them and
+   asserting: an issue exists for each accepted finding before the phase closes,
+   no artifact anywhere holds a declined one, and CAPTURE is byte-unchanged
+   either way.
+2. The set that reaches the ask is read off the STRUCTURED adjudication payload -
+   the `RULINGS` (`downgraded`/`refuted` are the non-survivors) and the raised
+   severity - and never re-parsed out of `REVIEW-<trigger>-<discriminator>.md`
+   prose. Asserted by a fixture whose prose and payload disagree: the ask follows
+   the payload.
+3. Phase close ASSERTS empty rather than performing a roll-out. Close is the
+   check; the ask is the mechanism. The assertion counts SUBSTANTIVE bullets
+   across `Todos`, `Seeds` and `Notes` and must not count the `- None.`
+   placeholder: measured 2026-08-24, `capture-sections` returns `bullets: 1` for
+   a section whose only line is `- None.`, and `EMPTY_CAPTURE`
+   (`bin/lib/capture-file.mjs:99`) writes that placeholder under all three walked
+   headings, so a count taken off `bullets` as it stands fails on a freshly
+   created queue - the state this phase most wants to be legal. A non-empty
+   walked section at close is a reported problem naming each item.
+4. An item is RESOLVED by removal, never by annotation. The prose rule is stated
+   in the triage reference, and a check FAILS when a walked bullet carries a
+   re-verification annotation (the `KEPT <date>` / `recorded not fixed` shapes).
+   The 2026-08-24 sweep already removed all 12 - `grep -c` over CAPTURE.md
+   returns 0 and the surviving instances sit in `_archive-*/` outside the walk -
+   so a FIXTURE is the only thing that can prove this check works. A check
+   written against the live file passes vacuously forever.
+5. The bound (criterion 8), the annotation check (criterion 4) and the `##
+   Archive` report (criterion 7) are CODE reachable by fixture, not prose steps.
+   `/cad-health` is a skill a model executes and its existing capture step is a
+   printed note; a prose step cannot be verified "by a fixture over the bound
+   failing and one under it passing". `/cad-health` prints the verdict these
+   checks return.
+6. The write targets the tracker phase 1 resolved, verified LIVE against
+   Forgejo, GitHub and GitLab. `glab` IS present on this machine - measured
+   2026-08-25, `/usr/bin/glab`, version 1.114.0 - which falsifies phase 1's
+   standing "glab is absent" constraint and the comment carrying it at
+   `bin/lib/issue-decision.mjs:38-41`; that comment is corrected as part of this
+   phase. No host, org or username appears as a literal anywhere in the
+   implementation: a grep for `jcrenshaw` over `cadence-core/` returns nothing
+   outside test fixtures.
+7. The write is a NEW writing face on the `CREATE_TABLE` pinned-vector pattern,
+   not an extension of `bin/lib/issue-decision.mjs`, whose header states its own
+   contract as read-only ("NOTHING HERE WRITES") and whose `HOST_TABLE` rows
+   carry only `list` and `resolve` argv. That header's claim survives this phase
+   intact. Separately, `## Archive` leaves the CAPTURE contract: absent from
+   `EMPTY_CAPTURE` (already true by construction - there is no
+   `templates/CAPTURE.md` to edit), struck from
+   `references/capture-grammar.md:25`, and a CAPTURE.md still carrying one is
+   reported rather than walked or ignored. `.planning/ARCHIVE.md` is a different
+   thing and is UNTOUCHED: it is a live recall surface written by
+   `milestone-prune` and read by `recall`, measured at 1-3 of the top 5 hits on
+   representative queries.
+8. A configured bound on the walked bullet count fails loud, so a filing path
+   that silently stops surfaces at that bound instead of at 235. Verified by a
+   fixture over the bound failing and one under it passing. The key owes a
+   `references/config-reach.md` row and a catalog row or `self-verify` reddens,
+   and its FAIL consequence is stated against the one int-bound precedent in the
+   schema - `workflow.max_dispatch_tokens.*`, where "a crossing is REPORTED and
+   nothing is refused".
+9. A write that does not land - auth failure, offline, tracker unreachable -
+   REFUSES rather than dropping the finding or silently parking it in CAPTURE,
+   and reports what could not be filed and why. It never kills a finding because
+   the network was down.
+10. The ask is BATCHED per gate fire: fifteen findings produce ONE ask STEP, not
+   fifteen. "One step", not one tool call - the ask-user seam caps options at
+   four per question minus a NONE slot and questions at four per call, so fifteen
+   findings as individual options cannot fit one call, and `triage-gate.md`
+   already batches `ceil(N/3)` questions per fire on the adjudicated arm. The
+   falsifiable form: the ask count for a fire is bounded by the seam's caps and
+   does not scale one-per-finding. Verified against a multi-finding fire.
+11. A declined finding is filed and immediately marked, and a later fire carrying
+   the same fingerprint does NOT ask again. The fingerprint is `(file, claim)`.
+   There is NO `symbol` field on a finding: `FINDING_KEYS` is
+   `{file, line, severity, claim, failure_scenario}` and `findingIssue`
+   (`bin/lib/adjudication-record.mjs:208-227`) REFUSES any key outside it, so a
+   `(file, symbol)` fingerprint would force a new field that every existing
+   adjudication payload and queue member then fails. `line` is excluded
+   deliberately - including it, as `convergenceKey` does, makes a decline forget
+   itself the moment the file shifts by one line. The decline marker is a LABEL
+   applied at CREATE time, the only spelling all three CLIs share on the create
+   call: `tea issues create --labels`, `gh issue create --label`,
+   `glab issue create --label` all exist, while `gh issue close --reason` is
+   gh-only and `tea issues close` takes no reason flag at all. The decline lookup
+   is ONE query per fire regardless of finding count, asserted by counting forge
+   calls on a multi-finding fire.
+12. An INCOMPLETE decline lookup refuses the fire rather than silently re-asking.
+   Forgejo/Gitea clamps `tea issues list` at 50 rows server-side whatever
+   `--limit` asks, and this repository filed 163 issues in a single 2026-08-24
+   sweep, so a decline set larger than the page is reachable today. The existing
+   `normalizeList` truncation arm (`bin/lib/issue-decision.mjs:228-243`) is what
+   this reads.
+13. The recall consequence is not silently regressed. `recall` builds its corpus
+   from `phases/*/{SUMMARY,UAT,CONTEXT}.md`, `CAPTURE.md`, `ARCHIVE.md` and
+   `tasks/*/RECORD.md` and reads no forge, so a finding routed to the tracker
+   leaves the corpus entirely - and "a bullet `/cad-capture` writes is reachable
+   by `/cad-plan`'s recall" is the SHIPPED `CAP-01` guarantee at
+   `REQUIREMENTS.md`. The filed issue's title is mirrored as one low-scoring
+   recall row at file time so the guarantee holds. Verified by filing a finding
+   and asserting `recall` still surfaces it.
+14. Full suite green, and no `reason` token REMOVED or RENAMED - additions pass.
+   Read one-directionally on purpose: criterion 9 requires a refusal arm that
+   necessarily ADDS one, so a two-directional empty-diff contradicts it. Baseline
+   measured 2026-08-24: 112 distinct `reason` literals across `cadence-core/bin/`.
+   Pinned as a committed sorted list asserted forward by set-containment.
+
+**Open question for planning, not settled here:** whether `gh issue create` and
+`glab issue create` emit anything machine-readable on success (their `--help`
+was read on gh 2.98.0 and glab 1.114.0; no live create was run, since a create
+mutates a tracker), whether Forgejo auto-creates a label named in
+`--labels` that does not yet exist on the repository or errors, and whether
+`glab issue create` blocks on a confirmation prompt in a spawned non-TTY child
+without `-y`. The third is the dangerous one: a create that hangs inside a gate
+step is the failure mode this seam has no timeout story for.
 
 ### Phase 4: One spelling, one phase
 **Goal:** A phase spelling that would be silently normalized is refused where it is written, and a phase directory whose name would collide with another phase is reported as drift.
