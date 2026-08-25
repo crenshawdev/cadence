@@ -218,6 +218,10 @@ token check. Do NOT restate either call here: a second spelling is a second seam
 invocation the census counts and a second copy that can drift from the first.
 The inline path writes `PLAN.md` from the same template, so the count reads it
 with no special case.
+
+`check_census` applies here too, on the same reasoning and under the same
+prohibition on a second spelling: run that step exactly as written once this
+step's `PLAN.md` is on disk, and do not continue while it refuses.
 </step>
 
 <step name="handle_return">
@@ -294,6 +298,45 @@ This exists because soft enforcement was measured and failed: a planner told
 the ceiling and a checker told to flag the overrun both passed an 8-task plan
 against a ceiling of 4. Two model-judgment gates missed a comparison a count
 makes exactly.
+</step>
+
+<step name="check_census">
+The plan's lease against the hand-maintained COUNTS this repository keeps - the
+numbers a human wrote down that the code must keep true. Run after
+`check_size`, once the plan is on disk and before any executor could be
+dispatched, and ahead of `count_planned` so a short lease is caught before the
+workflow pays a seam call - and long before `check_gate` pays a cad-plan-checker
+dispatch to review a lease this check already knows is short.
+
+ONCE PER PLAN FILE the phase has, because `--plan` names one plan file:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" lease-check --phase {N} --plan <k> --plan-time
+```
+
+It answers `ok:true`, or it refuses with `census-at-risk` and a
+`censuses_at_risk` list. Each entry names the FILE the lease is missing, what
+that file's count is a count of, and the site that asserts it.
+
+It REFUSES, and that break is deliberate. `plan-size` one step above and
+`criteria-size` report because the workflow decides what to do about a size.
+A soft report HERE reproduces exactly the failure this check exists against:
+the planner is told, continues, and the count goes red inside an executor's
+commit with no plan naming the file that would re-pin it. Not hypothetical -
+this project's own record (`.planning/_archive-v3.7.1`) carries two
+`undeclared-files` refusals that were committed rather than obeyed. So this
+step offers no options and asks nothing.
+
+The remedy, and the whole remedy: add each named file to that plan's `files:`
+list and re-run this check until it answers `ok:true`. Do not continue to
+`count_planned`, and do not dispatch anything, while it refuses. Declaring the
+file is also undertaking to re-pin its count in the same commit, which is why
+the executor needs the declaration before it starts rather than after.
+
+Say the missing files out loud, each beside the census it holds - "PLAN-2.md
+does not declare cadence-core/bin/trace.test.mjs, which holds the count of the
+four refusing trace flags' sentences". The point of this step is
+`check_size`'s point: the overrun stops being silent.
 </step>
 
 <step name="count_planned">
