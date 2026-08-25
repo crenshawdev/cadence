@@ -8,8 +8,8 @@ import { join } from 'node:path';
 import { fail, memoryBackend, ok, read } from './core.mjs';
 import { buildIndex, search } from '../lib/bm25.mjs';
 import {
-  parseArchiveRows, parseCaptureSnippets, parseContextDecisions, parseSummarySnippets,
-  parseTaskRecordSnippets, parseUat,
+  parseArchiveRows, parseCaptureSnippets, parseContextDecisions, parseFiledRows,
+  parseSummarySnippets, parseTaskRecordSnippets, parseUat,
 } from '../lib/planning-files.mjs';
 import { requireInt } from '../lib/require-int.mjs';
 import { taskRecordsIn } from '../lib/task-record.mjs';
@@ -141,6 +141,30 @@ function cmdRecall(dir, query, opts) {
     for (const text of parseTaskRecordSnippets(record)) {
       corpus.push({ text, source: `tasks/${slug}/RECORD.md` });
     }
+  }
+
+  // The FILED tier (CAP-01), and it is the reason a finding routed to the
+  // tracker is still reachable from here. The rows are POINTERS - one title per
+  // ACCEPTED filed issue, no finding body - so what this tier adds to the
+  // corpus is a way back to the issue and not a copy of the thing that was
+  // moved out of the run. A DECLINED finding is never in this file: its only
+  // record is the decline label on the forge.
+  //
+  // LAST, on the identical argument the ARCHIVE.md and tasks walks above make
+  // for their own positions: `search()` orders hits by (score desc, corpus
+  // position asc), so appending leaves every existing corpus index where it was
+  // and a tree with no `.planning/FILED.md` emits the bytes it emitted before
+  // this walk existed. Read through the same guarded `read()` - an absent or
+  // unreadable file is empty data, never an ENOENT the dispatch catch would
+  // turn into `fail('internal')`, which is what the empty-corpus contract rests
+  // on.
+  //
+  // NO `phase` KEY, for the reason the tasks tier states: a filed issue sits
+  // outside the phase spine, and `references/recall.md` forbids substituting an
+  // inferred one.
+  const filed = read(join(dir, 'FILED.md'));
+  if (filed) for (const row of parseFiledRows(filed)) {
+    corpus.push({ text: row.text, source: row.source });
   }
 
   if (!corpus.length) return ok({ results: [], total: 0, ...warn });

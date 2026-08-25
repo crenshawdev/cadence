@@ -441,3 +441,89 @@ test('a CLI that prints a URL on create leaks none of it onto the envelope', () 
   const json = JSON.stringify(envelope);
   assert.ok(!json.includes('tracker.test'), json);
 });
+
+// --- the recall pointer: ACCEPTED only, and that is criterion 1 --------------
+
+/** `.planning/FILED.md` as text, or '' when the seam never wrote one. */
+const filedText = (dir) => {
+  const p = join(dir, '.planning', 'FILED.md');
+  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+};
+
+test('three accepts and two declines leave exactly THREE bullets in FILED.md', () => {
+  // The falsifying case for "no artifact anywhere holds a declined one": a test
+  // over successful ACCEPTS alone passes vacuously, so this one asserts the
+  // absence of the two declined titles and fingerprints as well.
+  const payload = dispositions([
+    [FIVE[0], 'accept'], [FIVE[1], 'decline'], [FIVE[2], 'accept'],
+    [FIVE[3], 'decline'], [FIVE[4], 'accept'],
+  ]);
+  const { status, envelope, dir } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  const text = filedText(dir);
+  const bullets = text.split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(bullets.length, 3, text);
+  for (const f of [FIVE[0], FIVE[2], FIVE[4]]) {
+    assert.ok(text.includes(fingerprint(f)), `accepted ${fingerprint(f)} is absent`);
+    assert.ok(text.includes(issueTitle(f)), `accepted title is absent`);
+  }
+  for (const f of [FIVE[1], FIVE[3]]) {
+    assert.ok(!text.includes(fingerprint(f)), `declined ${fingerprint(f)} leaked`);
+    assert.ok(!text.includes(f.claim), `declined claim leaked`);
+  }
+});
+
+test('a fire of declines ALONE writes no FILED.md at all', () => {
+  const payload = dispositions([[FIVE[0], 'decline'], [FIVE[1], 'decline']]);
+  const { status, envelope, dir } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(envelope.declined, 2);
+  assert.equal(filedText(dir), '');
+});
+
+test('the bullet is a POINTER: the title and no finding body', () => {
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const { dir } = run(['file', '--payload', payload]);
+  const text = filedText(dir);
+  assert.match(text, /^- \d{4}-\d{2}-\d{2} github acme\/widget [0-9a-f]+: /m);
+  assert.ok(!text.includes(FIVE[0].failure_scenario), 'the failure scenario is not a pointer');
+});
+
+test('a second fire appends rather than replacing the first run\'s rows', () => {
+  const { dir } = run(['file', '--payload', dispositions([[FIVE[0], 'accept']])]);
+  // The second run reuses the SAME repository directory, which is what makes
+  // this an append test rather than two independent writes.
+  const stubDir = tmp('bin');
+  const createLog = join(tmp('log'), 'creates');
+  stubBin(stubDir, 'gh', { createLog });
+  execFileSync(process.execPath,
+    [SEAM, 'file', '--dir', dir, '--payload', dispositions([[FIVE[2], 'accept']])],
+    { encoding: 'utf8', cwd: tmpdir(),
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
+        CAD_ARGV_LOG: join(tmp('log'), 'argv'), PATH: `${stubDir}:${process.env.PATH}` } });
+  const text = filedText(dir);
+  assert.ok(text.includes(fingerprint(FIVE[0])), 'the first run\'s row survived');
+  assert.ok(text.includes(fingerprint(FIVE[2])), 'the second run\'s row landed');
+  assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, 2, text);
+});
+
+test('a create that fails part way still mirrors the issues that DID land', () => {
+  // The tracker holds two issues; a pointer they never got would be a second
+  // loss on top of the first.
+  const payload = dispositions([
+    [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
+  ]);
+  const { status, envelope, dir } = run(['file', '--payload', payload], { stub: { failAt: 3 } });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'create-failed');
+  const text = filedText(dir);
+  assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, 2, text);
+  assert.ok(!text.includes(fingerprint(FIVE[2])), 'the unfiled one is not mirrored');
+});
+
+test('`unfixed` writes nothing at all - the ask is not a filing', () => {
+  const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
+  const { dir } = run(['unfixed', '--payload', payload]);
+  assert.equal(filedText(dir), '');
+});

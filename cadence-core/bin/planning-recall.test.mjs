@@ -422,3 +422,64 @@ test('task-record -> recall: a record written by the seam is found by what it sa
   assert.equal(r.json.ok, true);
   assert.deepEqual(r.json.results.map((x) => x.source), ['tasks/bound-plan-size/RECORD.md']);
 });
+
+// --- recall: the FILED pointer a routed finding leaves behind (CAP-01) --------
+// A finding a gate declined to fix now leaves the run for the tracker, so it
+// leaves the corpus too - and "a bullet /cad-capture writes is reachable by
+// /cad-plan's recall" is the SHIPPED CAP-01 guarantee. One pointer row per
+// ACCEPTED filed issue is what holds it. Read LAST, beside ARCHIVE.md and the
+// tasks tier, so a tree with no FILED.md emits exactly the bytes it emitted
+// before this walk existed - that byte-identity is the first assertion below.
+
+/** Write a FILED.md into a fixture tree; `rows` are raw grammar lines. */
+function filed(dir, rows) {
+  writeFileSync(join(dir, 'FILED.md'),
+    `# Filed\n\n${rows.map((r) => `- ${r}`).join('\n')}\n`);
+  return dir;
+}
+
+test('recall: a filed issue comes back by its title, sourced FILED.md', () => {
+  const dir = makeTree({ phases: { 1: { summaryBody: { deviations: ['a live deviation'] } } } });
+  filed(dir, [
+    '2026-08-25 forgejo acme/widget 0123456789abcdef: [cadence 0123456789abcdef] '
+      + 'the redaction window clips a credential before its at sign',
+  ]);
+  const r = recall('redaction credential window', dir);
+  const hit = r.json.results.find((x) => x.source === 'FILED.md');
+  assert.ok(hit, JSON.stringify(r.json.results));
+  assert.match(hit.snippet, /clips a credential before its at sign/);
+  // A pointer, not the finding: no phase field, the way a task record has none.
+  assert.equal(hit.phase, undefined);
+});
+
+test('recall: a tree with no FILED.md answers byte-identically to one that never had it', () => {
+  const spec = {
+    phases: { 1: { summaryBody: { deviations: ['alpha beta gamma'] } } },
+    capture: [{ section: 'Todos', text: 'wire the beta recall path', phase: 1 }],
+  };
+  const bare = recall('beta gamma', makeTree(spec));
+  const empty = recall('beta gamma', filed(makeTree(spec), []));
+  assert.equal(bare.raw, empty.raw, 'a FILED.md with no rows changes no byte');
+  // And the filed rows land AFTER the live ones, so no existing corpus INDEX
+  // moved: the live hits come back in the same order, the same rows. Their
+  // SCORES do move and are deliberately not asserted, for the reason the
+  // ARCHIVE.md arm above states.
+  const withRows = recall('beta gamma', filed(makeTree(spec),
+    ['2026-08-25 github acme/widget 00112233445566aa: [cadence 00112233445566aa] an unrelated filed note']));
+  assert.deepEqual(withRows.json.results.map((r) => [r.source, r.snippet]),
+    bare.json.results.map((r) => [r.source, r.snippet]));
+});
+
+test('recall: a note in FILED.md that is not a row mints no corpus entry', () => {
+  const dir = makeTree({ phases: { 1: { summaryBody: { deviations: ['a live deviation'] } } } });
+  writeFileSync(join(dir, 'FILED.md'),
+    '# Filed\n\nsomeone wrote a paragraph about zebrafish here.\n\n- not a row either\n');
+  const r = recall('zebrafish', dir);
+  assert.deepEqual(r.json.results.filter((x) => x.source === 'FILED.md'), []);
+});
+
+test('recall: two runs over a corpus holding a filed row are byte-identical', () => {
+  const dir = makeTree({ phases: { 1: { summaryBody: { deviations: ['alpha beta gamma'] } } } });
+  filed(dir, ['2026-08-25 gitlab acme/widget aabbccddeeff0011: [cadence aabbccddeeff0011] beta gamma pointer']);
+  assert.equal(recall('beta gamma', dir).raw, recall('beta gamma', dir).raw);
+});

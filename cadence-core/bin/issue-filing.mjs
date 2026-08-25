@@ -39,9 +39,11 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { withPlanningFileLock } from './lib/capture-file.mjs';
+import { appendFiledRow, atomicWrite } from './lib/planning-files.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
@@ -263,6 +265,53 @@ function cmdUnfixed(dir, payloadFile) {
 }
 
 /**
+ * Mirror the ACCEPTED filings into `.planning/FILED.md`, or say why not.
+ *
+ * ACCEPTED ONLY, and that is criterion 1 rather than a filter for tidiness. A
+ * declined finding's title written here would put it back inside the recall
+ * corpus - the accumulation this phase removes, one indirection later. The
+ * decline label on the forge is the only place a decline persists.
+ *
+ * ONE LOCKED READ-MODIFY-WRITE for the whole batch, through the guard
+ * lib/capture-file.mjs exports for exactly this shape and the `atomicWrite` it
+ * uses underneath. Reading outside the lock is the lost update it exists to
+ * stop: two writers each read the same bytes, each append their own rows, and
+ * the second rename erases the first one's.
+ *
+ * @param {string} dir @param {string} provider @param {string} repo
+ * @param {Array<{fingerprint: string, disposition: string, title: string}>} filed
+ * @returns {{ok: true} | {ok: false, reason: string, detail: string}}
+ */
+function mirrorFiled(dir, provider, repo, filed) {
+  const rows = filed.filter((f) => f.disposition === 'accept');
+  if (!rows.length) return { ok: true };
+  const file = join(dir, '.planning', 'FILED.md');
+  const date = new Date().toISOString().slice(0, 10);
+  try {
+    // Before the lock, because the LOCK is a sibling of the target and both its
+    // exclusive create and `atomicWrite`'s sibling-temp rename need the parent
+    // directory to be there.
+    mkdirSync(join(dir, '.planning'), { recursive: true });
+    const guarded = withPlanningFileLock(file, () => {
+      let text = '';
+      try { text = readFileSync(file, 'utf8'); } catch { text = ''; }
+      for (const row of rows) {
+        text = appendFiledRow(text, { date, provider, slug: repo,
+          fingerprint: row.fingerprint, title: row.title });
+      }
+      atomicWrite(file, text);
+    }, 'filed-locked');
+    if (guarded.ok === false) {
+      return { ok: false, reason: guarded.reason, detail: guarded.detail };
+    }
+  } catch (e) {
+    return { ok: false, reason: 'write-failed',
+      detail: `${file}: ${e && e.message ? e.message : String(e)}` };
+  }
+  return { ok: true };
+}
+
+/**
  * The dispositions payload's grammar, checked before the first create.
  *
  * `findingIssue` from lib/adjudication-record.mjs is deliberately NOT reused
@@ -355,6 +404,10 @@ function cmdFile(dir, payloadFile) {
         disposition: e.disposition,
         title: issueTitle(e.finding),
       }));
+      // The mirror runs before the refusal is emitted: the issues that DID land
+      // are on the tracker, and a recall pointer they never got is a second
+      // loss on top of the first.
+      mirrorFiled(dir, forge.provider, forge.repo, filed);
       emit({ ok: false, reason: 'create-failed', provider: forge.provider, repo: forge.repo,
         filed, unfiled, warnings: forge.warnings,
         detail: `${forge.bin} could not create the issue for ${unfiled[0].fingerprint} on `
@@ -366,6 +419,22 @@ function cmdFile(dir, payloadFile) {
       return;
     }
     filed.push({ fingerprint: fingerprint(finding), disposition, title });
+  }
+
+  const mirror = mirrorFiled(dir, forge.provider, forge.repo, filed);
+  if (mirror.ok === false) {
+    // Every issue exists; the RECALL POINTER does not. That is not a success:
+    // CAP-01's shipped guarantee is that a finding stays reachable by
+    // `/cad-plan`'s recall, and this file is where that reachability lives now.
+    emit({ ok: false, reason: mirror.reason, provider: forge.provider, repo: forge.repo,
+      filed, warnings: forge.warnings,
+      detail: `every issue was created on ${forge.repo}, but the recall pointer could `
+        + `not be written: ${mirror.detail}`,
+      hint: 'the issues are FILED and must not be filed again - fix the write the detail '
+        + 'names (a stale .planning/FILED.md.lock is the usual answer) and add one `- ` '
+        + 'row per accepted issue to .planning/FILED.md by hand, or re-run only the '
+        + 'mirror once the path is writable' });
+    return;
   }
 
   emit({ ok: true, provider: forge.provider, repo: forge.repo,

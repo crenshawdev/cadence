@@ -1198,6 +1198,127 @@ export function appendArchiveRows(text, label, rows) {
 }
 
 // ---------------------------------------------------------------------------
+// FILED.md - the recall POINTER a filed issue leaves behind (CAP-01).
+//
+// WHY THIS FILE EXISTS AT ALL. `cmdRecall` builds its corpus from
+// `phases/*/{SUMMARY,UAT,CONTEXT}.md`, CAPTURE.md, ARCHIVE.md and
+// `tasks/*/RECORD.md`, and it reads no forge. A finding routed to the tracker
+// therefore leaves the corpus entirely - and "a bullet /cad-capture writes is
+// reachable by /cad-plan's recall" is the SHIPPED CAP-01 guarantee. One pointer
+// row per filed issue is what keeps that true across the move.
+//
+// ONE ROW PER ACCEPTED ISSUE, NEVER A DECLINED ONE. Criterion 1 says no
+// artifact anywhere holds a declined finding, and this file is an artifact
+// INSIDE the recall corpus - a declined title mirrored here is the accumulation
+// the phase removes, reappearing one indirection later. The decline label on
+// the forge is the only place a decline persists.
+//
+// THE ROW IS A POINTER, NOT THE FINDING. Date, provider, slug, fingerprint and
+// the issue's TITLE, and no body: what enters the corpus is enough to find the
+// issue again and not the thing that was just moved out of the run. That is
+// also why no gate reads this file as a queue - it is an index of what was
+// filed, and the accumulation the phase forbids is a queue of unresolved work.
+//
+// It is a NEW top-level planning file rather than a section of an existing one:
+// `.planning/CAPTURE.md` is byte-unchanged by criterion 1 and
+// `.planning/ARCHIVE.md` is UNTOUCHED by criterion 7, so neither can hold it.
+// ---------------------------------------------------------------------------
+
+/**
+ * One filed row: a column-0 `- `, an ISO date, the provider, the repository
+ * slug, the fingerprint token, a colon, a space, then the title to end of line.
+ *
+ * Everything before the `: ` is fully constrained - a date, a lowercase
+ * provider word, a slug with no spaces, a lowercase hex token - which is what
+ * lets the TITLE carry a colon, a backtick or a pipe with no second escaping
+ * rule, exactly as `ARCHIVE_ROW` above earns the same freedom. Nothing after
+ * `: ` is parsed at all.
+ */
+const FILED_ROW = /^- (\d{4}-\d{2}-\d{2}) ([a-z]+) (\S+) ([0-9a-f]+): (.*)$/;
+
+/**
+ * The preamble an empty FILED.md is created with. It names the writer and the
+ * reader because this file has exactly one of each, and a human who finds it in
+ * a repository has no other way to learn that. A `# ` title and deliberately NO
+ * column-0 `## ` heading, so nothing in it can be read as anything else.
+ */
+const FILED_PREAMBLE = `# Filed: issues this repository's gates opened
+
+Written by \`issue-filing.mjs file\` when a gate's finding is ACCEPTED and filed
+on the tracker, read by \`planning.mjs recall\` beside CAPTURE.md. One \`- \` row
+per filed issue: the date, the provider, the repository slug, the finding's
+(file, claim) fingerprint and the issue's title. No finding body - a row is a
+pointer to an issue, not a copy of it, and NOTHING here is a queue. A declined
+finding is never written here; its only record is the decline label on the
+forge. A line that is not a row is skipped, so a note added here mints no
+recall entry.
+`;
+
+/**
+ * FILED.md rows in document order, as the `{text, source}` shape `cmdRecall`
+ * builds its corpus from.
+ *
+ * `text` is the TITLE alone - the row's own free-text tail - because that is
+ * what a query has words in common with; the date, provider and slug are
+ * addressing and would only dilute the score. `source` is the flat `FILED.md`,
+ * the spelling the CAPTURE.md walk already uses for a top-level file.
+ *
+ * A line that does not match `FILED_ROW` is skipped, the posture
+ * `parseArchiveRows` takes on a non-row line, so a human note in this file
+ * cannot mint a corpus entry. A row whose title is blank after the `: ` is
+ * dropped for the reason `appendArchiveRows` drops an empty snippet: an empty
+ * corpus entry ranks against every query and says nothing.
+ *
+ * Pure reader, normalizing through the shared `normalize` (BOM, CRLF, lone CR)
+ * exactly as `captureSections` does: a CRLF checkout must index as its plain-LF
+ * twin.
+ * @param {string} text
+ * @returns {Array<{text: string, source: string, provider: string, slug: string,
+ *   fingerprint: string, date: string}>}
+ */
+export function parseFiledRows(text) {
+  const out = [];
+  for (const line of normalize(text).split('\n')) {
+    const m = line.match(FILED_ROW);
+    if (!m) continue;
+    const title = m[5].trim();
+    if (!title) continue;
+    out.push({ text: title, source: 'FILED.md', date: m[1], provider: m[2],
+      slug: m[3], fingerprint: m[4] });
+  }
+  return out;
+}
+
+/**
+ * Land one filed row at the end of FILED.md `text` and return the new text.
+ * Text that is empty gets `FILED_PREAMBLE` first. Everything already there is
+ * byte-preserved, and nothing here does I/O or throws.
+ *
+ * Every field is FLATTENED on write, the discipline `appendArchiveRows` states
+ * for the same reason: an embedded newline becomes its own line on the next
+ * parse, where the row's tail is silently skipped. Flatten on write, never
+ * trust callers.
+ *
+ * A row whose fixed fields do not fit the grammar is REFUSED by returning the
+ * text unchanged - a row this file's own parser could not read back is not a
+ * pointer, it is a line of noise inside the recall corpus.
+ *
+ * @param {string} text
+ * @param {{date: string, provider: string, slug: string, fingerprint: string, title: string}} row
+ * @returns {string}
+ */
+export function appendFiledRow(text, row) {
+  const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
+  const r = row && typeof row === 'object' ? row : /** @type {any} */ ({});
+  const line = `- ${flat(r.date)} ${flat(r.provider)} ${flat(r.slug)} `
+    + `${flat(r.fingerprint)}: ${flat(r.title)}`;
+  if (!FILED_ROW.test(line)) return typeof text === 'string' ? text : '';
+  const base = typeof text === 'string' ? text : '';
+  if (!base.trim()) return `${FILED_PREAMBLE}\n${line}\n`;
+  return `${base}${base.endsWith('\n') ? '' : '\n'}${line}\n`;
+}
+
+// ---------------------------------------------------------------------------
 // CONTEXT.md - the `## Acceptance criteria` grammar. Stated in full at
 // cadence-core/references/acceptance-criteria.md; this section is that
 // grammar's single implementation, and `planning.mjs criteria-coverage` is its
