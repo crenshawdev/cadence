@@ -229,9 +229,9 @@ const DOCS_CLAIMS_CITATIONS = [
   {
     id: 'EXECUTE-10',
     doc: 'cadence-core/bin/planning/lease-check.mjs',
-    line: '450-453',
-    start: 450,
-    end: 453,
+    line: '498-501',
+    start: 498,
+    end: 501,
     symbol: "'undeclared-files'",
   },
   {

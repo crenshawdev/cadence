@@ -9,10 +9,13 @@ files:
   - cadence-core/bin/planning-lease-check.test.mjs
   - cadence-core/bin/trace.test.mjs
   - cadence-core/bin/phase-spelling.test.mjs
+  - cadence-core/bin/citation-census.test.mjs
   - cadence-core/workflows/plan.md
   - cadence-core/bin/weight-budgets.json
   - .planning/phases/2/census-replay.md
   - .planning/phases/2/UAT.md
+  - .planning/DOCS-CLAIMS.md
+  - .planning/phases/6/PLAN.md
 ---
 
 # Phase 6: Close the plan-time lease gate - Plan
