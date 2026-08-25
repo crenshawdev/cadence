@@ -1036,6 +1036,28 @@ export const CONTRACTS = {
       '--timeout-ms': { required: false, type: 'int', value: 'fallback', bare: 'fallback' },
     },
   },
+  // The filing seam (CAP-01, CAP-02). Both faces take the SAME flag with the
+  // same grammar, and the row is written twice rather than hoisted into `*`:
+  // required-ness is per subcommand in this table, and `--payload` is required
+  // on both only because both faces happen to need one - a third face that did
+  // not would have to un-declare it out of `*`, which is the shape this file's
+  // own header calls a bound one face does not hold.
+  //
+  // `--payload` REFUSES on both axes. It names the FILE the whole answer is
+  // read from: a bare one would fall through to reading `undefined` as a path,
+  // and a whitespace-only one names no file at all. There is no fallback that
+  // could be right - a filing seam with no payload has nothing to file.
+  'issue-filing.mjs': {
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    unfixed: {
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    file: {
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+  },
   'release-bump.mjs': {
     '*': {
       '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
