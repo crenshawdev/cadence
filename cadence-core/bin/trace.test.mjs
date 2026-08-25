@@ -2293,8 +2293,22 @@ test('fixture: the committed verbatim trace renders exactly as it did before thi
     'cad-verifier': { dispatches: 1, tokens: 78371 },
   });
   assert.deepEqual(r.unpaired, [
-    { corr: '1-573f325', phase: '1', plan: 'cad-reviewer', ts: '2026-08-12T13:51:44.001Z' },
+    {
+      corr: '1-573f325', phase: '1', plan: 'cad-reviewer',
+      ts: '2026-08-12T13:51:44.001Z', role: 'cad-reviewer',
+    },
   ]);
+});
+
+test('render: an unpaired row names the ROLE its dispatch was opened under', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: DISP });
+  // A dispatch that forgot `--role` keys the empty string rather than dropping
+  // the key, the same posture `roles` already takes: a forgotten flag stays
+  // VISIBLE instead of vanishing out of the report that would show it.
+  appendEvent(dir, { phase: 6, family: 'lifecycle', event: 'dispatch', plan: '2', ts: DISP });
+  assert.deepEqual(renderTrace(dir, 6).unpaired.map((u) => [u.plan, u.role]),
+    [['1', 'cad-executor'], ['2', '']]);
 });
 
 // --- the coordinator's own time (D-01) ---------------------------------------

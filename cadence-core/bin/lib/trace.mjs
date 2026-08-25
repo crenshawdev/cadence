@@ -356,7 +356,14 @@ export function appendEvent(planningRoot, event) {
  *   Two genuine dispatches on one worker key, each with its own close, are
  *   still two rows: what is collapsed is a repeat CLOSE, never a repeat
  *   DISPATCH.
- * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
+ * @property {{corr: any, phase: any, plan: any, ts: any, role: string}[]} unpaired
+ *   dispatches with no terminal event. `role` is the DISPATCH's own, the same
+ *   value `brackets[]` exposes and `roles` bills on, so a reader can say WHICH
+ *   KIND of worker is still open without re-deriving the pairing - and
+ *   re-deriving `open` and `seenTerminals` in a second reader is how two
+ *   readers of one record start disagreeing about which bracket closed. A
+ *   dispatch written with no `--role` keys the empty string here exactly as it
+ *   does in `roles`, so a forgotten flag stays visible instead of vanishing.
  * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched
  *   paired brackets whose terminal named a role its dispatch did not
  * @property {CoordinatorResidue} [coordinator] present ONLY when the scoped events
@@ -860,10 +867,15 @@ export function renderTrace(planningRoot, phase) {
       }
     }
   }
-  // `unpaired` carries the bracket's identity only - the accounting fields
-  // added above are internal and never reach the rendered shape.
+  // `unpaired` carries the bracket's identity plus the `role` the DISPATCH was
+  // opened under - a field the pairing already computed rather than a second
+  // answer derived here. The remaining accounting fields (`funded`,
+  // `turnsFunded` and the two figures) stay internal and never reach the
+  // rendered shape.
   for (const pending of open.values()) {
-    for (const p of pending) out.unpaired.push({ corr: p.corr, phase: p.phase, plan: p.plan, ts: p.ts });
+    for (const p of pending) {
+      out.unpaired.push({ corr: p.corr, phase: p.phase, plan: p.plan, ts: p.ts, role: p.role });
+    }
   }
 
   // The token total is OMITTED when nothing was recorded, so a role with no
