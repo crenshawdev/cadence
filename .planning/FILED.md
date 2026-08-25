@@ -10,3 +10,4 @@ forge. A line that is not a row is skipped, so a note added here mints no
 recall entry.
 
 - 2026-08-25 github crenshawdev/cadence e7cfd661a15c38fa: [cadence e7cfd661a15c38fa] Task 6 classifies `risk-check.mjs:70` and `:326` as exempt and makes that exemption part of the new census, despite CONTEXT D-06 identifying the corresponding `risk-check.mj
+- 2026-08-25 github crenshawdev/cadence b9ae737ae1a77a4f: [cadence b9ae737ae1a77a4f] The proposed terminal dedup treats any close that finds a pending dispatch for the same `(corr, phase, plan)` as that pending dispatch's first close, so it cannot distinguis
