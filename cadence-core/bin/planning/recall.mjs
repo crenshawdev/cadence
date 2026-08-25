@@ -5,7 +5,7 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, memoryBackend, ok, read } from './core.mjs';
+import { PHASE_DIR_NAME, fail, memoryBackend, ok, read } from './core.mjs';
 import { buildIndex, search } from '../lib/bm25.mjs';
 import {
   parseArchiveRows, parseCaptureSnippets, parseContextDecisions, parseFiledRows,
@@ -67,8 +67,12 @@ function cmdRecall(dir, query, opts) {
   const corpus = [];
   const phasesDir = join(dir, 'phases');
   if (existsSync(phasesDir)) {
+    // The GRAMMAR, not a looser numeric shape: `phase` below is `Number(n)`, so
+    // a `phases/08/` the loose filter admitted indexed its snippets under
+    // `phase: 8` - a DIFFERENT phase's evidence returned as this phase's
+    // (D-04). `phases/1.10/` is legal and stays in the corpus.
     const entries = readdirSync(phasesDir)
-      .filter((e) => /^\d+(?:\.\d+)?$/.test(e))
+      .filter((e) => PHASE_DIR_NAME.test(e))
       .sort((a, b) => Number(a) - Number(b));
     for (const n of entries) {
       const pdir = join(phasesDir, n);

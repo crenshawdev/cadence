@@ -483,3 +483,23 @@ test('recall: two runs over a corpus holding a filed row are byte-identical', ()
   filed(dir, ['2026-08-25 gitlab acme/widget aabbccddeeff0011: [cadence aabbccddeeff0011] beta gamma pointer']);
   assert.equal(recall('beta gamma', dir).raw, recall('beta gamma', dir).raw);
 });
+
+// The corpus walk reads the phase-directory GRAMMAR, not a looser numeric shape
+// (D-04). `phase` is `Number(n)`, so a `phases/08/` the loose filter admitted
+// indexed under `phase: 8` and returned a DIFFERENT phase's evidence as this
+// phase's. A legal `phases/1.10/` is still corpus.
+test('recall: a zero-padded phase directory is not corpus, and 1.10 still is', () => {
+  const dir = makeTree({
+    phases: {
+      8: { summaryBody: { deviations: ['the legal eight carries alpha'] } },
+      '08': { summaryBody: { deviations: ['the padded eight carries zarquon'] } },
+      '1.10': { summaryBody: { deviations: ['sub-phase ten carries zarquon too'] } },
+    },
+  });
+  const r = recall('zarquon', dir);
+  assert.equal(r.json.ok, true, r.raw);
+  const sources = r.json.results.map((x) => x.source);
+  assert.deepEqual(sources.filter((s) => s.startsWith('phases/08/')), [], r.raw);
+  assert.ok(sources.includes('phases/1.10/SUMMARY.md'), r.raw);
+  assert.equal(r.json.results.find((x) => x.source === 'phases/1.10/SUMMARY.md').phase, 1.1);
+});

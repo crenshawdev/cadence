@@ -136,7 +136,12 @@ function cmdStatus(dir) {
   if (closed) {
     let entries = [];
     try { entries = readdirSync(join(dir, 'phases')); } catch { /* absence is data */ }
-    const surviving = entries.filter((e) => /^\d+(\.\d+)?$/.test(e))
+    // The GRAMMAR, not a looser numeric shape: with `/^\d+(\.\d+)?$/` here a
+    // tree holding `phases/8` and `phases/08` emitted TWO `phase-dir` entries
+    // both carrying `phase: 8`, since `Number` collapses the padding the filter
+    // let through. An illegal name is reported by `phaseDirGrammarDrift` under
+    // its own kind and is not a surviving phase directory (D-04).
+    const surviving = entries.filter((e) => PHASE_DIR_NAME.test(e))
       .sort((a, b) => Number(a) - Number(b));
     for (const e of surviving) {
       const { plans } = listPlanFiles(join(dir, 'phases', e));

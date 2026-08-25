@@ -100,10 +100,10 @@ function phaseSpellingRefusal(parsed) {
 // It lives in core rather than beside its drift walk (`phaseDirGrammarDrift`
 // in planning/status.mjs) because a second family reaches it: the two `phases/`
 // LISTING filters, in `cmdStatus`'s surviving-directory report and in the
-// recall corpus walk. Those two are STILL the looser `/^\d+(\.\d+)?$/` as of
-// this commit, and the claim this comment used to carry - that they "keep a
-// zero-padded directory out of the corpus" - was simply untrue: measured
-// 2026-08-25, that pattern matches `08`, `0`, `1.01`, `1.00` and `2.0`.
+// recall corpus walk. Those two carried a looser `/^\d+(\.\d+)?$/` of their
+// own, described here as keeping "a zero-padded directory out of the corpus" -
+// untrue, measured 2026-08-25: it matches `08`, `1.01` and `2.0`, and both
+// sites key by `Number(...)`, so `phases/08/` landed under phase 8 (D-04).
 const PHASE_DIR_NAME = /^[1-9]\d*(?:\.[1-9]\d*)?$/;
 // `cadence-core/bin`, deliberately NOT this file's own directory. Both
 // consumers below walk UP from it - `MANIFEST_PATH` with two `'..'` segments,

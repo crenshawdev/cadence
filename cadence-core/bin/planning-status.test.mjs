@@ -382,3 +382,31 @@ test('status: a zero-padded fraction is reported and 1.10 is not', () => {
   // The parenthetical states the fraction rule, not just the integer one.
   assert.match(g[0].detail, /neither part zero-padded/);
 });
+
+// The surviving-directory filter reads the GRAMMAR, not a looser numeric shape
+// (D-04). With `/^\d+(\.\d+)?$/` there, `phases/08` beside `phases/8` passed the
+// filter and `Number('08')` collapsed it onto 8, so the close reported the same
+// phase twice.
+test('status: 08 beside 8 survives the close as ONE phase-dir entry, on the legal name', () => {
+  const dir = makeTree({ roadmap: [], phases: { 8: { plan: true }, '08': { plan: true } } });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.cycle, 'none');
+  const survivors = (r.drift || []).filter((d) => d.kind === 'phase-dir');
+  assert.equal(survivors.length, 1, JSON.stringify(survivors));
+  assert.equal(survivors[0].phase, 8);
+  assert.match(survivors[0].detail, /phases[/\\]?8[/\\] survives/);
+  // `08` is still REPORTED - under the grammar kind, which is where it belongs.
+  assert.deepEqual(grammarDrift(r).map((d) => d.entries), [['08']]);
+});
+
+// `phases/1.10/` is a legal sub-phase name and the tightened filter keeps it.
+test('status: a legal sub-phase directory still survives the close', () => {
+  const dir = makeTree({ roadmap: [], phases: { '1.10': { plan: true } } });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const survivors = (r.drift || []).filter((d) => d.kind === 'phase-dir');
+  assert.equal(survivors.length, 1, JSON.stringify(survivors));
+  assert.equal(survivors[0].phase, 1.1);
+  assert.deepEqual(grammarDrift(r), []);
+});
