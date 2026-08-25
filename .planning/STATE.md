@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 6 (One spelling, one phase)
-Status: phase complete
-Next: /cad-context 6 - phase 6 closes phase 2's two open UAT failures
+Phase: 6 of 6 (Close the plan-time lease gate)
+Status: context gathered
+Next: /cad-plan 6
 Updated: 2026-08-25
