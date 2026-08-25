@@ -518,30 +518,41 @@ test('lease-check: an undeclared path holding no count keeps the old reason, and
  * rewrite the SAME plan file - two runs over one path are what make their two
  * stdouts comparable byte for byte.
  */
-function planTimeTree(files, body = '') {
+function planTimeTree(files, body = '', how) {
   const cwd = mkdtempSync(join(tmpdir(), 'cad-plantime-'));
   const dir = join(cwd, '.planning');
   const pdir = join(dir, 'phases', '1');
   mkdirSync(pdir, { recursive: true });
-  writePlanTimePlan(pdir, files, body);
+  writePlanTimePlan(pdir, files, body, how);
   return { cwd, dir, pdir };
 }
 
-/** One plan file: frontmatter from `files`, then `body` verbatim. */
-function writePlanTimePlan(pdir, files, body = '') {
+/**
+ * One plan file: frontmatter from `files`, then `body` verbatim.
+ *
+ * `how` is what keeps the two-plan fixture below on THIS builder instead of a
+ * copy of it - `name` puts a second plan in the same phase directory, `key`
+ * misspells the one key the lease is read from, and `extra` plants a line the
+ * frontmatter grammar cannot read above it. Every one of them is a spelling of
+ * the same file, which is the point: this file's header states that two copies
+ * of a fixture builder is how two fixtures drift apart.
+ */
+function writePlanTimePlan(pdir, files, body = '',
+  { name = 'PLAN.md', key = 'files', extra = '' } = {}) {
   const fm = files === null ? ''
-    : `---\nphase: 1\nfiles:\n${files.map((f) => `  - ${f}\n`).join('')}---\n`;
-  writeFileSync(join(pdir, 'PLAN.md'), `${fm}# Plan\n${body}`);
+    : `---\nphase: 1\n${extra}${key}:\n${files.map((f) => `  - ${f}\n`).join('')}---\n`;
+  writeFileSync(join(pdir, name), `${fm}# Plan\n${body}`);
 }
 
 /** The arm's RAW stdout and exit code. Raw, because the "reads paths, never
  *  instructions" arm compares two runs byte for byte and a parse would hide a
  *  difference in field order. `process.execPath` and not `node`, because the
  *  no-git arm hands the child a PATH holding one stub and nothing else. */
-function planTimeRaw(cwd, dir, env) {
+function planTimeRaw(cwd, dir, env, plan = 1) {
   let stdout;
   let code = 0;
-  const argv = [PLANNING, '--dir', dir, 'lease-check', '--phase', '1', '--plan', '1', '--plan-time'];
+  const argv = [PLANNING, '--dir', dir, 'lease-check', '--phase', '1',
+    '--plan', String(plan), '--plan-time'];
   try {
     stdout = execFileSync(process.execPath, argv,
       { encoding: 'utf8', cwd, ...(env ? { env: { ...process.env, ...env } } : {}) });
@@ -550,8 +561,8 @@ function planTimeRaw(cwd, dir, env) {
 }
 
 /** planTimeRaw's one JSON line, parsed, with its exit code alongside. */
-function planTime(cwd, dir, env) {
-  const r = planTimeRaw(cwd, dir, env);
+function planTime(cwd, dir, env, plan = 1) {
+  const r = planTimeRaw(cwd, dir, env, plan);
   return { ...JSON.parse(r.stdout), _exit: r.code };
 }
 
@@ -663,6 +674,72 @@ test('lease-check --plan-time: a phase with no plan file is still no-plan on thi
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'no-plan');
   assert.equal(r._exit, 1);
+});
+
+// --- one fixture, two plans, both gates, both signals -------------------------
+//
+// The two cases phase 2's UAT found the plan-time gate PASSING: a frontmatter
+// line that could not be read, and a `files:` key misspelled `filez:`. They need
+// two signals because they are two different failures - the misspelled key is a
+// structurally valid key line and produces ZERO frontmatter issues, while the
+// garbage line produces an issue beside a file list that parsed fine - so a gate
+// reading either signal alone still passes one of them.
+//
+// TWO PLAN FILES in one directory, not one: `cmdPlanOverlap` returns before
+// computing `undeclared` when a phase holds fewer than two plans
+// (`planning/plan-overlap.mjs:63-70` spreads `frontmatter_issues` on that early
+// return and not `undeclared`), so a one-plan fixture would pin only half of
+// what the other gate reads. `lease-check --plan-time` is per-plan and answers
+// on either shape, which is what lets ONE fixture prove both gates read the same
+// two signals.
+
+/** A frontmatter line the grammar cannot read, above a `files:` key it can. */
+const UNREADABLE_LINE = '%% not a key line\n';
+
+test('lease-check --plan-time and plan-overlap read ONE two-plan fixture the same way', () => {
+  const { cwd, dir, pdir } = planTimeTree(['src/a.mjs'], '',
+    { name: 'PLAN-1.md', extra: UNREADABLE_LINE });
+  writePlanTimePlan(pdir, ['src/b.mjs'], '', { name: 'PLAN-2.md', key: 'filez' });
+
+  // Gate one: the pre-flight overlap check, over the whole directory at once.
+  const overlap = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(overlap.ok, true, JSON.stringify(overlap));
+  assert.deepEqual(overlap.frontmatter_issues.map((f) => f.plan), ['PLAN-1.md'],
+    JSON.stringify(overlap));
+  assert.equal(overlap.frontmatter_issues[0].issues[0].code, 'unknown-line',
+    JSON.stringify(overlap.frontmatter_issues));
+  assert.deepEqual(overlap.undeclared, ['PLAN-2.md'], JSON.stringify(overlap));
+
+  // Gate two: the plan-time lease gate, one plan at a time, on the same two.
+  const first = planTime(cwd, dir, undefined, 1);
+  assert.equal(first.ok, false, JSON.stringify(first));
+  assert.equal(first.reason, 'unparsed-lease');
+  assert.ok(first.hint && first.hint.length > 0, JSON.stringify(first));
+  assert.equal(first.frontmatter_issues[0].code, 'unknown-line', JSON.stringify(first));
+  assert.equal(first._exit, 1);
+
+  const second = planTime(cwd, dir, undefined, 2);
+  assert.equal(second.ok, false, JSON.stringify(second));
+  assert.equal(second.reason, 'empty-lease');
+  assert.ok(second.hint && second.hint.length > 0, JSON.stringify(second));
+  assert.equal(second.declared, 0);
+  assert.equal(second._exit, 1);
+});
+
+test('lease-check --plan-time: two plans that declare real paths are a PASS on both', () => {
+  // The other half of the pair above, on the same builder: this is a fail-closed
+  // rule and not a blanket refusal, so a two-plan fixture whose leases read
+  // cleanly and put no census at risk still answers ok:true on each plan number.
+  const { cwd, dir, pdir } = planTimeTree(['src/a.mjs'], '', { name: 'PLAN-1.md' });
+  writePlanTimePlan(pdir, ['src/b.mjs'], '', { name: 'PLAN-2.md' });
+
+  for (const k of [1, 2]) {
+    const r = planTime(cwd, dir, undefined, k);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.declared, 1);
+    assert.equal(r.frontmatter_issues, undefined);
+    assert.equal(r._exit, 0);
+  }
 });
 
 // --- the replay: every plan this repository has ever written -----------------
