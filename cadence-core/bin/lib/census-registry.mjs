@@ -95,7 +95,14 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'self-verify-merge-layers',
     holder: 'cadence-core/bin/self-verify.test.mjs',
-    counts: 'sixteen `mergeLayers(` callsites over twelve files, each in one of '
+    // `mergeLayers` is written here WITHOUT its opening paren on purpose. The
+    // merge-warnings rule matches the name followed by `(` on any non-comment
+    // line, so spelling the callsite out in this row's prose made the registry
+    // itself the thirteenth file carrying a callsite - self-verify red, and
+    // check 12 red at seventeen over thirteen. The fix belongs at the MENTION,
+    // which is the discipline lib/merge-warnings.mjs states and the same one
+    // that keeps this file's own marker head built rather than written.
+    counts: 'sixteen `mergeLayers` callsites over twelve files, each in one of '
       + 'the two warning-surfacing arms',
     asserted_by: 'the test named `check 12: the live tree is SIXTEEN callsites '
       + 'over TWELVE files, each in an arm`',
