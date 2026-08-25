@@ -464,8 +464,9 @@ CLEAN rather than erroring:
   committed, it would hard-halt every later land on an answered finding.
 
 ### 6. Consequence (gate)
-RE-READ `references/triage-gate.md` before acting on ANY gate - `blocking`
-included, not only `adjudicated`. It holds this step whole: all four arms
+RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
+acting on ANY gate - `blocking` included, not only `adjudicated`. It holds this
+step whole: all four arms
 (`advisory` / `deferred` / `blocking` / `adjudicated`), the ONE-round cap on a
 blocking re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
 carve-out inside `/cad-land`, and the `cad-verify`

@@ -11,6 +11,7 @@ import { existsSync as existsSyncSafe } from 'node:fs';
 import { rungBody } from './lib/rung-agent.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
+import { referenceRouterIssues } from './lib/reference-routers.mjs';
 import { WAIVED } from './lib/include-consumers.mjs';
 import { GLOBAL_ONLY_KEYS, globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { CONTRACTS, flagNames } from './lib/arg-contract.mjs';
@@ -1966,6 +1967,27 @@ test('check 13: an unusable rows file is reported, never a silent fall back', ()
   const p = run(['--root', root], { CADENCE_DEFERRED_READS: bad }).problems;
   assert.ok(p.some((x) => x.kind === 'unreadable-surface'
     && /CADENCE_DEFERRED_READS/.test(x.detail)), JSON.stringify(p));
+});
+
+// --- check 24: every cold branch is still reachable from its router ---------
+// The RULE - what counts as a Read, what counts as a branch, and the
+// fenced-block exclusion - is pinned in reference-routers.test.mjs against
+// synthetic rows. This side pins the LIVE tree and the wiring, the same split
+// check 13 and check 16 keep: the shipped register's four rows really do
+// resolve against the shipped routers, and the issues reach `problems`.
+
+test('check 24: the live tree satisfies every registered router branch', () => {
+  // Not a fixture. A cold branch is reachable from PROSE and from nowhere else,
+  // so this assertion is the only thing standing between a deleted Read line
+  // and an unreachable rule - for `references/triage-gate.md`, the ONE-round
+  // cap on a blocking re-arm.
+  assert.deepEqual(referenceRouterIssues(REPO), []);
+});
+
+test('check 24: self-verify names the check in `checked` and the live tree is clean', () => {
+  const j = run([]);
+  assert.match(j.checked, /reference-routers/);
+  assert.deepEqual(j.problems.filter((p) => p.kind.startsWith('reference-router-')), []);
 });
 
 // --- check 16: an `@`-include claims a consumer ------------------------------

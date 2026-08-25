@@ -241,6 +241,21 @@ export const CENSUSES = Object.freeze([
     subjects: ['cadence-core/bin/planning/'],
   }),
   entry({
+    id: 'reference-router-branches',
+    holder: 'cadence-core/bin/reference-routers.test.mjs',
+    counts: "the register's row count and the number of ROUTERS those rows "
+      + 'span - 4 over 2',
+    asserted_by: 'the test named `the register pins its row count and its router count`',
+    // The MODULE, not `cadence-core/references/`. Both numbers are read off
+    // `ROUTERS` itself, so the only edit that can move either one is an edit to
+    // this file - the same subject every other register census in this table
+    // carries. The wide directory lease was measured on 2026-08-25 and refuses
+    // 21 of the 37 plans declaring under `cadence-core/bin/`, past the
+    // half-the-plans rail `planning-lease-check.test.mjs` asserts, because a
+    // reference cold-split without a new ROUTER row moves no count at all.
+    subjects: ['cadence-core/bin/lib/reference-routers.mjs'],
+  }),
+  entry({
     id: 'seam-call-counts',
     holder: 'cadence-core/bin/seam-calls.test.mjs',
     counts: 'the happy-path seam invocations each measured workflow instructs - '

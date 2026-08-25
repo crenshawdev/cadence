@@ -212,6 +212,19 @@
 //                    applies to every prose surface, for the reason check 19
 //                    states about its own scope. It takes no CONTRACTS row, for
 //                    the reason check 14 states about `lib/*.mjs`.
+//  24. reference     a reference COLD-SPLIT behind a router stays reachable
+//      routers       from it: the cold file is on disk, the router still
+//                    carries a ${CLAUDE_PLUGIN_ROOT} Read of it, and a
+//                    references/*.md path a registered router names outside
+//                    every fenced block has a register row. A cold branch is
+//                    reachable from PROSE and from nowhere else, so a deleted
+//                    Read line leaves a green tree and an unreachable rule -
+//                    which for `references/triage-gate.md` is the ONE-round cap
+//                    on a blocking re-arm. The register, the three arms and the
+//                    fenced-block exclusion live in lib/reference-routers.mjs;
+//                    this side only decides that it applies to the whole root.
+//                    It takes no CONTRACTS row, for the reason check 14 states
+//                    about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -234,6 +247,7 @@ import { relayIssues } from './lib/route-relay.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
+import { referenceRouterIssues } from './lib/reference-routers.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
 import { refusalHintIssues } from './lib/refusal-hints.mjs';
 import { textTransportIssues } from './lib/text-transport.mjs';
@@ -1215,6 +1229,14 @@ function run(root) {
   // side only decides that it applies to the whole root.
   for (const issue of deferredReadIssues(root, deferredRows(problems))) problems.push(issue);
 
+  // 24. reference routers: a reference cold-split behind a router is still
+  // reachable from it, and the router grew no branch the register does not
+  // name. The rule, its hand-maintained register, the three arms and the
+  // fenced-block exclusion that keeps an in-command path argument from reading
+  // as a branch live in lib/reference-routers.mjs; this side only decides that
+  // it applies to the whole root.
+  for (const issue of referenceRouterIssues(root)) problems.push(issue);
+
   // 14. every shipped seam is contracted. Check 2 skips any script with no
   // CONTRACTS row (`if (!contract) continue`), which it must - prose names
   // third-party scripts too. The cost is that DELETING a row silently opts
@@ -1326,7 +1348,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
