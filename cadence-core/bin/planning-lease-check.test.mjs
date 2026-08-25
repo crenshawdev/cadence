@@ -11,11 +11,13 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, renameSync, realpathSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, renameSync, realpathSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PLANNING, seamSource, run } from './planning.test.mjs';
+import { CENSUSES, censusesAtRisk } from './lib/census-registry.mjs';
+import { parsePlanFiles } from './lib/planning-files.mjs';
 
 /** True iff this module is what node was told to run; realpath on both sides so
  * a symlinked checkout still matches (config-seams.test.mjs D-19). */
@@ -603,4 +605,66 @@ test('lease-check --plan-time: a phase with no plan file is still no-plan on thi
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'no-plan');
   assert.equal(r._exit, 1);
+});
+
+// --- the replay: every plan this repository has ever written -----------------
+//
+// D-03 accepts that each registry row's subject expression is hand-written and
+// can drift. This is the bound that keeps the drift from turning the gate into
+// noise: replayed over every PLAN in this repository's own record, no single
+// entry may refuse more than HALF of the plans it could speak to. An entry over
+// that line is narrowed again or removed, never tuned, for the reason
+// `planning/lease-check.mjs`'s own header gives - a rail that fires wrong gets
+// deleted.
+//
+// The PREDICATE is replayed, not the seam: `censusesAtRisk` is pure and takes
+// the declared list, so 40-odd plans cost one process instead of 40. That is
+// the whole reason the predicate lives in `lib/` and not inside the handler.
+//
+// The live `.planning` tree is the corpus, deliberately: `phases/`, every
+// `_archive-v*/` and every `tasks/<slug>/`. A fixture corpus would measure a
+// corpus someone chose, and the claim is about the plans this project actually
+// wrote.
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PLAN_FILE = /^PLAN(-[1-9][0-9]*)?\.md$/;
+
+/** Every plan file under `dir`, recursively, in a stable order. */
+function everyPlanFile(dir, out = []) {
+  for (const e of readdirSync(dir, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name))) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) everyPlanFile(full, out);
+    else if (PLAN_FILE.test(e.name)) out.push(full);
+  }
+  return out;
+}
+
+// The same "declares at least one path under cadence-core/bin/" filter the
+// CONTEXT measurement used, spelled as containment rather than as a prefix
+// test alone so a bare `cadence-core/bin/` directory lease counts itself.
+const underBin = (files) => files.some((f) => f === 'cadence-core/bin/'
+  || f.startsWith('cadence-core/bin/'));
+
+test('lease-check --plan-time: no registry entry refuses more than half of this repository\'s own plans', () => {
+  const plans = everyPlanFile(join(REPO_ROOT, '.planning'))
+    .map((f) => parsePlanFiles(readFileSync(f, 'utf8')).files)
+    .filter(underBin);
+  // Non-vacuous, and by a wide margin: an empty corpus would pass every bound
+  // below while measuring nothing. 40 were measured while the CONTEXT was
+  // gathered, before this phase's own plans landed.
+  assert.ok(plans.length > 30,
+    `the replay found only ${plans.length} plans declaring under cadence-core/bin/`);
+
+  const refusals = new Map(CENSUSES.map((e) => [e.id, 0]));
+  for (const files of plans) {
+    for (const at of censusesAtRisk(files)) refusals.set(at.id, refusals.get(at.id) + 1);
+  }
+  for (const [id, n] of refusals) {
+    assert.ok(n * 2 <= plans.length,
+      `registry entry ${id} refuses ${n} of ${plans.length} plans, over half. `
+      + 'Narrow its subjects or remove the row - a rail that fires wrong gets '
+      + 'deleted, not tuned. Then re-run and update '
+      + '.planning/phases/2/census-replay.md with the new counts.');
+  }
 });
