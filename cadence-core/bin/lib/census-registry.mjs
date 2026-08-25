@@ -41,12 +41,15 @@
 // sight - `.planning/phases/1/SUMMARY.md:46` already records the commit-time
 // arm being overridden twice rather than obeyed.
 //
-// WHAT IS NOT A CENSUS (D-05). A DERIVED number - one the test computes from
-// the tree at run time and checks against another thing it computed - is a
-// MEASUREMENT, and no plan can invalidate it: change the tree and both sides
-// move together. `cadence-core/bin/seam-calls.test.mjs:12-27` states its own
-// numbers are "DERIVED, never baselined" and carries the arithmetic that makes
-// that true. It is deliberately absent from this table and owes no marker.
+// WHAT IS NOT A CENSUS (D-05, as corrected mid-phase). A DERIVED number - one
+// the test computes from the tree at run time and checks against another thing
+// it computed - is a MEASUREMENT, and no plan can invalidate it: change the
+// tree and both sides move together. The exemption reaches only numbers nobody
+// wrote down. A count a human TYPED into the test is a census however carefully
+// the test's header derives it, because that derivation is provenance for the
+// number and not a second reading of the tree - the file still holds a literal
+// a plan's work can move, so it takes a row here and a marker at its asserting
+// site like every other one.
 //
 // THIS TABLE'S OWN LENGTH IS NEVER ASSERTED (D-04), and there is no count
 // export to assert it with. A length assertion would make adding a row a
@@ -236,6 +239,25 @@ export const CENSUSES = Object.freeze([
     // 2026-08-25 and moves this row from 4 of 46 plans refused to 18, against
     // the half-the-plans rail's bound of 23 - a cost paid for nothing (D-11).
     subjects: ['cadence-core/bin/planning/'],
+  }),
+  entry({
+    id: 'seam-call-counts',
+    holder: 'cadence-core/bin/seam-calls.test.mjs',
+    counts: 'the happy-path seam invocations each measured workflow instructs - '
+      + '14 for `workflows/plan.md` and 6 for `workflows/context.md`',
+    asserted_by: 'the generated test named `<file> instructs exactly <N> seam '
+      + 'invocations`, one per row of that file\'s `CENSUS` array',
+    // The two workflows the 2026-08-14 scan measured, and nothing wider: the
+    // count is per FILE and only these two files carry a row, so a subject
+    // reaching the rest of `cadence-core/workflows/` would refuse plans this
+    // census has nothing to say about. Replayed 2026-08-25 over this
+    // repository's own record, the narrow pair refuses 9 of the 47 plans
+    // declaring under `cadence-core/bin/`, against the half-the-plans bound of
+    // 23.5 that `planning-lease-check.test.mjs` asserts.
+    subjects: [
+      'cadence-core/workflows/plan.md',
+      'cadence-core/workflows/context.md',
+    ],
   }),
 ]);
 

@@ -131,6 +131,12 @@ test('the census counter is not dead: it joins continuations and ignores prose',
     'a backticked mention instructs nothing and is not a call');
 });
 
+// Each row's `calls:` is a literal a human typed, so this loop is the asserting
+// site of a hand-maintained census and carries the marker lib/census-registry.mjs
+// joins to its row. The header's arithmetic is that number's provenance, not a
+// second reading of the tree - which is what makes it a census and not the
+// derived measurement the registry exempts.
+// CADENCE-CENSUS: seam-call-counts | asserts: workflows/plan.md instructs exactly 14 seam invocations and workflows/context.md exactly 6
 for (const row of CENSUS) {
   test(`${row.file} instructs exactly ${row.calls} seam invocations`, () => {
     const text = readFileSync(join(REPO, row.file), 'utf8');
