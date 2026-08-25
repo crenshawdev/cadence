@@ -196,9 +196,11 @@ context-gathering, and debugging — without any external memory system.
 ### Active
 
 **`v3.7.1 - the tracker is the record`, opened 2026-08-24.** Three phases.
-Phase 1 resolves a forge at project setup, phase 2 makes CAPTURE.md a transient
+Phase 1 resolves a forge at project setup, phase 2 registers the repository's
 buffer for the phase in flight with the repository's own issue tracker as the
-record, and the sub-phase spelling fix rides along as phase 3. Measured at the open: 276 walked bullets in 251,968
+hand-maintained censuses and checks a plan's lease against them before an
+executor runs, phase 3 makes CAPTURE.md a transient record, and the sub-phase
+spelling fix rides along as phase 4. Measured at the open: 276 walked bullets in 251,968
 bytes, read by `/cad-plan` on every planning pass, after a hand sweep to zero
 on 2026-08-08 that regrew in sixteen days. Ids seeded at the open: `CAP-01`,
 `CAP-02`, `CAP-03`, `FRG-01`, `FRG-02`, `SPL-01`, `SPL-02`. Both open questions

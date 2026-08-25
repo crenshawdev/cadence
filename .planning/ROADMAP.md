@@ -70,9 +70,10 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 ## Phases
 
 - [x] **Phase 1: Pick a forge** - detect the installed forge CLIs, let the user choose the provider and name the repository to create or link, and persist that choice
-- [ ] **Phase 2: CAPTURE is transient** - CAPTURE holds only the phase in flight, phase close empties it, and anything worth keeping becomes an issue on the repository's own tracker
-- [ ] **Phase 3: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
-- [x] **Phase 4: Split planning.mjs by command** - the 32 `cmd*` handlers move to per-command modules, leaving a shared core, so a dispatch touching one command stops paying a whole-file read
+- [ ] **Phase 2: Census registry and plan-time lease check** - every hand-maintained census count is registered, and a plan that will change one is refused at plan time rather than halting an executor mid-task
+- [ ] **Phase 3: CAPTURE is transient** - CAPTURE holds only the phase in flight, phase close empties it, and anything worth keeping becomes an issue on the repository's own tracker
+- [ ] **Phase 4: One spelling, one phase** - tighten the phase-directory grammar to reject a zero-padded fraction, and apply the existing spelling refusal at every command that resolves `--phase` to a path
+- [x] **Phase 5: Split planning.mjs by command** - the 32 `cmd*` handlers move to per-command modules, leaving a shared core, so a dispatch touching one command stops paying a whole-file read
 
 ## Phase Details
 
@@ -80,7 +81,7 @@ This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`
 **Goal:** Cadence resolves a forge and an issue tracker when it sets a project
 up - new or adopted - by detecting which forge CLIs are installed, asking the
 user which provider to use and what the repository is called, and persisting
-that choice. This is the precondition phase 2's roll-out depends on.
+that choice. This is the precondition phase 3's roll-out depends on.
 **Depends on:** Nothing (first phase)
 **Requirements:** FRG-01, FRG-02
 **Success Criteria:**
@@ -111,7 +112,43 @@ that choice. This is the precondition phase 2's roll-out depends on.
    injected by prepending to the child's PATH, the pattern `issue-check.mjs`
    already uses, with no test-only override honoured in production (EXP-01).
 
-### Phase 2: CAPTURE is transient
+### Phase 2: Census registry and plan-time lease check
+**Goal:** A plan that will change a hand-maintained census count declares the
+file holding it BEFORE an executor starts, not after the work is done.
+`lease-check` only refuses at commit time, so today the cost of a missing
+declaration is a full re-execution: 20 of 39 checkpoints in phase 5 (51%) and 7
+of 15 on verbatim (47%) have this one cause, worth 14.8% and 17.4% of executor
+spend respectively. Phase 5's own PLAN-1 halted at task 1 with 0 of 8 tasks for
+151,683 tokens, then cost 242,318 more to redo the same work.
+**Depends on:** Nothing. Ordered before phases 3 and 4 because both of them
+change files carrying censuses, so they are the phases this check protects.
+**Requirements:** CEN-01, CEN-02
+**Success Criteria:**
+1. A registry names every hand-maintained census in the repository: the file
+   holding it, what it counts, and the test that asserts it. A census live in a
+   test but absent from the registry fails the suite naming the file and the
+   assertion, so the registry cannot silently fall behind the tree.
+2. `lease-check` gains a plan-time arm: given a PLAN's `files:` lease and the
+   registry, it names every registered census file the declared work would
+   invalidate but the lease does not declare. It reads the lease and the
+   registry only - it never runs the plan's work to find out.
+3. Replayed against phase 5's PLAN-1 lease as that plan was written - the one
+   that halted at 0 of 8 tasks - the plan-time arm names `trace.test.mjs` and
+   `self-verify.test.mjs` before any execution. This is the phase's own
+   regression fixture, not a live re-run.
+4. `/cad-plan` fires the check after PLAN.md is written and before any executor
+   is dispatched, and the refusal names each missing file beside the census it
+   holds, so the fix is to amend the lease rather than to guess.
+5. The three repeat offenders each carry a registry entry with their census
+   assertions named: `self-verify.test.mjs` (8 halts), `arg-contract.test.mjs`
+   (8) and `trace.test.mjs` (5).
+6. A commit-time `lease-check` refusal on a registered census file is
+   distinguishable in the run record from an ordinary `undeclared-files`
+   refusal, so a plan-time arm that stopped firing surfaces as its own signal
+   rather than as generic lease noise.
+7. Full suite green.
+
+### Phase 3: CAPTURE is transient
 **Goal:** A finding leaves `.planning/CAPTURE.md` at the moment a gate DEFERS
 it, not at phase close. The deferral is what files the issue, so the user sees
 the finding when it is raised rather than in a batch later. CAPTURE holds only
@@ -162,7 +199,7 @@ routed into it.
 10. Full suite green, and no `reason` token renamed: a diff of the literal
    `reason` strings in `cadence-core/bin/` before and after the phase is empty.
 
-### Phase 3: One spelling, one phase
+### Phase 4: One spelling, one phase
 **Goal:** A phase spelling that would be silently normalized is refused where it is written, and a phase directory whose name would collide with another phase is reported as drift.
 **Depends on:** Nothing (independent of phases 1 and 2; ordered last because it is the smallest change)
 **Requirements:** SPL-01, SPL-02
@@ -172,13 +209,13 @@ routed into it.
 3. Every `planning.mjs` command that resolves `--phase` to a `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal`: for each such command, `--phase 1.10` against a tree holding `phases/1.1/` returns `ok:false` with a `bad-args` reason naming both fixes, rather than acting on phase 1.1.
 4. A census test pins the guarded-callsite count against the `requirePhaseArg` callsite count in `planning.mjs`, so an unguarded path-resolving callsite fails the suite with a message naming it.
 
-### Phase 4: Split planning.mjs by command
+### Phase 5: Split planning.mjs by command
 **Goal:** No dispatch pays a whole-file read to reach one command. The 32 `cmd*` handlers move out of `planning.mjs` into per-command modules, leaving a shared core of roughly 1,600 lines, so an agent touching one command reads about 2,400 tokens instead of paying the read cap twice on a 104k-token file and still not holding it.
-**Depends on:** Nothing, and it should run BEFORE phases 2 and 3 rather than after. Both of those write into `planning.mjs`: phase 3 wires `phaseSpellingRefusal` at roughly 28 `requirePhaseArg` callsites there and its criteria cite `planning.mjs:278`, `:612` and `:2586` by line. Splitting afterwards would move every one of them, so the split goes first and the later phases land in the new layout.
+**Depends on:** Nothing, and it should run BEFORE the CAPTURE and spelling phases rather than after. Both of those write into `planning.mjs`: the spelling phase wires `phaseSpellingRefusal` at roughly 28 `requirePhaseArg` callsites there and its criteria cite `planning.mjs:278`, `:612` and `:2586` by line. Splitting afterwards would move every one of them, so the split goes first and the later phases land in the new layout.
 **Requirements:** LOD-02
 **Success Criteria:**
 1. `planning.mjs` retains dispatch and the shared top-level helpers and nothing else: every `cmd*` handler lives in its own module, and the entry file measures under 2,000 lines.
 2. No command's behaviour changes. The full suite is green, `self-verify.mjs` reports zero problems across all 26 checks, and `npx tsc -p tsconfig.ci.json` still exits 0.
-3. Every citation moves with the code it names. A `planning.mjs:<line>` reference on a surface that INSTRUCTS - `skills/`, `cadence-core/workflows/`, `cadence-core/references/`, and `.planning/REQUIREMENTS.md`'s `## Active` section plus `.planning/DOCS-CLAIMS.md` - either points at the new module or is rewritten, and a census test pins the count so a stale citation fails the suite naming it. This is the LOD-01 discipline applied to code. Amended 2026-08-24 after the plan review: the original wording said "anywhere under `.planning/`", which the executor cannot satisfy - `ROADMAP.md` is a surface its own contract forbids writing, and `ARCHIVE.md`, `REQUIREMENTS.md`'s `## Shipped` rows and the `phases/*/` records are records of what was true when written, not instructions to follow. `ROADMAP.md`'s phase 3 entry cites `planning.mjs:278`, `:612` and `:2586`; those are a HAND edit after the split, tracked as an open item rather than a task.
+3. Every citation moves with the code it names. A `planning.mjs:<line>` reference on a surface that INSTRUCTS - `skills/`, `cadence-core/workflows/`, `cadence-core/references/`, and `.planning/REQUIREMENTS.md`'s `## Active` section plus `.planning/DOCS-CLAIMS.md` - either points at the new module or is rewritten, and a census test pins the count so a stale citation fails the suite naming it. This is the LOD-01 discipline applied to code. Amended 2026-08-24 after the plan review: the original wording said "anywhere under `.planning/`", which the executor cannot satisfy - `ROADMAP.md` is a surface its own contract forbids writing, and `ARCHIVE.md`, `REQUIREMENTS.md`'s `## Shipped` rows and the `phases/*/` records are records of what was true when written, not instructions to follow. `ROADMAP.md`'s phase 4 entry (the spelling phase, phase 3 before the 2026-08-25 insert) cites `planning.mjs:278`, `:612` and `:2586`; those are a HAND edit after the split, tracked as an open item rather than a task.
 4. The test file is addressed rather than left behind: `planning.test.mjs` (418,298 chars) is either split alongside the handlers or the phase records why it was not, since a 105k-token test file reproduces the same read cost it set out to remove.
 5. The saving is measured, not asserted. The phase records the before and after token cost of reaching one representative handler, using the same `wc -c` method the requirement was measured with.
