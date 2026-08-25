@@ -37,22 +37,37 @@ Check, then report - do not fix without asking.
      is `git rm --cached .planning/trace.jsonl`. Both can be true at once, and
      then both steps are needed - adding the rule alone leaves a tracked file that
      keeps getting committed.
-   - The capture queue's sections outside the recall walk. Run
+   - The capture queue, in two calls - a census of the file's sections, and a
+     verdict on the walked queue itself:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture-sections`
-     and print one line per section whose `in_walk` is false, naming its heading
-     and its bullet count, then what the number MEANS in one clause: those
-     bullets are invisible to /cad-plan's recall. Silent when `exists` is false
-     or every section is in the walk.
-     Print it EVERY run, never filtered against a list of sections you expect to
-     be out of the walk. That allowlist is precisely what would have hidden the
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture-check`
+     From `capture-sections`, print one line per section whose `in_walk` is
+     false, naming its heading and its bullet count, then what the number MEANS
+     in one clause: those bullets are invisible to /cad-plan's recall. Silent
+     when `exists` is false or every section is in the walk. It is a NAMED NOTE,
+     not an issue, the way step 7's manifest clause is a distinct lower note:
+     `## Debt markers` is written wholesale by `debt-harvest` and is not a
+     queue, so calling every out-of-walk section an issue trains the user to
+     skim past exactly the line this is here to make readable. What is worth
+     their attention is a count that MOVED, which they can only see because the
+     steady-state number is printed too.
+     From `capture-check`, print three things, and these ARE issues.
+     `.planning/CAPTURE.md` holds the phase in flight and nothing else, so each
+     one says that stopped being true:
+     - `substantive` against `bound`, naming the crossing when `over_bound` is
+       true. A crossed bound means a filing path stopped filing - the queue is
+       carrying work that belongs on the tracker.
+     - every `annotations[]` entry with its section, line and text. An
+       annotation is an item adjudicated the WRONG WAY: an item is resolved by
+       REMOVAL, so re-verifying one in place made the bullet longer instead of
+       making it leave.
+     - `archive.heading` with `archive.bullets` when `archive.present` is true.
+       That heading has LEFT this file's contract - moving settled items to a
+       section of the same document changes nothing about the bytes.
+     Print both readings EVERY run, never filtered against a list of sections or
+     items you expect. That allowlist is precisely what would have hidden the
      incident this check exists for - all five lost bullets sat under
      `## Archive`, the section any allowlist would have named first.
-     It is a NAMED NOTE, not an issue, the way step 7's manifest clause is a
-     distinct lower note: a project that archives inside CAPTURE.md is meant to
-     have out-of-walk bullets, and calling that an issue every run trains the
-     user to skim past exactly the line this is here to make readable. What is
-     worth their attention is a count that MOVED, which they can only see
-     because the steady-state number is printed too.
 
 2. **STATE cursor.** Exactly the 4-line schema (Phase / Status / Next / Updated -
    references/conventions.md). `Status` is one of the lifecycle values
