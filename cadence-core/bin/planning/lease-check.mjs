@@ -13,6 +13,7 @@
 import { execFileSync } from 'node:child_process';
 import { join, relative, resolve as resolvePath, sep } from 'node:path';
 import { fail, ok, read } from './core.mjs';
+import { censusesAtRisk } from '../lib/census-registry.mjs';
 import { covers } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
@@ -223,6 +224,61 @@ function cmdLeaseCheck(dir, opts) {
     return fail('no-plan', `no PLAN-${k}.md or PLAN.md under ${pdir}`, `/cad-plan ${parsedPhase.raw}`);
   }
   const { files: declared, issues } = parsePlanFiles(text);
+  const frontmatter = issues.length ? { frontmatter_issues: issues } : {};
+
+  // --- the PLAN-TIME arm (CEN-02) ------------------------------------------
+  //
+  // The same question asked BEFORE an executor runs: not "did this commit stage
+  // a path the plan never named" but "will the declared work move a
+  // hand-maintained count whose holding file the plan never named". The commit
+  // -time arm below catches that too late - by then the census is already red
+  // and the fix is a lease amendment mid-run, which
+  // `.planning/_archive-v3.7.1` records being overridden rather than obeyed
+  // twice.
+  //
+  // It branches HERE, above the `execFileSync` block, so the two arms share
+  // nothing below `parsePlanFiles` (D-11). No `git` call, no staged set, and
+  // deliberately NO `no-staged-set` fail-closed rule: that rule is a statement
+  // about the STAGED side, and inheriting it would halt planning in any tree
+  // where `git diff --cached` fails, on a condition this arm does not measure.
+  // `repoRel` has no input here either - registry subjects and lease
+  // declarations are both already repo-relative strings, and `planFile` is
+  // built from the caller's own `--dir`, so the plan file is named by
+  // separator-normalizing that path rather than by resolving a toplevel.
+  //
+  // Which censuses are at risk is `lib/census-registry.mjs`'s answer and not
+  // this function's, for the reason the `covers` block below states about
+  // `lib/lease-grammar.mjs`: the replay in `planning-lease-check.test.mjs` asks
+  // the same predicate once per historical plan without a seam invocation, and
+  // a second copy here is how the two readers come to disagree.
+  if (opts['plan-time']) {
+    const planPath = planFile.split(sep).join('/');
+    const atRisk = censusesAtRisk(declared);
+    const base = {
+      phase: n,
+      plan: k,
+      plan_file: planPath,
+      declared: declared.length,
+      ...frontmatter,
+    };
+    // A clean lease is a PASS and not a silence: the caller needs to be able to
+    // tell "the check ran and found nothing" from "the check never ran".
+    if (!atRisk.length) return ok(base);
+    // Emitted directly for the reason the `undeclared-files` refusal below is:
+    // `fail()`'s reason/detail/hint shape has no channel for the offending
+    // list, and naming each missing FILE beside what its count counts and where
+    // it is asserted is the whole point - it is what makes the remedy "declare
+    // these" rather than "guess".
+    return emit({
+      ok: false,
+      reason: 'census-at-risk',
+      ...base,
+      censuses_at_risk: atRisk,
+      hint: `add these paths to ${planPath}'s files: list and re-run this check`
+        + ' - each one holds a count the declared work would move, and declaring'
+        + ' it is what lets the executor re-pin the count in the same commit',
+    });
+  }
 
   let top;
   /** @type {Buffer} */
@@ -321,7 +377,7 @@ function cmdLeaseCheck(dir, opts) {
     plan_file: repoRel(top, planFile),
     staged: staged.length,
     declared: declared.length,
-    ...(issues.length ? { frontmatter_issues: issues } : {}),
+    ...frontmatter,
   };
   if (undeclared.length) {
     // Emitted directly: fail()'s reason/detail/hint shape has no channel for
