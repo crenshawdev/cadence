@@ -71,7 +71,7 @@ visibly `unpicked` in `/cad-audit`.
 
 ## Phases
 
-- [ ] **Phase 1: Cold-split the eager references** - `review-triggers.md` and `seams.md` become a small router plus cold branch files, so a fire loads only the branch it selected, and the weight pin moves with it
+- [x] **Phase 1: Cold-split the eager references** - `review-triggers.md` and `seams.md` become a small router plus cold branch files, so a fire loads only the branch it selected, and the weight pin moves with it
 - [ ] **Phase 2: The host writes the bracket** - `SubagentStart`/`SubagentStop` write the trace bracket with the hand-written close kept as fallback, `self-verify` pins the registered event names, brackets carry `duration_ms`, and the undocumented host-return dependency is stated
 - [ ] **Phase 3: Pin the stem list and fix the prose** - the `planning-*.test.mjs` stem list gets a census, `CADENCE-CENSUS` gets its prose home in `conventions.md`, and `seam-calls.test.mjs`'s header stops misattributing its own derivation
 
