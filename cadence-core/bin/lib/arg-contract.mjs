@@ -911,6 +911,16 @@ export const CONTRACTS = {
     'capture-sections': {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
+    // The health verdict over the same file, and the same `--file` override.
+    // ONE WORD, never `capture check`: `subcommandKey` consumes a second word
+    // only for the families in `TWO_WORD`, and one operation does not earn
+    // widening that Set. No flag names the BOUND, and that absence is the
+    // point - the bound is `planning.max_capture_bullets` in the config layer,
+    // so a flag here would be a second, un-layered way to set one and a run's
+    // report would stop agreeing with the project's own configured number.
+    'capture-check': {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     'debt-harvest': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },

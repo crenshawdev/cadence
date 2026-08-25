@@ -207,6 +207,7 @@ import { cmdDetectSurfaces } from './planning/detect-surfaces.mjs';
 import { cmdReads } from './planning/reads.mjs';
 import { cmdCapture } from './planning/capture.mjs';
 import { cmdCaptureSections } from './planning/capture-sections.mjs';
+import { cmdCaptureCheck } from './planning/capture-check.mjs';
 import { cmdDebtHarvest } from './planning/debt-harvest.mjs';
 import { cmdMilestonePrune } from './planning/milestone-prune.mjs';
 import { cmdTrace } from './planning/trace.mjs';
@@ -304,6 +305,11 @@ const COMMANDS = {
   // Same `--file` override, and STANDALONE beside `status` rather than a
   // drift kind inside it (D-07) - see cmdCaptureSections.
   'capture-sections': (dir, _sub, opts) => cmdCaptureSections(dir, opts),
+  // ONE WORD, not `capture check`: `subcommandKey` consumes a second word only
+  // for the families in `TWO_WORD`, and one operation does not earn widening
+  // that Set. Standalone for the same reason its sibling is, and reporting
+  // rather than refusing - see cmdCaptureCheck.
+  'capture-check': (dir, _sub, opts) => cmdCaptureCheck(dir, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
   // SOURCE and writes into `.planning`. Same declared row, same door.
   'debt-harvest': (_dir, _sub, opts) =>
