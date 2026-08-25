@@ -25,6 +25,7 @@ test('a freshly created queue counts ZERO substantive bullets', () => {
     { section: 'Notes', substantive: 0 },
   ]);
   assert.deepEqual(r.annotations, []);
+  assert.deepEqual(r.items, []);
   assert.deepEqual(r.archive, { present: false, bullets: 0 });
 });
 
@@ -36,6 +37,17 @@ test('the placeholder does not hide a real bullet beside it', () => {
     { section: 'Seeds', substantive: 0 },
     { section: 'Notes', substantive: 0 },
   ]);
+});
+
+test('every substantive bullet is NAMED, not just counted', () => {
+  // The phase close reports these by name: "the queue holds 2" at close names
+  // nothing anybody can act on. The placeholder is not one of them.
+  const r = captureHealth('## Todos\n\n- None.\n- [ ] (phase 2) wire the path\n\n## Seeds\n\n- a seed\n');
+  assert.deepEqual(r.items, [
+    { section: 'Todos', line: 4, text: '(phase 2) wire the path' },
+    { section: 'Seeds', line: 8, text: 'a seed' },
+  ]);
+  assert.equal(r.substantive, r.items.length);
 });
 
 test('a checked bullet counts, and a continuation line and a `* ` line do not', () => {

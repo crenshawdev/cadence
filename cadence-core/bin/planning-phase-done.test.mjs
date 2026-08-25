@@ -10,11 +10,12 @@
 // a sibling that imports a fixture from here registers nothing twice.
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, existsSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, chmodSync, existsSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeTree, run } from './planning.test.mjs';
+import { EMPTY_CAPTURE } from './lib/capture-file.mjs';
 
 /** True iff this module is what node was told to run; realpath on both sides so
  * a symlinked checkout still matches (config-seams.test.mjs D-19). */
@@ -270,4 +271,74 @@ test('phase-done: `wrote` names the documents that moved, on both shapes', () =>
   assert.deepEqual(o.wrote, ['ROADMAP.md']);
   assert.deepEqual(o.reqs, []);
   assert.equal(o.roadmap.now, '[x]');
+});
+
+// --- the close ASSERTS the queue is empty (CAP-03) ---------------------------
+// It does not empty it. An item leaves CAPTURE.md at the gate that declined to
+// fix it; this is the check that it did, and it is a REPORT - the phase still
+// closes, both documents are still written, and the report rides beside them.
+
+/** A one-phase tree whose CAPTURE.md is written verbatim. */
+function captureTree(text) {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  if (text !== undefined) writeFileSync(join(dir, 'CAPTURE.md'), text);
+  return dir;
+}
+
+const TWO_LEFT = '## Todos\n\n- [ ] (phase 1) the one nobody filed\n\n'
+  + '## Seeds\n\n- an idea that outlived the phase\n\n## Notes\n\n- None.\n';
+
+test('phase-done: a non-empty queue is NAMED at close, and the phase still closes', () => {
+  const dir = captureTree(TWO_LEFT);
+  const r = run(['phase-done', '--n', '1'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0, 'a leftover queue is a report - the close is not refused');
+  // The close really happened: the box flipped and the document was written.
+  assert.equal(r.roadmap.now, '[x]');
+  assert.deepEqual(r.wrote, ['ROADMAP.md']);
+  assert.match(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), /- \[x\] \*\*Phase 1:/);
+  // Named, not counted: "2 items" at close names nothing anybody can act on.
+  assert.equal(r.capture.substantive, 2);
+  assert.deepEqual(r.capture.items, [
+    { section: 'Todos', line: 3, text: '(phase 1) the one nobody filed' },
+    { section: 'Seeds', line: 7, text: 'an idea that outlived the phase' },
+  ]);
+});
+
+test('phase-done: a queue holding only the placeholders names nothing', () => {
+  const r = run(['phase-done', '--n', '1'], captureTree(EMPTY_CAPTURE));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.capture.substantive, 0);
+  assert.deepEqual(r.capture.items, []);
+});
+
+test('phase-done: an absent CAPTURE.md is an EMPTY queue, and closes cleanly', () => {
+  const r = run(['phase-done', '--n', '1'], captureTree());
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.roadmap.now, '[x]');
+  assert.deepEqual(r.capture, { substantive: 0, items: [] });
+});
+
+test('phase-done: a queue that cannot be READ closes anyway, reported unread', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  // A phase's completion does not depend on this file being legible. The
+  // REASON lives in `capture-check`, which refuses that file with a hint.
+  const dir = captureTree(TWO_LEFT);
+  const file = join(dir, 'CAPTURE.md');
+  chmodSync(file, 0o000);
+  const r = run(['phase-done', '--n', '1'], dir);
+  chmodSync(file, 0o644);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.roadmap.now, '[x]');
+  assert.deepEqual(r.capture, { unread: true });
+});
+
+test('phase-done --undo: reopening a phase makes NO assertion about the queue', () => {
+  const dir = captureTree(TWO_LEFT);
+  run(['phase-done', '--n', '1'], dir);
+  const u = run(['phase-done', '--n', '1', '--undo'], dir);
+  assert.equal(u.ok, true, JSON.stringify(u));
+  assert.equal(u.roadmap.now, '[ ]');
+  assert.equal('capture' in u, false, 'the field rides the close arm only');
 });

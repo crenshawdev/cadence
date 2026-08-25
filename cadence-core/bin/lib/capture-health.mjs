@@ -92,6 +92,7 @@ function bulletText(line) {
  * @typedef {object} CaptureHealth
  * @property {number} substantive total substantive bullets across the walk
  * @property {Array<{section: string, substantive: number}>} sections per walked heading, in walk order
+ * @property {Array<{section: string, line: number, text: string}>} items every substantive bullet, in document order
  * @property {Array<{section: string, line: number, text: string}>} annotations walked bullets adjudicated in place
  * @property {{present: boolean, bullets: number}} archive the `## Archive` heading and what sits under it
  */
@@ -123,6 +124,13 @@ export function captureHealth(text) {
   const sections = [];
   /** @type {Array<{section: string, line: number, text: string}>} */
   const annotations = [];
+  // Every substantive bullet, named. The COUNT answers `/cad-health`'s bound
+  // question; the LIST is what the phase close reports, because "the queue has
+  // 4 items in it" at close names nothing a reader can act on. Uncapped on
+  // purpose: the only bound on this list is the queue's own, which is the
+  // thing being asserted.
+  /** @type {Array<{section: string, line: number, text: string}>} */
+  const items = [];
   let substantive = 0;
 
   for (const section of CAPTURE_WALK_SECTIONS) {
@@ -134,7 +142,10 @@ export function captureHealth(text) {
     for (let i = start + 1; start >= 0 && i < end; i++) {
       const body = bulletText(lines[i]);
       if (body === null) continue;
-      if (body !== PLACEHOLDER) count += 1;
+      if (body !== PLACEHOLDER) {
+        count += 1;
+        items.push({ section, line: i + 1, text: short(body) });
+      }
       if (ANNOTATIONS.some((re) => re.test(body))) {
         annotations.push({ section, line: i + 1, text: short(body) });
       }
@@ -152,6 +163,7 @@ export function captureHealth(text) {
   return {
     substantive,
     sections,
+    items,
     annotations,
     // Every bullet under the heading, placeholder included: an `## Archive`
     // section has no empty state worth exempting, and the number's job is to

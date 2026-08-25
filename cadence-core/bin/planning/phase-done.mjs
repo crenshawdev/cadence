@@ -8,9 +8,10 @@
 // leaves the tree at its old state under ok:false rather than half-flipped.
 'use strict';
 
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, read } from './core.mjs';
+import { captureHealth } from '../lib/capture-health.mjs';
 import { runTransition } from '../lib/file-transition.mjs';
 import {
   atomicWrite, parseRequirements, setPhaseBox, setReqStatus,
@@ -109,6 +110,23 @@ function cmdPhaseDone(dir, opts) {
     newReqText = res.text;
   }
 
+  // THE CLOSE ASSERTS THE QUEUE IS EMPTY - it does not empty it (CAP-03).
+  // `.planning/CAPTURE.md` holds the phase IN FLIGHT, and what makes it
+  // transient is that an item leaves at the gate that declined to fix it, not
+  // in a roll-out here. So this reads the queue and REPORTS what is left; a
+  // non-empty queue is a named problem and never a refusal, because a phase's
+  // completion is a fact about the work, not about this file.
+  //
+  // Read BEFORE the transition runs, for the same reason the pre-flight is
+  // where it is: whatever this returns must not depend on which documents have
+  // already been written. And nothing it returns can change the outcome - an
+  // absent queue is an EMPTY queue, and one that cannot be opened is reported
+  // `unread` and closes anyway. `planning.mjs capture-check` is where an
+  // unreadable queue gets a reason and a hint; it is a report of its own and
+  // refusing a phase close over it would be this seam answering a question
+  // nobody asked it.
+  const capture = undo ? null : readQueue(join(dir, 'CAPTURE.md'));
+
   // ONE ordered step list, stopped at the first failure: ROADMAP.md, then
   // REQUIREMENTS.md when there is one to write. The key on each step is the
   // DOCUMENT NAME rather than the joined path, because that key is what the
@@ -172,7 +190,41 @@ function cmdPhaseDone(dir, opts) {
   // they have always had - `reqs` stays the ids setReqStatus reported changed
   // and never becomes `null` to mean "not written", because /cad-verify and
   // /cad-undo read it and planning.test.mjs deep-equals it across nine cases.
-  ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs, wrote: applied.completed });
+  //
+  // `capture` is a NEW field on D-04's own precedent, and rides the CLOSE arm
+  // only: reopening a phase makes no assertion about the queue, so `--undo`
+  // omits it on the omit-optionals convention. Nothing existing changes
+  // meaning - `roadmap`, `reqs` and `wrote` keep the shape and contents nine
+  // deep-equal cases already assert.
+  ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs, wrote: applied.completed,
+    ...(capture ? { capture } : {}) });
+}
+
+/**
+ * The capture queue at close: `{substantive, items}` when it could be read or
+ * is absent, `{unread: true}` when it is present and could not be.
+ *
+ * The unread arm carries no `fs` message on purpose. This envelope's job is the
+ * CLOSE, and a reader who needs the reason runs `capture-check`, which refuses
+ * that file with a detail and a hint rather than reporting about a file it
+ * could not open.
+ * @param {string} file
+ * @returns {{substantive: number, items: Array<{section: string, line: number, text: string}>}
+ *   | {unread: true}}
+ */
+function readQueue(file) {
+  /** @type {string} */
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (e) {
+    // Absence is DATA, as everywhere in this seam: a project with no CAPTURE.md
+    // has an empty queue, which is exactly what this assertion wants to find.
+    if (e && /** @type {any} */ (e).code === 'ENOENT') return { substantive: 0, items: [] };
+    return { unread: true };
+  }
+  const health = captureHealth(text);
+  return { substantive: health.substantive, items: health.items };
 }
 
 export { cmdPhaseDone };
