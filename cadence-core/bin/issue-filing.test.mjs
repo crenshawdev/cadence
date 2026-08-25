@@ -605,6 +605,35 @@ test('a create failure whose mirror ALSO failed says so, and the hint stops the 
   assert.match(envelope.hint, /[Dd]o not re-file them/);
 });
 
+test('the create-failed hint is honest that the failed create may have LANDED', () => {
+  // `run` collapses a refusal, a SIGKILL on the timeout and a transport failure
+  // into one `{ok:false}`, and a forge can accept and create an issue before
+  // the client stops listening. The old hint said "re-run the unfiled entries"
+  // unconditionally, and since the only lookup this seam makes is filtered to
+  // DECLINE_LABEL it can never see an accepted issue - so the retry filed a
+  // duplicate. The fix is an honest instruction, and the token that makes it
+  // followable is the fingerprint the issue TITLE already carries.
+  const payload = dispositions([
+    [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
+  ]);
+  const { envelope } = run(['file', '--payload', payload], { stub: { failAt: 3 } });
+  assert.equal(envelope.reason, 'create-failed');
+  const failed = fingerprint(FIVE[2]);
+  assert.equal(envelope.unfiled[0].fingerprint, failed);
+  assert.ok(envelope.hint.includes(failed), envelope.hint);
+  assert.match(envelope.hint, /AMBIGUOUS rather than known-failed/, envelope.hint);
+  assert.match(envelope.hint, /BEFORE re-filing it/, envelope.hint);
+  assert.match(envelope.hint, /SEARCH acme\/widget's issues/, envelope.hint);
+  // The instruction is runnable only because the title carries that token, so
+  // assert the two agree rather than trusting the sentence.
+  assert.ok(issueTitle(FIVE[2]).includes(failed), issueTitle(FIVE[2]));
+  // No extra network call was bought to resolve the ambiguity: still one create
+  // attempt per entry up to the failure, and no list call on the `file` face.
+  const { calls } = run(['file', '--payload', payload], { stub: { failAt: 3 } });
+  assert.equal(createCalls(calls).length, 3, calls.join('\n'));
+  assert.deepEqual(listCalls(calls), []);
+});
+
 test('`unfixed` writes nothing at all - the ask is not a filing', () => {
   const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
   const { dir } = run(['unfixed', '--payload', payload]);

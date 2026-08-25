@@ -74,6 +74,14 @@ const CREATE_TIMEOUT_MS = 60000;
  * `stdio[2]` is `ignore` at the SPAWN, the discipline bin/forge.mjs and
  * bin/issue-check.mjs both state: a forge CLI's stderr is not this seam's to
  * read, to buffer or to put anywhere near an envelope.
+ *
+ * `ok: false` MEANS "this call did not come back clean", never "the remote did
+ * nothing". A nonzero exit, a SIGKILL on the timeout and a transport failure
+ * are one value here by construction - stderr is discarded, so there is not
+ * even a message to classify - and on a WRITE the second and third can follow a
+ * remote that already committed the change. Every caller of this on a create
+ * path has to carry that ambiguity forward rather than resolve it; `cmdFile`'s
+ * create-failed hint is where it is spelled out for the operator.
  * @param {string} bin @param {string[]} args
  * @param {{cwd: string, timeout: number}} opts
  */
@@ -432,9 +440,32 @@ function cmdFile(dir, payloadFile) {
       // revisited by the retry. `mirrored` says which of the two happened and
       // the hint below says what to do about it.
       const mirror = mirrorFiled(dir, forge.provider, forge.repo, filed);
-      const retry = `run \`${forge.bin}\` yourself in this directory to see why, then re-run this `
-        + 'step with ONLY the unfiled entries - they are named on this envelope and they '
-        + 'are still in hand, so none of them is lost.';
+      // A NONZERO CREATE IS AMBIGUOUS, and the instruction says so rather than
+      // pretending otherwise. `run` collapses every `execFileSync` throw into
+      // one `{ok: false}`: a forge that REFUSED, a SIGKILL on this seam's own
+      // CREATE_TIMEOUT_MS bound and a transport failure are indistinguishable
+      // here, and the last two are exactly the cases where the forge accepted
+      // and created the issue before the client stopped listening.
+      //
+      // Nothing in this seam can tell them apart, and nothing cheap could:
+      // `readDeclines` is a DECLINE_LABEL-filtered list, so it structurally
+      // cannot see an accepted issue, and no row reads an issue number back off
+      // a create (there is no `--json` on any create face - task 2's measured
+      // fact). A second lookup would be a second network call inside a gate
+      // step and a second page-clamp to reason about, for an answer the
+      // operator can get by looking. So the hint hands the ambiguity to the
+      // human WITH the one token that resolves it: the fingerprint is in the
+      // issue TITLE by construction (`issueTitle`), which makes "search for it
+      // before re-filing" an instruction that can actually be followed. Without
+      // this sentence the retry files a duplicate.
+      const failed = unfiled[0].fingerprint;
+      const retry = `run \`${forge.bin}\` yourself in this directory to see why. The create for `
+        + `${failed} is AMBIGUOUS rather than known-failed: a timeout, a kill on this step's `
+        + 'own bound and a dropped connection all look here exactly like a refusal, and the '
+        + `forge may have created that issue anyway. So SEARCH ${forge.repo}'s issues for the `
+        + `title carrying \`${failed}\` BEFORE re-filing it. Then re-run this step with ONLY `
+        + 'the unfiled entries this envelope names, minus any whose fingerprint is already on '
+        + 'the tracker - they are still in hand, so none of them is lost.';
       // Only when the mirror ALSO failed, because a hint that always warns
       // about the recall pointer teaches the reader to skip the sentence.
       const lostPointer = mirror.ok === false
