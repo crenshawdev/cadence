@@ -6,6 +6,25 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The plugin's home is GitHub again.**
+  `https://github.com/crenshawdev/cadence.git` is the published source and the
+  install URL. This reverses the move recorded in v2.0.0, which made the
+  self-hosted Forgejo remote the only published source; Forgejo is now the
+  mirror. The README badge, the README and DESIGN install commands, and the
+  plugin manifest's `homepage` all follow it, and the release link references
+  below resolve to GitHub releases, which exist for every tag from v1.1.0-rc.1
+  forward. An existing Forgejo-installed user follows it with three commands:
+
+  ```
+  /plugin uninstall cadence@cadence
+  /plugin marketplace add https://github.com/crenshawdev/cadence.git
+  /plugin install cadence@cadence
+  ```
+
+  Nothing about the plugin itself changes with the move.
+
 ## [3.7.1] - 2026-08-25
 
 `.planning/CAPTURE.md` was a queue nothing drained. Measured at the open: 276
@@ -3927,36 +3946,36 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
-[3.7.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.7.1
-[3.7.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.7.0
-[3.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.1
-[3.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.6.0
-[3.5.9]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.9
-[3.5.8]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.8
-[3.5.7]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.7
-[3.5.6]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.6
-[3.5.5]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.5
-[3.5.4]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.4
-[3.5.3]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.3
-[3.5.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.2
-[3.5.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.1
-[3.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.0
-[3.4.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.1
-[3.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.0
-[3.3.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.1
-[3.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.0
-[3.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.2.0
-[3.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.1.0
-[3.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.0.0
-[2.6.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.2
-[2.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.1
-[2.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.0
-[2.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.5.0
-[2.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.4.0
-[2.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.3.0
-[2.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.2.0
-[2.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/commit/e457e47
-[2.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.0.0
+[3.7.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.1
+[3.7.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.0
+[3.6.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.6.1
+[3.6.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.6.0
+[3.5.9]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.9
+[3.5.8]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.8
+[3.5.7]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.7
+[3.5.6]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.6
+[3.5.5]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.5
+[3.5.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.4
+[3.5.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.3
+[3.5.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.2
+[3.5.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.1
+[3.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.5.0
+[3.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.4.1
+[3.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.4.0
+[3.3.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.3.1
+[3.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.3.0
+[3.2.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.2.0
+[3.1.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.1.0
+[3.0.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.0.0
+[2.6.2]: https://github.com/crenshawdev/cadence/releases/tag/v2.6.2
+[2.6.1]: https://github.com/crenshawdev/cadence/releases/tag/v2.6.1
+[2.6.0]: https://github.com/crenshawdev/cadence/releases/tag/v2.6.0
+[2.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v2.5.0
+[2.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v2.4.0
+[2.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v2.3.0
+[2.2.0]: https://github.com/crenshawdev/cadence/releases/tag/v2.2.0
+[2.1.0]: https://github.com/crenshawdev/cadence/commit/e457e47
+[2.0.0]: https://github.com/crenshawdev/cadence/releases/tag/v2.0.0
 [1.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.5.0
 [1.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.1
 [1.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.0
