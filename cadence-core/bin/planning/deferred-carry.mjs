@@ -6,7 +6,7 @@
 
 import { existsSync, lstatSync, mkdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, readQueue } from './core.mjs';
+import { fail, ok, phaseSpellingCollision, readQueue } from './core.mjs';
 import { queueName } from '../lib/deferred-queue.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
@@ -44,6 +44,17 @@ function cmdDeferredCarry(dir, opts) {
     return fail('bad-args', 'deferred carry needs --phase <N>',
       'pass --phase <N> for the phase whose queue is being carried out, then re-run - this runs'
       + ' BEFORE milestone-prune, which deletes the directory the members sit in');
+  }
+  // The tree-aware collision check, right after the parse and BEFORE the
+  // destination rail below - this seam renames committed artifacts, so a
+  // spelling that names one phase in the envelope and another on disk is
+  // refused before anything moves. It refuses only when the normalized
+  // spelling names a directory that exists here, so `phases/1.10/` stays
+  // carryable on a tree with no `phases/1.1/`.
+  const collision = phaseSpellingCollision(dir, parsed);
+  if (collision) {
+    return fail('bad-args', `deferred carry ${collision}`,
+      're-run the carry with one of the two spellings the detail names - nothing was moved');
   }
   const n = parsed.raw;
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');

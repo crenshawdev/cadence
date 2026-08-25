@@ -22,7 +22,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -244,4 +244,132 @@ test('lease-check: --phase 08 refuses against a tree holding phases/8/', () => {
   stage(repo, 'a.txt');
   const r = leaseCheck(repo, dir, ['--phase', '08', '--plan', '1']);
   assertRefused(r, '08', '8');
+});
+
+
+// --- the queue and record faces -------------------------------------------
+//
+// Three more path-resolving callsites, each wired for a reason its own row
+// states. `deferred carry` RENAMES committed artifacts out of `phases/<raw>/`;
+// `deferred list` echoes nothing numeric but selects a directory under
+// `phases/` by exact name inside `readQueue`; `trace append` and `trace close`
+// share one body whose `.raw` reaches `recountReceipt` and then
+// `recordForFire`'s `join(dir, 'phases', ...)`.
+
+/** A queue member straight into `phases/<phase>/`, no repository needed - the
+ * same shape planning-deferred.test.mjs's `putMember` writes. */
+function putMember(dir, phase) {
+  writeFileSync(join(dir, 'phases', String(phase), 'DEFERRED-diff-plan-1.json'),
+    `${JSON.stringify({
+      phase: String(phase),
+      trigger: 'diff',
+      discriminator: 'plan-1',
+      round: 1,
+      findings: [{
+        file: 'src.js',
+        line: 1,
+        severity: 'high',
+        claim: 'the "x" binding is reassigned',
+        failure_scenario: 'a second reader sees 1 where the first saw 2',
+      }],
+    })}\n`);
+}
+
+test('deferred carry: --phase 1.10 carries out of phases/1.10/ when no phases/1.1 exists', () => {
+  const dir = tree(['1', '1.10']);
+  putMember(dir, '1.10');
+  const r = seam(['deferred', 'carry', '--phase', '1.10'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.carried, 1, JSON.stringify(r));
+  assert.equal(r.moved[0].from, 'phases/1.10/DEFERRED-diff-plan-1.json', JSON.stringify(r));
+  assert.equal(r.moved[0].to, 'deferred/1.10/DEFERRED-diff-plan-1.json', JSON.stringify(r));
+});
+
+test('deferred carry: --phase 1.10 refuses against a tree holding phases/1.1/, moving nothing', () => {
+  const dir = tree(['1', '1.1', '1.10']);
+  putMember(dir, '1.10');
+  const r = seam(['deferred', 'carry', '--phase', '1.10'], dir);
+  assertRefused(r, '1.10', '1.1');
+  assert.ok(r.detail.startsWith('deferred carry --phase'), r.detail);
+  // The refusal is ahead of every rename, which is the whole reason it sits
+  // where it does: this face MOVES committed artifacts.
+  assert.equal(existsSync(join(dir, 'phases', '1.10', 'DEFERRED-diff-plan-1.json')), true);
+  assert.equal(existsSync(join(dir, 'deferred')), false);
+});
+
+test('deferred carry: --phase 08 refuses against a tree holding phases/8/', () => {
+  const dir = tree(['8', '08']);
+  putMember(dir, '08');
+  assertRefused(seam(['deferred', 'carry', '--phase', '08'], dir), '08', '8');
+});
+
+test('deferred list: --phase 1.10 lists phases/1.10/ when no phases/1.1 exists', () => {
+  const dir = tree(['1', '1.10']);
+  putMember(dir, '1.10');
+  const r = seam(['deferred', 'list', '--phase', '1.10'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.members.map((m) => m.path),
+    ['phases/1.10/DEFERRED-diff-plan-1.json'], JSON.stringify(r));
+});
+
+test('deferred list: --phase 1.10 refuses against a tree holding phases/1.1/', () => {
+  const dir = tree(['1', '1.1', '1.10']);
+  putMember(dir, '1.10');
+  const r = seam(['deferred', 'list', '--phase', '1.10'], dir);
+  assertRefused(r, '1.10', '1.1');
+  assert.ok(r.detail.startsWith('deferred list --phase'), r.detail);
+});
+
+test('deferred list: --phase 08 refuses against a tree holding phases/8/', () => {
+  const dir = tree(['8', '08']);
+  putMember(dir, '08');
+  assertRefused(seam(['deferred', 'list', '--phase', '08'], dir), '08', '8');
+});
+
+const APPEND = ['trace', 'append', '--family', 'lifecycle', '--event', 'phase_start'];
+
+test('trace append: --phase 1.10 appends when no phases/1.1 exists', () => {
+  const dir = tree(['1', '1.10']);
+  const r = seam([...APPEND, '--phase', '1.10'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.written, true, JSON.stringify(r));
+  assert.equal(r.corr, '1.10', JSON.stringify(r));
+});
+
+test('trace append: --phase 1.10 refuses against a tree holding phases/1.1/, appending nothing', () => {
+  const dir = tree(['1', '1.1', '1.10']);
+  const r = seam([...APPEND, '--phase', '1.10'], dir);
+  assertRefused(r, '1.10', '1.1');
+  assert.ok(r.detail.startsWith('trace append --phase'), r.detail);
+  assert.equal(existsSync(join(dir, 'trace.jsonl')), false);
+});
+
+test('trace close: the same body, so it refuses on the same tree', () => {
+  const dir = tree(['1', '1.1', '1.10']);
+  const r = seam(['trace', 'close', '--phase', '1.10', '--role', 'executor'], dir);
+  assertRefused(r, '1.10', '1.1');
+  assert.ok(r.detail.startsWith('trace close --phase'), r.detail);
+});
+
+// --- the three exemptions, asserted rather than assumed ---------------------
+//
+// A wire at any of these would be a REGRESSION, so each gets an arm that goes
+// red if one is added. `capture` resolves no `phases/<N>/` path at all (D-08);
+// `trace render`, `suggest` and `window` scope a `.planning/trace.jsonl`
+// filter and resolve no directory either.
+
+test('capture: --phase 1.10 still writes the tag (phase 1.10) on a tree holding phases/1.1/', () => {
+  const dir = tree(['1', '1.1', '1.10']);
+  const r = seam(['capture', '--kind', 'todo', '--text', 'a thing', '--phase', '1.10'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.bullet, '- [ ] (phase 1.10) a thing', JSON.stringify(r));
+  assert.match(readFileSync(join(dir, 'CAPTURE.md'), 'utf8'), /\(phase 1\.10\) a thing/);
+});
+
+test('trace render: --phase 1.10 still renders on a tree holding phases/1.1/', () => {
+  const dir = tree(['1', '1.1', '1.10']);
+  seam([...APPEND, '--phase', '1.1'], dir); // something for the filter to skip
+  const r = seam(['trace', 'render', '--phase', '1.10'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.corr, '1.10', JSON.stringify(r));
 });

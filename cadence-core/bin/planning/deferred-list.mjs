@@ -4,7 +4,7 @@
 'use strict';
 
 import { existsSync } from 'node:fs';
-import { fail, ok, readQueue } from './core.mjs';
+import { fail, ok, phaseSpellingCollision, readQueue } from './core.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
@@ -49,6 +49,17 @@ function cmdDeferredList(dir, opts) {
       return fail('bad-args', 'deferred list --phase needs a phase number (N or N.M)',
         'send a plain phase number, or drop --phase to list every finding still queued across the'
         + ' milestone');
+    }
+    // The tree-aware collision check, before `readQueue` selects a directory
+    // under `phases/` by exact name. This face echoes nothing numeric, which is
+    // why it earns the wire anyway: `wantPhase` IS the directory component, so
+    // on a tree holding both spellings a caller asking about one phase's queue
+    // would be answered about the other's, under a `phase:` key echoing what
+    // they typed.
+    const collision = phaseSpellingCollision(dir, parsed);
+    if (collision) {
+      return fail('bad-args', `deferred list ${collision}`,
+        're-run the list with one of the two spellings the detail names - nothing was read');
     }
     // The caller's OWN spelling, the way every other phase-addressed read in
     // this file works: the value is a directory component before it is

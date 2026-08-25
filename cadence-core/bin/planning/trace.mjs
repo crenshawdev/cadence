@@ -24,7 +24,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import {
   ARGV, DISPATCH_WINDOW_DEFAULTS, RECORD_TOKEN, argRefusal, fail, listPlanFiles, ok,
-  read, readReadsRecords, routeLadder,
+  phaseSpellingCollision, read, readReadsRecords, routeLadder,
 } from './core.mjs';
 import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
@@ -378,6 +378,18 @@ function cmdTrace(dir, sub, opts) {
       return fail('bad-args', `trace ${sub} needs --phase <N>`,
         `pass --phase <N> for the phase this event belongs to, then re-run the ${sub} - nothing was`
         + ' appended, so exactly one event lands');
+    }
+    // The tree-aware collision check, right after the parse and ahead of every
+    // other flag rail below. `append` and `close` are the two arms whose
+    // `parsedPhase.raw` leaves this file: it reaches `recountReceipt` and then
+    // `recordForFire`'s `join(dir, 'phases', ...)`, so a colliding spelling
+    // would recount one phase's fires under another phase's name. The
+    // `suggest`, `render` and `window` arms take no wire - their raw spelling
+    // scopes a `.planning/trace.jsonl` filter and resolves no directory.
+    const collision = phaseSpellingCollision(dir, parsedPhase);
+    if (collision) {
+      return fail('bad-args', `trace ${sub} ${collision}`,
+        `re-run the ${sub} with one of the two spellings the detail names - nothing was appended`);
     }
     // `--detail-file` is the SAFE transport for a detail the CALLER derived -
     // a reviewer's verdict, a checkpoint's reason - and the reasoning lives in

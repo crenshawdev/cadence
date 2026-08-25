@@ -89,6 +89,11 @@ function cmdCapture(dir, opts) {
         + ' captured');
     }
     // The caller's OWN spelling, so `--phase 1.10` tags `(phase 1.10)`.
+    // THE STANDING EXEMPTION from the tree-aware `phaseSpellingCollision` check
+    // every other `--phase` face under `planning/` now carries (CONTEXT D-08):
+    // this one resolves no `phases/<N>/` path at all - `raw` is a TAG appended
+    // to CAPTURE.md below - and `capture-file.test.mjs:93-98` pins that
+    // `--phase 1.10` produces `(phase 1.10)` whatever is on disk.
     phase = parsed.raw;
   }
   // Same present-but-unusable refusal `debt-harvest --root` carries: a flag with
