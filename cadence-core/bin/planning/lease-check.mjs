@@ -12,7 +12,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { join, relative, resolve as resolvePath, sep } from 'node:path';
-import { fail, ok, read } from './core.mjs';
+import { fail, phaseSpellingCollision, ok, read } from './core.mjs';
 import { CENSUSES, censusesAtRisk } from '../lib/census-registry.mjs';
 import { covers } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
@@ -199,6 +199,16 @@ function cmdLeaseCheck(dir, opts) {
   if (!parsedPhase.ok) {
     return fail('bad-args', 'lease-check needs --phase <N>',
       'pass --phase <N> for the phase the plan being committed belongs to, then re-run');
+  }
+  // The tree-aware collision check, before ANY read of the phase directory -
+  // the #42/#45 rail this file already holds, that a flag is validated ahead of
+  // the work it names. It refuses only when the normalized spelling names a
+  // directory that exists here, so `phases/1.10/` stays addressable on a tree
+  // that has no `phases/1.1/`.
+  const collision = phaseSpellingCollision(dir, parsedPhase);
+  if (collision) {
+    return fail('bad-args', `lease-check ${collision}`,
+      're-run with one of the two spellings the detail names - nothing was read');
   }
   const parsedPlan = requireInt(opts.plan);
   if (!parsedPlan.ok) {

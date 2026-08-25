@@ -10,7 +10,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, ok, read, readJsonPayload } from './core.mjs';
+import { fail, phaseSpellingCollision, ok, read, readJsonPayload } from './core.mjs';
 import {
   UAT_FIELDS_VERSION, UAT_ORIGINS, UAT_SOURCES, atomicWrite, parseUat, renderUat,
   uatComplete,
@@ -63,6 +63,16 @@ function cmdUat(dir, sub, opts) {
   if (!parsedPhase.ok) {
     return fail('bad-args', 'uat needs --phase <N>',
       'pass --phase <N> naming the phase whose checklist this call touches, then re-run');
+  }
+  // The tree-aware collision check, before ANY read of the phase directory -
+  // the #42/#45 rail this file already holds, that a flag is validated ahead of
+  // the work it names. It refuses only when the normalized spelling names a
+  // directory that exists here, so `phases/1.10/` stays addressable on a tree
+  // that has no `phases/1.1/`.
+  const collision = phaseSpellingCollision(dir, parsedPhase);
+  if (collision) {
+    return fail('bad-args', `uat ${collision}`,
+      're-run with one of the two spellings the detail names - nothing was read');
   }
   const n = parsedPhase.raw;
 

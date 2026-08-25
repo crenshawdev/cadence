@@ -215,9 +215,9 @@ const DOCS_CLAIMS_CITATIONS = [
   {
     id: 'EXECUTE-10',
     doc: 'cadence-core/bin/planning/lease-check.mjs',
-    line: '440-443',
-    start: 440,
-    end: 443,
+    line: '450-453',
+    start: 450,
+    end: 453,
     symbol: "'undeclared-files'",
   },
   {
@@ -231,9 +231,9 @@ const DOCS_CLAIMS_CITATIONS = [
   {
     id: 'VERIFY-11',
     doc: 'cadence-core/bin/planning/uat.mjs',
-    line: '113-117',
-    start: 113,
-    end: 117,
+    line: '123-127',
+    start: 123,
+    end: 127,
     symbol: 'fields_version',
   },
   {

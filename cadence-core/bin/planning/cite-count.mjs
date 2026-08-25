@@ -8,7 +8,7 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, listPlanFiles, memoryBackend, ok, read, readJsonPayload } from './core.mjs';
+import { fail, phaseSpellingCollision, listPlanFiles, memoryBackend, ok, read, readJsonPayload } from './core.mjs';
 import { citedMentions } from '../lib/cite-cited.mjs';
 import { SURFACED_KINDS, surfacedRows } from '../lib/cite-surfaced.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
@@ -58,6 +58,16 @@ function cmdCiteCount(dir, opts) {
   if (!parsedPhase.ok) {
     return fail('bad-args', 'cite-count needs --phase <N>',
       'pass --phase <N> naming the phase whose plans should be counted, then re-run');
+  }
+  // The tree-aware collision check, before ANY read of the phase directory -
+  // the #42/#45 rail this file already holds, that a flag is validated ahead of
+  // the work it names. It refuses only when the normalized spelling names a
+  // directory that exists here, so `phases/1.10/` stays addressable on a tree
+  // that has no `phases/1.1/`.
+  const collision = phaseSpellingCollision(dir, parsedPhase);
+  if (collision) {
+    return fail('bad-args', `cite-count ${collision}`,
+      're-run with one of the two spellings the detail names - nothing was read');
   }
   const n = parsedPhase.value;
 

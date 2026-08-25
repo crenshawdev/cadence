@@ -26,6 +26,11 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The lease-check trio, imported rather than re-declared: that face runs inside
+// a real git repo, and a second copy of the repo builder is how two fixtures
+// drift apart. Importing registers nothing - the sibling's own `test` binding
+// is a no-op unless it IS the entry file.
+import { leaseRepo, leaseCheck, stage } from './planning-lease-check.test.mjs';
 
 const BIN = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(BIN, 'planning.mjs');
@@ -127,4 +132,116 @@ test('a canonical spelling is never refused, whatever else is on the tree', () =
   const r = seam(['adjudication', '--phase', '1.1', '--trigger', 'risk_surface',
     '--discriminator', 'plan-1'], dir);
   assertNotRefused(r);
+});
+
+// --- the six phase-artifact readers ----------------------------------------
+//
+// Each row seeds `phases/<n>/` with whatever that command has to find to do
+// real work, then asserts on the RESOLVE tree that the command acted on
+// `phases/1.10/` - not merely that it answered ok:true, which a normalizing
+// reader looking at an empty `phases/1.1/` would also do.
+const READERS = [
+  {
+    label: 'criteria-size',
+    seed: (pdir) => writeFileSync(join(pdir, 'CONTEXT.md'),
+      '# Context\n\n## Acceptance criteria\n\n- [ ] AC1: one\n- [ ] AC2: two\n'),
+    argv: ['criteria-size'],
+    acted: (r) => {
+      assert.equal(r.phases[0].context_found, true, JSON.stringify(r));
+      assert.equal(r.phases[0].context_criteria, 2, JSON.stringify(r));
+    },
+  },
+  {
+    label: 'plan-size',
+    seed: (pdir) => writeFileSync(join(pdir, 'PLAN.md'),
+      '---\nphase: 1.10\nfiles:\n  - a.txt\n---\n# Plan\n\n## Tasks\n\n'
+      + '### Task 1: x\n\n- **Files:** a.txt\n- **Action:** do\n- **Verify:** check\n'),
+    argv: ['plan-size'],
+    acted: (r) => assert.deepEqual(r.plans, [{ plan: 'PLAN.md', tasks: 1 }], JSON.stringify(r)),
+  },
+  {
+    label: 'plan-overlap',
+    seed: (pdir) => {
+      writeFileSync(join(pdir, 'PLAN-1.md'), '---\nphase: 1.10\nfiles:\n  - shared.txt\n---\n# Plan 1\n');
+      writeFileSync(join(pdir, 'PLAN-2.md'), '---\nphase: 1.10\nfiles:\n  - shared.txt\n---\n# Plan 2\n');
+    },
+    argv: ['plan-overlap'],
+    acted: (r) => assert.deepEqual(r.overlaps,
+      [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['shared.txt'] }], JSON.stringify(r)),
+  },
+  {
+    label: 'cite-count',
+    seed: (pdir) => writeFileSync(join(pdir, 'PLAN.md'),
+      '---\nphase: 1.10\nfiles:\n  - a.txt\n---\n# Plan\n'),
+    argv: ['cite-count'],
+    extraArgs: (dir) => {
+      const payload = join(dirname(dir), 'surfaced.json');
+      writeFileSync(payload, JSON.stringify({ ok: true, backend: 'builtin', results: [] }));
+      return ['--payload', payload];
+    },
+    acted: (r) => assert.deepEqual(r.plans, ['PLAN.md'], JSON.stringify(r)),
+  },
+  {
+    label: 'uat',
+    seed: (pdir) => writeFileSync(join(pdir, 'UAT.md'),
+      '---\nstatus: testing\nphase: 1.10\nstarted: 2026-01-01\nupdated: 2026-01-01\n---\n\n'
+      + '## Items\n\n### 1. Item 1\nexpected: behavior 1\nstatus: pass\n\n## Summary\n\ntotal: 1\n'),
+    argv: ['uat', 'status'],
+    acted: (r) => assert.equal(r.counts.pass, 1, JSON.stringify(r)),
+  },
+];
+
+for (const row of READERS) {
+  test(`${row.label}: --phase 1.10 acts on phases/1.10/ when no phases/1.1 exists`, () => {
+    const dir = tree(['1', '1.10']);
+    row.seed(join(dir, 'phases', '1.10'));
+    const extra = row.extraArgs ? row.extraArgs(dir) : [];
+    const r = seam([...row.argv, '--phase', '1.10', ...extra], dir);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    row.acted(r);
+  });
+
+  test(`${row.label}: --phase 1.10 refuses against a tree holding phases/1.1/`, () => {
+    const dir = tree(['1', '1.1', '1.10']);
+    row.seed(join(dir, 'phases', '1.10'));
+    const extra = row.extraArgs ? row.extraArgs(dir) : [];
+    const r = seam([...row.argv, '--phase', '1.10', ...extra], dir);
+    assertRefused(r, '1.10', '1.1');
+    assert.ok(r.detail.startsWith(`${row.label} --phase`), r.detail);
+  });
+
+  test(`${row.label}: --phase 08 refuses against a tree holding phases/8/`, () => {
+    const dir = tree(['8', '08']);
+    row.seed(join(dir, 'phases', '08'));
+    const extra = row.extraArgs ? row.extraArgs(dir) : [];
+    const r = seam([...row.argv, '--phase', '08', ...extra], dir);
+    assertRefused(r, '08', '8');
+  });
+}
+
+// lease-check is the sixth, and it runs inside a real git repo: the seam
+// resolves the staged set from `git rev-parse --show-toplevel`, so `tree()`
+// above cannot host it.
+test('lease-check: --phase 1.10 acts on phases/1.10/ when no phases/1.1 exists', () => {
+  const { repo, dir } = leaseRepo({ phase: '1.10', files: ['one-ten.txt'] });
+  stage(repo, 'one-ten.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1.10', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.plan_file, '.planning/phases/1.10/PLAN.md');
+});
+
+test('lease-check: --phase 1.10 refuses against a tree holding phases/1.1/', () => {
+  const { repo, dir } = leaseRepo({ phase: '1.10', files: ['one-ten.txt'] });
+  mkdirSync(join(dir, 'phases', '1.1'), { recursive: true });
+  stage(repo, 'one-ten.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1.10', '--plan', '1']);
+  assertRefused(r, '1.10', '1.1');
+  assert.ok(r.detail.startsWith('lease-check --phase'), r.detail);
+});
+
+test('lease-check: --phase 08 refuses against a tree holding phases/8/', () => {
+  const { repo, dir } = leaseRepo({ phase: 8, files: ['a.txt'] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '08', '--plan', '1']);
+  assertRefused(r, '08', '8');
 });

@@ -7,7 +7,7 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, ok, read } from './core.mjs';
+import { fail, phaseSpellingCollision, ok, read } from './core.mjs';
 import {
   classifyAcceptanceCriteria, parseRoadmapPhases, phaseCriteria,
 } from '../lib/planning-files.mjs';
@@ -79,6 +79,16 @@ function cmdCriteriaSize(dir, opts) {
       return fail('bad-args', 'criteria-size --phase needs a phase number',
         'send a plain phase number - 3, or 3.1 for an inserted phase - or drop --phase to check'
         + ' every phase the roadmap declares in one call');
+    }
+    // The tree-aware collision check, before ANY read of the phase directory -
+    // the #42/#45 rail this file already holds, that a flag is validated ahead of
+    // the work it names. It refuses only when the normalized spelling names a
+    // directory that exists here, so `phases/1.10/` stays addressable on a tree
+    // that has no `phases/1.1/`.
+    const collision = phaseSpellingCollision(dir, parsedPhase);
+    if (collision) {
+      return fail('bad-args', `criteria-size ${collision}`,
+        're-run with one of the two spellings the detail names - nothing was read');
     }
     targets = [{ n: parsedPhase.value, raw: parsedPhase.raw }];
   } else {

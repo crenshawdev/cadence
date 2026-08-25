@@ -9,7 +9,7 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, listPlanFiles, ok, read } from './core.mjs';
+import { fail, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
 import { intersects } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
@@ -27,6 +27,16 @@ function cmdPlanOverlap(dir, opts) {
   if (!parsedPhase.ok) {
     return fail('bad-args', 'plan-overlap needs --phase <N>',
       "pass --phase <N> naming the phase whose plans should be compared, then re-run");
+  }
+  // The tree-aware collision check, before ANY read of the phase directory -
+  // the #42/#45 rail this file already holds, that a flag is validated ahead of
+  // the work it names. It refuses only when the normalized spelling names a
+  // directory that exists here, so `phases/1.10/` stays addressable on a tree
+  // that has no `phases/1.1/`.
+  const collision = phaseSpellingCollision(dir, parsedPhase);
+  if (collision) {
+    return fail('bad-args', `plan-overlap ${collision}`,
+      're-run with one of the two spellings the detail names - nothing was read');
   }
   const n = parsedPhase.value;
   // The DIRECTORY is the caller's spelling; only the echoed `phase` below is

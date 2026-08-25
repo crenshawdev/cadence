@@ -4,7 +4,7 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, listPlanFiles, ok, read } from './core.mjs';
+import { fail, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
 import { phaseRequirements, planTaskTitles } from '../lib/planning-files.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 
@@ -28,6 +28,16 @@ function cmdPlanSize(dir, opts) {
   if (!parsedPhase.ok) {
     return fail('bad-args', 'plan-size needs --phase <N>',
       'pass --phase <N> naming the phase whose plans should be sized, then re-run');
+  }
+  // The tree-aware collision check, before ANY read of the phase directory -
+  // the #42/#45 rail this file already holds, that a flag is validated ahead of
+  // the work it names. It refuses only when the normalized spelling names a
+  // directory that exists here, so `phases/1.10/` stays addressable on a tree
+  // that has no `phases/1.1/`.
+  const collision = phaseSpellingCollision(dir, parsedPhase);
+  if (collision) {
+    return fail('bad-args', `plan-size ${collision}`,
+      're-run with one of the two spellings the detail names - nothing was read');
   }
   const n = parsedPhase.value;
 

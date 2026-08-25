@@ -852,7 +852,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-07 | cadence-core/workflows/execute.md | 35-39 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | stale | corrected - v3.4.1 phase 1 | 2 |
 | EXECUTE-08 | cadence-core/workflows/execute.md | 70 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate | 1 |
 | EXECUTE-09 | cadence-core/workflows/execute.md | 59-66 | `git diff --cached --quiet` / `--name-status` and `git stash push --staged` (git 2.35+). | accurate | accurate | 2 |
-| EXECUTE-10 | cadence-core/bin/planning/lease-check.mjs | 440-443 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
+| EXECUTE-10 | cadence-core/bin/planning/lease-check.mjs | 450-453 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
 | EXECUTE-11 | cadence-core/workflows/execute.md | 89-94 | `trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>` anchors the correlation id. | accurate | accurate | 2 |
 | EXECUTE-12 | cadence-core/workflows/execute.md | 97-100 | An append returning `written:false` (size cap, unwritable root) changes nothing on the execute path. | accurate | accurate | 2 |
 | EXECUTE-13 | cadence-core/workflows/execute.md | 112-114 | `planning.mjs plan-overlap --phase <N>` returns `overlaps`, `undeclared` and `frontmatter_issues`. | accurate | accurate | 2 |
@@ -1024,7 +1024,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | VERIFY-08 | cadence-core/workflows/verify.md | 64-68 | An item from a CONTEXT criterion carries `"criterion":"AC<N>"`. | accurate | accurate | 2 |
 | VERIFY-09 | cadence-core/workflows/verify.md | 69-70 | /cad-audit FAILs on a criterion no item names. | accurate | accurate | 2 |
 | VERIFY-10 | cadence-core/workflows/verify.md | 72 | Other-source items carry `"origin"`; the smoke item sends `"origin":"smoke"`. | accurate | accurate | 2 |
-| VERIFY-11 | cadence-core/bin/planning/uat.mjs | 113-117 | `uat init` writes `fields_version` before it looks at an item. | accurate | accurate | 2 |
+| VERIFY-11 | cadence-core/bin/planning/uat.mjs | 123-127 | `uat init` writes `fields_version` before it looks at an item. | accurate | accurate | 2 |
 | VERIFY-12 | cadence-core/bin/planning/criteria-coverage.mjs | 57-59 | Legacy also requires a CONTEXT declaring no ids beside a fieldless checklist. | accurate | accurate | 2 |
 | VERIFY-13 | cadence-core/workflows/verify.md | 80 | CONTEXT criteria may carry a `(human-verify: needs <tool/service>)` tag. | accurate | accurate | 1 |
 | VERIFY-14 | cadence-core/workflows/verify.md | 94-95 | `uat init --phase <N>` takes the item array on stdin. | accurate | accurate | 2 |
