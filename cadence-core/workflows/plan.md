@@ -329,9 +329,20 @@ ONCE PER PLAN FILE the phase has, because `--plan` names one plan file:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" lease-check --phase {N} --plan <k> --plan-time
 ```
 
-It answers `ok:true`, or it refuses with `census-at-risk` and a
-`censuses_at_risk` list. Each entry names the FILE the lease is missing, what
-that file's count is a count of, and the site that asserts it.
+It answers `ok:true`, or it refuses one of three ways, and the remedy differs:
+
+- `census-at-risk`, with a `censuses_at_risk` list. Each entry names the FILE
+  the lease is missing, what that file's count is a count of, and the site that
+  asserts it.
+- `unparsed-lease`, with a `frontmatter_issues` list naming the lines of the
+  plan's frontmatter that could not be read.
+- `empty-lease`, when the plan declared no files at all - usually a `files:`
+  key that is missing or misspelled.
+
+The last two say the `files:` list could not be READ, so nothing was measured
+and no census can be named. The remedy for those is to repair that plan's
+frontmatter, NOT to add a file: a path added to a list the seam cannot parse
+changes nothing it can see.
 
 It REFUSES, and that break is deliberate. `plan-size` one step above and
 `criteria-size` report because the workflow decides what to do about a size.
@@ -342,9 +353,9 @@ this project's own record (`.planning/_archive-v3.7.1`) carries two
 `undeclared-files` refusals that were committed rather than obeyed. So this
 step offers no options and asks nothing.
 
-The remedy, and the whole remedy: add each named file to that plan's `files:`
-list and re-run this check until it answers `ok:true`. Do not continue to
-`count_planned`, and do not dispatch anything, while it refuses. Declaring the
+When it names files, the remedy, and the whole remedy: add each named file to
+that plan's `files:` list and re-run this check until it answers `ok:true`. Do
+not continue to `count_planned`, and do not dispatch anything, while it refuses. Declaring the
 file is also undertaking to re-pin its count in the same commit, which is why
 the executor needs the declaration before it starts rather than after.
 
