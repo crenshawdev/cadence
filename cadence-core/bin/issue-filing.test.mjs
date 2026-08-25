@@ -391,6 +391,44 @@ test('a payload that is not JSON refuses naming the file', () => {
   assert.deepEqual(calls, []);
 });
 
+test('BOTH payload arms redact a credential out of the path they name', () => {
+  // The shape planning-lease-check.test.mjs's no-staged-set case pins, applied
+  // to the other input that reaches a `detail` as caller-supplied argv: the
+  // credential goes and NOTHING ELSE does. Both arms are asserted in one test
+  // because the defect was that the two arms disagreed - `no-payload` redacted
+  // the message and not the path, `bad-payload` redacted neither. No network:
+  // the paths are local and `.invalid` is reserved.
+  const secret = 'cad:s3cr3t-tok@host.invalid';
+
+  // Arm 1, no-payload: the path does not exist, so `readFileSync`'s own ENOENT
+  // message quotes the credential-bearing path back verbatim as well.
+  const absent = `/nonexistent/${secret}/payload.json`;
+  const gone = run(['unfixed', '--payload', absent]).envelope;
+  assert.equal(gone.reason, 'no-payload');
+  assert.equal(gone.detail.includes('s3cr3t-tok'), false, gone.detail);
+  assert.equal(gone.detail.includes('cad:'), false, gone.detail);
+  // The rest of the message survives, or the redaction has traded one useless
+  // envelope for another: the host, the path, and the failure's own wording.
+  assert.ok(gone.detail.includes('host.invalid'), gone.detail);
+  assert.ok(gone.detail.includes('/nonexistent/'), gone.detail);
+  assert.ok(gone.detail.includes('payload.json'), gone.detail);
+  assert.match(gone.detail, /no such file or directory/, gone.detail);
+
+  // Arm 2, bad-payload: the file EXISTS at a credential-bearing path and holds
+  // prose, so only this seam's own `${file}` interpolation carries the secret.
+  const home = join(tmp('cred'), secret);
+  mkdirSync(home, { recursive: true });
+  const present = join(home, 'payload.json');
+  writeFileSync(present, 'this is prose, not a payload');
+  const bad = run(['unfixed', '--payload', present]).envelope;
+  assert.equal(bad.reason, 'bad-payload');
+  assert.equal(bad.detail.includes('s3cr3t-tok'), false, bad.detail);
+  assert.equal(bad.detail.includes('cad:'), false, bad.detail);
+  assert.ok(bad.detail.includes('host.invalid'), bad.detail);
+  assert.ok(bad.detail.includes('payload.json'), bad.detail);
+  assert.match(bad.detail, /is not JSON/, bad.detail);
+});
+
 test('a payload buildEntries refuses names the entry, and no forge call is made', () => {
   const bad = payloadFor([[FIVE[0], 'survived']]);
   bad.voices[0].rulings[0].ruling = 'not-a-ruling';

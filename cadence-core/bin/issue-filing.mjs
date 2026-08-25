@@ -166,20 +166,34 @@ function resolveForge(dir) {
 
 /**
  * Read a JSON payload FILE, or the refusal that says why it could not be read.
+ *
+ * THE PATH REDACTS, on both arms, and so does the message. `--payload` is
+ * caller-supplied argv and this seam's stdout IS its workflow transcript, so a
+ * credential-bearing path - `/tmp/cad:s3cr3t-tok@host.invalid/payload.json` -
+ * reaches `detail` twice over: once as the path this seam echoes back, and once
+ * inside the message `readFileSync` quotes the path into. Both go through
+ * `redactUrl`, which is the tree's one credential rule for a `detail` (D-14) and
+ * the invariant `planning-lease-check.test.mjs`'s no-staged-set case pins.
+ *
+ * Each PART is redacted separately rather than the joined sentence, so the
+ * `path: message` join cannot manufacture a `user:secret@host` span out of two
+ * clean halves. What survives is what that test requires to survive: the host,
+ * the path, and this seam's own wording.
  * @param {string} file
  * @returns {{ok: true, value: any} | {ok: false, reason: string, detail: string, hint: string}}
  */
 function readPayload(file) {
+  const where = redactUrl(file);
   let raw;
   try { raw = readFileSync(file, 'utf8'); } catch (e) {
     return { ok: false, reason: 'no-payload',
-      detail: `${file}: ${e && e.message ? redactUrl(e.message) : String(e)}`,
+      detail: `${where}: ${redactUrl(e && e.message ? e.message : String(e))}`,
       hint: 'pass --payload the path of a file that exists and is readable - the same '
         + 'composed payload file the adjudication record was written from' };
   }
   try { return { ok: true, value: JSON.parse(raw) }; } catch (e) {
     return { ok: false, reason: 'bad-payload',
-      detail: `${file} is not JSON: ${e && e.message ? e.message : String(e)}`,
+      detail: `${where} is not JSON: ${redactUrl(e && e.message ? e.message : String(e))}`,
       hint: 'write the payload with JSON.stringify rather than by hand, then re-run - '
         + 'the file must hold one JSON object and nothing else' };
   }
