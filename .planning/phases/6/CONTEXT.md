@@ -10,8 +10,8 @@ In: The two cases phase 2's UAT found the plan-time lease gate passing.
 registry row in `lib/census-registry.mjs`, and that module's header loses the
 pre-correction D-05 text. `lease-check --plan-time` fails CLOSED on a lease it
 could not read, on both of the two signals that produce one. `workflows/plan.md`'s
-`check_census` prose is corrected to match, and phase 2's UAT is driven to
-`result: complete`.
+`check_census` prose is corrected to match, and phase 2's UAT items 9 and 10 are
+driven to `pass`.
 
 Out: The commit-time `lease-check` arm, unchanged. The `census-at-risk` reason and
 its `censuses_at_risk` payload, unchanged. The breadth rail at
@@ -83,15 +83,16 @@ plans declare `planning/lease-check.mjs` and pay the same census lease tax twice
   `weight-budgets.json` wholesale, which moves 5 unrelated keys into the diff.
   Evidence: `cadence-core/workflows/plan.md:325-327`,
   `cadence-core/bin/self-verify.mjs:783-787`, `cadence-core/bin/weight-budgets.json`.
-- D-05 (UAT item 11): AC5 is met by OBSERVING item 11 live during this phase's own
-  `/cad-plan` run, not by narrowing AC5 and not by skipping the item. Item 11 is a
-  live `/cad-plan` observation its own `why_human` calls out of reach of code, and
-  `uatComplete` requires every item to be `pass` or `skipped` with a reason -
-  `pending` fails it, so fixing items 9 and 10 alone leaves phase 2 `partial`.
-  This phase plans through `/cad-plan`, whose `check_census` step fires against
-  the D-12 lease, so item 11's test is a by-product of the phase's own planning
-  rather than extra work. Rejected: narrowing AC5 to items 9 and 10; recording
-  item 11 `skipped` with a reason. Evidence:
+- D-05 (UAT item 11): AC5 is met by items 9 and 10 alone. Item 11 STAYS
+  `pending` and phase 2's UAT stays `partial`, because item 11 is a live
+  `/cad-plan` observation of a run whose `check_census` actually REFUSES, and
+  this phase's own planning run declares every census holder correctly - the
+  D-12 lease is complete by construction, so this phase produces no refusal for
+  item 11 to watch. `uatComplete` requires every item to be `pass` or `skipped`
+  with a reason, so phase 2 stays `partial` until a later planning run genuinely
+  under-declares. Rejected: recording item 11 from this phase's own run, which
+  would record an observation nobody made; recording it `skipped` with a reason,
+  which would discard a check still worth making. Evidence: `.planning/ROADMAP.md:319`,
   `cadence-core/bin/lib/planning-files.mjs:1801-1806`, `.planning/phases/2/UAT.md:98-102`,
   live `uat status --phase 2` on 2026-08-25 returning `result: partial`.
 
@@ -176,9 +177,12 @@ plans declare `planning/lease-check.mjs` and pay the same census lease tax twice
       signals: `plan-overlap` emits `frontmatter_issues` and `undeclared`, and
       `lease-check --plan-time` refuses on the same two. Removing either half
       fails the test.
-- [ ] AC5: `planning.mjs uat status --phase 2` reports `result: complete` - items
-      9 and 10 pass on retest, and item 11 is recorded from this phase's own live
-      `/cad-plan` run. (human-verify: needs a live /cad-plan orchestrator run)
+- [ ] AC5: `planning.mjs uat status --phase 2` reports `fail: 0` - items 9 and 10
+      are both recorded `pass` with evidence naming this phase's work. Item 11
+      stays `pending` and phase 2's UAT stays `partial`: item 11 needs a live
+      `/cad-plan` run that genuinely under-declares a census subject, and this
+      phase's own run declares every holder correctly, so there is no refusal to
+      observe. It is answered by a later planning run, not by this phase.
 - [ ] AC6: `node cadence-core/bin/test.mjs` runs green, `npx tsc -p tsconfig.ci.json`
       exits 0, and `self-verify.mjs --root .` reports `problems []`.
 
