@@ -311,8 +311,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
 ```
 
 Create no `.planning/phases/` directory. A phase directory is
-`.planning/phases/<N>/` with a bare integer for `<N>`, created lazily by the
-first skill that needs it.
+`.planning/phases/<N>/`, created lazily by the first skill that needs it; the
+grammar for `<N>` is stated in `references/roadmap-phases.md`.
 </step>
 
 <step name="commit">

@@ -86,7 +86,7 @@ function phaseSpellingRefusal(parsed) {
 // insertion, with neither part zero-padded and no slug suffix. Checked here and
 // resolved NOWHERE - Cadence states the grammar and REPORTS what violates it,
 // rather than teaching the seams to resolve `08-meteogram-legend`
-// (references/conventions.md).
+// (references/roadmap-phases.md).
 //
 // The fractional part carries the SAME `[1-9]` lead as the integer part,
 // because the fraction is the sub-phase ORDINAL and obeys the same no-padding

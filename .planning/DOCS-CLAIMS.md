@@ -909,7 +909,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | NEW-PROJECT-18 | cadence-core/workflows/new-project.md | 287-288 | `granularity`: coarse 3-5, standard 5-8, fine 8-12. | accurate | accurate | 2 |
 | NEW-PROJECT-19 | cadence-core/workflows/new-project.md | 297 | `cadence-core/templates/ROADMAP.md` exists. | accurate | accurate | 2 |
 | NEW-PROJECT-20 | cadence-core/workflows/new-project.md | 337-338 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` is a valid call. | accurate | accurate | 2 |
-| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 341-345 | A phase directory is `.planning/phases/<N>/` with no zero-padding and no slug suffix. | accurate | accurate | 2 |
+| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 466-470 | The workflow creates no `.planning/phases/` directory; a phase directory is `.planning/phases/<N>/`, created lazily, and the grammar for `<N>` is stated in `references/roadmap-phases.md`. | accurate | accurate | 2 |
 | NEW-PROJECT-22 | cadence-core/workflows/new-project.md | 374-375, 402 | STATE.md is a 4-line cursor. | accurate | accurate | 2 |
 | PHASE-01 | cadence-core/workflows/phase.md | 4-6 | A phase number appears in four places: ROADMAP list, `.planning/phases/<N>/`, the REQUIREMENTS Phase column, the STATE cursor. | accurate | accurate | 2 |
 | PHASE-02 | cadence-core/workflows/phase.md | 7 | The renumber mechanics live in the planning seam's `renumber` subcommand. | accurate | accurate | 2 |
@@ -1139,7 +1139,7 @@ mistake.
 | ADOPT-22 | cadence-core/workflows/adopt.md | 200-206 | `planning.mjs criteria-size --roadmap-min 2 --roadmap-max 5`, no `--phase`, `roadmap_found: false` is not zero | accurate | accurate | 2 |
 | ADOPT-23 | cadence-core/workflows/adopt.md | 206-207 | A REPORT, not a gate, exactly as `plan-size`'s `phase-too-big` is | accurate | accurate | 2 |
 | ADOPT-24 | cadence-core/workflows/adopt.md | 229-230 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` | accurate | accurate | 2 |
-| ADOPT-25 | cadence-core/workflows/adopt.md | 233-235 | A phase directory is `.planning/phases/<N>/` with a bare integer, created lazily | accurate | accurate | 2 |
+| ADOPT-25 | cadence-core/workflows/adopt.md | 313-315 | A phase directory is `.planning/phases/<N>/`, created lazily by the first skill that needs it, with the grammar for `<N>` stated in `references/roadmap-phases.md` | accurate | accurate | 2 |
 | ADOPT-26 | cadence-core/workflows/adopt.md | 239-240 | `planning.commit_docs` false skips the commit step entirely | accurate | accurate | 2 |
 | ADOPT-27 | cadence-core/workflows/adopt.md | 242 | The protected-branch guard is `references/git-guard.md` | accurate | accurate | 2 |
 | ADOPT-28 | cadence-core/workflows/adopt.md | 247-251 | ONE commit staging exactly five files: PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json | accurate | accurate | 2 |

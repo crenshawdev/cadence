@@ -464,10 +464,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
 ```
 
 Do NOT create `.planning/phases/` directories. A phase directory is
-`.planning/phases/<N>/`, where `<N>` is the bare phase integer from ROADMAP.md
-(no zero-padding, no slug suffix), created lazily by the first skill that needs
-it (cad-context or cad-plan) and matched to an existing directory's name if one
-is already present.
+`.planning/phases/<N>/`, created lazily by the first skill that needs it
+(cad-context or cad-plan) and matched to an existing directory's name if one is
+already present; the grammar for `<N>` is stated in
+`references/roadmap-phases.md`.
 
 Commit: `docs: create roadmap ([N] phases)` with `.planning/ROADMAP.md`,
 `.planning/STATE.md`, `.planning/REQUIREMENTS.md`.

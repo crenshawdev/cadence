@@ -90,8 +90,8 @@ Check, then report - do not fix without asking.
    was interrupted (/cad-milestone finishes it).
    `.planning/phases/<N>/` dirs correspond to real phases (a planned
    phase with no dir yet is fine; a dir with no phase is an issue). The
-   directory grammar is a bare integer or `N.M`, no zero-padding and no slug
-   (references/conventions.md): report every `phase-dir-grammar` entry
+   directory grammar is stated in references/roadmap-phases.md: report every
+   `phase-dir-grammar` entry
    `planning.mjs status` returns as an issue naming the entries it lists -
    Cadence resolves no other spelling, so those directories are unsupported, and
    renaming them is the user's call and never an auto-fix. A phase

@@ -19,18 +19,10 @@ Nothing here reaches an agent that has not read it.
   driving a separate code repo from here is the steerer's responsibility, not
   the tool's. (execute.md guards and warns if it detects the split, but does
   not make it work.)
-- Phase directory: `.planning/phases/<N>/` where `<N>` is the bare phase integer
-  from ROADMAP.md or an `N.M` sub-phase insertion (`phases/1/`, `phases/2/`,
-  `phases/2.1/`) - no zero-padding, no slug suffix. That is the WHOLE grammar:
-  Cadence resolves no other spelling, ships no second legal form, and migrates
-  nothing. The guarantee it makes is that no spelling is ever silently
-  redirected to a DIFFERENT phase's directory - every seam builds its path from
-  the string the caller typed, so `--phase 08` addresses `phases/08` literally,
-  reading it when it exists and reporting a not-found naming it when it does
-  not. Anything outside the grammar is unsupported: `/cad-health` REPORTS such a
-  directory (a `phase-dir-grammar` entry from `planning.mjs status`) and
-  renaming it is the user's call, never an auto-fix.
-  Created lazily by the first skill that needs it (cad-context or cad-plan).
+- Phase directory: `.planning/phases/<N>/`, created lazily by the first skill
+  that needs it (cad-context or cad-plan). The grammar for `<N>`, and the
+  guarantee that no spelling is ever silently redirected to a DIFFERENT phase's
+  directory, are stated in `references/roadmap-phases.md` and nowhere else.
 
 ## Deliberate shortcuts
 

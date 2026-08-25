@@ -79,6 +79,36 @@ near miss. Lowercase `phase 1` is prose and stays prose. `## Phases` itself
 never matches: the token needs `Phase` + space + digits, which `Phases` cannot
 provide.
 
+## The phase directory
+
+`.planning/phases/<N>/`, where `<N>` is the bare integer of a phase from
+ROADMAP.md or an `N.M` sub-phase insertion (`phases/1/`, `phases/2/`,
+`phases/2.1/`) - no zero-padding on either part, no slug suffix - created
+lazily by the first skill that needs it (cad-context or cad-plan). That is the WHOLE grammar: Cadence
+resolves no other spelling, ships no second legal form, and migrates nothing.
+
+`2.0` is NOT a legal spelling of phase 2. The fraction is the sub-phase
+ORDINAL, and it obeys the same no-padding rule the integer part does, so `.0`
+is not a fraction at all - there is no sub-phase zero to name. The same rule
+makes `1.01` a padded spelling of `1.1` rather than a directory of its own,
+while leaving `1.10` legal: sub-phase ten is a real sub-phase, and
+`phases/1.10/` is a directory every command can address.
+
+The guarantee is that no spelling is ever silently redirected to a DIFFERENT
+phase's directory. Every seam builds its path from the string the caller typed,
+so `--phase 08` addresses `phases/08` literally, reading it when it exists and
+reporting a not-found naming it when it does not. Where the caller's spelling
+would normalize onto a phase directory that ALSO exists on that tree, the
+command refuses `bad-args` and names both fixes - retype the flag, or rename
+the directory - rather than picking one; and the two faces that WRITE a phase
+identity, `cursor set` and `seed-reqs`, refuse a lossy spelling whatever is on
+disk.
+
+A directory outside the grammar is unsupported and REPORTED, never migrated:
+`planning.mjs status` returns it as a `phase-dir-grammar` drift entry naming
+the legal directory it collides with, `/cad-health` reports every such entry as
+an issue, and renaming it is the user's call, never an auto-fix.
+
 ## The four states
 
 | State | When | `status` does | `cursor set` does |
