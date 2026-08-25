@@ -1,8 +1,0 @@
-PLAN PARTIAL
-Plan: .planning/phases/2/PLAN-2.md
-Tasks: 1 of 7
-| Task | Commit | Note |
-|---|---|---|
-| 1 - Declare the plan-time flag and re-pin the flag-entry count | 90578bcb | `--plan-time` added to the `'lease-check'` CONTRACTS row as `required: false, type: 'boolean', value: 'fallback', bare: 'fallback'` - the shape every other boolean flag in the table carries - with a comment stating why it is a flag and not a second word and why `--plan` stays required on both arms. Predicted the census would move 184 to 185; the failing run said exactly `the table declares 185 flag entries`, re-pinned at the assertion and in the `CADENCE-CENSUS` marker text in the same commit. `node --test cadence-core/bin/arg-contract.test.mjs` 11 pass / 0 fail. `npx tsc -p tsconfig.ci.json` exit 0. Top-level row count unchanged at 18. |
-Deviations: [deviation] Task 1's `Verify:` asserts that after the row lands, `planning.mjs lease-check --phase 2 --plan 2 --plan-time` "no longer refuses with a `bad-args` complaint about an unknown flag". Predicted a `bad-args` refusal on the BEFORE run; observed `ok:true` instead - `parseArgs` in `planning.mjs:222-232` puts any `--x` into `opts` and `evaluateFlags` judges only DECLARED rows, so an undeclared flag has never been refused at this door. The criterion holds after the change, but it held before it too, so that clause is not falsifiable. Recorded rather than acted on: the row's real load-bearing consumer is task 6, where `self-verify`'s script-invocation lint reads the declaration for the workflow's new invocation. No change made on account of it.
-Open items: none

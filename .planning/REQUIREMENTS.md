@@ -17,89 +17,6 @@ true when written.
 seeded at the open - the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
 
-- **FRG-01**: Cadence resolves a forge when it sets a project up, new or
-  adopted: it detects which forge CLIs are installed (`tea`, `gh`, `glab`)
-  through the existing `lib/on-path.mjs`, asks the user which provider to use
-  and what the repository is called, and persists that choice so a repository
-  that temporarily loses its remote does not silently change behaviour. All
-  three CLIs are present on the development machine, so offering a choice is
-  the normal case rather than the edge.
-- **FRG-02**: A forge is a PRECONDITION, not an option (OQ-1). `/cad-land`
-  offers MR and PR, which exist only on a forge; `git.integration_branch`
-  creates a branch for parallel work to merge into; `/cad-milestone` cuts and
-  tags a version. No provider detected or none selected refuses with a reason
-  naming what was looked for and a hint naming the install, under the
-  no-third-party-output discipline `issue-check.mjs` already holds.
-- **CEN-01**: Every hand-maintained census count in the repository is
-  registered - the file holding it, what it counts, and the test that asserts
-  it - and a census live in a test but absent from the registry fails the suite
-  naming both. A census is a count a human wrote down that the code must keep
-  true: `self-verify.test.mjs` hand-lists every schema key, `arg-contract.test.mjs`
-  pins the guarded-callsite count, `trace.test.mjs` requires four refusal
-  sentences to appear exactly once. Nothing today knows they exist as a class,
-  which is why a plan can omit one without noticing.
-- **CEN-02**: A plan that will invalidate a registered census declares that file
-  before an executor starts. `lease-check` refuses only at commit time, after
-  the work is done, so the cost of the omission is a full re-execution rather
-  than an amended lease: 20 of 39 checkpoints in phase 5 (51%) and 7 of 15 on
-  verbatim (47%) trace to it, worth 14.8% and 17.4% of executor spend. Phase 5's
-  PLAN-1 halted at task 1 with 0 of 8 tasks for 151,683 tokens and cost 242,318
-  more to redo. The plan-time arm reads the lease and the registry only; it
-  never runs the plan's work to find out, and `/cad-plan` fires it after PLAN.md
-  is written and before any dispatch.
-- **CAP-01**: A finding leaves `.planning/CAPTURE.md` at the moment a gate
-  DEFERS it, not at phase close - the deferral is what files it, so the user
-  sees a finding when it is raised rather than in a batch. Phase close only
-  ASSERTS the file is empty. The item grammar has two states today, `- [ ]` and
-  `- [x]`, and `[x]` means done, so a decision NOT to do something has no
-  representation and stays `[ ]` looking like live work. With no way to record
-  a rejection, rejections were written into the bullets instead - the
-  `KEPT <date>` / `recorded not fixed` annotations, 12 of them in this
-  repository - so adjudicating an item made it longer rather than removing it.
-  Resolution is removal, never annotation.
-- **CAP-02**: The gate ASKS (batched per gate fire) and a declined finding
-  is DROPPED, with no residue anywhere. It takes a word of its own: `deferral`
-  and `deferred` are already a `FIRE_RECEIPTS` outcome event, a
-  `review.triggers.<t>.gate` value and the `DEFERRED-*.json` queue member, and
-  reusing them repeats the `git.auto_close` collision. Accepted findings become an issue on the
-  repository's OWN tracker, derived from its `origin` remote (Forgejo, GitHub,
-  GitLab) with no host, org or username hardcoded. This project's own history
-  already points there - CAPTURE bullets cite `#238`, `#249`, `#69`, `#29`. A
-  `## Archive` heading inside CAPTURE is not the record and leaves the
-  contract: this repository has 185 such bullets proving that moving items
-  within the file fixes the recall walk and nothing about the 251,968 bytes.
-- **CAP-03**: A bound on the walked bullet count that fails loud in
-  `/cad-health`. The 2026-08-08 sweep took the queue to zero and it regrew to
-  276 walked items in sixteen days, because no workflow drains the file:
-  `workflows/milestone.md` never mentions CAPTURE and the only two workflows
-  that reference it, `plan.md` and `execute.md`, are readers. A sweep without a
-  bound restarts the clock.
-- **SPL-01**: A `phases/` directory whose name would be normalized to a
-  DIFFERENT phase is reported as `phase-dir-grammar` drift. `PHASE_DIR_NAME`
-  (`cadence-core/bin/planning/core.mjs:107`) guards the integer part with a leading
-  `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are
-  all silently legal (verified 2026-08-24) while the detail
-  `phaseDirGrammarDrift` prints says "no zero-padding".
-- **SPL-02**: Every command that resolves `--phase` to a
-  `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal`
-  (`planning/core.mjs:77`). Re-measured 2026-08-25, after phase 5's split: 22
-  live `requirePhaseArg` invocations remain outside tests, spread across 14
-  `cadence-core/bin/planning/` modules plus `lib/arg-contract.mjs`, and NONE in
-  `cadence-core/bin/planning.mjs`, which retains only a comment. It is wired at
-  2 of those 22 today, `cursor set` (`planning/cursor-set.mjs`, `:42`) and
-  `seed-reqs` (`planning/seed-reqs.mjs`, `:28`); the rest
-  take the normalized number and never mention the spelling they discarded.
-- **LOD-02**: `cadence-core/bin/planning.mjs` is split so that no dispatch pays
-  a whole-file read to reach one command. Measured 2026-08-24: the file is
-  417,009 chars (~104k tokens, 7,853 lines), and of those, 6,033 lines are the
-  32 `cmd*` handlers while only 1,574 are shared top-level helpers, so the
-  handlers are near-independent leaves rather than an entangled core. It is
-  touched by 158 of the last 400 commits, and `planning.test.mjs` (418,298
-  chars) by 117, so this is the file the executor reads most and the most
-  expensive one to read. Against a 15,000-token read cap a single handler
-  cannot be reached without seven windowed reads or a truncated one. LOD-01
-  (`git.md` -> `git-guard.md` + `git-publish.md`) is the standing precedent for
-  a split that moves every citation with it.
 
 ## Shipped
 
@@ -309,6 +226,16 @@ parses only the Traceability table).
 | HNT-02 (a reason site in scope with no hint is a reported problem, so the invariant survives the next seam rather than being re-measured after it. The ratio has drifted twice already - 130/10 at filing, 186/13 today - which is why this is a check and not a sweep (#238).) | 1 | Complete | v3.7.0 |
 | HNT-01 (every seam refusal the cycle declares in scope sets a companion hint that names, in the user's terms, what to do next. In scope spans BOTH refusal spellings under `cadence-core/bin/`, tests excluded: the `reason:` object literal (186 sites, 13 hinted, measured 2026-08-23) and the positional `fail('token', detail, hint)` call (196 sites, 13 hinted, 183 not), with only 5 tokens appearing in both forms. Those counts are provenance, not the denominator - the in-scope population is fixed by phase 1's boundary decision, which keys on the site emitting an `ok:false` envelope. The kebab-case token is what the user reads today (#238).) | 1 | Complete | v3.7.0 |
 | SCP-01 (`config.mjs set` refuses a repo-layer-only key written at the user-global layer, at write time, reading a schema marker rather than naming keys. That marker is NEW: `"src": "repo"` is explicitly not it, since the schema's own `_meta.note` defines it as "settable in either layer" and its 33 keys include `stakes` and `granularity`, which `workflows/config.md:124` tells the user to set globally. The test the new marker encodes is whether a user-global value authorizes a change to a repository that never opted in; `git.auto_close` is the only key that passes it today, its own `purpose` string and `lib/repo-auto-close.mjs` already saying so at land time. `checkPairs` (`bin/config.mjs:151`) validates retired, unknown and type and nothing about layer scope, so `git.auto_close` written globally is silent until the close refuses at land time (#249).) | 2 | Complete | v3.7.0 |
+| FRG-01 (Cadence resolves a forge when it sets a project up, new or adopted: it detects which forge CLIs are installed (`tea`, `gh`, `glab`) through the existing `lib/on-path.mjs`, asks the user which provider to use and what the repository is called, and persists that choice so a repository that temporarily loses its remote does not silently change behaviour. All three CLIs are present on the development machine, so offering a choice is the normal case rather than the edge.) | 1 | Complete | v3.7.1 |
+| FRG-02 (A forge is a PRECONDITION, not an option (OQ-1). `/cad-land` offers MR and PR, which exist only on a forge; `git.integration_branch` creates a branch for parallel work to merge into; `/cad-milestone` cuts and tags a version. No provider detected or none selected refuses with a reason naming what was looked for and a hint naming the install, under the no-third-party-output discipline `issue-check.mjs` already holds.) | 1 | Complete | v3.7.1 |
+| LOD-02 (`cadence-core/bin/planning.mjs` is split so that no dispatch pays a whole-file read to reach one command. Measured 2026-08-24: the file is 417,009 chars (~104k tokens, 7,853 lines), and of those, 6,033 lines are the 32 `cmd*` handlers while only 1,574 are shared top-level helpers, so the handlers are near-independent leaves rather than an entangled core. It is touched by 158 of the last 400 commits, and `planning.test.mjs` (418,298 chars) by 117, so this is the file the executor reads most and the most expensive one to read. Against a 15,000-token read cap a single handler cannot be reached without seven windowed reads or a truncated one. LOD-01 (`git.md` -> `git-guard.md` + `git-publish.md`) is the standing precedent for a split that moves every citation with it.) | 5 | Complete | v3.7.1 |
+| CEN-01 (Every hand-maintained census count in the repository is registered - the file holding it, what it counts, and the test that asserts it - and a census live in a test but absent from the registry fails the suite naming both. A census is a count a human wrote down that the code must keep true: `self-verify.test.mjs` hand-lists every schema key, `arg-contract.test.mjs` pins the guarded-callsite count, `trace.test.mjs` requires four refusal sentences to appear exactly once. Nothing today knows they exist as a class, which is why a plan can omit one without noticing.) | 2 | Complete | v3.7.1 |
+| CEN-02 (A plan that will invalidate a registered census declares that file before an executor starts. `lease-check` refuses only at commit time, after the work is done, so the cost of the omission is a full re-execution rather than an amended lease: 20 of 39 checkpoints in phase 5 (51%) and 7 of 15 on verbatim (47%) trace to it, worth 14.8% and 17.4% of executor spend. Phase 5's PLAN-1 halted at task 1 with 0 of 8 tasks for 151,683 tokens and cost 242,318 more to redo. The plan-time arm reads the lease and the registry only; it never runs the plan's work to find out, and `/cad-plan` fires it after PLAN.md is written and before any dispatch.) | 2 | Complete | v3.7.1 |
+| CAP-01 (A finding leaves `.planning/CAPTURE.md` at the moment a gate DEFERS it, not at phase close - the deferral is what files it, so the user sees a finding when it is raised rather than in a batch. Phase close only ASSERTS the file is empty. The item grammar has two states today, `- [ ]` and `- [x]`, and `[x]` means done, so a decision NOT to do something has no representation and stays `[ ]` looking like live work. With no way to record a rejection, rejections were written into the bullets instead - the `KEPT <date>` / `recorded not fixed` annotations, 12 of them in this repository - so adjudicating an item made it longer rather than removing it. Resolution is removal, never annotation.) | 3 | Complete | v3.7.1 |
+| CAP-02 (The gate ASKS (batched per gate fire) and a declined finding is DROPPED, with no residue anywhere. It takes a word of its own: `deferral` and `deferred` are already a `FIRE_RECEIPTS` outcome event, a `review.triggers.<t>.gate` value and the `DEFERRED-*.json` queue member, and reusing them repeats the `git.auto_close` collision. Accepted findings become an issue on the repository's OWN tracker, derived from its `origin` remote (Forgejo, GitHub, GitLab) with no host, org or username hardcoded. This project's own history already points there - CAPTURE bullets cite `#238`, `#249`, `#69`, `#29`. A `## Archive` heading inside CAPTURE is not the record and leaves the contract: this repository has 185 such bullets proving that moving items within the file fixes the recall walk and nothing about the 251,968 bytes.) | 3 | Complete | v3.7.1 |
+| CAP-03 (A bound on the walked bullet count that fails loud in `/cad-health`. The 2026-08-08 sweep took the queue to zero and it regrew to 276 walked items in sixteen days, because no workflow drains the file: `workflows/milestone.md` never mentions CAPTURE and the only two workflows that reference it, `plan.md` and `execute.md`, are readers. A sweep without a bound restarts the clock.) | 3 | Complete | v3.7.1 |
+| SPL-01 (A `phases/` directory whose name would be normalized to a DIFFERENT phase is reported as `phase-dir-grammar` drift. `PHASE_DIR_NAME` (`cadence-core/bin/planning/core.mjs:107`) guards the integer part with a leading `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are all silently legal (verified 2026-08-24) while the detail `phaseDirGrammarDrift` prints says "no zero-padding".) | 4 | Complete | v3.7.1 |
+| SPL-02 (Every command that resolves `--phase` to a `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal` (`planning/core.mjs:77`). Re-measured 2026-08-25, after phase 5's split: 22 live `requirePhaseArg` invocations remain outside tests, spread across 14 `cadence-core/bin/planning/` modules plus `lib/arg-contract.mjs`, and NONE in `cadence-core/bin/planning.mjs`, which retains only a comment. It is wired at 2 of those 22 today, `cursor set` (`planning/cursor-set.mjs`, `:42`) and `seed-reqs` (`planning/seed-reqs.mjs`, `:28`); the rest take the normalized number and never mention the spelling they discarded.) | 4 | Complete | v3.7.1 |
 
 ## Deferred
 
@@ -351,16 +278,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FRG-01 | Phase 1 | Complete |
-| FRG-02 | Phase 1 | Complete |
-| LOD-02 | Phase 5 | Complete |
-| CEN-01 | Phase 2 | Complete |
-| CEN-02 | Phase 2 | Complete |
-| CAP-01 | Phase 3 | Complete |
-| CAP-02 | Phase 3 | Complete |
-| CAP-03 | Phase 3 | Complete |
-| SPL-01 | Phase 4 | Complete |
-| SPL-02 | Phase 4 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
