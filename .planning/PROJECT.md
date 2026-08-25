@@ -202,7 +202,25 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `/cad-phase add` opens the next one.
+**`v3.7.2 - the router loads late and the host writes the bracket`, opened
+2026-08-25.** Three phases against the `Reference split and trace hooks`
+milestone, due 2026-08-28. Phase 1 cold-splits `references/review-triggers.md`
+(40,413 B) and `references/seams.md` (25,068 B) behind a router, copying the
+`verify.md` / `verify-deep.md` pattern - the one change this cycle that visibly
+moves what a run costs. Phase 2 registers `SubagentStart`/`SubagentStop` as trace
+writers with the hand-written `trace close` KEPT as fallback, dedup on
+`(corr, worker key)`, pins the registered event names in `self-verify`, records
+`duration_ms`, and states the undocumented host-return dependency the bracket
+system rests on. Phase 3 pins the `planning-*.test.mjs` stem list and fixes two
+prose defects. Seeded ids: `LOD-06`, `HOK-01`, `HOK-02`, `TRC-02`, `TRC-03`,
+`CEN-03`, `DOC-04`.
+
+GH-117 (`WorktreeCreate` seeds the phase dir) is deliberately HELD OUT in the
+`Worktree verdict` milestone, natively blocked by GH-119 and GH-120: if
+worktrees do not earn their cost, its remedy code is deleted rather than
+rewritten.
+
+### Previously
 
 **`v3.7.1 - the tracker is the record` closed 2026-08-25.** Six phases, 138
 commits off `v3.7.0`, ten requirement ids all traced to a verified phase:

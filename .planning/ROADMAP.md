@@ -1,73 +1,180 @@
-# Roadmap: v3.7.1 - the tracker is the record
+# Roadmap: v3.7.2 - the router loads late and the host writes the bracket
 
 ## Overview
 
-**`v3.7.1`, opened 2026-08-24.** Two phases. The first is the theme: **`.planning/CAPTURE.md` is a transient working buffer for the phase in flight, and the repository's own issue tracker is the record.** The second is a small identity fix carried over from the sub-phase cluster, kept separate because it shares no surface with the first.
+**`v3.7.2`, opened 2026-08-25.** Three phases against the
+`Reference split and trace hooks` milestone, due 2026-08-28. Two themes and a
+filler phase. The first theme is **what a fire loads**: two reference files are
+read whole to use one branch of them. The second is **who writes the trace
+record**: today only the orchestrator does, by hand, so a session that dies
+between dispatch and close leaves the bracket unpaired forever.
 
-**The measured state.** `planning.mjs capture-sections` reports this repository's CAPTURE.md at Todos 233, Seeds 36, Notes 7 inside the recall walk, plus Archive 185 and Debt markers 1 outside it - 584 lines, 251,968 bytes. The file is `/cad-plan`'s recall input, so every planning pass in this project reads a quarter of a megabyte of which the large majority is settled. Two items have become level-2 headings (`## [latent] (phase 2) ...`), which puts them outside `CAPTURE_WALK_SECTIONS` (`lib/planning-files.mjs:879`) and invisible to the recall they were filed for.
+**The measured state, load.** `cadence-core/references/review-triggers.md` is
+40,413 B and `references/seams.md` is 25,068 B, both loaded eagerly at every
+fire or dispatch site. A `risk_surface` fire reads the `plan`, `diff` and
+`phase_diff` prose it will never use; an ask-only site reads the entire
+spawn-agent and provider contract. `review-triggers.md` has since grown past
+its own weight-budget line, so the pin moves in the same commit. The pattern to
+copy already exists and works: `workflows/verify.md` (~1,839 words) against
+`verify-deep.md` (319), split cold behind a branch decision.
 
-**This has happened before and was swept by hand.** The `## Archive` block states it: 185 open items archived as one block on 2026-08-08 by v2.6.0 phase 1, "every open item in the queue that this cycle did not capture", which had "accumulated across nine milestones and were carried unread through every one". The queue went to zero and regrew in sixteen days. A one-time sweep is not a fix, because nothing in any workflow drains this file: `cadence-core/workflows/milestone.md` never mentions CAPTURE, and the only two workflows that reference it - `plan.md` and `execute.md` - are readers.
+**The measured state, trace.** `trace.jsonl` carries 217 `duration_ms` values
+returned by the host and zero on brackets, so `/cad-report` and `/cad-suggest`
+price a dispatch with no wall clock. Worse, the close is hand-written: on
+2026-08-25 a pause landed before the close and left plan 2's first dispatch
+unpaired. Claude Code 2.1.245 exposes 31 hook events; Cadence registers 2
+(`PreToolUse`, `PostToolUse`) because the rest did not exist when `hooks.json`
+was written. `SubagentStart`/`SubagentStop` are two of them.
 
-**Why it accumulates, stated exactly.** The item grammar has two states, `- [ ]` and `- [x]`, and `[x]` means *done*. A decision **not** to do something has no representation, so it stays `[ ]` and is indistinguishable from live work. With no way to record a rejection, rejections were written INTO the bullets instead - the `KEPT 2026-08-08, re-verified against ...` and `recorded not fixed` annotations, 12 of them - so adjudicating an item made it longer rather than removing it. One bullet in the queue today says in its own text "It stands as a caution against the next pathspec-commit proposal, not as a live defect" and is still an open todo.
+**Belt and suspenders, deliberately.** The hand-written `trace close` is KEPT as
+a fallback rather than replaced. A hook-only design goes SILENTLY quiet if the
+host renames an event; today a missing close renders as `unpaired`, which is a
+visible defect. Dedup is on `(corr, worker key)`, first writer wins, and
+`self-verify` pins the registered event names so a rename REDDENS a check
+instead of going quiet. That pin is why phase 2 can add a hook writer at all.
 
-**The fix is not a bigger archive.** Moving settled items to a `## Archive` heading in the same file keeps the recall walk clean and changes nothing about the bytes; this repository already has 185 such bullets proving it. Durable records belong in the issue tracker, which is where this project's own history already points - CAPTURE bullets cite `#238`, `#249`, `#69`, `#29`. CAPTURE becomes scoped to one phase, empties at phase close, and carries no history section at all.
+**The standing exposure this rests on.** The token, tool-use and duration
+figures on the subagent return are undocumented, and the bracket system,
+`weight-budgets.json` and the six `max_dispatch_tokens` keys all read them.
+Anthropic can change that rendering with no deprecation. Cadence already carries
+the right recovery - omit `--tokens` on a figureless return, render `unrecorded`
+distinctly from `0` - and that recovery is the precondition for adding a second
+writer, so phase 2 states the dependency where a reader finds it rather than
+leaving it in the code.
 
-**Generic, not local.** Cadence ships to whoever installs it. The tracker is derived from the repository's own `origin` remote - Forgejo, GitHub, GitLab - and no host, org or user is hardcoded.
+**What this cycle is not.** It is not the worktree question. GH-117
+(`WorktreeCreate` seeds the phase dir) is held out in the `Worktree verdict`
+milestone, natively blocked by GH-119 and GH-120: if worktrees turn out not to
+earn their cost, GH-117's remedy code is deleted rather than rewritten. It is
+not a general hook expansion either - only the two events phase 2 names get
+registered, and each one gets a pin.
 
-**What this cycle is not.** It is not a sweep of this repository's existing 276 walked items; that disposition is OQ-2 below and is decided before phase 1 plans, not during it. It does not change how findings are RAISED - the review triggers and their blocking/adjudicated arms are unchanged; only where a non-actioned finding LANDS changes. No reason token is renamed.
-
-This cycle seeds ids up front - `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02` - so every one is either traced to a phase or visibly `unpicked` in `/cad-audit`.
+This cycle seeds ids up front - `LOD-06`, `HOK-01`, `HOK-02`, `TRC-02`,
+`TRC-03`, `CEN-03`, `DOC-04` - so every one is either traced to a phase or
+visibly `unpicked` in `/cad-audit`.
 
 ## Open Questions
 
-- **OQ-1 - RESOLVED 2026-08-24: Cadence requires a forge.** A repository hosted
-  on a platform with an issue tracker - Forgejo/Gitea, GitHub, GitLab - is a
-  precondition, not an option. The tool already assumes one nearly everywhere:
-  `/cad-land` offers MR and PR, two mechanisms that exist only on a forge;
-  `git.integration_branch: milestone` creates a branch whose purpose is that
-  parallel work merges back into it; `/cad-milestone` cuts and tags a version;
-  the ROADMAP template says git is the archive; and this project's own planning
-  docs cite `#238`, `#249`, `#69`, `#29`. A no-tracker mode would be a second
-  disposition set, a second close path and a config nobody sets - what
-  `/cad-minimalism-review` exists to delete. The fresh-directory gap at
-  `/cad-new-project` is handled by phase 1's setup step, not by a permanent
-  second mode.
-  - Auth failure and offline are NOT "no forge": the item was filable and the
-    write did not land. Those refuse the close rather than empty the file.
+- **OQ-1 - what splits out of `review-triggers.md`.** The file has a router
+  shape already (a trigger name selects a section), but the blocking/adjudicated
+  arm rules and the one-round re-arm cap are safety rules that some callers need
+  BEFORE the branch decision. Which text is genuinely per-branch and which must
+  stay in the hot entrypoint is decided at phase 1 planning, against the actual
+  fire sites, not now.
 
-- **OQ-2 - RESOLVED 2026-08-24: one manual sweep.** This repository's existing
-  276 walked items are cleaned up by hand, once, outside the phase work.
-
-- **OQ-3 - RESOLVED 2026-08-24: a deferral ASKS, and a decline is final.**
-  Nothing files automatically. When a gate defers findings the user is asked,
-  and a finding the user declines is DROPPED - not parked, not annotated, not
-  written to CAPTURE, not carried to the next phase. There is no long-living
-  residue by construction, which is what makes "CAPTURE cannot accumulate" true
-  rather than aspirational.
-  - The ask is BATCHED per gate fire, not per finding: one prompt listing what
-    the gate deferred, the user picks which become issues. A gate that defers
-    fifteen findings must not produce fifteen prompts - that friction is what
-    made the old silent-write path attractive in the first place.
-  - Severity classes need no separate rule (the original sub-question 2): the
-    user sees each finding before anything is written, so there is no automatic
-    stream for a severity filter to hold back.
-  - The target is simply the forge phase 1 resolved (sub-question 3); the user
-    is deciding per fire, so no separate private staging tracker is needed.
-  - A DECLINE IS RECORDED ON THE TRACKER, not locally. The finding is filed and
-    immediately closed `wontfix`, so a closed issue is the decline record and no
-    local file grows. Closed issues do not appear in the open count, so this
-    costs nothing on the landing page. "Has this already been declined" is then
-    ONE query per gate fire against closed issues - never a walk of N local
-    entries, and never a call per finding. Without this the same finding is
-    re-raised every cycle and the user is asked forever, which is the accumulation
-    problem wearing a different coat.
-  - The fingerprint is `(file path, symbol or anchor)`, not prose - prose will
-    not match across two independent review runs. This is deliberately COARSE
-    and its cost is stated: a genuinely new finding in an already-declined
-    function can be suppressed. Preferred over asking the user the same question
-    every cycle, and the failure is recoverable (reopen the closed issue).
+- **OQ-2 - whether `SubagentStart` can carry the correlation id.** The dedup key
+  is `(corr, worker key)`, and a hook only helps if it can compute both from what
+  the host hands it. If `SubagentStart`'s payload cannot reach the corr, the
+  start half stays hand-written and only `SubagentStop` becomes a second writer.
+  Resolved at phase 2 planning by reading the actual payload, not by assuming
+  one.
 
 ## Phases
 
+- [ ] **Phase 1: Cold-split the eager references** - `review-triggers.md` and `seams.md` become a small router plus cold branch files, so a fire loads only the branch it selected, and the weight pin moves with it
+- [ ] **Phase 2: The host writes the bracket** - `SubagentStart`/`SubagentStop` write the trace bracket with the hand-written close kept as fallback, `self-verify` pins the registered event names, brackets carry `duration_ms`, and the undocumented host-return dependency is stated
+- [ ] **Phase 3: Pin the stem list and fix the prose** - the `planning-*.test.mjs` stem list gets a census, `CADENCE-CENSUS` gets its prose home in `conventions.md`, and `seam-calls.test.mjs`'s header stops misattributing its own derivation
 
 ## Phase Details
+
+### Phase 1: Cold-split the eager references
+**Goal:** A site that fires one review trigger, or calls one seam, stops reading
+the other branches. `cadence-core/references/review-triggers.md` (40,413 B) and
+`references/seams.md` (25,068 B) each become a small router with an unambiguous
+branch decision plus cold files loaded only after that decision, copying the
+`workflows/verify.md` / `verify-deep.md` split that already works. This is the
+one change in the cycle that visibly moves what a run costs.
+**Depends on:** Nothing (first phase). Ordered first because it is the only
+phase whose benefit is measurable in tokens, and because phase 2 edits
+`execute.md`'s guardrails and `seams.md`'s dispatch contract - cheaper against a
+router than against a 25 KB file.
+**Requirements:** LOD-06
+**Issues:** GH-95
+**Success Criteria:**
+1. The entrypoint of each split file is a small router whose branch decision is
+   unambiguous - a reader can name which cold file a given trigger or seam call
+   loads without reading any of them.
+2. Cold files load only AFTER their branch is selected. No caller loads a branch
+   it did not select.
+3. NO safety rule lives solely in a cold file ahead of the branch decision that
+   needs it. The blocking/adjudicated arms and the one-round re-arm cap are the
+   named cases: whatever a caller must obey before it picks a branch stays in
+   the hot entrypoint, and OQ-1 is resolved in the plan against the actual fire
+   sites.
+4. `self-verify` checks every include target, so a branch that lost its contract
+   reddens rather than silently running without it.
+5. The `review-triggers.md` weight-budget pin moves in the same commit as the
+   split - the file is over its pre-existing budget line today, and a split that
+   leaves a stale pin is a census the next phase trips over.
+6. Every existing caller still resolves: a census or test names the include
+   targets, so a renamed cold file cannot go unnoticed.
+7. Full suite green; the measured before/after byte counts for both files are
+   recorded in the phase SUMMARY, not asserted from the plan.
+
+### Phase 2: The host writes the bracket
+**Goal:** A trace bracket survives session death. `SubagentStart` and
+`SubagentStop` write the bracket from the host side, the orchestrator's
+hand-written `trace close` is KEPT as a fallback, and dedup on
+`(corr, worker key)` lets the first writer win. `self-verify` pins the hook
+event names Cadence registers so a host rename reddens a check instead of going
+quiet, brackets record the `duration_ms` the host already returns and Cadence
+today discards, and the undocumented host-return dependency the whole system
+rests on is stated where a reader finds it.
+**Depends on:** Phase 1 - this phase edits `execute.md`'s guardrails and the
+seams dispatch contract, and does so against the split router rather than the
+whole file.
+**Requirements:** HOK-01, HOK-02, TRC-02, TRC-03
+**Issues:** GH-116, GH-118, GH-115, GH-121
+**Success Criteria:**
+1. The host-return contract is documented before any hook writes anything: which
+   token, tool-use and duration figures Cadence reads off a subagent return,
+   which code depends on each (the bracket system, `weight-budgets.json`, the
+   six `max_dispatch_tokens` keys), and that Anthropic can change the rendering
+   with no deprecation. The existing recovery - omit `--tokens` on a figureless
+   return, render `unrecorded` distinctly from `0` - is named as the mitigation
+   in force, not proposed as new work.
+2. `SubagentStart`/`SubagentStop` are registered in `hooks.json` and write the
+   trace bracket. Where the payload cannot supply the correlation id, OQ-2 is
+   resolved in the plan by reading the actual payload, and the affected half
+   stays hand-written rather than guessing a key.
+3. The orchestrator's hand-written `trace close` still works and is still
+   exercised by a test. A hook-only design is explicitly refused: if the host
+   renames an event, the fallback keeps the record and criterion 5 reddens.
+4. Dedup is on `(corr, worker key)` and the first writer wins. A bracket written
+   by both paths appears once; neither path assumes it ran first.
+5. `self-verify` asserts every hook event name Cadence registers is in a pinned
+   known set. An event renamed upstream fails that check by name.
+6. Brackets carry `duration_ms`. `trace close` grows one flag, which moves the
+   `arg-contract-flag-entries` census 185 -> 186 and is declared in the plan's
+   lease before an executor starts.
+7. `execute.md`'s guardrails are updated: they enumerate who may write the
+   trace, and a hook is a new writer. The enumeration is corrected, not
+   appended to loosely.
+8. The `seam-calls` and `arg-contract` counts and the
+   `trace-refusal-sentences` census are re-pinned in the same commit as the
+   change that moves them.
+9. Full suite green; a session killed between dispatch and close leaves a PAIRED
+   bracket, demonstrated rather than argued.
+
+### Phase 3: Pin the stem list and fix the prose
+**Goal:** Three small carried items, each placed where a file this cycle already
+opened is already open. A new `planning-*.test.mjs` stem stops silently running
+in the `other` group, `CADENCE-CENSUS` gets the prose home `CADENCE-DEBT`
+already has, and a test header stops misattributing its own derivation.
+**Depends on:** Phase 2 - the stem-list census is registered against the same
+registry phase 2 re-pins, so both land after that file settles.
+**Requirements:** CEN-03, DOC-04
+**Issues:** GH-110, GH-113, GH-114
+**Success Criteria:**
+1. A census pins the `planning-*.test.mjs` stem list that
+   `cadence-core/bin/test.mjs:36` holds in `GROUPS.planning`. A stem added later
+   and not named there fails a check instead of silently running in `other`. The
+   registry carries 12 rows today and none of them covers this.
+2. `cadence-core/references/conventions.md` describes the `CADENCE-CENSUS`
+   marker in prose, alongside the `CADENCE-DEBT` entry in "## Deliberate
+   shortcuts". The fields are described WITHOUT writing a literal marker line,
+   for the same reason that section already states about its own token.
+3. `cadence-core/bin/seam-calls.test.mjs`'s header at line 49 names the phase 5
+   plan it actually derives from, not "PLAN-2", so it no longer reads as if it
+   described the plan that re-pinned the row above it.
+4. Full suite green, and the new census passes its own registry check.

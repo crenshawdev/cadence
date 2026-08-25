@@ -1,4 +1,4 @@
-# Requirements: Cadence (v3.7.1)
+# Requirements: Cadence (v3.7.2)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
@@ -13,15 +13,18 @@ Decisions; nothing here is rewritten, because `## Shipped` is a record of what w
 true when written.
 
 
-No cycle open. `v3.7.1 - the tracker is the record` closed 2026-08-25 and its
-ten ids - `FRG-01`, `FRG-02`, `CEN-01`, `CEN-02`, `CAP-01`, `CAP-02`, `CAP-03`,
-`SPL-01`, `SPL-02`, `LOD-02` - are rows under `## Shipped` below, all Complete.
-Nothing has been promoted here to fill the section: the ids under `## Deferred`
-keep their own reasons and are not live scope until a phase picks one up.
+`v3.7.2 - the router loads late and the host writes the bracket` opened
+2026-08-25 with three phases. Its seven seeded ids are named in ROADMAP.md's
+Overview and in each phase's `**Requirements:**` line, deliberately NOT
+duplicated here: `/cad-plan` seeds each Traceability row as its phase is
+planned - the practice `v3.5.7` established - so an id not yet picked up
+surfaces as `unpicked` in `/cad-audit` rather than as a hand-written row.
 
-`/cad-phase add` opens the next cycle's first phase entry. `/cad-plan` then
-seeds each Traceability row as its phase is planned - the practice `v3.5.7`
-established - and rows are never hand-populated here.
+`v3.7.1 - the tracker is the record` closed 2026-08-25; its ten ids - `FRG-01`,
+`FRG-02`, `CEN-01`, `CEN-02`, `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`,
+`LOD-02` - are rows under `## Shipped` below, all Complete. The ids under
+`## Deferred` keep their own reasons and are not live scope until a phase picks
+one up.
 
 
 ## Shipped
