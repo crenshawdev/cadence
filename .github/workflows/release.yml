@@ -1,0 +1,63 @@
+name: release
+
+# A tag is the trigger, so publishing is a consequence of tagging rather than a
+# separate thing to remember. Thirty tags between v2.3.0 and v3.7.1 shipped with
+# no release attached because nothing here watched for them.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # Scoped to this job alone; the workflow default above stays read-only.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag and plugin manifest agree
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+          MANIFEST="$(jq -r .version .claude-plugin/plugin.json)"
+          if [ "$VER" != "$MANIFEST" ]; then
+            echo "::error::tag ${TAG} claims ${VER}, .claude-plugin/plugin.json says ${MANIFEST}"
+            exit 1
+          fi
+          echo "version ${VER} agrees"
+
+      - name: Slice the CHANGELOG section for this version
+        id: notes
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          # Everything between this version's heading and the next one, minus
+          # the link-reference block Keep a Changelog puts at the foot.
+          awk -v ver="$VER" '
+            $0 ~ "^## \\[" ver "\\]" { f = 1; next }
+            f && /^## \[/ { exit }
+            f && !/^\[[^]]+\]: *http/ { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::error::CHANGELOG.md carries no section for ${VER}"
+            exit 1
+          fi
+          echo "wrote $(wc -l < RELEASE_NOTES.md) lines of notes"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          # An -rc tag publishes as a pre-release and never takes Latest.
+          case "$TAG" in
+            *-rc.*|*-alpha*|*-beta*) FLAGS="--prerelease --latest=false" ;;
+            *)                       FLAGS="--latest" ;;
+          esac
+          gh release create "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md --verify-tag $FLAGS
