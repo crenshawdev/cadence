@@ -1,0 +1,35 @@
+{
+  "phase": "1",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "aeca7fd3",
+  "head": "df67210d",
+  "base_id": "aeca7fd344d8a003a84c8efb9178c259f10b9b08",
+  "head_id": "df67210dc5329b2149a0f04c9c563588cb695581",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/reference-routers.mjs",
+      "line": 241,
+      "severity": "high",
+      "claim": "Arm 2 accepts a cold branch merely because its `${CLAUDE_PLUGIN_ROOT}` path occurs anywhere in the router text; unlike arm 3, it does not exclude fenced blocks or require an actual prose Read.",
+      "failure_scenario": "Delete the prose Read for a registered cold file, while leaving (or adding) that same path in a fenced example/command block. `text.includes(...)` remains true, so `referenceRouterIssues` reports no `reference-router-branch-unread` issue and self-verify passes, although a reader following the router will never load the cold rule. This is especially plausible because the implementation explicitly recognizes fenced paths as subprocess arguments rather than router branches.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "caa07bfb",
+      "base_id": "aeca7fd344d8a003a84c8efb9178c259f10b9b08",
+      "head_id": "df67210dc5329b2149a0f04c9c563588cb695581"
+    }
+  ]
+}
