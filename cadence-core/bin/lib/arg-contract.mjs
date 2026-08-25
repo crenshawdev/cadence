@@ -604,9 +604,24 @@ export const CONTRACTS = {
     'seed-reqs': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // `--plan-time` selects the PLAN-TIME arm (CEN-02): the same operation
+    // asked before an executor runs, against the plan's declared lease and the
+    // census registry, instead of after the fact against the staged set. A
+    // FLAG and never a `lease-check plan` second word, for the reason this
+    // file's header states and the `cite-count` row above repeats:
+    // `subcommandKey` consumes a second word only for the families in
+    // `TWO_WORD`, `lease-check` is one of the one-word precedents it names,
+    // and one operation does not earn widening that Set.
+    //
+    // `--plan` stays REQUIRED on both arms, and that is not an oversight of
+    // the optional arm: both arms name a plan FILE on disk and neither can
+    // resolve `PLAN-<k>.md` without it, so a required-ness that varied by flag
+    // would state a bound one arm does not hold - the per-subcommand rule this
+    // table already applies to `risk-check run` against `risk-check status`.
     'lease-check': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--plan-time': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     'detect-commands': {
       '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
