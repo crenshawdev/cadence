@@ -92,20 +92,30 @@ const CENSUS = [
   },
   {
     file: join('cadence-core', 'workflows', 'plan.md'),
-    calls: 12,
+    calls: 14,
     note: 'status, config.mjs get, plan-size x2, recall, trace close x2, '
       + 'seed-reqs, cursor set (9), plus RBK-01\'s two read-back count points - '
       + '`cite-count --point planned` at count_planned and `cite-count --point '
       + 'committed` at count_committed (+2) - plus CEN-02\'s plan-time census '
-      + 'gate, `lease-check --plan-time` at check_census (+1). Two read-back '
+      + 'gate, `lease-check --plan-time` at check_census (+1), plus the two '
+      + 'dispatch-site `route.mjs resolve` calls, one at spawn_planner and one '
+      + 'at spawn_checker (+2). Two read-back '
       + 'points, not one: a checker revision and an applied adjudicated '
       + 'survivor both edit the plan between them, so one count would describe '
       + 'a plan that no longer exists. And one census gate, not two: '
       + 'inline_plan REFERENCES check_census and those two count steps rather '
-      + 'than restating their calls, which is what holds this at 12 and not 15. '
-      + 'A thirteenth means a call came back - most likely a restated count or '
-      + 'a restated census call in inline_plan, or a `trace append` beside the '
-      + 'seam\'s own in-code outcome event.',
+      + 'than restating their calls, which is what holds this at 14 and not 17. '
+      + 'The resolve pair moved this row from 12 on 2026-08-25 (`08100808`) and '
+      + 'added NO round-trip, which is the measurement that justifies the '
+      + 're-pin: both sites already instructed the resolve in prose and already '
+      + 'carried their `--bracket-read` inline, and that commit only wrote the '
+      + 'four-line command form at each site so the caller stops grepping '
+      + 'seams.md to recover it. This counter reads literal command blocks, so '
+      + 'what moved the number is a call that became literal, not a call that '
+      + 'was added. '
+      + 'A fifteenth means a call came back - most likely a restated count or '
+      + 'a restated census call in inline_plan, a third resolve, or a '
+      + '`trace append` beside the seam\'s own in-code outcome event.',
   },
 ];
 
