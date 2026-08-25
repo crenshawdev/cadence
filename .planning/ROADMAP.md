@@ -169,11 +169,13 @@ these is the `git.auto_close` collision the project already paid for once.
    gate produces findings it will not fix now - the blocking arm's
    below-blocker/high remainder, the adjudicated arm's non-survivors, any
    `recorded not fixed` disposition - the user is asked once for that fire with
-   those findings listed. Accepted findings become issues immediately; declined
-   findings are DROPPED. Verified by running a gate that produces them and
-   asserting: an issue exists for each accepted finding before the phase closes,
-   no artifact anywhere holds a declined one, and CAPTURE is byte-unchanged
-   either way.
+   those findings listed. Accepted findings become issues immediately; a declined
+   finding is filed too, carrying the decline label, because that labelled issue
+   is the ONLY thing that stops a later fire asking about it again (criterion
+   11). Verified by running a gate that produces them and asserting: an issue
+   exists for each accepted finding before the phase closes, a declined one
+   exists on the tracker carrying the decline label and is absent from
+   `.planning/FILED.md`, and CAPTURE is byte-unchanged either way.
 2. The set that reaches the ask is read off the STRUCTURED adjudication payload -
    the `RULINGS` (`downgraded`/`refuted` are the non-survivors) and the raised
    severity - and never re-parsed out of `REVIEW-<trigger>-<discriminator>.md`
