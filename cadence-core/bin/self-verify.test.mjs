@@ -338,7 +338,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`git.auto_branch` `git.base_branch` `git.create_tag`\n' +
     '`git.on_land_cleanup` `git.auto_close` `git.issue_check`\n' +
     '`git.forge_provider` `git.forge_repo` `git.forge_host`\n' +
-    '`planning.commit_docs` `memory.backend`\n' +
+    '`planning.commit_docs` `planning.max_capture_bullets` `memory.backend`\n' +
     '`risk.override.<surface>`\n');
   const r = run(['--root', root]);
   assert.equal(r.ok, true, JSON.stringify(r.problems));
@@ -1619,8 +1619,8 @@ test('check 12: *.test.mjs is off the walk - a test may write any shape', () => 
   assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
 });
 
-// CADENCE-CENSUS: self-verify-merge-layers | asserts: seventeen mergeLayers callsites over thirteen files, each in one of the two warning-surfacing arms
-test('check 12: the live tree is SEVENTEEN callsites over THIRTEEN files, each in an arm', () => {
+// CADENCE-CENSUS: self-verify-merge-layers | asserts: eighteen mergeLayers callsites over fourteen files, each in one of the two warning-surfacing arms
+test('check 12: the live tree is EIGHTEEN callsites over FOURTEEN files, each in an arm', () => {
   // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
   // miscount in either direction fails rather than passing quietly, and a
   // new callsite cannot be added without choosing an arm.
@@ -1630,7 +1630,9 @@ test('check 12: the live tree is SEVENTEEN callsites over THIRTEEN files, each i
   // `trace`'s two and `risk-check run`'s to their own command modules. Same
   // sixteen reads, three more files holding them.
   // Then CAP-01 added issue-filing.mjs, which reads the persisted forge record
-  // once for BOTH of its faces: seventeen reads over thirteen files.
+  // once for BOTH of its faces: seventeen reads over thirteen files. CAP-03
+  // added planning/capture-check.mjs, which reads the capture bound once:
+  // eighteen reads over fourteen files.
   const binDir = join(REPO, 'cadence-core', 'bin');
   const skip = join(binDir, 'lib', 'config-merge.mjs');
   /** @param {string} dir @returns {string[]} */
@@ -1663,8 +1665,8 @@ test('check 12: the live tree is SEVENTEEN callsites over THIRTEEN files, each i
       }
     }
   }
-  assert.equal(total, 17, `callsites: ${files.join(', ')}`);
-  assert.equal(files.length, 13, files.join(', '));
+  assert.equal(total, 18, `callsites: ${files.join(', ')}`);
+  assert.equal(files.length, 14, files.join(', '));
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
   assert.deepEqual(armB, [join('cadence-core', 'bin', 'review-provider.mjs')]);

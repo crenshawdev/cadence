@@ -102,11 +102,11 @@ export const CENSUSES = Object.freeze([
     // check 12 red at seventeen over thirteen. The fix belongs at the MENTION,
     // which is the discipline lib/merge-warnings.mjs states and the same one
     // that keeps this file's own marker head built rather than written.
-    counts: 'seventeen `mergeLayers` callsites over thirteen files, each in one '
+    counts: 'eighteen `mergeLayers` callsites over fourteen files, each in one '
       + 'of the two warning-surfacing arms',
     asserted_by: 'the test named `check 12: the live tree is SEVENTEEN callsites '
       + 'over THIRTEEN files, each in an arm`',
-    // The thirteen files that carry a callsite today. lib/config-merge.mjs is
+    // The fourteen files that carry a callsite today. lib/config-merge.mjs is
     // deliberately NOT a subject: that test's own `skip` excludes it, so
     // editing it cannot move the count.
     subjects: [
@@ -118,6 +118,7 @@ export const CENSUSES = Object.freeze([
       'cadence-core/bin/issue-check.mjs',
       'cadence-core/bin/issue-filing.mjs',
       'cadence-core/bin/land-cleanup.mjs',
+      'cadence-core/bin/planning/capture-check.mjs',
       'cadence-core/bin/planning/core.mjs',
       'cadence-core/bin/planning/risk-check.mjs',
       'cadence-core/bin/planning/trace.mjs',

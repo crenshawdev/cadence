@@ -31,12 +31,15 @@ function isEntryFile() {
 /** `node:test`'s `test` when run directly, a no-op when imported (see header). */
 const test = isEntryFile() ? nodeTest : () => {};
 
-/** A tree with a roadmap and a CAPTURE.md written verbatim. */
-function tree(capture) {
-  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+/** A tree with a roadmap, a CAPTURE.md written verbatim, and an optional config. */
+function tree(capture, config) {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], ...(config ? { config } : {}) });
   if (capture !== undefined) writeFileSync(join(dir, 'CAPTURE.md'), capture);
   return dir;
 }
+
+/** `planning.max_capture_bullets` set to `n` in the repo config layer. */
+const bounded = (n) => ({ planning: { max_capture_bullets: n } });
 
 // A queue in the state this phase says a file should never reach: three live
 // bullets, two of them settled IN PLACE with an annotation, and a section of
@@ -80,6 +83,9 @@ test('capture-check: a freshly created queue is zero, unannotated and archive-fr
   ]);
   assert.deepEqual(r.annotations, []);
   assert.deepEqual(r.archive, { heading: '## Archive', present: false, bullets: 0 });
+  // The schema default, applied here because `mergeLayers` applies none.
+  assert.equal(r.bound, 40);
+  assert.equal(r.over_bound, false);
 });
 
 test('capture-check: the annotated bullets and the archived section are all named', () => {
@@ -133,4 +139,43 @@ test('capture-check: a VALUELESS --file is bad-args, never silently the --dir de
   const r = run(['capture-check', '--file'], tree(MANGLED));
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-args');
+});
+
+// --- the bound: a REPORT, never a refusal ------------------------------------
+// The pair is the point. One tree, two configured bounds: the same three
+// bullets cross a bound of 2 and clear a bound of 4, so the crossing is
+// demonstrably read off the config layer rather than off anything in the file.
+
+test('capture-check: a queue over its bound is REPORTED, with both numbers, and refuses nothing', () => {
+  const r = run(['capture-check'], tree(MANGLED, bounded(2)));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0, 'a crossing is a report - the seam still exits 0');
+  assert.equal(r.substantive, 3);
+  assert.equal(r.bound, 2);
+  assert.equal(r.over_bound, true);
+  // The other two verdicts are unchanged by the crossing: three reports, one
+  // envelope, none of them suppressing another.
+  assert.equal(r.annotations.length, 2);
+  assert.equal(r.archive.present, true);
+});
+
+test('capture-check: the same tree under a bound of 4 reports no crossing', () => {
+  const r = run(['capture-check'], tree(MANGLED, bounded(4)));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.substantive, 3);
+  assert.equal(r.bound, 4);
+  assert.equal(r.over_bound, false);
+});
+
+test('capture-check: a torn config layer rides the envelope rather than silently defaulting', () => {
+  // A layer that did not parse reads EVERY key as unset, so a project that
+  // raised its bound would be told it crossed a number it does not use. The
+  // report still lands - nothing here refuses - and the warning says why the
+  // bound is the default one.
+  const dir = tree(MANGLED);
+  writeFileSync(join(dir, 'config.json'), '{ not json');
+  const r = run(['capture-check'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.bound, 40);
+  assert.ok(Array.isArray(r.warnings) && r.warnings.length >= 1, JSON.stringify(r.warnings));
 });

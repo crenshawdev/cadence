@@ -53,6 +53,7 @@ pair is one selectable option and its `description`.
 | `git.auto_close` `[repo-layer-only]` | bool | Run the whole close unattended (audit → tag → PR → merge → reset) with no prompts? | `true`→run it start to finish, stopping only if a serious review finding is still unresolved · `false`→stop before publishing - you run `/cad-land` yourself | false |
 | **Planning** |||||
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
+| `planning.max_capture_bullets` | int | How many live items may sit in `.planning/CAPTURE.md` before Cadence says the queue has stopped being the phase in flight? A crossing is reported by `planning.mjs capture-check` and nothing is refused - filing never stops. The default sits above this repository's own 30 (measured 2026-08-25), so it fires on growth rather than on arrival | e.g. `40` | 40 |
 | **Memory** |||||
 | `memory.backend` `[repo]` | enum | How past planning notes are searched and resurfaced | `builtin`→built-in search over your `.planning/` docs, no setup and no dependencies · `none`→turn that search off | builtin |
 | **Review** (providers handled separately) |||||
