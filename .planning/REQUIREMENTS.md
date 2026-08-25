@@ -76,7 +76,7 @@ Traceability row as its phase is planned; rows are never hand-populated here.
   bound restarts the clock.
 - **SPL-01**: A `phases/` directory whose name would be normalized to a
   DIFFERENT phase is reported as `phase-dir-grammar` drift. `PHASE_DIR_NAME`
-  (`cadence-core/bin/planning/status.mjs:28`) guards the integer part with a leading
+  (`cadence-core/bin/planning/core.mjs:107`) guards the integer part with a leading
   `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are
   all silently legal (verified 2026-08-24) while the detail
   `phaseDirGrammarDrift` prints says "no zero-padding".

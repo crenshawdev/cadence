@@ -356,3 +356,29 @@ test('status: 08 beside a legal 8 names the phase it collides with', () => {
   assert.match(g[0].detail, /phases[/\\]?8 is the phase they collide with/);
   assert.match(g[0].detail, /is not a phase directory name/);
 });
+
+// The FRACTION obeys the same no-padding rule as the integer part (phase 4
+// D-01/D-02): `1.01` and `1.00` are padded spellings that would normalize onto
+// phase 1, and `2.0` is not a fraction at all rather than a second spelling of
+// phase 2. `1.10` is NOT padded - it is sub-phase ten - and stays legal, which
+// is why the rule cannot be `String(Number(x)) === x`: that round trip accepts
+// `1.01` and refuses `1.10`, exactly backwards.
+test('status: a zero-padded fraction is reported and 1.10 is not', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+    phases: { 1: { plan: true }, 2: { plan: true } },
+  });
+  phaseDirs(dir, ['1.00', '1.01', '1.1', '1.10', '2.0', '8']);
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const g = grammarDrift(r);
+  assert.equal(g.length, 2, JSON.stringify(g));
+  assert.deepEqual(g[0].entries, ['1.00', '1.01']);
+  assert.match(g[0].detail, /phases[/\\]?1(,|\s)/);
+  assert.deepEqual(g[1].entries, ['2.0']);
+  assert.match(g[1].detail, /phases[/\\]?2 is the phase they collide with/);
+  // The legal names never earn an entry of their own.
+  assert.equal(g.some((d) => d.entries.some((e) => ['1.1', '1.10', '8'].includes(e))), false);
+  // The parenthetical states the fraction rule, not just the integer one.
+  assert.match(g[0].detail, /neither part zero-padded/);
+});

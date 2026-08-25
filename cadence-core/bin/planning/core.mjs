@@ -81,6 +81,30 @@ function phaseSpellingRefusal(parsed) {
     + ` - send --phase "${canonical}", or rename phases/${parsed.raw}/ to phases/${canonical}/`;
 }
 
+
+// THE phase-directory grammar: a bare phase integer, or an `N.M` sub-phase
+// insertion, with neither part zero-padded and no slug suffix. Checked here and
+// resolved NOWHERE - Cadence states the grammar and REPORTS what violates it,
+// rather than teaching the seams to resolve `08-meteogram-legend`
+// (references/conventions.md).
+//
+// The fractional part carries the SAME `[1-9]` lead as the integer part,
+// because the fraction is the sub-phase ORDINAL and obeys the same no-padding
+// rule: `1.01` is a padded spelling of `1.1`, and `2.0` is not a fraction at
+// all rather than a second spelling of phase 2. Deliberately NOT the
+// `String(Number(x)) === x` round trip `phaseSpellingRefusal` above uses -
+// measured 2026-08-25, `1.01` round-trips and `1.10` does not, so a round-trip
+// rule would legalize `1.01` and outlaw `1.10`, inverting the two cases this
+// grammar most has to get right. `phases/1.10/` stays a legal directory name.
+//
+// It lives in core rather than beside its drift walk (`phaseDirGrammarDrift`
+// in planning/status.mjs) because a second family reaches it: the two `phases/`
+// LISTING filters, in `cmdStatus`'s surviving-directory report and in the
+// recall corpus walk. Those two are STILL the looser `/^\d+(\.\d+)?$/` as of
+// this commit, and the claim this comment used to carry - that they "keep a
+// zero-padded directory out of the corpus" - was simply untrue: measured
+// 2026-08-25, that pattern matches `08`, `0`, `1.01`, `1.00` and `2.0`.
+const PHASE_DIR_NAME = /^[1-9]\d*(?:\.[1-9]\d*)?$/;
 // `cadence-core/bin`, deliberately NOT this file's own directory. Both
 // consumers below walk UP from it - `MANIFEST_PATH` with two `'..'` segments,
 // `routeLadder` with one - and both swallow their own read failure, so a `HERE`
@@ -780,6 +804,7 @@ export {
   FLAG_SENTENCES,
   HERE,
   MANIFEST_PATH,
+  PHASE_DIR_NAME,
   QUEUE_HOMES,
   RECORD_TOKEN,
   RISK_DIFF_MAX_BUFFER,

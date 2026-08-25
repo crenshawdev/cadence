@@ -137,10 +137,10 @@ const CITATIONS = [
   },
   {
     surface: '.planning/REQUIREMENTS.md',
-    citation: 'planning/status.mjs:28',
-    file: 'cadence-core/bin/planning/status.mjs',
-    start: 28,
-    end: 28,
+    citation: 'planning/core.mjs:107',
+    file: 'cadence-core/bin/planning/core.mjs',
+    start: 107,
+    end: 107,
     symbol: 'PHASE_DIR_NAME',
   },
   {

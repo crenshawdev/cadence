@@ -2,30 +2,18 @@
 // planning/status.mjs - `status`: where the project is, derived from the phase
 // artifacts on disk and reconciled against the STATE.md cursor.
 //
-// The phase-directory grammar (`PHASE_DIR_NAME`), the drift walk over it
-// (`phaseDirGrammarDrift`) and the cursor/derived agreement table (`AGREE`)
-// live here because nothing else reads them - phase 4's D-05 partition puts a
-// single-use helper beside its handler and leaves the multi-family readers,
-// `derivePhases` among them, in planning/core.mjs.
+// The drift walk over the phase-directory grammar (`phaseDirGrammarDrift`) and
+// the cursor/derived agreement table (`AGREE`) live here because nothing else
+// reads them - phase 4's D-05 partition puts a single-use helper beside its
+// handler and leaves the multi-family readers in planning/core.mjs. The grammar
+// itself (`PHASE_DIR_NAME`) is one of those readers and is imported from there.
 'use strict';
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { derivePhases, fail, listPlanFiles, ok, read, readQueue } from './core.mjs';
+import { PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, read, readQueue } from './core.mjs';
 import { classifyPhaseList, parseCursor, parseRequirements } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
-
-// THE phase-directory grammar (references/conventions.md): a bare phase integer
-// or an `N.M` sub-phase, no zero-padding and no slug suffix. Checked here and
-// resolved NOWHERE - D-01 is that Cadence states the grammar and reports what
-// violates it, rather than teaching the seams to resolve `08-meteogram-legend`.
-//
-// Deliberately STRICTER than the two `phases/` LISTING filters (`:189` and the
-// recall corpus walk), and it does not replace them: `/^\d+(\.\d+)?$/` there
-// keeps a zero-padded directory out of the corpus and out of the
-// surviving-dir report exactly as it does today (D-09). The leading `[1-9]` is
-// what makes `08` a violation rather than a synonym for `8`.
-const PHASE_DIR_NAME = /^[1-9]\d*(?:\.\d+)?$/;
 
 /**
  * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per
@@ -75,7 +63,7 @@ function phaseDirGrammarDrift(dir) {
     const legal = g.legal.slice().sort();
     const verb = entries.length > 1 ? 'are not phase directory names' : 'is not a phase directory name';
     let detail = `${entries.join(', ')} ${verb}`
-      + ' (bare integer or N.M, no zero-padding, no slug)';
+      + ' (bare integer or N.M, neither part zero-padded, no slug)';
     if (entries.length > 1 && g.n !== null) detail += `; they share numeric prefix ${g.n}`;
     if (legal.length) {
       detail += `; ${legal.map((e) => `phases/${e}`).join(', ')} is the phase they collide with`;
