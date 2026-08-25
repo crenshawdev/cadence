@@ -1,6 +1,6 @@
 # State
 
-Phase: 6 of 6 (Close the plan-time lease gate)
-Status: phase complete
-Next: /cad-milestone - phase 6 was the last phase on the roadmap; the audit gate precedes any ship
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-08-25

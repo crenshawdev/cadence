@@ -5,10 +5,17 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v3.6.1` is the current release: the three gaps `v3.6.0` named about
-its own `/cad-why` work, closed - the chain states the reachability it does not
-have, the entry cap carries a byte claim measurement supports, and closes order
-by parsed instants. `v3.6.0` before it was everything Cadence wrote down being
+subsystem. `v3.7.1` is the current release: the queue nothing
+drained, closed at its cause - a gate that declines a finding files it on the
+repository's own issue tracker in the step that decided, CAPTURE.md holds the
+phase in flight and nothing else, and phase close asserts it empty. Riding with
+it: a census registry with a plan-time lease check, `planning.mjs` split into 30
+per-command modules, and one spelling per phase directory. `v3.7.0` before it
+was Cadence stating its failures in its own vocabulary and never stating the
+remedy, so a hintless refusal became a build failure. `v3.6.1` before that was
+the three gaps `v3.6.0` named about its own `/cad-why` work, closed - the chain
+states the reachability it does not have, the entry cap carries a byte claim
+measurement supports, and closes order by parsed instants. `v3.6.0` before it was everything Cadence wrote down being
 written by a gate and read by nobody: `/cad-why` walks the record join,
 `cite-count` measures whether recall was read, and the fast path leaves a
 record behind it. `v3.5.9` before it was the release seam and the frontmatter
@@ -195,18 +202,33 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v3.7.1 - the tracker is the record`, opened 2026-08-24.** Three phases.
-Phase 1 resolves a forge at project setup, phase 2 registers the repository's
-buffer for the phase in flight with the repository's own issue tracker as the
-hand-maintained censuses and checks a plan's lease against them before an
-executor runs, phase 3 makes CAPTURE.md a transient record, and the sub-phase
-spelling fix rides along as phase 4. Measured at the open: 276 walked bullets in 251,968
-bytes, read by `/cad-plan` on every planning pass, after a hand sweep to zero
-on 2026-08-08 that regrew in sixteen days. Ids seeded at the open: `CAP-01`,
-`CAP-02`, `CAP-03`, `FRG-01`, `FRG-02`, `SPL-01`, `SPL-02`. Both open questions
-are resolved at the open: a forge is a precondition rather than an option, and
-this repository's existing 276 items are swept by hand once, outside the phase
-work.
+No cycle open. `/cad-phase add` opens the next one.
+
+**`v3.7.1 - the tracker is the record` closed 2026-08-25.** Six phases, 138
+commits off `v3.7.0`, ten requirement ids all traced to a verified phase:
+`FRG-01`, `FRG-02` (the forge resolved at project setup), `CEN-01`, `CEN-02`
+(the census registry and the plan-time lease check), `CAP-01`, `CAP-02`,
+`CAP-03` (the tracker is the record; CAPTURE holds the phase in flight and
+close asserts it empty), `SPL-01`, `SPL-02` (one spelling per phase) and
+`LOD-02` (`planning.mjs` split into 30 per-command modules behind a 360-line
+entry file). `/cad-audit` PASS on both arms - 10 of 10 requirements traced, 33
+of 33 acceptance criteria covered across five phases. Manifest bumped to
+`3.7.1`.
+
+Where the cycle now lives: its requirement rows under `## Shipped` in
+REQUIREMENTS.md, its narrative in `CHANGELOG.md` under `[3.7.1]`, and 144
+residue rows - phase deviations, UAT items and CONTEXT decisions - under this
+label's heading in `.planning/ARCHIVE.md`, which is what `recall` indexes now
+that `phases/1-6/` are gone from the live tree. The phase work itself is in git
+history off `v3.7.0`.
+
+Outstanding at this close: the merge to `main` and the `v3.7.1` release tag,
+both `/cad-land`'s (the tag is cut on the pulled base after the merge
+confirms). One acceptance item carries forward rather than shipping proven -
+phase 2's UAT item 11, whether the `/cad-plan` orchestrator halts on a live
+`check_census` refusal rather than dispatching past it. The seam arm underneath
+it is verified in both directions; only the workflow's obedience is unobserved,
+and the first `/cad-plan` of the next cycle observes it.
 
 **`v3.7.0 - the refusal that names the next step` closed 2026-08-24.** Two
 phases, 36 commits off `v3.6.1`, three ids seeded at the open and all three

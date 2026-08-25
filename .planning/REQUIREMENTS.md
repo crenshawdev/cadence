@@ -1,4 +1,4 @@
-# Requirements: Cadence (v3.6.0)
+# Requirements: Cadence (v3.7.1)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
@@ -13,9 +13,15 @@ Decisions; nothing here is rewritten, because `## Shipped` is a record of what w
 true when written.
 
 
-`v3.7.1 - the tracker is the record` opened 2026-08-24, four phases, nine ids
-seeded at the open - the practice `v3.5.7` established. `/cad-plan` seeds each
-Traceability row as its phase is planned; rows are never hand-populated here.
+No cycle open. `v3.7.1 - the tracker is the record` closed 2026-08-25 and its
+ten ids - `FRG-01`, `FRG-02`, `CEN-01`, `CEN-02`, `CAP-01`, `CAP-02`, `CAP-03`,
+`SPL-01`, `SPL-02`, `LOD-02` - are rows under `## Shipped` below, all Complete.
+Nothing has been promoted here to fill the section: the ids under `## Deferred`
+keep their own reasons and are not live scope until a phase picks one up.
+
+`/cad-phase add` opens the next cycle's first phase entry. `/cad-plan` then
+seeds each Traceability row as its phase is planned - the practice `v3.5.7`
+established - and rows are never hand-populated here.
 
 
 ## Shipped
@@ -279,10 +285,10 @@ section only, bounded at the next `## ` heading.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 
-Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
+Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
 from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-20 v3.5.6 closed. It seeded no requirement ids, so `## Traceability` held no rows to archive and the audit's trace arm ran over zero requirements while the coverage arm carried the proof at 20/20 criteria across 3 phases. `v3.5.7 - measured, and no lever to change it` scoped as RDX-01, BCH-01, CER-01 and IVW-01, seeded at the open so the trace arm is live from the first phase*
+*Last updated: 2026-08-25 v3.7.1 closed. Ten ids traced to a verified phase across six phases - FRG-01, FRG-02, CEN-01, CEN-02, CAP-01, CAP-02, CAP-03, SPL-01, SPL-02, LOD-02 - and archived to `## Shipped`, leaving `## Traceability` empty. /cad-audit PASS on both arms: 10 of 10 requirements traced, 33 of 33 acceptance criteria covered across five phases. No cycle is open; `/cad-phase add` seeds the next one*
