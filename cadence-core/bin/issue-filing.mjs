@@ -422,15 +422,37 @@ function cmdFile(dir, payloadFile) {
       // The mirror runs before the refusal is emitted: the issues that DID land
       // are on the tracker, and a recall pointer they never got is a second
       // loss on top of the first.
-      mirrorFiled(dir, forge.provider, forge.repo, filed);
+      //
+      // AND ITS ANSWER RIDES THE ENVELOPE. `mirrorFiled` refuses on a held lock
+      // (`filed-locked`) and on a failed write, and a discarded refusal here is
+      // the worst of the three outcomes silently reported as the middle one:
+      // the caller is told these entries are `filed`, and told to re-run only
+      // the `unfiled` ones, so an issue that WAS created and never got its
+      // `.planning/FILED.md` row is unreachable through recall AND is never
+      // revisited by the retry. `mirrored` says which of the two happened and
+      // the hint below says what to do about it.
+      const mirror = mirrorFiled(dir, forge.provider, forge.repo, filed);
+      const retry = `run \`${forge.bin}\` yourself in this directory to see why, then re-run this `
+        + 'step with ONLY the unfiled entries - they are named on this envelope and they '
+        + 'are still in hand, so none of them is lost.';
+      // Only when the mirror ALSO failed, because a hint that always warns
+      // about the recall pointer teaches the reader to skip the sentence.
+      const lostPointer = mirror.ok === false
+        ? ` AND the recall pointer was NOT written (${mirror.reason}: ${mirror.detail}), so the `
+          + `${filed.length} entries this envelope lists as \`filed\` are on ${forge.repo} with `
+          + 'NOTHING in .planning/FILED.md pointing at them: fix the write that detail names '
+          + '(a stale .planning/FILED.md.lock is the usual answer) and add one `- ` row per '
+          + 'ACCEPTED filed entry by hand. Do not re-file them - they already exist.'
+        : '';
       emit({ ok: false, reason: 'create-failed', provider: forge.provider, repo: forge.repo,
         filed, unfiled, warnings: forge.warnings,
+        mirrored: mirror.ok === true,
+        mirror_reason: mirror.ok === false ? mirror.reason : null,
+        mirror_detail: mirror.ok === false ? mirror.detail : null,
         detail: `${forge.bin} could not create the issue for ${unfiled[0].fingerprint} on `
           + `${forge.repo}: ${filed.length} of ${read.entries.length} were filed and `
           + `${unfiled.length} were not`,
-        hint: `run \`${forge.bin}\` yourself in this directory to see why, then re-run this `
-          + 'step with ONLY the unfiled entries - they are named on this envelope and they '
-          + 'are still in hand, so none of them is lost' });
+        hint: retry + lostPointer });
       return;
     }
     filed.push({ fingerprint: fingerprint(finding), disposition, title });

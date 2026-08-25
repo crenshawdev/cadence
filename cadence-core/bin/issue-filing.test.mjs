@@ -90,13 +90,20 @@ function stubBin(dir, name, { listBody = '[]', loginBody = '[]', failAt = 0, cre
  * prepended dir already answers `onPath` and `execFileSync` before the real
  * binary of the same name is reached. `bins: []` is how a case asks for a PATH
  * where no forge CLI resolves at all.
+ *
+ * `prepare` runs against the fresh repository directory after it is built and
+ * before the seam is spawned - the hook a case needs when its point is the
+ * state of `.planning/` at the moment the seam reaches it (a held
+ * `FILED.md.lock`, say), which cannot be planted after `repoWith` returns
+ * because `repoWith` runs inside this helper.
  */
-function run(args, { git = GITHUB, bins = ['gh'], stub = {} } = {}) {
+function run(args, { git = GITHUB, bins = ['gh'], stub = {}, prepare = null } = {}) {
   const stubDir = tmp('bin');
   const argvLog = join(tmp('log'), 'argv');
   const createLog = join(tmp('log'), 'creates');
   for (const name of bins) stubBin(stubDir, name, { ...stub, createLog });
   const dir = repoWith(git);
+  if (prepare) prepare(dir);
   const env = {
     ...process.env,
     CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
@@ -558,6 +565,44 @@ test('a create that fails part way still mirrors the issues that DID land', () =
   const text = filedText(dir);
   assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, 2, text);
   assert.ok(!text.includes(fingerprint(FIVE[2])), 'the unfiled one is not mirrored');
+  // The mirror LANDED, and the envelope says so rather than leaving the caller
+  // to assume it - which is the other half of the case below.
+  assert.equal(envelope.mirrored, true, JSON.stringify(envelope));
+  assert.equal(envelope.mirror_reason, null);
+});
+
+test('a create failure whose mirror ALSO failed says so, and the hint stops the retry losing it', () => {
+  // The worst of the three outcomes was reported as the middle one: two issues
+  // exist on the tracker, `.planning/FILED.md` names neither, and the envelope
+  // still listed them as `filed` while telling the caller to re-run only the
+  // `unfiled` ones. Nothing then ever revisits them, so they are unreachable
+  // through recall forever. A held lock is the cheap way to make the mirror
+  // refuse: `withPlanningFileLock` waits out its own bound and returns
+  // `filed-locked` rather than throwing.
+  const payload = dispositions([
+    [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
+  ]);
+  const { status, envelope, dir } = run(['file', '--payload', payload], {
+    stub: { failAt: 3 },
+    prepare: (d) => writeFileSync(join(d, '.planning', 'FILED.md.lock'), ''),
+  });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'create-failed');
+  // The failure is still reported as what it is: a create that did not land.
+  assert.equal(envelope.filed.length, 2);
+  assert.equal(envelope.unfiled.length, 1);
+  // And the discarded result is now on the envelope.
+  assert.equal(envelope.mirrored, false, JSON.stringify(envelope));
+  assert.equal(envelope.mirror_reason, 'filed-locked');
+  assert.ok(envelope.mirror_detail && envelope.mirror_detail.includes('FILED.md.lock'),
+    envelope.mirror_detail);
+  assert.equal(filedText(dir), '', 'the mirror really did not write');
+  // The hint tells the truth about BOTH halves: re-run the unfiled ones, and
+  // do not re-file the filed ones whose pointer is missing.
+  assert.match(envelope.hint, /ONLY the unfiled entries/);
+  assert.match(envelope.hint, /recall pointer was NOT written/);
+  assert.match(envelope.hint, /\.planning\/FILED\.md/);
+  assert.match(envelope.hint, /[Dd]o not re-file them/);
 });
 
 test('`unfixed` writes nothing at all - the ask is not a filing', () => {
