@@ -135,22 +135,11 @@ const CITATIONS = [
     end: 501,
     symbol: 'atomicWrite',
   },
-  {
-    surface: '.planning/REQUIREMENTS.md',
-    citation: 'planning/core.mjs:107',
-    file: 'cadence-core/bin/planning/core.mjs',
-    start: 107,
-    end: 107,
-    symbol: 'PHASE_DIR_NAME',
-  },
-  {
-    surface: '.planning/REQUIREMENTS.md',
-    citation: 'planning/core.mjs:77',
-    file: 'cadence-core/bin/planning/core.mjs',
-    start: 77,
-    end: 77,
-    symbol: 'phaseSpellingRefusal',
-  },
+  // SPL-01 and SPL-02's two `planning/core.mjs` citations retired here at the
+  // v3.7.1 close on 2026-08-25: their `## Active` bullets moved to `## Shipped`,
+  // and a Shipped row is a one-line summary that carries no line citations. This
+  // is grammar one's third remedy, not a lost pin - the code both rows named is
+  // unchanged and still asserted by `phase-spelling.test.mjs`.
 ];
 
 test('grammar one: every citation on a guarded surface has exactly one pinned row', () => {
