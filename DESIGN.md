@@ -384,7 +384,7 @@ lever is trigger frequency (gating), never a weak reviewer.
   of what is on disk. Only `cad-plan-checker` has a `low` rung, as the next bullet says.)*
 - ✅ **IMPLEMENTED (2026-07-10):** resolver `bin/route.mjs` + editable data `route-table.json`
   (role→tier, profile→model matrix over Claude aliases, auto signals). The spawn-agent seam
-  (`references/seams.md`) resolves every dispatch through it; re-dispatch sites pass `--attempt N`
+  (`references/seam-spawn-agent.md`) resolves every dispatch through it; re-dispatch sites pass `--attempt N`
   so `auto` escalates on failure. `model.profile` gains `auto`; the one low-effort role
   (`cad-plan-checker`) escalates via variant file `cad-plan-checker-high`. Tests: `bin/route.test.mjs`
   (10, zero-dep `node:test`). Role tiers + matrix are data — edit `route-table.json`, not code.

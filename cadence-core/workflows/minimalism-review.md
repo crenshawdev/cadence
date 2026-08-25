@@ -42,9 +42,10 @@ list, because it reads exactly like a correct one.
 
 <step name="dispatch">
 Assemble `{ instruction, artifact }`:
-- `artifact` = the target as a REFERENCE, never its bytes (references/seams.md's
-  deferred-read rule - the reviewer produces what it needs with its own
-  Read/Grep/Bash): the path for a file, the directory for a directory, the
+- `artifact` = the target as a REFERENCE, never its bytes
+  (references/seam-spawn-agent.md's deferred-read rule - the reviewer produces
+  what it needs with its own Read/Grep/Bash): the path for a file, the
+  directory for a directory, the
   `<base_ref>..<head_ref>` pair for a phase range.
 - `instruction` = "Hunt code that WORKS and should not exist. Four species:
   (1) reinvented standard library or reinvented dependency - a hand-rolled
@@ -83,7 +84,7 @@ none to report. There is no cross-model arm either: a provider call needs a
 resolved tier and this pass owns no tier key.
 
 Parse the returned `{findings:[...]}` and close the bracket the moment you have
-it. OMIT `--tokens` on a figureless return (seams.md's bracket rule):
+it. OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>

@@ -35,9 +35,10 @@ same trigger gates differently on a solo project and a critical one.
 
 The seam has ALREADY applied config-wins precedence: a
 `review.triggers.<trigger>.gate` the user set beats the level's gate, and the
-disagreement arrives as a `warnings[]` entry - relay it (seams.md) rather than
-resolving it again here. The same precedence has applied to the tier and the
-effort since RVW-03, so those two maps are answers, not defaults: a layer that
+disagreement arrives as a `warnings[]` entry - relay it (seam-spawn-agent.md)
+rather than resolving it again here. The same precedence has applied to the
+tier and the effort since RVW-03, so those two maps are answers, not defaults:
+a layer that
 set `review.triggers.<trigger>.tier` or `.effort` is already folded in, and
 where no layer did, the STAKES LEVEL's row answered - raising `stakes` moves the
 cross-model half of the panel exactly as it moves the subagent half. A degraded
@@ -50,9 +51,10 @@ provider's model id and its reasoning-effort API parameter (step 4), and both
 arrive RESOLVED on the step-1 line rather than being read from config here. The
 `claude-subagent` backend can honour neither: its model and its rung both come
 from the routing seam, and effort is definition-time only on the spawn-agent
-seam - not per-dispatch overridable (seams.md). That is a host constraint, not
-an omission here. So a configured `effort` is not a promise this backend can
-keep, and step 4 names the gap instead of dropping the value silently.
+seam - not per-dispatch overridable (seam-spawn-agent.md). That is a host
+constraint, not an omission here. So a configured `effort` is not a promise
+this backend can keep, and step 4 names the gap instead of dropping the value
+silently.
 
 ### 2. Payload
 Assemble `{ instruction, artifact }` from the wiring table:
@@ -92,8 +94,8 @@ What the seam decided, stated so the set is readable rather than mysterious:
 
 An empty set already arrives as `["claude-subagent"]`, so a review always runs -
 and the resolve says which provider it dropped and at which tier, as a
-`warnings[]` entry. Relay it (seams.md); never silently skip a `blocking`
-trigger.
+`warnings[]` entry. Relay it (seam-spawn-agent.md); never silently skip a
+`blocking` trigger.
 
 The limit, so nothing above reads as a guarantee it is not: nothing REFUSES a
 dispatch to a reviewer outside this set. The mark step 4 leaves on the run
@@ -101,9 +103,9 @@ record is the whole enforcement, so a substitution is visible afterwards rather
 than prevented.
 
 ### 4. Run the reviewers
-Issue the resolved set in ONE message (seams.md Concurrent dispatch);
-serialize only when one dispatch consumes another's output, which a reviewer
-set never does. Per backend:
+Issue the resolved set in ONE message (seam-spawn-agent.md Concurrent
+dispatch); serialize only when one dispatch consumes another's output, which a
+reviewer set never does. Per backend:
 
 - **claude-subagent**: bracket this worker in the joined run record first, keyed
   `--plan cad-reviewer --role cad-reviewer`, with `--read` carrying the payload
@@ -135,7 +137,7 @@ set never does. Per backend:
   gets the refs, the scope, or the path and PRODUCES the artifact itself - it
   holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
   the JSON object it returns, and close the bracket the moment you have it.
-  OMIT `--tokens` on a figureless return (seams.md's bracket rule):
+  OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
@@ -564,8 +566,8 @@ asking the user to supply it:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" detect-surfaces --root .
 ```
 
-Then ask through the ask-user seam (seams.md), whose conventions bind here: at
-most four options per question, the recommended one FIRST and labelled
+Then ask through the ask-user seam (seam-ask-user.md), whose conventions bind
+here: at most four options per question, the recommended one FIRST and labelled
 `(recommended)`, and that label is a display convention and never a
 pre-selection - the user still chooses and the seam still blocks.
 

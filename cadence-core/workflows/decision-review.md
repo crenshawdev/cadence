@@ -57,7 +57,7 @@ does, from `review.reviewers[]`:
   Then dispatch `cad-reviewer` through the
   spawn-agent seam with the payload above as its prompt. Parse the returned
   `{findings:[...]}` and close the bracket the moment you have it. OMIT
-  `--tokens` on a figureless return (seams.md's bracket rule):
+  `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
@@ -88,8 +88,8 @@ does, from `review.reviewers[]`:
 When the resolved set has more than one reviewer (claude-subagent plus a
 surviving cross-model provider, or several), dispatch them CONCURRENTLY in one
 message - they refute the same static artifact independently, so serializing
-them only adds latency (seams.md concurrent dispatch; review-triggers.md step
-4's one-message batch).
+them only adds latency (seam-spawn-agent.md concurrent dispatch;
+review-triggers.md step 4's one-message batch).
 
 If the resolved set (after any drops) is only `claude-subagent`, this is the
 single-model default; when a cross-model provider survives, this is the

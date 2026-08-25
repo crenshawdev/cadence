@@ -235,7 +235,8 @@ earlier answer stay sequential.
 
 ## Subagents and reviews
 
-- Spawn agents only through the spawn-agent seam (references/seams.md).
+- Spawn agents only through the spawn-agent seam
+  (references/seam-spawn-agent.md).
 - Every second opinion goes through the review trigger interface
   (references/review-triggers.md). No skill embeds its own reviewer loop.
 

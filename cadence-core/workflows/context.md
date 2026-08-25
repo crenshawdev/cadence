@@ -155,7 +155,7 @@ scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
 wastes the whole pass and forces a mid-analysis interruption.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
-(references/seams.md), the bracket on its resolve:
+(references/seam-spawn-agent.md), the bracket on its resolve:
 `--bracket-read ".planning/ROADMAP.md"`. That read-set is what this SITE causes
 the worker to read, which is not the same as what the prompt below names. The
 prompt names no planning path at all; the analyzer's contract
@@ -343,7 +343,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/CONTEXT.md` (one
 consult site - this step) for its shape - five sections, nothing else, with the
 fill-in guidance for each.
 
-Deferred on SIZE, not branch-locality (references/seams.md, File round-trip):
+Deferred on SIZE, not branch-locality (references/seam-spawn-agent.md, File
+round-trip):
 this step is unconditional but reached once, at the very end, so the read folds
 into the turn that writes the file while an eager copy would ride every turn of
 the interview before it.

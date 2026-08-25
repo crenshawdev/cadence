@@ -11,8 +11,9 @@ on this path is a real defect to report, not the fork-point default.
    `cadence/phase-<N>-plan-<k>` (spawn-agent seam, worktree isolation), the
    whole batch issued in ONE message. Resolve the route ONCE for
    (cad-executor, attempt 1) and reuse it for every executor in the batch -
-   identical role and attempt, so re-resolving per dispatch is wasted (seams.md
-   concurrent dispatch). Same prompt as sequential except the mode line:
+   identical role and attempt, so re-resolving per dispatch is wasted
+   (seam-spawn-agent.md concurrent dispatch). Same prompt as sequential except
+   the mode line:
    "Worktree executor on branch {branch} - worktree rules apply."
 2. Wait for every executor in the batch (same timeout).
 3. Merge each worktree branch back sequentially: record each branch's pre-merge
@@ -49,9 +50,9 @@ on this path is a real defect to report, not the fork-point default.
    `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape
    (a), the refs `{base_ref: that plan's pre-merge HEAD from step 3, head_ref:
    that plan's post-merge HEAD from step 3}`) - the ranges are static and
-   independent, so
-   the per-plan reviews need not serialize (seams.md concurrent dispatch). This
-   step runs AFTER step 3 merged every branch, so a per-plan `diff` review never
+   independent, so the per-plan reviews need not serialize
+   (seam-spawn-agent.md concurrent dispatch). This step runs AFTER step 3
+   merged every branch, so a per-plan `diff` review never
    fires before the merge and its refs always resolve in THIS tree, which is the
    tree a dispatched subagent inherits. The
    `diff` gate reports and continues as today at `advisory`; at `adjudicated`

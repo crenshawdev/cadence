@@ -171,8 +171,8 @@ Sequential (default) unless ALL of these hold:
 
 <step name="execute_sequential">
 For each plan in order: dispatch ONE cad-executor via the spawn-agent seam
-(references/seams.md), in the normal working tree, no worktrees, and wait
-for it to finish before starting the next.
+(references/seam-spawn-agent.md), in the normal working tree, no worktrees, and
+wait for it to finish before starting the next.
 
 Record the pre-plan HEAD, then dispatch with a prompt ordered stable-first, so
 successive executors in the phase share a cached prefix: phase-level context
@@ -223,8 +223,8 @@ what this site causes the executor to read: the shared set every plan in the
 phase re-reads, plus that plan's own file. `--plan <k>` beside it is a different
 quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
 declared files, so an executor is routed for the plan it is being handed
-(references/seams.md's Routing block states the rule). Once that executor comes
-back, append the CLOSE:
+(references/seam-spawn-agent.md's Routing block states the rule). Once that
+executor comes back, append the CLOSE:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --detail-file <path>
@@ -241,8 +241,9 @@ bracket; a worker with none of them is what `trace render` reports as unpaired.
 WORKER key that pairs a dispatch with its close; `--role` is what the per-role
 totals group on, and keyed on the plan number alone `cad-executor` - the single
 largest spender in a phase - is the one line the totals could never print.
-OMIT `--tokens` on a figureless return (seams.md's bracket rule). A worktree
-executor still emits nothing of its own - these are the ORCHESTRATOR's lines.
+OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule). A
+worktree executor still emits nothing of its own - these are the
+ORCHESTRATOR's lines.
 
 The `phase_start` line in `git_guard` is NOT one of these. It is the correlation-id
 ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:

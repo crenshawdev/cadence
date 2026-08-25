@@ -205,7 +205,7 @@ them leads to a land: `/cad-milestone` chains `/cad-land` after its prune, and
 not a skill invocation, so the ask-user offer below reads "triage the queue"
 and this workflow invokes nothing.
 
-Offer the suggestion through the ask-user seam (references/seams.md):
+Offer the suggestion through the ask-user seam (references/seam-ask-user.md):
 1. Continue now - invoke the suggested skill
 2. Stop here - report only
 </step>
