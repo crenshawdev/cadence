@@ -143,10 +143,10 @@ evidence: `node cadence-core/bin/test.mjs` -> tests 3199, pass 3199, fail 0. `np
 ### 20. The phase-summary step still routes open items into the file this phase declared transient
 expected: behavior wrong - the goal's third clause ('nothing durable is ever routed into it') is contradicted inside the shipped tree, and the queue is observably accumulating
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
-source: verifier
-evidence: cadence-core/workflows/execute.md:446-457 instructs 'File each open item into `.planning/CAPTURE.md` through the seam, one call per item' at the phase SUMMARY step, unchanged by this phase and in neither plan's lease. cadence-core/workflows/verify.md:315-325 then has phase-done assert the same queue is empty, so the workflow that closes a phase fills the queue the close reports on. Measured: `node cadence-core/bin/planning.mjs capture-check` on this repository returns substantive 37 (Todos 28, Seeds 9, Notes 0) against bound 40, where .planning/phases/3/SUMMARY.md's goal check records 30 measured the same day (2026-08-25). Nothing in the phase drains the queue, and CAPTURE.md is untracked here so the growth is not even reviewable in git.
+source: model
+evidence: Fixed by plan 3 (312e8cbf, d04e7605, 61683a20). `grep -n "capture --kind" cadence-core/workflows/execute.md` -> exit 1, no match; execute.md:446-457 now reads "An open item lives in `.planning/phases/<N>/SUMMARY.md`'s `## Open items`, written by this step, and NOWHERE else. It is not filed into `.planning/CAPTURE.md`", with the recall-score measurement (42.4677 SUMMARY vs 31.1468 CAPTURE) as the stated reason. `grep -n "debt-harvest"` still returns its invocation at :466, so only the CAPTURE route was removed. `node cadence-core/bin/planning.mjs capture-check` -> substantive 31 (Todos 21, Seeds 10, Notes 0) against bound 40, down from the 37 this item measured on 2026-08-25; `grep -c "(phase 3)" .planning/CAPTURE.md` -> 0. The queue is no longer accumulating from the close.
 reported: behavior wrong - the goal's third clause ('nothing durable is ever routed into it') is contradicted inside the shipped tree, and the queue is observably accumulating
 severity: major
 cause: `cadence-core/workflows/execute.md:446-457` still instructs the phase-SUMMARY step to file each open item into `.planning/CAPTURE.md` one seam call at a time, and that file was in neither PLAN-1's nor PLAN-2's lease so nothing in this phase touched it. The phase built the ask that files a DECLINED GATE FINDING on the tracker, but left the OTHER durable writer of CAPTURE.md - the phase close's own summary step - intact. Confirmed live: `capture-check` on this tree returns substantive 37 (Todos 28, Seeds 9) against bound 40, up from the 30 SUMMARY.md measured the same day, so the queue is observably still accumulating.
@@ -172,11 +172,32 @@ status: skipped
 reported: skip
 reason: Deferred by the user during execution (plan 1 task 8). Needs authenticated tea/gh/glab against three operator-owned scratch repos and live network writes; this repository sets no git.forge_provider/git.forge_repo, so issue-filing.mjs unfixed answers no-forge. Procedure at .planning/phases/3/live-forge-check.md.
 
+### 23. A prose surface that writes the transient queue is reported by name
+expected: self-verify reports zero problems on the live tree, and capture-writers.test.mjs passes - including the replay of execute.md's retired summary-step block as it shipped at 0169ef62, which is reported, while a debt-harvest row, a capture-check invocation and a backticked `capture` mention are silent; a `>> .planning/CAPTURE.md` and a `> .planning/CAPTURE.md` redirect are each reported, a redirect to another path is not.
+status: pass
+first_pass: pass
+source: model
+evidence: `node cadence-core/bin/self-verify.mjs` -> problems [] across 27 checks, the list now ending in `capture-writers`. `node --test cadence-core/bin/capture-writers.test.mjs` -> tests 13, pass 13, fail 0, including 'a redirect to any other path, and a mention of the bare filename, are silent', 'one line redirecting the capture path is reported once, not per occurrence', 'a row settles its own surface only' and 'two rows for one surface and face both have to be non-durable'.
+
+### 24. The capture contract names who may write the file
+expected: grep for `cad-execute` in references/capture-grammar.md returns nothing, and grep for `capture-writers` returns the line naming the register as the writer set's one home.
+status: pass
+first_pass: pass
+source: model
+evidence: `grep -n "cad-execute" cadence-core/references/capture-grammar.md` -> exit 1, no match (the `## Todos` writer cell no longer names it). `grep -n "capture-writers" cadence-core/references/capture-grammar.md` -> :63 `cadence-core/bin/lib/capture-writers.mjs`. `self-verify.mjs` (check 23) reports ...`, the line naming the register as the writer set's one home.
+
+### 25. A phase open item stays reachable by recall, from SUMMARY.md and nowhere else
+expected: A distinctive clause from each of the seven bullets phase 3's close removed from CAPTURE.md still greps to .planning/phases/3/SUMMARY.md, `grep -c "(phase 3)" .planning/CAPTURE.md` returns 0, and planning.mjs recall surfaces the item from SUMMARY.md with no CAPTURE duplicate.
+status: pass
+first_pass: pass
+source: model
+evidence: Each removed phase-3 open item still greps to SUMMARY.md and is absent from CAPTURE.md: 'Plan 1 task 8 is DEFERRED' 1/0, 'cannot run the path this phase just built' 1/0, 'The downgraded finding, still in hand and unfiled' 1/0, 'risk-check status' 2/0. `grep -c "(phase 3)" .planning/CAPTURE.md` -> 0. `planning.mjs recall "phase-close queue assertion reads CAPTURE unlocked before runTransition downgraded finding"` -> top hit score 13.8932 source phases/3/SUMMARY.md, with no CAPTURE.md row anywhere in the results.
+
 ## Summary
 
-total: 22
-passed: 19
-failed: 1
+total: 25
+passed: 23
+failed: 0
 pending: 0
 skipped: 2
 blocked: 0
