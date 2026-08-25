@@ -1185,6 +1185,82 @@ test('seam: --turns 0 is a recorded figure, not an omission', () => {
   assert.match(traceBytes(dir), /"turns":0/);
 });
 
+// --- the THIRD figure on the same return: --duration-ms (TRC-02) -------------
+//
+// How long the WORKER took, which is not the dispatch-to-close span renderTrace
+// derives off the two timestamps: that one includes the orchestrator's own time
+// between the two writes. The flag takes the host's own formatted spelling
+// because that is the only one an orchestrator can copy off a return.
+
+test('seam: --duration-ms takes the formatted spelling the host prints', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+    '--role', 'cad-executor', '--duration-ms', '1m 23s']);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  const [e] = lines(dir);
+  assert.equal(e.duration_ms, 83000);
+  // A NUMBER of milliseconds, for the reason `--tokens` is a number: a reader
+  // sums the field without type-checking it first.
+  assert.equal(typeof e.duration_ms, 'number');
+  assert.match(traceBytes(dir), /"duration_ms":83000/);
+});
+
+test('seam: --duration-ms accepts every term of its closed grammar', () => {
+  for (const [raw, ms] of [['4200', 4200], ['0', 0], ['450ms', 450], ['23s', 23000],
+    ['1h2m3s', 3723000], ['2h 30m', 9000000], ['1m 23s', 83000]]) {
+    const dir = root();
+    const r = run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+      '--role', 'cad-executor', '--duration-ms', raw]);
+    assert.equal(r.ok, true, raw);
+    assert.equal(lines(dir)[0].duration_ms, ms, raw);
+  }
+});
+
+test('seam: a malformed --duration-ms appends NOTHING at all', () => {
+  const dir = root();
+  // The grammar is CLOSED to digits and unit letters: free text, a negative, a
+  // decimal, a unit Cadence does not read and a grouped figure are all typos,
+  // and a typo may not cost the bracket it was recording.
+  for (const bad of ['later', '-1', '1.5', '', '1,234', '3d', '1m23', 'abc', '9999999999999999999h']) {
+    const before = traceBytes(dir);
+    const r = run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+      '--role', 'cad-executor', '--duration-ms', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    // Byte-identical (or still absent): a best-effort append with the field
+    // dropped renders the bracket duration-less while the caller believes a
+    // figure landed.
+    assert.equal(traceBytes(dir), before, bad);
+  }
+  assert.equal(traceBytes(dir), null);
+  // A bare `--duration-ms` at the end of the line is refused at the declared
+  // door, before the body is reached.
+  const bare = run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+    '--role', 'cad-executor', '--duration-ms']);
+  assert.equal(bare.ok, false);
+  assert.equal(bare.reason, 'bad-args');
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: a close with no --duration-ms writes no duration_ms key at all', () => {
+  const dir = root();
+  run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+    '--role', 'cad-executor', '--tokens', '12']);
+  const [e] = lines(dir);
+  // OMITTED, never `0`: a zero claims a dispatch that took no time, and a trace
+  // written before this flag existed must stay byte-identical.
+  assert.equal('duration_ms' in e, false, JSON.stringify(e));
+});
+
+test('seam: --duration-ms lands on a `trace append` through the same shared body', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '2', '--family', 'lifecycle',
+    '--event', 'return', '--plan', 'p', '--role', 'cad-planner', '--duration-ms', '450ms']);
+  assert.equal(r.ok, true);
+  assert.equal(lines(dir)[0].duration_ms, 450);
+});
+
 test('seam: a close pairs with the dispatch of the same --plan', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',

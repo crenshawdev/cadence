@@ -858,12 +858,27 @@ export const CONTRACTS = {
     // CLOSE row only, exactly as `--raised` is listed on `append` only: the
     // flag is validated in the ONE shared `append|close` body, and this row is
     // a prose allowlist that never widens what a subcommand accepts.
+    // `--duration-ms` is the THIRD figure on that same return, and it is
+    // declared `string` rather than `int` for the reason `--tokens` declares
+    // `fallback` on its value axis: the host surfaces this figure formatted,
+    // inside `Done (N tool uses - X tokens - Ys)`, so the only spelling an
+    // orchestrator can copy is `1m 23s`. An `int` row refuses that at the door
+    // AFTER the dispatch half of the bracket is already written, stranding the
+    // worker unpaired forever - a recording error escalated into loss of the
+    // bracket it was recording. The real grammar - a plain millisecond count,
+    // or number-plus-unit terms over h/m/s/ms - is WIDER than any type here can
+    // state and lives in the shared body, exactly where `--tokens`'
+    // comma-grouping exception does. Both axes still REFUSE: `string` refuses
+    // only a blank, and the body refuses everything outside that closed
+    // grammar, so a mistyped duration appends nothing rather than silently
+    // dropping the field. Listed on the CLOSE row alone, as `--turns` is.
     'trace close': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--tokens': { required: false, type: 'int', value: 'fallback', bare: 'refuse' },
       '--turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--duration-ms': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--detail': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--detail-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--reviewer': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
