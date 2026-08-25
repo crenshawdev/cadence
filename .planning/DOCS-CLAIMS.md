@@ -852,7 +852,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-07 | cadence-core/workflows/execute.md | 35-39 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | stale | corrected - v3.4.1 phase 1 | 2 |
 | EXECUTE-08 | cadence-core/workflows/execute.md | 70 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate | 1 |
 | EXECUTE-09 | cadence-core/workflows/execute.md | 59-66 | `git diff --cached --quiet` / `--name-status` and `git stash push --staged` (git 2.35+). | accurate | accurate | 2 |
-| EXECUTE-10 | cadence-core/bin/planning/lease-check.mjs | 331-334 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
+| EXECUTE-10 | cadence-core/bin/planning/lease-check.mjs | 440-443 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
 | EXECUTE-11 | cadence-core/workflows/execute.md | 89-94 | `trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>` anchors the correlation id. | accurate | accurate | 2 |
 | EXECUTE-12 | cadence-core/workflows/execute.md | 97-100 | An append returning `written:false` (size cap, unwritable root) changes nothing on the execute path. | accurate | accurate | 2 |
 | EXECUTE-13 | cadence-core/workflows/execute.md | 112-114 | `planning.mjs plan-overlap --phase <N>` returns `overlaps`, `undeclared` and `frontmatter_issues`. | accurate | accurate | 2 |
