@@ -14,11 +14,31 @@ true when written.
 
 
 `v3.7.2 - the router loads late and the host writes the bracket` opened
-2026-08-25 with three phases. Its seven seeded ids are named in ROADMAP.md's
-Overview and in each phase's `**Requirements:**` line, deliberately NOT
-duplicated here: `/cad-plan` seeds each Traceability row as its phase is
-planned - the practice `v3.5.7` established - so an id not yet picked up
-surfaces as `unpicked` in `/cad-audit` rather than as a hand-written row.
+2026-08-25 with three phases. `/cad-plan` seeds each Traceability row as its
+phase is planned - the practice `v3.5.7` established - so an id below that no
+plan has picked up yet surfaces as `unpicked` in `/cad-audit` rather than as a
+hand-written row.
+
+- **LOD-06**: `references/review-triggers.md` and `references/seams.md` are each
+  a small router plus cold branch files, so a fire or a seam call loads only the
+  branch it selected and no safety rule needed before the branch decision lives
+  in a cold file.
+- **HOK-01**: `SubagentStart`/`SubagentStop` write the trace bracket, with the
+  orchestrator's hand-written `trace close` kept as a fallback and dedup on
+  `(corr, worker key)`, first writer wins - so a bracket survives session death.
+- **HOK-02**: `self-verify` asserts every hook event name Cadence registers is
+  in a pinned known set, so an upstream rename reddens a check by name instead
+  of going silently quiet.
+- **TRC-02**: lifecycle brackets record the `duration_ms` the host already
+  returns, so `/cad-report` and `/cad-suggest` can price a dispatch with a wall
+  clock.
+- **TRC-03**: the subagent return's token, tool-use and duration figures are
+  documented where a reader finds them, naming what depends on each and the
+  mitigation already in force for a figureless return.
+- **CEN-03**: a census pins the `planning-*.test.mjs` stem list, so a stem added
+  later and not registered fails a check instead of silently running in `other`.
+- **DOC-04**: `CADENCE-CENSUS` has a prose home in `references/conventions.md`,
+  and `seam-calls.test.mjs`'s header names the plan it actually derives from.
 
 `v3.7.1 - the tracker is the record` closed 2026-08-25; its ten ids - `FRG-01`,
 `FRG-02`, `CEN-01`, `CEN-02`, `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`,
@@ -287,6 +307,7 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| LOD-06 | Phase 1 | Pending |
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
