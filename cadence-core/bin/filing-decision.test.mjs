@@ -9,7 +9,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fingerprint, unfixedFindings, FINGERPRINT_CHARS } from './lib/filing-decision.mjs';
+import {
+  DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, fingerprint, fingerprintInTitle,
+  issueBody, issueTitle, normalizeDeclines, unfixedFindings,
+} from './lib/filing-decision.mjs';
+import { PROVIDER_TABLE } from './lib/forge-decision.mjs';
 
 /** One finding, at the raised severity the case cares about. */
 const finding = (file, line, severity, claim) => ({
@@ -184,5 +188,212 @@ test('a non-object payload refuses with the grammar detail, not an empty answer'
     assert.equal(out.ok, false, JSON.stringify(junk));
     assert.notEqual(out.detail, '');
     assert.deepEqual(out.findings, []);
+  }
+});
+
+// --- the pinned vectors: one create argv and one lookup argv per provider ----
+//
+// Byte-exact arrays, not shape assertions. A flag this table gets wrong is a
+// child that prompts, opens an editor or filters on nothing - and none of those
+// is visible in a `.includes()` check.
+
+test('the forgejo create and lookup vectors are exactly these', () => {
+  const row = FILING_TABLE.forgejo;
+  assert.deepEqual(
+    row.create('acme/widget', { title: 'T', body: 'B', declined: false }, 'my-login'),
+    ['issues', 'create', '--repo', 'acme/widget', '--login', 'my-login',
+      '--title', 'T', '--description', 'B'],
+  );
+  assert.deepEqual(
+    row.create('acme/widget', { title: 'T', body: 'B', declined: true }, 'my-login'),
+    ['issues', 'create', '--repo', 'acme/widget', '--login', 'my-login',
+      '--title', 'T', '--description', 'B', '--labels', DECLINE_LABEL],
+  );
+  assert.deepEqual(
+    row.lookup('acme/widget', row.limit, 'my-login'),
+    ['issues', 'list', '--repo', 'acme/widget', '--login', 'my-login',
+      '--labels', DECLINE_LABEL, '--state', 'all',
+      '--fields', 'index,title', '--output', 'json', '--limit', '50'],
+  );
+  assert.equal(row.limit, 50);
+  assert.equal(row.needsLogin, true);
+});
+
+test('the github create and lookup vectors are exactly these', () => {
+  const row = FILING_TABLE.github;
+  assert.deepEqual(
+    row.create('acme/widget', { title: 'T', body: 'B', declined: false }),
+    ['issue', 'create', '--repo', 'acme/widget', '--title', 'T', '--body', 'B'],
+  );
+  assert.deepEqual(
+    row.create('acme/widget', { title: 'T', body: 'B', declined: true }),
+    ['issue', 'create', '--repo', 'acme/widget', '--title', 'T', '--body', 'B',
+      '--label', DECLINE_LABEL],
+  );
+  assert.deepEqual(
+    row.lookup('acme/widget', row.limit),
+    ['issue', 'list', '--repo', 'acme/widget', '--label', DECLINE_LABEL,
+      '--state', 'all', '--json', 'number,title', '--limit', '200'],
+  );
+  assert.equal(row.limit, 200);
+  assert.equal(row.needsLogin, false);
+});
+
+test('the gitlab create vector carries -y, and its lookup is exactly this', () => {
+  // `-y` is the hang criterion 9 would otherwise have to report as a timeout:
+  // without it `glab issue create` blocks on a confirmation prompt inside a
+  // gate step.
+  const row = FILING_TABLE.gitlab;
+  const created = row.create('acme/widget', { title: 'T', body: 'B', declined: false });
+  assert.deepEqual(created,
+    ['issue', 'create', '--repo', 'acme/widget', '--title', 'T', '--description', 'B', '-y']);
+  assert.ok(created.includes('-y'));
+  assert.deepEqual(
+    row.create('acme/widget', { title: 'T', body: 'B', declined: true }),
+    ['issue', 'create', '--repo', 'acme/widget', '--title', 'T', '--description', 'B',
+      '-y', '--label', DECLINE_LABEL],
+  );
+  assert.deepEqual(
+    row.lookup('acme/widget', row.limit),
+    ['issue', 'list', '--repo', 'acme/widget', '--label', DECLINE_LABEL,
+      '--all', '--output', 'json', '--per-page', '100'],
+  );
+  assert.equal(row.limit, 100);
+  assert.equal(row.needsLogin, false);
+});
+
+test('every row supplies a body/description on create, on all three providers', () => {
+  // gh PROMPTS for a body when `--body` is absent and glab opens an EDITOR
+  // without `--description`. A row that stopped supplying one would hang.
+  for (const [provider, row] of Object.entries(FILING_TABLE)) {
+    const argv = row.create('a/b', { title: 'T', body: 'B', declined: false }, 'login');
+    assert.ok(argv.includes('--body') || argv.includes('--description'), provider);
+    assert.ok(argv.includes('B'), provider);
+  }
+});
+
+test('the three keys are PROVIDER_TABLE\'s own, so a persisted provider is the key', () => {
+  assert.deepEqual(Object.keys(FILING_TABLE), Object.keys(PROVIDER_TABLE));
+});
+
+test('no row names a binary: PROVIDER_TABLE already says which drives which', () => {
+  for (const [provider, row] of Object.entries(FILING_TABLE)) {
+    const argv = [
+      ...row.create('a/b', { title: 'T', body: 'B', declined: true }, 'login'),
+      ...row.lookup('a/b', row.limit, 'login'),
+    ];
+    for (const bin of Object.values(PROVIDER_TABLE)) {
+      assert.ok(!argv.includes(bin), `${provider} argv names the binary ${bin}`);
+    }
+  }
+});
+
+test('the decline label is one frozen literal with no separator a forge reads', () => {
+  // GitLab reads `::` as a SCOPED label; a label a forge interprets behaves
+  // differently per provider, which is the one thing a shared literal may not do.
+  assert.equal(DECLINE_LABEL, 'cadence-declined');
+  assert.doesNotMatch(DECLINE_LABEL, /[\s:]/);
+});
+
+// --- the lookup normalizer ---------------------------------------------------
+
+/** `n` rows whose titles carry real fingerprints. */
+const page = (n) => JSON.stringify(
+  Array.from({ length: n }, (_, i) => ({
+    number: i + 1,
+    title: issueTitle(finding(`src/f${i}.mjs`, 1, 'low', `claim ${i}`)),
+  })),
+);
+
+test('a response of exactly the page size is INCOMPLETE and carries no records', () => {
+  const out = normalizeDeclines(page(50), 50);
+  assert.equal(out.complete, false);
+  assert.deepEqual(out.fingerprints, []);
+  assert.match(out.detail, /filled the 50-row page/);
+});
+
+test('one row under the page size is COMPLETE and carries its tokens', () => {
+  const out = normalizeDeclines(page(49), 50);
+  assert.equal(out.complete, true);
+  assert.equal(out.detail, null);
+  assert.equal(out.fingerprints.length, 49);
+  assert.equal(out.fingerprints[0], fingerprint(finding('src/f0.mjs', 1, 'low', 'claim 0')));
+});
+
+test('a response that is not a JSON array reports incomplete rather than throwing', () => {
+  for (const junk of ['not json at all', '{"issues": []}', '42', '"a string"', '', null, 7]) {
+    const out = normalizeDeclines(junk, 50);
+    assert.equal(out.complete, false, JSON.stringify(junk));
+    assert.deepEqual(out.fingerprints, []);
+    assert.notEqual(out.detail, null);
+  }
+});
+
+test('an empty page is a COMPLETE read of nothing - the first fire on a tracker', () => {
+  const out = normalizeDeclines('[]', 50);
+  assert.equal(out.complete, true);
+  assert.deepEqual(out.fingerprints, []);
+});
+
+test('a row with no readable title fails the WHOLE read: the output shape moved', () => {
+  const out = normalizeDeclines(JSON.stringify([{ number: 1 }]), 50);
+  assert.equal(out.complete, false);
+  assert.match(out.detail, /no readable title/);
+});
+
+test('a hand-labelled issue is SKIPPED, not a failure - a human can apply a label', () => {
+  const rows = JSON.stringify([
+    { number: 1, title: 'someone filed this by hand and labelled it' },
+    { number: 2, title: issueTitle(finding('src/a.mjs', 1, 'low', 'a real one')) },
+  ]);
+  const out = normalizeDeclines(rows, 50);
+  assert.equal(out.complete, true);
+  assert.deepEqual(out.fingerprints, [fingerprint(finding('src/a.mjs', 1, 'low', 'a real one'))]);
+});
+
+// --- the title carries the token the lookup reads back -----------------------
+
+test('a title round-trips to the fingerprint the finding digests to', () => {
+  const f = finding('cadence-core/bin/lib/a.mjs', 12, 'medium', 'the retry loop is capped at three');
+  assert.equal(fingerprintInTitle(issueTitle(f)), fingerprint(f));
+});
+
+test('a claim long enough to clip the title still round-trips', () => {
+  // The digest is over the claim's own bytes, so clipping the TITLE cannot
+  // change the token - which is why the token goes first.
+  const f = finding('src/a.mjs', 1, 'low', 'x'.repeat(4000));
+  const title = issueTitle(f);
+  assert.ok(title.length <= 200);
+  assert.equal(fingerprintInTitle(title), fingerprint(f));
+});
+
+test('a claim with newlines becomes one line', () => {
+  const f = finding('src/a.mjs', 1, 'low', 'first line\nsecond line\n\tthird');
+  assert.equal(issueTitle(f), `[cadence ${fingerprint(f)}] first line second line third`);
+});
+
+test('a title carrying no token, or a non-string, recovers null', () => {
+  for (const t of ['plain title', '[cadence zzzz] x', `[cadence ${'a'.repeat(15)}] x`, null, 42, undefined]) {
+    assert.equal(fingerprintInTitle(t), null, JSON.stringify(t));
+  }
+});
+
+test('the body names the finding and never a CLI response', () => {
+  const f = { ...finding('src/a.mjs', 12, 'medium', 'the retry loop is capped'), voice: 'sonnet', ruling: 'downgraded' };
+  const body = issueBody(f);
+  assert.match(body, /src\/a\.mjs:12/);
+  assert.match(body, /\*\*medium\*\*/);
+  assert.match(body, /by sonnet/);
+  assert.match(body, /ruled downgraded/);
+  assert.match(body, /the retry loop is capped/);
+  assert.match(body, /what breaks: the retry loop is capped/);
+  assert.match(body, new RegExp(fingerprint(f)));
+});
+
+test('the body is never empty, whatever the finding is missing', () => {
+  // gh prompts and glab opens an editor on an absent body, so an empty string
+  // here is the hang the flag rules exist to prevent.
+  for (const junk of [{}, null, { file: 'a' }]) {
+    assert.ok(issueBody(junk).trim().length > 0, JSON.stringify(junk));
   }
 });
