@@ -1,6 +1,6 @@
 # Cadence
 
-[![test](https://git.jcrenshaw.dev/crenshawdev/cadence/badges/workflows/test.yml/badge.svg)](https://git.jcrenshaw.dev/crenshawdev/cadence/actions?workflow=test.yml)
+[![test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
 
 Cadence is an engineering methodology for Claude Code, for code that has to keep working after you ship it. It assumes you are the engineer of record. The model plans, builds and reviews, and you approve the plan, triage what the reviewers find, and authorize every push. Nothing is certified by the thing that wrote it. It costs you attention at each of those points: if you want to describe a feature and come back to a merged PR, this is the wrong tool.
 
@@ -11,7 +11,7 @@ The methodology ships as controls. Each step of the loop has named checks around
 Cadence is a Claude Code plugin. Add the marketplace, then install:
 
 ```
-/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git
+/plugin marketplace add https://github.com/crenshawdev/cadence.git
 /plugin install cadence@cadence
 ```
 

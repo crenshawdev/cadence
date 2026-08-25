@@ -176,7 +176,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
 - **Positioning:** public distribution eventually; a trimmed **single-developer** distillation descended from GSD,
   properly licensed. Trim anything team/multi-author.
 - **Distribution model:** **SUPERSEDED (shipped as a Claude Code plugin).** User install =
-  `/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git` then
+  `/plugin marketplace add https://github.com/crenshawdev/cadence.git` then
   `/plugin install cadence@cadence`; update/uninstall are the matching `/plugin` commands.
   The plugin runtime carries the tree, so the npm copy-installer described below was never
   built. Dev/contributor flow = clone the repo. *(Original 2026-07-10 decision, kept for
