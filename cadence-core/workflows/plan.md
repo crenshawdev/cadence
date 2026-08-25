@@ -93,12 +93,27 @@ that consumes a prior call's output is serialized.
 </step>
 
 <step name="spawn_planner">
-Dispatch cad-planner via the spawn-agent seam (references/seams.md) - resolve
-its model + agent file through the seam's routing step (first dispatch is
-`--attempt 1`), and put the dispatch bracket ON that resolve:
-`--bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"`
-- the read-set this site causes the planner to read, one comma-separated value,
-never a repeated flag. In gaps mode append `.planning/phases/{N}/UAT.md` and
+Dispatch cad-planner via the spawn-agent seam (references/seams.md). Resolve its
+model + agent file and write the dispatch bracket in ONE call:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-planner \
+  --attempt 1 --phase {N} \
+  --bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"
+```
+
+The form is written out HERE, at the site, because it is four lines and finding
+them in references/seams.md costs a grep with a window wide enough to be the
+tell that the caller is guessing - measured at ~9 KB read to recover a 4-line
+command. seams.md stays the source for what the resolve RETURNS (the retry
+rungs, the per-role pin, the `{ok:false}` arm, and the rule that every
+`warnings[]` entry reaches the user before the dispatch); this block is only the
+invocation. Relay every `warnings[]` entry the resolve returns to the user
+before dispatching, each distinct warning once per workflow run - a warning that
+reaches JSON and no human is a resolved-then-dropped value wearing a
+diagnostic's clothes. `--attempt 1` because this is the first dispatch.
+`--bracket-read` is the read-set this site causes the planner to read, one
+comma-separated value, never a repeated flag. In gaps mode append `.planning/phases/{N}/UAT.md` and
 the existing PLAN* and SUMMARY* files to that value, matching the read list the
 prompt below carries. The resolve writes the lifecycle dispatch event itself;
 only the CLOSE in handle_return stays here. Then wait - do not read, edit, or
@@ -375,11 +390,20 @@ to be set against, and these two counts are what produce it.
 Skip when workflow.plan_check is false or `--skip-check` was passed.
 
 Dispatch cad-plan-checker via the spawn-agent seam, the bracket on its resolve:
-`--phase {N} --bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"`.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-plan-checker \
+  --phase {N} \
+  --bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"
+```
+
 `--phase {N}` is EXPLICIT here and not left to the cursor: this resolve runs
 while the cursor still names phase N-1, so without it the checker is routed off
 the wrong phase's plans (references/seams.md's Routing block). No `--plan` - the
-checker reviews every plan of the phase, so it floors on their union.
+checker reviews every plan of the phase, so it floors on their union. The role
+and the flags differ from spawn_planner's resolve, which is why the form is
+written out again rather than pointed at: what the call RETURNS is stated once,
+in seams.md, and is not restated here.
 Prompt:
 
 ```markdown
