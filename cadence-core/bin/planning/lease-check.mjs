@@ -13,12 +13,13 @@
 import { execFileSync } from 'node:child_process';
 import { join, relative, resolve as resolvePath, sep } from 'node:path';
 import { fail, ok, read } from './core.mjs';
-import { censusesAtRisk } from '../lib/census-registry.mjs';
+import { CENSUSES, censusesAtRisk } from '../lib/census-registry.mjs';
 import { covers } from '../lib/lease-grammar.mjs';
 import { parsePlanFiles } from '../lib/planning-files.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { isReportName } from '../lib/report-rotation.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
+import { appendEvent } from '../lib/trace.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
 // ---------------------------------------------------------------------------
@@ -379,9 +380,61 @@ function cmdLeaseCheck(dir, opts) {
     declared: declared.length,
     ...frontmatter,
   };
+  // Which of the undeclared paths HOLD a hand-maintained count (CEN-02).
+  // Joined on the holding file by equality and not through `covers`: a staged
+  // path is one file and a holder is one file, so there is no directory lease
+  // on either side of this join to interpret.
+  //
+  // The split is what makes criterion 6's distinction real. An ordinary
+  // `undeclared-files` refusal says a path rode a commit its plan never named;
+  // this one says the same path is where a count LIVES, so the commit is about
+  // to leave a census red with no plan naming the file that would re-pin it.
+  // The remedy differs too - amend the lease AND re-pin in the same commit -
+  // and a caller cannot act on a difference the envelope does not carry.
+  const holders = new Map(CENSUSES.map((e) => [e.holder, e]));
+  const censusFiles = undeclared.filter((p) => holders.has(p));
+
   if (undeclared.length) {
     // Emitted directly: fail()'s reason/detail/hint shape has no channel for
     // the offending list, and the list is the whole point of the refusal.
+    if (censusFiles.length) {
+      // Appended BEFORE the envelope is emitted, on the `planning/risk-check.mjs`
+      // pattern: `appendEvent` never throws and never speaks, its
+      // `{written, reason}` rides the envelope so a trace that could not be
+      // written is reported rather than silently dropped, and it may NOT change
+      // the verdict.
+      //
+      // On THIS arm alone. Not on the ordinary `undeclared-files` arm and not
+      // on the plan-time arm: the append IS the distinguishing signal, and
+      // widening it to every refusal destroys the distinction it exists to
+      // draw. The record and the envelope carry DIFFERENT halves - the record
+      // carries the census IDENTITY, which is what a later reader joins on, and
+      // the envelope carries the file list and the hint, which is what the
+      // caller in front of the refusal has to act on.
+      //
+      // `phase` is the caller's OWN spelling, verbatim, the way a prose `trace
+      // append --phase` stores it: the two must be one string or the records
+      // do not join.
+      const res = appendEvent(dir, {
+        phase: parsedPhase.raw,
+        plan: k,
+        family: 'outcome',
+        event: 'census_undeclared',
+        censuses: censusFiles.map((f) => holders.get(f).id),
+      });
+      return emit({
+        ok: false,
+        reason: 'undeclared-census-files',
+        ...common,
+        undeclared,
+        census_files: censusFiles,
+        trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
+        hint: `add these paths to ${common.plan_file}'s files: list, or unstage`
+          + ' them - the ones under census_files each hold a hand-maintained'
+          + ' count this commit moves, so declaring one is also undertaking to'
+          + ' re-pin its count in the same commit',
+      });
+    }
     return emit({
       ok: false,
       reason: 'undeclared-files',

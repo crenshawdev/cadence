@@ -443,6 +443,57 @@ test('lease-check: a staged path that is not valid UTF-8 is refused BY NAME, nev
   assert.equal(r._exit, 1);
 });
 
+// --- the commit-time refusal, split by whether the path HOLDS a count --------
+//
+// Criterion 6 is carried BOTH ways, on the `planning/risk-check.mjs` pattern:
+// a distinct reason on the ENVELOPE, which is what the caller in front of the
+// refusal acts on, and an appended `outcome` event on the RECORD, which is what
+// a later reader joins on. The two halves are different on purpose - the
+// envelope carries the file list and the hint, the record carries the census
+// identity - so the pair below asserts each half is where it belongs and not in
+// the other.
+
+test('lease-check: a staged census FILE is refused by a reason of its own, and leaves a record', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  stage(repo, 'cadence-core/bin/trace.test.mjs');
+
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'undeclared-census-files');
+  assert.notEqual(r.reason, 'undeclared-files');
+  assert.deepEqual(r.undeclared, ['cadence-core/bin/trace.test.mjs']);
+  assert.deepEqual(r.census_files, ['cadence-core/bin/trace.test.mjs']);
+  assert.equal(r.trace.written, true, JSON.stringify(r.trace));
+  assert.equal(r._exit, 1);
+
+  const lines = readFileSync(join(dir, 'trace.jsonl'), 'utf8').trim().split('\n');
+  assert.equal(lines.length, 1, lines.join(' | '));
+  const ev = JSON.parse(lines[0]);
+  assert.equal(ev.family, 'outcome');
+  assert.equal(ev.event, 'census_undeclared');
+  assert.deepEqual(ev.censuses, ['trace-refusal-sentences']);
+  // The halves, each asserted absent from the other side.
+  assert.equal(r.censuses, undefined, 'the census identity belongs to the record');
+  assert.equal(ev.undeclared, undefined, 'the offending file list belongs to the envelope');
+});
+
+test('lease-check: an undeclared path holding no count keeps the old reason, and writes nothing', () => {
+  // The append IS the distinguishing signal. Widening it to every refusal would
+  // destroy the distinction criterion 6 asks for, so this arm asserts the trace
+  // file was never created at all - not merely that it holds no census line.
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  stage(repo, 'src/other.js');
+
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'undeclared-files');
+  assert.deepEqual(r.undeclared, ['src/other.js']);
+  assert.equal(r.census_files, undefined);
+  assert.equal(r.trace, undefined);
+  assert.equal(existsSync(join(dir, 'trace.jsonl')), false);
+  assert.equal(r._exit, 1);
+});
+
 // --- lease-check --plan-time: the same lease question, asked BEFORE the run ---
 //
 // The commit-time arms above ask "did this commit stage a path the plan never
