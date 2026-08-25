@@ -156,7 +156,10 @@ Plan shape: one plan.
   place - even by a one-line shift - also breaks that census, independently of
   the Shipped move, because the rows pin exact line numbers and assert the named
   symbol appears on them. Evidence:
-  `cadence-core/bin/citation-census.test.mjs:168-176`.
+  `cadence-core/bin/citation-census.test.mjs:168-176`. [corrected by plan-1
+  deviation: the plan breaks three MORE pinned citations D-13 does not name -
+  `EXECUTE-10`, `VERIFY-11` and `cad-verifier-contract`'s `uat.mjs:489-491` -
+  because a guard inserted near the top of a module shifts every pin below it]
 
 ## Acceptance criteria
 

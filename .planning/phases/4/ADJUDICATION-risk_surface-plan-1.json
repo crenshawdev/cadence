@@ -1,0 +1,49 @@
+{
+  "phase": "4",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "8cb6a04e",
+  "head": "53f5a1b6",
+  "base_id": "8cb6a04e44fff78cbbe45405c6c25fac9c5a9bf4",
+  "head_id": "53f5a1b60e5ca5cae070f02e18b831ca6a92ddd5",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning/status.mjs",
+      "line": 145,
+      "severity": "high",
+      "claim": "The new grammar treats both `1.1` and `1.10` as legal phase-directory names, but the surviving-directory path still converts each accepted name with `Number(e)`. Those distinct legal names both become `1.1`; since neither is grammar drift, `status` can silently emit two phase-dir records under the same phase identity, contrary to the stated no-different-phase guarantee.",
+      "failure_scenario": "Close a milestone with both `.planning/phases/1.1/` and `.planning/phases/1.10/` present. The filter admits both directories, then the existing `Number(e)` mapping collapses `1.10` to `1.1`, so consumers receive duplicate/misattributed status entries and cannot distinguish which directory each result describes.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "0cbfe379ca1f2862f6b002618791c40f587e6cdf",
+      "base_id": "8cb6a04e44fff78cbbe45405c6c25fac9c5a9bf4",
+      "head_id": "53f5a1b60e5ca5cae070f02e18b831ca6a92ddd5"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning/recall.mjs",
+      "line": 75,
+      "severity": "high",
+      "claim": "The recalled corpus now explicitly admits `1.10` as a legal directory through `PHASE_DIR_NAME`, but the result identity remains `Number(n)`. Thus evidence read from `phases/1.10/` is returned as phase `1.1`; the added test even pins this incorrect identity rather than preventing it.",
+      "failure_scenario": "Put a searchable SUMMARY entry in `.planning/phases/1.10/` and another phase directory `.planning/phases/1.1/` on the same tree. `recall` indexes the former under numeric phase `1.1`, so a query can return sub-phase-ten evidence labeled as sub-phase one, causing a caller to act on evidence from a different legal phase.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "0cbfe379ca1f2862f6b002618791c40f587e6cdf",
+      "base_id": "8cb6a04e44fff78cbbe45405c6c25fac9c5a9bf4",
+      "head_id": "53f5a1b60e5ca5cae070f02e18b831ca6a92ddd5"
+    }
+  ]
+}

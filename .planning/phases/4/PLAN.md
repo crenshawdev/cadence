@@ -30,9 +30,11 @@ files:
   - cadence-core/bin/weight-budgets.json
   - cadence-core/references/roadmap-phases.md
   - cadence-core/references/conventions.md
+  - cadence-core/workflows/progress.md
   - cadence-core/workflows/new-project.md
   - cadence-core/workflows/adopt.md
   - skills/cad-health/SKILL.md
+  - skills/cad-verifier-contract/SKILL.md
   - .planning/REQUIREMENTS.md
   - .planning/DOCS-CLAIMS.md
 ---
