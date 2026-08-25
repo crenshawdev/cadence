@@ -443,18 +443,24 @@ falsified claim left standing is inherited by every planner after this one -
 the report alone corrects nobody downstream. A deviation that merely adjusts
 scope or adds work touches nothing here; only a refuted D-NN does.
 
-File each open item into `.planning/CAPTURE.md` through the seam, one call per
-item - it creates the file when absent and owns the bullet's format, so this
-step states neither:
-Write the sentence to a scratch file and name the PATH (caller-derived text -
-references/conventions.md):
-`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind todo --text-file <path> --phase <N>`
-SUMMARY is the phase's record; CAPTURE is the live phase-linked queue - a
-deferred item routed here resurfaces on its phase instead of surviving only
-because the next executor re-notices it. Do not duplicate an item already
-present. An `ok:false` return is reported in one line, never passed over: an
-item that did not land is not queued. This file joins the docs commit in the
-state step.
+An open item lives in `.planning/phases/<N>/SUMMARY.md`'s `## Open items`,
+written by this step, and NOWHERE else. It is not filed into
+`.planning/CAPTURE.md`, and the reason is in the code rather than in a
+preference: `parseSummarySnippets`
+(`cadence-core/bin/lib/planning-files.mjs`) already indexes `## Deviations` and
+`## Open items` bullets into the recall corpus, so the item is already reachable
+by `/cad-plan` and the CAPTURE copy was a second, lower-scoring row for the same
+sentence - measured on this repository 2026-08-25, the SUMMARY row scores
+42.4677 against the CAPTURE duplicate's 31.1468 for the same query, the same
+item twice. CAPTURE holds the phase IN FLIGHT; an open item is by definition
+what did not finish inside the phase, so routing it there is the durable write
+that makes the queue accumulate.
+
+An item that must outlive the phase is the CLOSE's business, not this step's:
+`planning.mjs phase-done`'s `capture` field names whatever is still in the queue
+and `workflows/verify.md` prints it, so the disposition - filed on the tracker,
+or dropped - is the user's own. Nothing is filed onward from here: no ask, no
+forge call.
 
 Then run
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" debt-harvest --root .`
@@ -491,8 +497,10 @@ envelope's `deferred` block and never from this string.
 
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
 `<plandir>/reports/` DIRECTORY, `.planning/phases/<N>/CONTEXT.md` if the
-summary step annotated a corrected decision, and `.planning/CAPTURE.md` if the
-summary step appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
+summary step annotated a corrected decision, and `.planning/CAPTURE.md` only if
+the summary step's debt harvest reported `written` - that harvest is the one
+thing at this step that can still change the file, now that an open item is
+written to SUMMARY.md and nowhere else - `docs(<N>): phase <N> summary` - staging exactly
 those paths. Stage `.planning/phases/<N>/DEFERRED-*.json` alongside them, and
 stage it whatever that key says: a queue member is the only durable evidence a
 fire was deferred - `.planning/trace.jsonl` is gitignored and the sibling
