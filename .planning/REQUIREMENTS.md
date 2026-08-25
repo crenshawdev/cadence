@@ -5,6 +5,14 @@
 
 ## Active
 
+**Issue citations.** A bare `#NNN` anywhere in this file is an issue on the public
+Forgejo archive at `git.jcrenshaw.dev/crenshawdev/cadence`, NOT on GitHub - GitHub
+renumbers from 1, so the same number there is a different, real issue. Issues filed
+on GitHub from 2026-08-25 are written `GH-NNN`. Rationale in PROJECT.md's Key
+Decisions; nothing here is rewritten, because `## Shipped` is a record of what was
+true when written.
+
+
 `v3.7.1 - the tracker is the record` opened 2026-08-24, four phases, nine ids
 seeded at the open - the practice `v3.5.7` established. `/cad-plan` seeds each
 Traceability row as its phase is planned; rows are never hand-populated here.
