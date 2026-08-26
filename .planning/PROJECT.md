@@ -204,10 +204,46 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**No cycle open.**
+**`v3.7.3 - the record has to be right before it can be cut`, opened
+2026-08-26.** Three phases against the `Dispatch cost` milestone. The cycle's
+whole subject is what a dispatch costs, and it opens by fixing the instruments
+rather than the cost, because every argument for cutting the cost is denominated
+in figures this repo records about itself.
 
-`/cad-phase add` opens the next one. The roadmap is pruned empty and there is
-no theme yet, so none was invented to fill this section.
+**The measured state.** `cad-executor` is 25,587,266 of 50,145,905 recorded
+tokens, 51% of the whole record, and its dispatches re-read 3.52 times per
+distinct file, worst case `cadence-core/bin/planning.mjs` opened 57 times inside
+one dispatch. 39 checkpoint returns say plans exceed one context. 233 of 239
+executor dispatches across cadence and verbatim ran opus at `shipped` and the
+routing discount fired 6 times total.
+
+**Why the instruments come first.** Three of the figures above cannot currently
+be trusted or extended. `renderTrace`'s close dedup pairs a delayed repeat close
+with the NEXT dispatch of the same worker key, so on a retry the bracket carries
+the wrong figures and the role is billed for all three terminals (GH-128,
+reproduced 2026-08-26). `duration_ms` is written onto every bracket by
+`planning/trace.mjs:795` and read by nothing, so the worker's own wall clock has
+no consumer (GH-129). And no cache figures are recorded at all, so no
+prompt-cache claim can be measured before or after a change (GH-92), which is
+why GH-91 declares itself blocked on it.
+
+**Then the cost itself.** `workflow.max_plan_tasks` bounds a plan by task count
+and nothing bounds the bytes its `files:` frontmatter declares, which on one
+measured `PLAN-1.md` was ~90% of a 70,554-token dispatch (GH-94). The
+risk-routing floor reads whole-file BODY lines rather than the diff, so any plan
+declaring a large file inherits its matches and can never earn the discount
+(GH-112). GH-91's one-line fix lands last, once phase 1 can prove whether it
+recovered anything.
+
+Seeded ids: `TRC-04`, `MSR-05`, `TRC-05`, `BUD-03`, `RSK-05`, `RNG-03`,
+`COV-02`.
+
+GH-117 (`WorktreeCreate` seeds the phase dir) is deliberately HELD OUT in the
+`Worktree verdict` milestone, natively blocked by GH-119 and GH-120: if
+worktrees do not earn their cost, its remedy code is deleted rather than
+rewritten.
+
+### Previously
 
 **`v3.7.2 - the router loads late and the host writes the bracket` closed
 2026-08-26.** Three phases, 42 commits off `v3.7.1`, seven requirement ids all
@@ -227,20 +263,13 @@ rows - phase deviations, UAT items and CONTEXT decisions - under this label's
 heading in `.planning/ARCHIVE.md`, which is what `recall` indexes now that
 `phases/1-3/` are gone from the live tree. The phase work itself is in git.
 
-Still outstanding: the merge and the `v3.7.2` release tag are `/cad-land`'s, cut
-on the pulled base after the merge confirms. Two items remain in CAPTURE, both
-release-path and both sized as `/cad-task` rather than a phase: a `v*` tag
-publishes an official release from a SHA that never reached `main`
-(`release.yml` triggers on tags, `test.yml` never does), and
-`actions/checkout@v4` at `release.yml:20` is unpinned while running under
-`contents: write`.
-
-GH-117 (`WorktreeCreate` seeds the phase dir) is deliberately HELD OUT in the
-`Worktree verdict` milestone, natively blocked by GH-119 and GH-120: if
-worktrees do not earn their cost, its remedy code is deleted rather than
-rewritten.
-
-### Previously
+Landed and published: merged as #134 with all 14 required checks green, tagged
+`v3.7.2` on the pulled base, release published 2026-08-26. Its eight tracker
+issues are closed. Two items remain in CAPTURE, both release-path and both sized
+as `/cad-task` rather than a phase: a `v*` tag publishes an official release
+from a SHA that never reached `main` (`release.yml` triggers on tags, `test.yml`
+never does), and `actions/checkout@v4` at `release.yml:20` is unpinned while
+running under `contents: write`.
 
 **`v3.7.1 - the tracker is the record` closed 2026-08-25.** Six phases, 138
 commits off `v3.7.0`, ten requirement ids all traced to a verified phase:

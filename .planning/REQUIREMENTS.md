@@ -5,10 +5,26 @@
 
 ## Active
 
-**No cycle open.** `/cad-phase add` opens the next one - it is the only workflow
-that appends a phase line to an existing roadmap. The shipped ids are rows under
-`## Shipped` below; the `## Deferred` ids keep their own reasons and nothing was
-promoted to fill this section.
+`v3.7.3 - the record has to be right before it can be cut` opened 2026-08-26
+with three phases against the `Dispatch cost` milestone. `/cad-plan` seeds each
+Traceability row as its phase is planned - the practice `v3.5.7` established -
+so an id below that no plan has picked up yet surfaces as `unpicked` in
+`/cad-audit` rather than as a hand-written row.
+
+- **TRC-04**: `renderTrace`'s close dedup pairs a delayed repeat close with the
+  dispatch it belongs to, never with the next dispatch of the same worker key
+- **MSR-05**: the worker's own `duration_ms` has a reader - `/cad-report` and
+  `/cad-suggest` price a dispatch with it, distinct from the bracket's `ms`
+- **TRC-05**: a bracket records cache figures, so a prompt-cache claim can be
+  measured before and after a change
+- **BUD-03**: a plan is bounded by the BYTES its `files:` frontmatter declares,
+  not by task count alone
+- **RSK-05**: the risk-routing floor reads the diff rather than whole-file body
+  lines, so a plan declaring a large file can earn the discount
+- **RNG-03**: the rung label stops foreclosing a shared cached prefix across a
+  role's rungs, with TRC-05's figures proving what it recovered
+- **COV-02**: `skim.test.mjs` walks `cadence-core/bin/planning/`, so its 30
+  modules are covered
 
 **Issue citations.** A bare `#NNN` anywhere in this file is an issue on the public
 Forgejo archive at `git.jcrenshaw.dev/crenshawdev/cadence`, NOT on GitHub - GitHub
