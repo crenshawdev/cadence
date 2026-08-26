@@ -1,0 +1,109 @@
+{
+  "status": "needs_human",
+  "score": "7/9",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "The host-return contract is stated where a reader finds it, and the six max_dispatch_tokens purposes no longer cite a file that lost the argument",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/references/seam-spawn-agent.md:43-68 - the STANDING EXPOSURE bullet names the token count (funds the roles block and the six max_dispatch_tokens ceilings), the tool-use count (--turns) and the duration (--duration-ms, distinguished from the row's own `ms`), states 'Anthropic can change that rendering in any release, with no deprecation window', names weight-budgets.json as the half that does NOT depend on the host, and closes with 'THE MITIGATION IS ALREADY IN FORCE': omit the flag rather than send 0, unrecorded kept distinct from a recorded zero. `grep -n 'seams\\.md' cadence-core/config.schema.json` exits 1 with no output; the six purposes (config.schema.json:32-37) now read 'references/seam-spawn-agent.md carries the argument'."
+    },
+    {
+      "n": 2,
+      "truth": "A Cadence dispatch whose hand-written close never runs is still closed by the host's SubagentStop hook",
+      "status": "UNCERTAIN",
+      "uat_item": 2,
+      "evidence": "Registration and script are real and correct: hooks/hooks.json:27-37 declares SubagentStop -> node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/subagent-trace.mjs\", no matcher, timeout 10. Driven end to end against a scratch project (/tmp scratchpad/p2) with one open cad-executor dispatch and NO hand-written close: piping {cwd, agent_type:'cadence:cad-executor-xhigh'} into cadence-core/bin/subagent-trace.mjs printed nothing, exited 0, appended one lifecycle/return quoting the dispatch's own corr 9-aaaa/phase/plan, and `trace render` then showed brackets:1, unpaired:[]. The payload shape is the host's own: the 2.1.245 binary's zod schema reads hook_event_name:'SubagentStop', stop_hook_active, agent_id, agent_transcript_path, agent_type - no corr, phase, tokens or duration, which is D-01 confirmed independently. What no probe here can settle is the host actually invoking the registered hook in a live session."
+    },
+    {
+      "n": 3,
+      "truth": "A dispatch closed only from the host side is listed under brackets, not unpaired, so a bracket outlives the session that opened it",
+      "status": "UNCERTAIN",
+      "uat_item": 3,
+      "evidence": "Same scratch run as truth 2: before the pipe, `trace render` listed the dispatch under unpaired ([{corr:'9-aaaa',phase:'2',plan:'1',ts:...,role:'cad-executor'}]) and brackets was empty; after the hook alone wrote its close, brackets held that row and unpaired was []. The hook adopts rather than derives - cadence-core/bin/lib/subagent-trace.mjs:93-127 reads render.unpaired, keeps the newest row of the mapped role and quotes its corr/phase/plan - and appendEvent honours the caller's corr, which is what made the pairing hold. Only the live half is unproven: no bracket on .planning/trace.jsonl was written by the host (the hook was registered mid-run, so this phase's own two closes came from the hand-written path)."
+    },
+    {
+      "n": 4,
+      "truth": "Two writers closing one dispatch render as exactly one bracket in either arrival order, with no second unpaired row and no double billing",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "The dedup is real code, not the old replay guard: cadence-core/bin/lib/trace.mjs:641-664 keeps seenTerminals (which keys on the millisecond and cannot fold two writers) and adds pairedRows, a (corr,phase,plan) map; :770-772 registers the row a pairing owns and :825-840 folds a repeat close into it, filling only empty fields and upgrading `return`->`checkpoint` one direction only. Driven with the two REAL writers against scratch fixtures: hook first then `trace close --tokens 12345 --turns 7 --duration-ms '1m 23s' --detail ...`, and the same pair reversed, both render {brackets:1, unpaired:[], roles:{cad-executor:{dispatches:1,tokens:12345,turns:9->7}}} with event 'checkpoint' and duration_ms 83000 surviving in both orders. Named tests: cadence-core/bin/trace.test.mjs:1640-1687 ('a dispatch closed by BOTH writers is exactly one bracket' asserting brackets.length===1, 'the two closes render identically in EITHER arrival order', 'two genuine dispatches on ONE worker key are still two brackets')."
+    },
+    {
+      "n": 5,
+      "truth": "A hook event renamed out of the pinned set makes self-verify fail and print the offending name",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "Ran it: a symlink tree of the repo with only hooks/hooks.json replaced (SubagentStop -> SubagentStopped) gives `node cadence-core/bin/self-verify.mjs --root <fixture>` -> ok:false, exactly 1 problem: kind unregistered-hook-event, file hooks/hooks.json, detail '`SubagentStopped` is registered and no lib/hook-events.mjs row declares it (declared: PreToolUse, PostToolUse, SubagentStop)'. The register is hand-maintained at cadence-core/bin/lib/hook-events.mjs:59-75 and is a parameter so a test cannot assert it against itself; the check is wired in self-verify.mjs:273 (import), run(root), and its token appears in the emitted `checked` string (self-verify.mjs:1374). On the live tree self-verify reports ok:true, 0 problems, hook-events present in `checked`. `node --test --test-name-pattern 'check 25' cadence-core/bin/self-verify.test.mjs` -> 5/5 pass."
+    },
+    {
+      "n": 6,
+      "truth": "trace close accepts the host's formatted duration without refusal, a mistyped one appends nothing, and the figure reaches the rendered bracket",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Against a scratch .planning: `--duration-ms '1m 23s'` -> ok:true and the appended line carries \"duration_ms\":83000; `--duration-ms 4200` -> 4200; `--duration-ms later` -> ok:false bad-args, hint naming the two spellings, file line count unchanged; a bare trailing `--duration-ms` -> ok:false. Declared string, not int, at cadence-core/bin/lib/arg-contract.mjs:881 with the grammar in the shared append|close body (cadence-core/bin/planning/trace.mjs:362, :554-557, :795). Guarded on the read side exactly as tokens/turns are (lib/trace.mjs:710-711) and OPTIONAL on the row (:797), so a pre-flag record renders byte-identically. Live record: `trace render` over .planning/trace.jsonl shows 379 brackets, 2 of them carrying duration_ms (802630 and 739724, this phase's own executors). Census: cadence-core/bin/arg-contract.test.mjs:303-304 asserts 190 flag entries, and the suite is green on it."
+    },
+    {
+      "n": 7,
+      "truth": "The full suite is green and the hand-written close is still exercised per prose file",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/test.mjs` -> tests 3321, pass 3321, fail 0, exit 0. cadence-core/bin/trace.test.mjs:1963-1973 still holds the 9-file BRACKETING map and :2123-2151 still runs the per-file loop with assert.equal(closed.length, dispatched) - EQUALS, not 'at least' - plus the zero-raw-terminal-append assertion. The two new test files pass on their own: subagent-trace.test.mjs 6/6, hook-events.test.mjs 8/8."
+    },
+    {
+      "n": 8,
+      "truth": "The prose enumerates who may write the trace, with the hand-written close named a kept fallback rather than a duplicate to prune",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/workflows/execute.md:539-565 - the <guardrails> block now carries 'THREE writers touch this run record's brackets and no fourth', naming the dispatch half on route.mjs resolve --bracket-read, the hand-written trace close (which alone carries --tokens/--turns/--duration-ms) and the SubagentStop hook by script path, plus a second bullet calling the hand-written close a FALLBACK kept on purpose (cad-task's phase-0 bracket has no subagent behind it; a hook-only design goes silently quiet on a rename). cadence-core/references/seam-spawn-agent.md:130-162 says the same in its ONE bracket-rule paragraph ('The caller is no longer the only WRITER of a close, and is still the only one that can carry those figures') and adds --duration-ms under the same omit-rather-than-zero rule. No sentence in either file contradicts the other; prose-agreement.test.mjs passes in the green suite."
+    },
+    {
+      "n": 9,
+      "truth": "The pins that guard this work are re-pinned rather than left stale, so the next phase does not trip over them",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "`node cadence-core/bin/self-verify.mjs` on the live tree -> ok:true with 0 problems, so no budget-overrun after seam-spawn-agent.md (+56 lines) and execute.md (+33) grew - cadence-core/bin/weight-budgets.json is in the same commit range (git diff --stat 04086a80^..HEAD). arg-contract-flag-entries re-pinned to 190 across 20 rows (arg-contract.test.mjs:303) with the new top-level CONTRACTS row for subagent-trace.mjs, and no uncontracted-script problem. Debt-marker scan over every file the phase touched (lib/subagent-trace.mjs, bin/subagent-trace.mjs, lib/hook-events.mjs, lib/trace.mjs, planning/trace.mjs, hooks/hooks.json, seam-spawn-agent.md, execute.md): no TODO/FIXME/XXX/HACK/placeholder/not-implemented hits. All four requirements mapped to this phase are claimed by a plan (TRC-02, TRC-03 by PLAN-1; HOK-01, HOK-02 by PLAN-2); none orphaned. HOK-01's SubagentStart half is answered rather than dropped - ROADMAP criterion 2 allows the half whose payload cannot supply the correlation id to stay hand-written, and D-02 resolves OQ-2 against the running binary."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Host-return contract documented, stale seams.md citations gone",
+      "evidence": "seam-spawn-agent.md:43-68 names all three figures, what each funds, the no-deprecation exposure and the omit/unrecorded mitigation already in force; `grep -n 'seams\\.md' cadence-core/config.schema.json` returns nothing (exit 1) and the six max_dispatch_tokens purposes now cite seam-spawn-agent.md."
+    },
+    {
+      "k": 4,
+      "name": "Two writers on one dispatch render as one close",
+      "evidence": "Ran both real writers against scratch fixtures in both arrival orders: brackets 1, unpaired [], figures (tokens 12345, turns 7, duration_ms 83000) and the checkpoint arm all survive, role billed for one dispatch with nothing unrecorded. Backed by trace.test.mjs:1640-1687, which asserts brackets.length===1 and deep-equals the two orderings."
+    },
+    {
+      "k": 5,
+      "name": "self-verify reddens on a renamed hook event and prints the name",
+      "evidence": "self-verify --root against a repo-shaped fixture whose hooks.json renames SubagentStop -> SubagentStopped: ok:false, one unregistered-hook-event problem whose detail contains the exact spelling `SubagentStopped` and lists the declared set. Live tree ok:true with hook-events in `checked`."
+    },
+    {
+      "k": 6,
+      "name": "--duration-ms takes the host's spelling, render reports it, flag census is 190",
+      "evidence": "'1m 23s' -> duration_ms 83000, 4200 -> 4200, 'later' and a bare flag both refused with nothing appended; `trace render` over the live record shows duration_ms on the brackets whose close carried one (802630, 739724) and no key at all on those that did not; arg-contract.test.mjs:304 asserts 190."
+    },
+    {
+      "k": 7,
+      "name": "Full test suite green, BRACKETING loop still exercises the hand-written close",
+      "evidence": "node cadence-core/bin/test.mjs -> 3321 pass, 0 fail, exit 0; trace.test.mjs:2123-2151 still runs assert.equal(closed.length, dispatched) over the 9-file BRACKETING map plus the zero-raw-terminal-append assertion."
+    }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "SubagentStop registered and closes a dispatch with no hand-written close",
+      "expected": "With the plugin installed, run a real Cadence dispatch, let it return, and issue NO hand-written `trace close`. `planning.mjs trace render --phase 2` shows that worker under `brackets` with a lifecycle `return` on .planning/trace.jsonl that no orchestrator step wrote.",
+      "why_human": "Out-of-reach resource, not an unexercised path: firing SubagentStop needs the host to dispatch and complete a subagent inside an installed plugin session, and this verifier has no live host session to dispatch from. Everything reachable was executed - piping a host-shaped payload into cadence-core/bin/subagent-trace.mjs against a scratch project did append the close and did move the row from unpaired to brackets - so what remains unproven is only that the host invokes the registration, which no probe in this environment can trigger."
+    },
+    {
+      "name": "A dispatch whose close never runs is still paired",
+      "expected": "After that same live dispatch, the worker appears under `brackets` and NOT under `unpaired`, and its bracket carries identity only (no tokens, turns or duration), which is the signature of a host-written close.",
+      "why_human": "Same out-of-reach resource. The record cannot witness it yet: the hook was registered mid-run, so both of this phase's own executor brackets were closed by the hand-written path and no bracket on .planning/trace.jsonl was written by the host. Only a real dispatch after this install can produce one."
+    }
+  ]
+}
