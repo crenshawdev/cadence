@@ -1565,6 +1565,76 @@ test('scanDeclared: the document rule is scoped to THIS face - scanDiff still re
     scope).matches, []);
 });
 
+// --- the LINE-KIND exemption (RSK-05, D-03) ----------------------------------
+//
+// A declared file's body is mostly lines the plan will never touch, and an
+// import or a literal constant NAMES a construct without doing it. Every
+// fixture below is assembled for the reason the rest of this file's are: the
+// census row above feeds a whole-file add of this file to the detector.
+const RM_CALL = 'rm' + 'Sync';
+/** The measured false positive: an `fs` teardown import that names a recursive
+ * delete and calls nothing (self-verify.test.mjs:6 raised five phases on it). */
+const IMPORT_ONLY = `import { ${RM_CALL} } from 'node:fs';\n`;
+/** The same name, invoked. This is the line the floor exists for. */
+const DELETE_CALL = `${RM_CALL}(dir, { recursive: true });\n`;
+/** A constant whose NAME carries a credential word and whose value is a string
+ * literal - three of this repository's four `secrets` raises are this shape. */
+const CONST_LITERAL = `const ${'DEBT'}_${'TOKEN'} = 'CADENCE-DEBT';\n`;
+
+test('scanDeclared: an IMPORT of a risky name is not evidence, and calling it still is', () => {
+  const scope = ['destructive'];
+  assert.deepEqual(scanDeclared([{ path: 'src/teardown.mjs', body: IMPORT_ONLY }],
+    scope).matches, [], 'an import brings a name into scope and does nothing with it');
+  assert.deepEqual(scanDeclared([{ path: 'src/teardown.mjs', body: DELETE_CALL }],
+    scope).matches.map((m) => m.category), ['destructive']);
+});
+
+test('scanDeclared: a literal CONSTANT is not evidence, and a call that uses one still is', () => {
+  const scope = ['secrets'];
+  assert.deepEqual(scanDeclared([{ path: 'src/markers.mjs', body: CONST_LITERAL }],
+    scope).matches, [], 'a credential-shaped NAME bound to a string is a name, not a secret');
+  // The same category, evidenced by a line that DOES something with a credential.
+  const call = `writeFileSync(f, '${'OPENAI_API'}_${'KEY'}=x');\n`;
+  assert.deepEqual(scanDeclared([{ path: 'src/markers.mjs', body: call }],
+    scope).matches.map((m) => m.category), ['secrets']);
+});
+
+test('scanDeclared: a constant initialized by a CALL still counts - the literal rule is load-bearing', () => {
+  // `const rows = <parse>(readFileSync(path))` is syntactically a constant
+  // declaration and is a real untrusted-input call site. Exempting every
+  // `const` would buy the discount by weakening the floor, and would make the
+  // floor fire or not on assignment style.
+  const body = `const rows = ${PARSE_CALL}(readFileSync(p));\n`;
+  assert.deepEqual(scanDeclared([{ path: 'src/read.mjs', body }],
+    ['untrusted_input']).matches.map((m) => m.category), ['untrusted_input']);
+});
+
+test('scanDeclared: a MIXED line is never withheld - the exemption ends at the statement', () => {
+  // A line-kind exemption withholds the WHOLE line, so a line that both
+  // declares and calls must not be withheld: dropping it would lose a genuine
+  // call site. The dynamic form is the second half - `import(` is a call
+  // expression, not an import statement.
+  const scope = ['destructive'];
+  const mixed = `import { ${RM_CALL} } from 'node:fs'; ${RM_CALL}(dir, { recursive: true });\n`;
+  const dynamic = `import('node:fs').then(({ ${RM_CALL} }) => ${RM_CALL}(d));\n`;
+  assert.deepEqual(scanDeclared([{ path: 'src/teardown.mjs', body: mixed }],
+    scope).matches.map((m) => m.category), ['destructive']);
+  assert.deepEqual(scanDeclared([{ path: 'src/teardown.mjs', body: dynamic }],
+    scope).matches.map((m) => m.category), ['destructive']);
+});
+
+test('scanDeclared: the line-kind rule is scoped to THIS face - scanDiff still reads an added import', () => {
+  // The commit-time face reads a HUNK, where an import someone actually ADDED
+  // is a change in the range, and the gate it feeds is `blocking` at every
+  // stakes level. The two faces are given the same line and only the plan-time
+  // one is silent.
+  const scope = ['destructive'];
+  assert.deepEqual(scanDiff(diffOf('src/teardown.mjs', [IMPORT_ONLY.trimEnd()]), scope)
+    .matches.map((m) => m.category), ['destructive']);
+  assert.deepEqual(scanDeclared([{ path: 'src/teardown.mjs', body: IMPORT_ONLY }],
+    scope).matches, []);
+});
+
 test('scanDeclared: a null, a scalar and an absent body each report rather than throw', () => {
   const bodies = [null, 7, undefined, true, {}, []];
   for (const body of bodies) {
