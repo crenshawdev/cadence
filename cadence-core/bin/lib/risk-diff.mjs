@@ -580,9 +580,17 @@ function isIncidentalLine(/** @type {string} */ line) {
  *   narrowed to the project's answered
  *   `review.triggers.risk_surface.surfaces` set. A category not in this list is
  *   not looked for and is not reported.
- * @returns {{categories: string[], matches: Array<{category: string, signal: string}>}}
- *   the same `{category, signal}` entries `scanDiff` returns, so a fire site
- *   states a reason from one shape whichever face produced it.
+ * @returns {{categories: string[], matches: Array<{category: string, signal: string}>,
+ *   withheld: Array<{path: string, category: string}>}}
+ *   `matches` is the same `{category, signal}` entries `scanDiff` returns, so a
+ *   fire site states a reason from one shape whichever face produced it.
+ *   `withheld` is what the LINE-KIND exemption cost, per declared path: a
+ *   category that file evidenced BEFORE the narrowing and does not evidence
+ *   after it, because its only matching line was an import or a literal
+ *   constant. A raise that used to rest on one of those says so instead of
+ *   moving silently, and a file whose category survives on a line the exemption
+ *   kept is not listed. `scanDiff` has no such field: that face withholds
+ *   nothing.
  *
  * A DECLARED PATH WITH NO READABLE BODY IS NOT INCONCLUSIVE, which is the one
  * place this face deliberately parts from `scanDiff`'s silence-is-never-cleared
@@ -600,6 +608,10 @@ export function scanDeclared(files, categories) {
   const paths = [];
   /** @type {string[]} */
   const lines = [];
+  /** Per declared path that lost at least one line, what the exemption kept and
+   * what it withheld - the only input the cost list below needs. */
+  /** @type {Array<{path: string, kept: string[], dropped: string[]}>} */
+  const split = [];
   for (const entry of list) {
     const path = typeof entry === 'string'
       ? entry
@@ -610,14 +622,20 @@ export function scanDeclared(files, categories) {
     if (typeof body !== 'string' || !body) continue;
     if (isSignalTable(path)) continue;
     if (isDocument(path)) continue;
+    /** @type {string[]} */
+    const kept = [];
+    /** @type {string[]} */
+    const dropped = [];
     for (const raw of body.split('\n')) {
       const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
       // The third exemption, and the only one that is per LINE (RSK-05, D-03):
       // a line that names a construct without doing it is not evidence that the
       // declared change touches the surface.
-      if (isIncidentalLine(line)) continue;
+      if (isIncidentalLine(line)) { dropped.push(line); continue; }
+      kept.push(line);
       lines.push(line);
     }
+    if (dropped.length) split.push({ path, kept, dropped });
   }
 
   const sets = pathSets(paths);
@@ -630,5 +648,25 @@ export function scanDeclared(files, categories) {
     const signal = signalIn(category, sets, lines, 'body line');
     if (signal) matches.push({ category, signal });
   }
-  return { categories: wanted, matches };
+
+  // WHAT THE NARROWING COST, per declared path. Computed through the SAME
+  // `signalIn` the matches above go through - a second signal table here would
+  // be the drift this file exists to prevent - and asked twice of one file: once
+  // over every line of its body, once over the lines the exemption kept. A
+  // category answering the first and not the second evidenced that file only on
+  // a withheld line. The PATH signals run identically in both calls, so a file
+  // that evidences a category by its path or its extension never appears here:
+  // the exemption did not cost that evidence, and saying it did would be false.
+  /** @type {Array<{path: string, category: string}>} */
+  const withheld = [];
+  for (const { path, kept, dropped } of split) {
+    const fileSets = pathSets([path]);
+    const whole = kept.concat(dropped);
+    for (const category of wanted) {
+      if (!signalIn(category, fileSets, whole, 'body line')) continue;
+      if (signalIn(category, fileSets, kept, 'body line')) continue;
+      withheld.push({ path, category });
+    }
+  }
+  return { categories: wanted, matches, withheld };
 }

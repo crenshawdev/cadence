@@ -1635,6 +1635,36 @@ test('scanDeclared: the line-kind rule is scoped to THIS face - scanDiff still r
     scope).matches, []);
 });
 
+test('scanDeclared: `withheld` names the file and the category whose only evidence was withheld', () => {
+  // The cost of the narrowing, stated rather than left to be inferred: this is
+  // what lets a raise that used to rest on an import say so instead of moving
+  // its cited file silently.
+  const r = scanDeclared([{ path: 'src/teardown.mjs', body: IMPORT_ONLY }], ALL);
+  assert.deepEqual(r.matches, []);
+  assert.deepEqual(r.withheld, [{ path: 'src/teardown.mjs', category: 'destructive' }]);
+});
+
+test('scanDeclared: a category that SURVIVES on a kept line is not named as withheld', () => {
+  // The half that makes the list readable: a file holding both an exempt line
+  // and a genuine call site lost nothing, so naming it would be false. The
+  // exemption still ran - the import is withheld - and the category answers
+  // anyway.
+  const body = IMPORT_ONLY + DELETE_CALL;
+  const r = scanDeclared([{ path: 'src/teardown.mjs', body }], ALL);
+  assert.deepEqual(r.matches.map((m) => m.category), ['destructive']);
+  assert.deepEqual(r.withheld, [], JSON.stringify(r.withheld));
+});
+
+test('scanDeclared: PATH evidence is never reported as withheld - the exemption did not cost it', () => {
+  // The exemption withholds BODY lines only, so a file whose path or extension
+  // evidences the category kept its evidence whole. Both `signalIn` calls see
+  // the same path signals, which is what makes that fall out rather than be
+  // special-cased.
+  const r = scanDeclared([{ path: 'deploy/host.pem', body: CONST_LITERAL }], ['secrets']);
+  assert.deepEqual(r.matches, [{ category: 'secrets', signal: '.pem file' }]);
+  assert.deepEqual(r.withheld, [], JSON.stringify(r.withheld));
+});
+
 test('scanDeclared: a null, a scalar and an absent body each report rather than throw', () => {
   const bodies = [null, 7, undefined, true, {}, []];
   for (const body of bodies) {
@@ -1649,7 +1679,7 @@ test('scanDeclared: a null, a scalar and an absent body each report rather than 
     assert.deepEqual(scanDeclared(files, ALL).matches, [], JSON.stringify(files));
   }
   assert.deepEqual(scanDeclared([{ path: 'src/auth/session.rs' }], null),
-    { categories: [], matches: [] });
+    { categories: [], matches: [], withheld: [] });
   // A bare string entry is a path with no body - the shape a caller that read
   // nothing at all hands over.
   assert.deepEqual(scanDeclared(['src/auth/session.rs'], ALL).matches,

@@ -2051,6 +2051,42 @@ test('replay: an ARCHIVED phase directory is measured in the same run', () => {
   assert.deepEqual(r.regressions, []);
 });
 
+// A body whose ONE line imports a risky name and calls nothing - the shape the
+// line-kind exemption withholds (RSK-05, D-03). Assembled for the reason
+// SECRET_BODY is: this file is read by the same detector.
+const IMPORT_ONLY_BODY = `import { ${'rm'}${'Sync'} } from 'node:fs';\n`;
+/** The same import followed by the call it brought into scope, which is a
+ * genuine call site and is never withheld. */
+const IMPORT_THEN_CALL_BODY = `${IMPORT_ONLY_BODY}${'rm'}${'Sync'}(dir, { recursive: true });\n`;
+
+test('replay: a row NAMES the file whose only evidence for a surface was withheld', () => {
+  // AC4's second half: a raise that used to rest on an import says which file
+  // and which surface stopped counting, instead of moving its cited evidence
+  // silently. Said as a `reason` and not a `warning` - `warnings[]` is for an
+  // input the floor could not READ, and a withheld line is one it read and
+  // judged.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['src/teardown.mjs'] },
+    { 'src/teardown.mjs': IMPORT_ONLY_BODY });
+  const [row] = replay(fx.file).rows;
+  assert.equal(row.raised, false, 'an import alone no longer raises');
+  assert.ok(row.reason.some((x) => x.includes('src/teardown.mjs') && x.includes('destructive')
+    && /no longer counts/.test(x)), JSON.stringify(row.reason));
+  assert.equal('warnings' in row, false, 'the floor READ this file - nothing was unreadable');
+});
+
+test('replay: a file whose surface SURVIVES on a called line is not named as withheld', () => {
+  // The half that keeps the sentence honest: the exemption still ran on the
+  // import line, and the category answers anyway, so nothing was cost and
+  // saying it was would be false.
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['src/teardown.mjs'] },
+    { 'src/teardown.mjs': IMPORT_THEN_CALL_BODY });
+  const [row] = replay(fx.file).rows;
+  assert.equal(row.raised, true);
+  assert.equal(row.surface, 'destructive');
+  assert.equal(row.file, 'src/teardown.mjs');
+  assert.deepEqual(row.reason.filter((x) => /no longer counts/.test(x)), []);
+});
+
 test('replay: a phase whose plan cannot be read prints today\'s level and says so', () => {
   const fx = floorRoot({ ...ANSWERED }, {
     '3/PLAN-1.md': '---\nphase: 3\nplan: 1\nfiles:\n  - src/a.mjs\n  not a key line\n---\n\n# Plan\n',

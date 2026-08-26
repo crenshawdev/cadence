@@ -621,7 +621,23 @@ function levelFor(ctx) {
 
   for (const w of scope.warnings) warnings.push(w);
   const entries = declaredBodies(repoRoot, scope.files);
-  const { matches } = scanDeclared(entries, surfaces);
+  const { matches, withheld } = scanDeclared(entries, surfaces);
+
+  // WHAT THE LINE-KIND EXEMPTION COST THIS SCOPE (RSK-05), said before any arm
+  // below decides anything, because it is true on every arm: a raise that used
+  // to rest on an import or a literal constant now says which file and which
+  // surface stopped counting, instead of moving its evidence silently.
+  //
+  // A `reason` and not a `warning`, on the distinction this function keeps
+  // everywhere else: `warnings[]` is for an input the floor could NOT read - an
+  // oversized body, a path outside the tree, a plan out of grammar - and a
+  // withheld line is one it read and judged. Measured on this repository
+  // 2026-08-26 this fires 5 times across the 28 archived phase directories, so
+  // it is a sentence and not a flood.
+  for (const w of withheld) {
+    reason.push(`risk floor: ${scopeName}: ${w.path} evidences ${w.category} `
+      + 'only on an import or a constant declaration, which no longer counts');
+  }
 
   // THE WAIVER, applied per MATCH and not to the scan: a project that waived
   // `secrets` on a phase which also touches `destructive` still routes at the
