@@ -308,10 +308,10 @@ section only, bounded at the next `## ` heading.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | LOD-06 | Phase 1 | Complete |
-| TRC-02 | Phase 2 | Pending |
-| TRC-03 | Phase 2 | Pending |
-| HOK-01 | Phase 2 | Pending |
-| HOK-02 | Phase 2 | Pending |
+| TRC-02 | Phase 2 | Complete |
+| TRC-03 | Phase 2 | Complete |
+| HOK-01 | Phase 2 | Complete |
+| HOK-02 | Phase 2 | Complete |
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time

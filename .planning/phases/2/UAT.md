@@ -19,12 +19,18 @@ evidence: seam-spawn-agent.md:43-68 names all three figures, what each funds, th
 ### 2. SubagentStop registered and closes a dispatch with no hand-written close
 expected: hooks/hooks.json registers SubagentStop, and a real Cadence dispatch completed with NO hand-written `trace close` still appears closed in `planning.mjs trace render --phase 2`. (human-verify: needs a live subagent dispatch in the host)
 criterion: AC2
-status: pending
+status: pass
+first_pass: pass
+source: model
+evidence: hooks/hooks.json registers SubagentStop -> node ${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/subagent-trace.mjs, no matcher (D-08). Live fire in a process started AFTER hooks.json was written (claude pid 3053136 start 20:53:37 vs hooks.json mtime 20:07:45): opened a bracket with `route.mjs resolve --role cad-plan-checker --bracket-read .planning/phases/2/PLAN-1.md --bracket-plan uat-hookfire --phase 2`, dispatched cadence:cad-plan-checker-high, and issued NO hand-written trace close. trace.jsonl gained, unprompted, {"family":"lifecycle","event":"return","plan":"uat-hookfire","role":"cad-plan-checker","ts":"2026-08-26T01:13:27.365Z"} - corr/phase/plan/role adopted verbatim off the open dispatch, and no tokens, turns, duration_ms or detail, exactly gate 3's contract. `trace render --phase 2` shows the dispatch under brackets with event:return.
 
 ### 3. A dispatch whose close never runs is still paired
 expected: `trace render` lists that dispatch under `brackets`, not `unpaired`. (human-verify: needs a live subagent dispatch in the host)
 criterion: AC3
-status: pending
+status: pass
+first_pass: pass
+source: model
+evidence: Same live fire, no hand-written close. `trace render --phase 2` puts the dispatch under brackets: {"corr":"2-c8d1ac67","phase":"2","plan":"uat-hookfire","role":"cad-plan-checker","event":"return","ts":"2026-08-26T01:13:21.589Z","end":"2026-08-26T01:13:27.365Z","ms":5776,"tokens":null}. The unpaired filter for plan uat-hookfire is empty and the unpaired total held at 3 (the same three pre-existing rows) while brackets went 101 -> 102. tokens is null, so the role row bills it as unrecorded (cad-plan-checker dispatches 3, tokens 64203, unrecorded 2) rather than as a fabricated 0 - the AC1 mitigation holding on a hook-only close.
 
 ### 4. Two writers on one dispatch render as one close
 expected: When both writers fire on one dispatch, `trace render` shows exactly one close for that (corr, phase, plan) and `unpaired` gains no row; a test drives both paths against a fixture and asserts the count is 1.
@@ -61,9 +67,9 @@ evidence: node cadence-core/bin/test.mjs -> 3321 pass, 0 fail, exit 0; trace.tes
 ## Summary
 
 total: 7
-passed: 5
+passed: 7
 failed: 0
-pending: 2
+pending: 0
 skipped: 0
 blocked: 0
 reworked: 0
