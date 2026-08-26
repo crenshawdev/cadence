@@ -5,20 +5,38 @@ Feeds: /cad-plan 2
 
 ## Scope boundary
 
+NARROWED 2026-08-26 at `/cad-plan 2`. The measurement half moved to phase 3
+(TRC-07, promoted out of deferral the same day). What follows is the scope as it
+now stands; the moved material is kept below under its own headings rather than
+deleted, because phase 3 is built from it.
+
+Why it moved: the planner replayed the `SubagentStop` hook's own rule against
+the live record and found the refusal happens TWO GATES EARLIER than D-03
+assumes. `terminalOf` answers NOT-TERMINAL for 16 of 16 subagent transcripts
+written 2026-08-26, so `closeForStop` returns null before GATE 2a is reached,
+and GATE 2a has never yet been the blocker: only 5 of 399 brackets carry
+`agent_id` at all and none of those sit anywhere but last on their worker key.
+The unpaired-row fallback is separately dead - 11 stale rows spanning
+2026-08-09 to 2026-08-26 count as open workers forever. All of that is TRC-07,
+which the `Out` line below already excluded, so this CONTEXT was asking the
+phase to build on the one thing it had ruled out.
+
 In: deleting the rung sentence from every agent body so a role's rung files
 share one cached prefix instead of diverging at body line 2 (RNG-03), with a
-check that fails when a future rung file breaks it; and unblocking the
-measurement that proves what it recovered - the `SubagentStop` hook is today
-structurally prevented from writing the two cache figures it is the only
-possible writer of.
+check that fails when a future rung file breaks it.
 Out: consolidating or renaming any rung file (spike recommendation 4 - the split
 is already minimal, and any rename fails AC2); changing `route-table.json`, the
-stakes ladder or any `model.effort.*` pin; TRC-07's NOT-TERMINAL and
-second-worker-identity losses, which are a separate deferred requirement;
-`weight-budgets.json` re-pins, which a shrinking surface does not need.
-Deferred: None.
-Plan shape: multiple plans, same phase - the rung-body edit (AC1-AC3) and the
-cache-figure recording (AC4-AC6) sit on two unrelated seams and share only AC7.
+stakes ladder or any `model.effort.*` pin; `weight-budgets.json` re-pins, which a
+shrinking surface does not need; and the measurement itself - whether the prefix
+recovers anything is phase 3's question, not this one's.
+Deferred: the measurement, to phase 3.
+Plan shape: ONE plan. The two seams that justified a split no longer both sit in
+this phase.
+
+One planning detail carried out of the planner's read: deleting the rung
+sentence falsifies the sentence left behind it, which still says "This file
+names that contract **and your rung**". Reword the pointer paragraph in the same
+edit or the tree ships a stale self-description.
 
 ## Durable decisions
 
@@ -41,7 +59,15 @@ cache-figure recording (AC4-AC6) sit on two unrelated seams and share only AC7.
   WARNING calls." The other five contracts mention `rung` only in frontmatter
   `description:`. Evidence: `skills/cad-plan-checker-contract/SKILL.md:19-27`,
   `.planning/spikes/agent-prefix-cache-fragmentation/SPIKE.md` recommendation 2.
-- D-03 (Measurement): GATE 2a at `cadence-core/bin/lib/subagent-trace.mjs:199`
+MOVED TO PHASE 3 (2026-08-26): D-03, D-05 and D-06 below are the measurement
+half's decisions and are not this phase's to honor. They are kept here as
+gathered input for phase 3's own context pass. D-03's premise is superseded -
+see the Scope boundary above - and D-06's choice of `cad-verifier` has to be
+RE-DECIDED, because that role holds one of the 11 stale unpaired rows, so the
+hook would mis-attribute its figures to an archived phase-3 bracket
+(`corr 3-23fb76d`, 2026-08-21) rather than abstain.
+
+- D-03 (Measurement, MOVED to phase 3, premise superseded): GATE 2a at `cadence-core/bin/lib/subagent-trace.mjs:199`
   fills only the cache fields on an already-closed bracket instead of refusing
   the whole row. This is what makes AC4-AC6 buildable at all. The phase's
   roadmap premise - "TRC-05 shipped the figures in v3.7.3, so the claim is now
@@ -64,7 +90,7 @@ cache-figure recording (AC4-AC6) sit on two unrelated seams and share only AC7.
   `rungBodyIssue`'s tolerance is untouched everywhere else. Evidence:
   `cadence-core/bin/lib/rung-agent.mjs` (`normalizeBody`),
   `cadence-core/bin/rung-agent.test.mjs:100-102`.
-- D-05 (Measurement): the before/after forces the rung alternation DIRECTLY -
+- D-05 (Measurement, MOVED to phase 3): the before/after forces the rung alternation DIRECTLY -
   one role dispatched at two rungs in one sitting - rather than flipping a
   `model.effort.*` pin (which strands whatever the previous rung had warmed, the
   very condition being measured) or setting `model.escalate_on_failure: true`
@@ -73,7 +99,7 @@ cache-figure recording (AC4-AC6) sit on two unrelated seams and share only AC7.
   six roles resolves exactly one rung, so a naturally occurring before/after
   measures nothing. Evidence: `.planning/config.json:13-21`,
   `.planning/spikes/agent-prefix-cache-fragmentation/SPIKE.md:122-139` (C5).
-- D-06 (Measurement): the measured role is `cad-verifier`. It has four rungs,
+- D-06 (Measurement, MOVED to phase 3, RE-DECIDE the role): the measured role is `cad-verifier`. It has four rungs,
   runs in the MAIN tree - a worktree role's hook close lands in a
   `.planning/trace.jsonl` that `.gitignore:29` keeps out of the worktree and that
   is destroyed with it - and its 10,792 B contract is not the contract this phase
@@ -121,18 +147,22 @@ cache-figure recording (AC4-AC6) sit on two unrelated seams and share only AC7.
 - [ ] AC3: `skills/cad-plan-checker-contract/SKILL.md` no longer tells the agent
       its agent file names its rung, and the rung reaches the plan checker
       through its dispatch prompt instead.
-- [ ] AC4: a bracket closed by the caller AND then by the hook carries the
+- [ ] AC4: `node cadence-core/bin/test.mjs` is green and `self-verify` reports
+      `problems: []`.
+
+MOVED TO PHASE 3 (2026-08-26), kept as gathered input for its context pass. The
+AC4 above is the old AC7 renumbered; the three below were AC4-AC6.
+
+- [ ] (phase 3) a bracket closed by the caller AND then by the hook carries the
       caller's `tokens` and `turns` together with the hook's
       `cache_read_input_tokens` and `cache_creation_input_tokens`.
-- [ ] AC5: `.planning/trace.jsonl` shows at least one bracket carrying a
+- [ ] (phase 3) `.planning/trace.jsonl` shows at least one bracket carrying a
       non-zero `cache_read_input_tokens` after a real dispatch. Today it is 0 of
-      398.
-- [ ] AC6: two `cad-verifier` dispatches at two different rungs, run in one
+      399.
+- [ ] (phase 3) two dispatches of one role at two different rungs, run in one
       sitting, are recorded with both cache figures and with the method - which
       rungs, elapsed time, which tree - including the case where the delta is
-      zero.
-- [ ] AC7: `node cadence-core/bin/test.mjs` is green and `self-verify` reports
-      `problems: []`.
+      zero. The role is re-decided per D-06 above.
 
 ## Flagged assumptions
 

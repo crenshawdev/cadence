@@ -2,9 +2,10 @@
 
 ## Overview
 
-**`v3.7.4`, opened 2026-08-26.** Three phases against the `Dispatch cost`
+**`v3.7.4`, opened 2026-08-26.** Four phases against the `Dispatch cost`
 milestone, which `v3.7.3` opened and did not finish. That cycle fixed the
-instruments and closed at phase 1; this one spends what they measure.
+instruments and closed at phase 1; this one spends what they measure - and, at
+phase 2 planning, discovered it has to finish one instrument first.
 
 **Why this scope and not the rest of the tracker.** The 31 open issues were
 triaged 2026-08-26 against one question: would a user running Cadence on their
@@ -21,9 +22,12 @@ executor dispatches across cadence and verbatim ran opus at `shipped`, and the
 routing discount fired 6 times in total.
 
 **What changed since that was written.** `TRC-05` shipped in `v3.7.3`, so a
-bracket now records cache traffic. `RNG-03` declared itself blocked on exactly
-that, and is no longer blocked: the prefix claim can be measured before and
-after rather than asserted.
+bracket CAN record cache traffic. `RNG-03` declared itself blocked on exactly
+that, and its layout half is now unblocked. Its measurement half is not: phase 2
+planning replayed the `SubagentStop` hook's own rule against the live record and
+found 399 brackets carrying 0 cache figures, refused two gates earlier than the
+recording path. That is `TRC-07`, promoted out of deferral on 2026-08-26 as
+phase 3. The cycle grew a phase rather than shipping a claim it could not check.
 
 **What this cycle is not.** It is not the worktree question (`Worktree verdict`,
 blocked on GH-119 and GH-120), it is not reviewer calibration (`Finding flood`,
@@ -49,8 +53,9 @@ filed and named here so the next cycle does not have to rediscover it.
 ## Phases
 
 - [x] **Phase 1: Bound what a dispatch is handed** - bound a plan by the bytes its `files:` declares, and stop the risk floor inheriting a whole file's matches
-- [ ] **Phase 2: Unforeclose the shared rung prefix** - move the rung label off body line 2 so a role's rungs share a cached prefix, proved with the cache figures v3.7.3 shipped
-- [ ] **Phase 3: Keep the record writable** - rotate `trace.jsonl` before the 1 MiB cap makes it permanently write-dead
+- [ ] **Phase 2: Unforeclose the shared rung prefix** - delete the rung sentence from every agent body so a role's rungs share a cached prefix, with a check that fails when a future rung file breaks it
+- [ ] **Phase 3: Make the cache figures reach the record** - the two prompt-cache figures reach the bracket for every worker that stopped, so phase 2's recovery can be measured instead of asserted
+- [ ] **Phase 4: Keep the record writable** - rotate `trace.jsonl` before the 1 MiB cap makes it permanently write-dead
 
 ## Phase Details
 
@@ -66,16 +71,28 @@ filed and named here so the next cycle does not have to rediscover it.
 5. `node cadence-core/bin/test.mjs` is green, `self-verify` reports no problems, and any new config key is registered in `config.schema.json` and `config-catalog.md`.
 
 ### Phase 2: Unforeclose the shared rung prefix
-**Goal:** A role's rung files share a cached prefix instead of diverging at body line 2, and the recovery is measured rather than asserted. `RNG-03` declared itself blocked on cache figures; `TRC-05` shipped them in v3.7.3, so the claim is now checkable.
+**Goal:** A role's rung files share a cached prefix instead of diverging at body line 2. Whether that recovers anything on the record is phase 3's question, because the hook that would write the cache figures cannot reach its write path until `TRC-07` ships.
 **Depends on:** nothing
 **Requirements:** RNG-03
 **Success Criteria:**
 1. Every rung file for one role shares a byte-identical prefix up to the first point where the rungs genuinely differ, verified by a check that fails when a future rung file breaks it.
 2. `route.mjs resolve` returns the same agent, model and effort for every rung as it does today, so the move changed layout and not routing.
-3. The cache-read figures on the bracket are compared across a before and after run of the same role, and the result is recorded with its method, including the case where the recovery is zero.
-4. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.
+3. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.
 
-### Phase 3: Keep the record writable
+### Phase 3: Make the cache figures reach the record
+**Goal:** The two prompt-cache figures reach the bracket for every worker that STOPPED, not only the ones the `SubagentStop` hook could both identify and call terminal. Until they do, phase 2's prefix recovery cannot be measured and every cost claim this milestone makes is denominated in a figure the record cannot carry. Baseline 2026-08-26: 399 brackets, 0 carrying a cache figure.
+**Depends on:** nothing (phase 2 can land before or after; only its MEASUREMENT waits on this)
+**Requirements:** TRC-07
+**Success Criteria:**
+1. All three withholding gates record the worker's cache figures and still write no `return` - not-terminal, already-closed, and two-open-dispatch - with the termination gate itself unchanged rather than relaxed.
+2. `trace render` folds a cache-only fact onto the bracket for the same worker, joined by `corr` and `agent_id`, and never overwrites a bracket that already carries figures.
+3. A fixture holding an unpaired dispatch of one role from an EARLIER `corr` plus one open dispatch in the current `corr` closes the current one; the same fixture refuses today. Measured 2026-08-26: 11 stale `unpaired` rows spanning 2026-08-09 to 2026-08-26 make this gate permanently dead for five of six roles, and give `cad-verifier` a stale row it would MIS-ATTRIBUTE to rather than abstain from.
+4. Every `trace close` prose site passes `--agent-id`, so a non-executor bracket is joinable at all.
+5. After the change, a terminal stop, a not-terminal stop and a two-open pair each produce a bracket carrying both cache keys, each equal to the sum `subagent-transcript.mjs` reports for that worker's own transcript.
+6. Phase 2's prefix recovery is compared across a before and after run of the same role off those figures, and recorded with its method, including the case where the recovery is zero.
+7. `node cadence-core/bin/test.mjs` is green, `self-verify` reports no problems, and any new event name is registered in the trace producer census.
+
+### Phase 4: Keep the record writable
 **Goal:** `.planning/trace.jsonl` stops being able to reach a state where every subsequent append fails forever. Today it silently write-deads at 1 MiB and sits at 54.1%.
 **Depends on:** nothing
 **Requirements:** TRC-08
