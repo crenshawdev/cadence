@@ -17,6 +17,7 @@ files:
   - cadence-core/bin/phase-spelling.test.mjs
   - cadence-core/bin/trace.test.mjs
   - cadence-core/bin/seam-calls.test.mjs
+  - cadence-core/bin/self-verify.test.mjs
 ---
 
 # Phase 1: Bound what a dispatch is handed - Plan 1
