@@ -55,7 +55,7 @@ belongs to `Finding flood` with GH-100 and GH-135, not here.
 
 ## Phases
 
-- [ ] **Phase 1: Make the record say what happened** - fix the close dedup on a repeat, give `duration_ms` a reader, record cache figures
+- [ ] **Phase 1: Make the record say what happened** - fix the close dedup on a repeat, land the stop close on the right worker, give `duration_ms` a reader, record cache figures
 - [ ] **Phase 2: Bound what a dispatch is handed** - bound a plan by declared bytes, stop the risk floor inheriting a whole file's matches, unforeclose the shared rung prefix
 - [ ] **Phase 3: Close the coverage and detector gaps** - walk `planning/` in the skim test, stop the risk detector re-tripping on stored reviewer text, home `DISPATCH_WINDOW_DEFAULTS` with its reader
 
@@ -64,13 +64,14 @@ belongs to `Finding flood` with GH-100 and GH-135, not here.
 ### Phase 1: Make the record say what happened
 **Goal:** The three figures the rest of this cycle argues from are correct, consumable, and complete: a repeat close never steals the next dispatch's bracket, the worker's own duration has a reader, and a bracket records cache figures.
 **Depends on:** Nothing (first phase)
-**Requirements:** TRC-04, MSR-05, TRC-05
+**Requirements:** TRC-04, TRC-06, MSR-05, TRC-05
 **Success Criteria:**
 1. Replaying `dispatch A, close A, dispatch B, A's delayed repeat, close B` for one worker key renders two brackets carrying A's and B's OWN figures, and `roles.tokens` equals the sum of those two brackets, not of all three terminals.
-2. The ordinary two-writer case is unchanged: one dispatch, a figureless hook close, then the hand-written close with figures renders one bracket and `dispatches: 1`.
-3. `/cad-report` and `/cad-suggest` each print a figure sourced from a bracket's `duration_ms`, labelled distinctly from the bracket's `ms`, and say `unrecorded` rather than `0` when the close carried no wall clock.
-4. A bracket close records cache figures, and `trace render` reports them; a close carrying none omits the keys rather than writing zeros.
-5. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.
+2. With two open dispatches of one role, a `SubagentStop` payload closes the dispatch that actually stopped rather than the newest one, demonstrated against a fixture holding both; and a payload arriving while another stop hook is still blocking termination writes no `return` at all.
+3. The ordinary two-writer case is unchanged: one dispatch, a figureless hook close, then the hand-written close with figures renders one bracket and `dispatches: 1`.
+4. `/cad-report` and `/cad-suggest` each print a figure sourced from a bracket's `duration_ms`, labelled distinctly from the bracket's `ms`, and say `unrecorded` rather than `0` when the close carried no wall clock.
+5. A bracket close records cache figures, and `trace render` reports them; a close carrying none omits the keys rather than writing zeros.
+6. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.
 
 ### Phase 2: Bound what a dispatch is handed
 **Goal:** A plan cannot silently hand its executor an unbounded read set, a plan declaring a large file can still earn the routing discount, and a role's rungs can share a cached prefix.

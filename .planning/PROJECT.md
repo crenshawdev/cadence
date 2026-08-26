@@ -235,8 +235,18 @@ declaring a large file inherits its matches and can never earn the discount
 (GH-112). GH-91's one-line fix lands last, once phase 1 can prove whether it
 recovered anything.
 
-Seeded ids: `TRC-04`, `MSR-05`, `TRC-05`, `BUD-03`, `RSK-05`, `RNG-03`,
-`COV-02`.
+A codex review of the v3.7.2 release, adjudicated against the code 2026-08-26,
+added a fourth defect to phase 1's list and confirmed three more. GH-136: the
+`SubagentStop` payload carries no agent identity, so `closeForStop` adopts the
+newest open dispatch of the role - live today at `parallelization.enabled` true
+with `max_concurrent_agents` 3. GH-138: `trace.jsonl` is write-dead at 1 MiB with
+no rotation and sits at 52%, which takes the whole milestone's evidence with it.
+Filed and out of this cycle: GH-137 (a phase with commits but no `SUMMARY.md`
+derives as `planned`, so execute can replay it) and GH-139 (router fence parsing
+ignores delimiter type and run length).
+
+Seeded ids: `TRC-04`, `TRC-06`, `MSR-05`, `TRC-05`, `BUD-03`, `RSK-05`,
+`RNG-03`, `COV-02`.
 
 GH-117 (`WorktreeCreate` seeds the phase dir) is deliberately HELD OUT in the
 `Worktree verdict` milestone, natively blocked by GH-119 and GH-120: if
