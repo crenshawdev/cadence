@@ -1,5 +1,5 @@
 {
- "_comment": "Per-surface UTF-8 byte budgets enforced by self-verify.mjs (CWT-02). Regenerate from cadence-core/bin/weight.mjs when intentional surface growth is accepted. This is NOT a config.schema.json key - do not migrate it into config; it is a manifest beside the check.",
+ "_comment": "Per-surface UTF-8 byte CEILINGS enforced by self-verify.mjs (CWT-02): a surface OVER its entry is a problem, a surface under it is not. Exactness was tried and abandoned - it taxed shrinking at the same rate as growth. Raise an entry from cadence-core/bin/weight.mjs only when intentional growth is accepted. LOWER it in the same commit as any deliberate prose cut: nothing forces a ceiling down, so re-pinning after a cut is what stops the surface growing back into headroom it no longer needs. This is NOT a config.schema.json key - do not migrate it into config; it is a manifest beside the check.",
  "budgets": {
   "agents/cad-assumptions-analyzer-high.md": 489,
   "agents/cad-assumptions-analyzer.md": 519,

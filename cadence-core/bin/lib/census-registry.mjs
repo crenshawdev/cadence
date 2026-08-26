@@ -151,7 +151,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'weight-budgets',
     holder: 'cadence-core/bin/weight-budgets.json',
-    counts: 'the exact UTF-8 byte size of each budgeted prose surface',
+    counts: 'a UTF-8 byte ceiling for each budgeted prose surface',
     // Row (d) stretches criterion 1's "the test that asserts it" to a non-test
     // asserting site on purpose (D-08). It is the one census every
     // prose-editing plan in this repository invalidates.
