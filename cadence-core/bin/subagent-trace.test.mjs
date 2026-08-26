@@ -200,6 +200,26 @@ test('stop: the close adopts the dispatch its agent_id belongs to, not the newes
   assert.equal(ev.role, 'cad-executor');
 });
 
+test('stop: back-to-back dispatches keep their own brackets', () => {
+  // The parallel path's normal shape, and the one the causal floor alone got
+  // wrong: both executors are dispatched in ONE message, so BOTH dispatches are
+  // on the record before either worker has read anything. Each worker's first
+  // read then lands after the other's dispatch, and "the latest dispatch at or
+  // before my first read" hands plan 1's worker plan 2's row.
+  const B = 'b2963bac47b7d63c9';
+  const back = () => render([
+    open('cad-executor', '1', T(0)),
+    open('cad-executor', '2', T(1), { corr: '2-def5678' }),
+  ]);
+  const reads = [read(AGENT, T(2)), read(B, T(3))];
+
+  assert.equal(closeForStop(STOP, back(), { reads }).plan, '1');
+  assert.equal(
+    closeForStop({ agent_type: 'cadence:cad-executor', agent_id: B }, back(), { reads }).plan,
+    '2',
+  );
+});
+
 test('stop: with NO read evidence the newest open dispatch is still adopted', () => {
   // The fallback is the whole safety of this change: no close this hook writes
   // today may be lost to a join that had nothing to go on.
@@ -221,13 +241,31 @@ test('stop: with NO read evidence the newest open dispatch is still adopted', ()
   assert.equal(noId.plan, '2');
 });
 
-test('stop: a first read older than every open dispatch falls back rather than guessing', () => {
-  // The third way the join declines: the worker read before any dispatch on the
-  // record opened, so no open row can be shown to be its own. Adopting nothing
-  // would lose a close the hook writes today; adopting the earliest row would
-  // be a guess the evidence does not support.
-  const ev = closeForStop(STOP, twoOpen(), { reads: [read(AGENT, T(-5))] });
-  assert.equal(ev.plan, '2');
+test('stop: a first read older than every open dispatch writes NOTHING', () => {
+  // Not a decline - positive evidence. A worker is dispatched before it reads,
+  // so one already reading at T-5 was dispatched before T-5, which is before
+  // every row still open here. Its own dispatch is therefore already paired,
+  // and there is nothing on this list for it to close.
+  //
+  // Falling back to newest-open is what this used to do, and it is the
+  // stolen-bracket defect arriving by the other door: a delayed hook close
+  // landing on the NEXT dispatch of the same role. `renderTrace`'s repeat-close
+  // discriminator cannot catch that one downstream, because a close whose
+  // transcript yields no instant is stamped at APPEND time and so never
+  // precedes the head pending dispatch (D-06). Writing nothing costs a close
+  // that was wrong anyway, and the dispatch it would have stolen stays open and
+  // renders as the visible `unpaired` it actually is.
+  assert.equal(closeForStop(STOP, twoOpen(), { reads: [read(AGENT, T(-5))] }), null);
+});
+
+test('stop: a delayed close does not steal the next dispatch of its role', () => {
+  // The end-to-end shape of D-06, at the identity gate rather than the render.
+  // Worker A ran and closed; its hook close arrives late, after B was already
+  // dispatched, and carries no transcript instant at all - the degraded path,
+  // where the render's own discriminator is blind.
+  const afterAClosed = render([open('cad-executor', '2', T(10), { corr: '2-def5678' })]);
+  const late = closeForStop(STOP, afterAClosed, { reads: [read(AGENT, T(1))] });
+  assert.equal(late, null, "A's late close took B's open dispatch");
 });
 
 test('stop: the join reads the EARLIEST record of that worker, not the first listed', () => {
