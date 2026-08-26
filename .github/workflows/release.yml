@@ -26,7 +26,7 @@ jobs:
       # fetch-depth: 0 for two reasons: the reachability test below walks
       # history, and `why-record.test.mjs` reads this repository's own log as
       # its fixture corpus and fails 23 arms on a depth-1 checkout.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -59,7 +59,7 @@ jobs:
       # Scoped to this job alone; the workflow default above stays read-only.
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Tag and plugin manifest agree
         run: |
