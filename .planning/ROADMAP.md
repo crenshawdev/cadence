@@ -55,7 +55,7 @@ belongs to `Finding flood` with GH-100 and GH-135, not here.
 
 ## Phases
 
-- [ ] **Phase 1: Make the record say what happened** - fix the close dedup on a repeat, land the stop close on the right worker, give `duration_ms` a reader, record cache figures
+- [x] **Phase 1: Make the record say what happened** - fix the close dedup on a repeat, land the stop close on the right worker, give `duration_ms` a reader, record cache figures
 - [ ] **Phase 2: Bound what a dispatch is handed** - bound a plan by declared bytes, stop the risk floor inheriting a whole file's matches, unforeclose the shared rung prefix
 - [ ] **Phase 3: Close the coverage and detector gaps** - walk `planning/` in the skim test, stop the risk detector re-tripping on stored reviewer text, home `DISPATCH_WINDOW_DEFAULTS` with its reader
 
