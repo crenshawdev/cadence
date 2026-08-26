@@ -82,7 +82,7 @@ needs it - a `node -e` field read, the shape `workflows/progress.md` and
 `references/triage-gate.md` already use:
 
 ```
-node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let r;try{r=JSON.parse(f.readFileSync(d+"/render.json","utf8"))}catch(e){console.error("scratch-unreadable: "+d+"/render.json: "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+d+"/render.json is not an object");process.exit(1)}if(!Array.isArray(r.brackets)){console.error("scratch-shape: brackets is not an array in "+d+"/render.json");process.exit(1)}if(!r.brackets.every((b)=>b&&typeof b==="object")){console.error("scratch-shape: brackets has a non-object entry in "+d+"/render.json");process.exit(1)}for(const b of r.brackets)console.log([b.role,b.plan,b.event,b.ms,b.tokens,b.turns].join("\t"))' "<the echoed scratch directory>" "<the echoed run token>"
+node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let r;try{r=JSON.parse(f.readFileSync(d+"/render.json","utf8"))}catch(e){console.error("scratch-unreadable: "+d+"/render.json: "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+d+"/render.json is not an object");process.exit(1)}if(!Array.isArray(r.brackets)){console.error("scratch-shape: brackets is not an array in "+d+"/render.json");process.exit(1)}if(!r.brackets.every((b)=>b&&typeof b==="object")){console.error("scratch-shape: brackets has a non-object entry in "+d+"/render.json");process.exit(1)}for(const b of r.brackets)console.log([b.role,b.plan,b.event,b.ms,b.tokens,b.turns,b.duration_ms].join("\t"))' "<the echoed scratch directory>" "<the echoed run token>"
 ```
 
 Its first two arguments are the two literals `read_record` printed. It refuses
@@ -105,7 +105,7 @@ Compose the report, tersest form that keeps the receipts. Shape:
 
 ```
 Phase <N>: <name> - run record
-Dispatches: <table: role | rung | tokens | turns | minutes, one row per `brackets` entry (minutes from its `ms`, turns from its `turns` key - absent on a row whose close carried none), rung from routing resolves>
+Dispatches: <table: role | rung | tokens | turns | step minutes | worker minutes, one row per `brackets` entry (step minutes from its `ms`, worker minutes from its `duration_ms`, turns from its `turns` key - absent on a row whose close carried none), rung from routing resolves>
 Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from `outcomes` and REVIEW files. Where the fire left an ADJUDICATION record, the survivor figure is that record's rulings COUNTED and checked against the `survivors`/`downgraded`/`refuted` on the event; a fire with no record reads `unrecorded`>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns, cross-model provider calls, and figureless returns): <total recorded; top role and its share; unrecorded dispatch count>
@@ -117,8 +117,18 @@ Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that
 
 Rules, all load-bearing:
 - Every number is FROM the record. A dispatch with no token figure reports
-  `unrecorded`, never an estimate; minutes come from the row's own `ms`, and a
-  null `ms` or a null `tokens` reports absent rather than zero.
+  `unrecorded`, never an estimate; step minutes come from the row's own `ms`,
+  and a null `ms` or a null `tokens` reports absent rather than zero.
+- TWO CLOCKS, and the columns are labelled apart because they measure different
+  things. Step minutes are the row's `ms`, dispatch-to-close, so they include
+  whatever the orchestrator did between the two writes. Worker minutes are the
+  row's `duration_ms`, what the HOST reported for the worker itself - copied
+  onto the close, never computed and never re-derived from `ms`, which is the
+  distinction `cadence-core/bin/lib/trace.mjs`'s `TraceRender` typedef states
+  under TWO ELAPSED FIGURES. A bracket with no `duration_ms` key prints
+  `unrecorded` in that column and never `0`: an absent wall clock and a worker
+  that took no time are different claims, and only one of them is a
+  measurement.
 - What that token line EXCLUDES, stated where the figure is printed, in the
   same three names `cadence-core/bin/lib/trace-suggest.mjs` exports as
   `SPEND_EXCLUDES` and `/cad-suggest` relays - one list, so the two surfaces
