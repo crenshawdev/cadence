@@ -126,8 +126,12 @@ sit on two unrelated seams and share only AC7.
 - [ ] AC3: the byte measurement reports how many declared paths were absent from
       disk, and a plan declaring an absent path shows a non-zero count there.
 - [ ] AC4: `route.mjs replay --file .planning/config.json` shows at least one
-      archived scope computing a LOWER level than it computes today, with its
-      `reason` naming the file whose body match no longer counts as evidence.
+      archived scope citing DIFFERENT evidence for its raise than it cites
+      today, with its `reason` naming the file whose body match no longer
+      counts. `_archive-v2.2.0/2` is the witness: its winning surface moves
+      from `secrets` to `destructive`. A LOWER computed level is not required
+      and does not occur on this corpus - measured 2026-08-26, 0 of 28 scopes
+      drop a rung, because every raising scope retains a genuine call site.
 - [ ] AC5: in that same replay, every scope whose raise came from a body line
       that is neither an import nor a constant declaration computes the level it
       computes today.

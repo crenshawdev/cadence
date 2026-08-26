@@ -61,7 +61,7 @@ filed and named here so the next cycle does not have to rediscover it.
 **Success Criteria:**
 1. A plan whose `files:` frontmatter declares more than the configured byte ceiling is reported at plan time, naming the plan, its declared bytes and the ceiling, in the same shape `plan-size` reports `plan-too-many-tasks`.
 2. The ceiling has a config key with a stated default, and a plan under it is not reported at all.
-3. The risk-routing floor no longer counts whole-file body lines for a path a plan merely declares: a plan naming a large file whose relevant surface is small resolves to a lower rung than it does today, demonstrated on a case drawn from `.planning/_archive-*`.
+3. The risk-routing floor no longer counts import lines or constant declarations as evidence of a risk surface for a path a plan merely declares: at least one scope drawn from `.planning/_archive-*` cites different evidence for its raise than it does today, naming in its `reason` the file whose body match no longer counts. Measured 2026-08-26 over all 28 archived phase directories: no scope on this corpus drops a rung, because every raising scope retains a genuine call site; the narrowing changes which evidence is cited, and a level drop is available only to a corpus whose raises rest on imports alone.
 4. A plan that genuinely touches a risk surface still floors at the same rung it does today, so criterion 3 did not buy the discount by weakening the floor.
 5. `node cadence-core/bin/test.mjs` is green, `self-verify` reports no problems, and any new config key is registered in `config.schema.json` and `config-catalog.md`.
 
