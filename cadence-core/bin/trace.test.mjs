@@ -2714,3 +2714,105 @@ test('the four refusing trace flags carry ONE sentence each, in one map', () => 
       + 'the flag->sentence map beside the dispatch door is its one home');
   }
 });
+
+// --- the cache figures ride the bracket and nothing else (TRC-05) ------------
+//
+// They reach the record from ONE writer - the `SubagentStop` hook, which holds
+// the worker's own transcript - and they are read here exactly the way
+// `duration_ms` is: the same numeric guard, the same omit-when-absent spread,
+// the same fill-only-empty fold. What is different is where they may GO, and
+// that is what the `roles` assertions below pin.
+
+/** A close carrying whatever cache figures a case needs. */
+const cacheClose = (extra) => ({
+  phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+  ts: '2026-08-26T10:05:00.000Z', tokens: 1200, ...extra,
+});
+
+/** One dispatch, closed once, rendered. */
+function closedWith(extra) {
+  const dir = root();
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(dir, cacheClose(extra));
+  return renderTrace(dir, 6);
+}
+
+test('render: a bracket carries the cache figures its close reported, and roles does not', () => {
+  const r = closedWith({ cache_creation_input_tokens: 4096, cache_read_input_tokens: 33033480 });
+  const [row] = r.brackets;
+  assert.equal(row.cache_creation_input_tokens, 4096);
+  assert.equal(row.cache_read_input_tokens, 33033480);
+  // D-03, and this is the assertion that holds it: the per-role bill is
+  // DEEP-EQUAL to the same fixture rendered without them. A cache read summed
+  // over turns counts one cached prefix once per turn, so folding it into a
+  // total denominated in final windows would produce a number denominated in
+  // nothing - and would misprice every role in the report.
+  assert.deepEqual(r.roles, closedWith({}).roles);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 1200 } });
+});
+
+test('render: a close reporting no cache traffic leaves NEITHER key on the bracket', () => {
+  // ABSENT, not zero. Checked by `in` and never against 0: a zero would claim
+  // the worker billed no cache traffic, and every trace written before this
+  // phase must render byte-identically.
+  const [row] = closedWith({}).brackets;
+  assert.equal('cache_creation_input_tokens' in row, false, JSON.stringify(row));
+  assert.equal('cache_read_input_tokens' in row, false, JSON.stringify(row));
+  // The two answer INDEPENDENTLY: one reported and one not is one key.
+  const [one] = closedWith({ cache_read_input_tokens: 900 }).brackets;
+  assert.equal(one.cache_read_input_tokens, 900);
+  assert.equal('cache_creation_input_tokens' in one, false, JSON.stringify(one));
+});
+
+test('render: a non-numeric cache figure contributes NOTHING to the bracket', () => {
+  // The guard `tokens`, `turns` and `duration_ms` already carry, for the same
+  // hazard: a hand-edited or foreign-producer line must never string-concatenate
+  // onto a numeric field a caller sums.
+  const [row] = closedWith({
+    cache_creation_input_tokens: '1,000', cache_read_input_tokens: 12,
+  }).brackets;
+  assert.equal('cache_creation_input_tokens' in row, false, JSON.stringify(row));
+  assert.equal(row.cache_read_input_tokens, 12, 'the readable half of the same row survived');
+});
+
+test('render: the cache fold fills an empty field and never overwrites one', () => {
+  // The two writers close one bracket in either order. The hook is the only one
+  // that HAS these figures, so the ordinary live shape is the hand-written close
+  // opening the row and the hook filling it - but the reverse must not lose a
+  // figure either, which is what the second half pins.
+  const dir = root();
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(dir, cacheClose({ ts: '2026-08-26T10:05:00.000Z' }));
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z',
+    cache_creation_input_tokens: 4096, cache_read_input_tokens: 900,
+  });
+  const r = renderTrace(dir, 6);
+  assert.equal(r.brackets.length, 1, 'two closes, one dispatch, one row');
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 4096);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 900);
+
+  // ...and the first writer's figure STANDS when the second carries its own.
+  const other = root();
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(other, cacheClose({
+    ts: '2026-08-26T10:05:00.000Z', cache_read_input_tokens: 900,
+  }));
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z', cache_read_input_tokens: 7,
+  });
+  const [folded] = renderTrace(other, 6).brackets;
+  assert.equal(folded.cache_read_input_tokens, 900,
+    'the second writer overwrote a figure the first one read');
+});

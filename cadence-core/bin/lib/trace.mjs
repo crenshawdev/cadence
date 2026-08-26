@@ -114,6 +114,16 @@ export const TERMINAL = ['return', 'checkpoint', 'escalation'];
 export const ANCHOR = 'phase_start';
 
 /**
+ * The two cache figures a close may carry, in the host's own spelling. They
+ * reach the record from ONE writer and cannot reach it from any other: the
+ * host renders `tokens`, `turns` and a duration on a subagent return and no
+ * cache figure at all, so only the `SubagentStop` hook - which holds the
+ * worker's own transcript - can sum them (`lib/subagent-transcript.mjs`).
+ * There is deliberately no `trace close` flag for either.
+ */
+const CACHE_KEYS = ['cache_creation_input_tokens', 'cache_read_input_tokens'];
+
+/**
  * The lifecycle event the COORDINATOR writes at the start of a workflow step it
  * can name. It is a fifth lifecycle NAME, not a fifth family: `FAMILIES` is
  * validated at the seam while `renderTrace`'s `counts` is a fixed four-key
@@ -327,7 +337,7 @@ export function appendEvent(planningRoot, event) {
  *   counter appear only where at least one figure of that kind landed on the
  *   role, so a record written before either flag existed renders unchanged.
  * @property {Record<string, any>[]} events
- * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number}[]} brackets
+ * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}[]} brackets
  *   every dispatch that PAIRED, one row each, in the order its terminal was
  *   read. The pairing was already computed here for the accounting; exposing it
  *   is what lets a caller print per-worker rows without re-deriving `open` and
@@ -344,11 +354,23 @@ export function appendEvent(planningRoot, event) {
  *   worker wants `duration_ms`; a reader asking how long a step held the run
  *   wants `ms`.
  *
- *   `turns` and `duration_ms` are the OPTIONAL keys: `ms` and `tokens` are on
- *   every row (null where they could not be computed), while a bracket whose
- *   close carried no tool-call count has no `turns` key and one whose close
- *   carried no wall clock has no `duration_ms` key at all - so a record written
- *   before either flag existed renders byte-identically.
+ *   THE CACHE FIGURES, and what they are NOT. `cache_creation_input_tokens` and
+ *   `cache_read_input_tokens` are the worker's own billed cache traffic, summed
+ *   across its transcript by the `SubagentStop` hook, which is the only writer
+ *   that ever holds them. They stop HERE: they never reach `roles`, and
+ *   `roles.tokens` is byte-identical with and without them (D-03). The roles
+ *   block bills what a RETURN reported - a final-window figure for one dispatch
+ *   - while a cache read summed over turns counts one cached prefix once per
+ *   turn, so adding one to the other would produce a number denominated in
+ *   nothing. That is the same rule `cadence-core/workflows/report.md` states
+ *   when it forbids a second, differently denominated window number.
+ *
+ *   `turns`, `duration_ms` and the two cache keys are the OPTIONAL keys: `ms`
+ *   and `tokens` are on every row (null where they could not be computed),
+ *   while a bracket whose close carried no tool-call count has no `turns` key,
+ *   one whose close carried no wall clock has no `duration_ms` key, and one
+ *   whose close reported no cache traffic has neither cache key at all - so a
+ *   record written before any of those flags existed renders byte-identically.
  *
  *   ONE ROW PER DISPATCH, not per close. Two writers close one bracket - the
  *   host's `SubagentStop` hook and the orchestrator's own `trace close` - and
@@ -709,6 +731,15 @@ export function renderTrace(planningRoot, phase) {
     // string-concatenated onto a numeric field a caller sums.
     const duration = typeof e.duration_ms === 'number' && Number.isFinite(e.duration_ms)
       ? e.duration_ms : null;
+    // And again for the two cache figures, guarded identically for the
+    // identical hazard. Collected as an object carrying only the keys that
+    // passed, so the omit-when-absent rule below is a spread rather than two
+    // more conditionals: a figure nobody reported must leave NO key behind.
+    /** @type {Record<string, number>} */
+    const cache = {};
+    for (const k of CACHE_KEYS) {
+      if (typeof e[k] === 'number' && Number.isFinite(e[k])) cache[k] = e[k];
+    }
 
     const worker = `${key(e.corr)}\0${key(e.phase)}\0${key(e.plan)}`;
     if (e.event === DISPATCH) {
@@ -826,6 +857,12 @@ export function renderTrace(planningRoot, phase) {
           // from the two timestamps - `ms` one clause above already is that
           // quantity, and it measures the step rather than the worker.
           ...(duration !== null ? { duration_ms: duration } : {}),
+          // The cache figures, OMITTED on the same rule and taken off the
+          // TERMINAL alone for the same reason: they are summed out of the
+          // worker's own transcript, and a dispatch half has no transcript to
+          // read. They ride this row and go NOWHERE else - see the `brackets`
+          // typedef for why the `roles` bill cannot have them.
+          ...cache,
           // The worker's host id, off the TERMINAL alone - the dispatch half
           // never has one. OMITTED when neither writer carried it, the same
           // rule `turns` and `duration_ms` follow, so a record written before
@@ -867,6 +904,10 @@ export function renderTrace(planningRoot, phase) {
         if (b.tokens === null && tokens !== null) b.tokens = tokens;
         if (!('turns' in b) && turns !== null) b.turns = turns;
         if (!('duration_ms' in b) && duration !== null) b.duration_ms = duration;
+        // The same fill-only-empty clause for the cache figures. In practice
+        // the hook is the only writer that has them, so this is the arm that
+        // lands them on a row the hand-written close opened first.
+        for (const k of CACHE_KEYS) if (!(k in b) && k in cache) b[k] = cache[k];
         // The arm upgrades in ONE direction and never back. A figureless writer
         // that happened to run first would otherwise turn every checkpoint into
         // a clean `return` - billing a worker that came back unusable as a
