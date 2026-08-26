@@ -476,6 +476,98 @@ function isDocument(/** @type {string} */ path) {
 }
 
 /**
+ * THE LINE KINDS `scanDeclared` WITHHOLDS from its content pass (RSK-05, D-03),
+ * the third exemption on this face and the first that is about a LINE rather
+ * than a file. A declared file's body is mostly lines the plan will never
+ * touch, and two kinds of them name a construct without doing it: an IMPORT
+ * statement, which brings a name into scope, and a CONSTANT DECLARATION whose
+ * initializer is a literal, which binds a value. Measured on this repository
+ * 2026-08-26: four of the raises on the archived phase set rest on exactly
+ * those - an `fs` teardown import in a test file, and three SCREAMING_SNAKE
+ * constants whose NAME carries a credential word - so the floor was raising on
+ * the vocabulary a file happens to mention rather than on anything it does.
+ *
+ * A LINE THAT CALLS SOMETHING IS STILL EVIDENCE, and that is the whole boundary.
+ * Every pattern below is anchored at line START, on the rule this file's header
+ * states, and every one of them must reach the END of the line: a line that
+ * both declares and calls - an import followed by a call to what it imported -
+ * is NOT withheld, because withholding it would drop a genuine call site and buy
+ * the discount by weakening the floor. The literal restriction on the constant
+ * arm is the same argument: a `const` bound to a JSON parse of a file read is
+ * syntactically a constant declaration and is a real untrusted-input call site,
+ * so exempting every `const` would make the floor fire or not on assignment
+ * style. A dynamic `import` CALL is code, not an import statement, and is
+ * excluded here for the same reason.
+ *
+ * SCOPED TO THIS FACE, like the two exemptions above and for their reason:
+ * `scanDiff` reads a HUNK, where an import someone actually added is a change
+ * in the range, and its header's fix-at-the-MENTION rule stays in force
+ * unedited. Nothing here reaches `CONTENT_SIGNALS`, which the `blocking`
+ * commit-time gate shares by construction (D-02).
+ */
+const IMPORT_LINE_KINDS = Object.freeze([
+  // ES modules, Java, Python `import x`. The negative lookahead is the dynamic
+  // `import` call, which is an expression and stays code.
+  /^\s*import\s+(?!\()[^;]*;?\s*$/,
+  // Python `from x import y`.
+  /^\s*from\s+\S+\s+import\s+[^;]*;?\s*$/,
+  // C and C++.
+  /^\s*#\s*include\s+\S[^;]*$/,
+  // Rust, PHP, Perl. `use ` and never `use`, so `useEffect(...)` stays a call.
+  /^\s*use\s+[^;]*;?\s*$/,
+  // CommonJS. The binding keyword is broader than the constant arm's on
+  // purpose: what makes this an import is the module load on the right.
+  /^\s*(?:const|let|var)\s+[^=;]+=\s*require\s*\([^;]*\)\s*;?\s*$/,
+]);
+
+/** `const NAME = ...` and its cousins in other languages, up to the initializer. */
+const DECLARED_CONSTANT =
+  /^\s*(?:(?:export|public|private|protected|readonly)\s+)*(?:const|static|final|val)\s+[A-Za-z_$][^=;]*=\s*([^;]*?)\s*;?\s*$/;
+
+/** A SCREAMING_SNAKE name bound with no declaration keyword at all - Python,
+ * shell, Make. The name shape is the one `CONTENT_SIGNALS.secrets` itself
+ * reads, so the two agree on what a constant NAME looks like. */
+const SHOUTING_CONSTANT = /^\s*[A-Z][A-Z0-9_]*\s*(?::[^=;]*)?=\s*([^;]*?)\s*;?\s*$/;
+
+/** What an initializer may START with to be a literal: a string, a number, a
+ * regex, a bracketed literal, or one of the value keywords. Deliberately not a
+ * `(`, which opens an arrow function or a parenthesized expression. */
+const LITERAL_INITIALIZER =
+  /^(?:['"`]|[-+]?\d|\/[^/*]|[[{]|true\b|false\b|null\b|undefined\b|None\b|nil\b)/;
+
+/** An initializer that is nothing but a regex literal. Judged on its own,
+ * because a regex may carry a `(` of its own - `/\bPhase (\d+)\b/` is one of the
+ * four measured false positives - and that parenthesis is a capture group, not
+ * a call. */
+const REGEX_LITERAL = /^\/(?:[^/\\\n]|\\.)*\/[a-z]*$/;
+
+/** A call anywhere in an initializer: a `(` opened by a name, a closing bracket
+ * or a closing paren. This is what keeps a literal-looking initializer that
+ * actually invokes something - a list holding a call, a regex with `.test`
+ * applied - counting as evidence. */
+const CALL_EXPRESSION = /[\w$\])]\s*\(/;
+
+/** Whether `line` is only a module import. */
+function isImportStatement(/** @type {string} */ line) {
+  return IMPORT_LINE_KINDS.some((re) => re.test(line));
+}
+
+/** Whether `line` is only a constant declaration bound to a literal. */
+function isConstantDeclaration(/** @type {string} */ line) {
+  const m = DECLARED_CONSTANT.exec(line) || SHOUTING_CONSTANT.exec(line);
+  if (!m) return false;
+  const init = m[1];
+  if (!init || !LITERAL_INITIALIZER.test(init)) return false;
+  return REGEX_LITERAL.test(init) || !CALL_EXPRESSION.test(init);
+}
+
+/** Whether `line` names a construct without doing it, and so is withheld from
+ * `scanDeclared`'s content pass. */
+function isIncidentalLine(/** @type {string} */ line) {
+  return isImportStatement(line) || isConstantDeclaration(line);
+}
+
+/**
  * What a DECLARED FILE SET touches - the plan-time face, where there is no diff
  * to read because the change has not been written yet.
  *
@@ -488,9 +580,17 @@ function isDocument(/** @type {string} */ path) {
  *   narrowed to the project's answered
  *   `review.triggers.risk_surface.surfaces` set. A category not in this list is
  *   not looked for and is not reported.
- * @returns {{categories: string[], matches: Array<{category: string, signal: string}>}}
- *   the same `{category, signal}` entries `scanDiff` returns, so a fire site
- *   states a reason from one shape whichever face produced it.
+ * @returns {{categories: string[], matches: Array<{category: string, signal: string}>,
+ *   withheld: Array<{path: string, category: string}>}}
+ *   `matches` is the same `{category, signal}` entries `scanDiff` returns, so a
+ *   fire site states a reason from one shape whichever face produced it.
+ *   `withheld` is what the LINE-KIND exemption cost, per declared path: a
+ *   category that file evidenced BEFORE the narrowing and does not evidence
+ *   after it, because its only matching line was an import or a literal
+ *   constant. A raise that used to rest on one of those says so instead of
+ *   moving silently, and a file whose category survives on a line the exemption
+ *   kept is not listed. `scanDiff` has no such field: that face withholds
+ *   nothing.
  *
  * A DECLARED PATH WITH NO READABLE BODY IS NOT INCONCLUSIVE, which is the one
  * place this face deliberately parts from `scanDiff`'s silence-is-never-cleared
@@ -508,6 +608,10 @@ export function scanDeclared(files, categories) {
   const paths = [];
   /** @type {string[]} */
   const lines = [];
+  /** Per declared path that lost at least one line, what the exemption kept and
+   * what it withheld - the only input the cost list below needs. */
+  /** @type {Array<{path: string, kept: string[], dropped: string[]}>} */
+  const split = [];
   for (const entry of list) {
     const path = typeof entry === 'string'
       ? entry
@@ -518,7 +622,20 @@ export function scanDeclared(files, categories) {
     if (typeof body !== 'string' || !body) continue;
     if (isSignalTable(path)) continue;
     if (isDocument(path)) continue;
-    for (const raw of body.split('\n')) lines.push(raw.endsWith('\r') ? raw.slice(0, -1) : raw);
+    /** @type {string[]} */
+    const kept = [];
+    /** @type {string[]} */
+    const dropped = [];
+    for (const raw of body.split('\n')) {
+      const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+      // The third exemption, and the only one that is per LINE (RSK-05, D-03):
+      // a line that names a construct without doing it is not evidence that the
+      // declared change touches the surface.
+      if (isIncidentalLine(line)) { dropped.push(line); continue; }
+      kept.push(line);
+      lines.push(line);
+    }
+    if (dropped.length) split.push({ path, kept, dropped });
   }
 
   const sets = pathSets(paths);
@@ -531,5 +648,25 @@ export function scanDeclared(files, categories) {
     const signal = signalIn(category, sets, lines, 'body line');
     if (signal) matches.push({ category, signal });
   }
-  return { categories: wanted, matches };
+
+  // WHAT THE NARROWING COST, per declared path. Computed through the SAME
+  // `signalIn` the matches above go through - a second signal table here would
+  // be the drift this file exists to prevent - and asked twice of one file: once
+  // over every line of its body, once over the lines the exemption kept. A
+  // category answering the first and not the second evidenced that file only on
+  // a withheld line. The PATH signals run identically in both calls, so a file
+  // that evidences a category by its path or its extension never appears here:
+  // the exemption did not cost that evidence, and saying it did would be false.
+  /** @type {Array<{path: string, category: string}>} */
+  const withheld = [];
+  for (const { path, kept, dropped } of split) {
+    const fileSets = pathSets([path]);
+    const whole = kept.concat(dropped);
+    for (const category of wanted) {
+      if (!signalIn(category, fileSets, whole, 'body line')) continue;
+      if (signalIn(category, fileSets, kept, 'body line')) continue;
+      withheld.push({ path, category });
+    }
+  }
+  return { categories: wanted, matches, withheld };
 }
