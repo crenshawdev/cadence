@@ -231,7 +231,7 @@ return - never a `0`, which claims a measurement nobody made
 (seam-spawn-agent.md's bracket rule):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
 ```
 
 - `## PLANNING COMPLETE` - confirm the listed files exist on disk, continue.
@@ -416,7 +416,7 @@ references/conventions.md), and the seam closes it as a checkpoint.
 OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
 ```
 
 Handle the return:

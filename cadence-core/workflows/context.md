@@ -179,7 +179,7 @@ references/conventions.md), and the seam closes it as a `checkpoint` instead of
 a `return`:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
 ```
 
 Wait for the result. Parse:
