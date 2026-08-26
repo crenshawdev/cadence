@@ -345,6 +345,24 @@ queue triage alone.
 - **COV-02**: `skim.test.mjs` walks `cadence-core/bin/planning/`, so its 30
   modules are covered
   Deferred 2026-08-26 out of `v3.7.3` with phases 2-4.
+- **CAP-04**: `phase-done`'s `capture` field becomes the same ask the review
+  gates use - one AskUserQuestion for the batch, then `issue-filing.mjs file` -
+  so named items become tracker issues and unnamed ones carry the decline label
+  and stop resurfacing (GH-122). Closes the one accumulation path `v3.7.1` left
+  open: review findings no longer reach CAPTURE.md, but `/cad-capture` bullets
+  have no drain at all. Demonstrated at the `v3.7.1` close 2026-08-25, where 32
+  substantive items (21 todos + 11 seeds) survived the milestone. Phase close
+  rather than milestone close because batch size grows with the gap. Adjudicated
+  2026-08-26 as an accumulation defect wearing an enhancement label. Promote at
+  the cycle after `v3.7.4`
+- **RCL-07**: `recall` folds common suffixes at index time and query time, so
+  `seam` matches `seams` and `close` matches `closes` (GH-93, item 1 only).
+  `cadence-core/bin/lib/bm25.mjs:20` states the gap outright. A ~30-line
+  deterministic suffix fold in one file, zero-dep, applied identically on both
+  sides. Split 2026-08-26 from GH-93's other two items - the multi-query union
+  changes the seam signature and the failure-records item needs a scope decision
+  - which stay on the issue and are not scope. Promote at the cycle after
+  `v3.7.4`
 
 ## Out of Scope
 
