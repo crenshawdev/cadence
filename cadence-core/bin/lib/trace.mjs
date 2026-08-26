@@ -749,7 +749,38 @@ export function renderTrace(planningRoot, phase) {
       seenTerminals.add(identity);
 
       const pending = open.get(worker);
-      let matched = pending && pending.length ? pending.shift() : null;
+      // THE DELAYED REPEAT (D-05). A close that arrives after the NEXT dispatch
+      // of the same worker key is handed that dispatch by the FIFO
+      // `pending.shift()` below - the STEAL, whose tell on the record is the
+      // stolen row's NEGATIVE `ms`, because the row's start is the later
+      // dispatch's `ts` while its end is the earlier close's. It is reachable
+      // whenever a writer is delayed past the retry that follows it: the host's
+      // `SubagentStop` hook fires when the host decides, not when the
+      // orchestrator reaches its close step, so a retried plan can see the
+      // first attempt's hook close land after the second attempt's dispatch.
+      // The cost of the steal is not one wrong row: the row it opens is funded,
+      // so the role is billed for all three terminals and the retry's own
+      // figures land on a bracket that never happened.
+      //
+      // The discriminator is the TIMESTAMP relation, and it is deliberately
+      // narrow. A terminal is a repeat close of a row this key ALREADY opened,
+      // never a pairing, only when all three hold: both clocks parse, the
+      // terminal's instant is strictly EARLIER than the head pending dispatch's,
+      // and `pairedRows` holds a row for this worker key. Miss any one and
+      // today's FIFO pairing stands unchanged - an unreadable clock must never
+      // silently reclassify a genuine close, which is the posture `millis`
+      // states at the top of this file, and with no row on the key there is
+      // nothing for a repeat to fold into.
+      //
+      // The worker key and the `seenTerminals` replay identity are UNTOUCHED
+      // (D-01). Widening that identity is the alternative this rule replaces,
+      // and it stays refused for the reason stated above it: dropping the
+      // millisecond folds two GENUINE dispatches on one key into one bracket.
+      const head = pending && pending.length ? pending[0] : null;
+      const headT = head ? millis(head.ts) : null;
+      const delayedRepeat = head !== null && t !== null && headT !== null
+        && t < headT && pairedRows.has(worker);
+      let matched = head && !delayedRepeat ? pending.shift() : null;
       // A REPEAT CLOSE: nothing left open on this worker key, but a row this
       // key already opened is on the record, so this is the second writer
       // closing the same bracket rather than a stray terminal. It adopts the

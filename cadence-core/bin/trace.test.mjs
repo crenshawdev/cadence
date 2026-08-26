@@ -1686,6 +1686,50 @@ test('render: two genuine dispatches on ONE worker key are still two brackets', 
   assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, unrecorded: 2 } });
 });
 
+test('render: a delayed repeat close never steals the NEXT dispatch of its key', () => {
+  // The retry path (TRC-04). A plan is dispatched, closed, and dispatched again
+  // on the SAME worker key; the first attempt's second writer - the host's
+  // `SubagentStop` hook, which fires when the host decides - lands after the
+  // retry's dispatch. The FIFO alone hands that late close the retry's open
+  // dispatch, and the tell is the stolen row's NEGATIVE `ms`: measured on this
+  // fixture before the discriminator, row 2 rendered `end` 10:05 against `ts`
+  // 10:09 for `ms: -240000`, and the role was billed for all three terminals.
+  const dir = root();
+  const ev = (e) => appendEvent(dir,
+    { phase: 5, family: 'lifecycle', plan: 'p', role: 'cad-executor', ...e });
+  const A_OPEN = '2026-08-20T10:00:00.000Z';
+  const A_SHUT = '2026-08-20T10:05:00.000Z';
+  const B_OPEN = '2026-08-20T10:09:00.000Z';
+  const B_SHUT = '2026-08-20T10:14:00.000Z';
+  ev({ event: 'dispatch', ts: A_OPEN });
+  ev({ event: 'return', ts: A_SHUT, tokens: 1000 });
+  ev({ event: 'dispatch', ts: B_OPEN });
+  // A's DELAYED repeat: its own stop instant, so it is earlier than the
+  // dispatch it must not consume. Figureless, and so not a `seenTerminals`
+  // replay of the close above it - the two differ in their token field.
+  ev({ event: 'return', ts: A_SHUT });
+  ev({ event: 'return', ts: B_SHUT, tokens: 2000 });
+  const r = renderTrace(dir, 5);
+
+  assert.equal(r.brackets.length, 2, 'two dispatches, two brackets');
+  const [a, b] = r.brackets;
+  // Each row spans its OWN dispatch and its OWN close, and carries its OWN
+  // figure: the repeat folded into the row it belongs to and opened none.
+  assert.equal(a.ts, A_OPEN);
+  assert.equal(a.end, A_SHUT);
+  assert.equal(a.tokens, 1000);
+  assert.equal(b.ts, B_OPEN);
+  assert.equal(b.end, B_SHUT);
+  assert.equal(b.tokens, 2000);
+  for (const row of r.brackets) {
+    assert.equal(row.ms, 300000, `a stolen bracket renders ${row.ms}`);
+  }
+  assert.deepEqual(r.unpaired, [], 'no genuine dispatch was left open');
+  // The role is billed for the two brackets, not for all three terminals.
+  assert.deepEqual(r.roles,
+    { 'cad-executor': { dispatches: 2, tokens: a.tokens + b.tokens } });
+});
+
 test('render: a close whose dispatch was never read still bills its own role', () => {
   const dir = root();
   // A close whose dispatch fell outside the `--phase` filter or above the read
