@@ -882,6 +882,11 @@ export const CONTRACTS = {
       '--detail': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--detail-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--reviewer': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // The host's own id for the worker this close belongs to. REFUSES like
+      // every other join key here: a blank one would read as "no id" while the
+      // caller believes the close was bound, which is the one failure this
+      // flag exists to remove.
+      '--agent-id': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // `--events` asks for the RAW event array. The default response carries the
     // paired `brackets` rows plus every `outcome` event instead, which is what

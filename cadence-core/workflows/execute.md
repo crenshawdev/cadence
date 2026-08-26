@@ -227,12 +227,16 @@ declared files, so an executor is routed for the plan it is being handed
 executor comes back, append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path>
 ```
 
 ONE line per executor, and the detail is the executor's own return line - write
 it to a scratch file and pass the PATH (caller-derived text -
-references/conventions.md). OMIT the detail entirely for a `PLAN COMPLETE` or
+references/conventions.md). `--agent-id` is the host's name for the worker that
+just returned and this line is its only writer; it stops a late `SubagentStop`
+closing the NEXT executor's bracket, which on the parallel path is the whole of
+how that hook tells two executors apart (references/seam-spawn-agent.md). OMIT
+it when the return carried no id. OMIT the detail entirely for a `PLAN COMPLETE` or
 `PLAN PARTIAL` and the seam closes a `return`; carry it for any checkpoint
 return and the seam closes a `checkpoint`. A plan moved to another path or rung is an `escalation`,
 which the seam does not infer - it stays on `trace append`. All three close a

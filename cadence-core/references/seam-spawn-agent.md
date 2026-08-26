@@ -152,6 +152,13 @@ never `--duration-ms 0`, which would claim a dispatch that took no time.
 `--duration-ms` takes the host's OWN spelling (`1m 23s`, `450ms`) or a plain
 millisecond count, so the figure is copied rather than converted; the standing
 exposure all three of them create is stated in the window-CEILING bullet above.
+`--agent-id <the id on the subagent return>` rides that same line and is its one
+non-figure field. The CALLER is its only possible writer - the `dispatch` half is
+written before the subagent exists, so it has no id to carry - and it is what
+lets the `SubagentStop` hook know a worker whose bracket is already closed and
+write nothing, rather than land a late stop on whatever else is open
+(`lib/subagent-trace.mjs`). OMIT it when the host returned none: with two
+dispatches of one role open and no id, that hook refuses rather than guess.
 The caller is no longer the only WRITER of a close, and is still the only one
 that can carry those figures: the host's `SubagentStop` hook
 (`cadence-core/bin/subagent-trace.mjs`) closes a bracket this line never

@@ -59,33 +59,39 @@
 //    `plan` verbatim. No matching row means DO NOTHING: the hook never invents a
 //    dispatch and never opens a bracket.
 //
-//    WHICH open dispatch is the agent-identity join (D-07). Adopting the NEWEST
-//    one crosses two same-role workers whenever more than one is open, which is
-//    live today - `parallelization.enabled` dispatches up to
-//    `max_concurrent_agents` executors at once - and the stop payload's
-//    `agent_id` is the only field that can tell them apart. The trace's own
-//    `dispatch` event cannot carry it and never can: that event is written
-//    BEFORE the subagent exists, so the id does not yet have a value. The join
-//    is therefore through a record written from inside the worker -
-//    `.planning/reads.jsonl`, whose rows `lib/read-trace.mjs`'s `recordFromHook`
-//    stamps with the same `agent_id` spelling the stop payload uses.
+//    WHICH open dispatch, and the answer is UNAMBIGUOUS OR NOTHING (TRC-06).
+//    Adopting the NEWEST one crosses two same-role workers whenever more than
+//    one is open, which is live today - `parallelization.enabled` dispatches up
+//    to `max_concurrent_agents` executors at once - and TRC-06 forbids exactly
+//    that adoption by name. So the rule is two questions with no clock in
+//    either:
 //
-//    The rule: take the EARLIEST `ts` among read records carrying the payload's
-//    `agent_id` - the first thing that worker did - then among the open
-//    dispatches of its role keep the ones at or before that instant and adopt
-//    the LATEST of them. A worker's first read cannot precede its own dispatch,
-//    so a dispatch opened after it belongs to somebody else.
+//      a. Does a bracket on the record already carry this payload's `agent_id`?
+//         Then this worker's close is already written and there is nothing here
+//         for it to close. DO NOTHING.
+//      b. Is there EXACTLY ONE open dispatch of the mapped role? Adopt it.
+//         Anything else - none, or two the evidence cannot separate - is DO
+//         NOTHING.
 //
-//    The FALLBACK is stated rather than silent: when the payload carries no
-//    `agent_id`, when no read record carries it, or when no open dispatch of
-//    that role precedes its first read, the newest-open adoption above stands
-//    unchanged. No close this hook writes today is lost to a missing join.
+//    The id reaches the record on the CLOSE, never the dispatch. That event is
+//    written before the subagent exists, so it has no id to carry; the
+//    orchestrator learns the id the moment the host returns and puts it on its
+//    hand-written `trace close --agent-id`. That is the whole join, and it is
+//    an equality test rather than an inference.
 //
-//    The accepted cost, stated rather than worked around: two same-role workers
-//    dispatched in one batch whose first reads interleave can still cross, since
-//    the ordering evidence is the reads rather than the dispatches themselves.
-//    Both brackets still pair and both roles still bill correctly; only the plan
-//    numbers can cross, and only in that narrower case.
+//    WHY NOT A TIMESTAMP HEURISTIC. Ordering evidence - a worker's first read
+//    against the dispatch instants - cannot identify a worker, because the
+//    parallel path dispatches both executors in ONE message: both dispatches
+//    land before either worker reads, so every ordering rule has an
+//    interleaving that crosses them. Three separate ones were tried and each
+//    had a counter-example; the information is simply not in the clocks.
+//
+//    THE COST, stated rather than hidden. Where the hand-written close never
+//    ran AND two dispatches of the role are open, this writes nothing and both
+//    stay `unpaired`. That is the visible defect the whole record already
+//    prefers to a confident wrong row: an `unpaired` marker is countable and a
+//    crossed bracket bills one worker for another's run. In a sequential phase
+//    - one open dispatch of a role at a time - nothing changes at all.
 //
 // 3. THE EVENT, and NOTHING else on it. A `lifecycle` `return` carrying the
 //    adopted `corr`, `phase`, `plan` and `role`. No `tokens`, no `turns`, no
@@ -107,169 +113,35 @@ import { roleOfAgent } from './read-trace.mjs';
 import { terminalOf, STOP_STATE } from './subagent-transcript.mjs';
 
 /**
- * A timestamp as milliseconds, or null when there is nothing to read. Same
- * posture `lib/trace.mjs` takes: an unparseable `ts` contributes NOTHING to the
- * comparison rather than putting a NaN into it, because every NaN comparison is
- * false and the newest row would silently become the first one tested.
- * @param {any} v
- * @returns {number|null}
+ * The payload's `agent_id`, or null when it carries none this rule can use.
+ * @param {any} payload
+ * @returns {string|null}
  */
-function millis(v) {
-  if (typeof v !== 'string' || !v) return null;
-  const t = Date.parse(v);
-  return Number.isNaN(t) ? null : t;
-}
-
-/**
- * The newest open dispatch among rows already filtered to one role - the
- * adoption this rule has always made, and now the fallback the identity join
- * lands on whenever it has nothing to go on.
- * @param {any[]} rows
- * @returns {any|null}
- */
-function newestOpen(rows) {
-  let best = null;
-  let bestT = -Infinity;
-  for (const row of rows) {
-    const t = millis(row.ts);
-    // An unreadable `ts` sorts BELOW every readable one and never displaces a
-    // row whose clock could be read. `>=` breaks a tie - and the all-unreadable
-    // case - toward the row written LAST, because the record is append-ordered
-    // and later-written is the best available reading of "newest" when the
-    // clock cannot answer.
-    const at = t === null ? -Infinity : t;
-    if (best === null || at >= bestT) { best = row; bestT = at; }
-  }
-  return best;
-}
-
-/**
- * The join's third answer: the evidence positively places this worker's own
- * dispatch OUTSIDE the open set, so there is nothing here for it to close. It
- * is a sentinel and not `null` because the two mean opposite things to the
- * caller - `null` is "cannot say, fall back", and falling back is precisely
- * what writes a closed worker's terminal onto a live dispatch's bracket.
- */
-const NO_OPEN_DISPATCH = Object.freeze({ noOpenDispatch: true });
-
-/**
- * The first `.planning/reads.jsonl` instant recorded for every agent id in the
- * evidence, as a Map of id -> milliseconds. A record written from INSIDE a
- * worker is the only place an agent id and a clock appear together, which is
- * why the trace's own `dispatch` event can never supply this.
- *
- * A row whose `ts` cannot be read contributes nothing rather than sorting low:
- * this whole join is an ordering claim, and a row with no readable clock
- * supports no ordering claim at all.
- *
- * @param {any[]} records
- * @returns {Map<string, number>}
- */
-function firstReadByAgent(records) {
-  const first = new Map();
-  for (const r of records) {
-    if (!r || typeof r !== 'object') continue;
-    const id = typeof r.agent_id === 'string' && r.agent_id ? r.agent_id : null;
-    if (!id) continue;
-    const t = millis(r.ts);
-    if (t === null) continue;
-    const prior = first.get(id);
-    if (prior === undefined || t < prior) first.set(id, t);
-  }
-  return first;
-}
-
-/**
- * The open dispatch the payload's `agent_id` belongs to (GATE 2's join, D-07).
- *
- * THREE answers, not two, and the third is what stops a worker that has
- * already been closed from taking a live dispatch's bracket:
- * - a ROW - this worker's own open dispatch, adopt it;
- * - `NO_OPEN_DISPATCH` - the evidence positively says this worker has no open
- *   dispatch, so the caller must emit NOTHING rather than fall back;
- * - `null` - the evidence cannot say, so the caller falls back to `newestOpen`,
- *   which is exactly what this rule did before it read an id at all.
- *
- * TWO readings of the same evidence, in order: a RANK when the peer set lines
- * up one for one with the open dispatches, and the CAUSAL FLOOR - the latest
- * dispatch at or before this worker's first read - whenever it does not. The
- * floor alone was the rule until it was found to cross brackets on exactly the
- * case this hook exists for: dispatch A, dispatch B a moment later, then A's
- * first read, which lands AFTER B's dispatch, so A adopted B's row. The body
- * below states what each reading rests on and why the count test bounds the
- * rank.
- *
- * An agent whose first read PRECEDES the oldest open dispatch was dispatched
- * before it too, so its own dispatch is already paired and off this list. That
- * is the `NO_OPEN_DISPATCH` evidence.
- *
- * @param {any} payload the stop payload
- * @param {{reads?: any}|undefined} evidence
- * @param {any[]} rows open dispatches already filtered to the mapped role
- * @returns {any|null}
- */
-function adoptByAgentId(payload, evidence, rows) {
-  const id = payload && typeof payload.agent_id === 'string' && payload.agent_id
+function agentIdOf(payload) {
+  return payload && typeof payload.agent_id === 'string' && payload.agent_id
     ? payload.agent_id : null;
-  if (!id) return null;
-  const records = evidence && Array.isArray(evidence.reads) ? evidence.reads : [];
+}
 
-  const first = firstReadByAgent(records);
-  const mine = first.get(id);
-  if (mine === undefined) return null;
-
-  // Open dispatches whose clock can be read, oldest first. An unreadable `ts`
-  // is SKIPPED rather than fatal: the join is an ordering claim and that row
-  // supports none, but it stays eligible in the `newestOpen` fallback, which is
-  // what an all-unreadable render resolves through.
-  const dated = rows
-    .map((row) => ({ row, t: millis(row.ts) }))
-    .filter((d) => d.t !== null)
-    .sort((a, b) => a.t - b.t);
-  if (dated.length === 0) return null;
-
-  const oldest = dated[0].t;
-  // Positive evidence: this worker was already reading before the oldest still-
-  // open dispatch was made. Its own dispatch is therefore older than every row
-  // here and is already paired, so there is nothing open for it to close.
-  if (mine < oldest) return NO_OPEN_DISPATCH;
-
-  // THE CAUSAL FLOOR, and the answer whenever ranking cannot be trusted: a
-  // dispatch made after this worker was already reading cannot be the one that
-  // started it, so the latest dispatch at or before its first read is the best
-  // single-worker reading of the evidence.
-  let floor = null;
-  for (const d of dated) {
-    if (d.t > mine) break;
-    floor = d.row;
-  }
-
-  // RANK, when - and only when - the peer set lines up with the open dispatches
-  // one for one. A worker cannot read before it was dispatched, so dispatches
-  // ordered by `ts` and their workers ordered by first read are the SAME
-  // sequence, and the i-th dispatch is the i-th worker's. That is what the
-  // causal floor alone cannot get right: dispatch A, dispatch B a moment later,
-  // then A's first read - which lands after B's dispatch, so the floor picks B
-  // and the two brackets cross. Ranking is indifferent to how late a first read
-  // arrives; it needs only the two orders to agree.
-  //
-  // The count test is what keeps it honest. `reads.jsonl` is append-ordered
-  // across every worker in the session, including workers whose dispatch has
-  // already been paired off, so a peer set larger than the open set means some
-  // peer is not one of these dispatches and every rank below it is shifted by
-  // one. Unequal counts fall back to the floor rather than guessing which peer
-  // to drop.
-  const peers = [...first.entries()]
-    .filter(([, t]) => t >= oldest)
-    .sort((a, b) => a[1] - b[1]);
-  if (peers.length === dated.length) {
-    const rank = peers.findIndex(([peerId]) => peerId === id);
-    const picked = rank >= 0 ? dated[rank] : null;
-    // The floor still binds the ranked answer: a rank that lands on a dispatch
-    // made after this worker was reading is a rank the evidence contradicts.
-    if (picked && picked.t <= mine) return picked.row;
-  }
-  return floor;
+/**
+ * Whether a bracket on the record already carries this worker's id - meaning
+ * its close is written and this stop has nothing left to close.
+ *
+ * The id is on the CLOSE half, put there by the orchestrator's hand-written
+ * `trace close --agent-id`, which is the only writer that ever holds it: the
+ * `dispatch` event is written before the subagent exists. So a `true` here is
+ * an equality test against a recorded fact, never an inference from clocks.
+ *
+ * A worker whose close carried no id is indistinguishable from one that never
+ * closed, and that is the safe direction: it falls through to the single-open
+ * test below, which refuses on any ambiguity of its own.
+ *
+ * @param {any} render the result of `renderTrace(...)`
+ * @param {string} id
+ * @returns {boolean}
+ */
+function alreadyClosed(render, id) {
+  const rows = render && Array.isArray(render.brackets) ? render.brackets : [];
+  return rows.some((row) => row && row.agent_id === id);
 }
 
 /**
@@ -278,12 +150,10 @@ function adoptByAgentId(payload, evidence, rows) {
  * @param {any} payload the host's `SubagentStop` JSON
  * @param {any} render the result of `renderTrace(planningRoot)` - unscoped,
  *   because the payload carries no phase to scope it by (D-01)
- * @param {{transcript?: any, reads?: any}} [evidence] what the disk half read
- *   for this stop (D-08). `transcript` is the stopped worker's own JSONL, whole,
- *   as a string; `reads` are the parsed `.planning/reads.jsonl` records the
- *   agent-identity join needs. Omitted - the shape every pre-evidence caller
- *   uses - the termination gate answers `unknown` and the adoption falls back to
- *   the newest open dispatch, which is exactly what this rule did before.
+ * @param {{transcript?: any}} [evidence] what the disk half read for this stop
+ *   (D-08). `transcript` is the stopped worker's own JSONL, whole, as a string.
+ *   Omitted - the shape every pre-evidence caller uses - the termination gate
+ *   answers `unknown` and this rule proceeds exactly as it does with one.
  * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string}|null}
  */
 export function closeForStop(payload, render, evidence) {
@@ -297,24 +167,24 @@ export function closeForStop(payload, render, evidence) {
   const role = roleOfAgent(payload && payload.agent_type);
   if (!role) return null;
 
-  // GATE 2 - adopt an open dispatch of that role. `unpaired` already carries the
-  // DISPATCH's own `role` (the field the pairing computed), so this reads the
-  // render's answer rather than deriving a second one.
+  // GATE 2a - this worker's close may already be on the record. The hand-written
+  // close carries the id; a hook stop that arrives after it has nothing left to
+  // close, and falling through would land it on whatever ELSE is open - which is
+  // the stolen-bracket defect, arriving after the fact instead of ahead of it.
+  const id = agentIdOf(payload);
+  if (id && alreadyClosed(render, id)) return null;
+
+  // GATE 2b - UNAMBIGUOUS OR NOTHING. `unpaired` already carries the DISPATCH's
+  // own `role` (the field the pairing computed), so this reads the render's
+  // answer rather than deriving a second one. Exactly one open dispatch of the
+  // role is the only state in which this rule knows whose stop it is holding:
+  // TRC-06 forbids the newest-open adoption by name, and no ordering of
+  // dispatch instants can separate two workers that were dispatched in one
+  // message - which is precisely what the parallel path does.
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
   const mine = rows.filter((row) => row && row.role === role);
-  // The identity join first, the newest-open fallback second - but the join now
-  // has a third answer that must NOT reach the fallback. `NO_OPEN_DISPATCH` is
-  // positive evidence that this worker's own dispatch is already paired, and
-  // falling back there is what let a delayed hook close land on the NEXT
-  // dispatch of the same role: the close carries no transcript instant on the
-  // degraded path, so `renderTrace`'s repeat-close discriminator - which asks
-  // whether the terminal precedes the head pending dispatch - could not catch
-  // it downstream either (D-06). One of the two guards has to hold, and this is
-  // the one that still holds when the transcript is unreadable.
-  const adopted = adoptByAgentId(payload, evidence, mine);
-  if (adopted === NO_OPEN_DISPATCH) return null;
-  const best = adopted || newestOpen(mine);
-  if (!best) return null;
+  if (mine.length !== 1) return null;
+  const best = mine[0];
 
   // GATE 3 - the event. Identity quoted verbatim off the adopted row; no figure
   // of any kind, because the payload carries none.

@@ -44,7 +44,6 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { renderTrace, appendEvent } from './lib/trace.mjs';
 import { closeForStop } from './lib/subagent-trace.mjs';
-import { readsPath, MAX_READS_BYTES } from './lib/read-trace.mjs';
 
 // The ceiling on the ONE unbounded read this hook does. The stopped worker's
 // transcript is a file the host grows for as long as the worker runs, so it has
@@ -98,48 +97,12 @@ function readTranscript(p) {
   }
 }
 
-// The `.planning/reads.jsonl` records the agent-identity join needs, or an empty
-// list for "nothing to join with", which the rule reads as the fallback arm.
-//
-// Its own guarded read, deliberately: `planning/core.mjs` has a
-// `readReadsRecords` doing the same three lines, and importing it would drag the
-// whole planning seam into a hook process for a file walk and a JSON.parse. The
-// path and the byte ceiling ARE imported, from the lib that owns both, because
-// two different numbers bounding one file is how a hook and a seam start
-// disagreeing about what the record contains. A truncated final line is skipped
-// rather than fatal - the writer is a hook that can be killed mid-append, and a
-// partial tail must not cost every complete record ahead of it.
-//
-// Read only when there is an `agent_id` to join on: with no id the rule falls
-// back whatever this returns, and this repository's own file is 6.7 MB.
-function readReads(root, agentId) {
-  if (!agentId) return [];
-  const file = readsPath(root);
-  let text;
-  try {
-    if (statSync(file).size > MAX_READS_BYTES) return [];
-    text = readFileSync(file, 'utf8');
-  } catch {
-    return [];
-  }
-  const records = [];
-  for (const line of text.split('\n')) {
-    const t = line.trim();
-    if (!t) continue;
-    try { records.push(JSON.parse(t)); } catch { /* partial line */ }
-  }
-  return records;
-}
-
 try {
   const input = JSON.parse(readFileSync(0, 'utf8'));
   const cwd = String(input?.cwd || process.cwd());
   const root = planningRoot(cwd);
   if (root) {
-    const evidence = {
-      transcript: readTranscript(input?.transcript_path),
-      reads: readReads(root, input?.agent_id),
-    };
+    const evidence = { transcript: readTranscript(input?.transcript_path) };
     const event = closeForStop(input, renderTrace(root), evidence);
     if (event) appendEvent(root, event);
   }

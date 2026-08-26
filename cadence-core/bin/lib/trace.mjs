@@ -826,6 +826,12 @@ export function renderTrace(planningRoot, phase) {
           // from the two timestamps - `ms` one clause above already is that
           // quantity, and it measures the step rather than the worker.
           ...(duration !== null ? { duration_ms: duration } : {}),
+          // The worker's host id, off the TERMINAL alone - the dispatch half
+          // never has one. OMITTED when neither writer carried it, the same
+          // rule `turns` and `duration_ms` follow, so a record written before
+          // the flag grows no new key. `lib/subagent-trace.mjs` reads this to
+          // recognise a worker whose bracket is already closed.
+          ...(e.agent_id ? { agent_id: e.agent_id } : {}),
         };
         out.brackets.push(bracketRow);
         // The row this worker key now owns, so a SECOND close of it folds in
