@@ -17,8 +17,7 @@
 // states - the fix belongs in the pattern, never in a second list.
 //
 // No entry in test.mjs's GROUPS: a stem no group names lands in `other`, which
-// the default run and CI both execute, and that file's header states this is
-// deliberate.
+// the default run and CI both execute.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';

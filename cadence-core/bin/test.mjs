@@ -5,14 +5,21 @@
 // what CI's full arm runs; this exists because the whole suite is ~26s and a
 // routing change has no business re-running the git-publish seams.
 //
-// Groups are declared HERE rather than in a manifest beside this file: nothing
-// else reads them, and a second file would be one more thing to keep in sync
-// for no second consumer.
+// Groups are declared HERE rather than in a manifest beside this file: the one
+// other reader is `cadence-core/bin/test-groups.test.mjs`, which reads the
+// declaration below as SOURCE TEXT rather than importing it, and a second file
+// would be one more thing to keep in sync for no second consumer.
 //
-// There is deliberately NO coverage check. A stem this file does not name
-// lands in `other`, which the default run and CI both execute, so a new test
-// file runs from the moment it exists - a manifest that could silently drop a
-// file is the failure mode a coverage check would then have to exist to catch.
+// ONE GROUP IS PINNED - `planning` - and the pin lives in
+// `cadence-core/bin/test-groups.test.mjs`: that group's list has to be exactly
+// the `planning-*.test.mjs` files on disk, in both directions, for the reason
+// its own group comment below states. `node cadence-core/bin/test.mjs planning`
+// is the documented way to run that seam, so a stem missing from it leaves the
+// bulk of the seam in `other` while the group still reports green.
+//
+// The rest of the tree has NO coverage check, and does not need one: a stem no
+// group names lands in `other`, which the default run and CI both execute, so a
+// new test file runs from the moment it exists.
 //
 // Usage:
 //   node cadence-core/bin/test.mjs                 every group
