@@ -152,12 +152,24 @@ never `--duration-ms 0`, which would claim a dispatch that took no time.
 `--duration-ms` takes the host's OWN spelling (`1m 23s`, `450ms`) or a plain
 millisecond count, so the figure is copied rather than converted; the standing
 exposure all three of them create is stated in the window-CEILING bullet above.
+`--agent-id <the id on the subagent return>` rides that same line and is its one
+non-figure field. The CALLER is its only possible writer - the `dispatch` half is
+written before the subagent exists, so it has no id to carry - and it is what
+lets the `SubagentStop` hook know a worker whose bracket is already closed and
+write nothing, rather than land a late stop on whatever else is open
+(`lib/subagent-trace.mjs`). OMIT it when the host returned none: with two
+dispatches of one role open and no id, that hook refuses rather than guess.
 The caller is no longer the only WRITER of a close, and is still the only one
-that can carry those figures: the host's `SubagentStop` hook
+that can carry the three figures above: the host's `SubagentStop` hook
 (`cadence-core/bin/subagent-trace.mjs`) closes a bracket this line never
 reached - a session that died between the two halves, a return nobody billed -
-and it carries IDENTITY and no figures at all, because the stop payload holds
-none. So keep writing this line. It is a permanent FALLBACK rather than a
+and it carries IDENTITY plus the two cache figures it sums off the stopped
+worker's own transcript, `cache_creation_input_tokens` and
+`cache_read_input_tokens`. The split is WHERE A FIGURE LIVES: `--tokens`,
+`--turns` and `--duration-ms` are rendered on a return only this caller sees,
+and the cache figures are rendered on no return at all, which is why they have
+no flag here and why the hook is their only possible writer. They ride the
+`brackets[]` row and never the `roles` token bill. So keep writing this line. It is a permanent FALLBACK rather than a
 duplicate to prune: `/cad-task`'s phase-0 bracket has no subagent behind it for
 any hook to close, and a hook-only design goes silently quiet on a host rename.
 Two closes of one dispatch render as ONE bracket in either arrival order -

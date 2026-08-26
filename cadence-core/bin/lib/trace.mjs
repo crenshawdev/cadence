@@ -114,6 +114,16 @@ export const TERMINAL = ['return', 'checkpoint', 'escalation'];
 export const ANCHOR = 'phase_start';
 
 /**
+ * The two cache figures a close may carry, in the host's own spelling. They
+ * reach the record from ONE writer and cannot reach it from any other: the
+ * host renders `tokens`, `turns` and a duration on a subagent return and no
+ * cache figure at all, so only the `SubagentStop` hook - which holds the
+ * worker's own transcript - can sum them (`lib/subagent-transcript.mjs`).
+ * There is deliberately no `trace close` flag for either.
+ */
+const CACHE_KEYS = ['cache_creation_input_tokens', 'cache_read_input_tokens'];
+
+/**
  * The lifecycle event the COORDINATOR writes at the start of a workflow step it
  * can name. It is a fifth lifecycle NAME, not a fifth family: `FAMILIES` is
  * validated at the seam while `renderTrace`'s `counts` is a fixed four-key
@@ -327,7 +337,7 @@ export function appendEvent(planningRoot, event) {
  *   counter appear only where at least one figure of that kind landed on the
  *   role, so a record written before either flag existed renders unchanged.
  * @property {Record<string, any>[]} events
- * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number}[]} brackets
+ * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, agent_id?: string}[]} brackets
  *   every dispatch that PAIRED, one row each, in the order its terminal was
  *   read. The pairing was already computed here for the accounting; exposing it
  *   is what lets a caller print per-worker rows without re-deriving `open` and
@@ -344,11 +354,23 @@ export function appendEvent(planningRoot, event) {
  *   worker wants `duration_ms`; a reader asking how long a step held the run
  *   wants `ms`.
  *
- *   `turns` and `duration_ms` are the OPTIONAL keys: `ms` and `tokens` are on
- *   every row (null where they could not be computed), while a bracket whose
- *   close carried no tool-call count has no `turns` key and one whose close
- *   carried no wall clock has no `duration_ms` key at all - so a record written
- *   before either flag existed renders byte-identically.
+ *   THE CACHE FIGURES, and what they are NOT. `cache_creation_input_tokens` and
+ *   `cache_read_input_tokens` are the worker's own billed cache traffic, summed
+ *   across its transcript by the `SubagentStop` hook, which is the only writer
+ *   that ever holds them. They stop HERE: they never reach `roles`, and
+ *   `roles.tokens` is byte-identical with and without them (D-03). The roles
+ *   block bills what a RETURN reported - a final-window figure for one dispatch
+ *   - while a cache read summed over turns counts one cached prefix once per
+ *   turn, so adding one to the other would produce a number denominated in
+ *   nothing. That is the same rule `cadence-core/workflows/report.md` states
+ *   when it forbids a second, differently denominated window number.
+ *
+ *   `turns`, `duration_ms` and the two cache keys are the OPTIONAL keys: `ms`
+ *   and `tokens` are on every row (null where they could not be computed),
+ *   while a bracket whose close carried no tool-call count has no `turns` key,
+ *   one whose close carried no wall clock has no `duration_ms` key, and one
+ *   whose close reported no cache traffic has neither cache key at all - so a
+ *   record written before any of those flags existed renders byte-identically.
  *
  *   ONE ROW PER DISPATCH, not per close. Two writers close one bracket - the
  *   host's `SubagentStop` hook and the orchestrator's own `trace close` - and
@@ -709,6 +731,15 @@ export function renderTrace(planningRoot, phase) {
     // string-concatenated onto a numeric field a caller sums.
     const duration = typeof e.duration_ms === 'number' && Number.isFinite(e.duration_ms)
       ? e.duration_ms : null;
+    // And again for the two cache figures, guarded identically for the
+    // identical hazard. Collected as an object carrying only the keys that
+    // passed, so the omit-when-absent rule below is a spread rather than two
+    // more conditionals: a figure nobody reported must leave NO key behind.
+    /** @type {Record<string, number>} */
+    const cache = {};
+    for (const k of CACHE_KEYS) {
+      if (typeof e[k] === 'number' && Number.isFinite(e[k])) cache[k] = e[k];
+    }
 
     const worker = `${key(e.corr)}\0${key(e.phase)}\0${key(e.plan)}`;
     if (e.event === DISPATCH) {
@@ -749,7 +780,38 @@ export function renderTrace(planningRoot, phase) {
       seenTerminals.add(identity);
 
       const pending = open.get(worker);
-      let matched = pending && pending.length ? pending.shift() : null;
+      // THE DELAYED REPEAT (D-05). A close that arrives after the NEXT dispatch
+      // of the same worker key is handed that dispatch by the FIFO
+      // `pending.shift()` below - the STEAL, whose tell on the record is the
+      // stolen row's NEGATIVE `ms`, because the row's start is the later
+      // dispatch's `ts` while its end is the earlier close's. It is reachable
+      // whenever a writer is delayed past the retry that follows it: the host's
+      // `SubagentStop` hook fires when the host decides, not when the
+      // orchestrator reaches its close step, so a retried plan can see the
+      // first attempt's hook close land after the second attempt's dispatch.
+      // The cost of the steal is not one wrong row: the row it opens is funded,
+      // so the role is billed for all three terminals and the retry's own
+      // figures land on a bracket that never happened.
+      //
+      // The discriminator is the TIMESTAMP relation, and it is deliberately
+      // narrow. A terminal is a repeat close of a row this key ALREADY opened,
+      // never a pairing, only when all three hold: both clocks parse, the
+      // terminal's instant is strictly EARLIER than the head pending dispatch's,
+      // and `pairedRows` holds a row for this worker key. Miss any one and
+      // today's FIFO pairing stands unchanged - an unreadable clock must never
+      // silently reclassify a genuine close, which is the posture `millis`
+      // states at the top of this file, and with no row on the key there is
+      // nothing for a repeat to fold into.
+      //
+      // The worker key and the `seenTerminals` replay identity are UNTOUCHED
+      // (D-01). Widening that identity is the alternative this rule replaces,
+      // and it stays refused for the reason stated above it: dropping the
+      // millisecond folds two GENUINE dispatches on one key into one bracket.
+      const head = pending && pending.length ? pending[0] : null;
+      const headT = head ? millis(head.ts) : null;
+      const delayedRepeat = head !== null && t !== null && headT !== null
+        && t < headT && pairedRows.has(worker);
+      let matched = head && !delayedRepeat ? pending.shift() : null;
       // A REPEAT CLOSE: nothing left open on this worker key, but a row this
       // key already opened is on the record, so this is the second writer
       // closing the same bracket rather than a stray terminal. It adopts the
@@ -795,6 +857,18 @@ export function renderTrace(planningRoot, phase) {
           // from the two timestamps - `ms` one clause above already is that
           // quantity, and it measures the step rather than the worker.
           ...(duration !== null ? { duration_ms: duration } : {}),
+          // The cache figures, OMITTED on the same rule and taken off the
+          // TERMINAL alone for the same reason: they are summed out of the
+          // worker's own transcript, and a dispatch half has no transcript to
+          // read. They ride this row and go NOWHERE else - see the `brackets`
+          // typedef for why the `roles` bill cannot have them.
+          ...cache,
+          // The worker's host id, off the TERMINAL alone - the dispatch half
+          // never has one. OMITTED when neither writer carried it, the same
+          // rule `turns` and `duration_ms` follow, so a record written before
+          // the flag grows no new key. `lib/subagent-trace.mjs` reads this to
+          // recognise a worker whose bracket is already closed.
+          ...(e.agent_id ? { agent_id: e.agent_id } : {}),
         };
         out.brackets.push(bracketRow);
         // The row this worker key now owns, so a SECOND close of it folds in
@@ -830,6 +904,41 @@ export function renderTrace(planningRoot, phase) {
         if (b.tokens === null && tokens !== null) b.tokens = tokens;
         if (!('turns' in b) && turns !== null) b.turns = turns;
         if (!('duration_ms' in b) && duration !== null) b.duration_ms = duration;
+        // The same fill-only-empty clause for the cache figures. In practice
+        // the hook is the only writer that has them, so this is the arm that
+        // lands them on a row the hand-written close opened first.
+        for (const k of CACHE_KEYS) if (!(k in b) && k in cache) b[k] = cache[k];
+        // Identity folds on the SAME fill-only-empty rule, and it has to: the
+        // hook's figureless close is the writer that ordinarily opens this row
+        // (the host fires SubagentStop when the worker stops, before the
+        // orchestrator has processed the return), so without this clause an id
+        // supplied on the hand-written close is dropped on exactly the arrival
+        // order AC4 calls ordinary - and `lib/subagent-trace.mjs`'s
+        // `alreadyClosed` equality test then reads a key that is never there.
+        if (!('agent_id' in b) && e.agent_id) b.agent_id = e.agent_id;
+        // THE SPAN, and it is NOT fill-only-empty - `end` is never empty, so
+        // that rule would freeze it at whichever close landed first. `ms` is
+        // DISPATCH-TO-CLOSE and the typedef says it includes whatever the
+        // orchestrator did BETWEEN WRITING THE TWO HALVES, so the close that
+        // ends the span is the LATER of them. Freezing it at the first is what
+        // let a bracket render `ms` SHORTER than the `duration_ms` beside it -
+        // a worker running 362s inside a 263s window, measured on this
+        // repository's own record 2026-08-26 - and it understated every
+        // bracket the hook closed first, which is the ordinary order.
+        // MONOTONIC, never backwards: a delayed repeat close (the D-05
+        // ordering, whose `ts` precedes the head pending dispatch) must not
+        // shrink a span that already closed later.
+        const a2 = millis(repeat.entry.ts);
+        if (t !== null && (millis(b.end) === null || t > millis(b.end))) {
+          b.end = e.ts;
+          b.ms = a2 !== null ? t - a2 : null;
+          // The coordinator span extends with it, or `residue_ms` keeps
+          // billing the coordinator for time a worker held. Pushing a second
+          // span does not double-count: `mergeSpans` unions overlapping spans
+          // and this one shares its `a`, so it widens the existing span rather
+          // than adding one. (The note that used to sit here said the reverse.)
+          if (a2 !== null && t > a2) coordRow(e.corr).spans.push({ a: a2, b: t });
+        }
         // The arm upgrades in ONE direction and never back. A figureless writer
         // that happened to run first would otherwise turn every checkpoint into
         // a clean `return` - billing a worker that came back unusable as a
@@ -838,10 +947,12 @@ export function renderTrace(planningRoot, phase) {
         // known to be a terminal, so "not `return`" is exactly "`checkpoint` or
         // `escalation`" without re-enumerating them.
         if (b.event === 'return' && e.event !== 'return') b.event = e.event;
-        // No `mismatched` row and no coordinator span: both are the PAIRING's
-        // to report, and today a terminal with nothing pending contributes
-        // neither. A repeat close reporting a second span would subtract one
-        // worker's time from the coordinator's bill twice.
+        // No `mismatched` row: that one IS the PAIRING's to report, and a
+        // terminal with nothing pending contributes none. The coordinator span
+        // is handled above and is no longer withheld here - it widens with
+        // `end` rather than being re-pushed as an independent span, which is
+        // what the double-billing this note used to warn about would have
+        // required.
       }
       if (tokens !== null) {
         // Bill the DISPATCH's role. An unmatched terminal has no dispatch to

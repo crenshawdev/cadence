@@ -1686,6 +1686,50 @@ test('render: two genuine dispatches on ONE worker key are still two brackets', 
   assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, unrecorded: 2 } });
 });
 
+test('render: a delayed repeat close never steals the NEXT dispatch of its key', () => {
+  // The retry path (TRC-04). A plan is dispatched, closed, and dispatched again
+  // on the SAME worker key; the first attempt's second writer - the host's
+  // `SubagentStop` hook, which fires when the host decides - lands after the
+  // retry's dispatch. The FIFO alone hands that late close the retry's open
+  // dispatch, and the tell is the stolen row's NEGATIVE `ms`: measured on this
+  // fixture before the discriminator, row 2 rendered `end` 10:05 against `ts`
+  // 10:09 for `ms: -240000`, and the role was billed for all three terminals.
+  const dir = root();
+  const ev = (e) => appendEvent(dir,
+    { phase: 5, family: 'lifecycle', plan: 'p', role: 'cad-executor', ...e });
+  const A_OPEN = '2026-08-20T10:00:00.000Z';
+  const A_SHUT = '2026-08-20T10:05:00.000Z';
+  const B_OPEN = '2026-08-20T10:09:00.000Z';
+  const B_SHUT = '2026-08-20T10:14:00.000Z';
+  ev({ event: 'dispatch', ts: A_OPEN });
+  ev({ event: 'return', ts: A_SHUT, tokens: 1000 });
+  ev({ event: 'dispatch', ts: B_OPEN });
+  // A's DELAYED repeat: its own stop instant, so it is earlier than the
+  // dispatch it must not consume. Figureless, and so not a `seenTerminals`
+  // replay of the close above it - the two differ in their token field.
+  ev({ event: 'return', ts: A_SHUT });
+  ev({ event: 'return', ts: B_SHUT, tokens: 2000 });
+  const r = renderTrace(dir, 5);
+
+  assert.equal(r.brackets.length, 2, 'two dispatches, two brackets');
+  const [a, b] = r.brackets;
+  // Each row spans its OWN dispatch and its OWN close, and carries its OWN
+  // figure: the repeat folded into the row it belongs to and opened none.
+  assert.equal(a.ts, A_OPEN);
+  assert.equal(a.end, A_SHUT);
+  assert.equal(a.tokens, 1000);
+  assert.equal(b.ts, B_OPEN);
+  assert.equal(b.end, B_SHUT);
+  assert.equal(b.tokens, 2000);
+  for (const row of r.brackets) {
+    assert.equal(row.ms, 300000, `a stolen bracket renders ${row.ms}`);
+  }
+  assert.deepEqual(r.unpaired, [], 'no genuine dispatch was left open');
+  // The role is billed for the two brackets, not for all three terminals.
+  assert.deepEqual(r.roles,
+    { 'cad-executor': { dispatches: 2, tokens: a.tokens + b.tokens } });
+});
+
 test('render: a close whose dispatch was never read still bills its own role', () => {
   const dir = root();
   // A close whose dispatch fell outside the `--phase` filter or above the read
@@ -2669,4 +2713,227 @@ test('the four refusing trace flags carry ONE sentence each, in one map', () => 
     assert.equal(n, 1, `"${sentence}" is written ${n} times across the planning seam; `
       + 'the flag->sentence map beside the dispatch door is its one home');
   }
+});
+
+// --- the cache figures ride the bracket and nothing else (TRC-05) ------------
+//
+// They reach the record from ONE writer - the `SubagentStop` hook, which holds
+// the worker's own transcript - and they are read here exactly the way
+// `duration_ms` is: the same numeric guard, the same omit-when-absent spread,
+// the same fill-only-empty fold. What is different is where they may GO, and
+// that is what the `roles` assertions below pin.
+
+/** A close carrying whatever cache figures a case needs. */
+const cacheClose = (extra) => ({
+  phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+  ts: '2026-08-26T10:05:00.000Z', tokens: 1200, ...extra,
+});
+
+/** One dispatch, closed once, rendered. */
+function closedWith(extra) {
+  const dir = root();
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(dir, cacheClose(extra));
+  return renderTrace(dir, 6);
+}
+
+test('render: a bracket carries the cache figures its close reported, and roles does not', () => {
+  const r = closedWith({ cache_creation_input_tokens: 4096, cache_read_input_tokens: 33033480 });
+  const [row] = r.brackets;
+  assert.equal(row.cache_creation_input_tokens, 4096);
+  assert.equal(row.cache_read_input_tokens, 33033480);
+  // D-03, and this is the assertion that holds it: the per-role bill is
+  // DEEP-EQUAL to the same fixture rendered without them. A cache read summed
+  // over turns counts one cached prefix once per turn, so folding it into a
+  // total denominated in final windows would produce a number denominated in
+  // nothing - and would misprice every role in the report.
+  assert.deepEqual(r.roles, closedWith({}).roles);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 1200 } });
+});
+
+test('render: a close reporting no cache traffic leaves NEITHER key on the bracket', () => {
+  // ABSENT, not zero. Checked by `in` and never against 0: a zero would claim
+  // the worker billed no cache traffic, and every trace written before this
+  // phase must render byte-identically.
+  const [row] = closedWith({}).brackets;
+  assert.equal('cache_creation_input_tokens' in row, false, JSON.stringify(row));
+  assert.equal('cache_read_input_tokens' in row, false, JSON.stringify(row));
+  // The two answer INDEPENDENTLY: one reported and one not is one key.
+  const [one] = closedWith({ cache_read_input_tokens: 900 }).brackets;
+  assert.equal(one.cache_read_input_tokens, 900);
+  assert.equal('cache_creation_input_tokens' in one, false, JSON.stringify(one));
+});
+
+test('render: a non-numeric cache figure contributes NOTHING to the bracket', () => {
+  // The guard `tokens`, `turns` and `duration_ms` already carry, for the same
+  // hazard: a hand-edited or foreign-producer line must never string-concatenate
+  // onto a numeric field a caller sums.
+  const [row] = closedWith({
+    cache_creation_input_tokens: '1,000', cache_read_input_tokens: 12,
+  }).brackets;
+  assert.equal('cache_creation_input_tokens' in row, false, JSON.stringify(row));
+  assert.equal(row.cache_read_input_tokens, 12, 'the readable half of the same row survived');
+});
+
+test('render: the cache fold fills an empty field and never overwrites one', () => {
+  // The two writers close one bracket in either order. The hook is the only one
+  // that HAS these figures, so the ordinary live shape is the hand-written close
+  // opening the row and the hook filling it - but the reverse must not lose a
+  // figure either, which is what the second half pins.
+  const dir = root();
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(dir, cacheClose({ ts: '2026-08-26T10:05:00.000Z' }));
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z',
+    cache_creation_input_tokens: 4096, cache_read_input_tokens: 900,
+  });
+  const r = renderTrace(dir, 6);
+  assert.equal(r.brackets.length, 1, 'two closes, one dispatch, one row');
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 4096);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 900);
+
+  // ...and the first writer's figure STANDS when the second carries its own.
+  const other = root();
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(other, cacheClose({
+    ts: '2026-08-26T10:05:00.000Z', cache_read_input_tokens: 900,
+  }));
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z', cache_read_input_tokens: 7,
+  });
+  const [folded] = renderTrace(other, 6).brackets;
+  assert.equal(folded.cache_read_input_tokens, 900,
+    'the second writer overwrote a figure the first one read');
+});
+
+test('render: the worker id survives the hook closing the bracket first', () => {
+  // THE ORDINARY ARRIVAL ORDER, and the one the fold used to drop the id on.
+  // The host fires SubagentStop when the worker stops, which is before the
+  // orchestrator has processed the return and written its own close - so the
+  // figureless hook close is ordinarily the writer that OPENS the row, and the
+  // id rides the hand-written close that lands second. Without the fold clause
+  // the record carries worker identity only on brackets the hand-written close
+  // happened to open, and `lib/subagent-trace.mjs`'s `alreadyClosed` equality
+  // test reads a key that is absent on the common path.
+  const dir = root();
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:00.000Z',
+  });
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z',
+    tokens: 900, turns: 4, duration_ms: 60000, agent_id: 'WORKER-Z',
+  });
+  const r = renderTrace(dir, 6);
+  assert.equal(r.brackets.length, 1, 'two closes, one dispatch, one row');
+  assert.equal(r.brackets[0].agent_id, 'WORKER-Z',
+    'the id on the second writer was dropped by the fold');
+  // The three figures beside it fold on the same rule, which is what the
+  // comment above the clause claims and what this pins alongside it.
+  assert.equal(r.brackets[0].tokens, 900);
+  assert.equal(r.brackets[0].turns, 4);
+  assert.equal(r.brackets[0].duration_ms, 60000);
+
+  // ...and the FIRST writer's id stands, on the same fill-only-empty rule the
+  // figures follow. Two ids on one bracket means two workers were confused for
+  // one, and the writer that opened the row is the one that named it.
+  const other = root();
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:00.000Z', agent_id: 'WORKER-A',
+  });
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z', agent_id: 'WORKER-B',
+  });
+  const [folded] = renderTrace(other, 6).brackets;
+  assert.equal(folded.agent_id, 'WORKER-A',
+    'the second writer overwrote the id the first one named');
+});
+
+test('render: the span ends at the LATER close, not whichever landed first', () => {
+  // `ms` is DISPATCH-TO-CLOSE and the brackets typedef says it includes what
+  // the orchestrator did between writing the two halves. Freezing `end` at the
+  // first terminal broke that: the hook's figureless close ordinarily lands
+  // first, so `ms` stopped at the worker's stop and excluded exactly the
+  // orchestrator time it is defined to include. The tell is a bracket whose
+  // `ms` is SHORTER than the `duration_ms` beside it - a worker running longer
+  // than the window that supposedly contained it.
+  const dir = root();
+  appendEvent(dir, {
+    phase: 8, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: at(0),
+  });
+  appendEvent(dir, {
+    phase: 8, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: at(4),
+  });
+  appendEvent(dir, {
+    phase: 8, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: at(6), tokens: 900, turns: 4, duration_ms: 5 * MIN,
+  });
+  const [b] = renderTrace(dir, 8).brackets;
+  assert.equal(b.end, at(6), 'the span still ends at the close that landed first');
+  assert.equal(b.ms, 6 * MIN, '`ms` excluded the orchestrator time it is defined to include');
+  assert.ok(b.ms >= b.duration_ms,
+    `a worker cannot run ${b.duration_ms}ms inside a ${b.ms}ms window`);
+
+  // MONOTONIC, never backwards. A delayed repeat close - the D-05 ordering,
+  // whose `ts` precedes the dispatch already paired - must not shrink a span
+  // that closed later.
+  const other = root();
+  appendEvent(other, {
+    phase: 8, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: at(0),
+  });
+  appendEvent(other, {
+    phase: 8, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: at(6), tokens: 900,
+  });
+  appendEvent(other, {
+    phase: 8, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: at(4),
+  });
+  const [late] = renderTrace(other, 8).brackets;
+  assert.equal(late.end, at(6), 'an earlier repeat close dragged the span backwards');
+  assert.equal(late.ms, 6 * MIN);
+});
+
+test('coordinator: the residue subtracts the worker span to its LATER close', () => {
+  // The same defect one layer out. The coordinator span was pushed once, at
+  // pairing time, off the first terminal - so every bracket the hook closed
+  // first handed the coordinator back time the worker was still holding, and
+  // `residue_ms` overstated by the gap between the two closes.
+  const dir = root();
+  mark(dir, 'execute', 0);
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: DISPATCH, plan: 'cad-executor', role: 'cad-executor', ts: at(2) });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 'cad-executor', ts: at(4) });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 'cad-executor', ts: at(6), tokens: 900 });
+  mark(dir, 'verify', 10);
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'gate', ts: at(12) });
+  const c = renderTrace(dir, 1).coordinator;
+  // The worker held 2->6, four minutes, not the two the first close claimed.
+  assert.equal(c.bracket_ms, 4 * MIN, 'the coordinator was billed for time the worker held');
+  assert.equal(c.steps[0].residue_ms, 6 * MIN);
+  assert.equal(c.residue_ms, 8 * MIN);
 });

@@ -1,0 +1,77 @@
+{
+  "phase": "1",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "b799b54d",
+  "head": "cad5cffd",
+  "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+  "head_id": "cad5cffd4f6d1ef891fd1b5573094f26110164c0",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/subagent-trace.mjs",
+      "line": 96,
+      "severity": "high",
+      "claim": "The host-supplied `transcript_path` is read synchronously after only a size check, without requiring it to be a regular file.",
+      "failure_scenario": "A valid SubagentStop payload with a Cadence `agent_type`, a valid project cwd, and `transcript_path: \"/dev/zero\"` passes `statSync` because the device reports size 0, then `readFileSync(..., \"utf8\")` never reaches EOF (or exhausts memory). The hook times out/crashes before appending the close, silently leaving the worker bracket unpaired. A FIFO or other blocking special file has the same effect.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "Mechanism confirmed - readTranscript checks statSync(p).size only and never isFile(), so a character device or FIFO reaching readFileSync would hang. Severity overstated at high: transcript_path is supplied by the host process in its own SubagentStop payload, not by any untrusted party, and the module header states the path is used as given precisely so the hook's exposure is the file's internal format rather than its location. Real robustness gap, medium.",
+      "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+      "head_id": "cad5cffd4f6d1ef891fd1b5573094f26110164c0"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/subagent-trace.mjs",
+      "line": 185,
+      "severity": "high",
+      "claim": "The agent-id adoption heuristic cannot identify a worker when two same-role dispatches are already open before that worker's first read; it deterministically assigns the worker to the latest prior dispatch.",
+      "failure_scenario": "Dispatch executor A for plan 1 at T0, dispatch executor B for plan 2 at T1, then let A's first recorded read be T2 and B's first read be T3. On A's terminal stop, `adoptByAgentId` keeps both dispatches and selects plan 2 because it is latest at or before T2. A's close is therefore written with B's corr/plan. B's later close then falls back to or consumes plan 1, crossing the workers' brackets.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "426163a0",
+      "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+      "head_id": "cad5cffd4f6d1ef891fd1b5573094f26110164c0"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/trace.mjs",
+      "line": 780,
+      "severity": "high",
+      "claim": "The delayed-repeat discriminator only protects a repeat whose event timestamp precedes the pending dispatch, but the new stop path deliberately emits no timestamp when transcript evidence is absent or lacks a timestamp.",
+      "failure_scenario": "For one worker key, append dispatch A at T0 and a normal/manual return for A at T5 with tokens; append retry dispatch B at T9; then deliver A's SubagentStop after T9 with a missing/unreadable transcript (or a terminal transcript with no `timestamp`). `closeForStop` omits `ts`, so appendEvent stamps the hook arrival around T10. Since T10 is not less than B's T9 dispatch, this condition is false and the delayed A repeat consumes B's pending dispatch. B's actual return then has no pending dispatch to close, leaving B with A's end and reintroducing the stolen-bracket/double-terminal behavior the discriminator is intended to prevent.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "426163a0",
+      "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+      "head_id": "cad5cffd4f6d1ef891fd1b5573094f26110164c0"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/subagent-trace.mjs",
+      "line": 137,
+      "severity": "high",
+      "claim": "A stop payload's `agent_id` is never verified against the `agentId` inside the transcript used for the termination decision.",
+      "failure_scenario": "An active executor A has an open dispatch and a read record for A. Supply a SubagentStop payload for A whose `transcript_path` points to B's terminal transcript (or a hostile file containing an assistant `end_turn` record). `terminalOf` accepts B's terminal record, while the reads join uses payload agent id A and adopts A's open dispatch. The hook writes A's close even though A never stopped; the transcript's own `agentId` is parsed but ignored.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "Gap confirmed - terminalOf reads the transcript and never compares its agentId to the payload's agent_id. Severity overstated at high: the host composes agent_id and transcript_path in one payload, so an inconsistent pair has no realistic producer, and the scenario requires a malformed host rather than any input a worker or user controls. Defense in depth, low.",
+      "base_id": "b799b54d5f3ad085f6e00ca9085d164de3138610",
+      "head_id": "cad5cffd4f6d1ef891fd1b5573094f26110164c0"
+    }
+  ]
+}

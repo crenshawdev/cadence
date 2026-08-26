@@ -1,5 +1,5 @@
 {
- "_comment": "Per-surface UTF-8 byte budgets enforced by self-verify.mjs (CWT-02). Regenerate from cadence-core/bin/weight.mjs when intentional surface growth is accepted. This is NOT a config.schema.json key - do not migrate it into config; it is a manifest beside the check.",
+ "_comment": "Per-surface UTF-8 byte CEILINGS enforced by self-verify.mjs (CWT-02): a surface OVER its entry is a problem, a surface under it is not. Exactness was tried and abandoned - it taxed shrinking at the same rate as growth. Raise an entry from cadence-core/bin/weight.mjs only when intentional growth is accepted. LOWER it in the same commit as any deliberate prose cut: nothing forces a ceiling down, so re-pinning after a cut is what stops the surface growing back into headroom it no longer needs. This is NOT a config.schema.json key - do not migrate it into config; it is a manifest beside the check.",
  "budgets": {
   "agents/cad-assumptions-analyzer-high.md": 489,
   "agents/cad-assumptions-analyzer.md": 519,
@@ -46,7 +46,7 @@
   "cadence-core/references/roadmap-phases.md": 12990,
   "cadence-core/references/seam-ask-user.md": 1902,
   "cadence-core/references/seam-review-provider.md": 3095,
-  "cadence-core/references/seam-spawn-agent.md": 22963,
+  "cadence-core/references/seam-spawn-agent.md": 23919,
   "cadence-core/references/seams.md": 2323,
   "cadence-core/references/triage-gate.md": 21328,
   "cadence-core/references/worktree-executor.md": 3939,
@@ -63,18 +63,18 @@
   "cadence-core/workflows/audit.md": 13029,
   "cadence-core/workflows/config-review.md": 4133,
   "cadence-core/workflows/config.md": 15724,
-  "cadence-core/workflows/context.md": 20196,
+  "cadence-core/workflows/context.md": 19378,
   "cadence-core/workflows/coverage.md": 4034,
   "cadence-core/workflows/debug.md": 6920,
   "cadence-core/workflows/decision-review.md": 11066,
   "cadence-core/workflows/docs-verify.md": 2796,
-  "cadence-core/workflows/execute.md": 33007,
+  "cadence-core/workflows/execute.md": 29001,
   "cadence-core/workflows/milestone.md": 15190,
   "cadence-core/workflows/minimalism-review.md": 8313,
   "cadence-core/workflows/new-project.md": 25913,
   "cadence-core/workflows/phase.md": 3448,
   "cadence-core/workflows/plan-gaps.md": 939,
-  "cadence-core/workflows/plan.md": 33848,
+  "cadence-core/workflows/plan.md": 28764,
   "cadence-core/workflows/progress.md": 13197,
   "cadence-core/workflows/spike.md": 2720,
   "cadence-core/workflows/suggest.md": 9398,
@@ -82,7 +82,7 @@
   "cadence-core/workflows/undo.md": 3103,
   "cadence-core/workflows/verify-deep.md": 3915,
   "cadence-core/workflows/verify-sweep.md": 1263,
-  "cadence-core/workflows/verify.md": 18292,
+  "cadence-core/workflows/verify.md": 17626,
   "skills/cad-adopt/SKILL.md": 923,
   "skills/cad-assumptions-analyzer-contract/SKILL.md": 5980,
   "skills/cad-audit/SKILL.md": 1639,
@@ -117,6 +117,6 @@
   "skills/cad-verify/SKILL.md": 1049,
   "skills/cad-report/SKILL.md": 755,
   "skills/cad-why/SKILL.md": 1293,
-  "cadence-core/workflows/report.md": 19249
+  "cadence-core/workflows/report.md": 20038
  }
 }

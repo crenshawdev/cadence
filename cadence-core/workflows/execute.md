@@ -1,6 +1,11 @@
 <purpose>
 The skill's objective states the guarantees. What it does not: ALL worktree
 ceremony exists inside the parallel opt-in branch and nowhere else.
+
+Why each step is shaped the way it is - the measured failures, the ordering
+arguments, the rejected alternatives - is in `docs/rationale/execute.md`. It is
+not read at runtime. Read it before EDITING this file, so a step is not removed
+for looking redundant.
 </purpose>
 
 <process>
@@ -28,10 +33,8 @@ Resolve the phase:
   the executor reports of the run that committed them. Run /cad-undo <N> first,
   then /cad-execute <N>. To re-run over that record anyway: /cad-execute <N>
   --rerun." Read the status from the `phases[]` DERIVATION and never from
-  `cursor.status` - `planning.mjs` states in as many words that the cursor is a
-  hint the derivation beats. `complete` is refused beside `executed` because it
-  re-runs identically and destroys the same evidence one status later. Stopping
-  HERE is the point: this is before the `git_guard` step, so before the
+  `cursor.status` - the cursor is a hint the derivation beats. `complete` is
+  refused beside `executed`. Stop HERE, before `git_guard`: before the
   protected-branch guard, before the `phase_start` trace anchor, and before any
   executor dispatch.
 
@@ -49,9 +52,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
 ```
 
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
-gate from the routing bundle (`route.mjs resolve`), which is what makes the
-stakes level reach a fire site rather than only the seam. A `config.mjs get` of
-a gate is not a source for one either way: unset, it answers `null` and names
+gate from the routing bundle (`route.mjs resolve`). A `config.mjs get` of a gate
+is not a source for one either way - unset, it answers `null` and names
 `route.mjs resolve` as where the level's gate is resolved.
 </step>
 
@@ -85,22 +87,11 @@ Never stash, unstage or commit the user's staged work without asking - the seam
 asks, the user chooses. Run the same check in a cross-repo phase's code repo,
 beside its protected-branch guard.
 
-**What this does NOT prove.** The check reads the INDEX, so it establishes that
-no work was staged at phase start - not that the worktree was clean. Two gaps
-follow, and neither is closable by widening this check:
-
-- An UNSTAGED edit the user already made to a file a plan declares rides into
-  that task's commit, because staging a path stages its whole working-tree
-  content. The lease gate cannot separate them either: the path is declared, so
-  the write is legal, and provenance is not a property of a path.
-- An unstaged or untracked file OUTSIDE the lease that some later `git add`
-  sweeps in reads as an executor violating its lease, blocking the phase on work
-  the executor never did.
-
-So the guarantee is "no staged work at phase start", and the executor's commits
-are only as attributable as the worktree was clean. When it matters that a
-phase's commits contain nothing but the phase's own work, start it from a clean
-worktree (`git status --porcelain` empty), not merely a clean index.
+**What this does NOT prove.** The check reads the INDEX, so the guarantee is "no
+staged work at phase start", not a clean worktree, and the executor's commits
+are only as attributable as the worktree was. When it matters that a phase's
+commits contain nothing but the phase's own work, start it from a clean worktree
+(`git status --porcelain` empty), not merely a clean index.
 
 Record `git rev-parse --short HEAD` as PHASE_START for later diffs, then anchor
 this phase's joined run record with the same sha:
@@ -152,17 +143,13 @@ Sequential (default) unless ALL of these hold:
   every executor would halt `blocked` on its own missing plan.
 
   OFFER THE FIX HERE, through the ask-user seam, and do not send the user to
-  another command to get it: this is the only moment they are demonstrably
-  affected, and the /cad-config step that would otherwise set it is gated on
-  `parallelization.enabled` already being true - so a user who turned
-  parallelization on by editing the config directly never reaches it and their
-  runs degrade to sequential forever with one line of explanation per run.
-  Quote the exact JSON (`"worktree": { "baseRef": "head" }`), name the file
-  each option writes (the project's `.claude/settings.json`, recommended, or
-  `~/.claude/settings.json`), and follow workflows/config.md's write rules:
-  READ the target first, show the current `worktree` block or that there is
-  none, merge the one key, preserve every other byte, never touch a
-  managed-policy file. Declining is valid and means sequential for this run.
+  another command to get it. Quote the exact JSON
+  (`"worktree": { "baseRef": "head" }`), name the file each option writes (the
+  project's `.claude/settings.json`, recommended, or `~/.claude/settings.json`),
+  and follow workflows/config.md's write rules: READ the target first, show the
+  current `worktree` block or that there is none, merge the one key, preserve
+  every other byte, never touch a managed-policy file. Declining is valid and
+  means sequential for this run.
 
   On accept, re-run `worktree-base.mjs resolve`; `parallelSafe: true` now, so
   continue on the PARALLEL path. `ok:false` -> sequential (the check could not
@@ -184,12 +171,7 @@ successive executors in the phase share a cached prefix: phase-level context
 - The `surfaces` the executor's own `route.mjs resolve` answered, verbatim -
   the bar the work is written to, not a review that fires later. On
   `surfaces_answered: false` say that no layer answered, so ALL of the
-  table's categories stand rather than none. That widening is THIS moment's
-  answer and not a general reading of the flag: the executor is being told what
-  bar to write to, where all eight is the safe direction. The FIRE is the
-  opposite - `risk-check run` refuses `surfaces-unanswered` rather than
-  detecting on a set nobody chose (`references/risk-surface.md`). One flag,
-  two moments, and the difference is which direction is safe in each.
+  table's categories stand rather than none.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
@@ -198,8 +180,8 @@ Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
 report format) - `skills/cad-executor-contract/SKILL.md` already carries them as
 its stable, cached definition, preloaded by every `cad-executor` rung file
-(`agents/cad-executor.md` is a stub naming the rung and that contract). Repeating them in the volatile dispatch tail pays for cached
-content twice.
+(`agents/cad-executor.md` is a stub naming the rung and that contract).
+Repeating them in the volatile dispatch tail pays for cached content twice.
 
 **The report file (both paths).** An executor writes its task table to
 `<plandir>/reports/plan-<k>.md` - `<plandir>` is the plan file's own directory -
@@ -209,57 +191,53 @@ two kinds of moment only: the `summary` step, once per plan, and a continuation
 branch, where you read ONLY the task numbers and commit hashes for the `git log`
 confirmation that branch already performs. Nowhere else, and never back into a
 dispatch prompt - re-inlining the table returns the bytes the file exists to
-move out, on the most expensive path there is. Before a worktree branch is
-merged its report lives in the worktree, not here: `git worktree list
---porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`.
+move out. Before a worktree branch is merged its report lives in the worktree,
+not here: `git worktree list --porcelain` gives the worktree root for branch
+`cadence/phase-<N>-plan-<k>`.
 
 **The lifecycle bracket (both paths).** Every worker this workflow hands work to
-is bracketed in the joined run record, so a phase's trace attributes what
-happened to the worker that caused it. The DISPATCH half rides each executor's
+is bracketed in the joined run record. The DISPATCH half rides each executor's
 own resolve on the spawn-agent seam's routing step:
 `--plan <k> --bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
 - the worker key is the plan NUMBER here, not the role name, and `--read` is
 what this site causes the executor to read: the shared set every plan in the
 phase re-reads, plus that plan's own file. `--plan <k>` beside it is a different
 quantity carrying the same number: it scopes the RISK FLOOR to this plan's own
-declared files, so an executor is routed for the plan it is being handed
-(references/seam-spawn-agent.md's Routing block states the rule). Once that
-executor comes back, append the CLOSE:
+declared files (references/seam-spawn-agent.md's Routing block states the rule).
+Once that executor comes back, append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path>
 ```
 
 ONE line per executor, and the detail is the executor's own return line - write
 it to a scratch file and pass the PATH (caller-derived text -
-references/conventions.md). OMIT the detail entirely for a `PLAN COMPLETE` or
-`PLAN PARTIAL` and the seam closes a `return`; carry it for any checkpoint
-return and the seam closes a `checkpoint`. A plan moved to another path or rung is an `escalation`,
-which the seam does not infer - it stays on `trace append`. All three close a
-bracket. A dispatch that gets none of them is closed by the host's
-`SubagentStop` hook instead, so `trace render` reports as `unpaired` only a
-worker NEITHER writer closed - but that hook carries no figures at all, so a
-skipped close still costs the record this worker's tokens, turns and wall
-clock.
-`--plan`/`--bracket-plan` is the
-WORKER key that pairs a dispatch with its close; `--role` is what the per-role
-totals group on, and keyed on the plan number alone `cad-executor` - the single
-largest spender in a phase - is the one line the totals could never print.
+references/conventions.md). `--agent-id` is the host's name for the worker that
+just returned and this line is its only writer; it stops a late `SubagentStop`
+closing the NEXT executor's bracket. OMIT it when the return carried no id.
+OMIT the detail entirely for a `PLAN COMPLETE` or `PLAN PARTIAL` and the seam
+closes a `return`; carry it for any checkpoint return and the seam closes a
+`checkpoint`. A plan moved to another path or rung is an `escalation`, which the
+seam does not infer - it stays on `trace append`. All three close a bracket. A
+dispatch that gets none of them is closed by the host's `SubagentStop` hook
+instead, so `trace render` reports as `unpaired` only a worker NEITHER writer
+closed - but that hook carries none of the RETURN's figures, so a skipped close
+still costs the record this worker's tokens, turns and wall clock.
+
+`--plan`/`--bracket-plan` is the WORKER key that pairs a dispatch with its
+close; `--role` is what the per-role totals group on, and BOTH are required.
 OMIT `--tokens` on a figureless return, and `--turns` and `--duration-ms` on
 the same rule - never a `0`, which claims a measurement nobody made
-(seam-spawn-agent.md's bracket rule). A
-worktree executor still emits nothing of its own - these are the
-ORCHESTRATOR's lines.
+(seam-spawn-agent.md's bracket rule). A worktree executor still emits nothing of
+its own - these are the ORCHESTRATOR's lines.
 
-The `phase_start` line in `git_guard` is NOT one of these. It is the correlation-id
-ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:
-keying it into the role table would invent a role that never ran.
+The `phase_start` line in `git_guard` is NOT one of these. It is the
+correlation-id ANCHOR, not a worker bracket, and it takes no `--role`,
+`--tokens` or `--read`.
 
 A worktree executor emits NO trace events of its own, and inner tool-level
-detail is deliberately not captured. The bracket AROUND a worker is what makes
-it attributable - the orchestrator writes both halves, and the host's
-`SubagentStop` hook writes a close of its own for a dispatch whose hand-written
-close never ran; what happened INSIDE a worker is its report file's job.
+detail is deliberately not captured: what happened INSIDE a worker is its report
+file's job.
 
 Handle the executor's return:
 - **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
@@ -293,8 +271,7 @@ checked. The seam does not require a NUMBER - `--plan` takes the worker key - so
 keeping one spelling is the coordinator's job, not the seam's.
 
 After each plan completes, ASK THE SEAM whether the plan's committed range
-touched a risk surface - never by reading the diff against a prose list, which
-left no record at all when it matched nothing:
+touched a risk surface - never by reading the diff against a prose list:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD
@@ -326,22 +303,15 @@ so it also catches the run that answered `ok:true` while its append came back
 `written: false` - a check whose answer never reached the record is a check the
 next reader cannot see.
 
-Firing ONCE here rather than per risky commit is the point. Halting the executor
-mid-plan cost a fresh-context re-dispatch per match, and a continuation whose
-only job was writing code no task authorized - which is itself new risk surface,
-and the next halt. The range is committed and complete when this reads it, so
-the reviewer judges what the plan actually built instead of a half-finished
-staged index.
+Fire ONCE here, on the committed range, never per risky commit and never
+mid-plan.
 
 Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
-reviewer runs the diff itself. Default is `off` at `solo` and `shipped`: an
-advisory review gates nothing, and the LAST plan of a phase has no next
-dispatch to overlap it with, so it buys a wait for findings that stop nothing.
-`risk_surface` above already blocked on this same range, and no gate reviews
-the branch again at land. The arms below are what a user who sets
-`review.triggers.diff.gate` gets, and what `critical` resolves on its own.
+reviewer runs the diff itself. Default is `off` at `solo` and `shipped`. The
+arms below are what a user who sets `review.triggers.diff.gate` gets, and what
+`critical` resolves on its own.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
@@ -386,18 +356,14 @@ main tree YOURSELF, in your own serialized turn - bring the branch up to the
 main tree's commit, or copy `.planning/phases/<N>/` in - and then re-dispatch
 that plan once. The executor contract is not touched by this and must not be:
 references/worktree-executor.md, which `<worktree_mode>` reads, forbids
-`git merge`, `rebase`, `fetch` and `stash` outright,
-and reconciliation is the orchestrator's serialized decision precisely because N
-executors each reconciling their own tree have no conflict policy at all.
-Cadence still issues no `git worktree add` of its own - the host creates the
-worktree and the fork point is the user's `worktree.baseRef` setting.
+`git merge`, `rebase`, `fetch` and `stash` outright, and reconciliation is the
+orchestrator's serialized decision. Cadence still issues no `git worktree add`
+of its own - the host creates the worktree and the fork point is the user's
+`worktree.baseRef` setting.
 
 After that remedy has failed twice, the plan falls back to the SEQUENTIAL path in
 the main tree, and an `escalation` lifecycle event records the worker that
-changed paths. A fallback and not a bounded re-dispatch loop: every failure arm
-in choose_path already resolves to sequential, and a loop here would put a second
-re-arm on the execute path beside the review triggers' own, which
-`references/triage-gate.md` caps at one round.
+changed paths. A fallback and not a bounded re-dispatch loop.
 
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
@@ -427,11 +393,8 @@ does the sum of these commits plausibly deliver the phase goal? Name
 anything that looks missing. Every concrete claim in the paragraph carries
 its evidence inline - a file:line or a command output, drawn from
 `git log --oneline`, the returned digests, or a direct look (the report files
-open at `summary`, not here) - never an unevidenced "X now works":
-cad-verifier later treats SUMMARY claims as assertions to falsify, so an
-evidenced claim closes that loop and an unevidenced one is just a guess
-wearing a verdict. This is an assessment, not a gate - gaps become
-SUMMARY open items, not a fix loop.
+open at `summary`, not here) - never an unevidenced "X now works". This is an
+assessment, not a gate - gaps become SUMMARY open items, not a fix loop.
 </step>
 
 <step name="summary">
@@ -447,22 +410,18 @@ shows that decision's claim false against ground truth - also corrects the
 record it refuted: append ` [corrected by plan-<k> deviation: <the true fact,
 one clause>]` to that decision's line in `.planning/phases/<N>/CONTEXT.md`.
 Later phases receive prior decisions as a summary drawn from these files, so a
-falsified claim left standing is inherited by every planner after this one -
-the report alone corrects nobody downstream. A deviation that merely adjusts
-scope or adds work touches nothing here; only a refuted D-NN does.
+falsified claim left standing is inherited by every planner after this one. A
+deviation that merely adjusts scope or adds work touches nothing here; only a
+refuted D-NN does.
 
 An open item lives in `.planning/phases/<N>/SUMMARY.md`'s `## Open items`,
 written by this step, and NOWHERE else. It is not filed into
-`.planning/CAPTURE.md`, and the reason is in the code rather than in a
-preference: `parseSummarySnippets`
+`.planning/CAPTURE.md`: `parseSummarySnippets`
 (`cadence-core/bin/lib/planning-files.mjs`) already indexes `## Deviations` and
 `## Open items` bullets into the recall corpus, so the item is already reachable
-by `/cad-plan` and the CAPTURE copy was a second, lower-scoring row for the same
-sentence - measured on this repository 2026-08-25, the SUMMARY row scores
-42.4677 against the CAPTURE duplicate's 31.1468 for the same query, the same
-item twice. CAPTURE holds the phase IN FLIGHT; an open item is by definition
-what did not finish inside the phase, so routing it there is the durable write
-that makes the queue accumulate.
+by `/cad-plan` and the CAPTURE copy is a second, lower-scoring row for the same
+sentence. CAPTURE holds the phase IN FLIGHT; an open item is by definition
+what did not finish inside the phase.
 
 An item that must outlive the phase is the CLOSE's business, not this step's:
 `planning.mjs phase-done`'s `capture` field names whatever is still in the queue
@@ -496,34 +455,31 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N
 The pointer names the queue and its count beside the next action
 (`/cad-verify <N> - 2 deferred findings queued, triage before landing`). A file
 and not the inline flag because caller-derived text rides a path at every seam
-flag that carries it (`references/conventions.md`), which is the reason
-`cursor set --next-file` exists at all. Keep `--status executed` exactly as it
-is: a new status value would land outside `planning.mjs`'s `AGREE` map, be
-reported as `cursor` drift and be rewritten by the very next `/cad-progress`.
-The pointer is a HINT; the count `/cad-progress` prints comes from the `status`
-envelope's `deferred` block and never from this string.
+flag that carries it (`references/conventions.md`).
+Keep `--status executed` exactly as it is: a new status value would land outside
+`planning.mjs`'s `AGREE` map, be reported as `cursor` drift and be rewritten by
+the very next `/cad-progress`. The pointer is a HINT; the count `/cad-progress`
+prints comes from the `status` envelope's `deferred` block and never from this
+string.
 
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
 `<plandir>/reports/` DIRECTORY, `.planning/phases/<N>/CONTEXT.md` if the
 summary step annotated a corrected decision, and `.planning/CAPTURE.md` only if
-the summary step's debt harvest reported `written` - that harvest is the one
-thing at this step that can still change the file, now that an open item is
-written to SUMMARY.md and nowhere else - `docs(<N>): phase <N> summary` - staging exactly
-those paths. Stage `.planning/phases/<N>/DEFERRED-*.json` alongside them, and
-stage it whatever that key says: a queue member is the only durable evidence a
-fire was deferred - `.planning/trace.jsonl` is gitignored and the sibling
-REVIEW file is committed by nothing - so an untracked member is gone on a fresh
-clone, and it also leaves the tree dirty at `/cad-land` step 2. It is not a
-planning doc the key is the standing answer for; it is what stops the land. The DIRECTORY, never one report by name: an executor rotates a
-previous run's report aside to a suffixed sibling, which a by-name stage leaves
-untracked. It takes everything in there, so the flagged diffs
-(`plan-<k>-risk.diff`, `plan-<k>-risk-task-<n>.diff`) go out by PATHSPEC, not a
-rule naming a file: `git add <plandir>/reports/
-':(exclude)<plandir>/reports/*.diff'`. With the key false the reports
-stay uncommitted exactly like SUMMARY.md, because a report IS a planning doc and
-that key is the user's standing answer for all of them - the worktree path
-commits regardless not as a docs decision but because the commit is the only
-transport across the merge. The cursor is never left uncommitted.
+the summary step's debt harvest reported `written` - `docs(<N>): phase <N>
+summary` - staging exactly those paths.
+
+Stage `.planning/phases/<N>/DEFERRED-*.json` alongside them, and stage it
+whatever that key says: it is not a planning doc the key is the standing answer
+for, it is what stops the land.
+
+The DIRECTORY, never one report by name: an executor rotates a previous run's
+report aside to a suffixed sibling, which a by-name stage leaves untracked. It
+takes everything in there, so the flagged diffs (`plan-<k>-risk.diff`,
+`plan-<k>-risk-task-<n>.diff`) go out by PATHSPEC, not a rule naming a file:
+`git add <plandir>/reports/ ':(exclude)<plandir>/reports/*.diff'`. With the key
+false the reports stay uncommitted exactly like SUMMARY.md; the worktree path
+commits regardless, because the commit is the only transport across the merge.
+The cursor is never left uncommitted.
 </step>
 
 <step name="done">
@@ -555,13 +511,8 @@ verification runs in a fresh subagent.
   the host's `SubagentStop` hook (`cadence-core/bin/subagent-trace.mjs`) writes
   a figureless close for a dispatch whose hand-written one never ran. Executors
   write no trace events of their own, on either path.
-- The hand-written close is a FALLBACK kept on purpose, never a duplicate to
-  prune: `/cad-task`'s phase-0 bracket has no subagent behind it for any hook to
-  close, and a hook-only design goes silently quiet on a host rename, where a
-  missing close renders as the visible `unpaired` defect instead. Two closes of
-  one dispatch render as ONE bracket - the worker-key dedup in
-  `cadence-core/bin/lib/trace.mjs` folds whichever arrived second into the row
-  the first opened.
+- The hand-written close is a FALLBACK kept on purpose - never prune it as a
+  duplicate of the hook. Two closes of one dispatch render as ONE bracket.
 </guardrails>
 
 <success_criteria>

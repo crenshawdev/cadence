@@ -357,7 +357,7 @@ const TRACE_GRAMMAR = {
 // The first four declare `fallback` on both axes and the last four `refuse` -
 // the two dispositions this one body has always run side by side (D-05), now
 // stated once in the table instead of seven times here.
-const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer', '--trigger'];
+const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer', '--trigger', '--agent-id'];
 
 // The `--duration-ms` grammar, CLOSED to digits and unit letters.
 //
@@ -737,6 +737,7 @@ function cmdTrace(dir, sub, opts) {
     const step = trimmed('--step');
     const reviewer = trimmed('--reviewer');
     const trigger = trimmed('--trigger');
+    const agentId = trimmed('--agent-id');
 
     // THE CROSS-ARTIFACT CHECK (AC4). The three settled figures are DERIVED by
     // the `adjudication` seam from the record's own rulings and copied onto
@@ -805,6 +806,12 @@ function cmdTrace(dir, sub, opts) {
       ...(step === undefined ? {} : { step }),
       ...(reviewer === undefined ? {} : { reviewer }),
       ...(trigger === undefined ? {} : { trigger }),
+      // The worker's host id, carried so the `SubagentStop` hook can tell a
+      // worker that has ALREADY been closed from one still running. It is the
+      // only identity the hook and the orchestrator both hold: the `dispatch`
+      // half cannot carry it (that event is written before the subagent
+      // exists), and the orchestrator learns it the moment the host returns.
+      ...(agentId === undefined ? {} : { agent_id: agentId }),
     });
     return ok({
       written: res.written,

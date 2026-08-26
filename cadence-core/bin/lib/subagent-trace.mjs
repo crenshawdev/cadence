@@ -20,6 +20,22 @@
 // figures, and phase 0's `/cad-task` bracket has no subagent behind it for any
 // hook to close.
 //
+// GATE 0, AND IT RUNS AHEAD OF EVERYTHING. THE TERMINATION GATE (D-09). The
+// payload carries no field that separates a worker that FINISHED from one
+// handed back mid-turn - `stop_hook_active` is documented for `Stop` and is not
+// a `SubagentStop` field - so the evidence is the worker's own transcript,
+// which the payload points at through its documented `transcript_path`. The
+// disk half reads it and INJECTS the bytes (D-08); `lib/subagent-transcript.mjs`
+// holds the rule that reads them.
+//
+// It runs before the render is even consulted, because a worker that has not
+// stopped must produce nothing whatever the record holds. And it refuses on
+// NOT-TERMINAL alone, never on UNKNOWN: a payload with no `transcript_path`, a
+// file that could not be read, an over-cap file and a layout that changed all
+// arrive as `unknown` and still produce the close this hook produces today.
+// Folding `unknown` into the refusal is how a host-side rename would delete
+// every hook close in the record at once and silently.
+//
 // THREE GATES, in this order.
 //
 // 1. THE SELF-FILTER (D-08). The 2.1.245 `SubagentStop` runner calls the hook
@@ -38,26 +54,75 @@
 //    phase, no plan and no worker key at all (D-01), so there is nothing to
 //    derive one from - and deriving from `agent_type` would write
 //    `role: "cadence:cad-executor-xhigh"`, a role row no
-//    `workflow.max_dispatch_tokens.<role>` key can ever match. Instead the rule
-//    takes the NEWEST `unpaired` dispatch whose `role` is the mapped role and
-//    quotes ITS `corr`, `phase` and `plan` verbatim. No matching row means DO
-//    NOTHING: the hook never invents a dispatch and never opens a bracket.
+//    `workflow.max_dispatch_tokens.<role>` key can ever match. The rule picks an
+//    `unpaired` dispatch of the mapped role and quotes ITS `corr`, `phase` and
+//    `plan` verbatim. No matching row means DO NOTHING: the hook never invents a
+//    dispatch and never opens a bracket.
 //
-//    The accepted cost, stated rather than worked around: two workers of one
-//    role running concurrently on the parallel `/cad-execute` path can have
-//    their closes attributed to each other's worker key. Both brackets still
-//    pair and both roles still bill correctly; only the plan numbers can cross.
-//    The payload's `agent_id` is the field that would fix it, and joining it
-//    needs a START-half hook, which D-02 refuses on measured grounds.
+//    WHICH open dispatch, and the answer is UNAMBIGUOUS OR NOTHING (TRC-06).
+//    Adopting the NEWEST one crosses two same-role workers whenever more than
+//    one is open, which is live today - `parallelization.enabled` dispatches up
+//    to `max_concurrent_agents` executors at once - and TRC-06 forbids exactly
+//    that adoption by name. So the rule is two questions with no clock in
+//    either:
 //
-// 3. THE EVENT, and NOTHING else on it. A `lifecycle` `return` carrying the
-//    adopted `corr`, `phase`, `plan` and `role`. No `tokens`, no `turns`, no
-//    `duration_ms`, no `detail`: the payload carries none of them, and
-//    `lib/trace.mjs`'s token-provenance header states why a fabricated figure
-//    is strictly worse than an absent one - an invented number lands in `trace
-//    suggest`'s share denominator and misprices every other role with it. The
-//    hand-written close supplies the figures, and `renderTrace`'s worker-key
-//    dedup folds whichever writer arrives second into the row the first opened.
+//      a. Does a bracket on the record already carry this payload's `agent_id`?
+//         Then this worker's close is already written and there is nothing here
+//         for it to close. DO NOTHING.
+//      b. Is there EXACTLY ONE open dispatch of the mapped role? Adopt it.
+//         Anything else - none, or two the evidence cannot separate - is DO
+//         NOTHING.
+//
+//    The id reaches the record on the CLOSE, never the dispatch. That event is
+//    written before the subagent exists, so it has no id to carry; the
+//    orchestrator learns the id the moment the host returns and puts it on its
+//    hand-written `trace close --agent-id`. That is the whole join, and it is
+//    an equality test rather than an inference.
+//
+//    WHY NOT A TIMESTAMP HEURISTIC. Ordering evidence - a worker's first read
+//    against the dispatch instants - cannot identify a worker, because the
+//    parallel path dispatches both executors in ONE message: both dispatches
+//    land before either worker reads, so every ordering rule has an
+//    interleaving that crosses them. Three separate ones were tried and each
+//    had a counter-example; the information is simply not in the clocks.
+//
+//    THE COST, stated rather than hidden. Where the hand-written close never
+//    ran AND two dispatches of the role are open, this writes nothing and both
+//    stay `unpaired`. That is the visible defect the whole record already
+//    prefers to a confident wrong row: an `unpaired` marker is countable and a
+//    crossed bracket bills one worker for another's run. In a sequential phase
+//    - one open dispatch of a role at a time - nothing changes at all.
+//
+// 3. THE EVENT, and nothing on it this hook cannot SEE. A `lifecycle` `return`
+//    carrying the adopted `corr`, `phase`, `plan` and `role`, plus the two cache
+//    figures where the evidence supplied them. The discriminator is WHERE A
+//    FIGURE LIVES, not which writer is senior:
+//
+//      - On the host's RETURN - `tokens`, `turns`, `duration_ms` and the
+//        `detail` text. Only the orchestrator sees a return, so this event
+//        carries none of them, and `lib/trace.mjs`'s token-provenance header
+//        states why a fabricated figure is strictly worse than an absent one:
+//        an invented number lands in `trace suggest`'s share denominator and
+//        misprices every other role with it.
+//      - In the worker's own TRANSCRIPT - `cache_creation_input_tokens` and
+//        `cache_read_input_tokens`, summed by `lib/subagent-transcript.mjs`.
+//        Those are never rendered onto a return, so no hand-written close can
+//        ever carry them and no `trace close` flag could be filled (D-11).
+//        This hook holds the only evidence there is, so it is the only writer
+//        that can put them on the record. Each key is OMITTED when the
+//        transcript reported nothing for it - the absent-not-zero rule the
+//        whole record keeps.
+//
+//    The keys take the host's OWN spelling, so a bracket figure joins back to
+//    the transcript line it was summed from with no translation table - the
+//    same reason `duration_ms` took the spelling the record already used. And
+//    they never reach the `roles` block's token bill: a cache figure summed
+//    over turns is a different denomination from a return's final-window
+//    `tokens` (D-03).
+//
+//    The hand-written close supplies the return's figures, and `renderTrace`'s
+//    worker-key dedup folds whichever writer arrives second into the row the
+//    first opened, filling only the fields that row left empty.
 //
 // There is deliberately NO refusing envelope here. The hook emits nothing on
 // any stream by contract, so there is no reader for a `reason`, and a bare
@@ -67,19 +132,38 @@
 'use strict';
 
 import { roleOfAgent } from './read-trace.mjs';
+import { terminalOf, cacheOf, STOP_STATE } from './subagent-transcript.mjs';
 
 /**
- * A timestamp as milliseconds, or null when there is nothing to read. Same
- * posture `lib/trace.mjs` takes: an unparseable `ts` contributes NOTHING to the
- * comparison rather than putting a NaN into it, because every NaN comparison is
- * false and the newest row would silently become the first one tested.
- * @param {any} v
- * @returns {number|null}
+ * The payload's `agent_id`, or null when it carries none this rule can use.
+ * @param {any} payload
+ * @returns {string|null}
  */
-function millis(v) {
-  if (typeof v !== 'string' || !v) return null;
-  const t = Date.parse(v);
-  return Number.isNaN(t) ? null : t;
+function agentIdOf(payload) {
+  return payload && typeof payload.agent_id === 'string' && payload.agent_id
+    ? payload.agent_id : null;
+}
+
+/**
+ * Whether a bracket on the record already carries this worker's id - meaning
+ * its close is written and this stop has nothing left to close.
+ *
+ * The id is on the CLOSE half, put there by the orchestrator's hand-written
+ * `trace close --agent-id`, which is the only writer that ever holds it: the
+ * `dispatch` event is written before the subagent exists. So a `true` here is
+ * an equality test against a recorded fact, never an inference from clocks.
+ *
+ * A worker whose close carried no id is indistinguishable from one that never
+ * closed, and that is the safe direction: it falls through to the single-open
+ * test below, which refuses on any ambiguity of its own.
+ *
+ * @param {any} render the result of `renderTrace(...)`
+ * @param {string} id
+ * @returns {boolean}
+ */
+function alreadyClosed(render, id) {
+  const rows = render && Array.isArray(render.brackets) ? render.brackets : [];
+  return rows.some((row) => row && row.agent_id === id);
 }
 
 /**
@@ -88,35 +172,63 @@ function millis(v) {
  * @param {any} payload the host's `SubagentStop` JSON
  * @param {any} render the result of `renderTrace(planningRoot)` - unscoped,
  *   because the payload carries no phase to scope it by (D-01)
- * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string}|null}
+ * @param {{transcript?: any}} [evidence] what the disk half read for this stop
+ *   (D-08). `transcript` is the stopped worker's own JSONL, whole, as a string.
+ *   Omitted - the shape every pre-evidence caller uses - the termination gate
+ *   answers `unknown`, the cache sums answer nothing at all, and this rule
+ *   proceeds exactly as it does with one.
+ * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}|null}
  */
-export function closeForStop(payload, render) {
+export function closeForStop(payload, render, evidence) {
+  const transcript = evidence && evidence.transcript;
+  // GATE 0 - the termination gate. NOT-TERMINAL alone refuses; `unknown` falls
+  // through to the behaviour this hook had before it read a transcript at all.
+  const stopped = terminalOf(transcript);
+  if (stopped.state === STOP_STATE.NOT_TERMINAL) return null;
+
   // GATE 1 - the self-filter. `roleOfAgent` is null for the host's own types,
   // for `coordinator`, and for anything else that is not a Cadence rung file.
   const role = roleOfAgent(payload && payload.agent_type);
   if (!role) return null;
 
-  // GATE 2 - adopt the newest open dispatch of that role. `unpaired` already
-  // carries the DISPATCH's own `role` (the field the pairing computed), so this
-  // reads the render's answer rather than deriving a second one.
+  // GATE 2a - this worker's close may already be on the record. The hand-written
+  // close carries the id; a hook stop that arrives after it has nothing left to
+  // close, and falling through would land it on whatever ELSE is open - which is
+  // the stolen-bracket defect, arriving after the fact instead of ahead of it.
+  const id = agentIdOf(payload);
+  if (id && alreadyClosed(render, id)) return null;
+
+  // GATE 2b - UNAMBIGUOUS OR NOTHING. `unpaired` already carries the DISPATCH's
+  // own `role` (the field the pairing computed), so this reads the render's
+  // answer rather than deriving a second one. Exactly one open dispatch of the
+  // role is the only state in which this rule knows whose stop it is holding:
+  // TRC-06 forbids the newest-open adoption by name, and no ordering of
+  // dispatch instants can separate two workers that were dispatched in one
+  // message - which is precisely what the parallel path does.
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
-  let best = null;
-  let bestT = -Infinity;
-  for (const row of rows) {
-    if (!row || row.role !== role) continue;
-    const t = millis(row.ts);
-    // An unreadable `ts` sorts BELOW every readable one and never displaces a
-    // row whose clock could be read. `>=` breaks a tie - and the all-unreadable
-    // case - toward the row written LAST, because the record is append-ordered
-    // and later-written is the best available reading of "newest" when the
-    // clock cannot answer.
-    const at = t === null ? -Infinity : t;
-    if (best === null || at >= bestT) { best = row; bestT = at; }
-  }
-  if (!best) return null;
+  const mine = rows.filter((row) => row && row.role === role);
+  if (mine.length !== 1) return null;
+  const best = mine[0];
 
   // GATE 3 - the event. Identity quoted verbatim off the adopted row; no figure
-  // of any kind, because the payload carries none.
+  // the host puts on a RETURN, because this hook never sees one, and the two
+  // cache figures the worker's own transcript reported, because nothing else
+  // ever will. Each cache key is spread only where the sum exists, so a
+  // transcript that reported neither leaves the event exactly as it was before
+  // this hook read one.
+  //
+  // `ts` is the ONE field this rule takes off the transcript rather than off
+  // the adopted row, and it is the worker's OWN stop instant. Without it
+  // `renderEvent` stamps `new Date()` at append, so a hook close delayed past
+  // the next dispatch of the same worker key would carry an instant LATER than
+  // that dispatch - and `renderTrace`'s repeat-close discriminator, which asks
+  // whether the terminal precedes the head pending dispatch, could never fire
+  // in production (D-06). It is quoted byte for byte and never reparsed: an
+  // instant no reader can parse contributes nothing downstream, which is the
+  // posture the whole record already takes for an unreadable clock, while an
+  // append time invents a figure that looks real. OMITTED, never null, when the
+  // evidence names no instant - the absent-not-zero rule the bracket's own
+  // `duration_ms` follows.
   return {
     corr: best.corr,
     phase: best.phase,
@@ -124,5 +236,7 @@ export function closeForStop(payload, render) {
     family: 'lifecycle',
     event: 'return',
     role,
+    ...(stopped.ts ? { ts: stopped.ts } : {}),
+    ...cacheOf(transcript),
   };
 }

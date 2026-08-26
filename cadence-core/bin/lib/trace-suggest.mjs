@@ -37,6 +37,7 @@
  * @typedef {{counts: Record<string, number>,
  *            roles: Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>,
  *            events: any[],
+ *            brackets?: {duration_ms?: number}[],
  *            coordinator?: {wall_ms: number, bracket_ms: number, residue_ms: number,
  *                           steps: {phase: any, step: any, ts: any, residue_ms: number}[]}}} RenderLike
  * @typedef {{roles: {role: string, brackets: number, touches: number, distinct: number,
@@ -673,6 +674,59 @@ export function suggestFromRender(render, resolution, reads) {
         + ' No key in `config.schema.json` governs in-dispatch re-reading - the remedy is discipline, not'
         + " configuration: symbol or line anchors on a plan's `files:` entries, and targeted reads"
         + ' over whole-file ones.',
+      action: null,
+    });
+  }
+
+  // R8: the worker wall clock, the receipt denominated in the figure the HOST
+  // reported for the worker itself. The counterpart to R6 from the other end:
+  // that one names the time no worker was billed for, this one names the time
+  // the workers themselves reported. Receipt only, `action` null, for R6's
+  // reason - no `config.schema.json` key governs how long a worker runs.
+  //
+  // The two clocks are named APART in the evidence, the way `lib/trace.mjs`'s
+  // `TraceRender` typedef names them under TWO ELAPSED FIGURES: a bracket's
+  // `ms` is dispatch-to-close and includes whatever the orchestrator did
+  // between the two writes, while `duration_ms` is what the host reported for
+  // the worker. A reader handed one figure and no name for it would price a
+  // worker with the step's clock.
+  //
+  // The dispatches whose close carried no wall clock are COUNTED beside the sum
+  // rather than folded in as zeros (D-04) - a zero would claim a worker that
+  // took no time, which is not a measurement anyone made.
+  //
+  // SILENT - nothing at all, never an entry saying nothing - when no bracket in
+  // scope carries a `duration_ms`. That is R6's posture for a render with no
+  // coordinator block, and it is the only reading that fits the record: with 6
+  // of 386 live brackets carrying one (measured 2026-08-26), a scope where none
+  // does has no figure to denominate a receipt IN, rather than a run that took
+  // no worker time. R6's `coordinator.residue_ms` is NOT re-based on this
+  // figure for the same measurement (D-02): 380 of those brackets would
+  // contribute zero worker time and fire R6 on every run.
+  const brackets = Array.isArray(render.brackets) ? render.brackets : [];
+  let workerMs = 0;
+  let priced = 0;
+  let silent = 0;
+  for (const b of brackets) {
+    if (!b || typeof b !== 'object') continue;
+    const d = typeof b.duration_ms === 'number' && Number.isFinite(b.duration_ms)
+      ? b.duration_ms : null;
+    if (d === null) { silent++; continue; }
+    workerMs += d;
+    priced++;
+  }
+  if (priced > 0) {
+    out.push({
+      kind: 'info',
+      subject: 'workers',
+      evidence: `worker wall clock reported by the host: ${minutes(workerMs)} across`
+        + ` ${priced} dispatch(es)`
+        + (silent > 0
+          ? `, with ${silent} more whose close carried none - unrecorded, never counted as zero`
+          : '')
+        + '. This is the WORKER\'s own run time and not the dispatch-to-close `ms`'
+        + " /cad-report prints beside it, which includes the orchestrator's own time"
+        + ' between the two writes.',
       action: null,
     });
   }
