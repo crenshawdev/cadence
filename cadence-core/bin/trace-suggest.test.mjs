@@ -1127,3 +1127,67 @@ test('seam: an UNREADABLE reads.jsonl fails `reads --join` and WARNS on `trace s
     chmodSync(file, 0o600);
   }
 });
+
+// --- R8: the worker's own wall clock, and only when there is one (MSR-05) ----
+
+/** A render whose brackets carry whatever wall clocks a case needs. */
+const workerRender = (durations) => ({
+  counts: {},
+  roles: {},
+  events: [],
+  brackets: durations.map((d, i) => ({
+    role: 'cad-executor', plan: String(i), event: 'return', ms: 900000, tokens: 1000,
+    ...(d === null ? {} : { duration_ms: d }),
+  })),
+});
+
+/** The one entry R8 emits, or null when it stayed silent. */
+const workerReceipt = (render) =>
+  suggestFromRender(render).find((x) => x.subject === 'workers') || null;
+
+test('R8: the receipt sums the worker clock and COUNTS the dispatches without one', () => {
+  // Two brackets reported a wall clock and one did not. The one that did not is
+  // counted beside the sum as unrecorded rather than folded in as a zero (D-04):
+  // a zero would claim a worker that took no time, which nobody measured.
+  const r = workerRender([600000, 300000, null]);
+  const out = suggestFromRender(r);
+  assert.equal(out.length, 1, `expected exactly one entry: ${JSON.stringify(out)}`);
+  const [e] = out;
+  assert.equal(e.kind, 'info');
+  assert.equal(e.subject, 'workers');
+  assert.match(e.evidence, /15 min across 2 dispatch\(es\)/);
+  assert.match(e.evidence, /1 more whose close carried none - unrecorded, never counted as zero/);
+  // The two clocks are NAMED APART, the way the `TraceRender` typedef names
+  // them: a reader handed one figure and no name for it prices a worker with
+  // the step's clock.
+  assert.match(e.evidence, /WORKER's own run time and not the dispatch-to-close `ms`/);
+  // The closed `Suggestion` vocabulary (D-12), which `suggest.md`'s ask step
+  // depends on: it builds `/cad-config <key>=<value>` out of `action` plus
+  // `proposed`, so an info entry that grew either would offer a key to set.
+  assert.deepEqual(Object.keys(e).sort(), ['action', 'evidence', 'kind', 'subject']);
+  assert.equal(e.action, null);
+
+  // With every bracket priced there is no unrecorded clause at all.
+  const all = workerReceipt(workerRender([60000, 60000]));
+  assert.match(all.evidence, /2 min across 2 dispatch\(es\)\./);
+  assert.equal(/unrecorded/.test(all.evidence), false, all.evidence);
+});
+
+test('R8: a scope where NO bracket carries a wall clock says nothing at all', () => {
+  // Not a run that took no worker time - a scope with no figure to denominate a
+  // receipt in, which is R6's posture for a render with no coordinator block.
+  // Measured 2026-08-26: 6 of 386 live brackets carry a `duration_ms`, so this
+  // is the ordinary case and an entry here would say nothing on every run.
+  for (const [why, r] of Object.entries({
+    'brackets that all reported none': workerRender([null, null]),
+    'no brackets at all': workerRender([]),
+    'no brackets key on the render': { counts: {}, roles: {}, events: [] },
+    'a brackets key that is not an array': { counts: {}, roles: {}, events: [], brackets: 'nope' },
+    'rows that are not objects': { counts: {}, roles: {}, events: [], brackets: [null, 42] },
+    'a non-numeric wall clock': {
+      counts: {}, roles: {}, events: [], brackets: [{ duration_ms: '1m 23s' }],
+    },
+  })) {
+    assert.equal(workerReceipt(/** @type {any} */ (r)), null, why);
+  }
+});
