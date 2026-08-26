@@ -133,8 +133,14 @@ test('transcript: the rule never throws, whatever it is handed', () => {
 /** An assistant line carrying a `message.usage`, the host's own shape. */
 const billed = (usage, timestamp = T2) => line({
   type: 'assistant', agentId: 'a1852a9b36a6c52b8', timestamp,
-  message: { id: 'msg_01', role: 'assistant', content: [], stop_reason: 'end_turn', usage },
+  message: { id: nextId(), role: 'assistant', content: [], stop_reason: 'end_turn', usage },
 });
+
+// A DISTINCT message id per `billed(...)` call, because one message is billed
+// once however many lines it occupies. A test that means "two messages" has to
+// say so; the repeated-line shape gets its own explicit id below.
+let idSeq = 0;
+const nextId = () => `msg_${(idSeq += 1)}`;
 
 test('transcript: the cache figures are SUMMED across every assistant entry', () => {
   // Each `message.usage` describes ONE billed request, so the sum is the
@@ -178,6 +184,60 @@ test('transcript: a figure no entry reported is ABSENT, never 0', () => {
   // ...and a figure the host really reported as zero is RECORDED as zero.
   assert.deepEqual(cacheOf(billed({ cache_read_input_tokens: 0 })),
     { cache_read_input_tokens: 0 });
+});
+
+test('transcript: ONE message is billed once, however many lines it occupies', () => {
+  // The shape this file's own header states: an assistant message is written as
+  // one line per content block, and every line repeats the same `message.id`
+  // and the same `usage`. Summing per LINE bills a six-block message six times.
+  // Measured over 199 real subagent transcripts on this machine, the per-line
+  // sum was 1.91x the per-message one - on the single figure TRC-05 exists to
+  // make measurable.
+  const block = (usage, timestamp) => JSON.stringify({
+    type: 'assistant', agentId: 'a1852a9b36a6c52b8', timestamp,
+    message: { id: 'msg_repeat', role: 'assistant', content: [], stop_reason: null, usage },
+  });
+  const usage = { cache_creation_input_tokens: 12128, cache_read_input_tokens: 61501 };
+  const text = [block(usage, T1), block(usage, T1), block(usage, T1)].join('\n') + '\n';
+  assert.deepEqual(cacheOf(text), {
+    cache_creation_input_tokens: 12128,
+    cache_read_input_tokens: 61501,
+  }, 'a three-block message was billed three times');
+
+  // A SECOND, genuinely different message still adds - the fold is by id, never
+  // a cap on how much one transcript may report.
+  const two = text + billed({ cache_read_input_tokens: 1000 }, T2) + '\n';
+  assert.deepEqual(cacheOf(two).cache_read_input_tokens, 62501);
+});
+
+test('transcript: an entry with no usable message id is still counted', () => {
+  // The fold is an id equality test, so an entry carrying no id cannot be
+  // folded into anything. Counting it is the safe direction: dropping it would
+  // lose real traffic, and the repeated-line shape always carries an id.
+  const noId = (usage) => JSON.stringify({
+    type: 'assistant', agentId: 'a1', timestamp: T1,
+    message: { role: 'assistant', content: [], stop_reason: 'end_turn', usage },
+  });
+  const text = [noId({ cache_read_input_tokens: 5 }), noId({ cache_read_input_tokens: 7 })].join('\n');
+  assert.deepEqual(cacheOf(text), { cache_read_input_tokens: 12 });
+});
+
+test('transcript: a cache figure that is not a non-negative integer is DROPPED', () => {
+  // A token count cannot be negative or fractional. A negative one would cancel
+  // real traffic recorded elsewhere in the same file - the worst shape, because
+  // the total still looks plausible - and a value past the safe-integer range
+  // cannot be summed without the total going non-finite, which serializes to
+  // `null` and records a figure no line ever carried.
+  for (const bad of [-100, 1.5, Number.MAX_VALUE, 2 ** 53]) {
+    const answer = cacheOf(billed({ cache_read_input_tokens: bad }, T1));
+    assert.equal('cache_read_input_tokens' in answer, false, `${bad} was recorded`);
+  }
+  // A negative on one message does not eat a real figure on another.
+  const text = [
+    billed({ cache_read_input_tokens: -100 }, T1),
+    billed({ cache_read_input_tokens: 100 }, T2),
+  ].join('\n');
+  assert.deepEqual(cacheOf(text), { cache_read_input_tokens: 100 });
 });
 
 test('transcript: a non-numeric cache figure contributes NOTHING', () => {

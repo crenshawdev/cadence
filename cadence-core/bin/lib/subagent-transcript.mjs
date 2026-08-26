@@ -141,17 +141,39 @@ const CACHE_FIELDS = ['cache_creation_input_tokens', 'cache_read_input_tokens'];
 export function cacheOf(text) {
   /** @type {Record<string, number>} */
   const sums = {};
+  // ONE MESSAGE IS BILLED ONCE, however many LINES it occupies. This file's own
+  // header states the shape: an assistant message is written as one line per
+  // content block, and every one of those lines repeats the SAME `message.id`
+  // and the SAME `usage` object. Summing per LINE therefore bills a
+  // six-block message six times. Measured 2026-08-26 over 199 real subagent
+  // transcripts on this machine: 1,119,841,751 cache-read tokens summed per
+  // line against 585,293,789 summed per message - the shipped figure was 1.91x
+  // the traffic that actually happened, on the one number TRC-05 exists to make
+  // measurable.
+  const billed = new Set();
   for (const entry of assistantEntries(text)) {
-    const usage = entry.message && typeof entry.message === 'object'
-      ? entry.message.usage : null;
+    const message = entry.message && typeof entry.message === 'object'
+      ? entry.message : null;
+    const usage = message ? message.usage : null;
     if (!usage || typeof usage !== 'object') continue;
+    // An entry with no usable id cannot be folded into anything, so it is
+    // counted: dropping it would lose real traffic, and the repeated-line shape
+    // this guards against always carries an id.
+    const id = typeof message.id === 'string' && message.id ? message.id : null;
+    if (id !== null) {
+      if (billed.has(id)) continue;
+      billed.add(id);
+    }
     for (const field of CACHE_FIELDS) {
       const v = usage[field];
       // The guard `lib/trace.mjs` already puts on `tokens`, `turns` and
       // `duration_ms`, for the identical hazard: a host or hand-edited line
       // carrying `"cache_read_input_tokens": "1,000"` must contribute NOTHING
       // rather than be string-concatenated onto a numeric field a caller sums.
-      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      // A token count is additionally a NON-NEGATIVE INTEGER: a negative value
+      // would cancel real traffic recorded elsewhere in the same file, and a
+      // fractional one would record a token that cannot exist.
+      if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0) continue;
       sums[field] = (sums[field] || 0) + v;
     }
   }
