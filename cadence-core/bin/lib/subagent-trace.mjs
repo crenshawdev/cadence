@@ -93,14 +93,36 @@
 //    crossed bracket bills one worker for another's run. In a sequential phase
 //    - one open dispatch of a role at a time - nothing changes at all.
 //
-// 3. THE EVENT, and NOTHING else on it. A `lifecycle` `return` carrying the
-//    adopted `corr`, `phase`, `plan` and `role`. No `tokens`, no `turns`, no
-//    `duration_ms`, no `detail`: the payload carries none of them, and
-//    `lib/trace.mjs`'s token-provenance header states why a fabricated figure
-//    is strictly worse than an absent one - an invented number lands in `trace
-//    suggest`'s share denominator and misprices every other role with it. The
-//    hand-written close supplies the figures, and `renderTrace`'s worker-key
-//    dedup folds whichever writer arrives second into the row the first opened.
+// 3. THE EVENT, and nothing on it this hook cannot SEE. A `lifecycle` `return`
+//    carrying the adopted `corr`, `phase`, `plan` and `role`, plus the two cache
+//    figures where the evidence supplied them. The discriminator is WHERE A
+//    FIGURE LIVES, not which writer is senior:
+//
+//      - On the host's RETURN - `tokens`, `turns`, `duration_ms` and the
+//        `detail` text. Only the orchestrator sees a return, so this event
+//        carries none of them, and `lib/trace.mjs`'s token-provenance header
+//        states why a fabricated figure is strictly worse than an absent one:
+//        an invented number lands in `trace suggest`'s share denominator and
+//        misprices every other role with it.
+//      - In the worker's own TRANSCRIPT - `cache_creation_input_tokens` and
+//        `cache_read_input_tokens`, summed by `lib/subagent-transcript.mjs`.
+//        Those are never rendered onto a return, so no hand-written close can
+//        ever carry them and no `trace close` flag could be filled (D-11).
+//        This hook holds the only evidence there is, so it is the only writer
+//        that can put them on the record. Each key is OMITTED when the
+//        transcript reported nothing for it - the absent-not-zero rule the
+//        whole record keeps.
+//
+//    The keys take the host's OWN spelling, so a bracket figure joins back to
+//    the transcript line it was summed from with no translation table - the
+//    same reason `duration_ms` took the spelling the record already used. And
+//    they never reach the `roles` block's token bill: a cache figure summed
+//    over turns is a different denomination from a return's final-window
+//    `tokens` (D-03).
+//
+//    The hand-written close supplies the return's figures, and `renderTrace`'s
+//    worker-key dedup folds whichever writer arrives second into the row the
+//    first opened, filling only the fields that row left empty.
 //
 // There is deliberately NO refusing envelope here. The hook emits nothing on
 // any stream by contract, so there is no reader for a `reason`, and a bare
@@ -110,7 +132,7 @@
 'use strict';
 
 import { roleOfAgent } from './read-trace.mjs';
-import { terminalOf, STOP_STATE } from './subagent-transcript.mjs';
+import { terminalOf, cacheOf, STOP_STATE } from './subagent-transcript.mjs';
 
 /**
  * The payload's `agent_id`, or null when it carries none this rule can use.
@@ -153,13 +175,15 @@ function alreadyClosed(render, id) {
  * @param {{transcript?: any}} [evidence] what the disk half read for this stop
  *   (D-08). `transcript` is the stopped worker's own JSONL, whole, as a string.
  *   Omitted - the shape every pre-evidence caller uses - the termination gate
- *   answers `unknown` and this rule proceeds exactly as it does with one.
- * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string}|null}
+ *   answers `unknown`, the cache sums answer nothing at all, and this rule
+ *   proceeds exactly as it does with one.
+ * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}|null}
  */
 export function closeForStop(payload, render, evidence) {
+  const transcript = evidence && evidence.transcript;
   // GATE 0 - the termination gate. NOT-TERMINAL alone refuses; `unknown` falls
   // through to the behaviour this hook had before it read a transcript at all.
-  const stopped = terminalOf(evidence && evidence.transcript);
+  const stopped = terminalOf(transcript);
   if (stopped.state === STOP_STATE.NOT_TERMINAL) return null;
 
   // GATE 1 - the self-filter. `roleOfAgent` is null for the host's own types,
@@ -187,7 +211,11 @@ export function closeForStop(payload, render, evidence) {
   const best = mine[0];
 
   // GATE 3 - the event. Identity quoted verbatim off the adopted row; no figure
-  // of any kind, because the payload carries none.
+  // the host puts on a RETURN, because this hook never sees one, and the two
+  // cache figures the worker's own transcript reported, because nothing else
+  // ever will. Each cache key is spread only where the sum exists, so a
+  // transcript that reported neither leaves the event exactly as it was before
+  // this hook read one.
   //
   // `ts` is the ONE field this rule takes off the transcript rather than off
   // the adopted row, and it is the worker's OWN stop instant. Without it
@@ -209,5 +237,6 @@ export function closeForStop(payload, render, evidence) {
     event: 'return',
     role,
     ...(stopped.ts ? { ts: stopped.ts } : {}),
+    ...cacheOf(transcript),
   };
 }

@@ -281,3 +281,71 @@ test('stop: a payload with no agent_type at all answers nothing', () => {
     assert.equal(closeForStop(payload, r), null);
   }
 });
+
+// --- the cache figures only this hook can see (TRC-05) -----------------------
+
+/** A stopped worker's transcript whose assistant lines carry a `usage`. */
+const billed = (usages) => usages.map((usage, i) => JSON.stringify({
+  type: 'assistant', agentId: 'a1', timestamp: T(9),
+  message: { id: `msg_0${i}`, role: 'assistant', content: [], stop_reason: 'end_turn', usage },
+})).join('\n');
+
+test('stop: the event carries the two CACHE figures and no return figure', () => {
+  // The discriminator is where a figure LIVES. `tokens`, `turns` and
+  // `duration_ms` are on the host's return, which only the orchestrator sees;
+  // the cache sums are in the worker's own transcript, which only this hook
+  // holds, so it is the only writer that can ever put them on the record (D-11).
+  const ev = closeForStop(
+    { agent_type: 'cadence:cad-executor', agent_id: AGENT },
+    render([open('cad-executor', '1', T(0))]),
+    {
+      transcript: billed([
+        { cache_creation_input_tokens: 100, cache_read_input_tokens: 1000 },
+        { cache_creation_input_tokens: 50, cache_read_input_tokens: 2000 },
+      ]),
+    },
+  );
+  assert.ok(ev);
+  assert.deepEqual(Object.keys(ev).sort(), [
+    'cache_creation_input_tokens', 'cache_read_input_tokens',
+    'corr', 'event', 'family', 'phase', 'plan', 'role', 'ts',
+  ]);
+  // SUMMED across every assistant entry: each `usage` is one billed request.
+  assert.equal(ev.cache_creation_input_tokens, 150);
+  assert.equal(ev.cache_read_input_tokens, 3000);
+  for (const k of ['tokens', 'turns', 'duration_ms', 'detail']) {
+    assert.equal(k in ev, false, `the hook invented a ${k} the return alone carries`);
+  }
+});
+
+test('stop: a transcript reporting no cache traffic leaves BOTH keys off', () => {
+  // Omitted, never zero: an absent key says the transcript reported nothing,
+  // and a `0` would claim the worker billed no cache traffic. Checked by `in`.
+  const evidences = {
+    'assistant lines with no usage object': { transcript: transcript('end_turn', T(9)) },
+    'a usage carrying neither field': { transcript: billed([{ input_tokens: 12 }]) },
+    'a string figure, which contributes nothing':
+      { transcript: billed([{ cache_read_input_tokens: '1,000' }]) },
+    'no transcript at all': undefined,
+  };
+  for (const [why, evidence] of Object.entries(evidences)) {
+    const ev = closeForStop(
+      { agent_type: 'cadence:cad-executor', agent_id: AGENT },
+      render([open('cad-executor', '1', T(0))]),
+      evidence,
+    );
+    assert.ok(ev, why);
+    assert.equal('cache_creation_input_tokens' in ev, false, why);
+    assert.equal('cache_read_input_tokens' in ev, false, why);
+  }
+  // ...and the figures never buy a close the gates refused: a worker that has
+  // not stopped writes nothing whatever its transcript billed.
+  assert.equal(
+    closeForStop(
+      { agent_type: 'cadence:cad-executor', agent_id: AGENT },
+      render([open('cad-executor', '1', T(0))]),
+      { transcript: '{"type":"assistant","message":{"stop_reason":"tool_use","usage":{"cache_read_input_tokens":9}}}' },
+    ),
+    null,
+  );
+});

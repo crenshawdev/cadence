@@ -83,10 +83,13 @@ function planningRoot(start) {
 // is the one part of an explicitly unstable layout that can be avoided.
 //
 // Nothing this file contains reaches any stream or any other process. The rule
-// reads it for two answers - did the worker stop, and when - and the only byte
-// that leaves is the terminal entry's timestamp, which `JSON.stringify` escapes
-// on its way onto the record. Every failure is null, which the rule reads as
-// UNKNOWN and treats as today's behaviour.
+// reads it for three answers - did the worker stop, when, and how much cache
+// traffic it billed - and what leaves is the terminal entry's timestamp, which
+// `JSON.stringify` escapes on its way onto the record, plus two sums that are
+// NUMBERS by construction: `lib/subagent-transcript.mjs` adds a `usage` field
+// only where it is already a finite number, so no byte of transcript text can
+// ride out on them. Every failure is null, which the rule reads as UNKNOWN and
+// treats as today's behaviour.
 function readTranscript(p) {
   if (typeof p !== 'string' || !p) return null;
   try {
