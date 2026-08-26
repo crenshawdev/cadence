@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 4 (Make the record say what happened)
-Status: phase complete
-Next: /cad-context 2
+Phase: 2 of 4 (Make the cache figures reach the record)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-08-26
