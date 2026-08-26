@@ -140,7 +140,7 @@ reviewer set never does. Per backend:
   OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --agent-id <the id on the subagent return> --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
   ```
 
   A dispatch that failed, returned nothing, or returned an unparseable object

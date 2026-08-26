@@ -20,7 +20,7 @@ is where that bound is enforced.
    checker's close below:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
    ```
 
    ONE line, the same arms handle_return uses: an empty or unmarked return is
@@ -51,7 +51,7 @@ is where that bound is enforced.
    verdict:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
    ```
 
    An empty or unmarked return goes to a scratch file and rides
