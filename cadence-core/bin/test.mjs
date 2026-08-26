@@ -52,7 +52,7 @@ const GROUPS = Object.freeze({
   // running in parallel processes, which is why its non-seam members (trace,
   // bm25, debt-markers) stay the cheap ones.
   planning: ['planning', 'planning-adjudication', 'planning-audit',
-    'planning-capture-sections', 'planning-cite-count',
+    'planning-capture-check', 'planning-capture-sections', 'planning-cite-count',
     'planning-criteria-coverage', 'planning-criteria-size', 'planning-cursor',
     'planning-debt-harvest', 'planning-deferred', 'planning-detect',
     'planning-files', 'planning-lease-check', 'planning-milestone-prune',
