@@ -38,6 +38,7 @@ Read config through the seam - one call for every key this workflow uses:
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.plan_check workflow.inline_plan_threshold workflow.max_plan_tasks \
+  workflow.max_plan_bytes \
   planning.commit_docs \
   git.protected_branches git.on_protected \
   git.base_branch memory.backend
@@ -277,7 +278,7 @@ The written plan against the ceiling the planner was handed. A COUNT, run after
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-size --phase {N} \
-  --max-tasks {workflow.max_plan_tasks}
+  --max-tasks {workflow.max_plan_tasks} --max-bytes {workflow.max_plan_bytes}
 ```
 
 `plan-too-many-tasks` names the PLAN file and both numbers. It is per plan, so
@@ -286,6 +287,16 @@ split this plan's tasks across more plans, sequential where they share files.
 Say the numbers out loud when you do - "PLAN.md carries 8 tasks against a
 ceiling of 4" - because the point of this step is that the overrun stops being
 silent.
+
+`plan-too-many-bytes` gets exactly that treatment one question over: the BYTES
+that plan's `files:` frontmatter declares, which is the read set ONE executor
+dispatch is handed and is what the user pays for. Name the PLAN file and both
+numbers out loud - "PLAN-1.md declares 712,004 bytes against a ceiling of
+675,000" - and the remedy is the same split into more plans, because a plan's
+declared list splits with its tasks. Read the `absent` count beside the figure
+before you judge it: it is how many declared paths are not on disk yet, so a low
+byte count beside a non-zero `absent` is a plan whose files do not exist yet
+rather than a cheap dispatch.
 
 Not a hard halt. The user may have chosen option 3 at `too_big` and asked for
 the full scope, and a check that refused what the user just authorized would be
