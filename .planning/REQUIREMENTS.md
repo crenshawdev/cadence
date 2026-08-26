@@ -5,6 +5,11 @@
 
 ## Active
 
+**No cycle open.** `/cad-phase add` opens the next one - it is the only workflow
+that appends a phase line to an existing roadmap. The shipped ids are rows under
+`## Shipped` below; the `## Deferred` ids keep their own reasons and nothing was
+promoted to fill this section.
+
 **Issue citations.** A bare `#NNN` anywhere in this file is an issue on the public
 Forgejo archive at `git.jcrenshaw.dev/crenshawdev/cadence`, NOT on GitHub - GitHub
 renumbers from 1, so the same number there is a different, real issue. Issues filed
@@ -13,11 +18,9 @@ Decisions; nothing here is rewritten, because `## Shipped` is a record of what w
 true when written.
 
 
-`v3.7.2 - the router loads late and the host writes the bracket` opened
-2026-08-25 with three phases. `/cad-plan` seeds each Traceability row as its
-phase is planned - the practice `v3.5.7` established - so an id below that no
-plan has picked up yet surfaces as `unpicked` in `/cad-audit` rather than as a
-hand-written row.
+`v3.7.2 - the router loads late and the host writes the bracket` closed
+2026-08-26; its seven ids - `LOD-06`, `TRC-02`, `TRC-03`, `HOK-01`, `HOK-02`,
+`CEN-03`, `DOC-04` - are rows under `## Shipped` below, all Complete.
 
 
 `v3.7.1 - the tracker is the record` closed 2026-08-25; its ten ids - `FRG-01`,
