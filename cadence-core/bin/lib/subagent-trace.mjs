@@ -20,7 +20,7 @@
 // figures, and phase 0's `/cad-task` bracket has no subagent behind it for any
 // hook to close.
 //
-// GATE 0, AND IT RUNS AHEAD OF EVERYTHING. THE TERMINATION GATE (D-09). The
+// GATE 0, THE TERMINATION GATE (D-09), AND WHAT NOW RUNS AHEAD OF IT. The
 // payload carries no field that separates a worker that FINISHED from one
 // handed back mid-turn - `stop_hook_active` is documented for `Stop` and is not
 // a `SubagentStop` field - so the evidence is the worker's own transcript,
@@ -28,13 +28,22 @@
 // disk half reads it and INJECTS the bytes (D-08); `lib/subagent-transcript.mjs`
 // holds the rule that reads them.
 //
-// It runs before the render is even consulted, because a worker that has not
-// stopped must produce nothing whatever the record holds. And it refuses on
-// NOT-TERMINAL alone, never on UNKNOWN: a payload with no `transcript_path`, a
-// file that could not be read, an over-cap file and a layout that changed all
-// arrive as `unknown` and still produce the close this hook produces today.
-// Folding `unknown` into the refusal is how a host-side rename would delete
-// every hook close in the record at once and silently.
+// THE SELF-FILTER RUNS FIRST NOW, not this gate. Every withholding arm below
+// writes a cache-only fact, and that fact has to NAME the worker it is about:
+// it carries the mapped role, and a type that maps to no role is not a Cadence
+// worker at all, so nothing may be written for it whatever its transcript
+// says. The reorder changes no answer, because each gate withholds the close
+// independently of the others rather than by falling through the one before
+// it. And the old ordering's reason still holds exactly where it was aimed: a
+// worker that has not stopped produces NO CLOSE whatever the record holds, and
+// the fact it does produce asserts nothing about whether the worker finished -
+// only what its transcript has billed so far.
+//
+// The gate refuses on NOT-TERMINAL alone, never on UNKNOWN: a payload with no
+// `transcript_path`, a file that could not be read, an over-cap file and a
+// layout that changed all arrive as `unknown` and still produce the close this
+// hook produces today. Folding `unknown` into the refusal is how a host-side
+// rename would delete every hook close in the record at once and silently.
 //
 // THREE GATES, in this order.
 //
@@ -157,6 +166,45 @@
 //    worker-key dedup folds whichever writer arrives second into the row the
 //    first opened, filling only the fields that row left empty.
 //
+// THE CACHE-ONLY FACT, on every gate that withholds the close (D-07). All
+// three refusing arms above - not-terminal, already-closed, and two open
+// dispatches of one role - used to throw the worker's two cache figures away
+// with the close they refused. Nothing else on the record can recover them:
+// the host renders no cache figure on a return, so the transcript this hook
+// holds is the only evidence there will ever be, and a stop that cannot claim
+// a bracket still billed real traffic. So each of them now answers ONE event
+// under `WORKER_CACHE` - never a `return`, never a `checkpoint`, never an
+// `escalation` - and the termination gate is unchanged rather than relaxed.
+//
+// The fact carries `corr`, `phase`, `role`, `agent_id` and whichever cache keys
+// the transcript supplied, plus `ts` on exactly the rule the close follows. It
+// carries NO `plan`: with two open dispatches of one role there is no single
+// plan to name, and one shape for the event whatever gate wrote it is worth
+// more than a field that would sometimes be a guess.
+//
+// Its identity comes from evidence this rule can SEE, in two places and no
+// others. Where a BRACKET already carries the payload's `agent_id`, `corr` and
+// `phase` come off that bracket: it is the exact row the fact will fold onto,
+// and it is the only evidence gate 2a has, because an already-closed dispatch
+// is no longer in `unpaired` at all. Otherwise they come off the corr-scoped
+// candidate set, whose rows share a `corr` by construction and carry a REAL
+// phase with it - so `renderTrace`'s `--phase` filter needs no carve-out and
+// two readers of one record cannot disagree about which phase this worker ran
+// in (D-04).
+//
+// NO FACT AT ALL in three cases. When neither a bracket nor a candidate row is
+// there to name, because an invented `corr` is a row no reader could join.
+// When the transcript reported NEITHER figure, because absent is not zero and
+// an event carrying both keys omitted states nothing (D-12). And when the
+// payload carries no `agent_id`, because `corr` plus `agent_id` is the fold's
+// only key (D-10) - a worker-key fallback of that shape was refuted in `v3.7.3`
+// phase 1 and reverted at `4fbf7280`, and an id-less fact is a row that can
+// never reach a bracket.
+//
+// The unambiguous terminal path is untouched and still answers its single
+// `return` carrying the figures. No fact rides beside it: that would put one
+// worker's traffic on the record twice.
+//
 // There is deliberately NO refusing envelope here. The hook emits nothing on
 // any stream by contract, so there is no reader for a `reason`, and a bare
 // do-nothing answer is what keeps this module outside self-verify check 22.
@@ -168,6 +216,7 @@
 'use strict';
 
 import { roleOfAgent } from './read-trace.mjs';
+import { WORKER_CACHE } from './trace.mjs';
 import { terminalOf, cacheOf, STOP_STATE } from './subagent-transcript.mjs';
 
 /**
@@ -181,8 +230,12 @@ function agentIdOf(payload) {
 }
 
 /**
- * Whether a bracket on the record already carries this worker's id - meaning
- * its close is written and this stop has nothing left to close.
+ * The bracket on the record that already carries this worker's id, or null.
+ * A row here means the worker's close is written and this stop has nothing left
+ * to close - AND it is the row a cache-only fact would fold onto, which is why
+ * this answers the ROW rather than a boolean: gate 2a has no other evidence to
+ * build the fact's identity from, because an already-closed dispatch is no
+ * longer in `unpaired` at all.
  *
  * The id is on the CLOSE half, put there by the orchestrator's hand-written
  * `trace close --agent-id`, which is the only writer that ever holds it: the
@@ -195,11 +248,41 @@ function agentIdOf(payload) {
  *
  * @param {any} render the result of `renderTrace(...)`
  * @param {string} id
- * @returns {boolean}
+ * @returns {any}
  */
-function alreadyClosed(render, id) {
+function closedBracket(render, id) {
   const rows = render && Array.isArray(render.brackets) ? render.brackets : [];
-  return rows.some((row) => row && row.agent_id === id);
+  return rows.find((row) => row && row.agent_id === id) || null;
+}
+
+/**
+ * The cache-only fact a withholding gate answers, as a one-entry list - or an
+ * empty one where there is nothing this rule may state.
+ *
+ * @param {string|null} id the payload's `agent_id`; without it the fact has no
+ *   join key and can never reach a bracket (D-10), so there is nothing to write
+ * @param {string} role the MAPPED role, never the host's `agent_type`
+ * @param {Record<string, number>} cache what `cacheOf` summed; EMPTY means the
+ *   transcript reported neither figure, and absent is not zero (D-12)
+ * @param {string|null} ts the worker's own stop instant, omitted where the
+ *   evidence named none - the same rule the close's `ts` follows
+ * @param {any} source the row this fact quotes `corr` and `phase` off: the
+ *   bracket already carrying the id, else a candidate dispatch of the current
+ *   run. Null means the rule can see no run to name and writes nothing.
+ * @returns {any[]}
+ */
+function cacheFact(id, role, cache, ts, source) {
+  if (!id || !source || !Object.keys(cache).length) return [];
+  return [{
+    corr: source.corr,
+    phase: source.phase,
+    family: 'lifecycle',
+    event: WORKER_CACHE,
+    role,
+    agent_id: id,
+    ...(ts ? { ts } : {}),
+    ...cache,
+  }];
 }
 
 /**
@@ -252,43 +335,63 @@ function currentRun(rows) {
  *   Omitted - the shape every pre-evidence caller uses - the termination gate
  *   answers `unknown`, the cache sums answer nothing at all, and this rule
  *   proceeds exactly as it does with one.
- * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}[]}
+ * @returns {{corr: any, phase: any, plan?: any, family: string, event: string, role: string, agent_id?: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}[]}
+ *   Either the single `return` an unambiguous terminal stop closes with, or the
+ *   single `WORKER_CACHE` fact a withholding gate states instead, or nothing.
  */
 export function closeForStop(payload, render, evidence) {
   const transcript = evidence && evidence.transcript;
-  // GATE 0 - the termination gate. NOT-TERMINAL alone refuses; `unknown` falls
-  // through to the behaviour this hook had before it read a transcript at all.
-  const stopped = terminalOf(transcript);
-  if (stopped.state === STOP_STATE.NOT_TERMINAL) return [];
-
-  // GATE 1 - the self-filter. `roleOfAgent` is null for the host's own types,
-  // for `coordinator`, and for anything else that is not a Cadence rung file.
+  // GATE 1 - the self-filter, AND IT RUNS FIRST. `roleOfAgent` is null for the
+  // host's own types, for `coordinator`, and for anything else that is not a
+  // Cadence rung file. It moved ahead of the termination gate because every
+  // withholding arm below now writes a fact carrying the MAPPED role, and a
+  // type with no role is not a Cadence worker at all. No answer moved with it:
+  // each gate withholds the close on its own evidence.
   const role = roleOfAgent(payload && payload.agent_type);
   if (!role) return [];
+
+  // The evidence every arm below reads, taken ONCE. `closedBracket` is gate 2a's
+  // test and the fact's identity source in the same row; `mine` is gate 2b's
+  // count and the fact's identity source everywhere else.
+  const id = agentIdOf(payload);
+  const cache = cacheOf(transcript);
+  const stopped = terminalOf(transcript);
+  const closed = id ? closedBracket(render, id) : null;
+  const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
+  const mine = currentRun(rows.filter((row) => row && row.role === role));
+  // The one answer a withholding gate gives: the figures, and never a close.
+  const withheld = () => cacheFact(id, role, cache, stopped.ts, closed || mine[0] || null);
+
+  // GATE 0 - the termination gate. NOT-TERMINAL alone refuses the CLOSE;
+  // `unknown` falls through to the behaviour this hook had before it read a
+  // transcript at all. What a refusal answers is the fact: a worker handed back
+  // mid-turn has still billed the cache traffic its transcript reports, and no
+  // other writer will ever hold it.
+  if (stopped.state === STOP_STATE.NOT_TERMINAL) return withheld();
 
   // GATE 2a - this worker's close may already be on the record. The hand-written
   // close carries the id; a hook stop that arrives after it has nothing left to
   // close, and falling through would land it on whatever ELSE is open - which is
   // the stolen-bracket defect, arriving after the fact instead of ahead of it.
-  const id = agentIdOf(payload);
-  if (id && alreadyClosed(render, id)) return [];
+  // The figures still land, on the very bracket the id matched.
+  if (closed) return withheld();
 
   // GATE 2b - UNAMBIGUOUS OR NOTHING, within the CURRENT RUN. `currentRun` drops
   // a dead run's stranded rows before the count is taken (D-03) - without it,
   // every dispatch of the role ever left open counts as a live worker forever
   // and this gate refuses unconditionally. It never chooses between two workers:
   // one run's concurrent dispatches share a `corr`, so they both survive the
-  // scope and are both still refused below. `unpaired` already carries the
-  // DISPATCH's
-  // own `role` (the field the pairing computed), so this reads the render's
-  // answer rather than deriving a second one. Exactly one open dispatch of the
-  // role is the only state in which this rule knows whose stop it is holding:
-  // TRC-06 forbids the newest-open adoption by name, and no ordering of
-  // dispatch instants can separate two workers that were dispatched in one
-  // message - which is precisely what the parallel path does.
-  const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
-  const mine = currentRun(rows.filter((row) => row && row.role === role));
-  if (mine.length !== 1) return [];
+  // scope and are both still refused below.
+  //
+  // `unpaired` already carries the DISPATCH's own `role` (the field the pairing
+  // computed), so this reads the render's answer rather than deriving a second
+  // one. Exactly one open dispatch of the role is the only state in which this
+  // rule knows whose stop it is holding: TRC-06 forbids the newest-open adoption
+  // by name, and no ordering of dispatch instants can separate two workers that
+  // were dispatched in one message - which is precisely what the parallel path
+  // does. Refusing here still costs the record nothing but the CLOSE: the
+  // figures ride the fact.
+  if (mine.length !== 1) return withheld();
   const best = mine[0];
 
   // GATE 3 - the event. Identity quoted verbatim off the adopted row; no figure
@@ -318,6 +421,6 @@ export function closeForStop(payload, render, evidence) {
     event: 'return',
     role,
     ...(stopped.ts ? { ts: stopped.ts } : {}),
-    ...cacheOf(transcript),
+    ...cache,
   }];
 }

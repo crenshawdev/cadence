@@ -9,6 +9,13 @@
 // one stop can owe the record more than one event, and DO NOTHING is the
 // empty list. So every do-nothing case below asserts `[]` rather than null,
 // and every case that expects an answer reads it out of the list.
+//
+// Two kinds of event can be in it. A `return` CLOSES a bracket and only the
+// unambiguous terminal path writes one. A `worker_cache` fact closes nothing
+// and states the two cache figures a withholding gate would otherwise have
+// thrown away - so a case titled "produces nothing" means the fixture gave the
+// hook no cache evidence either, and the cases at the foot of this file are
+// where each gate's fact is pinned.
 'use strict';
 
 import { test } from 'node:test';
@@ -199,7 +206,9 @@ test('stop: TWO open dispatches of the role produce NOTHING', () => {
   // put in its place: the parallel path dispatches both executors in ONE
   // message, so no ordering of dispatch instants separates them. Both rows stay
   // `unpaired`, which is the visible defect - a crossed bracket bills one worker
-  // for another's run and reads as clean.
+  // for another's run and reads as clean. Neither transcript here billed any
+  // cache traffic, so nothing is the WHOLE answer; the gate's cache-only fact
+  // is pinned at the foot of this file.
   assert.deepEqual(closeForStop(STOP, twoOpen()), []);
   // ...and the transcript half changes nothing: a worker that provably stopped
   // still cannot say WHICH open dispatch is its own.
@@ -213,7 +222,8 @@ test('stop: a worker already closed by the orchestrator writes NOTHING', () => {
   // The hand-written close carries `--agent-id`, so a hook stop arriving after
   // it finds its own bracket on the record. Falling through here is the
   // stolen-bracket defect arriving late: plan 2 is open, and adopting it would
-  // bill worker A's terminal against worker B's dispatch.
+  // bill worker A's terminal against worker B's dispatch. No transcript here,
+  // so there are no figures for the gate's fact to state either.
   const r = withBrackets(
     [open('cad-executor', '2', T(10), { corr: '2-def5678' })],
     [bracket('cad-executor', '1', { agent_id: AGENT })],
@@ -412,14 +422,158 @@ test('stop: a transcript reporting no cache traffic leaves BOTH keys off', () =>
     assert.equal('cache_creation_input_tokens' in ev, false, why);
     assert.equal('cache_read_input_tokens' in ev, false, why);
   }
-  // ...and the figures never buy a close the gates refused: a worker that has
-  // not stopped writes nothing whatever its transcript billed.
-  assert.deepEqual(
-    closeForStop(
-      { agent_type: 'cadence:cad-executor', agent_id: AGENT },
-      render([open('cad-executor', '1', T(0))]),
-      { transcript: '{"type":"assistant","message":{"stop_reason":"tool_use","usage":{"cache_read_input_tokens":9}}}' },
+  // ...and the figures never buy a CLOSE the gates refused. A worker that has
+  // not stopped still writes no `return` whatever its transcript billed - the
+  // termination gate is unchanged, not relaxed - and what it does write is the
+  // cache-only fact, which closes nothing.
+  const notTerminal = closeForStop(
+    { agent_type: 'cadence:cad-executor', agent_id: AGENT },
+    render([open('cad-executor', '1', T(0))]),
+    { transcript: '{"type":"assistant","message":{"stop_reason":"tool_use","usage":{"cache_read_input_tokens":9}}}' },
+  );
+  assert.equal(notTerminal.length, 1);
+  assert.equal(notTerminal[0].event, 'worker_cache');
+  assert.equal(notTerminal[0].cache_read_input_tokens, 9);
+});
+
+// --- every withholding gate still states the figures (TRC-07, D-07) ----------
+//
+// Three gates refuse the close, and all three used to throw the worker's cache
+// figures away with it. Nothing else on the record can recover them: the host
+// renders no cache figure on a return, so the transcript this hook holds is the
+// only evidence there will ever be. Each gate now answers ONE `worker_cache`
+// fact instead - and still no `return`, because the termination gate is
+// unchanged rather than relaxed.
+
+/** A transcript that billed cache traffic and stopped the way you name. */
+const billedStop = (stop) => JSON.stringify({
+  type: 'assistant', agentId: 'a1', timestamp: T(9),
+  message: {
+    id: 'msg_01',
+    role: 'assistant',
+    content: [],
+    stop_reason: stop,
+    usage: { cache_creation_input_tokens: 150, cache_read_input_tokens: 3000 },
+  },
+});
+
+const VSTOP = { agent_type: 'cadence:cad-verifier', agent_id: AGENT };
+
+/**
+ * The three gates, each arranged so IT is the one that fires, with the `corr`
+ * and `phase` the fact must quote and where they have to come from.
+ */
+const gates = {
+  'gate 0, not terminal': {
+    payload: { ...VSTOP, transcript: billedStop('tool_use') },
+    render: () => render([open('cad-verifier', 'cad-verifier', T(3))]),
+    corr: '2-abc1234',
+    phase: '2',
+    // With no id the gate still fires - a worker that has not stopped has not
+    // stopped whoever it is - and the fact is the only thing lost.
+    idless: [],
+  },
+  'gate 2a, already closed': {
+    // The identity comes off the BRACKET, which is the row the fact will fold
+    // onto and the only evidence this gate has: an already-closed dispatch is
+    // not in `unpaired` at all. The open row beside it carries a different
+    // `corr`, so quoting the wrong source is visible.
+    payload: { ...VSTOP, transcript: billedStop('end_turn') },
+    render: () => withBrackets(
+      [open('cad-verifier', 'cad-verifier', T(3))],
+      [bracket('cad-verifier', 'cad-verifier', { agent_id: AGENT, corr: '9-closed1', phase: '9' })],
     ),
+    corr: '9-closed1',
+    phase: '9',
+    // The id IS this gate, so an id-less payload is not an already-closed stop
+    // at all: it falls through to the single open dispatch and closes it, which
+    // is the behaviour `stop: a payload with no agent_id still closes an
+    // unambiguous dispatch` already pins. What matters here is what is NOT in
+    // the answer.
+    idless: ['return'],
+  },
+  'gate 2b, two open dispatches of one run': {
+    payload: { ...VSTOP, transcript: billedStop('end_turn') },
+    render: () => render([
+      open('cad-verifier', 'cad-verifier', T(3)),
+      open('cad-verifier', 'cad-verifier', T(4)),
+    ]),
+    corr: '2-abc1234',
+    phase: '2',
+    idless: [],
+  },
+};
+
+for (const [why, g] of Object.entries(gates)) {
+  test(`stop: ${why} states the cache figures and closes nothing`, () => {
+    const { transcript: text, ...payload } = g.payload;
+    const events = closeForStop(payload, g.render(), { transcript: text });
+    assert.equal(events.length, 1, why);
+    const [ev] = events;
+    assert.equal(ev.event, 'worker_cache', why);
+    assert.equal(ev.family, 'lifecycle');
+    assert.equal(ev.cache_creation_input_tokens, 150);
+    assert.equal(ev.cache_read_input_tokens, 3000);
+    assert.equal(ev.agent_id, AGENT, 'the fold\'s only join key is missing');
+    assert.equal(ev.role, 'cad-verifier', 'the fact took the host type, not the role');
+    // Taken off the render, never invented: an unreadable `corr` is a row no
+    // reader can join, and an invented `phase` is one `--phase` filters out.
+    assert.equal(ev.corr, g.corr);
+    assert.equal(ev.phase, g.phase);
+    // NO `plan`: with two open dispatches of one role there is no single plan to
+    // name, and one shape for the event whatever gate wrote it is worth more
+    // than a field that would sometimes be a guess.
+    assert.equal('plan' in ev, false, JSON.stringify(ev));
+    // ...and NOTHING in the answer closes a bracket.
+    for (const e of events) {
+      assert.equal(['return', 'checkpoint', 'escalation'].includes(e.event), false, why);
+    }
+  });
+
+  test(`stop: ${why} writes no FACT for a payload with no agent_id`, () => {
+    // `corr` plus `agent_id` is the fold's only key (D-10). A worker-key
+    // fallback of that shape was refuted in `v3.7.3` phase 1 and reverted at
+    // `4fbf7280`, so an id-less fact is a row that could never reach a bracket
+    // and is not written at all.
+    const { transcript: text, agent_id: _id, ...payload } = g.payload;
+    const events = closeForStop(payload, g.render(), { transcript: text });
+    assert.deepEqual(events.map((e) => e.event), g.idless, why);
+  });
+}
+
+test('stop: a withholding gate whose transcript billed NOTHING writes no fact', () => {
+  // Absent, never zero, and never an event carrying both keys omitted (D-12):
+  // an empty fact would claim this worker was measured and found to bill
+  // nothing, which is not what an unread transcript says.
+  assert.deepEqual(
+    closeForStop(VSTOP, render([open('cad-verifier', 'cad-verifier', T(3))]), {
+      transcript: JSON.stringify({
+        type: 'assistant',
+        message: { id: 'm1', role: 'assistant', stop_reason: 'tool_use', usage: { input_tokens: 12 } },
+      }),
+    }),
     [],
   );
+});
+
+test('stop: a withholding gate with no bracket and no candidate row writes nothing', () => {
+  // The identity has two sources and no third. With neither, an invented `corr`
+  // would be a row no reader could ever join back to a worker.
+  assert.deepEqual(
+    closeForStop(VSTOP, render([open('cad-executor', '1', T(3))]),
+      { transcript: billedStop('tool_use') }),
+    [],
+  );
+});
+
+test('stop: the UNAMBIGUOUS terminal path still answers one return and no fact', () => {
+  // Untouched, and deliberately so: a fact beside the close would put one
+  // worker's traffic on the record twice.
+  const events = closeForStop(VSTOP, render([open('cad-verifier', 'cad-verifier', T(3))]),
+    { transcript: billedStop('end_turn') });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, 'return');
+  assert.equal(events[0].cache_creation_input_tokens, 150);
+  assert.equal(events[0].cache_read_input_tokens, 3000);
+  assert.equal(events[0].plan, 'cad-verifier', 'the close still quotes the adopted row');
 });
