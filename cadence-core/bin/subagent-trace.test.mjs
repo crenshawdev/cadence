@@ -4,6 +4,11 @@
 // rule is pure by construction (lib/subagent-trace.mjs's header) and this is
 // what proves it, because the live path can only be exercised by a real
 // subagent dispatch inside the host.
+//
+// The answer is a LIST of events in append order (D-08), never `{...}|null`:
+// one stop can owe the record more than one event, and DO NOTHING is the
+// empty list. So every do-nothing case below asserts `[]` rather than null,
+// and every case that expects an answer reads it out of the list.
 'use strict';
 
 import { test } from 'node:test';
@@ -34,8 +39,11 @@ test('stop: a rung-suffixed Cadence type adopts the ONE open dispatch of its rol
   // `<plugin>:<agent-file-stem>` spelling; the dispatch event carries the bare
   // ROLE, and `--plan` for an executor is the plan NUMBER rather than the role.
   const r = render([open('cad-executor', '2', T(10), { corr: '2-def5678' })]);
-  const ev = closeForStop({ agent_type: 'cadence:cad-executor-xhigh' }, r);
-  assert.ok(ev, 'a live Cadence type with an open dispatch produced nothing');
+  const events = closeForStop({ agent_type: 'cadence:cad-executor-xhigh' }, r);
+  // EXACTLY ONE, and the rest of this file reads the same way: the contract is a
+  // list, so "produced an answer" is a length rather than a truthiness test.
+  assert.equal(events.length, 1, 'a live Cadence type with an open dispatch produced nothing');
+  const [ev] = events;
   // ADOPTED, never derived: every identity field is the open row's own.
   assert.equal(ev.corr, '2-def5678');
   assert.equal(ev.phase, '2');
@@ -52,7 +60,7 @@ test('stop: the event carries NO figure of any kind', () => {
   // (D-01), and a fabricated figure is strictly worse than an absent one: it
   // would land in `trace suggest`'s share denominator and misprice every other
   // role with it. The hand-written close is what carries the figures.
-  const ev = closeForStop(
+  const [ev] = closeForStop(
     { agent_type: 'cadence:cad-verifier-medium', agent_id: 'a1', session_id: 's1' },
     render([open('cad-verifier', 'cad-verifier', T(3))]),
   );
@@ -65,7 +73,7 @@ test('stop: the event carries NO figure of any kind', () => {
   // The transcript-backed arm adds exactly ONE key, `ts`, and it is the worker's
   // own stop instant rather than a figure. Every figure stays absent: the
   // transcript answers when the worker stopped and nothing about what it cost.
-  const stamped = closeForStop(
+  const [stamped] = closeForStop(
     { agent_type: 'cadence:cad-verifier-medium', agent_id: 'a1' },
     render([open('cad-verifier', 'cad-verifier', T(3))]),
     { transcript: transcript('end_turn', T(9)) },
@@ -86,9 +94,9 @@ test('stop: a worker whose transcript shows it has NOT stopped produces nothing'
   // is deliberately not enough.
   const r = render([open('cad-executor', '1', T(0))]);
   for (const stop of ['tool_use', null]) {
-    assert.equal(
+    assert.deepEqual(
       closeForStop({ agent_type: 'cadence:cad-executor' }, r, { transcript: transcript(stop, T(5)) }),
-      null,
+      [],
       `a transcript stopped ${stop} still produced a close`,
     );
   }
@@ -99,7 +107,7 @@ test('stop: a terminal transcript stamps the event with the WORKER\'s instant', 
   // delayed past the next dispatch of the same worker key would carry an
   // instant LATER than that dispatch - and `renderTrace`'s repeat-close
   // discriminator could never fire in production (D-06).
-  const ev = closeForStop(
+  const [ev] = closeForStop(
     { agent_type: 'cadence:cad-executor' },
     render([open('cad-executor', '1', T(0))]),
     { transcript: transcript('end_turn', T(7)) },
@@ -117,7 +125,7 @@ test('stop: NO transcript evidence produces the same event, with no ts key at al
   // this hook writes today - folding them into the refusal is how a host-side
   // rename would delete every hook close in the record at once and silently.
   const r = render([open('cad-executor', '1', T(0))]);
-  const base = closeForStop({ agent_type: 'cadence:cad-executor' }, r);
+  const [base] = closeForStop({ agent_type: 'cadence:cad-executor' }, r);
   const evidences = {
     'no third argument': undefined,
     'an empty evidence object': {},
@@ -128,7 +136,7 @@ test('stop: NO transcript evidence produces the same event, with no ts key at al
     'user lines only': { transcript: '{"type":"user","message":{"role":"user"}}' },
   };
   for (const [why, evidence] of Object.entries(evidences)) {
-    const ev = closeForStop({ agent_type: 'cadence:cad-executor' }, r, evidence);
+    const [ev] = closeForStop({ agent_type: 'cadence:cad-executor' }, r, evidence);
     assert.deepEqual(ev, base, why);
     // Checked by `in`, never against a null: an absent key and a null one are
     // different things on the record, and `renderEvent` only stamps the append
@@ -142,7 +150,7 @@ test('stop: a terminal transcript with no readable instant adds no ts key', () =
   // clock has still finished, and the absent key is what lets `renderEvent`
   // fall back to stamping the append the way it does today. OMITTED, not null -
   // the absent-not-zero rule the bracket's own `duration_ms` follows.
-  const ev = closeForStop(
+  const [ev] = closeForStop(
     { agent_type: 'cadence:cad-executor' },
     render([open('cad-executor', '1', T(0))]),
     { transcript: '{"type":"assistant","message":{"stop_reason":"end_turn"}}' },
@@ -155,9 +163,9 @@ test('stop: a non-Cadence type is still nothing, terminal transcript or not', ()
   // The self-filter is unmoved by the new gate: a terminal transcript is
   // permission to look at the record, never permission to close a bracket.
   const r = render([open('cad-executor', '1', T(0))]);
-  assert.equal(
+  assert.deepEqual(
     closeForStop({ agent_type: 'general-purpose' }, r, { transcript: transcript('end_turn', T(5)) }),
-    null,
+    [],
   );
 });
 
@@ -187,12 +195,12 @@ test('stop: TWO open dispatches of the role produce NOTHING', () => {
   // message, so no ordering of dispatch instants separates them. Both rows stay
   // `unpaired`, which is the visible defect - a crossed bracket bills one worker
   // for another's run and reads as clean.
-  assert.equal(closeForStop(STOP, twoOpen()), null);
+  assert.deepEqual(closeForStop(STOP, twoOpen()), []);
   // ...and the transcript half changes nothing: a worker that provably stopped
   // still cannot say WHICH open dispatch is its own.
-  assert.equal(
+  assert.deepEqual(
     closeForStop(STOP, twoOpen(), { transcript: transcript('end_turn', T(12)) }),
-    null,
+    [],
   );
 });
 
@@ -205,7 +213,7 @@ test('stop: a worker already closed by the orchestrator writes NOTHING', () => {
     [open('cad-executor', '2', T(10), { corr: '2-def5678' })],
     [bracket('cad-executor', '1', { agent_id: AGENT })],
   );
-  assert.equal(closeForStop(STOP, r), null);
+  assert.deepEqual(closeForStop(STOP, r), []);
 });
 
 test('stop: another worker\'s closed bracket does not block this one', () => {
@@ -215,7 +223,7 @@ test('stop: another worker\'s closed bracket does not block this one', () => {
     [open('cad-executor', '2', T(10), { corr: '2-def5678' })],
     [bracket('cad-executor', '1', { agent_id: 'b2963bac47b7d63c9' })],
   );
-  assert.equal(closeForStop(STOP, r).plan, '2');
+  assert.equal(closeForStop(STOP, r)[0].plan, '2');
 });
 
 test('stop: a close that carried NO id never blocks a later worker', () => {
@@ -226,7 +234,7 @@ test('stop: a close that carried NO id never blocks a later worker', () => {
     [open('cad-executor', '2', T(10), { corr: '2-def5678' })],
     [bracket('cad-executor', '1')],
   );
-  assert.equal(closeForStop(STOP, r).plan, '2');
+  assert.equal(closeForStop(STOP, r)[0].plan, '2');
 });
 
 test('stop: a payload with no agent_id still closes an unambiguous dispatch', () => {
@@ -234,7 +242,7 @@ test('stop: a payload with no agent_id still closes an unambiguous dispatch', ()
   // is unanswered, not answered NO, and the single-open test stands on its own -
   // so no close this hook writes today is lost to a missing id.
   const r = render([open('cad-executor', '1', T(0))]);
-  assert.equal(closeForStop({ agent_type: 'cadence:cad-executor' }, r).plan, '1');
+  assert.equal(closeForStop({ agent_type: 'cadence:cad-executor' }, r)[0].plan, '1');
 });
 
 test('stop: a render with no usable brackets half is not fatal', () => {
@@ -246,7 +254,7 @@ test('stop: a render with no usable brackets half is not fatal', () => {
     'rows that are not objects': [null, 42, 'x'],
   })) {
     const r = { file: '/x/.planning/trace.jsonl', unpaired: [open('cad-executor', '1', T(0))], brackets };
-    assert.equal(closeForStop(STOP, r).plan, '1', why);
+    assert.equal(closeForStop(STOP, r)[0].plan, '1', why);
   }
 });
 
@@ -257,7 +265,7 @@ test('stop: the rule never crosses roles', () => {
     open('cad-verifier', 'cad-verifier', T(2)),
     open('cad-executor', '1', T(0)),
   ]);
-  assert.equal(closeForStop(STOP, r).plan, '1');
+  assert.equal(closeForStop(STOP, r)[0].plan, '1');
 });
 
 test('stop: the self-filter answers nothing for every non-Cadence agent type', () => {
@@ -266,19 +274,19 @@ test('stop: the self-filter answers nothing for every non-Cadence agent type', (
   // in this repository's own `reads.jsonl` corpus.
   const r = render([open('cad-executor', '1', T(0)), open('cad-reviewer', 'cad-reviewer', T(1))]);
   for (const agent_type of ['general-purpose', 'Explore', 'fork', 'claude-code-guide']) {
-    assert.equal(closeForStop({ agent_type }, r), null, `${agent_type} produced a close event`);
+    assert.deepEqual(closeForStop({ agent_type }, r), [], `${agent_type} produced a close event`);
   }
 });
 
 test('stop: a Cadence type with no matching open dispatch answers nothing', () => {
   const r = render([open('cad-executor', '1', T(0))]);
-  assert.equal(closeForStop({ agent_type: 'cadence:cad-verifier' }, r), null);
+  assert.deepEqual(closeForStop({ agent_type: 'cadence:cad-verifier' }, r), []);
 });
 
 test('stop: a payload with no agent_type at all answers nothing', () => {
   const r = render([open('cad-executor', '1', T(0))]);
   for (const payload of [{}, { agent_type: null }, { agent_type: '' }, null]) {
-    assert.equal(closeForStop(payload, r), null);
+    assert.deepEqual(closeForStop(payload, r), []);
   }
 });
 
@@ -295,7 +303,7 @@ test('stop: the event carries the two CACHE figures and no return figure', () =>
   // `duration_ms` are on the host's return, which only the orchestrator sees;
   // the cache sums are in the worker's own transcript, which only this hook
   // holds, so it is the only writer that can ever put them on the record (D-11).
-  const ev = closeForStop(
+  const [ev] = closeForStop(
     { agent_type: 'cadence:cad-executor', agent_id: AGENT },
     render([open('cad-executor', '1', T(0))]),
     {
@@ -329,7 +337,7 @@ test('stop: a transcript reporting no cache traffic leaves BOTH keys off', () =>
     'no transcript at all': undefined,
   };
   for (const [why, evidence] of Object.entries(evidences)) {
-    const ev = closeForStop(
+    const [ev] = closeForStop(
       { agent_type: 'cadence:cad-executor', agent_id: AGENT },
       render([open('cad-executor', '1', T(0))]),
       evidence,
@@ -340,12 +348,12 @@ test('stop: a transcript reporting no cache traffic leaves BOTH keys off', () =>
   }
   // ...and the figures never buy a close the gates refused: a worker that has
   // not stopped writes nothing whatever its transcript billed.
-  assert.equal(
+  assert.deepEqual(
     closeForStop(
       { agent_type: 'cadence:cad-executor', agent_id: AGENT },
       render([open('cad-executor', '1', T(0))]),
       { transcript: '{"type":"assistant","message":{"stop_reason":"tool_use","usage":{"cache_read_input_tokens":9}}}' },
     ),
-    null,
+    [],
   );
 });

@@ -93,10 +93,17 @@
 //    crossed bracket bills one worker for another's run. In a sequential phase
 //    - one open dispatch of a role at a time - nothing changes at all.
 //
-// 3. THE EVENT, and nothing on it this hook cannot SEE. A `lifecycle` `return`
-//    carrying the adopted `corr`, `phase`, `plan` and `role`, plus the two cache
-//    figures where the evidence supplied them. The discriminator is WHERE A
-//    FIGURE LIVES, not which writer is senior:
+// 3. THE EVENTS, and nothing on any of them this hook cannot SEE. The answer is
+//    a LIST (D-08), in the order the disk half must append it: empty for do
+//    nothing, and one entry for every answer this rule gives today. It is
+//    plural because a stop can owe the record more than one fact - a gate that
+//    withholds the close still holds cache figures nothing else will ever have -
+//    and a `{...}|null` contract cannot express that at all.
+//
+//    The unambiguous answer is a `lifecycle` `return` carrying the adopted
+//    `corr`, `phase`, `plan` and `role`, plus the two cache figures where the
+//    evidence supplied them. The discriminator is WHERE A FIGURE LIVES, not
+//    which writer is senior:
 //
 //      - On the host's RETURN - `tokens`, `turns`, `duration_ms` and the
 //        `detail` text. Only the orchestrator sees a return, so this event
@@ -167,7 +174,9 @@ function alreadyClosed(render, id) {
 }
 
 /**
- * The close event a stopped subagent should append, or null for do-nothing.
+ * The events a stopped subagent should append, in file order. EMPTY is the
+ * do-nothing answer - never null, so the disk half's one loop covers both and
+ * there is no second shape for a caller to test for (D-08).
  *
  * @param {any} payload the host's `SubagentStop` JSON
  * @param {any} render the result of `renderTrace(planningRoot)` - unscoped,
@@ -177,26 +186,26 @@ function alreadyClosed(render, id) {
  *   Omitted - the shape every pre-evidence caller uses - the termination gate
  *   answers `unknown`, the cache sums answer nothing at all, and this rule
  *   proceeds exactly as it does with one.
- * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}|null}
+ * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}[]}
  */
 export function closeForStop(payload, render, evidence) {
   const transcript = evidence && evidence.transcript;
   // GATE 0 - the termination gate. NOT-TERMINAL alone refuses; `unknown` falls
   // through to the behaviour this hook had before it read a transcript at all.
   const stopped = terminalOf(transcript);
-  if (stopped.state === STOP_STATE.NOT_TERMINAL) return null;
+  if (stopped.state === STOP_STATE.NOT_TERMINAL) return [];
 
   // GATE 1 - the self-filter. `roleOfAgent` is null for the host's own types,
   // for `coordinator`, and for anything else that is not a Cadence rung file.
   const role = roleOfAgent(payload && payload.agent_type);
-  if (!role) return null;
+  if (!role) return [];
 
   // GATE 2a - this worker's close may already be on the record. The hand-written
   // close carries the id; a hook stop that arrives after it has nothing left to
   // close, and falling through would land it on whatever ELSE is open - which is
   // the stolen-bracket defect, arriving after the fact instead of ahead of it.
   const id = agentIdOf(payload);
-  if (id && alreadyClosed(render, id)) return null;
+  if (id && alreadyClosed(render, id)) return [];
 
   // GATE 2b - UNAMBIGUOUS OR NOTHING. `unpaired` already carries the DISPATCH's
   // own `role` (the field the pairing computed), so this reads the render's
@@ -207,7 +216,7 @@ export function closeForStop(payload, render, evidence) {
   // message - which is precisely what the parallel path does.
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
   const mine = rows.filter((row) => row && row.role === role);
-  if (mine.length !== 1) return null;
+  if (mine.length !== 1) return [];
   const best = mine[0];
 
   // GATE 3 - the event. Identity quoted verbatim off the adopted row; no figure
@@ -229,7 +238,7 @@ export function closeForStop(payload, render, evidence) {
   // append time invents a figure that looks real. OMITTED, never null, when the
   // evidence names no instant - the absent-not-zero rule the bracket's own
   // `duration_ms` follows.
-  return {
+  return [{
     corr: best.corr,
     phase: best.phase,
     plan: best.plan,
@@ -238,5 +247,5 @@ export function closeForStop(payload, render, evidence) {
     role,
     ...(stopped.ts ? { ts: stopped.ts } : {}),
     ...cacheOf(transcript),
-  };
+  }];
 }

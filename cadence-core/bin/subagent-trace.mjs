@@ -106,8 +106,15 @@ try {
   const root = planningRoot(cwd);
   if (root) {
     const evidence = { transcript: readTranscript(input?.transcript_path) };
-    const event = closeForStop(input, renderTrace(root), evidence);
-    if (event) appendEvent(root, event);
+    // A LIST, appended in the order the rule gave it (D-08). One stop can owe
+    // the record more than one event - a gate that withholds the close still
+    // holds cache figures nothing else will ever have - and the empty list is
+    // the do-nothing answer, so there is no null arm to test for. The
+    // `Array.isArray` guard is not defensive style: a non-array answer inside a
+    // hook contractually forbidden to speak on any stream must write nothing
+    // rather than throw, and the `catch` below is silent by design.
+    const events = closeForStop(input, renderTrace(root), evidence);
+    if (Array.isArray(events)) for (const event of events) appendEvent(root, event);
   }
 } catch {
   // Every failure is silent by contract: a broken recorder must never disturb
