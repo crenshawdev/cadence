@@ -1,0 +1,77 @@
+{
+  "status": "delivered",
+  "score": "6/6",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "All 19 files under agents/ carry exactly one distinct post-frontmatter body per role, and no rung sentence survives anywhere on a shipped surface",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Hashed the raw bytes after the frontmatter fence for all 19 files: cad-assumptions-analyzer 2 files/1 distinct (153 B), cad-executor 2/1 (141 B), cad-plan-checker 4/1 (145 B), cad-planner 3/1 (140 B), cad-reviewer 4/1 (141 B), cad-verifier 4/1 (141 B) - 19 files, 6 roles, 6 distinct bodies. `grep -rn \"Your rung is\" agents/` and `grep -rn \"and your rung\" agents/` both empty; a repo-wide grep over *.md/*.mjs/*.json outside .planning finds no stale rung prose on any shipped surface (only rung-agent.mjs:182's historical doc comment and the rewritten SKILL.md line). cadence-core/bin/lib/rung-agent.mjs rungBody(skill) now takes the skill alone."
+    },
+    {
+      "n": 2,
+      "truth": "The byte-identity rule exists in the lib, is wired into self-verify's envelope, and a one-byte re-wrap of one rung file turns the real tree red with exactly one problem naming that file and its role",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "Rule: rungPrefixIssues(bodies) at cadence-core/bin/lib/rung-agent.mjs, scoped by RUNG_FILES, raw-byte grouping, minority-is-the-stray, returns {code:'rung-prefix-split', role, stems, detail}. Wired: imported at self-verify.mjs:255, bodies collected raw in the agents/ walk (self-verify.mjs:931 `agentBodies[e.slice(0,-3)] = body`), consumed as check 7d after the walk (self-verify.mjs:1050-1060), and `rung-prefix` is in the single `checked:` list (self-verify.mjs:1398). LIVE PROBE on a full copy of the tree in scratchpad: baseline ok:true problems:[]; replacing 'full\\ncontract' with 'full contract' in agents/cad-executor-xhigh.md (387 B before and after) gives ok:false with exactly ONE problem, kind rung-prefix-split, file agents/cad-executor-xhigh.md, detail naming agents/cad-executor.md and the role cad-executor; restoring the file returns ok:true problems:[]. `node --test cadence-core/bin/rung-agent.test.mjs` pass 41 fail 0 and `node --test cadence-core/bin/self-verify.test.mjs` pass 177 fail 0 carry the matching rows, including 'check 7d: ONE rung file re-wrapped is flagged, naming that file and its role' which also asserts no budget-overrun and no agent-carries-behaviour fires on that input."
+    },
+    {
+      "n": 3,
+      "truth": "Routing returns the same agent, model and effort for all 18 (level, role) cells as before the phase, pinned by a test that a future change would fail",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "`git diff 167272d5..8ca0dfdc` touches neither cadence-core/bin/route.mjs, cadence-core/route-table.json, cadence-core/bin/route.test.mjs nor .planning/config.json, and the RUNG_FILES table inside rung-agent.mjs is unchanged (no stem added, removed or renamed - D-10 held). route.test.mjs:79-131 pins all 18 cells as HAND-WRITTEN data (model, effort, agent, retry effort, retry agent), one test() per cell, explicitly never derived from route-table.json; `node --test cadence-core/bin/route.test.mjs` at HEAD is tests 160 / pass 160 / fail 0. Live end-to-end: `node cadence-core/bin/route.mjs resolve --role <role>` returns an envelope carrying agent, model and effort for each of the six roles (e.g. cad-plan-checker -> cad-plan-checker-high / sonnet / high)."
+    },
+    {
+      "n": 4,
+      "truth": "The plan checker's contract no longer claims its agent file names its rung, and the resolved rung actually reaches it at both - and only - the two sites Cadence dispatches that role from",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "skills/cad-plan-checker-contract/SKILL.md:20 now opens 'Your dispatch prompt names your rung.' - `grep -n \"agent file names your rung\"` is empty, the four-rung vocabulary (low, medium, high, xhigh) is retained, and the block's one real instruction ('the higher your rung, the harder you reason and the stricter you are on borderline BLOCKER vs WARNING calls ... identical at every rung') is intact. Seam trace: the value enters at `route.mjs resolve --role cad-plan-checker` (envelope carries `effort`, observed live) and lands in the dispatch prompt at cadence-core/workflows/plan.md:400 inside check_gate's fenced <verification_context>, immediately below the resolve at :381 - 'Rung: {the `effort` the resolve above returned} - that value, never a rung named here' - and at cadence-core/references/plan-revision.md:44-45 on the step 2 narrowed --attempt 2 re-dispatch - 'Name it in the prompt too - `Rung: {the effort THIS resolve returned}`'. Neither line hardcodes a rung name. A repo-wide grep for cad-plan-checker across cadence-core/ and skills/ finds no third dispatch site."
+    },
+    {
+      "n": 5,
+      "truth": "The full suite is green and self-verify on the real root reports problems: []",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`node cadence-core/bin/test.mjs` at HEAD 8ca0dfdc: tests 3391 / pass 3391 / fail 0 / cancelled 0 (one run). `node cadence-core/bin/self-verify.mjs --root .`: ok true, problems [], and `checked` contains rung-prefix. The 9 planning-renumber.test.mjs failures the executor recorded as a deviation did NOT reproduce here, matching the orchestrator's post-phase re-measurement in SUMMARY.md:28."
+    },
+    {
+      "n": 6,
+      "truth": "Deleting rungBodyIssue's body-vs-frontmatter-effort arm (D-09) left no coverage hole - the frontmatter effort is still held against the rung map on every agent file",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "Probe on the scratchpad tree copy: changing agents/cad-executor-xhigh.md's frontmatter to `effort: high` gives ok:false with {kind:'rung-effort-mismatch', file:'agents/cad-executor-xhigh.md', detail:'lib/rung-agent.mjs files this as cad-executor's xhigh rung, but it carries effort: high'}. That is check 7b (self-verify.mjs:968-985, rungEffortIssue), which runs on the frontmatter of every agent file rather than only the ones preloading a contract. The two deleted test rows are replaced by comments recording the redundancy at rung-agent.test.mjs and self-verify.test.mjs:762-768, as the plan required. weight-budgets.json raised exactly the three rows the prose edit pushed over (plan-revision.md 3863->4016, plan.md 29485->29572, cad-plan-checker-contract/SKILL.md 6746->6820) and touched none of the 19 shrinking agents/ rows, honouring D-08."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Rung bodies are byte-identical within a role",
+      "evidence": "Hashed post-frontmatter bytes of all 19 agents/*.md: 6 roles, 6 distinct bodies, one per role (executor 2 files, planner 3, reviewer 4, verifier 4, plan-checker 4, assumptions-analyzer 2). No 'Your rung is' or 'and your rung' anywhere under agents/, and no stale rung prose on any shipped surface repo-wide."
+    },
+    {
+      "k": 2,
+      "name": "A one-byte divergence in a rung body is caught",
+      "evidence": "Live probe on a full copy of the tree: baseline self-verify ok:true problems:[]; re-wrapping one line break in agents/cad-executor-xhigh.md (387 B unchanged) gives ok:false with exactly one rung-prefix-split naming that file and cad-executor; restoring returns ok:true problems:[]. Rule lives in lib/rung-agent.mjs (rungPrefixIssues), wired as check 7d in self-verify.mjs and named rung-prefix in `checked`."
+    },
+    {
+      "k": 3,
+      "name": "Routing is unmoved across all 18 cells",
+      "evidence": "route.mjs, route-table.json, route.test.mjs, config.json and the RUNG_FILES table are all untouched by 167272d5..8ca0dfdc; route.test.mjs:79-131 pins all 18 cells as hand-written data with model, effort, agent and retry agent, and passes 160/160 at HEAD. Live resolve returns agent/model/effort per role."
+    },
+    {
+      "k": 4,
+      "name": "The plan checker learns its rung from the dispatch prompt",
+      "evidence": "SKILL.md:20 'Your dispatch prompt names your rung'; grep for 'agent file names your rung' empty; BLOCKER vs WARNING instruction and the four-rung vocabulary retained. plan.md:400 (check_gate, below the resolve at :381) and plan-revision.md:44-45 (step 2 re-dispatch) each carry a Rung line sourced from that dispatch's own resolved `effort`, with no rung name in the prose. No third dispatch site exists."
+    },
+    {
+      "k": 5,
+      "name": "The suite is green and self-verify is clean",
+      "evidence": "node cadence-core/bin/test.mjs -> tests 3391 / pass 3391 / fail 0. node cadence-core/bin/self-verify.mjs --root . -> ok true, problems []."
+    }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
