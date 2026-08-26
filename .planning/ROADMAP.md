@@ -2,7 +2,7 @@
 
 ## Overview
 
-**`v3.7.3`, opened 2026-08-26.** Three phases against the `Dispatch cost`
+**`v3.7.3`, opened 2026-08-26.** Four phases against the `Dispatch cost`
 milestone. The subject is what a dispatch costs, and the cycle opens by fixing
 the instruments rather than the cost, because every argument for cutting the
 cost is denominated in figures this repository records about itself.
@@ -43,21 +43,22 @@ belongs to `Finding flood` with GH-100 and GH-135, not here.
   bytes, the estimated tokens, or refuse at plan time versus warn. The measured
   case (four files, 252,473 B, ~63,000 estimated tokens inside a 70,554-token
   dispatch) says the ratio is stable enough to bound either way. Decided at
-  phase 2 planning against the actual `files:` declarations in the archive, not
+  phase 3 planning against the actual `files:` declarations in the archive, not
   now.
 
 - **OQ-2 - whether the risk floor can read a diff at plan time.** RSK-05 wants
   the floor to stop inheriting a whole file's matches, but at `check_census`
   time there is no diff yet - the plan has not run. Whether the fix is a
   narrower read, a waiver key, or a planner-contract line telling planners to
-  declare narrow files is decided at phase 2 planning by reading what
+  declare narrow files is decided at phase 3 planning by reading what
   `planning/risk-check.mjs` actually has in hand at that moment.
 
 ## Phases
 
 - [x] **Phase 1: Make the record say what happened** - fix the close dedup on a repeat, land the stop close on the right worker, give `duration_ms` a reader, record cache figures
-- [ ] **Phase 2: Bound what a dispatch is handed** - bound a plan by declared bytes, stop the risk floor inheriting a whole file's matches, unforeclose the shared rung prefix
-- [ ] **Phase 3: Close the coverage and detector gaps** - walk `planning/` in the skim test, stop the risk detector re-tripping on stored reviewer text, home `DISPATCH_WINDOW_DEFAULTS` with its reader
+- [ ] **Phase 2: Make the cache figures reach the record** - report what the transcript said even when the close must be withheld, and join a cache-only fact to its bracket
+- [ ] **Phase 3: Bound what a dispatch is handed** - bound a plan by declared bytes, stop the risk floor inheriting a whole file's matches, unforeclose the shared rung prefix
+- [ ] **Phase 4: Close the coverage and detector gaps** - walk `planning/` in the skim test, stop the risk detector re-tripping on stored reviewer text, home `DISPATCH_WINDOW_DEFAULTS` with its reader
 
 ## Phase Details
 
@@ -73,7 +74,19 @@ belongs to `Finding flood` with GH-100 and GH-135, not here.
 5. A bracket close records cache figures, and `trace render` reports them; a close carrying none omits the keys rather than writing zeros.
 6. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.
 
-### Phase 2: Bound what a dispatch is handed
+### Phase 2: Make the cache figures reach the record
+**Goal:** The two prompt-cache figures land on the bracket for every worker that STOPPED. Today they land only when the hook can both identify the dispatch and call the transcript terminal, and the gap is not a rounding error: 16.6% of the record's cache traffic is dropped outright.
+**Depends on:** Phase 1
+**Requirements:** TRC-07
+**Success Criteria:**
+1. A `SubagentStop` whose transcript is NOT terminal records the worker's cache figures AND still writes no `return`, demonstrated against one fixture asserting both in a single render - AC3's gate is unchanged, not relaxed.
+2. `trace render` folds a cache-only fact onto the bracket for the same worker; a bracket that already carries cache figures is not overwritten, on the same fill-only-empty rule `turns`, `duration_ms` and `agent_id` follow.
+3. With two open dispatches of one role, the cache figures still reach the correct bracket, joined by `agent_id` rather than by position or arrival order.
+4. `roles.tokens` is byte-identical with and without any cache-only fact present, so D-03's denomination rule is unchanged.
+5. Re-running the transcript measurement over this repository shows the RECORDED cache-read total within a stated tolerance of the transcript total. Baseline measured 2026-08-26: 907,299,249 of 5,477,801,867 tokens (16.6%) are unrecorded, so today's figure is 83.4%.
+6. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems, with the new event registered in its hook-events check and the flag census re-pinned per D-12.
+
+### Phase 3: Bound what a dispatch is handed
 **Goal:** A plan cannot silently hand its executor an unbounded read set, a plan declaring a large file can still earn the routing discount, and a role's rungs can share a cached prefix.
 **Depends on:** Phase 1
 **Requirements:** BUD-03, RSK-05, RNG-03
@@ -84,7 +97,7 @@ belongs to `Finding flood` with GH-100 and GH-135, not here.
 4. No two rungs of one role diverge before their shared contract prose, demonstrated by a byte comparison of two rung files, and phase 1's cache figures show what the change recovered.
 5. `node cadence-core/bin/test.mjs` is green.
 
-### Phase 3: Close the coverage and detector gaps
+### Phase 4: Close the coverage and detector gaps
 **Goal:** The three known one-change gaps are shut: the skim test covers `planning/`, the risk detector stops re-tripping on its own stored reviewer text, and `DISPATCH_WINDOW_DEFAULTS` sits with its only reader.
 **Depends on:** Phase 1
 **Requirements:** COV-02
