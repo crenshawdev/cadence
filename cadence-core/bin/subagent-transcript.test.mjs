@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { terminalOf, STOP_STATE } from './lib/subagent-transcript.mjs';
+import { terminalOf, cacheOf, STOP_STATE } from './lib/subagent-transcript.mjs';
 
 /** One transcript line, in the host's own shape. */
 const line = (o) => JSON.stringify(o);
@@ -125,5 +125,77 @@ test('transcript: the rule never throws, whatever it is handed', () => {
   // error is just a close the record silently lost.
   for (const input of [undefined, null, 0, [], {}, Symbol('x'), ' ', 'null', '[]', '{}']) {
     assert.doesNotThrow(() => terminalOf(/** @type {any} */ (input)));
+  }
+});
+
+// --- the worker's own cache traffic (TRC-05) ---------------------------------
+
+/** An assistant line carrying a `message.usage`, the host's own shape. */
+const billed = (usage, timestamp = T2) => line({
+  type: 'assistant', agentId: 'a1852a9b36a6c52b8', timestamp,
+  message: { id: 'msg_01', role: 'assistant', content: [], stop_reason: 'end_turn', usage },
+});
+
+test('transcript: the cache figures are SUMMED across every assistant entry', () => {
+  // Each `message.usage` describes ONE billed request, so the sum is the
+  // worker's total billed cache traffic - the quantity a prompt-cache claim is
+  // argued in. A max would answer how big the prefix got and could not be
+  // compared across two workers with different turn counts.
+  const text = [
+    user(T1),
+    billed({ cache_creation_input_tokens: 100, cache_read_input_tokens: 1000 }, T1),
+    user(T2),
+    billed({ cache_creation_input_tokens: 50, cache_read_input_tokens: 2000 }),
+  ].join('\n') + '\n';
+  assert.deepEqual(cacheOf(text), {
+    cache_creation_input_tokens: 150,
+    cache_read_input_tokens: 3000,
+  });
+  // ...and reading the file for cache traffic did not change what it says about
+  // the worker having finished, or when.
+  assert.deepEqual(terminalOf(text), { state: STOP_STATE.TERMINAL, ts: T2 });
+});
+
+test('transcript: a figure no entry reported is ABSENT, never 0', () => {
+  // An absent key and a zero are different claims: one says the transcript
+  // never reported the figure, the other claims the worker billed no cache
+  // traffic. Checked by key presence throughout, never against 0.
+  const cases = {
+    'assistant entries with no usage object at all':
+      [user(T1), asst('end_turn', T2)].join('\n'),
+    'a usage object carrying neither field': billed({ input_tokens: 12 }),
+    'nothing readable at all': '',
+    'user lines only': user(T1),
+  };
+  for (const [why, text] of Object.entries(cases)) {
+    const answer = cacheOf(text);
+    assert.equal('cache_creation_input_tokens' in answer, false, why);
+    assert.equal('cache_read_input_tokens' in answer, false, why);
+  }
+  // The two figures answer INDEPENDENTLY: one reported and one not is one key.
+  assert.deepEqual(cacheOf(billed({ cache_creation_input_tokens: 7 })),
+    { cache_creation_input_tokens: 7 });
+  // ...and a figure the host really reported as zero is RECORDED as zero.
+  assert.deepEqual(cacheOf(billed({ cache_read_input_tokens: 0 })),
+    { cache_read_input_tokens: 0 });
+});
+
+test('transcript: a non-numeric cache figure contributes NOTHING', () => {
+  // The guard `lib/trace.mjs` already puts on `tokens`, `turns` and
+  // `duration_ms`, for the identical hazard: `"1,000"` string-concatenated onto
+  // a numeric field a caller sums is worse than no figure at all.
+  const text = [
+    billed({ cache_creation_input_tokens: 10, cache_read_input_tokens: '1,000' }, T1),
+    billed({ cache_creation_input_tokens: NaN, cache_read_input_tokens: null }),
+  ].join('\n');
+  const answer = cacheOf(text);
+  assert.deepEqual(answer, { cache_creation_input_tokens: 10 });
+  assert.equal('cache_read_input_tokens' in answer, false,
+    'a string figure left a key behind rather than contributing nothing');
+  // A usage that is not an object at all, and a line the parse skipped, are the
+  // same nothing - the rule never throws whatever the file holds.
+  for (const input of [undefined, null, 42, billed('nope'), billed(null), '{"type":"assis']) {
+    assert.doesNotThrow(() => cacheOf(/** @type {any} */ (input)));
+    assert.deepEqual(cacheOf(/** @type {any} */ (input)), {});
   }
 });

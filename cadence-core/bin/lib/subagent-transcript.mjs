@@ -1,7 +1,8 @@
 // @ts-check
 // subagent-transcript.mjs - the pure rule that reads a worker's OWN transcript
-// and answers two things about it: did that worker reach a terminal entry, and
-// what instant does that entry carry.
+// and answers what only that file can say: did the worker reach a terminal
+// entry, what instant does that entry carry, and how much cache traffic did the
+// worker bill along the way.
 //
 // WHY IT EXISTS. `SubagentStop` fires when the host says a subagent stopped,
 // and the payload carries no field that distinguishes "finished" from "handed
@@ -50,6 +51,25 @@
 // which is exactly why an unrecognized shape answers `unknown` instead of
 // guessing at a rule for it.
 //
+// THE CACHE FIGURES, and why they are SUMMED. Every assistant entry carries a
+// `message.usage`, and on it `cache_creation_input_tokens` and
+// `cache_read_input_tokens`. Each `usage` describes ONE billed request, so the
+// SUM across a worker's entries is that worker's total billed cache traffic -
+// the quantity a prompt-cache claim is argued in, and the only one that can be
+// compared between two dispatches. A MAX would answer how large the cached
+// prefix got at its biggest, which says nothing about what the dispatch cost and
+// cannot be compared across two workers with different turn counts. The figures
+// are not on the host's return, so no hand-written close can ever carry them
+// (D-11): this file is the only place they exist.
+//
+// AND WHAT THEY ARE NOT. The read figure counts one cached prefix ONCE PER TURN,
+// so it is not a window size and is denominated differently from a bracket's
+// `tokens`, which behaves like the dispatch's FINAL window. Measured 2026-08-26
+// on this machine, one 292-assistant worker sums to 33,033,480 cache-read tokens
+// against a six-figure bracket `tokens`; a reader that took the two for the same
+// kind of number would misprice every role it touched. That is why they ride the
+// bracket row and never reach the `roles` block's token bill (D-03).
+//
 // A TRUNCATED LINE IS SKIPPED, never fatal: the host appends to this file while
 // the hook may already be reading it, so a partial tail must not cost the
 // caller every complete line ahead of it. That is the posture
@@ -80,6 +100,65 @@ export const STOP_STATE = Object.freeze({
 const TOOL_USE = 'tool_use';
 
 /**
+ * The transcript's `"assistant"` lines, in file order. ONE copy of the line
+ * walk, because both answers below read the same file for the same worker on
+ * the same trigger and a second copy of the skip rules is how two readers of one
+ * transcript start disagreeing about which lines are in it.
+ *
+ * Anything that is not a non-empty string yields nothing at all, which is what
+ * lets an absent, empty or over-cap file arrive here as an ordinary argument.
+ * @param {any} text
+ * @returns {Generator<any>}
+ */
+function* assistantEntries(text) {
+  if (typeof text !== 'string' || !text) return;
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    /** @type {any} */
+    let o;
+    try { o = JSON.parse(t); } catch { continue; } // a partial or foreign line
+    if (o && typeof o === 'object' && o.type === 'assistant') yield o;
+  }
+}
+
+/** The two `message.usage` fields `cacheOf` sums, in the host's own spelling. */
+const CACHE_FIELDS = ['cache_creation_input_tokens', 'cache_read_input_tokens'];
+
+/**
+ * The two cache figures a worker billed, summed across its whole transcript.
+ *
+ * @param {any} text the transcript's own bytes, INJECTED - the whole file as a
+ *   string, the same argument `terminalOf` takes.
+ * @returns {{cache_creation_input_tokens?: number, cache_read_input_tokens?: number}}
+ *   Each key is present only where at least one assistant entry carried a
+ *   NUMERIC, finite value for it, and ABSENT otherwise - never 0. An absent key
+ *   says the transcript never reported the figure; a zero would claim the worker
+ *   billed no cache traffic, and this record keeps those two claims apart
+ *   everywhere. The keys take the host's OWN spelling so a bracket figure joins
+ *   back to the transcript line it was summed from with no translation table.
+ */
+export function cacheOf(text) {
+  /** @type {Record<string, number>} */
+  const sums = {};
+  for (const entry of assistantEntries(text)) {
+    const usage = entry.message && typeof entry.message === 'object'
+      ? entry.message.usage : null;
+    if (!usage || typeof usage !== 'object') continue;
+    for (const field of CACHE_FIELDS) {
+      const v = usage[field];
+      // The guard `lib/trace.mjs` already puts on `tokens`, `turns` and
+      // `duration_ms`, for the identical hazard: a host or hand-edited line
+      // carrying `"cache_read_input_tokens": "1,000"` must contribute NOTHING
+      // rather than be string-concatenated onto a numeric field a caller sums.
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      sums[field] = (sums[field] || 0) + v;
+    }
+  }
+  return sums;
+}
+
+/**
  * Whether a worker reached a terminal entry, and when.
  *
  * @param {any} text the transcript's own bytes, INJECTED - the whole file as a
@@ -95,14 +174,7 @@ export function terminalOf(text) {
 
   /** @type {any} */
   let last = null;
-  for (const line of text.split('\n')) {
-    const t = line.trim();
-    if (!t) continue;
-    /** @type {any} */
-    let o;
-    try { o = JSON.parse(t); } catch { continue; } // a partial or foreign line
-    if (o && typeof o === 'object' && o.type === 'assistant') last = o;
-  }
+  for (const entry of assistantEntries(text)) last = entry;
   // No assistant line at all: a user-only transcript, an unparseable file, or a
   // layout this rule does not recognize. Nothing to decide on.
   if (!last) return { state: STOP_STATE.UNKNOWN, ts: null };
