@@ -224,11 +224,34 @@ test('stop: a worker already closed by the orchestrator writes NOTHING', () => {
   // stolen-bracket defect arriving late: plan 2 is open, and adopting it would
   // bill worker A's terminal against worker B's dispatch. No transcript here,
   // so there are no figures for the gate's fact to state either.
+  //
+  // Both rows share a `corr` because both plans belong to ONE phase run, which
+  // is the only arrangement in which this gate is reached at all: the match is
+  // scoped to the run the candidate set names, and the test below pins what
+  // happens when a bracket wearing this id belongs to some other run.
   const r = withBrackets(
-    [open('cad-executor', '2', T(10), { corr: '2-def5678' })],
+    [open('cad-executor', '2', T(10))],
     [bracket('cad-executor', '1', { agent_id: AGENT })],
   );
   assert.deepEqual(closeForStop(STOP, r), []);
+});
+
+test('stop: a REUSED id does not reach back into a dead run', () => {
+  // The id is the host's, not Cadence's, and it repeats: measured over 1,333
+  // transcripts, 7 of 1,323 distinct ids appear in two or more transcripts of
+  // one project. Unscoped, this stop matches the old bracket, and gate 2a then
+  // quotes ITS `corr` and `phase` onto the fact - so the figures fold onto a
+  // bracket in another phase and a `--phase` render never shows it. Scoped, the
+  // old bracket is not this worker's close, and the single open dispatch of the
+  // current run is.
+  const r = withBrackets(
+    [open('cad-executor', '2', T(10))],
+    [bracket('cad-executor', '1', { agent_id: AGENT, corr: '1-dead9999', phase: '1' })],
+  );
+  const [ev] = closeForStop(STOP, r);
+  assert.equal(ev.event, 'return');
+  assert.equal(ev.plan, '2');
+  assert.equal(ev.corr, '2-abc1234', 'the close took a dead run\'s corr');
 });
 
 test('stop: another worker\'s closed bracket does not block this one', () => {
@@ -477,13 +500,16 @@ const gates = {
     // The identity comes off the BRACKET, which is the row the fact will fold
     // onto and the only evidence this gate has: an already-closed dispatch is
     // not in `unpaired` at all. The open row beside it carries a different
-    // `corr`, so quoting the wrong source is visible.
+    // `phase`, so quoting the wrong source is visible. It can no longer carry a
+    // different `corr` to show that: the match is scoped to the run in flight,
+    // so a bracket outside it is a reused id rather than this worker's close,
+    // which `stop: a REUSED id does not reach back into a dead run` pins.
     payload: { ...VSTOP, transcript: billedStop('end_turn') },
     render: () => withBrackets(
       [open('cad-verifier', 'cad-verifier', T(3))],
-      [bracket('cad-verifier', 'cad-verifier', { agent_id: AGENT, corr: '9-closed1', phase: '9' })],
+      [bracket('cad-verifier', 'cad-verifier', { agent_id: AGENT, phase: '9' })],
     ),
-    corr: '9-closed1',
+    corr: '2-abc1234',
     phase: '9',
     // The id IS this gate, so an id-less payload is not an already-closed stop
     // at all: it falls through to the single open dispatch and closes it, which

@@ -246,13 +246,33 @@ function agentIdOf(payload) {
  * closed, and that is the safe direction: it falls through to the single-open
  * test below, which refuses on any ambiguity of its own.
  *
+ * SCOPED TO THE RUN IN FLIGHT, for the same reason gate 2b is (D-03). The id is
+ * the host's, not Cadence's: measured 2026-08-26 over 1,333 transcripts, 7 of
+ * 1,323 distinct ids appear in two or more transcripts of the SAME project. An
+ * unscoped match lets one of those reuses find a bracket from a DEAD run, and
+ * because gate 2a quotes its identity off the row it matched, the fact is then
+ * written wearing that dead run's `corr` and `phase` - so D-10's corr-scoped
+ * fold has nothing left to defend, the figures land on a bracket in another
+ * phase, and a `--phase` render never shows the misplacement. Before this
+ * phase the same unscoped match was a silent no-op; the WRITE is what made it
+ * reachable.
+ *
+ * The scope is the candidate set's own `corr`, never a second notion of "now":
+ * where a dispatch of this role is open, the worker stopping is in THAT run and
+ * a bracket from any other one is a collision. Where no dispatch is open there
+ * is no live run to steal from, the match stays unscoped, and a worker whose
+ * bracket is already closed still finds it.
+ *
  * @param {any} render the result of `renderTrace(...)`
  * @param {string} id
+ * @param {any} corr the run in flight, or null/undefined for no scope
  * @returns {any}
  */
-function closedBracket(render, id) {
+function closedBracket(render, id, corr) {
   const rows = render && Array.isArray(render.brackets) ? render.brackets : [];
-  return rows.find((row) => row && row.agent_id === id) || null;
+  const scoped = corr === null || corr === undefined
+    ? rows : rows.filter((row) => row && corrKey(row.corr) === corrKey(corr));
+  return scoped.find((row) => row && row.agent_id === id) || null;
 }
 
 /**
@@ -356,9 +376,12 @@ export function closeForStop(payload, render, evidence) {
   const id = agentIdOf(payload);
   const cache = cacheOf(transcript);
   const stopped = terminalOf(transcript);
-  const closed = id ? closedBracket(render, id) : null;
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
+  // `mine` is computed FIRST because gate 2a's match now reads its `corr`: the
+  // candidate set is what names the run in flight, and a bracket outside it
+  // wearing this id is a reused host id rather than this worker's own close.
   const mine = currentRun(rows.filter((row) => row && row.role === role));
+  const closed = id ? closedBracket(render, id, mine.length ? mine[0].corr : null) : null;
   // The one answer a withholding gate gives: the figures, and never a close.
   const withheld = () => cacheFact(id, role, cache, stopped.ts, closed || mine[0] || null);
 
