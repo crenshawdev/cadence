@@ -132,8 +132,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_na
 causes the worker to read, one comma-separated value) makes the resolve write
 the worker's lifecycle `dispatch` event itself - one seam call where dispatch
 sites used to pay two. `--bracket-plan` is the worker key when it is not the
-role name (an executor's plan number). The CLOSE half stays with the caller,
-which alone sees the return: ONE `trace close` per dispatch moment, keyed
+role name (an executor's plan number). The CLOSE half is the CALLER's to
+write, because the caller alone sees the return: ONE `trace close` per dispatch
+moment, keyed
 `--plan <the worker key>` and `--role <name>`, carrying
 `--tokens <the figure on the subagent return>`,
 `--turns <the tool-call count on that same return>` and
@@ -151,6 +152,17 @@ never `--duration-ms 0`, which would claim a dispatch that took no time.
 `--duration-ms` takes the host's OWN spelling (`1m 23s`, `450ms`) or a plain
 millisecond count, so the figure is copied rather than converted; the standing
 exposure all three of them create is stated in the window-CEILING bullet above.
+The caller is no longer the only WRITER of a close, and is still the only one
+that can carry those figures: the host's `SubagentStop` hook
+(`cadence-core/bin/subagent-trace.mjs`) closes a bracket this line never
+reached - a session that died between the two halves, a return nobody billed -
+and it carries IDENTITY and no figures at all, because the stop payload holds
+none. So keep writing this line. It is a permanent FALLBACK rather than a
+duplicate to prune: `/cad-task`'s phase-0 bracket has no subagent behind it for
+any hook to close, and a hook-only design goes silently quiet on a host rename.
+Two closes of one dispatch render as ONE bracket in either arrival order -
+`lib/trace.mjs`'s worker-key dedup folds whichever arrived second into the row
+the first opened, filling only the fields that row left empty.
 A
 figureless return is ROUTINE (`lib/trace.mjs` holds the provenance), and the
 `unrecorded` it produces names a silent return, never a skipped bracket. A

@@ -227,7 +227,7 @@ declared files, so an executor is routed for the plan it is being handed
 executor comes back, append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path>
 ```
 
 ONE line per executor, and the detail is the executor's own return line - write
@@ -236,12 +236,18 @@ references/conventions.md). OMIT the detail entirely for a `PLAN COMPLETE` or
 `PLAN PARTIAL` and the seam closes a `return`; carry it for any checkpoint
 return and the seam closes a `checkpoint`. A plan moved to another path or rung is an `escalation`,
 which the seam does not infer - it stays on `trace append`. All three close a
-bracket; a worker with none of them is what `trace render` reports as unpaired.
+bracket. A dispatch that gets none of them is closed by the host's
+`SubagentStop` hook instead, so `trace render` reports as `unpaired` only a
+worker NEITHER writer closed - but that hook carries no figures at all, so a
+skipped close still costs the record this worker's tokens, turns and wall
+clock.
 `--plan`/`--bracket-plan` is the
 WORKER key that pairs a dispatch with its close; `--role` is what the per-role
 totals group on, and keyed on the plan number alone `cad-executor` - the single
 largest spender in a phase - is the one line the totals could never print.
-OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule). A
+OMIT `--tokens` on a figureless return, and `--turns` and `--duration-ms` on
+the same rule - never a `0`, which claims a measurement nobody made
+(seam-spawn-agent.md's bracket rule). A
 worktree executor still emits nothing of its own - these are the
 ORCHESTRATOR's lines.
 
@@ -250,9 +256,10 @@ ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:
 keying it into the role table would invent a role that never ran.
 
 A worktree executor emits NO trace events of its own, and inner tool-level
-detail is deliberately not captured. The orchestrator's brackets are what make
-every worker attributable; what happened INSIDE a worker is its report file's
-job.
+detail is deliberately not captured. The bracket AROUND a worker is what makes
+it attributable - the orchestrator writes both halves, and the host's
+`SubagentStop` hook writes a close of its own for a dispatch whose hand-written
+close never ran; what happened INSIDE a worker is its report file's job.
 
 Handle the executor's return:
 - **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
@@ -541,6 +548,20 @@ verification runs in a fresh subagent.
 - Deviations live in SUMMARY.md - git and SUMMARY are the record, STATE is
   not a log.
 - Read only the config keys named here; unknown keys are ignored.
+- THREE writers touch this run record's brackets and no fourth: the DISPATCH
+  half rides each site's own `route.mjs resolve` through `--bracket-read`; the
+  CLOSE half is the orchestrator's hand-written `trace close`, which alone sees
+  the return and so alone carries `--tokens`, `--turns` and `--duration-ms`; and
+  the host's `SubagentStop` hook (`cadence-core/bin/subagent-trace.mjs`) writes
+  a figureless close for a dispatch whose hand-written one never ran. Executors
+  write no trace events of their own, on either path.
+- The hand-written close is a FALLBACK kept on purpose, never a duplicate to
+  prune: `/cad-task`'s phase-0 bracket has no subagent behind it for any hook to
+  close, and a hook-only design goes silently quiet on a host rename, where a
+  missing close renders as the visible `unpaired` defect instead. Two closes of
+  one dispatch render as ONE bracket - the worker-key dedup in
+  `cadence-core/bin/lib/trace.mjs` folds whichever arrived second into the row
+  the first opened.
 </guardrails>
 
 <success_criteria>
