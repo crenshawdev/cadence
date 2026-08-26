@@ -123,6 +123,18 @@ re-measures (AC4), the same way phase 1 split its two seams.
   adding a second overwrite rule - `for (const k of CACHE_KEYS) if (!(k in b)
   && k in cache) b[k] = cache[k];` where `turns`, `duration_ms` and `agent_id`
   already follow the same rule. Evidence: `cadence-core/bin/lib/trace.mjs`.
+  SUPERSEDED 2026-08-26 for the two CACHE keys only, and AC2's "a bracket that
+  already carries cache figures is not overwritten" clause is superseded with
+  it: for `cache_creation_input_tokens` and `cache_read_input_tokens` the
+  LARGER value wins, per key and independently, at all three folding sites.
+  The reason is the writer count. `turns`, `duration_ms` and `agent_id` each
+  have TWO writers holding part of the truth, so the first value to arrive is
+  the authoritative one; these two keys have exactly ONE writer - the
+  `SubagentStop` hook summing the worker's own transcript - so two values for
+  one worker are two reads of a file that only grows, and keeping the first
+  froze a partial sum onto the record permanently. Summing them is refused: it
+  would double-bill every turn both reads covered. `.planning/ROADMAP.md`'s
+  phase 3 success criterion 2 was amended in the same commit as the code.
 - D-12 (absent, not zero): a stop whose transcript reported neither figure
   writes NO fact at all - not an event with both keys omitted, not one with
   zeros. Evidence: `cadence-core/bin/lib/subagent-transcript.mjs:141`
@@ -201,6 +213,33 @@ re-measures (AC4), the same way phase 1 split its two seams.
   produce two facts for one `agent_id`. If wrong: the planner must decide
   whether the second fact is a duplicate to drop or a genuine partial sum to
   add, and D-11's fill-only-empty rule silently picks "drop" without saying so.
+
+  MEASURED CORRECTION, 2026-08-26. What was actually falsified is not this
+  assumption but the premise underneath it, inherited from `v3.7.3` phase 1's
+  D-09 and D-11: that the stop payload's `transcript_path` names the WORKER's
+  own file. It does not. On the installed host 2.1.246 the `SubagentStop`
+  payload is the common hook input plus `stop_hook_active`, `agent_id`,
+  `agent_transcript_path`, `agent_type` and an optional
+  `last_assistant_message`; `agent_transcript_path` is the worker's file and
+  `transcript_path` is the SESSION's - the orchestrator's own conversation.
+  That is where the record's single cache-bearing figure came from: 52,918 /
+  528,568, exactly `cacheOf` over the orchestrator's session file truncated at
+  that event's own `ts`, while the stopped worker's own file sums 100,439 /
+  2,115,871.
+
+  The once-per-worker assumption itself is NOT falsified and is NOT settled.
+  The one live stop of that day fired once, at the worker's real stop. But an
+  async agent re-entered with a follow-up message stops again, so a second fact
+  for one `agent_id` remains reachable - and the larger-wins rule recorded
+  against D-11 above is what makes that second stop CORRECT the record rather
+  than be dropped.
+
+  One more measured fact the next reader needs, re-measured 2026-08-26 against
+  this repository's own host: over 1,310 subagent transcripts, 33 of the 34
+  written that day answer NOT-TERMINAL, against 1,071 terminal across the whole
+  corpus. On this host version the withholding path is the ORDINARY path, so
+  AC5's terminal-stop arm is provable from fixtures rather than from a live
+  dispatch.
 - AC5 cannot approach 100% of the transcript corpus, by construction -
   Confident; 7.3% of that corpus belongs to agent types `roleOfAgent` refuses by
   design (`general-purpose`, `Explore`, `workflow-subagent`,
