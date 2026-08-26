@@ -65,6 +65,11 @@ Plan shape: multiple plans - AC1-AC4 are one seam (`lib/trace.mjs` plus
   written before the subagent exists. Evidence:
   `cadence-core/bin/lib/subagent-trace.mjs:46-51` (names `agent_id` as the
   fixing field), `cadence-core/bin/lib/read-trace.mjs:226-228`, `:456-509`.
+  [corrected by plan-1 deviation: the `dispatch` half indeed cannot carry an
+  agent id, but the CLOSE can - the orchestrator learns it on the return - so
+  the join is an equality test on the bracket and the `reads.jsonl` join is
+  deleted, no timestamp ordering being able to separate two workers dispatched
+  in one message]
 - D-08 (pure rule): `closeForStop` stays pure and receives new evidence by
   INJECTION from `cadence-core/bin/subagent-trace.mjs`, which keeps doing the
   disk work; AC2 and AC3 run on injected records, not a filesystem. Evidence:
