@@ -397,6 +397,7 @@ Phase: {N} - {name}
 Goal: {goal from ROADMAP.md}
 Requirements: {phase requirement IDs}
 Task ceiling: {workflow.max_plan_tasks} - the resolved value, for dimension 6.
+Rung: {the `effort` the resolve above returned} - that value, never a rung named here.
 
 Read:
 - .planning/phases/{N}/PLAN*.md (the plans under review)

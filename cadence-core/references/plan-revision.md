@@ -41,6 +41,8 @@ is where that bound is enforced.
    measured, that was ten minutes to convert two blockers into one. Pass
    `--attempt 2` (the seam climbs it to the retry rung its own cell names,
    and returns the file for it - never a rung name this prose hardcodes).
+   Name it in the prompt too - `Rung: {the effort THIS resolve returned}` -
+   since the four agent files share one body and carry no rung of their own.
    Note what a narrow pass gives up: it re-reads nothing, so a fix that is
    locally right and wrong against CONTEXT can survive it. `plan.md`'s own
    `review` step is the full-artifact second opinion, and it fires after this
