@@ -139,9 +139,13 @@
 //    and a `{...}|null` contract cannot express that at all.
 //
 //    The unambiguous answer is a `lifecycle` `return` carrying the adopted
-//    `corr`, `phase`, `plan` and `role`, plus the two cache figures where the
-//    evidence supplied them. The discriminator is WHERE A FIGURE LIVES, not
-//    which writer is senior:
+//    `corr`, `phase`, `plan` and `role`, the stopping worker's own `agent_id`
+//    off the payload, and the two cache figures where the evidence supplied
+//    them. The id is what makes a bracket THIS writer closed joinable at all -
+//    the fold in `lib/trace.mjs` matches `corr` AND `agent_id`, and a bracket
+//    carrying no id is a dead end for every later fact and every later stop.
+//    The discriminator for the FIGURES is WHERE A FIGURE LIVES, not which
+//    writer is senior:
 //
 //      - On the host's RETURN - `tokens`, `turns`, `duration_ms` and the
 //        `detail` text. Only the orchestrator sees a return, so this event
@@ -204,8 +208,8 @@
 // phase 1 and reverted at `4fbf7280`, and an id-less fact is a row that can
 // never reach a bracket.
 //
-// The unambiguous terminal path is untouched and still answers its single
-// `return` carrying the figures. No fact rides beside it: that would put one
+// The unambiguous terminal path answers its single `return` carrying the
+// figures and the worker's id. No fact rides beside it: that would put one
 // worker's traffic on the record twice.
 //
 // There is deliberately NO refusing envelope here. The hook emits nothing on
@@ -427,6 +431,19 @@ export function closeForStop(payload, render, evidence) {
   // transcript that reported neither leaves the event exactly as it was before
   // this hook read one.
   //
+  // THE WORKER'S OWN `agent_id`, quoted straight off the payload and OMITTED
+  // when it carries none - the omit-never-null rule `ts` follows two clauses
+  // below. Without it a bracket THIS writer closed carries no id at all, and
+  // three things follow from that: the post-pass fold in `lib/trace.mjs` can
+  // never reach such a bracket, `closedBracket` cannot recognise the worker if
+  // it stops again, and the eleven-site `--agent-id` spread only ever helps the
+  // brackets the ORCHESTRATOR closed. It is evidence this rule can SEE - the
+  // same field on the same payload the cache-only fact beside it already quotes
+  // - never a derivation and never a fallback, so nothing about TRC-06's
+  // "unambiguous or nothing" moves. The repeat-close arm folds `agent_id`
+  // fill-only-empty, so a hand-written close carrying the same id afterwards
+  // changes nothing on the row.
+  //
   // `ts` is the ONE field this rule takes off the transcript rather than off
   // the adopted row, and it is the worker's OWN stop instant. Without it
   // `renderEvent` stamps `new Date()` at append, so a hook close delayed past
@@ -446,6 +463,7 @@ export function closeForStop(payload, render, evidence) {
     family: 'lifecycle',
     event: 'return',
     role,
+    ...(id ? { agent_id: id } : {}),
     ...(stopped.ts ? { ts: stopped.ts } : {}),
     ...cache,
   }];

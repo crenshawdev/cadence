@@ -72,7 +72,11 @@ test('stop: the event carries NO figure of any kind', () => {
     render([open('cad-verifier', 'cad-verifier', T(3))]),
   );
   assert.ok(ev);
-  assert.deepEqual(Object.keys(ev).sort(), ['corr', 'event', 'family', 'phase', 'plan', 'role']);
+  // `agent_id` is on the list because the PAYLOAD carried one and this writer
+  // quotes it - it is neither invented nor a figure, and without it a bracket
+  // the hook closed could never be joined to a later fact.
+  assert.deepEqual(Object.keys(ev).sort(),
+    ['agent_id', 'corr', 'event', 'family', 'phase', 'plan', 'role']);
   for (const k of ['tokens', 'turns', 'duration_ms', 'detail']) {
     assert.equal(k in ev, false, `the hook invented a ${k} the payload never carried`);
   }
@@ -86,7 +90,7 @@ test('stop: the event carries NO figure of any kind', () => {
     { transcript: transcript('end_turn', T(9)) },
   );
   assert.deepEqual(Object.keys(stamped).sort(),
-    ['corr', 'event', 'family', 'phase', 'plan', 'role', 'ts']);
+    ['agent_id', 'corr', 'event', 'family', 'phase', 'plan', 'role', 'ts']);
   for (const k of ['tokens', 'turns', 'duration_ms', 'detail']) {
     assert.equal(k in stamped, false, `the hook invented a ${k} off the transcript`);
   }
@@ -199,6 +203,31 @@ const bracket = (role, plan, extra) => ({
 /** A render carrying both halves. */
 const withBrackets = (unpaired, brackets) => ({
   file: '/x/.planning/trace.jsonl', unpaired, brackets,
+});
+
+test('stop: the close carries the worker\'s own agent_id, or no id key at all', () => {
+  // A bracket this writer closes has to be JOINABLE. `lib/trace.mjs`'s
+  // post-pass matches `corr` AND `agent_id`, and `closedBracket` recognises a
+  // worker that stops twice by the same equality - so a close carrying no id is
+  // a dead end for both, and the eleven-site `--agent-id` spread would only
+  // ever reach the brackets the ORCHESTRATOR closed.
+  const r = () => render([open('cad-verifier', 'cad-verifier', T(3))]);
+  const [carried] = closeForStop(
+    { agent_type: 'cadence:cad-verifier', agent_id: AGENT }, r(),
+    { transcript: transcript('end_turn', T(9)) },
+  );
+  assert.equal(carried.event, 'return');
+  assert.equal(carried.agent_id, AGENT);
+
+  // OMITTED, never null, when the payload carried none - the same rule `ts`
+  // follows one clause away. Quoted off the payload, so there is nothing to
+  // derive and nothing to fall back to.
+  const [bare] = closeForStop(
+    { agent_type: 'cadence:cad-verifier' }, r(),
+    { transcript: transcript('end_turn', T(9)) },
+  );
+  assert.equal(bare.event, 'return');
+  assert.equal('agent_id' in bare, false, JSON.stringify(bare));
 });
 
 test('stop: TWO open dispatches of the role produce NOTHING', () => {
@@ -414,7 +443,7 @@ test('stop: the event carries the two CACHE figures and no return figure', () =>
   );
   assert.ok(ev);
   assert.deepEqual(Object.keys(ev).sort(), [
-    'cache_creation_input_tokens', 'cache_read_input_tokens',
+    'agent_id', 'cache_creation_input_tokens', 'cache_read_input_tokens',
     'corr', 'event', 'family', 'phase', 'plan', 'role', 'ts',
   ]);
   // SUMMED across every assistant entry: each `usage` is one billed request.
