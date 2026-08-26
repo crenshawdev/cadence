@@ -1,0 +1,115 @@
+{
+  "status": "delivered",
+  "score": "10/10",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A plan declaring more than the ceiling comes back as one over[] entry naming the plan, its measured bytes and the ceiling, in plan-too-many-tasks' field shape",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "node cadence-core/bin/planning.mjs plan-size --phase 1 --max-bytes 100000 -> over:[{\"kind\":\"plan-too-many-bytes\",\"plan\":\"PLAN-1.md\",\"measured\":613294,\"ceiling\":100000,\"detail\":\"phase 1 PLAN-1.md declares 613294 bytes, ceiling 100000\"},{...PLAN-2.md 471305...}], within:false. Same five fields (kind/plan/measured/ceiling/detail) the task arm pushes: cadence-core/bin/planning/plan-size.mjs:186-190 (tasks) vs :208-211 (bytes)"
+    },
+    {
+      "n": 2,
+      "truth": "The same call with a ceiling above the declared bytes produces no byte entry at all",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "plan-size --phase 1 --max-bytes 675000 -> {\"plans\":[{\"plan\":\"PLAN-1.md\",\"tasks\":4,\"bytes\":613294,\"absent\":0},{\"plan\":\"PLAN-2.md\",\"tasks\":3,\"bytes\":471305,\"absent\":0}],\"max_bytes\":675000,\"over\":[],\"compared\":[\"max_bytes\"],\"within\":true}. The guard is plan-size.mjs:207 (p.bytes === null || p.bytes <= maxBytes -> continue)"
+    },
+    {
+      "n": 3,
+      "truth": "A plan declaring a path that is not on disk shows a non-zero absent count beside the byte total",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Hermetic run (--dir hook, temp tree outside the repo) on a plan declaring real.txt (500 B) plus does/not/exist.txt -> {\"plan\":\"PLAN-1.md\",\"bytes\":500,\"absent\":1}. Named test passes: node --test --test-name-pattern 'plan-size: a declared path that is not on disk' cadence-core/bin/planning-plans.test.mjs -> pass 1, fail 0. Implementation at plan-size.mjs:43-67 (declaredBytes: absolute, .. segment, stat failure and non-file each increment absent)"
+    },
+    {
+      "n": 4,
+      "truth": "_archive-v2.2.0/2 now raises on destructive instead of secrets, its reason naming the file whose body match no longer counts",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "route.mjs replay --file .planning/config.json, row _archive-v2.2.0/2: surface destructive, file cadence-core/bin/publish-decision.test.mjs, reason[0] = 'risk floor: _archive-v2.2.0/2: cadence-core/bin/git-publish.test.mjs evidences secrets only on an import or a constant declaration, which no longer counts'. Baseline confirmed, not assumed: the same replay run from a git-archive export of pre-phase 6f9b13de gives that row surface=secrets, file=cadence-core/bin/git-publish.test.mjs"
+    },
+    {
+      "n": 5,
+      "truth": "Every scope whose raise rests on a genuine (non-import, non-constant) body line computes the level it computed before - regressions empty, no row drops a rung",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "regressions: [] on the merged tree. Row-by-row diff of the merged replay against the 6f9b13de baseline replay: 29 rows in both, 0 rows changed `computed` (including the two pre-existing solo rows _archive-v2.2.0/5 and _archive-v2.6.0/1, solo in the baseline too). 5 rows changed only their cited evidence (_archive-v2.1.0/2, v2.2.0/2, v2.5.0/1, v2.6.0/3, v3.3.0/3)"
+    },
+    {
+      "n": 6,
+      "truth": "Each route.mjs replay row carries an integer bytes_read",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "All 29 rows Number.isInteger(bytes_read) === true (0 missing); range 6,629 (_archive-v2.6.0/1) to 1,293,579 (_archive-v2.5.0/1). Baseline replay at 6f9b13de has the field on no row. Written at cadence-core/bin/route.mjs:1449 from levelFor's summed declaredBodies bytes (route.mjs:644-645)"
+    },
+    {
+      "n": 7,
+      "truth": "The suite is green, self-verify is clean, and workflow.max_plan_bytes is registered in all three named files",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "node cadence-core/bin/test.mjs -> tests 3381, pass 3380, fail 0, skipped 1, exit 0. node cadence-core/bin/self-verify.mjs -> {\"ok\":true,\"checked\":\"...29 checks...\",\"problems\":[]}. Key present at cadence-core/config.schema.json:32 (int, min 1, default 675000), cadence-core/references/config-catalog.md:34, cadence-core/references/config-reach.md:126 ('plan-size report only')"
+    },
+    {
+      "n": 8,
+      "truth": "The ceiling is wired end to end - one real value travels from the config default into the workflow step the planner actually runs and lands in the seam's verdict",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "Enters: node cadence-core/bin/config.mjs get workflow.max_plan_bytes -> {\"workflow.max_plan_bytes\":675000}. Carried: cadence-core/workflows/plan.md:41 adds the key to the parse-step config.mjs get batch; plan.md:281 substitutes {workflow.max_plan_bytes} into the check_size call `planning.mjs plan-size --phase {N} --max-tasks ... --max-bytes ...`. Lands: plan-size.mjs:113-127 parses --max-bytes via requireInt and it reaches max_bytes/compared/over in the emitted verdict (observed at truths 1 and 2). Flag is registered in cadence-core/bin/lib/arg-contract.mjs and self-verify check 2 parses the prose against it clean"
+    },
+    {
+      "n": 9,
+      "truth": "The routing discount the goal names is real, not only re-cited evidence: a scope whose sole evidence is an import or a literal constant now computes a LOWER level than it did before",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "Hermetic scope outside the repo (temp planning root, this repo's config.json, one plan declaring src/keys.mjs whose body is `const API_TOKEN = 'abcdef';` plus an export). Merged tree: computed solo, raised false, reason 'src/keys.mjs evidences secrets only on an import or a constant declaration, which no longer counts'. Pre-phase 6f9b13de tree, same input: computed shipped, raised true, surface secrets. This closes the hedge in SUMMARY.md's Goal check ('0 of 29 rows moved a level ... not the same as observing the discount earned')"
+    },
+    {
+      "n": 10,
+      "truth": "Criterion 3's discount was not bought by weakening the floor - a plan that genuinely touches a risk surface still floors where it did",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "24 of 29 replay rows still raise on a genuine call line and hold their level; 0 of 29 changed `computed` against the 6f9b13de baseline. The exemption is call-aware by construction: cadence-core/bin/lib/risk-diff.mjs:558-564 (isConstantDeclaration requires a LITERAL_INITIALIZER and rejects CALL_EXPRESSION), verified live - cadence-core/bin/lib/planning-files.mjs still evidences secrets on line 331 `const REQ_ID_TOKEN_G = new RegExp(REQ_ID_TOKEN.source, 'g')` (a const with a call), while D-03's `const PHASE_TOKEN` line is withheld. NOTE, matching SUMMARY.md open item 3 and measured rather than assumed: the withholding does cost a TRUE positive off this corpus - `API_TOKEN = \"sk-live-abc\"` and `const API_TOKEN = \"sk-live-abc\";` both raised secrets at 6f9b13de and raise nothing now. The exposure is narrower than the open item suggests (API_KEY, SECRET_KEY, PASSWORD= and lower-case spellings matched at neither commit), so it is confined to TOKEN-named literal constants, which is exactly the shape D-03 accepted the trade on. Recorded as a known accepted cost, not a gap"
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Over-ceiling plan reports a byte entry",
+      "evidence": "plan-size --phase 1 --max-bytes 100000 returns two plan-too-many-bytes entries carrying plan/measured/ceiling/detail - the same five fields plan-too-many-tasks pushes at plan-size.mjs:186-190"
+    },
+    {
+      "k": 2,
+      "name": "Under-ceiling plan reports no byte entry",
+      "evidence": "plan-size --phase 1 --max-bytes 675000 -> over: [], compared: [\"max_bytes\"], within: true, with both plans measured (613294 and 471305)"
+    },
+    {
+      "k": 3,
+      "name": "Absent declared paths are counted",
+      "evidence": "Hermetic plan declaring one real 500 B file and one nonexistent path -> {\"bytes\":500,\"absent\":1}; the named unit test 'a declared path that is not on disk counts zero bytes and one absent' passes on its own"
+    },
+    {
+      "k": 4,
+      "name": "A replay scope cites different evidence",
+      "evidence": "_archive-v2.2.0/2 is destructive/publish-decision.test.mjs with reason naming git-publish.test.mjs as no longer counting; the pre-phase 6f9b13de replay shows the same row as secrets/git-publish.test.mjs"
+    },
+    {
+      "k": 5,
+      "name": "Genuine raises are unchanged",
+      "evidence": "regressions: [] and a row-by-row diff against the 6f9b13de baseline replay shows 0 of 29 rows changed `computed`; only 5 rows changed which file/surface they cite"
+    },
+    {
+      "k": 6,
+      "name": "Every replay row carries bytes read",
+      "evidence": "29 of 29 rows have an integer bytes_read (6,629 to 1,293,579); the baseline replay has the field on no row"
+    },
+    {
+      "k": 7,
+      "name": "Suite green and the key is registered",
+      "evidence": "test.mjs 3381 tests, 3380 pass, 0 fail, 1 skip; self-verify problems: [] across 29 checks; workflow.max_plan_bytes at config.schema.json:32, config-catalog.md:34, config-reach.md:126"
+    }
+  ],
+  "gaps": [],
+  "human_checks": []
+}

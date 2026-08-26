@@ -48,7 +48,7 @@ filed and named here so the next cycle does not have to rediscover it.
 
 ## Phases
 
-- [ ] **Phase 1: Bound what a dispatch is handed** - bound a plan by the bytes its `files:` declares, and stop the risk floor inheriting a whole file's matches
+- [x] **Phase 1: Bound what a dispatch is handed** - bound a plan by the bytes its `files:` declares, and stop the risk floor inheriting a whole file's matches
 - [ ] **Phase 2: Unforeclose the shared rung prefix** - move the rung label off body line 2 so a role's rungs share a cached prefix, proved with the cache figures v3.7.3 shipped
 - [ ] **Phase 3: Keep the record writable** - rotate `trace.jsonl` before the 1 MiB cap makes it permanently write-dead
 
