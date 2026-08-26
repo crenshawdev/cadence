@@ -46,12 +46,13 @@
 //                        references that step instead of restating the call,
 //                        which is what keeps this +1 and not +2.
 //
-// PLAN-2 task 6 stated 5 for `context.md`. That figure omits the +1 its own
-// task 3 mandates - the criteria-ceilings call - and 5 is unreachable while
-// that call exists. 6 is not "whatever the tree says" either: skipping the
-// close collapse, or reading `planning.commit_docs` in a second call, would
-// each make it 7, so the row still reddens on every half-done version of this
-// phase's work.
+// The plan this file was written under - v3.3.0 phase 4's `PLAN-2`, task 6, at
+// `.planning/_archive-v3.3.0/4/PLAN-2.md` - stated 5 for `context.md`. That
+// figure omits the +1 its own task 3 mandates - the criteria-ceilings call -
+// and 5 is unreachable while that call exists. 6 is not "whatever the tree
+// says" either: skipping the close collapse, or reading
+// `planning.commit_docs` in a second call, would each make it 7, so the row
+// still reddens on every half-done version of this phase's work.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
