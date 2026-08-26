@@ -242,9 +242,9 @@ return and the seam closes a `checkpoint`. A plan moved to another path or rung 
 which the seam does not infer - it stays on `trace append`. All three close a
 bracket. A dispatch that gets none of them is closed by the host's
 `SubagentStop` hook instead, so `trace render` reports as `unpaired` only a
-worker NEITHER writer closed - but that hook carries no figures at all, so a
-skipped close still costs the record this worker's tokens, turns and wall
-clock.
+worker NEITHER writer closed - but that hook carries none of the RETURN's
+figures, so a skipped close still costs the record this worker's tokens, turns
+and wall clock.
 `--plan`/`--bracket-plan` is the
 WORKER key that pairs a dispatch with its close; `--role` is what the per-role
 totals group on, and keyed on the plan number alone `cad-executor` - the single
