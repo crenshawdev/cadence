@@ -11,7 +11,49 @@ permissions:
   contents: read
 
 jobs:
+  guard:
+    # A tag is a movable pointer, and the `protect-release-tags` ruleset
+    # (id 19145547) carries only `deletion` and `non_fast_forward` - neither of
+    # which says WHERE a new tag may point. `test.yml` fires on `push` to main
+    # and on `pull_request`, never on tags. So until this job existed,
+    # `git tag v9.9.9 <any-sha> && git push origin v9.9.9` published an official
+    # release from a commit no CI had ever seen. Two conditions, both required:
+    # the tagged commit is ON main, and the suite is green for that exact SHA.
+    # Reachability alone is not enough (a red commit can sit on main); a green
+    # suite alone is not enough (any SHA can be made green in a fork).
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 for two reasons: the reachability test below walks
+      # history, and `why-record.test.mjs` reads this repository's own log as
+      # its fixture corpus and fails 23 arms on a depth-1 checkout.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: The tagged commit is reachable from main
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$SHA" refs/remotes/origin/main; then
+            echo "::error::${GITHUB_REF_NAME} points at ${SHA}, which is not reachable from origin/main - a release must be cut from a commit that landed on main"
+            exit 1
+          fi
+          echo "${SHA} is on main"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The zero-dep gates, run against the tagged SHA itself rather than
+      # trusted from whatever `test.yml` did on some other commit. `typecheck`
+      # is deliberately not duplicated here: it needs an ephemeral `npm install`
+      # and so is the one arm of test.yml this gate does not reproduce.
+      - run: node cadence-core/bin/test.mjs
+      - run: node cadence-core/bin/self-verify.mjs
+
   publish:
+    needs: guard
     runs-on: ubuntu-latest
     permissions:
       # Scoped to this job alone; the workflow default above stays read-only.
