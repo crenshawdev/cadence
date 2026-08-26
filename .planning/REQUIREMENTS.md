@@ -19,26 +19,6 @@ phase is planned - the practice `v3.5.7` established - so an id below that no
 plan has picked up yet surfaces as `unpicked` in `/cad-audit` rather than as a
 hand-written row.
 
-- **LOD-06**: `references/review-triggers.md` and `references/seams.md` are each
-  a small router plus cold branch files, so a fire or a seam call loads only the
-  branch it selected and no safety rule needed before the branch decision lives
-  in a cold file.
-- **HOK-01**: `SubagentStart`/`SubagentStop` write the trace bracket, with the
-  orchestrator's hand-written `trace close` kept as a fallback and dedup on
-  `(corr, worker key)`, first writer wins - so a bracket survives session death.
-- **HOK-02**: `self-verify` asserts every hook event name Cadence registers is
-  in a pinned known set, so an upstream rename reddens a check by name instead
-  of going silently quiet.
-- **TRC-02**: lifecycle brackets record the `duration_ms` the host already
-  returns, so `/cad-report` and `/cad-suggest` can price a dispatch with a wall
-  clock.
-- **TRC-03**: the subagent return's token, tool-use and duration figures are
-  documented where a reader finds them, naming what depends on each and the
-  mitigation already in force for a figureless return.
-- **CEN-03**: a census pins the `planning-*.test.mjs` stem list, so a stem added
-  later and not registered fails a check instead of silently running in `other`.
-- **DOC-04**: `CADENCE-CENSUS` has a prose home in `references/conventions.md`,
-  and `seam-calls.test.mjs`'s header names the plan it actually derives from.
 
 `v3.7.1 - the tracker is the record` closed 2026-08-25; its ten ids - `FRG-01`,
 `FRG-02`, `CEN-01`, `CEN-02`, `CAP-01`, `CAP-02`, `CAP-03`, `SPL-01`, `SPL-02`,
@@ -265,6 +245,13 @@ parses only the Traceability table).
 | CAP-03 (A bound on the walked bullet count that fails loud in `/cad-health`. The 2026-08-08 sweep took the queue to zero and it regrew to 276 walked items in sixteen days, because no workflow drains the file: `workflows/milestone.md` never mentions CAPTURE and the only two workflows that reference it, `plan.md` and `execute.md`, are readers. A sweep without a bound restarts the clock.) | 3 | Complete | v3.7.1 |
 | SPL-01 (A `phases/` directory whose name would be normalized to a DIFFERENT phase is reported as `phase-dir-grammar` drift. `PHASE_DIR_NAME` (`cadence-core/bin/planning/core.mjs:107`) guards the integer part with a leading `[1-9]` and leaves the fraction unguarded, so `1.01`, `1.00` and `2.0` are all silently legal (verified 2026-08-24) while the detail `phaseDirGrammarDrift` prints says "no zero-padding".) | 4 | Complete | v3.7.1 |
 | SPL-02 (Every command that resolves `--phase` to a `phases/<N>/` path refuses a lossy spelling through `phaseSpellingRefusal` (`planning/core.mjs:77`). Re-measured 2026-08-25, after phase 5's split: 22 live `requirePhaseArg` invocations remain outside tests, spread across 14 `cadence-core/bin/planning/` modules plus `lib/arg-contract.mjs`, and NONE in `cadence-core/bin/planning.mjs`, which retains only a comment. It is wired at 2 of those 22 today, `cursor set` (`planning/cursor-set.mjs`, `:42`) and `seed-reqs` (`planning/seed-reqs.mjs`, `:28`); the rest take the normalized number and never mention the spelling they discarded.) | 4 | Complete | v3.7.1 |
+| LOD-06 (`references/review-triggers.md` and `references/seams.md` are each a small router plus cold branch files, so a fire or a seam call loads only the branch it selected and no safety rule needed before the branch decision lives in a cold file.) | 1 | Complete | v3.7.2 |
+| TRC-02 (lifecycle brackets record the `duration_ms` the host already returns, so `/cad-report` and `/cad-suggest` can price a dispatch with a wall clock.) | 2 | Complete | v3.7.2 |
+| TRC-03 (the subagent return's token, tool-use and duration figures are documented where a reader finds them, naming what depends on each and the mitigation already in force for a figureless return.) | 2 | Complete | v3.7.2 |
+| HOK-01 (`SubagentStart`/`SubagentStop` write the trace bracket, with the orchestrator's hand-written `trace close` kept as a fallback and dedup on `(corr, worker key)`, first writer wins - so a bracket survives session death.) | 2 | Complete | v3.7.2 |
+| HOK-02 (`self-verify` asserts every hook event name Cadence registers is in a pinned known set, so an upstream rename reddens a check by name instead of going silently quiet.) | 2 | Complete | v3.7.2 |
+| CEN-03 (a census pins the `planning-*.test.mjs` stem list, so a stem added later and not registered fails a check instead of silently running in `other`.) | 3 | Complete | v3.7.2 |
+| DOC-04 (`CADENCE-CENSUS` has a prose home in `references/conventions.md`, and `seam-calls.test.mjs`'s header names the plan it actually derives from.) | 3 | Complete | v3.7.2 |
 
 ## Deferred
 
@@ -307,13 +294,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOD-06 | Phase 1 | Complete |
-| TRC-02 | Phase 2 | Complete |
-| TRC-03 | Phase 2 | Complete |
-| HOK-01 | Phase 2 | Complete |
-| HOK-02 | Phase 2 | Complete |
-| CEN-03 | Phase 3 | Complete |
-| DOC-04 | Phase 3 | Complete |
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
