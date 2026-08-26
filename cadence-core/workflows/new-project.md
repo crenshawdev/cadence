@@ -88,7 +88,7 @@ line):
      stop the forge step here. A forge is a precondition (FRG-02): do not invent
      a no-tracker mode, and do not fall through to the questions below.
    - `ask` - put the questions to the user through the ask-user seam
-     (`references/seams.md`), in this order:
+     (`references/seam-ask-user.md`), in this order:
 
      a. **Which forge**, as a structured choice over the envelope's `installed`
         entries - one option per entry, naming the provider and the binary that
@@ -128,10 +128,10 @@ line):
      Do not re-ask inside this run and do not invent a no-forge mode: a forge is
      a precondition (FRG-02), and the fix is to re-run this entry point once a
      provider is picked. This arm has to be written down because a declined
-     question has no answer at all - `references/seams.md` forbids fabricating
-     or defaulting an answer the seam was supposed to collect - so prose that
-     does not say what happens next lets setup run on past a question it never
-     got.
+     question has no answer at all - `references/seam-ask-user.md` forbids
+     fabricating or defaulting an answer the seam was supposed to collect - so
+     prose that does not say what happens next lets setup run on past a
+     question it never got.
 
      Persist the answers in ONE call, against this repository's own
      `.planning/config.json` (the default target - no `--file`, no `--global`):
@@ -241,7 +241,8 @@ Techniques:
   this replaces?"
 - Find done: "How will you know this is working?"
 
-**Structured questions** go through the ask-user seam (references/seams.md):
+**Structured questions** go through the ask-user seam
+(references/seam-ask-user.md):
 2-4 options that are interpretations, concrete examples, or choices that
 reveal priorities - never generic categories or leading options. Headers max
 12 characters. Include a "Let me explain" style escape when the space of
@@ -310,7 +311,7 @@ was passed. Otherwise skip silently - research is off by default, and a solo
 dev who knows the domain loses nothing by skipping a generic ecosystem survey.
 
 One pass, one agent, one file. Dispatch a single fresh-context agent via the
-spawn-agent seam (references/seams.md):
+spawn-agent seam (references/seam-spawn-agent.md):
 
 ```text
 Read .planning/PROJECT.md for project context.

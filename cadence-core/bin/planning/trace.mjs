@@ -359,6 +359,44 @@ const TRACE_GRAMMAR = {
 // stated once in the table instead of seven times here.
 const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer', '--trigger'];
 
+// The `--duration-ms` grammar, CLOSED to digits and unit letters.
+//
+// Two accepted spellings and nothing else: a plain non-negative integer, which
+// is a millisecond count, and the host's own formatted rendering - one or more
+// number-plus-unit terms over hours, minutes, seconds and milliseconds,
+// optionally space-separated (`1m 23s`, `1h2m3s`, `450ms`). `ms` is first in
+// the alternation because `m` would otherwise swallow the `m` of `450ms` and
+// read it as 450 minutes plus a stray `s`.
+//
+// CLOSED rather than free text on purpose: this flag carries a caller-derived
+// FIGURE, not caller-derived prose, so it stays out of
+// lib/text-transport.mjs's `TEXT_FLAGS` - whose header excludes `--tokens` on
+// exactly this ground - and needs no `-file` transport to be safe.
+//
+// `null` means malformed, which the caller turns into a refusal with NOTHING
+// appended. The safe-integer test is part of the grammar and not a paranoia
+// arm: `9999999999999999999h` parses term by term and would otherwise write a
+// float into a field a reader sums as an integer.
+const DURATION_UNITS = { ms: 1, s: 1000, m: 60000, h: 3600000 };
+const DURATION_TERMS = /^\d+(?:ms|h|m|s)(?:\s*\d+(?:ms|h|m|s))*$/;
+
+/** @param {any} raw @returns {number|null} milliseconds, or null when malformed */
+function parseDurationMs(raw) {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim();
+  if (!v) return null;
+  if (/^\d+$/.test(v)) {
+    const n = Number(v);
+    return Number.isSafeInteger(n) ? n : null;
+  }
+  if (!DURATION_TERMS.test(v)) return null;
+  let total = 0;
+  for (const [, n, unit] of v.matchAll(/(\d+)(ms|h|m|s)/g)) {
+    total += Number(n) * DURATION_UNITS[unit];
+  }
+  return Number.isSafeInteger(total) ? total : null;
+}
+
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
@@ -495,6 +533,33 @@ function cmdTrace(dir, sub, opts) {
           + ' nothing was appended, so a corrected re-run writes exactly one event');
       }
       turns = parsed.value;
+    }
+
+    // --duration-ms: how long the dispatch itself TOOK, the third figure on the
+    // same subagent return `--tokens` and `--turns` are read off. Distinct from
+    // the dispatch-to-close span `renderTrace` already derives off the two
+    // timestamps: that one includes the orchestrator's own time between the two
+    // writes, so a bracket carrying only it can say how long the STEP took and
+    // never how long the WORKER did.
+    // The value grammar is the one `parseDurationMs` above states, and it
+    // accepts the host's formatted spelling because that is the only one an
+    // orchestrator can copy: refusing `1m 23s` would drop the append with the
+    // `dispatch` half already written, stranding the worker in renderTrace's
+    // unpaired[] forever - the same escalation the `--tokens` comma-grouping
+    // exception exists to prevent.
+    // Outside that grammar it is a malformed CALL and NOTHING is appended, the
+    // posture `--tokens` and `--turns` both take: a dropped field renders the
+    // bracket duration-less while the caller believes a figure landed.
+    let durationMs;
+    if ('duration-ms' in opts) {
+      const parsed = parseDurationMs(opts['duration-ms']);
+      if (parsed === null) {
+        return fail('bad-args', `trace ${sub} --duration-ms needs a duration`,
+          "copy the wall clock off the worker's return as the host prints it (1m 23s, 450ms) or as"
+          + ' a plain whole number of milliseconds; nothing was appended, so a corrected re-run'
+          + ' writes exactly one event');
+      }
+      durationMs = parsed;
     }
 
     // --raised: how many findings the reviewers RAISED before adjudication, so
@@ -724,6 +789,10 @@ function cmdTrace(dir, sub, opts) {
       // as "this host reported none". A real `--turns 0` still records a 0,
       // exactly as `--tokens 0` already does.
       ...(turns === undefined ? {} : { turns }),
+      // OMITTED for the reason `--turns` is, and spelled `duration_ms` because
+      // the 232 `provider` events already on the record spell it that way - one
+      // reader parses one field name.
+      ...(durationMs === undefined ? {} : { duration_ms: durationMs }),
       ...(raised === undefined ? {} : { raised }),
       // The settled figures, each key present only when its flag was: a fire
       // nobody counted stays distinguishable from one that counted zero.

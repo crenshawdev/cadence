@@ -74,7 +74,7 @@ Two stops first, before anything is written.
      stop the forge step here. A forge is a precondition (FRG-02): do not invent
      a no-tracker mode, and do not fall through to the questions below.
    - `ask` - put the questions to the user through the ask-user seam
-     (`references/seams.md`), in this order:
+     (`references/seam-ask-user.md`), in this order:
 
      a. **Which forge**, as a structured choice over the envelope's `installed`
         entries - one option per entry, naming the provider and the binary that
@@ -115,10 +115,10 @@ Two stops first, before anything is written.
      Do not re-ask inside this run and do not invent a no-forge mode: a forge is
      a precondition (FRG-02), and the fix is to re-run this entry point once a
      provider is picked. This arm has to be written down because a declined
-     question has no answer at all - `references/seams.md` forbids fabricating
-     or defaulting an answer the seam was supposed to collect - so prose that
-     does not say what happens next lets setup run on past a question it never
-     got.
+     question has no answer at all - `references/seam-ask-user.md` forbids
+     fabricating or defaulting an answer the seam was supposed to collect - so
+     prose that does not say what happens next lets setup run on past a
+     question it never got.
 
      Persist the answers in ONE call, against this repository's own
      `.planning/config.json` (the default target - no `--file`, no `--global`):
@@ -185,7 +185,8 @@ And the REMAINING work - what the user wants next - is the one thing no repo
 states, so it is where the questioning belongs: it is what ROADMAP.md is about
 to be made of.
 
-**Structured questions** go through the ask-user seam (references/seams.md):
+**Structured questions** go through the ask-user seam
+(references/seam-ask-user.md):
 2-4 options that are interpretations, concrete examples, or choices that reveal
 priorities - never generic categories or leading options. Headers max 12
 characters. Include a "Let me explain" style escape when the space of answers is
@@ -227,9 +228,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PROJECT.md` and write
 - `## Out of Scope` entries always carry the reason.
 
 The `### Active` milestone version is a PROPOSED NEXT version, confirmed with
-the user through the ask-user seam (references/seams.md), and never the repo's
-current tag: /cad-health rule 7 reports drift when the Active version is a
-member of `git tag --list`, so naming the version already shipped fails the
+the user through the ask-user seam (references/seam-ask-user.md), and never the
+repo's current tag: /cad-health rule 7 reports drift when the Active version is
+a member of `git tag --list`, so naming the version already shipped fails the
 first health check the user runs. Propose the next one from the tag list
 (`v1.4.0` shipped -> `v1.5.0` proposed), and offer the alternatives rather than
 deciding alone.

@@ -6,6 +6,70 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.2] - 2026-08-26
+
+Two reference files were loaded on every run whether or not the branch they
+held was the one in play. `references/seams.md` was 25,068 B and
+`references/review-triggers.md` was 40,413 B, and between them they carried
+nine seams and triggers of which a given command needs one. This cycle splits
+both behind a router and pins every branch with a check, so a router that loses
+a cold file or stops Reading one reddens instead of quietly serving a stale
+index.
+
+The other half is the trace record. A lifecycle bracket was opened by the
+orchestrator and closed by the orchestrator, so a session that died between the
+two halves left the dispatch open forever, and an open bracket read the same
+whether the worker was still running or the session had gone. `SubagentStop`
+now writes the close. The hand-written one is kept rather than replaced,
+because it is the only writer that carries the figures, and whichever close
+arrives second folds into the first's row.
+
+Three phases, 40 commits off `v3.7.1`, seven requirement ids all traced to a
+verified phase: `LOD-06`, `HOK-01`, `HOK-02`, `TRC-02`, `TRC-03`, `CEN-03`,
+`DOC-04`. `/cad-audit` PASS on both arms, 14 of 14 acceptance criteria covered.
+
+### Added
+
+- **A reference router, so a run loads the branch it selected.**
+  `references/seams.md` is now 2,323 B over `seam-ask-user.md`,
+  `seam-spawn-agent.md` and `seam-review-provider.md`;
+  `references/review-triggers.md` is 20,153 B over `risk-surface.md`,
+  `review-cross-model.md` and `review-record.md`. Down from 25,068 and 40,413.
+  `cadence-core/bin/lib/reference-routers.mjs` registers all seven branches and
+  self-verify check `reference-routers` fails when a branch loses its cold file
+  or the router stops Reading it. 42 citations across 18 surfaces were
+  re-pointed at the file that holds the rule, so no prose surface cites the seam
+  family where it means one seam.
+
+- **The host closes the bracket.** A `SubagentStop` hook runs
+  `cadence-core/bin/subagent-trace.mjs` and writes the lifecycle close for a
+  dispatch that returned, so a bracket survives the session that opened it. The
+  hand-written `trace close` is kept, not replaced: it is the only writer that
+  carries the token, turn and duration figures, because the stop payload holds
+  none. Two closes of one dispatch render as one bracket, deduped on
+  `(corr, phase, plan)`, with no second `unpaired` row and no double coordinator
+  span.
+
+- **`--duration-ms` on `trace append` and `trace close`.** It takes the host's
+  own spelling (`1m 23s`, `450ms`) or a plain millisecond count, so the figure
+  is copied rather than converted, and a mistyped spelling is refused with
+  nothing appended. Every bracket whose close reported one now carries
+  `duration_ms`, which is the only figure for how long the WORKER ran; the `ms`
+  on a bracket row is dispatch-to-close wall clock and includes the
+  orchestrator's own time between the two writes.
+
+- **self-verify pins the hook event names Cadence registers.** Check 25 reads a
+  hand-maintained `HOOK_EVENTS` register, so a host that renames `SubagentStop`
+  fails a check instead of going silently quiet.
+
+- **A census over the `planning` test group.**
+  `cadence-core/bin/test-groups.test.mjs` compares `GROUPS.planning` against the
+  `planning-*.test.mjs` files on disk in both directions: a file no entry names
+  fails, and an entry with no file fails. No stem count is written down, so a
+  new planning test costs one list edit rather than two. It found its first
+  drift immediately, `planning-capture-check` was on disk and running under
+  `other`.
+
 ### Changed
 
 - **The plugin's home is GitHub again.**
@@ -24,6 +88,53 @@ All notable changes to Cadence are recorded here. The format follows
   ```
 
   Nothing about the plugin itself changes with the move.
+
+- **The host-return dependency is stated where a reader finds it.**
+  `references/seam-spawn-agent.md` now says which three figures Cadence reads
+  off a subagent return, that every one of them is copied by hand out of the
+  host's own rendering of `Done (N tool uses - X tokens - Ys)`, what each funds,
+  and that the rendering can change in any release with no deprecation window.
+  Nothing in Cadence can fix that. The mitigation already in force is that a
+  return carrying no figure omits the flag rather than sending `0`, so the
+  record degrades to "this run was not measured" instead of a fabricated zero
+  that reads as a measurement.
+
+- **`role` on every `unpaired[]` row**, so an open dispatch names the role it
+  was opened under instead of leaving you to guess from the worker key.
+
+- **`CADENCE-CENSUS` has a prose home.** `references/conventions.md`'s
+  `## Deliberate shortcuts` describes the marker grammar, the token, the
+  immediate colon, the id, the ` | ` separator and the `asserts:` clause, states
+  the one rule that a marked site with no registry row fails the suite, and
+  points at `cadence-core/bin/lib/census-registry.mjs` for the rest.
+  `CADENCE-DEBT` already had one.
+
+### Fixed
+
+- **Two headers argued against the check sitting beside them.**
+  `cadence-core/bin/test.mjs:11-15` said there was deliberately no coverage
+  check over the test manifest, and `census-registry.test.mjs:19-21` cited that
+  as settled rationale. The check exists now, so both headers describe what is
+  on disk.
+
+- **The seam-call header named a plan no reader can locate.**
+  `cadence-core/bin/seam-calls.test.mjs` cited a phase 5 plan as the source of
+  the 5-for-`context.md` figure it argues against. It came from v3.3.0 phase 4's
+  `PLAN-2` task 6. The header names the archive path now, so the claim is
+  checkable rather than taken on trust.
+
+- **The router's own Read check had a hole in it.**
+  `lib/reference-routers.mjs` tested the raw router text where the neighbouring
+  arm read prose only, so a cold path appearing solely inside a fenced example
+  satisfied the check. This cycle's own blocking `risk_surface` gate found it,
+  and the narrowed re-arm round came back clean (`caa07bfb`).
+
+### Known gaps
+
+- Nine literal `trace close` command lines under `cadence-core/workflows/` and
+  `cadence-core/references/` still spell `--tokens ... --turns ...` with no
+  `--duration-ms`, so an orchestrator copying one verbatim records no wall clock
+  for that role. Deliberately out of scope this cycle.
 
 ## [3.7.1] - 2026-08-25
 
@@ -3946,6 +4057,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.2
 [3.7.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.1
 [3.7.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.0
 [3.6.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.6.1

@@ -1185,6 +1185,82 @@ test('seam: --turns 0 is a recorded figure, not an omission', () => {
   assert.match(traceBytes(dir), /"turns":0/);
 });
 
+// --- the THIRD figure on the same return: --duration-ms (TRC-02) -------------
+//
+// How long the WORKER took, which is not the dispatch-to-close span renderTrace
+// derives off the two timestamps: that one includes the orchestrator's own time
+// between the two writes. The flag takes the host's own formatted spelling
+// because that is the only one an orchestrator can copy off a return.
+
+test('seam: --duration-ms takes the formatted spelling the host prints', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+    '--role', 'cad-executor', '--duration-ms', '1m 23s']);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  const [e] = lines(dir);
+  assert.equal(e.duration_ms, 83000);
+  // A NUMBER of milliseconds, for the reason `--tokens` is a number: a reader
+  // sums the field without type-checking it first.
+  assert.equal(typeof e.duration_ms, 'number');
+  assert.match(traceBytes(dir), /"duration_ms":83000/);
+});
+
+test('seam: --duration-ms accepts every term of its closed grammar', () => {
+  for (const [raw, ms] of [['4200', 4200], ['0', 0], ['450ms', 450], ['23s', 23000],
+    ['1h2m3s', 3723000], ['2h 30m', 9000000], ['1m 23s', 83000]]) {
+    const dir = root();
+    const r = run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+      '--role', 'cad-executor', '--duration-ms', raw]);
+    assert.equal(r.ok, true, raw);
+    assert.equal(lines(dir)[0].duration_ms, ms, raw);
+  }
+});
+
+test('seam: a malformed --duration-ms appends NOTHING at all', () => {
+  const dir = root();
+  // The grammar is CLOSED to digits and unit letters: free text, a negative, a
+  // decimal, a unit Cadence does not read and a grouped figure are all typos,
+  // and a typo may not cost the bracket it was recording.
+  for (const bad of ['later', '-1', '1.5', '', '1,234', '3d', '1m23', 'abc', '9999999999999999999h']) {
+    const before = traceBytes(dir);
+    const r = run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+      '--role', 'cad-executor', '--duration-ms', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    // Byte-identical (or still absent): a best-effort append with the field
+    // dropped renders the bracket duration-less while the caller believes a
+    // figure landed.
+    assert.equal(traceBytes(dir), before, bad);
+  }
+  assert.equal(traceBytes(dir), null);
+  // A bare `--duration-ms` at the end of the line is refused at the declared
+  // door, before the body is reached.
+  const bare = run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+    '--role', 'cad-executor', '--duration-ms']);
+  assert.equal(bare.ok, false);
+  assert.equal(bare.reason, 'bad-args');
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: a close with no --duration-ms writes no duration_ms key at all', () => {
+  const dir = root();
+  run(dir, ['trace', 'close', '--phase', '2', '--plan', 'p',
+    '--role', 'cad-executor', '--tokens', '12']);
+  const [e] = lines(dir);
+  // OMITTED, never `0`: a zero claims a dispatch that took no time, and a trace
+  // written before this flag existed must stay byte-identical.
+  assert.equal('duration_ms' in e, false, JSON.stringify(e));
+});
+
+test('seam: --duration-ms lands on a `trace append` through the same shared body', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '2', '--family', 'lifecycle',
+    '--event', 'return', '--plan', 'p', '--role', 'cad-planner', '--duration-ms', '450ms']);
+  assert.equal(r.ok, true);
+  assert.equal(lines(dir)[0].duration_ms, 450);
+});
+
 test('seam: a close pairs with the dispatch of the same --plan', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
@@ -1469,6 +1545,51 @@ test('render: a bracket falls back to a turn figure the DISPATCH half carried', 
     { 'cad-executor': { dispatches: 1, turns: 7, unrecorded: 1 } });
 });
 
+test('render: a bracket carries the wall clock its close reported, beside ms', () => {
+  const dir = root();
+  const a = '2026-08-16T10:00:00.000Z';
+  const b = '2026-08-16T10:05:00.000Z';
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: a });
+  appendEvent(dir, {
+    phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', ts: b,
+    tokens: 10, duration_ms: 83000,
+  });
+  const [row] = renderTrace(dir, 4).brackets;
+  assert.equal(row.duration_ms, 83000);
+  // TWO figures that measure different things, which is the whole reason both
+  // are on the row: `ms` is dispatch-to-close and includes the orchestrator's
+  // own time between the two writes, `duration_ms` is what the host reported
+  // for the worker itself. A reader that could not tell them apart would price
+  // a worker with the step's clock.
+  assert.equal(row.ms, 300000);
+  assert.notEqual(row.ms, row.duration_ms);
+});
+
+test('render: a bracket whose close carried no duration has NO duration_ms key', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 10 });
+  const [row] = renderTrace(dir, 4).brackets;
+  // ABSENT, not null: a `duration_ms: null` would put a new key on every
+  // bracket of every trace written before the flag existed.
+  assert.equal('duration_ms' in row, false, JSON.stringify(row));
+  assert.equal(row.tokens, 10, 'the rest of the row is untouched');
+});
+
+test('render: a non-numeric duration_ms contributes NOTHING to the bracket', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  // A hand-edited or foreign-producer line. The guard is the one `tokens` and
+  // `turns` already carry: the field is a number a caller sums, and the string
+  // form must never be concatenated onto it.
+  appendEvent(dir, {
+    phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    duration_ms: '1m 23s',
+  });
+  const [row] = renderTrace(dir, 4).brackets;
+  assert.equal('duration_ms' in row, false, JSON.stringify(row));
+});
+
 test('render: two closes differing ONLY in their turn count are two closes', () => {
   const dir = root();
   const at1 = '2026-08-16T10:00:00.000Z';
@@ -1488,6 +1609,92 @@ test('render: two closes differing ONLY in their turn count are two closes', () 
   appendEvent(same, { ...close, turns: 4 });
   assert.deepEqual(renderTrace(same, 4).roles,
     { 'cad-executor': { dispatches: 1, turns: 4, unrecorded: 1 } });
+});
+
+// --- two writers, one bracket: the worker-key dedup (TRC-03) -----------------
+//
+// The host's `SubagentStop` hook and the orchestrator's hand-written `trace
+// close` both close a dispatch, and neither may assume it ran first. The replay
+// guard cannot fold them - it keys on the millisecond, which two independent
+// writers never share - so the dedup is on the worker key.
+
+const DISP = '2026-08-20T10:00:00.000Z';
+const SHUT = '2026-08-20T10:05:00.000Z';
+/** The figureless writer's close: a bracket and nothing else. */
+const bare = { phase: 5, family: 'lifecycle', event: 'return', plan: 'p', role: 'cad-executor', ts: SHUT };
+/** The writer that read the return: every figure, and the checkpoint arm. */
+const rich = {
+  phase: 5, family: 'lifecycle', event: 'checkpoint', plan: 'p', role: 'cad-executor', ts: SHUT,
+  tokens: 1200, turns: 9, duration_ms: 83000, detail: 'needs a decision',
+};
+
+/** One dispatch closed twice, in the order the two closes are given. */
+function twice(first, second) {
+  const dir = root();
+  appendEvent(dir, { phase: 5, family: 'lifecycle', event: 'dispatch', plan: 'p', role: 'cad-executor', ts: DISP });
+  appendEvent(dir, first);
+  appendEvent(dir, second);
+  return renderTrace(dir, 5);
+}
+
+test('render: a dispatch closed by BOTH writers is exactly one bracket', () => {
+  const r = twice(bare, rich);
+  assert.equal(r.brackets.length, 1, 'two closes, one dispatch, one row');
+  const [b] = r.brackets;
+  // Every figure the second writer carried landed on the row the first opened.
+  assert.equal(b.tokens, 1200);
+  assert.equal(b.turns, 9);
+  assert.equal(b.duration_ms, 83000);
+  // The checkpoint arm SURVIVES the figureless writer that ran first. A
+  // downgrade here would bill a worker that came back unusable as a clean
+  // return, the one arm the record exists to keep separate.
+  assert.equal(b.event, 'checkpoint');
+  assert.deepEqual(r.unpaired, [], 'the second close consumed no other dispatch');
+  // Billed for ONE dispatch and ONE token figure, with nothing unrecorded.
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 1200, turns: 9 } });
+});
+
+test('render: the two closes render identically in EITHER arrival order', () => {
+  // Neither writer may assume it ran first: the hook fires when the host
+  // decides and the hand-written close when the orchestrator reaches its step.
+  //
+  // Everything the render DERIVES is compared, which is the whole of what the
+  // dedup decides. `file` is a scratch path and `events` is the file's own
+  // line order echoed back - the render reports the record rather than editing
+  // it - so those two are the one pair that can never match across two
+  // orderings, and asserting on them would be asserting the fixture.
+  const derived = (r) => ({
+    brackets: r.brackets, unpaired: r.unpaired, mismatched: r.mismatched,
+    roles: r.roles, counts: r.counts, corr: r.corr,
+  });
+  assert.deepEqual(derived(twice(rich, bare)), derived(twice(bare, rich)));
+});
+
+test('render: two genuine dispatches on ONE worker key are still two brackets', () => {
+  const dir = root();
+  const ev = (event, ts) => appendEvent(dir,
+    { phase: 5, family: 'lifecycle', event, plan: 'p', role: 'cad-executor', ts });
+  ev('dispatch', '2026-08-20T10:00:00.000Z');
+  ev('return', '2026-08-20T10:05:00.000Z');
+  ev('dispatch', '2026-08-20T11:00:00.000Z');
+  ev('return', '2026-08-20T11:05:00.000Z');
+  const r = renderTrace(dir, 5);
+  // What the dedup collapses is a repeat CLOSE, never a repeat DISPATCH: the
+  // second close found a dispatch pending and paired with it.
+  assert.equal(r.brackets.length, 2);
+  assert.deepEqual(r.unpaired, []);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, unrecorded: 2 } });
+});
+
+test('render: a close whose dispatch was never read still bills its own role', () => {
+  const dir = root();
+  // A close whose dispatch fell outside the `--phase` filter or above the read
+  // cap is a DIFFERENT input from a repeat close: there is no row to fold into,
+  // so today's behaviour stands - it bills its own role and opens no bracket.
+  appendEvent(dir, { phase: 5, family: 'lifecycle', event: 'return', plan: 'q', role: 'cad-verifier', tokens: 42 });
+  const r = renderTrace(dir, 5);
+  assert.deepEqual(r.brackets, []);
+  assert.deepEqual(r.roles, { 'cad-verifier': { dispatches: 0, tokens: 42 } });
 });
 
 test('render: a non-numeric turn figure contributes NOTHING', () => {
@@ -2086,8 +2293,22 @@ test('fixture: the committed verbatim trace renders exactly as it did before thi
     'cad-verifier': { dispatches: 1, tokens: 78371 },
   });
   assert.deepEqual(r.unpaired, [
-    { corr: '1-573f325', phase: '1', plan: 'cad-reviewer', ts: '2026-08-12T13:51:44.001Z' },
+    {
+      corr: '1-573f325', phase: '1', plan: 'cad-reviewer',
+      ts: '2026-08-12T13:51:44.001Z', role: 'cad-reviewer',
+    },
   ]);
+});
+
+test('render: an unpaired row names the ROLE its dispatch was opened under', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: DISP });
+  // A dispatch that forgot `--role` keys the empty string rather than dropping
+  // the key, the same posture `roles` already takes: a forgotten flag stays
+  // VISIBLE instead of vanishing out of the report that would show it.
+  appendEvent(dir, { phase: 6, family: 'lifecycle', event: 'dispatch', plan: '2', ts: DISP });
+  assert.deepEqual(renderTrace(dir, 6).unpaired.map((u) => [u.plan, u.role]),
+    [['1', 'cad-executor'], ['2', '']]);
 });
 
 // --- the coordinator's own time (D-01) ---------------------------------------

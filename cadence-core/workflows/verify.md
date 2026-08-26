@@ -109,7 +109,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verif
 ```
 
 Relay every `warnings[]` entry that resolve returns to the user before running
-the pass, each distinct warning once per run (`references/seams.md`).
+the pass, each distinct warning once per run
+(`references/seam-spawn-agent.md`).
 
 `verify` on that line is `on` or `off`. This step holds no role and the seam
 refuses a resolve without one, so it resolves as `cad-verifier` - the role it is

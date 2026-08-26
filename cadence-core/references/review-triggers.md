@@ -35,9 +35,10 @@ same trigger gates differently on a solo project and a critical one.
 
 The seam has ALREADY applied config-wins precedence: a
 `review.triggers.<trigger>.gate` the user set beats the level's gate, and the
-disagreement arrives as a `warnings[]` entry - relay it (seams.md) rather than
-resolving it again here. The same precedence has applied to the tier and the
-effort since RVW-03, so those two maps are answers, not defaults: a layer that
+disagreement arrives as a `warnings[]` entry - relay it (seam-spawn-agent.md)
+rather than resolving it again here. The same precedence has applied to the
+tier and the effort since RVW-03, so those two maps are answers, not defaults:
+a layer that
 set `review.triggers.<trigger>.tier` or `.effort` is already folded in, and
 where no layer did, the STAKES LEVEL's row answered - raising `stakes` moves the
 cross-model half of the panel exactly as it moves the subagent half. A degraded
@@ -50,9 +51,10 @@ provider's model id and its reasoning-effort API parameter (step 4), and both
 arrive RESOLVED on the step-1 line rather than being read from config here. The
 `claude-subagent` backend can honour neither: its model and its rung both come
 from the routing seam, and effort is definition-time only on the spawn-agent
-seam - not per-dispatch overridable (seams.md). That is a host constraint, not
-an omission here. So a configured `effort` is not a promise this backend can
-keep, and step 4 names the gap instead of dropping the value silently.
+seam - not per-dispatch overridable (seam-spawn-agent.md). That is a host
+constraint, not an omission here. So a configured `effort` is not a promise
+this backend can keep, and step 4 names the gap instead of dropping the value
+silently.
 
 ### 2. Payload
 Assemble `{ instruction, artifact }` from the wiring table:
@@ -92,8 +94,8 @@ What the seam decided, stated so the set is readable rather than mysterious:
 
 An empty set already arrives as `["claude-subagent"]`, so a review always runs -
 and the resolve says which provider it dropped and at which tier, as a
-`warnings[]` entry. Relay it (seams.md); never silently skip a `blocking`
-trigger.
+`warnings[]` entry. Relay it (seam-spawn-agent.md); never silently skip a
+`blocking` trigger.
 
 The limit, so nothing above reads as a guarantee it is not: nothing REFUSES a
 dispatch to a reviewer outside this set. The mark step 4 leaves on the run
@@ -101,9 +103,9 @@ record is the whole enforcement, so a substitution is visible afterwards rather
 than prevented.
 
 ### 4. Run the reviewers
-Issue the resolved set in ONE message (seams.md Concurrent dispatch);
-serialize only when one dispatch consumes another's output, which a reviewer
-set never does. Per backend:
+Issue the resolved set in ONE message (seam-spawn-agent.md Concurrent
+dispatch); serialize only when one dispatch consumes another's output, which a
+reviewer set never does. Per backend:
 
 - **claude-subagent**: bracket this worker in the joined run record first, keyed
   `--plan cad-reviewer --role cad-reviewer`, with `--read` carrying the payload
@@ -127,15 +129,15 @@ set never does. Per backend:
   nothing refuses it (step 3). Pass it on the close too - a bracket half that
   drops it says the return came from somewhere else.
 
-  `<N>` follows the rule the adjudication append in step 5 already states: the
-  phase in hand, or the STATE cursor's phase for a milestone-scoped trigger.
+  `<N>` is the phase in hand, or the STATE cursor's phase for a
+  milestone-scoped trigger.
 
   Then dispatch the `agent` and `model` the step-1 resolve
   returned, through the spawn-agent seam, with the payload as its prompt. It
   gets the refs, the scope, or the path and PRODUCES the artifact itself - it
   holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
   the JSON object it returns, and close the bracket the moment you have it.
-  OMIT `--tokens` on a figureless return (seams.md's bracket rule):
+  OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
@@ -189,120 +191,18 @@ set never does. Per backend:
   "fix" it by editing the config or by pretending the effort applied.
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): an API
   call runs nothing, so this is the one backend that cannot resolve a reference
-  itself. **This arm gets NO lifecycle bracket and no token field, deliberately.**
-  It is the one place a real API-reported usage figure could exist rather than a
-  host-reported one, and no adapter extracts one today. State the consequence
-  rather than let a reader infer completeness: under a panel, `cad-reviewer`'s
-  per-role total in `trace render` covers the claude-subagent voice ONLY, and the
-  provider call that ran beside it is unmeasured, so that number is short by an
-  unstated amount. Compose the payload FILE inside THIS RUN's own scratch
-  directory and pass it with the EXISTING `--payload <file>` flag - no new
-  subcommand or flag:
-  ```
-  D="$(mktemp -d "${TMPDIR:-/tmp}/cad-review-XXXXXX")" \
-    && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D holds a character a carried literal cannot survive" >&2; exit 1;; esac \
-    && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
-    && git diff <base_ref>..<head_ref> > "$D/artifact.txt" \
-    && node -e 'const f=require("fs");const rd=(p)=>{try{return f.readFileSync(p,"utf8")}catch(e){console.error("scratch-unreadable: "+p+": "+e.message);process.exit(1)}};const brief=rd(process.argv[1]),art=rd(process.argv[3]);if(art===""){console.error("scratch-unreadable: "+process.argv[3]+" is empty");process.exit(1)}f.writeFileSync(process.argv[4],JSON.stringify({instruction:brief+"\n\n"+process.argv[2],artifact:art}))' "${CLAUDE_PLUGIN_ROOT}/cadence-core/references/reviewer-brief.md" "<instruction>" "$D/artifact.txt" "$D/payload.json" \
-    && echo "scratch dir: $D  run token: $T"
-  ```
-  A carried literal is pasted into a later command unquoted-by-construction, so the guard REFUSES the directory at creation rather than trying to quote it defensively at every use site: `mktemp` builds the path from `$TMPDIR`, which the operator does not always own (a cloned repo's `.envrc`, a devcontainer, a CI runner), and one `"` in it closes the argument and runs the rest as commands. The character class is deliberately narrow - a `TMPDIR` holding a space is refused too, and fixing that is one `export` away, where a path that executes is not.
-
-  **The directory and the token are ECHOED because the seam call below runs in a
-  DIFFERENT Bash invocation**, where `$D` is empty - the tool persists the
-  working directory and not shell state. Carry both printed values into that
-  block as LITERALS. A fixed shared scratch name here is the worst collision in
-  the tree: a concurrent review in another repository would be the one whose
-  diff is sent to the provider under this run's instruction, at a gate that
-  blocks. The token is what a carried path needs, because a previous run's
-  payload is well-formed BY CONSTRUCTION and no shape guard can tell it from
-  this run's.
-  The composer REFUSES rather than composing something the provider would
-  accept: a brief or an artifact it cannot read, and an artifact that is EMPTY,
-  each name `scratch-unreadable` on stderr and exit non-zero without writing a
-  payload. The empty case is not defensive padding - an empty artifact is
-  exactly what a failed or colliding redirect leaves behind, and it would
-  otherwise be sent as a review of nothing.
-  The `instruction` is the reviewer BRIEF followed by this trigger's own
-  sentence, never the sentence alone.
-  `references/reviewer-brief.md` is the stance, the severity definitions, the
-  "approach differences are NOT findings" rule and the empty-findings rule -
-  the bar the claude-subagent arm gets from `skills/cad-reviewer-contract` and
-  this arm had no way to receive, so the two backends' findings were being
-  merged blind while only one of them had been told what a `blocker` is. The
-  same `node -e` step reads it, for the same reason it reads the artifact:
-  nothing is hand-assembled.
-  It is composed HERE, at the fire site, and NOT inside `review-provider.mjs`
-  because `assertUnderCap` measures the payload's parsed string FIELDS - bytes
-  added here are inside what the cap counts, so an over-cap payload is still
-  refused before any request is issued, while bytes added in the seam would be
-  invisible to it (the cap deliberately excludes the adapters'
-  schema-injection bytes) and every provider's cap would under-report by the
-  brief. The cost is measured, not unknown: about 670 estimated tokens against
-  the 120,000 default `review.max_prompt_tokens`, ~0.6% of one payload.
-  The composing step takes the artifact path as its THIRD argument and the
-  payload path it WRITES as its fourth. Both are arguments, and that is what
-  lets all three shapes share the step: shape (b) redirects `git diff --cached`
-  into the same run directory in place of the range diff, and shape (c) drops
-  the diff step and passes its OWN absolute path as that third argument.
-  Hardcode either name - as the payload path was, derived inside the script
-  from the environment - and shape (c) has no command at all, and every run
-  writes over every other run: it silently ships the previous review's file.
-  NEVER hand-assemble that JSON
-  with `echo` or a heredoc - one
-  unescaped quote or backslash anywhere in a diff makes the payload
-  unparseable, which comes back as `bad-payload` after the shell already did
-  the work. Both files are the model's own scratch inside that run directory,
-  never a phase artifact, and the directory is left for the operating system to
-  reap.
-  `assertUnderCap` is UNCHANGED and still measures the parsed string fields,
-  which under `--payload <file>` ARE the file's contents; a non-string
-  `artifact` is still refused `bad-payload` before the cap is consulted. Then
-  take this trigger's tier and effort off the step-1 line -
-  `reviewer_tiers[<trigger>]` and `reviewer_efforts[<trigger>]` - index the
-  provider's own map with the tier
-  (`model = review.providers.<name>.tiers[<the resolved tier>]`),
-  and run the seam with that model and that effort. Check the run token FIRST,
-  in the same invocation, so a carried path that is not this run's refuses
-  instead of being sent:
-  ```
-  [ "$(cat "<the echoed scratch directory>/run-token" 2>/dev/null)" = "<the echoed run token>" ] || { echo "scratch-stale: that directory holds another run payload" >&2; exit 1; }
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
-    --provider <name> --model <model> --effort <effort> --trigger <trigger> \
-    --payload "<the echoed scratch directory>/payload.json" \
-    [--key-file <review.key_file, only if set>]
-  ```
-  Both `<the echoed ...>` placeholders are the literals the composition block
-  printed, never a fresh `mktemp` and never a `$(...)` - a path is the
-  caller-derived-text rule `references/conventions.md` states, and re-deriving
-  the directory here would point `--payload` at an empty one.
-  `--trigger` is what JOINS this arm's seam-written event to the fire: the event
-  it writes already shares the phase's correlation id, and the trigger name is
-  the field that was missing. That event plus the subagent arm's `--reviewer`
-  field are what make two fires of ONE trigger - one cross-model, one subagent -
-  distinguishable in the record afterwards.
-  Read the one JSON line.
-  - `ok:true` -> use `findings`.
-  **Run this with an explicit command timeout of at least
-  `review.request_timeout_ms`** (default 540000; the host's own default is
-  120000 and its ceiling 600000). Without one the host kills the command
-  first, and a host kill prints NOTHING - the "one JSON line" below is then an
-  empty string, strictly worse than the `{ok:false, reason:"transport"}` this
-  seam degrades to on its own timer. A high-effort review legitimately takes
-  minutes (a flagship model on a ~13KB diff measured 292s), and the bound is a
-  socket INACTIVITY timeout on an unstreamed response, so it caps total
-  thinking time rather than detecting a dead
-  connection. Set it too low and the blocking gates lose their cross-model
-  voices to `reason:"transport"` while still reporting PASS.
-  - `ok:false` -> this reviewer is unavailable or unusable. Before dropping it,
-    emit one visible line naming the degradation - the reviewer and its
-    `reason` (`no-key` names where to set the key), e.g. "cross-model reviewer
-    `openai` unavailable: no-key (set $OPENAI_API_KEY) - dropping it from the
-    reviewer set". Do not swallow the reason silently. Drop the reviewer from
-    the set. If dropping it
-    empties the set, fall back to `claude-subagent` (step 3 rule) rather than
-    return nothing. A payload over `review.max_prompt_tokens` arrives here as
-    `reason: over-cap`, refused before any request was issued.
+  itself. Four rules bind whether or not you read the procedure below.
+  **This arm gets NO lifecycle bracket and no token field, deliberately** - no
+  adapter extracts the API's own usage figure today - and the cost is that under
+  a panel, `cad-reviewer`'s per-role total in `trace render` covers the
+  claude-subagent voice ONLY and is short by the unmeasured provider call beside
+  it. This trigger's tier and effort come off the STEP-1 LINE, and the tier
+  indexes the provider's own `tiers` map, never a config read here. An `ok:false`
+  reviewer is NAMED in one visible line, with its `reason`, before it is dropped.
+  And if dropping it EMPTIES the set, fall back to `claude-subagent` (step 3
+  rule) rather than return nothing.
+  The procedure is reached only on this branch: Read
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-cross-model.md`.
 
 ### 5. Combine (review.mode)
 - `single` - use the first available reviewer only; its findings are the result.
@@ -329,104 +229,25 @@ the stronger signal). Adjudication is the same discipline the panel-review skill
 uses: reviewers critique, the main model grounds and owns the verdict.
 
 Once the survivor list is settled, record the outcome. The trace append and the
-reported line below it are the ADJUDICATED arm's alone: advisory and blocking
+reported line under it are the ADJUDICATED arm's alone: advisory and blocking
 fires keep writing exactly what they write today, and the stated cost is that
 at `solo`, where `plan` stays advisory, `trace suggest` gets no rows about the
-gate that fires most often there. The ADJUDICATION RECORD further down is NOT
-scoped that way: it is written on the BLOCKING arm as well, at the settle point
+gate that fires most often there. The ADJUDICATION RECORD is NOT scoped that
+way: it is written on the BLOCKING arm as well, at the settle point
 `references/triage-gate.md` names. The ADVISORY arm writes neither, and the
 reason is not tidiness - its reviewer writes the findings file and closes its
 own bracket, and this session may end before the return lands, so nothing is
 positioned to rule. An advisory fire reads as unrecorded.
 
-Write the detail - `<trigger>: <n> survivors; voices <the reviewers that
-actually ran>` - to a scratch file and pass its path; the voice list is composed
-from what actually ran (caller-derived text - references/conventions.md):
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --plan <k> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] --detail-file <path>
-```
+Both writes settle here, and their MECHANICS - the
+`trace append --family outcome --event adjudication` line with every flag rule
+around it, and the `planning.mjs adjudication` call that writes the
+ADJUDICATION RECORD - are one Read away. Read
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-record.md` at this point.
 
 Then report `<n> survivors of <m> raised` to the user at this step - the line
 that makes a nine-findings-all-killed fire visible in the session and not only
 in the record.
-
-`--plan <k>` is required whenever the fire was per-plan: `risk-check status`
-joins a receipt to a record on the run AND the plan, so a receipt written
-without it keys to no plan and joins nothing, leaving a range that WAS fired and
-adjudicated reading as never fired. Omit it only for a fire that is not per-plan
-(`/cad-debug`, `/cad-task`, `/cad-verify`).
-
-`--base <base> --sha <head>` name the RANGE this adjudication settled - BOTH
-ends, since two ranges can share a head and differ at the base and are then
-different diffs over different surfaces. That is what lets `risk-check status`
-tell an adjudication of THIS range from one of an earlier, narrower range for
-the same plan. A receipt missing either end settles nothing, so omitting one
-leaves a matched range reading as never fired.
-
-The RAISED count travels on the `--raised` FLAG and never inside `--detail`: a
-figure parsed back out of that free-text slot would be exactly as trustworthy
-as the voice-list substitution the slot is already condemned for, so do not
-helpfully fold it back in. The three SETTLED counts travel the same way, on
-`--survivors`, `--downgraded` and `--refuted`, and they are the figures the
-record seam DERIVED and returned on its envelope - never a number you counted
-by hand off the survivor list, and never folded into `--detail` either. The
-seam recounts the record's rulings against them and REFUSES a receipt that
-disagrees, which is what makes the survivor count recomputable instead of
-asserted. `--round <round>` is omitted on an ordinary fire and carries the
-round on a re-armed one, because that is the record the recount has to read:
-without it a round-two settle is checked against round one's stale rulings and
-passes whenever the two counts happen to coincide. The TRIGGER travels the same way, on `--trigger`,
-and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
-range to its receipt on those two structured fields and never on the detail
-(`references/triage-gate.md` states the rule at all four settle points).
-
-`<N>` is the phase in hand, or the STATE cursor's phase for a trigger whose
-range spans phases. The VOICE LIST is load-bearing, not decoration: a
-`claude-subagent` voice never passes through `review-provider.mjs`, so it has no
-provider event of its own, and the survivor count alone cannot show a panel
-silently reduced to one voice while the gate reports clean - the dropped
-cross-model reviewer is only half of it. Name the set that RAN, never the set
-the trigger asked for.
-
-Then WRITE THE ADJUDICATION RECORD: the rulings themselves, not a count of them.
-An adjudicated-only rule would record nothing at all on most projects -
-`route.mjs resolve` returns `plan: blocking` and `risk_surface: blocking` at
-`shipped` stakes - and would exclude the sharpest case there is, a gate that
-passed with everything killed.
-
-YOU compose the payload, because you are the only actor holding both the raised
-finding bodies and the ruling: `review-provider.mjs` returns `findings` on
-stdout and never persists them, its own record carries provider, model, effort,
-tier, duration and outcome with no finding field, and
-`skills/cad-reviewer-contract/SKILL.md` specifies a return shape only. Compose
-it as a FILE in THIS RUN's own scratch directory, the way the provider payload
-is composed above, and NEVER hand-assemble that JSON with `echo` or a heredoc:
-the record's whole content is verbatim reviewer text with arbitrary quoting, so
-one unescaped quote makes the payload unparseable after the adjudication is
-already done and cannot be redone.
-
-The payload carries, PER VOICE, the reviewer's returned findings object
-VERBATIM, that voice's model, and one ruling per returned finding -
-`{voices: [{voice, model, returned, rulings: [...]}]}`, one entry per finding
-RAISED per raising voice. A `ruling` is `survived`, `downgraded` or `refuted`
-and there is no fourth value. Each ruling RESTATES the claim and the failure
-scenario it rules on, and the seam REFUSES the payload when a restatement
-differs from the returned text by one byte: the entry is stored from the
-reviewer's own words, so a paraphrase is refused rather than recorded. A
-`refuted` ruling names the contradicting code in its counter-evidence; a
-`survived` one names the fix commit.
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload <path>
-```
-
-It lands at `.planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json`,
-beside the sibling `REVIEW-<trigger>-<discriminator>.md` and on the same
-discriminator grammar - `plan-<k>` for a per-plan fire, `<command>-<short HEAD
-sha>` otherwise. It does NOT go inside `<plandir>/reports/`: the lease check
-exempts exactly one path under that directory by byte equality, so anything else
-staged from there answers `undeclared-files`.
 
 A RE-ARM PASSES `--round 2`, and the fire site is the only actor that knows
 which round it is on. A capped re-arm (`references/triage-gate.md`, ONE round)
@@ -437,35 +258,25 @@ a re-arm is REFUSED - never merged and never overwritten - because round one's
 record is what an auditor reads to see the finding a fix was claimed to close.
 
 **A `risk_surface` fire PERSISTS its settled survivors, at every gate.** Unlike
-the append above, this is not the adjudicated ARM's alone: `risk_surface` is
+the trace append, this is not the adjudicated ARM's alone: `risk_surface` is
 `blocking` at every level, and the default `review.mode` still settles a
-survivor list here. Write that list as the same JSON object every reviewer
-returns to `.planning/phases/<N>/REVIEW-risk_surface-<discriminator>.md`.
-`/cad-land`'s unattended close unions those files and pipes them to
-`land-cleanup.mjs gate`, and it fires no review of its own, so this write is the
-ONLY producer that halt has: skip it and an autonomous close merges over a
-blocker nobody halted on.
+survivor list here. `/cad-land`'s unattended close is the ONLY consumer that
+halt has - it fires no review of its own - so skipping the write lets an
+autonomous close merge over a blocker nobody halted on. Where it is written is
+in `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`.
 
-Two properties keep the union honest, and both are failure modes that report
-CLEAN rather than erroring:
-
-- **Every write is discriminated - there is no unsuffixed path.** A per-plan
-  fire uses `plan-<k>` per step 4's grammar; every other fire uses
-  `<command>-<short HEAD sha>` (`REVIEW-risk_surface-debug-a1b2c3d.md`). The
-  command half is not decoration: `/cad-debug` and `/cad-verify` can both fire
-  against the SAME unchanged HEAD, so the sha alone still collides. Two fires
-  sharing a filename do not merge, they overwrite - a later empty settle erases
-  an earlier survivor the user had overridden.
-- **The producer set outlives the phase dirs.** `/cad-milestone` step 3 prunes
-  `.planning/phases/<N>/` and only then chains `/cad-land`, so it carries the
-  survivors to `.planning/REVIEW-risk_surface-<label>.md` first. The consumer
-  glob is BOTH that path and `.planning/phases/*/REVIEW-risk_surface*.md`. That
-  carried file is TRANSIENT and never staged (milestone.md step 7 deletes it):
-  committed, it would hard-halt every later land on an answered finding.
+**The discriminator grammar, stated ONCE here** because both the record above
+and the survivor write use it: `plan-<k>` for a per-plan fire,
+`<command>-<short HEAD sha>` for every other one
+(`REVIEW-risk_surface-debug-a1b2c3d.md`). The command half is not decoration -
+`/cad-debug` and `/cad-verify` can both fire against the SAME unchanged HEAD,
+so the sha alone still collides, and two fires sharing a filename do not merge,
+they overwrite.
 
 ### 6. Consequence (gate)
-RE-READ `references/triage-gate.md` before acting on ANY gate - `blocking`
-included, not only `adjudicated`. It holds this step whole: all four arms
+RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
+acting on ANY gate - `blocking` included, not only `adjudicated`. It holds this
+step whole: all four arms
 (`advisory` / `deferred` / `blocking` / `adjudicated`), the ONE-round cap on a
 blocking re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
 carve-out inside `/cad-land`, and the `cad-verify`
@@ -506,133 +317,16 @@ re-dispatch whose only job was writing code no plan task authorized - itself
 new risk surface, and the next halt. Blocking on the finished range keeps the
 gate and drops the loop.
 
-## risk_surface detection (shipped defaults, configurable)
+## The `risk_surface` trigger's own contract
 
-Detection is a SEAM's answer, never a model's reading of this list:
+Everything specific to this trigger - the `risk-check run` seam call, the eight
+categories, the one-time surfaces ask, the resolved-set scoping, the two
+pre-filter drops and the survivor write step 5 names - is one Read away, and no
+other branch of this file needs it.
 
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --base <ref> --head <ref>
-```
+TWO ways in, one file: this fire's trigger IS `risk_surface`, or this site runs
+detection without firing anything at all (`/cad-execute`'s `risk_check`,
+`/cad-task`, `/cad-debug`, `/cad-verify`), where a range that matches nothing
+reads nothing else here.
 
-maps the range's changed PATHS and its ADDED and REMOVED lines to
-`{checked, categories, matches, inconclusive}` and appends that answer to
-`.planning/trace.jsonl` whatever it is - so a range that matched nothing leaves
-the same record a matching one does, and "the detection step was skipped" stops
-reading like "it ran and matched nothing".
-
-Two files carry the word surface and they answer different questions.
-`cadence-core/bin/lib/surface-scan.mjs` answers which categories a project
-SCOPES - once, from its structure, feeding the one-time ask below, and returning
-all eight unconditionally because the narrowing is the user's.
-`cadence-core/bin/lib/risk-diff.mjs` answers whether a given RANGE touched one,
-every time a plan or a task completes, and it can and does return nothing.
-
-A match in one of eight categories fires the `risk_surface` trigger, and so does
-an `inconclusive: true` the seam could not judge: an unjudged range is not a
-cleared one. The token beside each is the name that category carries
-everywhere it is named by machine - in `review.triggers.risk_surface.surfaces`
-and in route-table.json's `risk_surface_categories`:
-
-- `auth` - auth/authz/sessions
-- `migrations` - DB schema/migrations
-- `billing` - money/billing/pricing
-- `concurrency` - concurrency/async/locking
-- `destructive` - destructive ops (deletes, bulk updates, drops)
-- `secrets` - secrets/crypto/keys
-- `api_contract` - public API/wire contracts
-- `untrusted_input` - untrusted-input parsing
-
-This list is also the operative definition of the `critical` stakes value: a
-diff touching one of these surfaces is a break that does not come back as a bug
-report.
-
-**The set is chosen ONCE, at the first fire that needs it.** A `risk_surface`
-fire whose step-1 resolve reports `surfaces_answered: false` does not proceed to
-detection until the project has answered, and the SEAM enforces that, not this
-sentence: `risk-check run` reads the config itself and returns
-`{"ok":false,"reason":"surfaces-unanswered"}` when no layer answered and the
-caller named no `--surfaces`. Until it did, this paragraph was the whole gate,
-and an unanswered project was byte-identical to an answered one at every point
-after the resolve - measured on a sibling project 2026-08-19, seven blocking
-fires across three phases with the question never put to the user. A caller
-naming `--surfaces` has already resolved the scope and is not refused. Run the
-structural scan FIRST, so the question arrives carrying evidence instead of
-asking the user to supply it:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" detect-surfaces --root .
-```
-
-Then ask through the ask-user seam (seams.md), whose conventions bind here: at
-most four options per question, the recommended one FIRST and labelled
-`(recommended)`, and that label is a display convention and never a
-pre-selection - the user still chooses and the seam still blocks.
-
-Do NOT compose the options at this site. The `detect-surfaces` envelope returns
-them as `options`, already ordered and already de-duplicated: each entry's
-`surfaces` is the set that picking it writes, and each entry's `reason` is what
-the option states beside it, built from the scan's own `evidenced` signals and
-its `unspeakable` categories - which costs no research pass, because the scan
-already ran. Render that array in the order it arrives and add nothing to it.
-Composing the list from prose here is what put the same categories in the first
-slot and again in the last one (#206): a list a model assembles per run is a
-list no check can read.
-
-The first entry is always the scan's `recommended` array, which is all eight
-categories, and it is the same set on both scan arms. An `inconclusive: true`
-scan changes only the REASON that entry states - no dependency manifest and no
-category directory matched, so the structure evidences nothing either way.
-Never present a narrower set as the recommendation on evidence that does not
-exist (D-14) - the scan reports what it can SEE, and silence is never absence.
-
-Persist the answer at the repo layer, which is what makes it a one-time ask:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set 'review.triggers.risk_surface.surfaces=["secrets","destructive"]'
-```
-
-The choice cannot be skipped and cannot be defaulted: the seam forbids
-fabricating an answer it was supposed to collect, so an unanswered project does
-not fire and does not proceed past the question. The answer then SCOPES
-detection - `risk-check run` checks the categories the project chose, not the
-eight it did not. It is asked HERE and not in
-`/cad-new-project` or `/cad-adopt` because both front doors forbid configuration
-questions in their own prose AND in their own success criteria (D-15), and it
-costs nothing on a project that never trips this trigger.
-
-**The resolved set scopes the fire.** A heuristic match in a category OUTSIDE
-the resolved `surfaces` set does NOT fire the trigger. That set comes from the
-step-1 resolve, never from a config read at this site (D-13): a cost key whose
-enforcement is a model remembering to read a value is the same substitution
-shape step 3 closed for `review.reviewers`. With the key unset the resolve
-returns all eight, so every category fires exactly as today and no existing
-project's coverage shrinks on upgrade.
-
-This is the ONE detector, and it reads the diff - through `lib/risk-diff.mjs`,
-so an answer exists whether or not it matched. A path match against a
-phase's declared `files:` list was the other one until v2.7.0; it judged a file
-by its NAME, floored a whole phase on one token, and is gone. `tests/ingest_concurrency.rs`
-raising six roles to their top rung is what it cost.
-
-**Pre-filter before escalating (avoid a blocking panel on a non-risk).**
-These two drops are judgments about diff CONTENT.
-A heuristic match is dropped - it does NOT fire the trigger - when the match
-is provably harmless:
-
-- **Ephemeral / gitignored target.** A destructive op (`rm -rf`, drop, bulk
-  delete) whose only target is a gitignored or build-output path
-  (`git check-ignore <path>` matches). For a directory target, also require
-  `git ls-files -- <path>` to be empty - an ignored `dist/` that still holds
-  a force-added tracked file is not safe to drop. Deleting a truly ignored
-  `dist/` is a build clean, not data loss.
-- **Placeholder-shaped secret.** A secrets/keys match drops ONLY when BOTH
-  hold: the file is a template/sample/example (`*.env.example`, `*.sample`,
-  `*.template`, or an obvious example fixture) AND the value is a stub
-  (`<...>`, `changeme`, `your-...-here`, `xxx`, `example`, empty after `=`).
-  Either alone still fires - a real key in a `.env.example`, or a
-  placeholder-shaped value like `changeme` sitting in a runtime `.env` or
-  deploy config as an actual weak secret, both stay worth the panel.
-
-Drop only when the WHOLE match is harmless; a diff that also touches a real
-risk surface still fires. When unsure, do not drop - fire the trigger. Note
-each drop and why, so a mis-filter is visible rather than silent.
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`.

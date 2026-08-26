@@ -76,8 +76,8 @@ that consumes a prior call's output is serialized.
 2. If .planning/phases/<N>/CONTEXT.md is present, extract just its `Plan shape`
    line (grep the Scope boundary) - the planner reads the whole file itself
    (see the dispatch prompt below), so the coordinator needs only that one
-   directive line, not the bytes (seams.md handoff read discipline). Absent is
-   fine - plan from the roadmap goal alone.
+   directive line, not the bytes (seam-spawn-agent.md handoff read discipline).
+   Absent is fine - plan from the roadmap goal alone.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam) - replan from scratch (overwrite) or abort. Never
    overwrite silently.
@@ -93,8 +93,9 @@ that consumes a prior call's output is serialized.
 </step>
 
 <step name="spawn_planner">
-Dispatch cad-planner via the spawn-agent seam (references/seams.md). Resolve its
-model + agent file and write the dispatch bracket in ONE call:
+Dispatch cad-planner via the spawn-agent seam
+(references/seam-spawn-agent.md). Resolve its model + agent file and write the
+dispatch bracket in ONE call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-planner \
@@ -103,10 +104,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-plann
 ```
 
 The form is written out HERE, at the site, because it is four lines and finding
-them in references/seams.md costs a grep with a window wide enough to be the
-tell that the caller is guessing - measured at ~9 KB read to recover a 4-line
-command. seams.md stays the source for what the resolve RETURNS (the retry
-rungs, the per-role pin, the `{ok:false}` arm, and the rule that every
+them in references/seam-spawn-agent.md costs a grep with a window wide enough
+to be the tell that the caller is guessing - measured at ~9 KB read to recover a
+4-line command. seam-spawn-agent.md stays the source for what the resolve
+RETURNS (the retry rungs, the per-role pin, the `{ok:false}` arm, and the rule
+that every
 `warnings[]` entry reaches the user before the dispatch); this block is only the
 invocation. Relay every `warnings[]` entry the resolve returns to the user
 before dispatching, each distinct warning once per workflow run - a warning that
@@ -197,7 +199,8 @@ Notes - never diverge silently.
 </planning_context>
 
 (The return markers and report shape are the agent's own cached definition -
-never restate them in the dispatch tail; seams.md's cache discipline.)
+never restate them in the dispatch tail; seam-spawn-agent.md's cache
+discipline.)
 ```
 
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
@@ -245,7 +248,7 @@ always exactly one, or `trace render` reports a worker that never came back. On
 the empty-or-unmarked arm below, write that return to a scratch file and add
 `--detail-file <path>` (caller-derived text - references/conventions.md), and
 the seam closes it as a checkpoint instead. OMIT `--tokens` on a figureless
-return (seams.md's bracket rule - the one statement of why):
+return (seam-spawn-agent.md's bracket rule - the one statement of why):
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
@@ -410,11 +413,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-plan-
 
 `--phase {N}` is EXPLICIT here and not left to the cursor: this resolve runs
 while the cursor still names phase N-1, so without it the checker is routed off
-the wrong phase's plans (references/seams.md's Routing block). No `--plan` - the
-checker reviews every plan of the phase, so it floors on their union. The role
+the wrong phase's plans (references/seam-spawn-agent.md's Routing block). No
+`--plan` - the checker reviews every plan of the phase, so it floors on their
+union. The role
 and the flags differ from spawn_planner's resolve, which is why the form is
 written out again rather than pointed at: what the call RETURNS is stated once,
-in seams.md, and is not restated here.
+in seam-spawn-agent.md, and is not restated here.
 Prompt:
 
 ```markdown
@@ -438,7 +442,7 @@ Close its bracket the moment the return is in hand, before reading a single
 severity. ONE line: an empty or unmarked return is written to a scratch file and
 carried on `--detail-file <path>` (caller-derived text -
 references/conventions.md), and the seam closes it as a checkpoint.
-OMIT `--tokens` on a figureless return (seams.md's bracket rule):
+OMIT `--tokens` on a figureless return (seam-spawn-agent.md's bracket rule):
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>

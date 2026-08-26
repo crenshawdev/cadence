@@ -23,7 +23,7 @@ Carry a detail on a failed, empty or timed-out dispatch and the seam closes a
 `checkpoint`; OMIT it on a usable return and the seam closes a `return`. What
 failed is the verifier's own words, so it goes to a scratch file and the flag
 carries the PATH (caller-derived text - references/conventions.md). OMIT
-`--tokens` on a figureless return (seams.md's bracket rule).
+`--tokens` on a figureless return (seam-spawn-agent.md's bracket rule).
 
 A failed, empty, or timed-out dispatch then goes to `fall_through`. Otherwise
 continue to `merge`. There is no verifier retry to bracket: those are the only

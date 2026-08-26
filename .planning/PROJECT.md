@@ -5,7 +5,9 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v3.7.1` is the current release: the queue nothing
+subsystem. `v3.7.2` is the current release: the reference routers
+load their cold branches late and the host writes the trace bracket. Before it,
+`v3.7.1` closed the queue nothing
 drained, closed at its cause - a gate that declines a finding files it on the
 repository's own issue tracker in the step that decided, CAPTURE.md holds the
 phase in flight and nothing else, and phase close asserts it empty. Riding with
@@ -202,7 +204,43 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `/cad-phase add` opens the next one.
+**No cycle open.**
+
+`/cad-phase add` opens the next one. The roadmap is pruned empty and there is
+no theme yet, so none was invented to fill this section.
+
+**`v3.7.2 - the router loads late and the host writes the bracket` closed
+2026-08-26.** Three phases, 42 commits off `v3.7.1`, seven requirement ids all
+traced to a verified phase: `LOD-06` (two eager references cold-split behind a
+router, 25,068 B to 2,323 and 40,413 B to 20,153), `TRC-02`, `TRC-03`
+(`--duration-ms` on the close, close dedup on the worker key, `role` on an
+unpaired row), `HOK-01`, `HOK-02` (`SubagentStop` writes the bracket close, the
+hand-written one kept as the fallback that alone carries the figures), `CEN-03`
+(a both-directions census over the `planning` test group's stem list) and
+`DOC-04` (`CADENCE-CENSUS` given a prose home, two stale self-claims
+corrected). `/cad-audit` PASS on both arms: 7 of 7 requirements traced, 14 of 14
+acceptance criteria covered. Manifest bumped to `3.7.2`.
+
+Where the cycle now lives: its requirement rows under `## Shipped` in
+REQUIREMENTS.md, its narrative in `CHANGELOG.md` under `[3.7.2]`, and 52 residue
+rows - phase deviations, UAT items and CONTEXT decisions - under this label's
+heading in `.planning/ARCHIVE.md`, which is what `recall` indexes now that
+`phases/1-3/` are gone from the live tree. The phase work itself is in git.
+
+Still outstanding: the merge and the `v3.7.2` release tag are `/cad-land`'s, cut
+on the pulled base after the merge confirms. Two items remain in CAPTURE, both
+release-path and both sized as `/cad-task` rather than a phase: a `v*` tag
+publishes an official release from a SHA that never reached `main`
+(`release.yml` triggers on tags, `test.yml` never does), and
+`actions/checkout@v4` at `release.yml:20` is unpinned while running under
+`contents: write`.
+
+GH-117 (`WorktreeCreate` seeds the phase dir) is deliberately HELD OUT in the
+`Worktree verdict` milestone, natively blocked by GH-119 and GH-120: if
+worktrees do not earn their cost, its remedy code is deleted rather than
+rewritten.
+
+### Previously
 
 **`v3.7.1 - the tracker is the record` closed 2026-08-25.** Six phases, 138
 commits off `v3.7.0`, ten requirement ids all traced to a verified phase:

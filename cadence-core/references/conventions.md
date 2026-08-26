@@ -57,6 +57,32 @@ Documentation ABOUT this convention describes the fields in prose, as this
 section does, and never writes a literal marker line: the harvest scans tracked
 source, so a documented example would be ingested as a real marker.
 
+A hand-maintained CENSUS - a count a human wrote down that the code has to keep
+true - is marked the same way, on ONE line at the site that asserts it. The
+marker is the token `CADENCE-CENSUS` followed immediately by a colon, then the
+id of its row in `cadence-core/bin/lib/census-registry.mjs`, then ` | `, then
+`asserts` and a colon, then one line naming what the assertion pins. A marker
+missing its id or its `asserts` clause is named as malformed rather than
+dropped.
+
+The one rule over that grammar: a marked site whose id NO registry row names
+reddens the suite. The row is added in the commit that plants the marker, and
+deleting the row alone would leave the count marked and unwatched, which is
+exactly what reddening catches.
+
+Everything else about censuses lives in `cadence-core/bin/lib/census-registry.mjs`
+and is written there once - what makes a count a census rather than a
+measurement, why the table is hand-maintained, why a row's `subjects` are
+narrower than what the census actually scans, and why the table's own length is
+never asserted. This section summarizes the marker and points there; it does not
+restate any of it.
+
+Documentation about this token describes the fields in prose, as the paragraphs
+above do, and never writes a literal marker line. The reason is not the debt
+harvest's - no walk ingests markdown for this token - it is the grammar's: the
+token followed IMMEDIATELY by a colon is what MAKES a marker, so a spelled-out
+example would be one.
+
 ## Config resolution
 
 The only correct read is the seam - one call for every key the workflow uses:
@@ -235,7 +261,12 @@ earlier answer stay sequential.
 
 ## Subagents and reviews
 
-- Spawn agents only through the spawn-agent seam (references/seams.md).
+- Host-runtime specifics live in the three portability seams and nowhere else:
+  `references/seams.md` is the router that names them and the one file each
+  call Reads. No workflow or skill inlines a host-specific alternative beside
+  a seam's binding.
+- Spawn agents only through the spawn-agent seam
+  (references/seam-spawn-agent.md).
 - Every second opinion goes through the review trigger interface
   (references/review-triggers.md). No skill embeds its own reviewer loop.
 

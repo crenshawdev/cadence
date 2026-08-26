@@ -11,6 +11,7 @@ import { existsSync as existsSyncSafe } from 'node:fs';
 import { rungBody } from './lib/rung-agent.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
+import { referenceRouterIssues } from './lib/reference-routers.mjs';
 import { WAIVED } from './lib/include-consumers.mjs';
 import { GLOBAL_ONLY_KEYS, globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { CONTRACTS, flagNames } from './lib/arg-contract.mjs';
@@ -1968,6 +1969,27 @@ test('check 13: an unusable rows file is reported, never a silent fall back', ()
     && /CADENCE_DEFERRED_READS/.test(x.detail)), JSON.stringify(p));
 });
 
+// --- check 24: every cold branch is still reachable from its router ---------
+// The RULE - what counts as a Read, what counts as a branch, and the
+// fenced-block exclusion - is pinned in reference-routers.test.mjs against
+// synthetic rows. This side pins the LIVE tree and the wiring, the same split
+// check 13 and check 16 keep: the shipped register's four rows really do
+// resolve against the shipped routers, and the issues reach `problems`.
+
+test('check 24: the live tree satisfies every registered router branch', () => {
+  // Not a fixture. A cold branch is reachable from PROSE and from nowhere else,
+  // so this assertion is the only thing standing between a deleted Read line
+  // and an unreachable rule - for `references/triage-gate.md`, the ONE-round
+  // cap on a blocking re-arm.
+  assert.deepEqual(referenceRouterIssues(REPO), []);
+});
+
+test('check 24: self-verify names the check in `checked` and the live tree is clean', () => {
+  const j = run([]);
+  assert.match(j.checked, /reference-routers/);
+  assert.deepEqual(j.problems.filter((p) => p.kind.startsWith('reference-router-')), []);
+});
+
 // --- check 16: an `@`-include claims a consumer ------------------------------
 // The rule and its waiver bounds are pinned in include-consumers.test.mjs. This
 // side pins the WIRING: that the issues reach `problems`, that `checked` names
@@ -2509,4 +2531,73 @@ test('check 23: the LIVE tree is clean of all three capture-writer codes', () =>
   assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-unregistered'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-durable'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-redirect'), []);
+});
+
+// --- check 25: the hook event names Cadence registers ---------------------------
+//
+// A hook is the one Cadence surface the HOST names. A spelling it does not know
+// registers nothing at all - no error, no refusal, no empty result - so the only
+// evidence of a rename is the behaviour quietly not happening. These rows drive
+// the check through the CLI, which is what proves it is wired into `run(root)`
+// and not merely importable.
+
+/** A fixture plus a `hooks/hooks.json` carrying exactly `text`. */
+function hooksFixture(text, { full = false } = {}) {
+  const root = full ? fullFixture() : fixture('nothing to see\n');
+  mkdirSync(join(root, 'hooks'), { recursive: true });
+  writeFileSync(join(root, 'hooks', 'hooks.json'), text);
+  return root;
+}
+
+test('check 25: a RENAMED hook event is reported, and the problem prints the offending name', () => {
+  const root = hooksFixture(JSON.stringify({
+    hooks: {
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'node x.mjs' }] }],
+      // The rename this check exists for: one spelling wrong among several right.
+      SubagentStopped: [{ hooks: [{ type: 'command', command: 'node y.mjs' }] }],
+    },
+  }, null, 2));
+  const j = run(['--root', root]);
+  assert.equal(j.ok, false);
+  assert.match(j.checked, /hook-events/);
+  const hits = j.problems.filter((p) => p.kind === 'unregistered-hook-event');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'hooks/hooks.json');
+  // The EXACT spelling the file carries. A problem that cannot name the event
+  // is a number, and the whole failure is knowing WHICH name went wrong.
+  assert.match(hits[0].detail, /SubagentStopped/);
+  // ...and the registered name that is still right raises nothing.
+  assert.equal(hits[0].detail.includes('`PreToolUse`'), false, hits[0].detail);
+});
+
+test('check 25: a fixture with no hooks/hooks.json and no plugin manifest is lenient', () => {
+  const j = run(['--root', fixture('nothing to see\n')]);
+  assert.match(j.checked, /hook-events/);
+  assert.deepEqual(j.problems.filter((p) => p.file === 'hooks/hooks.json'), []);
+});
+
+test('check 25: a FULL tree missing the file reports missing-input', () => {
+  const hits = run(['--root', fullFixture()]).problems
+    .filter((p) => p.file === 'hooks/hooks.json');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].kind, 'missing-input');
+});
+
+test('check 25: malformed JSON is ONE problem naming the file, and the run still completes', () => {
+  const j = run(['--root', hooksFixture('{ "hooks": ')]);
+  const hits = j.problems.filter((p) => p.file === 'hooks/hooks.json');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].kind, 'unreadable-surface');
+  // The run REACHED its envelope rather than unwinding: every check still ran.
+  assert.match(j.checked, /config-keys/);
+  assert.match(j.checked, /hook-events/);
+});
+
+test('check 25: the LIVE tree registers only event names the register declares', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it, which is the assertion that reddens on a hook added without
+  // its register row.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'unregistered-hook-event'), []);
+  assert.deepEqual(p.filter((x) => x.file === 'hooks/hooks.json'), []);
 });

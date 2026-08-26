@@ -158,9 +158,9 @@ user's settings files. It decides where a subagent worktree forks from, so the
 parallel `/cad-execute` path depends on it - under its `"fresh"` default a
 worktree branches from the remote default branch and an executor arrives
 without this phase's CONTEXT or its own PLAN file, which is why `choose_path`
-refuses to parallelize there (`references/seams.md`, Worktree isolation;
-Claude Code >= 2.1.208). Inside a worktree, `"head"` means that worktree's own
-`HEAD`.
+refuses to parallelize there (`references/seam-spawn-agent.md`, Worktree
+isolation; Claude Code >= 2.1.208). Inside a worktree, `"head"` means that
+worktree's own `HEAD`.
 
 Run this step whenever `parallelization.use_worktrees` is true in the config as
 it now stands, WITHOUT also requiring `parallelization.enabled`. Gating it on
@@ -198,7 +198,7 @@ The one configuration question Cadence asks on its own - which of the eight risk
 surfaces the blocking `risk_surface` trigger fires on - reached deliberately,
 with the evidence beside it, and answerable again after the repository has
 changed shape. The first fire asks it once
-(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`); this arm
+(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md`); this arm
 is the way back to it, and re-entering it must never cost the user the answer
 they already gave.
 
@@ -232,8 +232,9 @@ they already gave.
    (D-14), and the recommendation stays all eight.
 
 4. Ask through the ask-user seam
-   (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/seams.md`), rendering the
-   envelope's `options` array in the order it arrives: at most four options per
+   (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/seam-ask-user.md`),
+   rendering the envelope's `options` array in the order it arrives: at most
+   four options per
    question, the first labelled `(recommended)`, and that label is a display
    convention and never a pre-selection - the user still chooses and the seam
    still blocks. Each option's own `reason` is what it states beside it, and

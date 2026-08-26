@@ -188,7 +188,7 @@ export const CENSUSES = Object.freeze([
   entry({
     id: 'bulk-output-register',
     holder: 'cadence-core/bin/bulk-output.test.mjs',
-    counts: "the register's row count and its two transport splits - 17, 4 "
+    counts: "the register's row count and its two transport splits - 18, 4 "
       + 'redirect and 3 file',
     asserted_by: 'the test named `the register pins its row count`',
     subjects: ['cadence-core/bin/lib/bulk-output.mjs'],
@@ -241,6 +241,21 @@ export const CENSUSES = Object.freeze([
     subjects: ['cadence-core/bin/planning/'],
   }),
   entry({
+    id: 'reference-router-branches',
+    holder: 'cadence-core/bin/reference-routers.test.mjs',
+    counts: "the register's row count and the number of ROUTERS those rows "
+      + 'span - 7 over 2',
+    asserted_by: 'the test named `the register pins its row count and its router count`',
+    // The MODULE, not `cadence-core/references/`. Both numbers are read off
+    // `ROUTERS` itself, so the only edit that can move either one is an edit to
+    // this file - the same subject every other register census in this table
+    // carries. The wide directory lease was measured on 2026-08-25 and refuses
+    // 21 of the 37 plans declaring under `cadence-core/bin/`, past the
+    // half-the-plans rail `planning-lease-check.test.mjs` asserts, because a
+    // reference cold-split without a new ROUTER row moves no count at all.
+    subjects: ['cadence-core/bin/lib/reference-routers.mjs'],
+  }),
+  entry({
     id: 'seam-call-counts',
     holder: 'cadence-core/bin/seam-calls.test.mjs',
     counts: 'the happy-path seam invocations each measured workflow instructs - '
@@ -258,6 +273,29 @@ export const CENSUSES = Object.freeze([
       'cadence-core/workflows/plan.md',
       'cadence-core/workflows/context.md',
     ],
+  }),
+  entry({
+    id: 'planning-group-stems',
+    holder: 'cadence-core/bin/test-groups.test.mjs',
+    // A SET, not a number, which is why no figure appears in this row either:
+    // the census is equality against the tree in both directions, so a
+    // legitimate new planning test costs one list edit and not two. Same
+    // hand-list-versus-tree shape as `rung-agent-files` above, and the reason
+    // it takes a row at all is D-05: one side of the comparison is typed by a
+    // human.
+    counts: "the `planning` group's membership in test.mjs's hand-typed "
+      + '`GROUPS` - the SET of stems, never a count of them',
+    asserted_by: 'the test named `GROUPS.planning is exactly the '
+      + 'planning-*.test.mjs files on disk, both directions`',
+    // `test.mjs` alone, never `cadence-core/bin/`. The typed list lives in that
+    // one file and only an edit to it can move the census; the other half of
+    // the comparison is the tree, which no lease can pin. Replayed 2026-08-25
+    // over this repository's own record, where 39 plans declare a path under
+    // `cadence-core/bin/` against a half-the-plans line of 19.5: this subject
+    // with a separate test-file holder refuses 1 of 39, while
+    // `cadence-core/bin/` refuses 39 of 39 - the rail firing wrong that phase
+    // 1 narrowed `reference-router-branches` to escape.
+    subjects: ['cadence-core/bin/test.mjs'],
   }),
 ]);
 

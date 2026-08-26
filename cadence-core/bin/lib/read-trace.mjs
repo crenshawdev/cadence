@@ -407,10 +407,15 @@ const ROLE_OF_STEM = new Map(
  * carries the bare ROLE. Null for anything else, including the host types and
  * `coordinator`, so the caller decides what each absence means rather than
  * having one of them silently become a role.
+ *
+ * EXPORTED for `lib/subagent-trace.mjs`, whose `SubagentStop` self-filter asks
+ * the same question of the same spelling. It imports this rather than holding a
+ * copy: two readers of one record deriving the role independently is how they
+ * start disagreeing about which bracket closed.
  * @param {any} agent
  * @returns {string|null}
  */
-function roleOfAgent(agent) {
+export function roleOfAgent(agent) {
   if (typeof agent !== 'string' || !agent) return null;
   const stem = agent.includes(':') ? agent.slice(agent.indexOf(':') + 1) : agent;
   return ROLE_OF_STEM.get(stem) || null;

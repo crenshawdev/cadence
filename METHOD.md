@@ -568,11 +568,11 @@ a shell is unbounded and the parser could be switched off by its own input.
 The guard is a rail against drift, not a boundary against an adversary, and
 `cadence-core/references/git-publish.md` rail 3 lists exactly what it misses.
 
-Two decisions are marked in `cadence-core/references/seams.md` as deliberately
-undefaulted, meaning they are presented with no recommended option and no
-reordering toward one: the publish mechanism in `/cad-land`, and the
-protected-branch guard when work would land on a protected branch. A nudge there
-is a bug, not a convenience.
+Two decisions are marked in `cadence-core/references/seam-ask-user.md` as
+deliberately undefaulted, meaning they are presented with no recommended
+option and no reordering toward one: the publish mechanism in `/cad-land`, and
+the protected-branch guard when work would land on a protected branch. A nudge
+there is a bug, not a convenience.
 
 Work runs on two tiers. A per-milestone integration branch is what parallel
 worktree branches merge back into - where a worktree forks FROM is the host's

@@ -2,7 +2,8 @@
 
 The bar every Cadence reviewer answers to, local or cross-model. It is composed
 into the `instruction` of a cross-model review payload at the fire site
-(`references/review-triggers.md` step 4), so an external reviewer is held to the
+(`references/review-cross-model.md`, the arm that composes it), so an external
+reviewer is held to the
 same stance, the same severity vocabulary and the same evidence rule as the
 `cad-reviewer` subagent - and an adjudicator can merge both sides' findings
 without knowing which reviewer produced which.
