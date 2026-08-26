@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 4 (Make the cache figures reach the record)
-Status: executed
-Next: /cad-verify 3
+Phase: 4 of 4 (Keep the record writable)
+Status: context gathered
+Next: /cad-plan 4
 Updated: 2026-08-26
