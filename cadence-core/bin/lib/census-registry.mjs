@@ -274,6 +274,29 @@ export const CENSUSES = Object.freeze([
       'cadence-core/workflows/context.md',
     ],
   }),
+  entry({
+    id: 'planning-group-stems',
+    holder: 'cadence-core/bin/test-groups.test.mjs',
+    // A SET, not a number, which is why no figure appears in this row either:
+    // the census is equality against the tree in both directions, so a
+    // legitimate new planning test costs one list edit and not two. Same
+    // hand-list-versus-tree shape as `rung-agent-files` above, and the reason
+    // it takes a row at all is D-05: one side of the comparison is typed by a
+    // human.
+    counts: "the `planning` group's membership in test.mjs's hand-typed "
+      + '`GROUPS` - the SET of stems, never a count of them',
+    asserted_by: 'the test named `GROUPS.planning is exactly the '
+      + 'planning-*.test.mjs files on disk, both directions`',
+    // `test.mjs` alone, never `cadence-core/bin/`. The typed list lives in that
+    // one file and only an edit to it can move the census; the other half of
+    // the comparison is the tree, which no lease can pin. Replayed 2026-08-25
+    // over this repository's own record, where 39 plans declare a path under
+    // `cadence-core/bin/` against a half-the-plans line of 19.5: this subject
+    // with a separate test-file holder refuses 1 of 39, while
+    // `cadence-core/bin/` refuses 39 of 39 - the rail firing wrong that phase
+    // 1 narrowed `reference-router-branches` to escape.
+    subjects: ['cadence-core/bin/test.mjs'],
+  }),
 ]);
 
 // --- discovery: the marker grammar, and the one rule over it -----------------
