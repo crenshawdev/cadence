@@ -11,6 +11,11 @@ criteria falsifiable.
 
 Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.
 /cad-plan reads it when present and plans without it when not.
+
+Why each step is shaped the way it is - the measured failures, the ordering
+arguments, the rejected alternatives - is in `docs/rationale/context.md`. It is
+not read at runtime. Read it before EDITING this file, so a step is not removed
+for looking redundant.
 </purpose>
 
 <process>
@@ -52,10 +57,7 @@ Read what already constrains this phase - never re-ask a settled question:
   `phases/*/SUMMARY.md` files - bounded most-recent-first exactly as the
   CONTEXT reads above are, so this read set cannot grow with N. Those
   deviations are the evidence the spend gate's "already grounded by a prior
-  phase" arm turns on; without them that arm never fires and the gate
-  collapses to its size arm alone. `workflows/report.md` already reads
-  deviations out of SUMMARY for its `Refuted:` line, so this is the same
-  source, not a new artifact.
+  phase" arm turns on.
 
 Priors are subordinate to current scope: `REQUIREMENTS.md` and `ROADMAP.md`
 carry the latest decisions, while a prior CONTEXT can be stale - a scope change
@@ -86,9 +88,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   memory.backend planning.commit_docs
 ```
 
-`planning.commit_docs` is not needed until the `commit` step at the very end;
-it is read HERE because this workflow's only other config touchpoint was a
-second Bash round-trip for one key. Carry the value forward.
+`planning.commit_docs` is not needed until the `commit` step at the very end.
+Read it HERE and carry the value forward.
 
 When `memory.backend` is `builtin` (the schema default), run recall for the
 phase goal:
@@ -98,9 +99,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms fr
 ```
 
 Skip this substep entirely when the backend is `none` - do not issue the
-recall call at all. The gate precedes the call on purpose: recall's own
-backend-off return is a backstop for a direct caller, not this workflow's gate,
-so `none` means the call is never made and no recalled data reaches the pass.
+recall call at all. The gate precedes the call on purpose (D-03).
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
 consult site - this step) for the result shape and how the top results render
@@ -130,10 +129,7 @@ Recommend DISPATCH unless all three point the other way: the phase's whole
 surface is already named in its roadmap entry, those files are ones this
 session has already read, and prior deviations have already settled how they
 behave. That is a judgment on evidence, and it is the whole gate. Compute no
-score, hold no threshold, and run no seam to rank the phase - measured on the
-committed verbatim fixture, a requirement-count threshold orders its two
-phases backwards, and this workflow's guardrails already ban splitting
-frameworks for the same reason.
+score, hold no threshold, and run no seam to rank the phase.
 
 On "Dispatch it", continue into `analyze` below, unchanged.
 
@@ -157,15 +153,11 @@ wastes the whole pass and forces a mid-analysis interruption.
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seam-spawn-agent.md), the bracket on its resolve:
 `--bracket-read ".planning/ROADMAP.md"`. That read-set is what this SITE causes
-the worker to read, which is not the same as what the prompt below names. The
-prompt names no planning path at all; the analyzer's contract
+the worker to read, which is not the same as what the prompt below names: the
+prompt names no planning path at all, and the analyzer's contract
 (`skills/cad-assumptions-analyzer-contract`) is what sends it to the roadmap
-entry, and this is the single most expensive dispatch in the whole spine. Prior
-phases' decisions reach it as the `<prior_decisions>` summary in the payload,
-distilled from the (at most 3) files load_priors read - the contract opens a
-prior CONTEXT.md itself only when the code contradicts a cited decision, so the
-sweep of every prior phase's file that used to grow with N is gone from both
-the contract and this record.
+entry. Prior phases' decisions reach it as the `<prior_decisions>` summary in
+the payload, distilled from the (at most 3) files load_priors read.
 
 This keeps raw file contents out of the main context. Prompt payload:
 
@@ -344,13 +336,11 @@ consult site - this step) for its shape - five sections, nothing else, with the
 fill-in guidance for each.
 
 Deferred on SIZE, not branch-locality (references/seam-spawn-agent.md, File
-round-trip):
-this step is unconditional but reached once, at the very end, so the read folds
-into the turn that writes the file while an eager copy would ride every turn of
-the interview before it.
+round-trip): this step is unconditional but reached once, at the very end, so
+the read folds into the turn that writes the file.
 
 Then count what was written against the 3-7 the `acceptance_criteria` step
-states - a ceiling nothing counts is the silent no-op this seam removes:
+states:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --phase {N} --context-min 3 --context-max 7

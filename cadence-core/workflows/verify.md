@@ -9,6 +9,11 @@ user result, counts recomputed every write).
 
 `--sweep` folds the cross-phase audit in (cold branch: verify-sweep.md).
 `--deep` adds a goal-backward codebase pass (cold branch: verify-deep.md).
+
+Why each step is shaped the way it is - the measured failures, the ordering
+arguments, the rejected alternatives - is in `docs/rationale/verify.md`. It is
+not read at runtime. Read it before EDITING this file, so a step is not removed
+for looking redundant.
 </purpose>
 
 <process>
@@ -114,9 +119,8 @@ the pass, each distinct warning once per run
 
 `verify` on that line is `on` or `off`. This step holds no role and the seam
 refuses a resolve without one, so it resolves as `cad-verifier` - the role it is
-deciding whether to dispatch. Both terms are load-bearing: the first-session term
-is what keeps the pass to once per phase, so dropping it would re-dispatch
-cad-verifier on every later UAT session.
+deciding whether to dispatch. Both terms are load-bearing: keep the
+first-session term, which is what holds the pass to once per phase.
 
 When `verify` is `off`, say so in one line - "stakes level solo: the deep verify
 pass is off; run `/cad-verify --deep` to force it" - rather than skipping
@@ -128,8 +132,7 @@ and follow it. Otherwise skip to `walk`.
 
 <step name="walk">
 TWO passes: the model executes and cites everything it can, then the user is
-asked about only what is left. Interrogating the user with a command the model
-can run itself is the defect this step exists to prevent.
+asked about only what is left.
 
 **The bar.** An item is a HUMAN check only when the model cannot execute it -
 it is irreversible against real data, or it is outside the model's reach
@@ -141,35 +144,28 @@ is not re-litigated:
   `(human-verify: needs <tool/service>)` suffix, written precisely when that
   tool is known absent on THIS machine.
 
-A `why_human` item is NOT that kind, and the field is not the predicate. The
-deep pass writes `why_human` for every UNCERTAIN truth as well as every
-human-only check (`skills/cad-verifier-contract`), and a truth is UNCERTAIN
-whenever no probe was observed - which is precisely a check the model can settle
-by running one. So READ the reason and apply the bar to it: it goes to pass 2
-only when it names irreversibility against real data or a resource outside the
-model's reach. Anything else - "no probe ran", "not exercised by a named test" -
-goes to pass 1 and is executed. Taking the field's presence as the answer hands
-the user back exactly the commands this step exists to run.
+A `why_human` item is NOT that kind, and the field is not the predicate - the
+deep pass writes it for every UNCERTAIN truth as well as every human-only check.
+So READ the reason and apply the bar to it: it goes to pass 2 only when it names
+irreversibility against real data or a resource outside the model's reach.
+Anything else - "no probe ran", "not exercised by a named test" - goes to pass 1
+and is executed.
 
 The suffix-tagged item, and a `why_human` item whose reason clears that reading,
 go straight to pass 2; pass 1 never runs their commands.
 
-`blocked` is TERMINAL - nothing returns an item to the walk from it (`next`
-offers only `pending`, `refresh` appends only unseen names, `route_failures`'
-reset is scoped to `status: fail`, and completion refuses it), so a bar applied
-loosely enough to run an impossible command puts the phase permanently out of
-reach of Complete. Pass 1 records `blocked` ONLY for an item that cleared the
+`blocked` is TERMINAL - nothing returns an item to the walk from it - so a bar
+applied loosely enough to run an impossible command puts the phase permanently
+out of reach of Complete. Pass 1 records `blocked` ONLY for an item that cleared the
 bar and then failed on an environmental cause the bar did not predict, and the
 results table says it needs the user's answer on the next run rather than being
 left to rot.
 
 **Pass 1 - execute and cite.** Read `.planning/phases/<N>/UAT.md` ONCE, at the
 top of the walk, for the pending items and their `expected` text. It has no
-substitute: `uat status` returns `status`, `counts`, `result` and
-`first_pending` alone - no item list, no `expected` string - and on a resumed
-session nothing has put the item bodies in context at all. ONE read BEFORE the
-chain starts, so the "no UAT.md re-reads between items" rule is unchanged and
-still governs pass 2.
+substitute - `uat status` returns no item list and no `expected` string. ONE
+read BEFORE the chain starts, so the "no UAT.md re-reads between items" rule is
+unchanged and still governs pass 2.
 
 Then, before offering ANY item, run the check for every pending item that
 clears the bar and record each the moment it is settled. The evidence is
@@ -183,10 +179,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat record --phase <N
   --fields-file <path> --source model
 ```
 
-One call per item, never a `uat merge` payload: merge atomically overwrites
-`phases/<N>/FINDINGS.json` on every success and would clobber the deep pass's
-envelope, the file that exists to make a discarded verifier finding
-recoverable.
+One call per item, never a `uat merge` payload: merge would clobber the deep
+pass's findings envelope.
 
 Then print ONE results table, so the executed items are visible in the
 transcript and not only on disk:
@@ -213,8 +207,7 @@ Expected: {expected}
 
 End the turn by asking in plain words: name what to run and what they should
 see, then ask what happened. Never an abstract "does this match", and never
-phrase it as though the user has already run it - an item the deep pass just
-appended has been in front of them for one turn (ask-user seam, open-ended
+phrase it as though the user has already run it (ask-user seam, open-ended
 prose - free-text pass/fail/describe answers do not fit a structured
 choice). Infer the result from the reply; never show pass/fail buttons,
 never ask severity:
