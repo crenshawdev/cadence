@@ -384,7 +384,13 @@ export function appendEvent(planningRoot, event) {
  *   THE CACHE FIGURES, and what they are NOT. `cache_creation_input_tokens` and
  *   `cache_read_input_tokens` are the worker's own billed cache traffic, summed
  *   across its transcript by the `SubagentStop` hook, which is the only writer
- *   that ever holds them. They stop HERE: they never reach `roles`, and
+ *   that ever holds them. They reach a row by EITHER of two routes: on a close
+ *   the hook was able to write, folded inline like every other close figure; or
+ *   on a `WORKER_CACHE` fact, when the hook stopped a worker it could not close
+ *   at all, folded by the post-pass that matches `corr` AND `agent_id`. The two
+ *   routes share one fill-only-empty rule, so a bracket whose close already
+ *   carried a figure is never rewritten by a fact naming it. They stop HERE
+ *   either way: they never reach `roles`, and
  *   `roles.tokens` is byte-identical with and without them (D-03). The roles
  *   block bills what a RETURN reported - a final-window figure for one dispatch
  *   - while a cache read summed over turns counts one cached prefix once per
@@ -712,6 +718,24 @@ export function renderTrace(planningRoot, phase) {
   // no bracket. Collapsing the two would drop figures the record keeps.
   /** @type {Map<string, {row: any, entry: any}>} worker key -> the row it opened */
   const pairedRows = new Map();
+
+  // THE CACHE-ONLY FACTS this pass collects and the post-pass below folds.
+  // Keyed `corr\0agent_id` - both terms, never the id alone: measured
+  // 2026-08-26 over 1,333 subagent transcripts, 7 of 1,323 distinct host ids
+  // appear in two or more transcripts of the SAME project, so an unscoped
+  // equality would land one session's figures on another's bracket. `corr` goes
+  // through `key()` for the reason the worker key does: `1` and `"1"` are one
+  // run.
+  //
+  // LAST FACT WINS for a pair, which is what `Map.set` gives here and is a
+  // decision rather than an accident. A transcript only GROWS, so a second
+  // `SubagentStop` for one worker is a re-sum of the same file and a superset of
+  // the first - summing the two would double-bill every turn both reads covered,
+  // while keeping the later one carries the more complete read. If the host ever
+  // produces genuinely disjoint partial sums this understates rather than
+  // double-bills, which is the direction this record already prefers.
+  /** @type {Map<string, Record<string, number>>} */
+  const cacheFacts = new Map();
   for (const e of out.events) {
     // Every family feeds the RUN's end-of-record mark, not the lifecycle one
     // alone: the coordinator's last step is still running while the routing and
@@ -766,6 +790,22 @@ export function renderTrace(planningRoot, phase) {
     const cache = {};
     for (const k of CACHE_KEYS) {
       if (typeof e[k] === 'number' && Number.isFinite(e[k])) cache[k] = e[k];
+    }
+
+    // The cache-only fact: collected here for the guarded `cache` object above,
+    // and folded only AFTER the loop. It cannot join its bracket inline (D-09):
+    // the host fires `SubagentStop` the moment the worker stops, while the
+    // orchestrator writes the `--agent-id` close only once it has processed the
+    // return, so the fact ordinarily arrives BEFORE the id it joins on - and the
+    // whole existing fold runs inside the `TERMINAL` branch, which this name
+    // deliberately never enters. A fact carrying no id can never reach a
+    // bracket, and one whose transcript reported neither figure has nothing to
+    // give, so neither is collected; neither is an error.
+    if (e.event === WORKER_CACHE) {
+      if (typeof e.agent_id === 'string' && e.agent_id && CACHE_KEYS.some((k) => k in cache)) {
+        cacheFacts.set(`${key(e.corr)}\0${e.agent_id}`, cache);
+      }
+      continue;
     }
 
     const worker = `${key(e.corr)}\0${key(e.phase)}\0${key(e.plan)}`;
@@ -1010,6 +1050,28 @@ export function renderTrace(planningRoot, phase) {
   // answer derived here. The remaining accounting fields (`funded`,
   // `turnsFunded` and the two figures) stay internal and never reach the
   // rendered shape.
+  // THE POST-PASS FOLD. Every bracket is built by now, which is the point: a
+  // fact that arrived first still finds the row its `agent_id` names.
+  //
+  // It touches the bracket ROW and nothing else - not `roleTotals`, not
+  // `out.roles`, not `seenTerminals`, not `pairedRows` - because a cache read
+  // summed over a worker's turns is a different denomination from a return's
+  // final-window `tokens` (D-03), and `roles` is byte-identical with and without
+  // every fact in the file. It reuses the SAME fill-only-empty clause the
+  // repeat-close arm applies to these two keys, so a bracket whose close already
+  // carried a figure keeps the one it has and there is no second overwrite rule
+  // to keep in agreement with the first. A fact naming no bracket changes
+  // nothing and is not an error. Where two brackets under one `corr` somehow
+  // carry one `agent_id`, the fold stops at the first: one worker's traffic
+  // copied onto two rows would bill it twice.
+  for (const [pair, cache] of cacheFacts) {
+    for (const b of out.brackets) {
+      if (!b.agent_id || `${key(b.corr)}\0${b.agent_id}` !== pair) continue;
+      for (const k of CACHE_KEYS) if (!(k in b) && k in cache) b[k] = cache[k];
+      break;
+    }
+  }
+
   for (const pending of open.values()) {
     for (const p of pending) {
       out.unpaired.push({ corr: p.corr, phase: p.phase, plan: p.plan, ts: p.ts, role: p.role });

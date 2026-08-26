@@ -2937,3 +2937,157 @@ test('coordinator: the residue subtracts the worker span to its LATER close', ()
   assert.equal(c.steps[0].residue_ms, 6 * MIN);
   assert.equal(c.residue_ms, 8 * MIN);
 });
+
+// --- the cache-only fact reaches its bracket in a post-pass (TRC-07) ---------
+//
+// Three withholding gates in the `SubagentStop` hook cannot write a close at
+// all, and used to throw the worker's two cache figures away with it. They now
+// write a `WORKER_CACHE` fact instead, and this is the half that joins one to
+// the bracket it names - AFTER the pairing pass, because the fact ordinarily
+// arrives BEFORE the `agent_id` it joins on.
+
+/** The dispatch every fixture below opens with. */
+const vDispatch = (extra) => ({
+  phase: 7, family: 'lifecycle', event: DISPATCH, plan: 'cad-verifier',
+  role: 'cad-verifier', ts: '2026-08-26T10:00:00.000Z', ...extra,
+});
+/** A close, in the shape the orchestrator's hand-written `trace close` writes. */
+const vClose = (extra) => ({
+  phase: 7, family: 'lifecycle', event: 'return', plan: 'cad-verifier',
+  role: 'cad-verifier', ts: '2026-08-26T10:05:30.000Z', tokens: 900, ...extra,
+});
+/** A cache-only fact, in the shape `lib/subagent-trace.mjs` writes one. */
+const vFact = (extra) => ({
+  phase: 7, family: 'lifecycle', event: WORKER_CACHE, role: 'cad-verifier',
+  ts: '2026-08-26T10:05:00.000Z',
+  cache_creation_input_tokens: 4096, cache_read_input_tokens: 33033480, ...extra,
+});
+
+/**
+ * Render one fixture TWICE - as written, and with every `worker_cache` line
+ * deleted - and refuse to return unless the `roles` block is byte-identical
+ * across the two. D-05 is the whole reason the fold is a pass of its own: a
+ * cache read summed over a worker's turns is a different denomination from a
+ * return's final-window `tokens`, so a fact may move a BRACKET and must never
+ * move the per-role bill. Asserting it inside the helper is what puts the
+ * assertion on every case below without restating it six times.
+ */
+function folded(rows) {
+  const dir = root();
+  for (const r of rows) appendEvent(dir, r);
+  const r = renderTrace(dir, 7);
+  const bare = root();
+  for (const row of rows) if (row.event !== WORKER_CACHE) appendEvent(bare, row);
+  assert.equal(JSON.stringify(r.roles), JSON.stringify(renderTrace(bare, 7).roles),
+    'a cache-only fact moved the per-role bill');
+  return r;
+}
+
+test('render: a cache-only fact lands on the bracket its corr and id name', () => {
+  // THE LIVE SHAPE. The hook's figureless close opens the row, the
+  // orchestrator's hand-written `trace close --agent-id` names the worker, and
+  // the fact - written by a gate that refused to close anything - carries the
+  // only cache figures the record will ever hold for that worker.
+  const r = folded([
+    vDispatch(),
+    // The hook's own close: no figure of any kind and no id, because the
+    // payload carries neither.
+    {
+      phase: 7, family: 'lifecycle', event: 'return', plan: 'cad-verifier',
+      role: 'cad-verifier', ts: '2026-08-26T10:05:00.000Z',
+    },
+    vClose({ agent_id: 'W1' }),
+    vFact({ agent_id: 'W1' }),
+  ]);
+  assert.equal(r.brackets.length, 1, 'the fact opened a bracket of its own');
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 4096);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 33033480);
+});
+
+test('render: the fact folds just as well when it arrives BEFORE the id', () => {
+  // The ORDINARY arrival order, and the reason the fold is a post-pass (D-09):
+  // the host fires `SubagentStop` the moment the worker stops, while the
+  // orchestrator writes its `--agent-id` close only after processing the
+  // return. A fold riding the forward pass would see no bracket yet and drop
+  // every figure this phase exists to keep.
+  const r = folded([
+    vDispatch(),
+    vFact({ agent_id: 'W1' }),
+    vClose({ agent_id: 'W1' }),
+  ]);
+  assert.equal(r.brackets.length, 1);
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 4096);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 33033480);
+});
+
+test('render: a fact never overwrites a figure the close already carried', () => {
+  // The SAME fill-only-empty clause the repeat-close arm applies to these two
+  // keys, reused rather than restated (D-11): a second overwrite rule is one
+  // that disagrees with the first the day either changes. The two keys answer
+  // independently, so a close carrying one of them still takes the other off
+  // the fact.
+  const r = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1', cache_read_input_tokens: 7 }),
+    vFact({ agent_id: 'W1' }),
+  ]);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 7, 'the fact overwrote the close');
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 4096, 'the empty half stayed empty');
+});
+
+test('render: with two workers of one role open, the fact reaches the matching id', () => {
+  // Not the newest bracket and not whichever fact arrived first - the one whose
+  // `agent_id` the fact names. This is the parallel path's own shape: two
+  // dispatches of one role in one phase run, closed under two different host
+  // ids.
+  const r = folded([
+    vDispatch(),
+    vDispatch({ ts: '2026-08-26T10:01:00.000Z' }),
+    vClose({ ts: '2026-08-26T10:05:00.000Z', agent_id: 'W1' }),
+    vClose({ ts: '2026-08-26T10:06:00.000Z', tokens: 800, agent_id: 'W2' }),
+    vFact({ agent_id: 'W2' }),
+  ]);
+  assert.equal(r.brackets.length, 2);
+  const [first, second] = r.brackets;
+  assert.equal(first.agent_id, 'W1');
+  assert.equal('cache_read_input_tokens' in first, false, JSON.stringify(first));
+  assert.equal('cache_creation_input_tokens' in first, false, JSON.stringify(first));
+  assert.equal(second.agent_id, 'W2');
+  assert.equal(second.cache_read_input_tokens, 33033480);
+  assert.equal(second.cache_creation_input_tokens, 4096);
+});
+
+test('render: a fact that names no bracket of its own run lands NOWHERE', () => {
+  // The join is `corr` AND `agent_id`, never the id alone (D-10). Measured
+  // 2026-08-26 over 1,333 transcripts, 7 of 1,323 distinct host ids appear in
+  // two or more transcripts of the same project, so an unscoped equality would
+  // put one session's figures on another session's bracket - and an id-less
+  // fact has no bracket it could ever reach. None of the three is an error and
+  // none of them adds a row.
+  for (const [why, extra] of Object.entries({
+    'a fact from another run': { agent_id: 'W1', corr: 'ANOTHER-RUN' },
+    'a fact carrying no id at all': {},
+    'a fact naming an id no bracket carries': { agent_id: 'NOBODY' },
+  })) {
+    const r = folded([vDispatch(), vClose({ agent_id: 'W1' }), vFact(extra)]);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal('cache_read_input_tokens' in r.brackets[0], false, why);
+    assert.equal('cache_creation_input_tokens' in r.brackets[0], false, why);
+    assert.deepEqual(r.unpaired, [], why);
+  }
+});
+
+test('render: two facts for one worker leave the LATER sums on the bracket', () => {
+  // A transcript only GROWS, so a second `SubagentStop` for one worker is a
+  // re-sum of the same file and a superset of the first. Summing the two would
+  // double-bill every turn both reads covered; keeping the later one carries
+  // the more complete read.
+  const r = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1' }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 100, cache_read_input_tokens: 1000 }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 150, cache_read_input_tokens: 3000 }),
+  ]);
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 150);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 3000);
+});
