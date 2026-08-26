@@ -17,7 +17,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   appendEvent, correlationId, renderTrace, tracePath, MAX_TRACE_BYTES, FAMILIES,
-  ANCHOR, DISPATCH, TERMINAL, COORDINATOR,
+  ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE,
 } from './lib/trace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -2133,7 +2133,7 @@ test('census: every trace family has a producer, and every producer speaks the r
   }
 
   // A lifecycle event the renderer does not know is a bracket that never pairs.
-  const known = [ANCHOR, DISPATCH, ...TERMINAL, COORDINATOR];
+  const known = [ANCHOR, DISPATCH, ...TERMINAL, COORDINATOR, WORKER_CACHE];
   const lifecycle = prose.filter((p) => p.family === 'lifecycle');
   for (const p of lifecycle) {
     assert.ok(known.includes(String(p.event)),

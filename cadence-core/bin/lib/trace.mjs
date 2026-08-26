@@ -144,6 +144,33 @@ const CACHE_KEYS = ['cache_creation_input_tokens', 'cache_read_input_tokens'];
  */
 export const COORDINATOR = 'coordinator';
 
+/**
+ * The lifecycle event a stopped worker's CACHE FIGURES ride when no close can
+ * carry them. `SubagentStop` withholds its `return` on three separate gates -
+ * the worker did not terminate, its bracket is already closed, or two
+ * dispatches of its role are open and the evidence cannot separate them - and
+ * every one of those paths used to throw the two cache sums away with the
+ * close. Nothing else on the record ever holds them: the host renders no cache
+ * figure on a return, so the hook that reads the worker's own transcript is the
+ * only writer there is. This name is what lets that hook state the figures
+ * WITHOUT stating a close.
+ *
+ * It is a fifth lifecycle NAME and not a fifth family, for the reason
+ * `COORDINATOR` states one clause above: `FAMILIES` is validated at the seam
+ * while `renderTrace`'s `counts` is a fixed four-key literal, so a fifth family
+ * would write fine and count nowhere.
+ *
+ * It must NEVER join `TERMINAL`. A name in that array re-enters `seenTerminals`,
+ * the FIFO `pending.shift()` and the `funded`/`turnsFunded` accounting, which
+ * would open and close a bracket for a worker that never returned - the exact
+ * defect the three gates exist to prevent. So it falls through both the
+ * `DISPATCH` branch and the `TERMINAL` branch untouched: it creates no bracket,
+ * no `unpaired` row and no role row, and the only things it moves are
+ * `counts.lifecycle` and the per-`corr` `last` instant every family feeds.
+ * `renderTrace`'s post-pass is what joins it to the bracket it names.
+ */
+export const WORKER_CACHE = 'worker_cache';
+
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {
   return join(planningRoot, TRACE_FILE);
