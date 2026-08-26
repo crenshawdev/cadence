@@ -916,6 +916,29 @@ export function renderTrace(planningRoot, phase) {
         // order AC4 calls ordinary - and `lib/subagent-trace.mjs`'s
         // `alreadyClosed` equality test then reads a key that is never there.
         if (!('agent_id' in b) && e.agent_id) b.agent_id = e.agent_id;
+        // THE SPAN, and it is NOT fill-only-empty - `end` is never empty, so
+        // that rule would freeze it at whichever close landed first. `ms` is
+        // DISPATCH-TO-CLOSE and the typedef says it includes whatever the
+        // orchestrator did BETWEEN WRITING THE TWO HALVES, so the close that
+        // ends the span is the LATER of them. Freezing it at the first is what
+        // let a bracket render `ms` SHORTER than the `duration_ms` beside it -
+        // a worker running 362s inside a 263s window, measured on this
+        // repository's own record 2026-08-26 - and it understated every
+        // bracket the hook closed first, which is the ordinary order.
+        // MONOTONIC, never backwards: a delayed repeat close (the D-05
+        // ordering, whose `ts` precedes the head pending dispatch) must not
+        // shrink a span that already closed later.
+        const a2 = millis(repeat.entry.ts);
+        if (t !== null && (millis(b.end) === null || t > millis(b.end))) {
+          b.end = e.ts;
+          b.ms = a2 !== null ? t - a2 : null;
+          // The coordinator span extends with it, or `residue_ms` keeps
+          // billing the coordinator for time a worker held. Pushing a second
+          // span does not double-count: `mergeSpans` unions overlapping spans
+          // and this one shares its `a`, so it widens the existing span rather
+          // than adding one. (The note that used to sit here said the reverse.)
+          if (a2 !== null && t > a2) coordRow(e.corr).spans.push({ a: a2, b: t });
+        }
         // The arm upgrades in ONE direction and never back. A figureless writer
         // that happened to run first would otherwise turn every checkpoint into
         // a clean `return` - billing a worker that came back unusable as a
@@ -924,10 +947,12 @@ export function renderTrace(planningRoot, phase) {
         // known to be a terminal, so "not `return`" is exactly "`checkpoint` or
         // `escalation`" without re-enumerating them.
         if (b.event === 'return' && e.event !== 'return') b.event = e.event;
-        // No `mismatched` row and no coordinator span: both are the PAIRING's
-        // to report, and today a terminal with nothing pending contributes
-        // neither. A repeat close reporting a second span would subtract one
-        // worker's time from the coordinator's bill twice.
+        // No `mismatched` row: that one IS the PAIRING's to report, and a
+        // terminal with nothing pending contributes none. The coordinator span
+        // is handled above and is no longer withheld here - it widens with
+        // `end` rather than being re-pushed as an independent span, which is
+        // what the double-billing this note used to warn about would have
+        // required.
       }
       if (tokens !== null) {
         // Bill the DISPATCH's role. An unmatched terminal has no dispatch to

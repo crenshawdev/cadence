@@ -2870,3 +2870,70 @@ test('render: the worker id survives the hook closing the bracket first', () => 
   assert.equal(folded.agent_id, 'WORKER-A',
     'the second writer overwrote the id the first one named');
 });
+
+test('render: the span ends at the LATER close, not whichever landed first', () => {
+  // `ms` is DISPATCH-TO-CLOSE and the brackets typedef says it includes what
+  // the orchestrator did between writing the two halves. Freezing `end` at the
+  // first terminal broke that: the hook's figureless close ordinarily lands
+  // first, so `ms` stopped at the worker's stop and excluded exactly the
+  // orchestrator time it is defined to include. The tell is a bracket whose
+  // `ms` is SHORTER than the `duration_ms` beside it - a worker running longer
+  // than the window that supposedly contained it.
+  const dir = root();
+  appendEvent(dir, {
+    phase: 8, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: at(0),
+  });
+  appendEvent(dir, {
+    phase: 8, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: at(4),
+  });
+  appendEvent(dir, {
+    phase: 8, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: at(6), tokens: 900, turns: 4, duration_ms: 5 * MIN,
+  });
+  const [b] = renderTrace(dir, 8).brackets;
+  assert.equal(b.end, at(6), 'the span still ends at the close that landed first');
+  assert.equal(b.ms, 6 * MIN, '`ms` excluded the orchestrator time it is defined to include');
+  assert.ok(b.ms >= b.duration_ms,
+    `a worker cannot run ${b.duration_ms}ms inside a ${b.ms}ms window`);
+
+  // MONOTONIC, never backwards. A delayed repeat close - the D-05 ordering,
+  // whose `ts` precedes the dispatch already paired - must not shrink a span
+  // that closed later.
+  const other = root();
+  appendEvent(other, {
+    phase: 8, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: at(0),
+  });
+  appendEvent(other, {
+    phase: 8, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: at(6), tokens: 900,
+  });
+  appendEvent(other, {
+    phase: 8, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: at(4),
+  });
+  const [late] = renderTrace(other, 8).brackets;
+  assert.equal(late.end, at(6), 'an earlier repeat close dragged the span backwards');
+  assert.equal(late.ms, 6 * MIN);
+});
+
+test('coordinator: the residue subtracts the worker span to its LATER close', () => {
+  // The same defect one layer out. The coordinator span was pushed once, at
+  // pairing time, off the first terminal - so every bracket the hook closed
+  // first handed the coordinator back time the worker was still holding, and
+  // `residue_ms` overstated by the gap between the two closes.
+  const dir = root();
+  mark(dir, 'execute', 0);
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: DISPATCH, plan: 'cad-executor', role: 'cad-executor', ts: at(2) });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 'cad-executor', ts: at(4) });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 'cad-executor', ts: at(6), tokens: 900 });
+  mark(dir, 'verify', 10);
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'gate', ts: at(12) });
+  const c = renderTrace(dir, 1).coordinator;
+  // The worker held 2->6, four minutes, not the two the first close claimed.
+  assert.equal(c.bracket_ms, 4 * MIN, 'the coordinator was billed for time the worker held');
+  assert.equal(c.steps[0].residue_ms, 6 * MIN);
+  assert.equal(c.residue_ms, 8 * MIN);
+});
