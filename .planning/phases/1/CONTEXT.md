@@ -105,7 +105,7 @@ sit on two unrelated seams and share only AC7.
   declared files, 17,222,879 bytes measured 2026-08-26 across the 28 phase
   directories; `levelFor`'s `evidencedBy` (`route.mjs:638-644`) re-runs
   `scanDeclared` per matched entry, so some bodies are scanned more than once.
-- D-12 (Registration): a new config key lands in FOUR places, not the two
+- D-12 (Registration): a new config key lands in FOUR places, not the two [corrected by plan-1 deviation: it lands in FIVE - the fifth is `self-verify.test.mjs`'s hand-maintained whole-schema completeness fixture, which fails `inert-config-key` for any key absent from it]
   criterion 5 names - `config.schema.json`, `references/config-catalog.md`,
   `references/config-reach.md`, and prose that names the key. Separately,
   `weight-budgets.json:77` pins `workflows/plan.md` at 28,764 B and the file is
