@@ -949,9 +949,7 @@ function run(root) {
           problems.push({ kind: 'agent-carries-behaviour', file: rel,
             detail: `body carries contract section ${tags.map((t) => `<${t}>`).join(', ')} - the contract belongs in the preloaded skill` });
         } else {
-          const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
-          const issue = rungBodyIssue(body, effortLine ? effortLine[1] : undefined,
-            parseSkillsField(fm[1]));
+          const issue = rungBodyIssue(body, parseSkillsField(fm[1]));
           if (issue) {
             problems.push({ kind: 'agent-carries-behaviour', file: rel,
               detail: `${issue.detail} - the contract belongs in the preloaded skill` });
@@ -961,10 +959,13 @@ function run(root) {
 
       // 7b. a rung file carries the effort the rung map filed it under.
       // Runs on the frontmatter of EVERY agent file, not only the ones
-      // preloading a contract, because the map may name any of them. Check 7
-      // above holds the body against this same field and check 8 below reads
-      // the rung out of the filename, so without this the one link that
-      // decides how deep the dispatch actually thinks goes unchecked.
+      // preloading a contract, because the map may name any of them. This is
+      // now the ONLY rule reading a rung file's `effort:` against anything:
+      // check 7 above used to hold the body against this same field, and that
+      // arm went with the rung sentence (RNG-03), while check 8 below reads
+      // the rung out of the FILENAME rather than out of the file. Without this
+      // the one link that decides how deep the dispatch actually thinks goes
+      // unchecked.
       if (fm) {
         const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
         const mismatch = rungEffortIssue(e.slice(0, -3),

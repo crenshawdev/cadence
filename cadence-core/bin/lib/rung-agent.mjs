@@ -96,18 +96,25 @@ export function rungFiles(role) {
 }
 
 /**
- * The canonical BODY of a rung agent file: the rung line, then a pointer at
- * the contract it preloads. Stated here rather than inside self-verify for the
- * same reason the name mapping is - the check and the files it checks must
+ * The canonical BODY of a rung agent file: a pointer at the contract it
+ * preloads, and nothing else. Stated here rather than inside self-verify for
+ * the same reason the name mapping is - the check and the files it checks must
  * read ONE source, or they drift and the linter blesses the drift.
- * @param {string} rung the file's frontmatter `effort`
+ *
+ * It names NO rung, and that is the point (RNG-03). The body used to open
+ * ``Your rung is `high`.``, which put a per-rung token at body line 1 and gave
+ * every rung file of one role a different prefix from its first character - so
+ * two rungs of the same role could share no cached prefix at all, however
+ * identical the rest. The rung was never lost by deleting it: the frontmatter
+ * `effort:` is what the host actually reads and what `rungEffortIssue` holds
+ * against this map. A role whose CONTRACT branches on the rung takes it from
+ * its dispatch prompt, which is billed fresh and costs no prefix.
  * @param {string} skill the contract skill the file preloads
  * @returns {string}
  */
-export function rungBody(rung, skill) {
-  return `Your rung is \`${rung}\`.\n\n`
-    + `Follow the preloaded \`${skill}\` skill exactly - it is your full\n`
-    + 'contract. This file names that contract and your rung, and adds nothing else.\n';
+export function rungBody(skill) {
+  return `Follow the preloaded \`${skill}\` skill exactly - it is your full\n`
+    + 'contract. This file names that contract and adds nothing else.\n';
 }
 
 /**
@@ -142,17 +149,22 @@ export function normalizeBody(text) {
  * them - the template names a single contract, and nothing here rules out a
  * future multi-contract agent.
  *
+ * The template no longer names a rung, so this rule no longer holds a body
+ * against its own frontmatter `effort:` (RNG-03). That arm is gone, not
+ * bypassed, and it was the redundant one: `rungEffortIssue` below holds the
+ * file's `effort:` against the rung RUNG_FILES filed it under, which is the
+ * link that decides how deep a dispatch actually thinks.
+ *
  * @param {string} body the agent file's prose, frontmatter already stripped
- * @param {string} [rung] the file's frontmatter `effort`
  * @param {string[]} [skills] the file's declared `skills:` entries
  * @returns {null|{detail: string}} null when the body IS the template
  */
-export function rungBodyIssue(body, rung, skills) {
+export function rungBodyIssue(body, skills) {
   const found = normalizeBody(body);
   const declared = (Array.isArray(skills) ? skills : [])
     .filter((s) => typeof s === 'string' && s);
   const names = declared.length ? declared : ['<contract>'];
-  const wanted = names.map((s) => normalizeBody(rungBody(rung || '', s)));
+  const wanted = names.map((s) => normalizeBody(rungBody(s)));
   if (wanted.includes(found)) return null;
   return { detail: `body is not the rung template - expected exactly ${JSON.stringify(wanted[0])}` };
 }
@@ -246,11 +258,14 @@ export function effortEnumIssues(schema, rungOrder) {
  *
  * A cell states a rung, RUNG_FILES turns it into a file NAME, and the dispatch
  * carries only that name - so the depth that actually runs is the `effort` in
- * that file's frontmatter. Two checks already sit near this and neither closes
- * it: `rungBodyIssue` holds a file's body against its OWN frontmatter, so a
- * file that is internally consistent and externally wrong passes, and check
- * 8's reachability arm reads the rung out of the FILENAME rather than out of
- * the file. Leave the gap and `route-table.json` can name `xhigh`, this map
+ * that file's frontmatter, and since RNG-03 deleted the rung sentence from the
+ * body this is the ONLY rule that reads that field against anything. Check 8's
+ * reachability arm reads the rung out of the FILENAME rather than out of the
+ * file, and `rungBodyIssue` held a file's body against its OWN frontmatter, so
+ * a file that was internally consistent and externally wrong passed it
+ * anyway - which is why losing that arm loses no coverage this one has, and
+ * why this one may not be weakened. Leave the gap and `route-table.json` can
+ * name `xhigh`, this map
  * can resolve it to a file carrying `effort: high`, and the resolver's JSON,
  * the transcript's `subagent_type` and the escalation `reason` all report
  * `xhigh` while nothing ran at it. Subagent turns record no effort anywhere,
