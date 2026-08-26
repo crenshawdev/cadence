@@ -1,23 +1,17 @@
-# Roadmap: v3.7.3 - the record has to be right before it can be cut (CLOSED at phase 1)
+# Roadmap: v3.7.4 - cut the cost the record can now measure
 
 ## Overview
 
-**`v3.7.3`, opened and closed 2026-08-26.** Opened with four phases against
-the `Dispatch cost` milestone; CLOSED at phase 1. The subject was what a
-dispatch costs, and the cycle opened by fixing the instruments rather than the
-cost, because every argument for cutting the cost is denominated in figures this
-repository records about itself.
+**`v3.7.4`, opened 2026-08-26.** Three phases against the `Dispatch cost`
+milestone, which `v3.7.3` opened and did not finish. That cycle fixed the
+instruments and closed at phase 1; this one spends what they measure.
 
-**Why it closed early.** Half this cycle's code commits were fixing the other
-half - 7 fix against 7 feat, where `v3.7.1` ran 27% and `v3.7.2` 22%. Four of
-those seven fixes were four passes at one question: which in-flight dispatch an
-async `SubagentStop` callback belongs to. And one real defect (`1b123d20`,
-the bracket span ending at the first close rather than the later one) landed
-after phase 1's UAT reported 8 passed and 0 failed, so the phase gate did not
-catch the class. Phases 2, 3 and 4 all sat on that same subsystem, so the rate
-would have carried rather than settled. Phase 1 shipped and is verified; the
-five ids the other three phases carried are under `## Deferred` in
-REQUIREMENTS.md, intact, each with its own promote condition.
+**Why this scope and not the rest of the tracker.** The 31 open issues were
+triaged 2026-08-26 against one question: would a user running Cadence on their
+own project ever feel this, or does it only bite while Cadence is being
+developed on Cadence? Three issues answered the second way and were declined
+(GH-109, GH-111, GH-139). Everything in this cycle answers the first way, and
+the first three are felt as money on every dispatch a user makes.
 
 **The measured state.** `cad-executor` is 25,587,266 of 50,145,905 recorded
 tokens, 51% of the whole record, and its dispatches re-read 3.52 times per
@@ -26,36 +20,68 @@ one dispatch. 39 checkpoint returns say plans exceed one context. 233 of 239
 executor dispatches across cadence and verbatim ran opus at `shipped`, and the
 routing discount fired 6 times in total.
 
-**Why the instruments come first.** Three of those figures cannot be trusted or
-extended today. `renderTrace`'s close dedup pairs a delayed repeat close with
-the NEXT dispatch of the same worker key, so on a retry the bracket carries the
-wrong figures and the role is billed for all three terminals - reproduced
-2026-08-26 on a six-line fixture, brackets `[1000, 9999]` where the second
-should be 2222 and `roles.tokens` 13221 for two dispatches. `duration_ms` is
-written onto every bracket by `planning/trace.mjs:795` and read by nothing, so
-the worker's own wall clock has no consumer and `/cad-suggest`'s wall-time
-figure comes from the bracket's `ms`, which includes the orchestrator's own
-time. And no cache figures are recorded at all, which is why GH-91 declares
-itself blocked.
+**What changed since that was written.** `TRC-05` shipped in `v3.7.3`, so a
+bracket now records cache traffic. `RNG-03` declared itself blocked on exactly
+that, and is no longer blocked: the prefix claim can be measured before and
+after rather than asserted.
 
-**Then the cost itself.** `workflow.max_plan_tasks` bounds a plan by task count
-and nothing bounds the bytes its `files:` frontmatter declares, which on one
-measured `PLAN-1.md` was about 90% of a 70,554-token dispatch. The risk-routing
-floor reads whole-file BODY lines rather than the diff, so any plan declaring a
-large file inherits its matches and can never earn the discount.
-
-**What this cycle is not.** It is not the worktree question and it is not a
-reviewer-calibration cycle. The `risk_surface` reviewer set looked miscalibrated
-in the v3.7.2 retune (4 of 22 adjudicated fires, 0 survivors of 2 raised); that
-belongs to `Finding flood` with GH-100 and GH-135, not here.
+**What this cycle is not.** It is not the worktree question (`Worktree verdict`,
+blocked on GH-119 and GH-120), it is not reviewer calibration (`Finding flood`,
+GH-100), and it is not GH-137, which is the highest-severity user-facing bug on
+the tracker but belongs to the execute path rather than to dispatch cost. It is
+filed and named here so the next cycle does not have to rediscover it.
 
 ## Open Questions
 
-Both of this cycle's open questions belonged to phase 3 (`BUD-03`, `RSK-05`) and
-were deferred with it. They are recorded on those ids in REQUIREMENTS.md's
-`## Deferred` section and are not live scope until a phase picks one up.
+- **OQ-1 - what a byte bound actually bounds.** `BUD-03` can bound the declared
+  bytes, the estimated tokens, or refuse at plan time versus warn. The measured
+  case (four files, 252,473 B, ~63,000 estimated tokens inside a 70,554-token
+  dispatch) says the ratio is stable enough to bound either way. Decided at
+  phase 1 planning against the actual `files:` declarations in the archive.
+
+- **OQ-2 - whether the risk floor can read a diff at plan time.** `RSK-05` wants
+  the floor to stop inheriting a whole file's matches, but at `check_census`
+  time there is no diff yet, because the plan has not run. Whether the fix is a
+  narrower read, a waiver key, or a planner-contract line telling planners to
+  declare narrow files is decided at phase 1 planning by reading what
+  `planning/risk-check.mjs` actually has in hand at that moment.
 
 ## Phases
 
+- [ ] **Phase 1: Bound what a dispatch is handed** - bound a plan by the bytes its `files:` declares, and stop the risk floor inheriting a whole file's matches
+- [ ] **Phase 2: Unforeclose the shared rung prefix** - move the rung label off body line 2 so a role's rungs share a cached prefix, proved with the cache figures v3.7.3 shipped
+- [ ] **Phase 3: Keep the record writable** - rotate `trace.jsonl` before the 1 MiB cap makes it permanently write-dead
 
 ## Phase Details
+
+### Phase 1: Bound what a dispatch is handed
+**Goal:** A plan cannot silently hand its executor an unbounded read set, and a plan declaring a large file can still earn the routing discount. Both are paid by every user on every phase, and neither is visible to them until the bill arrives.
+**Depends on:** nothing
+**Requirements:** BUD-03, RSK-05
+**Success Criteria:**
+1. A plan whose `files:` frontmatter declares more than the configured byte ceiling is reported at plan time, naming the plan, its declared bytes and the ceiling, in the same shape `plan-size` reports `plan-too-many-tasks`.
+2. The ceiling has a config key with a stated default, and a plan under it is not reported at all.
+3. The risk-routing floor no longer counts whole-file body lines for a path a plan merely declares: a plan naming a large file whose relevant surface is small resolves to a lower rung than it does today, demonstrated on a case drawn from `.planning/_archive-*`.
+4. A plan that genuinely touches a risk surface still floors at the same rung it does today, so criterion 3 did not buy the discount by weakening the floor.
+5. `node cadence-core/bin/test.mjs` is green, `self-verify` reports no problems, and any new config key is registered in `config.schema.json` and `config-catalog.md`.
+
+### Phase 2: Unforeclose the shared rung prefix
+**Goal:** A role's rung files share a cached prefix instead of diverging at body line 2, and the recovery is measured rather than asserted. `RNG-03` declared itself blocked on cache figures; `TRC-05` shipped them in v3.7.3, so the claim is now checkable.
+**Depends on:** nothing
+**Requirements:** RNG-03
+**Success Criteria:**
+1. Every rung file for one role shares a byte-identical prefix up to the first point where the rungs genuinely differ, verified by a check that fails when a future rung file breaks it.
+2. `route.mjs resolve` returns the same agent, model and effort for every rung as it does today, so the move changed layout and not routing.
+3. The cache-read figures on the bracket are compared across a before and after run of the same role, and the result is recorded with its method, including the case where the recovery is zero.
+4. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.
+
+### Phase 3: Keep the record writable
+**Goal:** `.planning/trace.jsonl` stops being able to reach a state where every subsequent append fails forever. Today it silently write-deads at 1 MiB and sits at 54.1%.
+**Depends on:** nothing
+**Requirements:** TRC-08
+**Success Criteria:**
+1. A trace at or over the cap is rotated rather than refused, and an append after rotation succeeds.
+2. The rotated content is still readable by whatever reads the trace, or the rule for what is dropped is stated where a reader will find it.
+3. A rotation is visible: a caller can tell that one happened rather than inferring it from missing events.
+4. The 1 MiB cap still bounds any single file, so rotation did not remove the bound it replaces.
+5. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.

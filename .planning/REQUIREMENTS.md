@@ -5,14 +5,40 @@
 
 ## Active
 
-`v3.7.3 - the record has to be right before it can be cut` opened 2026-08-26
-with four phases against the `Dispatch cost` milestone and CLOSED THE SAME DAY
-at phase 1, on a measured rework rate. Its four delivered ids - `TRC-04`,
-`TRC-06`, `MSR-05`, `TRC-05` - are rows under `## Shipped` below, all Complete.
-The five ids phases 2-4 would have carried are under `## Deferred`, each with
-its own promote condition. Nothing about them changed; the cycle did.
+`v3.7.4 - cut the cost the record can now measure` opened 2026-08-26 with
+three phases against the `Dispatch cost` milestone, which `v3.7.3` opened and
+did not finish. `/cad-plan` seeds each Traceability row as its phase is planned,
+so an id below that no plan has picked up yet surfaces as `unpicked` in
+`/cad-audit` rather than as a hand-written row.
 
-No cycle is open. `/cad-phase add` seeds the next one.
+Three of these four ids were deferred out of `v3.7.3` and are promoted back
+unchanged. The deferral swept them up with phase 2 on the stated reason that
+every remaining phase sat on the `SubagentStop` identity subsystem. That was true
+of phase 2 and false of phase 3: BUD-03, RSK-05 and RNG-03 touch plan
+frontmatter, the risk-check floor and agent rung labels, and none of them touches
+that hook. They are also the most user-facing work in the cycle, since every user
+pays all three on every dispatch.
+
+- **BUD-03**: a plan is bounded by the BYTES its `files:` frontmatter declares,
+  not by task count alone (GH-94). Promoted out of deferral 2026-08-26
+- **RSK-05**: the risk-routing floor reads the diff rather than whole-file body
+  lines, so a plan declaring a large file can earn the discount (GH-112).
+  Promoted out of deferral 2026-08-26
+- **RNG-03**: the rung label stops foreclosing a shared cached prefix across a
+  role's rungs, with TRC-05's figures proving what it recovered (GH-91).
+  Promoted out of deferral 2026-08-26, and no longer blocked: it declared itself
+  blocked on cache figures, which TRC-05 shipped in `v3.7.3`
+- **TRC-08**: `.planning/trace.jsonl` cannot reach a state where every append
+  fails forever. It write-deads at 1 MiB with no rotation, reset or archive path
+  (GH-138), measured 2026-08-26 at 567,248 B, 54.1% of the cap, across roughly
+  nine milestones. `milestone-prune` archives phase directories and does not
+  touch the trace, confirmed at the `v3.7.3` close
+
+
+`v3.7.3 - the record has to be right before it can be cut` opened and closed
+2026-08-26, at phase 1 on a measured rework rate. Its four delivered ids -
+TRC-04, TRC-06, MSR-05, TRC-05 - are rows under `## Shipped` below, all
+Complete. TRC-07 and COV-02 remain deferred with their own promote conditions.
 
 **Issue citations.** A bare `#NNN` anywhere in this file is an issue on the public
 Forgejo archive at `git.jcrenshaw.dev/crenshawdev/cadence`, NOT on GitHub - GitHub
@@ -278,6 +304,12 @@ failed. Phases 2-4 are all on that same surface, so the rate would have carried.
 Promote as a group when the identity join has a test that fails on the class the
 UAT missed, or individually on the conditions below.
 
+BUD-03, RSK-05 and RNG-03 were PROMOTED out of this block on 2026-08-26 into
+`v3.7.4`. They were deferred on a reason that did not apply to them: the block
+reason above says the remaining phases sat on the `SubagentStop` identity
+subsystem, and those three touch plan frontmatter, the risk-check floor and agent
+rung labels instead. TRC-07 and COV-02 stay.
+
 
 Deferred out of `v2.5.0` on 2026-08-08 as a block, to release the plan-size
 fix early rather than hold it behind four more phases. Nothing about these
@@ -309,18 +341,6 @@ queue triage alone.
   seven durable decisions, six acceptance criteria and the 2026-08-26 baseline
   measurement - is intact at `21fad7f3:.planning/phases/2/CONTEXT.md`; recover it
   with `git show` rather than re-gathering when this is promoted.
-
-- **BUD-03**: a plan is bounded by the BYTES its `files:` frontmatter declares,
-  not by task count alone
-  Deferred 2026-08-26 out of `v3.7.3` with phases 2-4.
-
-- **RSK-05**: the risk-routing floor reads the diff rather than whole-file body
-  lines, so a plan declaring a large file can earn the discount
-  Deferred 2026-08-26 out of `v3.7.3` with phases 2-4.
-
-- **RNG-03**: the rung label stops foreclosing a shared cached prefix across a
-  role's rungs, with TRC-05's figures proving what it recovered
-  Deferred 2026-08-26 out of `v3.7.3` with phases 2-4.
 
 - **COV-02**: `skim.test.mjs` walks `cadence-core/bin/planning/`, so its 30
   modules are covered
@@ -356,4 +376,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-26 v3.7.3 closed at phase 1. Four ids traced to a verified phase - TRC-04, TRC-06, MSR-05, TRC-05 - and archived to `## Shipped`, leaving `## Traceability` empty. Phases 2-4 were cut on a 50% rework rate and their five ids moved to `## Deferred` intact. No cycle is open; `/cad-phase add` seeds the next one*
+*Last updated: 2026-08-26 v3.7.4 opened against the `Dispatch cost` milestone with three phases and four ids - BUD-03, RSK-05 and RNG-03 promoted out of deferral, plus TRC-08 new for the trace rotation. `## Traceability` is empty until `/cad-plan` seeds each row as its phase is planned*
