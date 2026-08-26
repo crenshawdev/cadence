@@ -563,6 +563,7 @@ export const CONTRACTS = {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--max-reqs': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--max-tasks': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--max-bytes': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
     // THE READ-BACK COUNT (RBK-01): what the retrieval pass put in front of the
     // planner, against what the produced plan cites. ONE WORD, never a two-word

@@ -215,6 +215,54 @@ test('plan-size: a declared DIRECTORY and a path climbing out both land on absen
   assert.equal(r.plans[0].absent, 3);
 });
 
+test('plan-size: a plan over --max-bytes is plan-too-many-bytes, naming the plan and both numbers', () => {
+  const dir = bytesTree('files:\n  - src/a.rs\n  - src/b.rs',
+    { 'src/a.rs': 'x'.repeat(1200), 'src/b.rs': 'y'.repeat(345) });
+  const r = run(['plan-size', '--phase', '1', '--max-bytes', '1000'], dir);
+  assert.equal(r.max_bytes, 1000);
+  assert.deepEqual(r.compared, ['max_bytes']);
+  assert.equal(r.over.length, 1);
+  assert.deepEqual(r.over[0], {
+    kind: 'plan-too-many-bytes',
+    plan: 'PLAN.md',
+    measured: 1545,
+    ceiling: 1000,
+    detail: 'phase 1 PLAN.md declares 1545 bytes, ceiling 1000',
+  });
+  assert.equal(r.within, false);
+});
+
+test('plan-size: the same plan under a higher --max-bytes yields no byte entry and within: true', () => {
+  const dir = bytesTree('files:\n  - src/a.rs\n  - src/b.rs',
+    { 'src/a.rs': 'x'.repeat(1200), 'src/b.rs': 'y'.repeat(345) });
+  const r = run(['plan-size', '--phase', '1', '--max-bytes', '2000'], dir);
+  assert.deepEqual(r.over, []);
+  assert.deepEqual(r.compared, ['max_bytes']);
+  assert.equal(r.within, true);
+});
+
+test('plan-size: an out-of-grammar files: list is never compared against --max-bytes', () => {
+  // Not "under the ceiling" - not comparable at all, the arm
+  // `requirements_found: false` already follows one question over.
+  const dir = bytesTree('files:\n  - src/a.rs\n  this line is not an item',
+    { 'src/a.rs': 'x'.repeat(1200) });
+  const r = run(['plan-size', '--phase', '1', '--max-bytes', '1'], dir);
+  assert.deepEqual(r.over, []);
+  assert.deepEqual(r.compared, []);
+  assert.equal(r.within, null);
+});
+
+test('plan-size: a bare or non-integer --max-bytes is bad-args naming the flag', () => {
+  const dir = bytesTree('files: []');
+  for (const argv of [['plan-size', '--phase', '1', '--max-bytes'],
+    ['plan-size', '--phase', '1', '--max-bytes', 'lots']]) {
+    const r = run(argv, dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, /--max-bytes/);
+  }
+});
+
 test('plan-size: a files: list out of grammar reports null bytes, never 0', () => {
   // No-salvage, `readOnePlan`'s rule: 0 would state that the plan declares
   // nothing, which is absence of evidence reported as absence of surface.

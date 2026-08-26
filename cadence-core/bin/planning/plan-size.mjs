@@ -78,8 +78,9 @@ function declaredBytes(repoRoot, text) {
 // phase is why a plan overruns its task ceiling, so reporting them apart would
 // hand the caller two verdicts to reconcile.
 //
-// `--max-reqs` and `--max-tasks` are the CALLER's resolved values; this seam
-// reads no config for them. workflows/plan.md already batches a config read at
+// `--max-reqs`, `--max-tasks` and `--max-bytes` are the CALLER's resolved
+// values; this seam
+// reads no config for them (D-08). workflows/plan.md already batches a config read at
 // its parse step, so a second reader here would be a second place for the
 // resolved ceiling to disagree with the one the planner was handed.
 function cmdPlanSize(dir, opts) {
@@ -112,6 +113,17 @@ function cmdPlanSize(dir, opts) {
         + ' reads no config, so the value is the one the caller already resolved');
     }
     maxTasks = parsed.value;
+  }
+  let maxBytes = null;
+  if (opts['max-bytes'] !== undefined) {
+    const parsed = requireInt(opts['max-bytes']);
+    if (!parsed.ok) {
+      return fail('bad-args', '--max-bytes must be an integer',
+        'send --max-bytes as a plain integer number of bytes, or drop it to size without a byte'
+        + ' ceiling - this seam reads no config, so the value is the one the caller already'
+        + ' resolved');
+    }
+    maxBytes = parsed.value;
   }
   let maxReqs = null;
   if (opts['max-reqs'] !== undefined) {
@@ -151,9 +163,17 @@ function cmdPlanSize(dir, opts) {
   // `requirements_found: false` reported a comparison that never happened.
   const reqsCompared = maxReqs !== null && phase.found;
   const tasksCompared = maxTasks !== null && plans.length > 0;
+  // A plan whose `files:` list is out of grammar carries a null byte figure and
+  // is not compared - the rule the `requirements_found: false` arm above already
+  // follows, that something nobody could read is not a small one. So the ceiling
+  // reaches `compared` only when at least one plan actually had a figure to
+  // compare, which is what keeps `within: true` meaning "every comparison that
+  // ran came back clean" rather than "nothing was looked at".
+  const bytesCompared = maxBytes !== null && plans.some((p) => p.bytes !== null);
   const compared = [];
   if (reqsCompared) compared.push('max_reqs');
   if (tasksCompared) compared.push('max_tasks');
+  if (bytesCompared) compared.push('max_bytes');
 
   // Absence is not zero (D-05): a roadmap with no detail block for this phase
   // reports found:false and is never compared, because a phase nobody wrote
@@ -181,6 +201,20 @@ function cmdPlanSize(dir, opts) {
         detail: `phase ${n} ${p.plan} carries ${p.tasks} tasks, ceiling ${maxTasks}` });
     }
   }
+  // PER PLAN for the same reason the task ceiling is, and with the same remedy:
+  // the declared paths are what ONE executor dispatch is handed, so a plan over
+  // the ceiling splits into more plans rather than shrinking in place. Reported
+  // and never refused (D-09) - this is one more `over[]` entry beside
+  // `plan-too-many-tasks` at the same `check_size` step, not a new seam and not
+  // a new gate.
+  if (bytesCompared) {
+    for (const p of plans) {
+      if (p.bytes === null || p.bytes <= maxBytes) continue;
+      over.push({ kind: 'plan-too-many-bytes', plan: p.plan, measured: p.bytes,
+        ceiling: maxBytes,
+        detail: `phase ${n} ${p.plan} declares ${p.bytes} bytes, ceiling ${maxBytes}` });
+    }
+  }
 
   ok({
     phase: n,
@@ -191,6 +225,7 @@ function cmdPlanSize(dir, opts) {
     tasks,
     ...(maxReqs !== null ? { max_reqs: maxReqs } : {}),
     ...(maxTasks !== null ? { max_tasks: maxTasks } : {}),
+    ...(maxBytes !== null ? { max_bytes: maxBytes } : {}),
     over,
     compared,
     within: compared.length ? over.length === 0 : null,
