@@ -40,10 +40,25 @@
 // two writers arrives second into the row the first opened.
 'use strict';
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { renderTrace, appendEvent } from './lib/trace.mjs';
 import { closeForStop } from './lib/subagent-trace.mjs';
+
+// The ceiling on the ONE unbounded read this hook does. The stopped worker's
+// transcript is a file the host grows for as long as the worker runs, so it has
+// no natural bound and a hook is the worst place to discover that. Measured
+// 2026-08-26 over the 1,289 subagent transcripts on this machine: 115 B to
+// 2,608,524 B, p90 1,127,531 B, p99 1,789,123 B, and a whole-file parse takes
+// about 1 ms against the 10-second timeout `hooks/hooks.json` gives this hook.
+// 8 MiB is 3.2x the measured maximum, so the ceiling costs nothing today and
+// still refuses a pathological file rather than reading it; it is the same
+// figure `lib/read-trace.mjs` puts on `reads.jsonl`, restated here rather than
+// imported because the two bound different files for different reasons.
+// Above the ceiling the answer is UNKNOWN - nothing is read and nothing is
+// partially parsed - and the rule's unknown arm writes the close it writes
+// today rather than suppressing it.
+const MAX_TRANSCRIPT_BYTES = 8388608;
 
 // Walk up from the hook's cwd, stopping at the repo root: a session opened in a
 // subdirectory still bills the project. The same rule and the same reason as
@@ -61,12 +76,34 @@ function planningRoot(start) {
   }
 }
 
+// The stopped worker's own transcript, or null for "nothing to read". The path
+// is the payload's documented `transcript_path` and is used AS GIVEN: it is not
+// reconstructed out of a session id and a project slug, so what this hook is
+// exposed to is the file's internal format alone and never its location, which
+// is the one part of an explicitly unstable layout that can be avoided.
+//
+// Nothing this file contains reaches any stream or any other process. The rule
+// reads it for two answers - did the worker stop, and when - and the only byte
+// that leaves is the terminal entry's timestamp, which `JSON.stringify` escapes
+// on its way onto the record. Every failure is null, which the rule reads as
+// UNKNOWN and treats as today's behaviour.
+function readTranscript(p) {
+  if (typeof p !== 'string' || !p) return null;
+  try {
+    if (statSync(p).size > MAX_TRANSCRIPT_BYTES) return null;
+    return readFileSync(p, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 try {
   const input = JSON.parse(readFileSync(0, 'utf8'));
   const cwd = String(input?.cwd || process.cwd());
   const root = planningRoot(cwd);
   if (root) {
-    const event = closeForStop(input, renderTrace(root));
+    const evidence = { transcript: readTranscript(input?.transcript_path) };
+    const event = closeForStop(input, renderTrace(root), evidence);
     if (event) appendEvent(root, event);
   }
 } catch {

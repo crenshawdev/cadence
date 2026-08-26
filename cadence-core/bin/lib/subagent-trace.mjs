@@ -20,6 +20,22 @@
 // figures, and phase 0's `/cad-task` bracket has no subagent behind it for any
 // hook to close.
 //
+// GATE 0, AND IT RUNS AHEAD OF EVERYTHING. THE TERMINATION GATE (D-09). The
+// payload carries no field that separates a worker that FINISHED from one
+// handed back mid-turn - `stop_hook_active` is documented for `Stop` and is not
+// a `SubagentStop` field - so the evidence is the worker's own transcript,
+// which the payload points at through its documented `transcript_path`. The
+// disk half reads it and INJECTS the bytes (D-08); `lib/subagent-transcript.mjs`
+// holds the rule that reads them.
+//
+// It runs before the render is even consulted, because a worker that has not
+// stopped must produce nothing whatever the record holds. And it refuses on
+// NOT-TERMINAL alone, never on UNKNOWN: a payload with no `transcript_path`, a
+// file that could not be read, an over-cap file and a layout that changed all
+// arrive as `unknown` and still produce the close this hook produces today.
+// Folding `unknown` into the refusal is how a host-side rename would delete
+// every hook close in the record at once and silently.
+//
 // THREE GATES, in this order.
 //
 // 1. THE SELF-FILTER (D-08). The 2.1.245 `SubagentStop` runner calls the hook
@@ -67,6 +83,7 @@
 'use strict';
 
 import { roleOfAgent } from './read-trace.mjs';
+import { terminalOf, STOP_STATE } from './subagent-transcript.mjs';
 
 /**
  * A timestamp as milliseconds, or null when there is nothing to read. Same
@@ -88,9 +105,18 @@ function millis(v) {
  * @param {any} payload the host's `SubagentStop` JSON
  * @param {any} render the result of `renderTrace(planningRoot)` - unscoped,
  *   because the payload carries no phase to scope it by (D-01)
- * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string}|null}
+ * @param {{transcript?: any}} [evidence] what the disk half read for this stop
+ *   (D-08). `transcript` is the stopped worker's own JSONL, whole, as a string.
+ *   Omitted - the shape every pre-transcript caller uses - the termination gate
+ *   answers `unknown` and this rule is exactly what it was.
+ * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string}|null}
  */
-export function closeForStop(payload, render) {
+export function closeForStop(payload, render, evidence) {
+  // GATE 0 - the termination gate. NOT-TERMINAL alone refuses; `unknown` falls
+  // through to the behaviour this hook had before it read a transcript at all.
+  const stopped = terminalOf(evidence && evidence.transcript);
+  if (stopped.state === STOP_STATE.NOT_TERMINAL) return null;
+
   // GATE 1 - the self-filter. `roleOfAgent` is null for the host's own types,
   // for `coordinator`, and for anything else that is not a Cadence rung file.
   const role = roleOfAgent(payload && payload.agent_type);
@@ -117,6 +143,19 @@ export function closeForStop(payload, render) {
 
   // GATE 3 - the event. Identity quoted verbatim off the adopted row; no figure
   // of any kind, because the payload carries none.
+  //
+  // `ts` is the ONE field this rule takes off the transcript rather than off
+  // the adopted row, and it is the worker's OWN stop instant. Without it
+  // `renderEvent` stamps `new Date()` at append, so a hook close delayed past
+  // the next dispatch of the same worker key would carry an instant LATER than
+  // that dispatch - and `renderTrace`'s repeat-close discriminator, which asks
+  // whether the terminal precedes the head pending dispatch, could never fire
+  // in production (D-06). It is quoted byte for byte and never reparsed: an
+  // instant no reader can parse contributes nothing downstream, which is the
+  // posture the whole record already takes for an unreadable clock, while an
+  // append time invents a figure that looks real. OMITTED, never null, when the
+  // evidence names no instant - the absent-not-zero rule the bracket's own
+  // `duration_ms` follows.
   return {
     corr: best.corr,
     phase: best.phase,
@@ -124,5 +163,6 @@ export function closeForStop(payload, render) {
     family: 'lifecycle',
     event: 'return',
     role,
+    ...(stopped.ts ? { ts: stopped.ts } : {}),
   };
 }
