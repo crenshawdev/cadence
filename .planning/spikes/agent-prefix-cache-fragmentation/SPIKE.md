@@ -217,10 +217,10 @@ D-06 marked the choice RE-DECIDE for one reason: `cad-verifier` held one of the
 gate refuse unconditionally. Phase 3 scopes that gate's candidate set to the
 current run, which removes the objection.
 
-### The two sides, and the asymmetry between them
+### The two sides, and what each of them proves
 
-They are NOT the same instrument, and that is recorded as part of the method
-rather than as a footnote.
+They are the SAME ARITHMETIC over the same kind of file, and they are not the
+same instrument. Both are recorded here as part of the method.
 
 - **Before** - `cacheOf` (`cadence-core/bin/lib/subagent-transcript.mjs`) summed
   over `cad-verifier`'s own subagent transcripts under the host's project
@@ -228,19 +228,33 @@ rather than as a footnote.
   `8ca0dfdc`.
 - **After** - `cache_read_input_tokens` and `cache_creation_input_tokens` on
   that role's BRACKETS in `.planning/trace.jsonl`, once phase 3 is live and the
-  role has been dispatched again.
+  role has been dispatched again. Those bracket figures are `cacheOf` over the
+  stopped worker's OWN transcript, so the two sides are the same sum over the
+  same kind of file.
 
-Only the after-side exercises the code phase 3 writes. A before-side BRACKET
-cannot be produced at all: measured on the live record 2026-08-26, 406 brackets
-over 2,378 events, 0 of them carrying either cache key, and 63 of those brackets
-are `cad-verifier`'s. There is nothing to read back.
+That equality is NEW as of phase 3 plan 3, and stating it needs the correction
+that made it true. Until commit `68cfeddc` the `SubagentStop` hook read the
+payload's `transcript_path`, which names the ORCHESTRATOR's session rather than
+the worker that stopped, so the figures it wrote were a different actor's
+traffic. Both of the two cache-bearing brackets on the record were written that
+way, and both are wrong by more than a factor of four: the `cad-verifier`
+bracket at `3-a0fd304f` carries 52,918 / 528,568 where that worker's own
+transcript sums 100,439 / 2,115,871, and the `cad-planner` bracket beside it
+carries 50,428 / 527,186 against 240,156 / 10,405,827. Neither is an after
+figure and neither is comparable to the before side.
 
-Reading BOTH sides from transcripts was available and was rejected. That
-comparison would pass even if every withholding gate still threw the figures
-away, so it proves nothing about the record this phase exists to fix - and the
-record, not the transcript, is what every downstream cost claim reads. One
-post-`8ca0dfdc` `cad-verifier` transcript is already on disk and could supply
-that number today; it is deliberately not the after figure.
+What the after side ADDITIONALLY proves is that the RECORD carried the number.
+That is the only thing this phase exists to fix, and it is the whole reason
+reading both sides from transcripts was rejected: that comparison would pass
+even if every withholding gate still threw the figures away, and the record, not
+the transcript, is what every downstream cost claim reads. Post-`8ca0dfdc`
+`cad-verifier` transcripts are already on disk and could supply the number
+today; they are deliberately not the after figure.
+
+A before-side BRACKET cannot be produced at all. Measured on the live record
+2026-08-26 at this plan's tip: 409 brackets, 2 carrying either cache key - the
+two mis-sourced ones named above - and 64 of the 409 are `cad-verifier`'s. There
+is nothing correct to read back.
 
 The two sides also cannot hold the same number of dispatches, so the comparable
 quantity is a total over a DISPATCH COUNT, not a total. Both figures below are
@@ -295,6 +309,10 @@ rather than a shipped tool.
 
 ### Before, measured 2026-08-26
 
+UNCHANGED and deliberately NOT re-measured by phase 3. The before side reads
+transcripts directly and never went through the hook, so nothing phase 3
+corrected touches it.
+
 54 distinct `cad-verifier` agent ids appear in the read recorder's rows. 34 of
 their transcripts are still on disk - transcripts do not outlive the record, so
 20 have been pruned by the host - and 33 of the 34 predate `8ca0dfdc`.
@@ -310,7 +328,17 @@ PENDING the first post-phase-3 `cad-verifier` dispatches. The instrument this
 needs is a live host firing `SubagentStop` after the change, which no fixture
 can produce - which is why AC5 and AC6 are both human-verify. Run the after
 command above once the role has been dispatched at least twice and record the
-two figures and the delta here.
+two figures, the dispatch count behind them and the delta against the before
+side here.
+
+WHICH STOPS THOSE BRACKETS WILL COME FROM. Not hook-written closes. On the
+installed host version nearly every worker transcript ends on a `null`
+`stop_reason`: re-measured 2026-08-26, 33 of the 34 subagent transcripts written
+that day answer NOT-TERMINAL, against 1,071 terminal across a 1,310-file corpus.
+The hook's termination gate therefore refuses the close on the ordinary path and
+writes a `worker_cache` fact instead, which the renderer folds onto the bracket
+the orchestrator's own `trace close --agent-id` opened. That is the gate behaving
+as designed on correct evidence, and it is the path the after figures ride.
 
 ### What a zero would mean
 
