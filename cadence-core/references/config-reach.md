@@ -51,6 +51,7 @@ paraphrases. The phrases in use today:
 - `cross-model provider calls only`
 - `new-project roadmap step only`
 - `new-project research step only`
+- `plan-size report only`
 - `progress next-step suggestion only`
 - `repo config layer only`
 - `repo config layer only for the unattended publish`
@@ -122,6 +123,7 @@ purpose test runs against the reach the author just replaced.
 | `workflow.skip_discuss` | progress next-step suggestion only | `workflows/progress.md`'s next-step table, for an unplanned current phase |
 | `workflow.inline_plan_threshold` | universal | `workflows/plan.md` - task count at/below which a plan runs inline |
 | `workflow.max_plan_tasks` | universal | `workflows/plan.md` - the ceiling handed to cad-planner, PER PLAN; a phase needing more capacity gets more plans. `planning.mjs plan-size --max-tasks` counts the written plan against it at `check_size`, and cad-plan-checker flags compound tasks under Proportionality - the half a count cannot see |
+| `workflow.max_plan_bytes` | plan-size report only | `workflows/plan.md`'s `check_size` step is the one reader: it substitutes the resolved ceiling into `planning.mjs plan-size --max-bytes`, which sums the on-disk sizes of the paths each plan's `files:` frontmatter declares and returns a `plan-too-many-bytes` entry for a plan over it. `plan-size` itself reads no config, so the value compared is the one the caller already resolved; nothing on the dispatch path consults it and no writer refuses, so an over-ceiling plan is still planned and still executed |
 | `workflow.max_dispatch_tokens.cad-planner` | trace window report only | `bin/planning.mjs` - the window report reads this role's ceiling off the merged config and compares it to the `tokens` on each `brackets[]` row of the rendered record; nothing on the dispatch path reads it, so a crossing is a finding about a run that already finished |
 | `workflow.max_dispatch_tokens.cad-assumptions-analyzer` | trace window report only | `bin/planning.mjs` - the window report reads this role's ceiling off the merged config and compares it to the `tokens` on each `brackets[]` row of the rendered record; nothing on the dispatch path reads it, so a crossing is a finding about a run that already finished |
 | `workflow.max_dispatch_tokens.cad-verifier` | trace window report only | `bin/planning.mjs` - the window report reads this role's ceiling off the merged config and compares it to the `tokens` on each `brackets[]` row of the rendered record; nothing on the dispatch path reads it, so a crossing is a finding about a run that already finished |
