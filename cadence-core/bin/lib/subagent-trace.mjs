@@ -93,9 +93,22 @@
 //    `cad-assumptions-analyzer` x2, `cad-planner` x2, `cad-verifier` x1 - so a
 //    `cad-executor` stop today saw at least four "open" dispatches and refused
 //    UNCONDITIONALLY, rather than in the minority of genuinely concurrent
-//    cases the gate was written for. So the candidate set is narrowed before
-//    the count is taken: take the `corr` of the role's newest dated row and
-//    keep only the rows carrying it.
+//    cases the gate was written for. So the run in flight is NAMED ONCE, before
+//    either gate reads it, and the candidate set is narrowed to it before the
+//    count is taken.
+//
+//    WHAT NAMES IT is the newest dated evidence that could be about THIS
+//    worker, and there are two kinds. The role's `unpaired` rows through their
+//    `ts` - the run its open dispatches belong to. And any bracket carrying
+//    this payload's `agent_id` through its `end`, or its `ts` where that close
+//    instant is unreadable - the run this worker's own already-written close
+//    belongs to. The second kind is what stops a stop arriving AFTER its own
+//    bracket closed from adopting a dead run: with only `unpaired` in the
+//    clock, the role's surviving rows are that dead run's leftovers, it is
+//    called current, and gate 2b writes a `return` into a bracket from another
+//    phase. A bracket wearing this payload's own id is an equality test against
+//    a recorded fact about this worker, so it is evidence about the RUN and
+//    never a choice between two workers.
 //
 //    Do not undo this as a clock heuristic - it is the opposite of one. TRC-06
 //    forbids CHOOSING BETWEEN two open workers, and this never chooses: the
@@ -264,10 +277,9 @@ function agentIdOf(payload) {
  * phase the same unscoped match was a silent no-op; the WRITE is what made it
  * reachable.
  *
- * The scope is the candidate set's own `corr`, never a second notion of "now":
- * where a dispatch of this role is open, the worker stopping is in THAT run and
- * a bracket from any other one is a collision. Where no dispatch is open there
- * is no live run to steal from, the match stays unscoped, and a worker whose
+ * The scope is the RUN IN FLIGHT, computed once by `currentRun` before either
+ * gate reads it, never a second notion of "now". Where nothing anywhere is
+ * dated there is no run to name, the match stays unscoped, and a worker whose
  * bracket is already closed still finds it.
  *
  * @param {any} render the result of `renderTrace(...)`
@@ -323,30 +335,85 @@ function corrKey(v) {
 }
 
 /**
- * The rows of one run: the `corr` of the NEWEST dated row, and every row
- * carrying it. Rows arrive already filtered to one role.
+ * An instant as a number, or null where the record named none this reader can
+ * parse. The posture every arithmetic path in this record takes for an
+ * unreadable clock: it contributes nothing rather than being coerced to 0.
+ * @param {any} v
+ * @returns {number|null}
+ */
+function instant(v) {
+  if (typeof v !== 'string' || !v) return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * The clock a BRACKET carrying this payload's `agent_id` offers, one entry per
+ * matching row: its `end` where that parses, else its `ts`. `end` first because
+ * it is the instant the worker's bracket CLOSED, which is the moment this stop
+ * is arriving after; `ts` is the dispatch half and is the fallback for a row
+ * whose close instant is unreadable.
+ *
+ * These rows are evidence about the RUN, never candidates to adopt. A bracket
+ * wearing this payload's own id is an equality test against a recorded fact
+ * about THIS worker - it is not a choice between two workers, which is what
+ * TRC-06 forbids and which this still never does.
+ *
+ * @param {any} render the result of `renderTrace(...)`
+ * @param {string|null} id
+ * @returns {{corr: any, ts: any}[]}
+ */
+function bracketClocks(render, id) {
+  if (!id) return [];
+  const rows = render && Array.isArray(render.brackets) ? render.brackets : [];
+  const out = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || row.agent_id !== id) continue;
+    out.push({ corr: row.corr, ts: instant(row.end) !== null ? row.end : row.ts });
+  }
+  return out;
+}
+
+/**
+ * The run in flight: the `corr` of the newest dated piece of evidence that
+ * could be about THIS worker, and the candidate rows carrying it. Rows arrive
+ * already filtered to one role; `clocks` contribute a `corr` and an instant and
+ * are never candidates themselves.
  *
  * This is a scope, never a choice (D-03). It removes a DEAD run's leftovers
  * from the count - `unpaired` accumulates for the life of the file - and it
  * cannot separate two workers of one run, because they share a `corr` and both
  * survive it. An undated row contributes no clock and is treated as oldest, and
- * a set with no dated row at all is returned untouched, which is what this gate
- * counted before the scope existed.
+ * where NOTHING anywhere is dated the answer is a null `corr` and the rows
+ * untouched, which is what this gate counted before the scope existed.
  *
- * @param {any[]} rows
- * @returns {any[]}
+ * WHY THE BRACKETS ARE IN THE CLOCK. Named off `unpaired` alone, the run is
+ * right only while the worker's own dispatch is still open. The moment
+ * something has closed it, the role's surviving `unpaired` rows are a dead
+ * run's leftovers, this function calls THAT run current, and gate 2b - seeing
+ * exactly one candidate - adopts it and writes a `return` into a bracket from
+ * another phase. That is not hypothetical: the live record carries a
+ * `cad-verifier` `unpaired` row at corr `3-23fb76d` dated 2026-08-21, and it is
+ * exactly the row a second `cad-verifier` stop would have adopted.
+ *
+ * Rows are read before clocks so an unpaired dispatch wins an exact tie, which
+ * is the answer this gate gave before brackets contributed a clock at all.
+ *
+ * @param {any[]} rows the role's `unpaired` rows - the candidate set
+ * @param {{corr: any, ts: any}[]} clocks dated evidence that names a run but
+ *   can never be adopted
+ * @returns {{corr: any, rows: any[]}} `corr` is null when nothing was dated
  */
-function currentRun(rows) {
+function currentRun(rows, clocks) {
   let newest = null;
-  let corr;
-  for (const row of rows) {
-    if (typeof row.ts !== 'string' || !row.ts) continue;
-    const t = Date.parse(row.ts);
-    if (!Number.isFinite(t)) continue;
+  let corr = null;
+  for (const row of [...rows, ...clocks]) {
+    const t = instant(row.ts);
+    if (t === null) continue;
     if (newest === null || t > newest) { newest = t; corr = row.corr; }
   }
-  if (newest === null) return rows;
-  return rows.filter((row) => corrKey(row.corr) === corrKey(corr));
+  if (newest === null) return { corr: null, rows };
+  return { corr, rows: rows.filter((row) => corrKey(row.corr) === corrKey(corr)) };
 }
 
 /**
@@ -384,11 +451,17 @@ export function closeForStop(payload, render, evidence) {
   const cache = cacheOf(transcript);
   const stopped = terminalOf(transcript);
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
-  // `mine` is computed FIRST because gate 2a's match now reads its `corr`: the
-  // candidate set is what names the run in flight, and a bracket outside it
-  // wearing this id is a reused host id rather than this worker's own close.
-  const mine = currentRun(rows.filter((row) => row && row.role === role));
-  const closed = id ? closedBracket(render, id, mine.length ? mine[0].corr : null) : null;
+  // THE RUN IN FLIGHT, named ONCE and before either gate reads it. Both gate
+  // 2b's candidate set and gate 2a's match are scoped by this one value, so
+  // there is no second notion of "now" for them to disagree about - and the run
+  // can now be named by a bracket while no `unpaired` row of the role survives
+  // the scope, which is the state a stop arriving after its own close is in.
+  const run = currentRun(
+    rows.filter((row) => row && row.role === role),
+    bracketClocks(render, id),
+  );
+  const mine = run.rows;
+  const closed = id ? closedBracket(render, id, run.corr) : null;
   // The one answer a withholding gate gives: the figures, and never a close.
   const withheld = () => cacheFact(id, role, cache, stopped.ts, closed || mine[0] || null);
 

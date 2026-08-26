@@ -511,6 +511,37 @@ const billedStop = (stop) => JSON.stringify({
 
 const VSTOP = { agent_type: 'cadence:cad-verifier', agent_id: AGENT };
 
+test('stop: a stop arriving after its OWN close no longer adopts a dead run', () => {
+  // The run in flight used to be named off the role's `unpaired` rows alone,
+  // which is right only while this worker's dispatch is still open. Once
+  // something has closed it, the role's surviving rows are a DEAD run's
+  // leftovers: that run was called current, the bracket carrying this payload's
+  // id fell outside the scope, and gate 2b - seeing exactly one candidate -
+  // wrote a `return` into a bracket from another phase. Live for the very role
+  // AC5 and AC6 measure: the record carries a `cad-verifier` `unpaired` row at
+  // corr `3-23fb76d` dated 2026-08-21.
+  //
+  // A bracket wearing this payload's own `agent_id` now contributes its `end`
+  // to the clock, so the run it belongs to is the current one and gate 2a is
+  // reached. That is an equality test on this worker's own recorded id, never a
+  // choice between two workers.
+  const r = withBrackets(
+    [open('cad-verifier', 'cad-verifier', T(3), { corr: '1-dead000', phase: '1' })],
+    [bracket('cad-verifier', 'cad-verifier', { agent_id: AGENT, ts: T(4), end: T(9) })],
+  );
+  const events = closeForStop(VSTOP, r, { transcript: billedStop('end_turn') });
+  assert.equal(events.length, 1, JSON.stringify(events));
+  const [ev] = events;
+  assert.equal(ev.event, 'worker_cache');
+  assert.equal(ev.corr, '2-abc1234', 'the answer took the dead run\'s corr');
+  assert.equal(ev.phase, '2', 'the answer took the dead run\'s phase');
+  assert.equal(ev.cache_read_input_tokens, 3000);
+  for (const e of events) {
+    assert.equal(['return', 'checkpoint', 'escalation'].includes(e.event), false,
+      'a stranded dispatch was closed');
+  }
+});
+
 /**
  * The three gates, each arranged so IT is the one that fires, with the `corr`
  * and `phase` the fact must quote and where they have to come from.
