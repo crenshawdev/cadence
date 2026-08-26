@@ -6,6 +6,79 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.3] - 2026-08-26
+
+The figures this repository argues about its own cost with were wrong, and the
+cycle opened to fix the instruments before spending anything on the cost. Three
+of them could not be trusted. `renderTrace`'s close dedup paired a delayed
+repeat close with the NEXT dispatch of the same worker key, so on a retry the
+bracket carried the wrong figures and the role was billed for all three
+terminals. `duration_ms` was written onto every bracket and read by nothing. No
+cache figures were recorded at all.
+
+The cycle closed at phase 1 rather than running the three phases planned after
+it. Half its code commits were fixing the other half, 7 fix against 7 feat where
+`v3.7.1` ran 27% and `v3.7.2` 22%, four of those seven were four passes at one
+question - which in-flight dispatch an async `SubagentStop` callback belongs to
+- and one real defect landed after the phase's UAT reported 8 passed and 0
+failed. All three remaining phases sat on that same subsystem. Their five ids
+are deferred intact with their promote conditions, and phase 2's gathered
+context is recoverable from git rather than re-gathered.
+
+One phase, four requirement ids all traced to a verified phase: `TRC-04`,
+`TRC-06`, `MSR-05`, `TRC-05`. UAT 8 passed, 0 failed, 2 skipped.
+
+### Added
+
+- **A bracket records cache traffic** (`TRC-05`). The prompt-cache read and
+  creation figures land on the bracket row and not on the roles bill, so a
+  caching claim can be measured before and after a change. A close carrying no
+  figures omits the keys rather than writing zeros, and `roles.tokens` is
+  byte-identical whether they are present or not.
+
+- **The worker's own wall clock has a reader** (`MSR-05`). `/cad-report` and
+  `/cad-suggest` price a dispatch with `duration_ms`, printed beside the step's
+  own elapsed time so the orchestrator's share is visible rather than folded in.
+
+### Fixed
+
+- **A delayed repeat close stops stealing the next dispatch** (`TRC-04`).
+  `renderTrace`'s dedup now pairs a repeat close with the dispatch it belongs
+  to. Reproduced before the fix on a six-line fixture: brackets `[1000, 9999]`
+  where the second should have been 2222, and `roles.tokens` 13221 for two
+  dispatches.
+
+- **The stop close lands on the worker that actually stopped** (`TRC-06`), bound
+  by `agent_id` rather than inferred from clocks, and it writes nothing at all
+  for a worker whose own transcript says it has not terminated. Refusing is a
+  delivered outcome and not a shortfall: the `dispatch` event is written before
+  the subagent exists, so it carries no id to match against, and no ordering of
+  dispatch instants separates two workers dispatched in one message.
+
+- **A bracket spans to the later close, not the first.** Found after the phase's
+  UAT passed clean, which is why the remaining phases on this subsystem were
+  deferred rather than planned.
+
+### Changed
+
+- **Workflow prose keeps the instruction; the rationale moves out of the runtime
+  path.** The four most-read workflows were carrying two jobs, telling the model
+  what to do and defending each step to a reader who is not there at runtime.
+  The defence now lives in `docs/rationale/`, which nothing loads:
+  `plan.md` 33,848 to 28,764 B, `execute.md` 33,385 to 29,001 B, `context.md`
+  20,196 to 19,378 B, `verify.md` 18,292 to 17,626 B. No step was removed and no
+  gate weakened. Justification that is load-bearing on the model stayed inline,
+  and `prose-agreement.test.mjs` is what decides which that is: it caught a
+  sentence moved out of `execute.md`'s `state` step that had to stay.
+
+- **The weight manifest says what it enforces.** `weight-budgets.json` has been
+  a CEILING since exactness was abandoned for taxing shrinking at the same rate
+  as growth, but the census marker, the registry row and the manifest comment
+  all still described it as an exact byte size. The comment now also states the
+  convention the ceiling cannot enforce on its own: lower the entry in the same
+  commit as a deliberate cut, or the surface grows back into headroom it no
+  longer needs.
+
 ## [3.7.2] - 2026-08-26
 
 Two reference files were loaded on every run whether or not the branch they
@@ -4057,6 +4130,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.3
 [3.7.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.2
 [3.7.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.1
 [3.7.0]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.0
