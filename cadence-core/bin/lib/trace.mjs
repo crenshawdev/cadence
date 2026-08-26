@@ -124,6 +124,38 @@ export const ANCHOR = 'phase_start';
 const CACHE_KEYS = ['cache_creation_input_tokens', 'cache_read_input_tokens'];
 
 /**
+ * Whether `from`'s figure for `k` is a MORE COMPLETE read than what `into`
+ * already holds - the rule all three cache-folding sites in this file share.
+ *
+ * THE LARGER VALUE WINS, per key and independently, and that is deliberately
+ * NOT the fill-only-empty rule `tokens`, `turns`, `duration_ms` and `agent_id`
+ * follow one clause away. Those four have TWO writers each holding part of the
+ * truth, and the writer that had the figure is the one that read it off the
+ * return, so the first value to arrive is the authoritative one. These two keys
+ * have exactly ONE writer - the `SubagentStop` hook, summing the worker's own
+ * transcript - so there is no second writer for that rule to protect, and two
+ * values for one worker are two reads of a file that only GROWS. Keeping
+ * whichever landed first freezes a partial sum onto the record permanently.
+ *
+ * A larger value therefore means a more complete read of the same transcript.
+ * It never means a second worker's traffic added on: the pair is already scoped
+ * to one `corr` and one `agent_id`. And the rule deliberately refuses to SUM
+ * two reads, which would double-bill every turn both of them covered.
+ *
+ * This is the monotonic posture the repeat-close arm already takes for `end`
+ * and `ms`, on the same argument: a rule that keeps whichever value landed
+ * first understates a quantity that only grows.
+ *
+ * @param {Record<string, any>} into the row or map entry holding the figure
+ * @param {Record<string, number>} from the figures that just arrived
+ * @param {string} k
+ * @returns {boolean}
+ */
+function moreComplete(into, from, k) {
+  return k in from && (!(k in into) || from[k] > into[k]);
+}
+
+/**
  * The lifecycle event the COORDINATOR writes at the start of a workflow step it
  * can name. It is a fifth lifecycle NAME, not a fifth family: `FAMILIES` is
  * validated at the seam while `renderTrace`'s `counts` is a fixed four-key
@@ -388,8 +420,11 @@ export function appendEvent(planningRoot, event) {
  *   the hook was able to write, folded inline like every other close figure; or
  *   on a `WORKER_CACHE` fact, when the hook stopped a worker it could not close
  *   at all, folded by the post-pass that matches `corr` AND `agent_id`. The two
- *   routes share one fill-only-empty rule, so a bracket whose close already
- *   carried a figure is never rewritten by a fact naming it. They stop HERE
+ *   routes share ONE rule and it is not the fill-only-empty one the fields
+ *   beside them follow: the LARGER value wins, per key and independently. These
+ *   two keys have exactly one writer, so two values for one worker are two
+ *   reads of a transcript that only grows and the shorter one must never freeze
+ *   the row - which also makes re-rendering the same file idempotent. They stop HERE
  *   either way: they never reach `roles`, and
  *   `roles.tokens` is byte-identical with and without them (D-03). The roles
  *   block bills what a RETURN reported - a final-window figure for one dispatch
@@ -727,13 +762,16 @@ export function renderTrace(planningRoot, phase) {
   // through `key()` for the reason the worker key does: `1` and `"1"` are one
   // run.
   //
-  // LAST FACT WINS for a pair, which is what `Map.set` gives here and is a
-  // decision rather than an accident. A transcript only GROWS, so a second
-  // `SubagentStop` for one worker is a re-sum of the same file and a superset of
-  // the first - summing the two would double-bill every turn both reads covered,
-  // while keeping the later one carries the more complete read. If the host ever
-  // produces genuinely disjoint partial sums this understates rather than
-  // double-bills, which is the direction this record already prefers.
+  // THE LARGER READ WINS for a pair, per key and independently - see
+  // `moreComplete`. A transcript only GROWS, so a second `SubagentStop` for one
+  // worker is a re-sum of the same file and a superset of the first. Ordering
+  // the two by ARRIVAL (whichever `Map.set` saw last, or whichever was seen
+  // first) makes the answer depend on the order the lines landed in; ordering
+  // them by SIZE does not, so re-rendering the same file is idempotent and a
+  // short read can never freeze a bracket. Summing them is refused: that would
+  // double-bill every turn both reads covered. If the host ever produces
+  // genuinely disjoint partial sums this understates rather than double-bills,
+  // which is the direction this record already prefers.
   /** @type {Map<string, Record<string, number>>} */
   const cacheFacts = new Map();
   for (const e of out.events) {
@@ -803,7 +841,10 @@ export function renderTrace(planningRoot, phase) {
     // give, so neither is collected; neither is an error.
     if (e.event === WORKER_CACHE) {
       if (typeof e.agent_id === 'string' && e.agent_id && CACHE_KEYS.some((k) => k in cache)) {
-        cacheFacts.set(`${key(e.corr)}\0${e.agent_id}`, cache);
+        const pair = `${key(e.corr)}\0${e.agent_id}`;
+        const prior = cacheFacts.get(pair);
+        if (!prior) cacheFacts.set(pair, cache);
+        else for (const k of CACHE_KEYS) if (moreComplete(prior, cache, k)) prior[k] = cache[k];
       }
       continue;
     }
@@ -971,10 +1012,14 @@ export function renderTrace(planningRoot, phase) {
         if (b.tokens === null && tokens !== null) b.tokens = tokens;
         if (!('turns' in b) && turns !== null) b.turns = turns;
         if (!('duration_ms' in b) && duration !== null) b.duration_ms = duration;
-        // The same fill-only-empty clause for the cache figures. In practice
-        // the hook is the only writer that has them, so this is the arm that
-        // lands them on a row the hand-written close opened first.
-        for (const k of CACHE_KEYS) if (!(k in b) && k in cache) b[k] = cache[k];
+        // NOT the fill-only-empty clause, for the cache figures alone: the
+        // LARGER read wins, per key and independently (see `moreComplete`).
+        // The hook is the only writer that has these two at all, so there is no
+        // second writer for fill-only-empty to protect - two values here are
+        // two reads of one transcript that only grows, and the shorter one must
+        // not freeze the row. This is still the arm that lands them on a row
+        // the hand-written close opened first.
+        for (const k of CACHE_KEYS) if (moreComplete(b, cache, k)) b[k] = cache[k];
         // Identity folds on the SAME fill-only-empty rule, and it has to: the
         // hook's figureless close is the writer that ordinarily opens this row
         // (the host fires SubagentStop when the worker stops, before the
@@ -1057,17 +1102,19 @@ export function renderTrace(planningRoot, phase) {
   // `out.roles`, not `seenTerminals`, not `pairedRows` - because a cache read
   // summed over a worker's turns is a different denomination from a return's
   // final-window `tokens` (D-03), and `roles` is byte-identical with and without
-  // every fact in the file. It reuses the SAME fill-only-empty clause the
-  // repeat-close arm applies to these two keys, so a bracket whose close already
-  // carried a figure keeps the one it has and there is no second overwrite rule
-  // to keep in agreement with the first. A fact naming no bracket changes
+  // every fact in the file. It reuses the SAME clause the repeat-close arm
+  // applies to these two keys - the larger read wins, per key and independently
+  // (see `moreComplete`) - so there is no second rule to keep in agreement with
+  // the first, and a close that carried a SHORTER read of the worker's own
+  // transcript is corrected by the fact rather than freezing it. A bracket
+  // whose close carried the larger figure keeps it. A fact naming no bracket changes
   // nothing and is not an error. Where two brackets under one `corr` somehow
   // carry one `agent_id`, the fold stops at the first: one worker's traffic
   // copied onto two rows would bill it twice.
   for (const [pair, cache] of cacheFacts) {
     for (const b of out.brackets) {
       if (!b.agent_id || `${key(b.corr)}\0${b.agent_id}` !== pair) continue;
-      for (const k of CACHE_KEYS) if (!(k in b) && k in cache) b[k] = cache[k];
+      for (const k of CACHE_KEYS) if (moreComplete(b, cache, k)) b[k] = cache[k];
       break;
     }
   }

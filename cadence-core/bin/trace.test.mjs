@@ -2778,11 +2778,16 @@ test('render: a non-numeric cache figure contributes NOTHING to the bracket', ()
   assert.equal(row.cache_read_input_tokens, 12, 'the readable half of the same row survived');
 });
 
-test('render: the cache fold fills an empty field and never overwrites one', () => {
+test('render: two closes of one worker leave the LARGER cache read on the row', () => {
   // The two writers close one bracket in either order. The hook is the only one
   // that HAS these figures, so the ordinary live shape is the hand-written close
   // opening the row and the hook filling it - but the reverse must not lose a
   // figure either, which is what the second half pins.
+  //
+  // For these two keys the rule is the LARGER value, not fill-only-empty: one
+  // writer, and two values for one worker are two reads of a transcript that
+  // only grows. So the first half is a fill, the second is a refusal to shrink,
+  // and the third is the correction fill-only-empty would have refused.
   const dir = root();
   appendEvent(dir, {
     phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
@@ -2814,7 +2819,26 @@ test('render: the cache fold fills an empty field and never overwrites one', () 
   });
   const [folded] = renderTrace(other, 6).brackets;
   assert.equal(folded.cache_read_input_tokens, 900,
-    'the second writer overwrote a figure the first one read');
+    'the second writer shrank a figure the first one had read more of');
+
+  // ...and the SHORTER read gives way. This is the arm fill-only-empty got
+  // wrong: a hook close that landed first with a partial sum froze the row, and
+  // no later, fuller read of the same transcript could correct it.
+  const third = root();
+  appendEvent(third, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(third, cacheClose({
+    ts: '2026-08-26T10:05:00.000Z', cache_read_input_tokens: 7,
+  }));
+  appendEvent(third, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z', cache_read_input_tokens: 900,
+  });
+  const [corrected] = renderTrace(third, 6).brackets;
+  assert.equal(corrected.cache_read_input_tokens, 900,
+    'a 7-token read froze the row against a fuller one');
 });
 
 test('render: the worker id survives the hook closing the bracket first', () => {
@@ -3020,19 +3044,41 @@ test('render: the fact folds just as well when it arrives BEFORE the id', () => 
   assert.equal(r.brackets[0].cache_read_input_tokens, 33033480);
 });
 
-test('render: a fact never overwrites a figure the close already carried', () => {
-  // The SAME fill-only-empty clause the repeat-close arm applies to these two
-  // keys, reused rather than restated (D-11): a second overwrite rule is one
-  // that disagrees with the first the day either changes. The two keys answer
-  // independently, so a close carrying one of them still takes the other off
-  // the fact.
-  const r = folded([
+test('render: a fact CORRECTS a shorter figure the close carried, never a longer one', () => {
+  // THIS SUPERSEDES fill-only-empty for these two keys alone, and with it AC2's
+  // "a bracket that already carries cache figures is not overwritten" clause
+  // and D-11 as it applied to them. The reason is the writer count: these two
+  // keys have exactly ONE writer - the `SubagentStop` hook, summing the
+  // worker's own transcript - so there is no second writer for fill-only-empty
+  // to protect, and two values for one worker are two reads of a file that only
+  // GROWS. `tokens`, `turns`, `duration_ms` and `agent_id` each have two
+  // writers holding part of the truth and keep the old rule unchanged.
+  //
+  // The same clause the repeat-close arm applies, reused rather than restated:
+  // a second overwrite rule is one that disagrees with the first the day either
+  // changes.
+  const short = folded([
     vDispatch(),
     vClose({ agent_id: 'W1', cache_read_input_tokens: 7 }),
     vFact({ agent_id: 'W1' }),
   ]);
-  assert.equal(r.brackets[0].cache_read_input_tokens, 7, 'the fact overwrote the close');
-  assert.equal(r.brackets[0].cache_creation_input_tokens, 4096, 'the empty half stayed empty');
+  assert.equal(short.brackets[0].cache_read_input_tokens, 33033480,
+    'a 7-token read froze the bracket against the fact\'s fuller one');
+  // The two keys still answer INDEPENDENTLY: the half the close never carried
+  // comes off the fact regardless of what the other half did.
+  assert.equal(short.brackets[0].cache_creation_input_tokens, 4096,
+    'the key the close never carried stayed empty');
+
+  // ...and the fact never SHRINKS a figure. A close carrying the fuller read
+  // keeps its own, so the rule is larger-wins and not last-writer-wins.
+  const long = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1', cache_read_input_tokens: 99999999 }),
+    vFact({ agent_id: 'W1' }),
+  ]);
+  assert.equal(long.brackets[0].cache_read_input_tokens, 99999999,
+    'the fact shrank a figure the close had read more of');
+  assert.equal(long.brackets[0].cache_creation_input_tokens, 4096);
 });
 
 test('render: with two workers of one role open, the fact reaches the matching id', () => {
@@ -3077,17 +3123,52 @@ test('render: a fact that names no bracket of its own run lands NOWHERE', () => 
   }
 });
 
-test('render: two facts for one worker leave the LATER sums on the bracket', () => {
+test('render: two facts for one worker leave the LARGER sums, in either order', () => {
   // A transcript only GROWS, so a second `SubagentStop` for one worker is a
   // re-sum of the same file and a superset of the first. Summing the two would
-  // double-bill every turn both reads covered; keeping the later one carries
-  // the more complete read.
+  // double-bill every turn both reads covered; keeping the LARGER one carries
+  // the more complete read. Ordering by size rather than by arrival is what
+  // makes the answer independent of the order the lines landed in.
+  const small = { cache_creation_input_tokens: 100, cache_read_input_tokens: 1000 };
+  const big = { cache_creation_input_tokens: 150, cache_read_input_tokens: 3000 };
+  for (const [why, order] of Object.entries({ 'growing': [small, big], 'shrinking': [big, small] })) {
+    const r = folded([
+      vDispatch(),
+      vClose({ agent_id: 'W1' }),
+      vFact({ agent_id: 'W1', ...order[0] }),
+      vFact({ agent_id: 'W1', ...order[1] }),
+    ]);
+    assert.equal(r.brackets[0].cache_creation_input_tokens, 150, why);
+    assert.equal(r.brackets[0].cache_read_input_tokens, 3000, why);
+  }
+
+  // Per key and INDEPENDENTLY: a pair where each fact holds the larger half
+  // leaves both larger halves on the row, which no arrival-ordered rule gives.
   const r = folded([
     vDispatch(),
     vClose({ agent_id: 'W1' }),
-    vFact({ agent_id: 'W1', cache_creation_input_tokens: 100, cache_read_input_tokens: 1000 }),
-    vFact({ agent_id: 'W1', cache_creation_input_tokens: 150, cache_read_input_tokens: 3000 }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 150, cache_read_input_tokens: 1000 }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 100, cache_read_input_tokens: 3000 }),
   ]);
   assert.equal(r.brackets[0].cache_creation_input_tokens, 150);
   assert.equal(r.brackets[0].cache_read_input_tokens, 3000);
+});
+
+test('render: rendering one fixture TWICE gives byte-identical brackets', () => {
+  // Idempotence is what larger-wins buys that no arrival-ordered rule can: the
+  // answer is a function of the BYTES rather than of the order they were read
+  // in, so a reader that renders the same file again gets the same bracket. It
+  // also pins that the fold leaves no state behind between renders.
+  const dir = root();
+  for (const row of [
+    vDispatch(),
+    vClose({ agent_id: 'W1' }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 150, cache_read_input_tokens: 1000 }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 100, cache_read_input_tokens: 3000 }),
+  ]) appendEvent(dir, row);
+  const first = JSON.stringify(renderTrace(dir, 7).brackets);
+  assert.equal(JSON.stringify(renderTrace(dir, 7).brackets), first,
+    'a second render of the same bytes answered differently');
+  assert.equal(JSON.parse(first)[0].cache_creation_input_tokens, 150);
+  assert.equal(JSON.parse(first)[0].cache_read_input_tokens, 3000);
 });
