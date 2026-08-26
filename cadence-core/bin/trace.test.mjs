@@ -2816,3 +2816,57 @@ test('render: the cache fold fills an empty field and never overwrites one', () 
   assert.equal(folded.cache_read_input_tokens, 900,
     'the second writer overwrote a figure the first one read');
 });
+
+test('render: the worker id survives the hook closing the bracket first', () => {
+  // THE ORDINARY ARRIVAL ORDER, and the one the fold used to drop the id on.
+  // The host fires SubagentStop when the worker stops, which is before the
+  // orchestrator has processed the return and written its own close - so the
+  // figureless hook close is ordinarily the writer that OPENS the row, and the
+  // id rides the hand-written close that lands second. Without the fold clause
+  // the record carries worker identity only on brackets the hand-written close
+  // happened to open, and `lib/subagent-trace.mjs`'s `alreadyClosed` equality
+  // test reads a key that is absent on the common path.
+  const dir = root();
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:00.000Z',
+  });
+  appendEvent(dir, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z',
+    tokens: 900, turns: 4, duration_ms: 60000, agent_id: 'WORKER-Z',
+  });
+  const r = renderTrace(dir, 6);
+  assert.equal(r.brackets.length, 1, 'two closes, one dispatch, one row');
+  assert.equal(r.brackets[0].agent_id, 'WORKER-Z',
+    'the id on the second writer was dropped by the fold');
+  // The three figures beside it fold on the same rule, which is what the
+  // comment above the clause claims and what this pins alongside it.
+  assert.equal(r.brackets[0].tokens, 900);
+  assert.equal(r.brackets[0].turns, 4);
+  assert.equal(r.brackets[0].duration_ms, 60000);
+
+  // ...and the FIRST writer's id stands, on the same fill-only-empty rule the
+  // figures follow. Two ids on one bracket means two workers were confused for
+  // one, and the writer that opened the row is the one that named it.
+  const other = root();
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:00.000Z', agent_id: 'WORKER-A',
+  });
+  appendEvent(other, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z', agent_id: 'WORKER-B',
+  });
+  const [folded] = renderTrace(other, 6).brackets;
+  assert.equal(folded.agent_id, 'WORKER-A',
+    'the second writer overwrote the id the first one named');
+});

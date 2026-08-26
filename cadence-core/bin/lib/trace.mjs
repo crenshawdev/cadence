@@ -337,7 +337,7 @@ export function appendEvent(planningRoot, event) {
  *   counter appear only where at least one figure of that kind landed on the
  *   role, so a record written before either flag existed renders unchanged.
  * @property {Record<string, any>[]} events
- * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}[]} brackets
+ * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, agent_id?: string}[]} brackets
  *   every dispatch that PAIRED, one row each, in the order its terminal was
  *   read. The pairing was already computed here for the accounting; exposing it
  *   is what lets a caller print per-worker rows without re-deriving `open` and
@@ -908,6 +908,14 @@ export function renderTrace(planningRoot, phase) {
         // the hook is the only writer that has them, so this is the arm that
         // lands them on a row the hand-written close opened first.
         for (const k of CACHE_KEYS) if (!(k in b) && k in cache) b[k] = cache[k];
+        // Identity folds on the SAME fill-only-empty rule, and it has to: the
+        // hook's figureless close is the writer that ordinarily opens this row
+        // (the host fires SubagentStop when the worker stops, before the
+        // orchestrator has processed the return), so without this clause an id
+        // supplied on the hand-written close is dropped on exactly the arrival
+        // order AC4 calls ordinary - and `lib/subagent-trace.mjs`'s
+        // `alreadyClosed` equality test then reads a key that is never there.
+        if (!('agent_id' in b) && e.agent_id) b.agent_id = e.agent_id;
         // The arm upgrades in ONE direction and never back. A figureless writer
         // that happened to run first would otherwise turn every checkpoint into
         // a clean `return` - billing a worker that came back unusable as a
