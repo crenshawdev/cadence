@@ -40,6 +40,32 @@ How a workflow dispatches work to a fresh-context subagent.
   sentence that got the wall-clock key deleted in v2.7.0 - so a crossing is a
   REPORT and never a refusal, and the run it describes has already completed by
   the time anything reads it.
+- THE STANDING EXPOSURE the ceiling above rests on, stated once because nothing
+  in Cadence can fix it. Cadence reads THREE figures off a subagent return, and
+  every one of them is copied by hand out of the host's own rendering of `Done
+  (N tool uses - X tokens - Ys)`. There is no API handing them over.
+  - The TOKEN count. It funds the per-role accounting in the rendered record's
+    `roles` block and is the quantity the six `workflow.max_dispatch_tokens`
+    ceilings above are compared against, so a change in how it prints empties
+    both at once.
+  - The TOOL-USE count, copied onto the close as `--turns`. A run's price is
+    turns times window, so the token half alone can say what a worker returned
+    and never what it cost to get there.
+  - The DURATION, copied onto the close as `--duration-ms`. It is the only
+    figure for how long the WORKER ran: the `ms` on a `brackets[]` row is
+    dispatch-to-close wall clock and includes the orchestrator's own time
+    between the two writes.
+  Anthropic can change that rendering in any release, with no deprecation
+  window and no version this seam can test for. `cadence-core/bin/weight-budgets.json`
+  is the half of the same picture that does NOT depend on the host - it bounds
+  the bytes Cadence puts INTO a dispatch, which is why a byte budget and a
+  token ceiling are two controls and not one restated.
+  THE MITIGATION IS ALREADY IN FORCE and is not work this states as owed: a
+  return carrying no figure OMITS the flag rather than sending `0`, and the
+  renderer keeps `unrecorded` distinct from a recorded zero (`turns_unrecorded`
+  for the tool-use half, an absent `duration_ms` key for the wall clock). So a
+  rendering change degrades the record to "this run was not measured" -
+  visible, countable, and never a fabricated zero that reads as a measurement.
 - Where those numbers come from. Each default is that role's 75th-percentile
   terminal `tokens` figure on this repo's own record, rounded UP to the next
   25,000, measured 2026-08-17 over every `return` and `checkpoint` event
@@ -109,17 +135,23 @@ sites used to pay two. `--bracket-plan` is the worker key when it is not the
 role name (an executor's plan number). The CLOSE half stays with the caller,
 which alone sees the return: ONE `trace close` per dispatch moment, keyed
 `--plan <the worker key>` and `--role <name>`, carrying
-`--tokens <the figure on the subagent return>` and
-`--turns <the tool-call count on that same return>`. The seam fixes the family and
+`--tokens <the figure on the subagent return>`,
+`--turns <the tool-call count on that same return>` and
+`--duration-ms <the wall clock on that same return>`. The seam fixes the family and
 picks the arm off the DETAIL, whichever flag carried it (`--detail`, or
 `--detail-file <path>` when the text is the worker's own): absent means
 `return`, present means `checkpoint` (the worker came back empty, unmarked or
 unusable). `escalation` on a path
 change is NOT inferred and stays on `trace append`. OMIT `--tokens` when the
 return carries no figure - never `--tokens 0`, which would claim a dispatch
-that cost nothing - and OMIT `--turns` on the same rule when the return carries
+that cost nothing - OMIT `--turns` on the same rule when the return carries
 no tool-call count, never `--turns 0`, which would claim a dispatch that used
-no tools. A
+no tools - and OMIT `--duration-ms` when the return carries no wall clock,
+never `--duration-ms 0`, which would claim a dispatch that took no time.
+`--duration-ms` takes the host's OWN spelling (`1m 23s`, `450ms`) or a plain
+millisecond count, so the figure is copied rather than converted; the standing
+exposure all three of them create is stated in the window-CEILING bullet above.
+A
 figureless return is ROUTINE (`lib/trace.mjs` holds the provenance), and the
 `unrecorded` it produces names a silent return, never a skipped bracket. A
 turn-figureless return is routine in the same way and renders under a counter
