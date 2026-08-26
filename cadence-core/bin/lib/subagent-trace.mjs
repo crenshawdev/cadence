@@ -69,9 +69,35 @@
 //      a. Does a bracket on the record already carry this payload's `agent_id`?
 //         Then this worker's close is already written and there is nothing here
 //         for it to close. DO NOTHING.
-//      b. Is there EXACTLY ONE open dispatch of the mapped role? Adopt it.
-//         Anything else - none, or two the evidence cannot separate - is DO
-//         NOTHING.
+//      b. Is there EXACTLY ONE open dispatch of the mapped role IN THIS RUN?
+//         Adopt it. Anything else - none, or two the evidence cannot separate
+//         - is DO NOTHING.
+//
+//    SCOPED TO ONE RUN (D-03), AND THAT IS NOT THE HEURISTIC TRC-06 BANS.
+//    `unpaired` accumulates for the life of the file, so without a scope every
+//    dispatch of the role ever STRANDED counts as an open worker forever.
+//    Measured 2026-08-26 on this repository: 11 unpaired rows survive back to
+//    2026-08-09 - `cad-executor` x3, `cad-reviewer` x2,
+//    `cad-assumptions-analyzer` x2, `cad-planner` x2, `cad-verifier` x1 - so a
+//    `cad-executor` stop today saw at least four "open" dispatches and refused
+//    UNCONDITIONALLY, rather than in the minority of genuinely concurrent
+//    cases the gate was written for. So the candidate set is narrowed before
+//    the count is taken: take the `corr` of the role's newest dated row and
+//    keep only the rows carrying it.
+//
+//    Do not undo this as a clock heuristic - it is the opposite of one. TRC-06
+//    forbids CHOOSING BETWEEN two open workers, and this never chooses: the
+//    rule below it is unchanged, exactly one candidate is adopted and
+//    none-or-many is still DO NOTHING, so two workers dispatched in one
+//    message share a `corr`, both survive the scope and both are still
+//    refused. What the clock does here is decide which RUN is current, and
+//    that is a question about the file rather than about a worker. A row whose
+//    `ts` is absent or unparseable contributes NO clock and is treated as
+//    oldest - the posture every arithmetic path in this record takes for an
+//    unreadable instant - and where no row of the role is dated at all the set
+//    stands exactly as it did before this scope existed. Expiring, rewriting
+//    or deleting an unpaired row is a different question and belongs to trace
+//    rotation, not here.
 //
 //    The id reaches the record on the CLOSE, never the dispatch. That event is
 //    written before the subagent exists, so it has no id to carry; the
@@ -135,7 +161,10 @@
 // any stream by contract, so there is no reader for a `reason`, and a bare
 // do-nothing answer is what keeps this module outside self-verify check 22.
 //
-// Pure rule: no fs, no emit, no process, no Date, no randomness.
+// Pure rule: no fs, no emit, no process, no clock, no randomness. `Date.parse`
+// on a `ts` the RECORD supplied is the one exception and is not a clock read:
+// it is a deterministic function of bytes the caller handed in, the same way
+// `lib/trace.mjs`'s `millis` reads the instants it sorts by.
 'use strict';
 
 import { roleOfAgent } from './read-trace.mjs';
@@ -174,6 +203,43 @@ function alreadyClosed(render, id) {
 }
 
 /**
+ * A `corr` as a comparison key, so `1` and `"1"` name one run. The same
+ * coercion `lib/trace.mjs`'s `key()` applies to the pairing, restated in three
+ * words rather than exported: the two are the same rule about the same field.
+ * @param {any} v
+ */
+function corrKey(v) {
+  return v === undefined || v === null ? '' : String(v);
+}
+
+/**
+ * The rows of one run: the `corr` of the NEWEST dated row, and every row
+ * carrying it. Rows arrive already filtered to one role.
+ *
+ * This is a scope, never a choice (D-03). It removes a DEAD run's leftovers
+ * from the count - `unpaired` accumulates for the life of the file - and it
+ * cannot separate two workers of one run, because they share a `corr` and both
+ * survive it. An undated row contributes no clock and is treated as oldest, and
+ * a set with no dated row at all is returned untouched, which is what this gate
+ * counted before the scope existed.
+ *
+ * @param {any[]} rows
+ * @returns {any[]}
+ */
+function currentRun(rows) {
+  let newest = null;
+  let corr;
+  for (const row of rows) {
+    if (typeof row.ts !== 'string' || !row.ts) continue;
+    const t = Date.parse(row.ts);
+    if (!Number.isFinite(t)) continue;
+    if (newest === null || t > newest) { newest = t; corr = row.corr; }
+  }
+  if (newest === null) return rows;
+  return rows.filter((row) => corrKey(row.corr) === corrKey(corr));
+}
+
+/**
  * The events a stopped subagent should append, in file order. EMPTY is the
  * do-nothing answer - never null, so the disk half's one loop covers both and
  * there is no second shape for a caller to test for (D-08).
@@ -207,7 +273,13 @@ export function closeForStop(payload, render, evidence) {
   const id = agentIdOf(payload);
   if (id && alreadyClosed(render, id)) return [];
 
-  // GATE 2b - UNAMBIGUOUS OR NOTHING. `unpaired` already carries the DISPATCH's
+  // GATE 2b - UNAMBIGUOUS OR NOTHING, within the CURRENT RUN. `currentRun` drops
+  // a dead run's stranded rows before the count is taken (D-03) - without it,
+  // every dispatch of the role ever left open counts as a live worker forever
+  // and this gate refuses unconditionally. It never chooses between two workers:
+  // one run's concurrent dispatches share a `corr`, so they both survive the
+  // scope and are both still refused below. `unpaired` already carries the
+  // DISPATCH's
   // own `role` (the field the pairing computed), so this reads the render's
   // answer rather than deriving a second one. Exactly one open dispatch of the
   // role is the only state in which this rule knows whose stop it is holding:
@@ -215,7 +287,7 @@ export function closeForStop(payload, render, evidence) {
   // dispatch instants can separate two workers that were dispatched in one
   // message - which is precisely what the parallel path does.
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
-  const mine = rows.filter((row) => row && row.role === role);
+  const mine = currentRun(rows.filter((row) => row && row.role === role));
   if (mine.length !== 1) return [];
   const best = mine[0];
 

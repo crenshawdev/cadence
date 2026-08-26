@@ -171,10 +171,15 @@ test('stop: a non-Cadence type is still nothing, terminal transcript or not', ()
 
 // --- whose stop is this: unambiguous or nothing (TRC-06) ---------------------
 
-/** Two open executor dispatches on one role: plan 1 at T0, plan 2 at T10. */
+/**
+ * Two open executor dispatches on one role, in ONE run: plan 1 at T0, plan 2 at
+ * T10, both under `2-abc1234`. The shared `corr` is the point - the parallel
+ * path dispatches both executors in one message, so they belong to one run by
+ * construction, and gate 2b's run scope leaves both of them standing.
+ */
 const twoOpen = () => render([
   open('cad-executor', '1', T(0)),
-  open('cad-executor', '2', T(10), { corr: '2-def5678' }),
+  open('cad-executor', '2', T(10)),
 ]);
 
 const AGENT = 'a1852a9b36a6c52b8';
@@ -288,6 +293,67 @@ test('stop: a payload with no agent_type at all answers nothing', () => {
   for (const payload of [{}, { agent_type: null }, { agent_type: '' }, null]) {
     assert.deepEqual(closeForStop(payload, r), []);
   }
+});
+
+// --- gate 2b counts ONE RUN, not the whole file (D-03) -----------------------
+
+test('stop: a stranded dispatch from an EARLIER run no longer blocks this one', () => {
+  // `unpaired` accumulates for the life of the trace file, so before the run
+  // scope every dispatch of the role ever left open counted as a live worker
+  // forever and this gate refused unconditionally. Measured 2026-08-26 on this
+  // repository: 11 such rows survived back to 2026-08-09, one of them a
+  // `cad-verifier`. This exact fixture answered nothing before the scope
+  // existed, because it held two rows of the role.
+  const r = render([
+    open('cad-verifier', 'cad-verifier', T(0), { corr: '1-dead000' }),
+    open('cad-verifier', 'cad-verifier', T(10), { corr: '2-abc1234' }),
+  ]);
+  const events = closeForStop({ agent_type: 'cadence:cad-verifier' }, r);
+  assert.equal(events.length, 1, 'the dead run\'s leftover still voted');
+  assert.equal(events[0].corr, '2-abc1234', 'the close adopted the stranded row');
+});
+
+test('stop: two dispatches of one RUN still answer nothing', () => {
+  // The scope is not the heuristic TRC-06 bans, and this is the assertion that
+  // holds the line: two workers dispatched in one message share a `corr`, so
+  // both survive the scope and the rule below it refuses exactly as it did.
+  assert.deepEqual(
+    closeForStop({ agent_type: 'cadence:cad-verifier' }, render([
+      open('cad-verifier', 'cad-verifier', T(0)),
+      open('cad-verifier', 'cad-verifier', T(10)),
+    ])),
+    [],
+  );
+});
+
+test('stop: with no readable instant anywhere, the whole set stands', () => {
+  // An undated row contributes NO clock and is treated as oldest - the posture
+  // every arithmetic path in this record takes for an unreadable instant - so a
+  // role whose rows are all undated is counted exactly as it was before the
+  // scope existed: two rows refuse, one row closes.
+  const undated = [
+    open('cad-verifier', 'cad-verifier', undefined, { corr: '1-dead000' }),
+    open('cad-verifier', 'cad-verifier', 'not-a-date', { corr: '2-abc1234' }),
+  ];
+  assert.deepEqual(closeForStop({ agent_type: 'cadence:cad-verifier' }, render(undated)), []);
+  assert.equal(
+    closeForStop({ agent_type: 'cadence:cad-verifier' }, render([undated[0]]))[0].corr,
+    '1-dead000',
+  );
+});
+
+test('stop: an undated row of the CURRENT run is still counted', () => {
+  // Contributing no clock is not the same as being dropped. The scope filters on
+  // `corr`, so an undated row carrying the current run's id is still an open
+  // worker this rule cannot separate from the dated one beside it - which is the
+  // conservative direction and the one the whole record prefers.
+  assert.deepEqual(
+    closeForStop({ agent_type: 'cadence:cad-verifier' }, render([
+      open('cad-verifier', 'cad-verifier', undefined),
+      open('cad-verifier', 'cad-verifier', T(10)),
+    ])),
+    [],
+  );
 });
 
 // --- the cache figures only this hook can see (TRC-05) -----------------------
