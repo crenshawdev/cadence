@@ -67,7 +67,7 @@ belongs to `Finding flood` with GH-100 and GH-135, not here.
 **Requirements:** TRC-04, TRC-06, MSR-05, TRC-05
 **Success Criteria:**
 1. Replaying `dispatch A, close A, dispatch B, A's delayed repeat, close B` for one worker key renders two brackets carrying A's and B's OWN figures, and `roles.tokens` equals the sum of those two brackets, not of all three terminals.
-2. With two open dispatches of one role, a `SubagentStop` payload closes the dispatch that actually stopped rather than the newest one, demonstrated against a fixture holding both; and a payload arriving while another stop hook is still blocking termination writes no `return` at all.
+2. With two open dispatches of one role, a `SubagentStop` payload writes NOTHING rather than closing the wrong one, demonstrated against a fixture holding both - the `dispatch` event is written before the subagent exists, so it carries no id to match the payload's against, and no ordering of dispatch instants separates two workers dispatched in one message. The payload's id is what recognises a worker whose bracket is ALREADY closed. And a payload whose `transcript_path` shows the worker has not reached a terminal entry writes no `return` at all.
 3. The ordinary two-writer case is unchanged: one dispatch, a figureless hook close, then the hand-written close with figures renders one bracket and `dispatches: 1`.
 4. `/cad-report` and `/cad-suggest` each print a figure sourced from a bracket's `duration_ms`, labelled distinctly from the bracket's `ms`, and say `unrecorded` rather than `0` when the close carried no wall clock.
 5. A bracket close records cache figures, and `trace render` reports them; a close carrying none omits the keys rather than writing zeros.

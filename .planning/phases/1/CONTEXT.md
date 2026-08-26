@@ -121,8 +121,14 @@ Plan shape: multiple plans - AC1-AC4 are one seam (`lib/trace.mjs` plus
       figures, and `roles.tokens` equals the sum of those two brackets, not of
       all three terminals.
 - [ ] AC2: With two open dispatches of one role, a `SubagentStop` payload
-      closes the dispatch whose `agent_id` matches rather than the newest one,
-      demonstrated against a fixture holding both.
+      writes NOTHING rather than closing the wrong one, demonstrated against a
+      fixture holding both. [reworded 2026-08-26 by /cad-verify: the original
+      asked the payload's `agent_id` to SELECT among the two open dispatches.
+      Nothing can - the `dispatch` half is written before the subagent exists
+      and carries no id to compare against, which is the same premise D-07's
+      correction rests on. The id's delivered job is the negative one: GATE 2a
+      recognises a worker whose bracket is already closed. Refusing on ambiguity
+      is what shipped in `426163a0` and is the safer behaviour.]
 - [ ] AC3: A `SubagentStop` payload whose `transcript_path` shows the worker
       has not reached a terminal entry writes no `return` at all.
 - [ ] AC4: The ordinary two-writer case is unchanged - one dispatch, a

@@ -16,8 +16,12 @@ so an id below that no plan has picked up yet surfaces as `unpicked` in
 - **MSR-05**: the worker's own `duration_ms` has a reader - `/cad-report` and
   `/cad-suggest` price a dispatch with it, distinct from the bracket's `ms`
 - **TRC-06**: the `SubagentStop` close lands on the worker that actually
-  stopped, never on the newest open dispatch of its role, and does not fire
-  while another stop hook is still blocking termination
+  stopped OR writes nothing at all - never on the newest open dispatch of its
+  role, and never for a worker whose own transcript says it has not terminated.
+  Refusing is a delivered outcome, not a shortfall: the `dispatch` event is
+  written before the subagent exists, so it carries no id for a payload to
+  match against, and no ordering of dispatch instants separates two workers
+  dispatched in one message
 - **TRC-05**: a bracket records cache figures, so a prompt-cache claim can be
   measured before and after a change
 - **BUD-03**: a plan is bounded by the BYTES its `files:` frontmatter declares,
