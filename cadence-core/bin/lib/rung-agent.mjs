@@ -9,7 +9,8 @@
 // RUNG_FILES is the whole mapping story - a stated table, not a naming
 // convention, because no convention is true of all 19 files.
 // `rungBody`/`normalizeBody`/`rungBodyIssue` beside it state the one legitimate
-// BODY of a rung file, for the same single-source reason.
+// BODY of a rung file, and `rungPrefixIssues` states that one role's rung files
+// all carry it byte for byte, for the same single-source reason.
 //
 // Pure lib: no fs, no emit, no process, no Date, no randomness. It returns
 // names and problem CODES; the callers own the envelope - route.mjs decides
@@ -93,6 +94,82 @@ export function rungFile(role, rung) {
 export function rungFiles(role) {
   const map = typeof role === 'string' ? RUNG_FILES[role] : undefined;
   return map ? Object.values(map) : [];
+}
+
+/**
+ * Whether one role's rung files still share ONE body, byte for byte (RNG-03).
+ *
+ * A role's rungs are separate registered agents whose bodies are assembled
+ * into separate prompts, and a prompt cache can only reuse a prefix that is
+ * identical from its first byte. The rung sentence used to make that
+ * impossible by construction - every rung file opened with a different line -
+ * and deleting it bought a shared prefix that nothing then held. This is what
+ * holds it: an edit landing in one rung file and not its siblings re-forecloses
+ * the sharing, and it is invisible to every other check, because each file on
+ * its own is still a perfectly legal rung file.
+ *
+ * RAW BYTES, deliberately, and this is the one place in this lib where
+ * whitespace is load-bearing (D-04). `rungBodyIssue` normalizes whitespace away
+ * so that re-wrapping a paragraph is free - which is right for "does this file
+ * carry behaviour of its own" and exactly wrong here, since two line-break
+ * variants are two different cache prefixes. Re-wrapping ONE rung file and not
+ * its siblings is precisely the edit this rule exists to catch, so the two
+ * rules are not duplicates: they disagree about that edit on purpose.
+ *
+ * Scoped by RUNG_FILES: a stem the map does not name is not this rule's
+ * business (check 8's reachability arm owns stale and unreachable files), and
+ * a role contributing fewer than two bodies yields nothing - an absent file is
+ * already `missing-rung-agent`'s to report, and a second entry would
+ * double-count one fault.
+ *
+ * The majority body is the rank and the minority is what broke it, ties going
+ * to whichever group holds the earliest-declared rung, so the detail names the
+ * FILE a maintainer would open rather than every file in the role.
+ *
+ * @param {any} bodies stem -> that file's raw prose, frontmatter already
+ *   stripped; entries whose value is not a string are treated as absent
+ * @returns {{code: string, role: string, stems: string[], detail: string}[]}
+ */
+export function rungPrefixIssues(bodies) {
+  const read = bodies !== null && typeof bodies === 'object' && !Array.isArray(bodies)
+    ? bodies : {};
+  const bodyOf = (stem) => (Object.prototype.hasOwnProperty.call(read, stem)
+    && typeof read[stem] === 'string' ? read[stem] : null);
+
+  /** @type {{code: string, role: string, stems: string[], detail: string}[]} */
+  const out = [];
+  for (const role of Object.keys(RUNG_FILES)) {
+    // Declared rung order (low -> max), which is what makes the tie-break and
+    // the listed order below reproducible rather than filesystem-dependent.
+    const stems = Object.values(RUNG_FILES[role]).filter((s) => bodyOf(s) !== null);
+    if (stems.length < 2) continue;
+
+    /** @type {Map<string, string[]>} */
+    const groups = new Map();
+    for (const stem of stems) {
+      const body = /** @type {string} */ (bodyOf(stem));
+      const seen = groups.get(body);
+      if (seen) seen.push(stem);
+      else groups.set(body, [stem]);
+    }
+    if (groups.size === 1) continue;
+
+    // Insertion order IS declared rung order, and `>` is strict, so a tie
+    // leaves the earliest-declared group as the rank.
+    let rank = [];
+    for (const members of groups.values()) {
+      if (members.length > rank.length) rank = members;
+    }
+    const strays = stems.filter((s) => !rank.includes(s));
+    const name = (s) => `agents/${s}.md`;
+    out.push({ code: 'rung-prefix-split', role, stems: strays,
+      detail: `${strays.map(name).join(', ')} ${strays.length === 1 ? 'does' : 'do'} not carry `
+        + `the same body BYTE FOR BYTE as ${rank.map(name).join(', ')} - `
+        + `${role}'s rungs are dispatched as separate agents and share a cached prefix `
+        + 'only while their bodies are identical, so this edit has to land in every '
+        + `rung file of ${role} or in none` });
+  }
+  return out;
 }
 
 /**

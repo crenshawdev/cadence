@@ -767,6 +767,61 @@ test('check 7: a RE-WRAPPED template is not flagged - line breaks are not load-b
 // under, which is the link a dispatch actually rides, and it runs on every
 // agent file rather than only the ones preloading a contract.
 
+// --- check 7d: one role's rung files carry ONE body, byte for byte (RNG-03) ---
+//
+// A cross-FILE rule, so the fixture has to name two real stems of one real
+// role: it is scoped by lib/rung-agent.mjs's RUNG_FILES, and the `cad-t`-style
+// agents every check-7 row above uses are in no role's map at all.
+// cad-executor is the smallest role that can disagree - exactly two rungs.
+
+/** Frontmatter for a real cad-executor rung, effort matching what the map files it under. */
+const execFm = (name, effort) =>
+  `---\nname: ${name}\ntools: Read\neffort: ${effort}\nskills:\n  - cad-t-contract\n---\n`;
+const EXEC_LOW = execFm('cad-executor', 'high');
+const EXEC_XHIGH = execFm('cad-executor-xhigh', 'xhigh');
+/** RUNG_BODY with its ONE internal line break turned into a space. */
+const REWRAPPED = RUNG_BODY.replace('full\ncontract', 'full contract');
+
+test('check 7d: two rung bodies of one role that are byte-identical yield no problem', () => {
+  const root = fixtureWith({
+    agents: { 'cad-executor.md': EXEC_LOW + RUNG_BODY,
+      'cad-executor-xhigh.md': EXEC_XHIGH + RUNG_BODY },
+    skills: { 'cad-t-contract': CONTRACT },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'rung-prefix-split'), JSON.stringify(p));
+});
+
+test('check 7d: ONE rung file re-wrapped is flagged, naming that file and its role', () => {
+  assert.equal(REWRAPPED.length, RUNG_BODY.length, 'fixture differs by one byte');
+  const root = fixtureWith({
+    agents: { 'cad-executor.md': EXEC_LOW + RUNG_BODY,
+      'cad-executor-xhigh.md': EXEC_XHIGH + REWRAPPED },
+    skills: { 'cad-t-contract': CONTRACT },
+    budgets: { 'agents/cad-executor.md': (EXEC_LOW + RUNG_BODY).length,
+      'agents/cad-executor-xhigh.md': (EXEC_XHIGH + RUNG_BODY).length,
+      'skills/cad-t-contract/SKILL.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  const hit = p.find((x) => x.kind === 'rung-prefix-split');
+  assert.ok(hit, JSON.stringify(p));
+  assert.equal(hit.file, 'agents/cad-executor-xhigh.md');
+  assert.match(hit.detail, /cad-executor/);
+  // The two checks that would otherwise have caught it, both silent by design:
+  // no byte budget can see a same-size re-wrap, and check 7 normalizes
+  // whitespace away on purpose. Without 7d this edit ships green.
+  assert.ok(!p.some((x) => x.kind === 'budget-overrun'), 'no budget can see a same-size re-wrap');
+  assert.ok(!p.some((x) => x.kind === 'agent-carries-behaviour'),
+    'check 7 forgives a re-wrap on purpose - 7d is not a duplicate of it');
+});
+
+test('check 7d: the LIVE tree is clean, and the CLI names rung-prefix in `checked`', () => {
+  const r = run(['--root', REPO]);
+  assert.ok(!r.problems.some((x) => x.kind === 'rung-prefix-split'),
+    JSON.stringify(r.problems.filter((x) => x.kind === 'rung-prefix-split')));
+  assert.match(r.checked, /\brung-prefix\b/);
+});
+
 // --- check 7c: the verifier's narrow Write grant (D-08) ---
 //
 // Agent frontmatter has no path-scoped tool permission, so this check is the

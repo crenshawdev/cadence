@@ -9,10 +9,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  rungBody, rungBodyIssue, rungEffortIssue, RUNG_FILES, rungFile, rungFiles,
-  effortEnumIssues, EFFORT_PREFIX,
+  rungBody, rungBodyIssue, rungEffortIssue, rungPrefixIssues, RUNG_FILES, rungFile,
+  rungFiles, effortEnumIssues, EFFORT_PREFIX,
 } from './lib/rung-agent.mjs';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -128,6 +128,85 @@ test('rungBodyIssue REJECTS a same-size replacement of the pointer paragraph', (
 test('rungBodyIssue accepts a body pointing at ANY ONE declared skill', () => {
   const body = rungBody('cad-b-contract');
   assert.equal(rungBodyIssue(body, ['cad-a-contract', 'cad-b-contract']), null);
+});
+
+
+// --- rungPrefixIssues: one role, one body, byte for byte (RNG-03) -------------
+// The rule rungBodyIssue deliberately cannot hold. That one normalizes
+// whitespace away, so a re-wrapped rung file passes it; this one refuses that
+// exact edit, because two line-break variants are two different cache
+// prefixes. cad-executor is used throughout: two rungs, the smallest role that
+// can disagree at all.
+const EXEC = RUNG_FILES['cad-executor'];
+const EXEC_BODY = '\n\n' + rungBody('cad-executor-contract');
+/** EXEC_BODY with its ONE internal line break turned into a space. */
+const EXEC_REWRAPPED = EXEC_BODY.replace('full\ncontract', 'full contract');
+
+test('rungPrefixIssues: byte-identical rung bodies are NOT reported', () => {
+  // The load-bearing row: every row below mutates one body of this pair, so if
+  // this one ever reported something the mutations would prove nothing.
+  assert.deepEqual(rungPrefixIssues({ [EXEC.high]: EXEC_BODY, [EXEC.xhigh]: EXEC_BODY }), []);
+});
+
+test('rungPrefixIssues: ONE re-wrapped line break is reported, naming role and file', () => {
+  assert.equal(EXEC_REWRAPPED.length, EXEC_BODY.length, 'fixture differs by one byte, not one line');
+  assert.notEqual(EXEC_REWRAPPED, EXEC_BODY);
+  const issues = rungPrefixIssues({ [EXEC.high]: EXEC_BODY, [EXEC.xhigh]: EXEC_REWRAPPED });
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'rung-prefix-split');
+  assert.equal(issues[0].role, 'cad-executor');
+  assert.deepEqual(issues[0].stems, [EXEC.xhigh]);
+  assert.match(issues[0].detail, new RegExp(`agents/${EXEC.xhigh}\\.md`));
+  assert.match(issues[0].detail, new RegExp(`agents/${EXEC.high}\\.md`));
+});
+
+test('rungPrefixIssues: rungBodyIssue FORGIVES the same edit - not a duplicate rule', () => {
+  // Both directions in one row, because the whole justification for a second
+  // rule is that these two disagree about this input on purpose.
+  assert.equal(rungBodyIssue(EXEC_REWRAPPED, ['cad-executor-contract']), null);
+  assert.equal(rungPrefixIssues(
+    { [EXEC.high]: EXEC_BODY, [EXEC.xhigh]: EXEC_REWRAPPED }).length, 1);
+});
+
+test('rungPrefixIssues: the MINORITY is what broke rank, not the majority', () => {
+  const v = RUNG_FILES['cad-verifier'];
+  const body = '\n\n' + rungBody('cad-verifier-contract');
+  const issues = rungPrefixIssues({ [v.medium]: body, [v.high]: body,
+    [v.xhigh]: body + 'and one more thing.\n', [v.max]: body });
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.deepEqual(issues[0].stems, [v.xhigh]);
+});
+
+test('rungPrefixIssues: a role contributing ONE body yields nothing', () => {
+  // An absent sibling is missing-rung-agent's to report; a second entry here
+  // would double-count one fault.
+  assert.deepEqual(rungPrefixIssues({ [EXEC.high]: EXEC_BODY }), []);
+});
+
+test('rungPrefixIssues: a stem the map does not name is not this rule\'s business', () => {
+  assert.deepEqual(rungPrefixIssues({ [EXEC.high]: EXEC_BODY, [EXEC.xhigh]: EXEC_BODY,
+    'cad-executor-low': 'something else entirely\n', 'not-an-agent': 'x' }), []);
+});
+
+test('rungPrefixIssues: a non-string body is treated as absent, never as a difference', () => {
+  assert.deepEqual(rungPrefixIssues({ [EXEC.high]: EXEC_BODY, [EXEC.xhigh]: null }), []);
+  assert.deepEqual(rungPrefixIssues(null), []);
+  assert.deepEqual(rungPrefixIssues('agents/'), []);
+});
+
+test('rungPrefixIssues: the SHIPPED agents/ tree carries one body per role', () => {
+  // The live assertion. Read off disk rather than regenerated from rungBody,
+  // so a file that drifted is caught rather than reconstructed.
+  /** @type {Record<string, string>} */
+  const bodies = {};
+  for (const e of readdirSync(join(REPO, 'agents'))) {
+    if (!e.endsWith('.md')) continue;
+    const text = readFileSync(join(REPO, 'agents', e), 'utf8');
+    const fm = text.match(/^---\n([\s\S]*?)\n---/);
+    bodies[e.slice(0, -3)] = fm ? text.slice(fm[0].length) : text;
+  }
+  assert.equal(Object.keys(bodies).length, 19);
+  assert.deepEqual(rungPrefixIssues(bodies), []);
 });
 
 
