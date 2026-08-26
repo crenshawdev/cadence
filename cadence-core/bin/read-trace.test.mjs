@@ -447,7 +447,7 @@ test('a corpus recorded before files existed yields no file measurement rather t
 // is confidently wrong rather than honestly absent. Pure by injection, so the
 // caller supplies the bracket rows and this needs no trace file.
 
-import { joinReads, HOST_AGENT_TYPES } from './lib/read-trace.mjs';
+import { joinReads, HOST_AGENT_TYPES, roleOfAgent } from './lib/read-trace.mjs';
 
 /** One paired bracket row, the shape `renderTrace(...).brackets` returns. */
 const span = (role, plan, from, to) => ({
@@ -512,6 +512,20 @@ test('join: the host agent types are a stated FLOOR, never a failed join', () =>
   // nothing in this plugin opens a bracket for a host type, so a containment
   // hit there would be an invented attribution.
   for (const row of j.rows) assert.equal(row.status, 'floor');
+});
+
+test('the role mapping is EXPORTED, so the stop hook reads it rather than copying it', () => {
+  // `lib/subagent-trace.mjs`'s self-filter asks the same question of the same
+  // `<plugin>:<agent-file-stem>` spelling. It imports this function; a second
+  // copy of the map is how two readers of one record start disagreeing about
+  // which bracket closed.
+  assert.equal(typeof roleOfAgent, 'function');
+  assert.equal(roleOfAgent('cadence:cad-executor-xhigh'), 'cad-executor');
+  assert.equal(roleOfAgent('cad-verifier-medium'), 'cad-verifier');
+  // Null for the host's own types, for `coordinator`, and for a non-string.
+  for (const a of [...HOST_AGENT_TYPES, 'Explore', 'claude-code-guide', 'coordinator', '', 7, null]) {
+    assert.equal(roleOfAgent(a), null, `${String(a)} resolved to a role`);
+  }
 });
 
 test('join: a record with no agent field names the field absent rather than defaulting', () => {
