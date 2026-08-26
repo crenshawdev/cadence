@@ -189,3 +189,136 @@ the three named `/cad-why` gaps and nothing else. Both are captured as a seed in
 None. Every criterion was answered by read-only inspection of files already in
 the repository plus `.planning/trace.jsonl`; nothing was built and nothing needs
 discarding.
+
+## Post-ship: what the shared rung prefix recovered (2026-08-26)
+
+Recommendation 2 shipped in `v3.7.4` phase 2 at commit `8ca0dfdc`: the rung
+label moved out of the agent body, so a role's rungs now share the ~11 KB
+contract below it instead of each carrying a private copy. Recommendation 1 -
+"record cache figures in the trace FIRST" - is phase 3 of the same cycle, and
+this section is the before/after that ordering exists to make possible. RNG-03
+closes here, on a number, whichever way the number falls.
+
+### The role, and why this one
+
+`cad-verifier`. Three reasons, carried from `.planning/phases/2/CONTEXT.md`
+D-06:
+
+- It runs in the MAIN tree, so its `SubagentStop` write lands in this
+  repository's `.planning/trace.jsonl` rather than in a worktree's, which is
+  discarded with the worktree.
+- It has four rungs, so it is a role the C4 defect could actually cost
+  something.
+- Its contract is not the one phase 2 rewrote, so neither side of the comparison
+  is contaminated by that edit.
+
+D-06 marked the choice RE-DECIDE for one reason: `cad-verifier` held one of the
+11 stale `unpaired` rows that made the `SubagentStop` hook's two-open-dispatch
+gate refuse unconditionally. Phase 3 scopes that gate's candidate set to the
+current run, which removes the objection.
+
+### The two sides, and the asymmetry between them
+
+They are NOT the same instrument, and that is recorded as part of the method
+rather than as a footnote.
+
+- **Before** - `cacheOf` (`cadence-core/bin/lib/subagent-transcript.mjs`) summed
+  over `cad-verifier`'s own subagent transcripts under the host's project
+  directory for this repository, restricted to transcripts that predate
+  `8ca0dfdc`.
+- **After** - `cache_read_input_tokens` and `cache_creation_input_tokens` on
+  that role's BRACKETS in `.planning/trace.jsonl`, once phase 3 is live and the
+  role has been dispatched again.
+
+Only the after-side exercises the code phase 3 writes. A before-side BRACKET
+cannot be produced at all: measured on the live record 2026-08-26, 406 brackets
+over 2,378 events, 0 of them carrying either cache key, and 63 of those brackets
+are `cad-verifier`'s. There is nothing to read back.
+
+Reading BOTH sides from transcripts was available and was rejected. That
+comparison would pass even if every withholding gate still threw the figures
+away, so it proves nothing about the record this phase exists to fix - and the
+record, not the transcript, is what every downstream cost claim reads. One
+post-`8ca0dfdc` `cad-verifier` transcript is already on disk and could supply
+that number today; it is deliberately not the after figure.
+
+The two sides also cannot hold the same number of dispatches, so the comparable
+quantity is a total over a DISPATCH COUNT, not a total. Both figures below are
+reported per dispatch for that reason.
+
+### The command behind each side
+
+Before, from the repository root. The role of a transcript is not in the
+transcript: it is in the read recorder's own rows, which carry `agent` and
+`agent_id` together, and `agent_id` is the transcript's file stem.
+
+```
+node --input-type=module -e '
+import { readFileSync, globSync } from "node:fs";
+import { cacheOf } from "./cadence-core/bin/lib/subagent-transcript.mjs";
+const SHIP = Date.parse("2026-08-26T13:42:33-04:00");   // 8ca0dfdc
+const ids = new Set();
+for (const l of readFileSync(".planning/reads.jsonl", "utf8").split("\n")) {
+  if (!l.trim()) continue;
+  const o = JSON.parse(l);
+  if (o.agent_id && /^cadence:cad-verifier(-|$)/.test(o.agent)) ids.add(o.agent_id);
+}
+let n = 0, read = 0, creation = 0;
+for (const f of globSync("/claude/.claude/projects/-code-cadence/*/subagents/*.jsonl")) {
+  const id = (f.match(/agent-([^/]+)\.jsonl$/) || [])[1];
+  if (!ids.has(id)) continue;
+  const text = readFileSync(f, "utf8");
+  const first = text.split("\n").map((x) => { try { return JSON.parse(x).timestamp; } catch { return null; } })
+    .find((x) => typeof x === "string");
+  if (!(Date.parse(first) < SHIP)) continue;
+  const c = cacheOf(text);
+  n++; read += c.cache_read_input_tokens || 0; creation += c.cache_creation_input_tokens || 0;
+}
+console.log(n, read, creation, Math.round(read / n), Math.round(creation / n));
+'
+```
+
+After, once the phase is live and `cad-verifier` has been dispatched at least
+twice:
+
+```
+node cadence-core/bin/planning.mjs trace render --dir .planning \
+  | python3 -c 'import sys,json
+b=[x for x in json.load(sys.stdin)["brackets"] if x.get("role")=="cad-verifier" and "cache_read_input_tokens" in x]
+r=sum(x["cache_read_input_tokens"] for x in b); c=sum(x.get("cache_creation_input_tokens",0) for x in b)
+print(len(b), r, c, round(r/len(b)), round(c/len(b)))'
+```
+
+There is deliberately NO script for either side under `cadence-core/bin/`. A new
+bin surface drags a CONTRACTS row into the flag census, and this is a recipe
+rather than a shipped tool.
+
+### Before, measured 2026-08-26
+
+54 distinct `cad-verifier` agent ids appear in the read recorder's rows. 34 of
+their transcripts are still on disk - transcripts do not outlive the record, so
+20 have been pruned by the host - and 33 of the 34 predate `8ca0dfdc`.
+
+| | total | per dispatch (n=33) |
+| --- | --- | --- |
+| `cache_read_input_tokens` | 53,976,294 | 1,635,645 |
+| `cache_creation_input_tokens` | 2,765,064 | 83,790 |
+
+### After
+
+PENDING the first post-phase-3 `cad-verifier` dispatches. The instrument this
+needs is a live host firing `SubagentStop` after the change, which no fixture
+can produce - which is why AC5 and AC6 are both human-verify. Run the after
+command above once the role has been dispatched at least twice and record the
+two figures and the delta here.
+
+### What a zero would mean
+
+Record the figure even when it is zero, and read it as an answer rather than a
+failure. The host may key its prompt cache per agent DEFINITION, in which case a
+byte-identical contract body sitting under two different rung files is still two
+different cache entries, phase 2 recovered nothing, and RNG-03 closes on a
+measured negative. That is a real result: it retires the C4 defect as
+unrecoverable rather than latent, and it removes the reason to treat
+`model.effort.*` as a cache lever at all. A positive delta closes RNG-03 the
+other way and prices the two configuration changes the Verdict names.
