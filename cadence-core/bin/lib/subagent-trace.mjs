@@ -54,17 +54,38 @@
 //    phase, no plan and no worker key at all (D-01), so there is nothing to
 //    derive one from - and deriving from `agent_type` would write
 //    `role: "cadence:cad-executor-xhigh"`, a role row no
-//    `workflow.max_dispatch_tokens.<role>` key can ever match. Instead the rule
-//    takes the NEWEST `unpaired` dispatch whose `role` is the mapped role and
-//    quotes ITS `corr`, `phase` and `plan` verbatim. No matching row means DO
-//    NOTHING: the hook never invents a dispatch and never opens a bracket.
+//    `workflow.max_dispatch_tokens.<role>` key can ever match. The rule picks an
+//    `unpaired` dispatch of the mapped role and quotes ITS `corr`, `phase` and
+//    `plan` verbatim. No matching row means DO NOTHING: the hook never invents a
+//    dispatch and never opens a bracket.
 //
-//    The accepted cost, stated rather than worked around: two workers of one
-//    role running concurrently on the parallel `/cad-execute` path can have
-//    their closes attributed to each other's worker key. Both brackets still
-//    pair and both roles still bill correctly; only the plan numbers can cross.
-//    The payload's `agent_id` is the field that would fix it, and joining it
-//    needs a START-half hook, which D-02 refuses on measured grounds.
+//    WHICH open dispatch is the agent-identity join (D-07). Adopting the NEWEST
+//    one crosses two same-role workers whenever more than one is open, which is
+//    live today - `parallelization.enabled` dispatches up to
+//    `max_concurrent_agents` executors at once - and the stop payload's
+//    `agent_id` is the only field that can tell them apart. The trace's own
+//    `dispatch` event cannot carry it and never can: that event is written
+//    BEFORE the subagent exists, so the id does not yet have a value. The join
+//    is therefore through a record written from inside the worker -
+//    `.planning/reads.jsonl`, whose rows `lib/read-trace.mjs`'s `recordFromHook`
+//    stamps with the same `agent_id` spelling the stop payload uses.
+//
+//    The rule: take the EARLIEST `ts` among read records carrying the payload's
+//    `agent_id` - the first thing that worker did - then among the open
+//    dispatches of its role keep the ones at or before that instant and adopt
+//    the LATEST of them. A worker's first read cannot precede its own dispatch,
+//    so a dispatch opened after it belongs to somebody else.
+//
+//    The FALLBACK is stated rather than silent: when the payload carries no
+//    `agent_id`, when no read record carries it, or when no open dispatch of
+//    that role precedes its first read, the newest-open adoption above stands
+//    unchanged. No close this hook writes today is lost to a missing join.
+//
+//    The accepted cost, stated rather than worked around: two same-role workers
+//    dispatched in one batch whose first reads interleave can still cross, since
+//    the ordering evidence is the reads rather than the dispatches themselves.
+//    Both brackets still pair and both roles still bill correctly; only the plan
+//    numbers can cross, and only in that narrower case.
 //
 // 3. THE EVENT, and NOTHING else on it. A `lifecycle` `return` carrying the
 //    adopted `corr`, `phase`, `plan` and `role`. No `tokens`, no `turns`, no
@@ -100,15 +121,86 @@ function millis(v) {
 }
 
 /**
+ * The newest open dispatch among rows already filtered to one role - the
+ * adoption this rule has always made, and now the fallback the identity join
+ * lands on whenever it has nothing to go on.
+ * @param {any[]} rows
+ * @returns {any|null}
+ */
+function newestOpen(rows) {
+  let best = null;
+  let bestT = -Infinity;
+  for (const row of rows) {
+    const t = millis(row.ts);
+    // An unreadable `ts` sorts BELOW every readable one and never displaces a
+    // row whose clock could be read. `>=` breaks a tie - and the all-unreadable
+    // case - toward the row written LAST, because the record is append-ordered
+    // and later-written is the best available reading of "newest" when the
+    // clock cannot answer.
+    const at = t === null ? -Infinity : t;
+    if (best === null || at >= bestT) { best = row; bestT = at; }
+  }
+  return best;
+}
+
+/**
+ * The open dispatch the payload's `agent_id` belongs to, or null when the
+ * evidence cannot say (GATE 2's join, D-07).
+ *
+ * Two steps, and both of them can decline. The worker's first READ is the
+ * earliest `.planning/reads.jsonl` record carrying its `agent_id` - a record
+ * written from inside that worker, which is why it can carry an id the trace's
+ * own `dispatch` event never can. A dispatch opened AFTER that instant cannot
+ * be this worker's, so the candidates are the ones at or before it and the
+ * answer is the LATEST of those.
+ *
+ * A row whose `ts` cannot be read is skipped here rather than sorted low: this
+ * arm is an ordering claim, and a row with no readable clock supports no
+ * ordering claim at all. It is still eligible in `newestOpen`, which is what
+ * this returning null falls back to.
+ *
+ * @param {any} payload the stop payload
+ * @param {{reads?: any}|undefined} evidence
+ * @param {any[]} rows open dispatches already filtered to the mapped role
+ * @returns {any|null}
+ */
+function adoptByAgentId(payload, evidence, rows) {
+  const id = payload && typeof payload.agent_id === 'string' && payload.agent_id
+    ? payload.agent_id : null;
+  if (!id) return null;
+  const records = evidence && Array.isArray(evidence.reads) ? evidence.reads : [];
+
+  let firstRead = null;
+  for (const r of records) {
+    if (!r || typeof r !== 'object' || r.agent_id !== id) continue;
+    const t = millis(r.ts);
+    if (t === null) continue;
+    if (firstRead === null || t < firstRead) firstRead = t;
+  }
+  if (firstRead === null) return null;
+
+  let best = null;
+  let bestT = -Infinity;
+  for (const row of rows) {
+    const t = millis(row.ts);
+    if (t === null || t > firstRead) continue;
+    if (t >= bestT) { best = row; bestT = t; }
+  }
+  return best;
+}
+
+/**
  * The close event a stopped subagent should append, or null for do-nothing.
  *
  * @param {any} payload the host's `SubagentStop` JSON
  * @param {any} render the result of `renderTrace(planningRoot)` - unscoped,
  *   because the payload carries no phase to scope it by (D-01)
- * @param {{transcript?: any}} [evidence] what the disk half read for this stop
- *   (D-08). `transcript` is the stopped worker's own JSONL, whole, as a string.
- *   Omitted - the shape every pre-transcript caller uses - the termination gate
- *   answers `unknown` and this rule is exactly what it was.
+ * @param {{transcript?: any, reads?: any}} [evidence] what the disk half read
+ *   for this stop (D-08). `transcript` is the stopped worker's own JSONL, whole,
+ *   as a string; `reads` are the parsed `.planning/reads.jsonl` records the
+ *   agent-identity join needs. Omitted - the shape every pre-evidence caller
+ *   uses - the termination gate answers `unknown` and the adoption falls back to
+ *   the newest open dispatch, which is exactly what this rule did before.
  * @returns {{corr: any, phase: any, plan: any, family: string, event: string, role: string, ts?: string}|null}
  */
 export function closeForStop(payload, render, evidence) {
@@ -122,23 +214,17 @@ export function closeForStop(payload, render, evidence) {
   const role = roleOfAgent(payload && payload.agent_type);
   if (!role) return null;
 
-  // GATE 2 - adopt the newest open dispatch of that role. `unpaired` already
-  // carries the DISPATCH's own `role` (the field the pairing computed), so this
-  // reads the render's answer rather than deriving a second one.
+  // GATE 2 - adopt an open dispatch of that role. `unpaired` already carries the
+  // DISPATCH's own `role` (the field the pairing computed), so this reads the
+  // render's answer rather than deriving a second one.
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
-  let best = null;
-  let bestT = -Infinity;
-  for (const row of rows) {
-    if (!row || row.role !== role) continue;
-    const t = millis(row.ts);
-    // An unreadable `ts` sorts BELOW every readable one and never displaces a
-    // row whose clock could be read. `>=` breaks a tie - and the all-unreadable
-    // case - toward the row written LAST, because the record is append-ordered
-    // and later-written is the best available reading of "newest" when the
-    // clock cannot answer.
-    const at = t === null ? -Infinity : t;
-    if (best === null || at >= bestT) { best = row; bestT = at; }
-  }
+  const mine = rows.filter((row) => row && row.role === role);
+  // The identity join first, the newest-open fallback second. `||` rather than
+  // a branch: every way the join can come up empty - no `agent_id`, no read
+  // record carrying it, no dispatch old enough - lands on the same fallback,
+  // and enumerating them separately is how one of them silently stops falling
+  // back.
+  const best = adoptByAgentId(payload, evidence, mine) || newestOpen(mine);
   if (!best) return null;
 
   // GATE 3 - the event. Identity quoted verbatim off the adopted row; no figure

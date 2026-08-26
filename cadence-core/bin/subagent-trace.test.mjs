@@ -164,6 +164,106 @@ test('stop: a non-Cadence type is still nothing, terminal transcript or not', ()
   );
 });
 
+// --- the agent-identity join (TRC-06, D-07) ----------------------------------
+
+/** A `.planning/reads.jsonl` row, the shape `recordFromHook` writes. */
+const read = (agent_id, ts) => ({ ts, tool: 'Read', agent: 'cadence:cad-executor', agent_id });
+
+/** Two open executor dispatches on one role: plan 1 at T0, plan 2 at T10. */
+const twoOpen = () => render([
+  open('cad-executor', '1', T(0)),
+  open('cad-executor', '2', T(10), { corr: '2-def5678' }),
+]);
+
+const AGENT = 'a1852a9b36a6c52b8';
+const STOP = { agent_type: 'cadence:cad-executor', agent_id: AGENT };
+
+test('stop: the close adopts the dispatch its agent_id belongs to, not the newest', () => {
+  // The worker's FIRST read sits at T5 - after plan 1 opened and before plan 2
+  // did - so plan 1 is the only dispatch it can belong to. Newest-open would
+  // pick plan 2, which is live today: `parallelization.enabled` runs up to
+  // `max_concurrent_agents` executors at once.
+  const ev = closeForStop(STOP, twoOpen(), {
+    reads: [
+      read('other-agent', T(1)),
+      read(AGENT, T(7)),
+      read(AGENT, T(5)),
+      read(AGENT, T(9)),
+    ],
+  });
+  assert.ok(ev);
+  // ADOPT, NEVER DERIVE holds through the join: every identity field is still
+  // quoted verbatim off the open row, and nothing comes off `agent_type`.
+  assert.equal(ev.plan, '1');
+  assert.equal(ev.corr, '2-abc1234');
+  assert.equal(ev.phase, '2');
+  assert.equal(ev.role, 'cad-executor');
+});
+
+test('stop: with NO read evidence the newest open dispatch is still adopted', () => {
+  // The fallback is the whole safety of this change: no close this hook writes
+  // today may be lost to a join that had nothing to go on.
+  for (const [why, evidence] of Object.entries({
+    'no evidence at all': undefined,
+    'no reads key': { transcript: transcript('end_turn', T(12)) },
+    'an empty record list': { reads: [] },
+    'a non-array': { reads: 'nope' },
+    'records for a DIFFERENT worker': { reads: [read('another-agent', T(5))] },
+    'records with unreadable instants': { reads: [read(AGENT, 'not-a-timestamp'), read(AGENT, null)] },
+    'malformed records': { reads: [null, 42, {}, { agent_id: AGENT }] },
+  })) {
+    assert.equal(closeForStop(STOP, twoOpen(), evidence).plan, '2', why);
+  }
+  // ...and so is a payload carrying no `agent_id` at all, with real records on
+  // the table that would otherwise have answered plan 1.
+  const noId = closeForStop({ agent_type: 'cadence:cad-executor' }, twoOpen(),
+    { reads: [read(AGENT, T(5))] });
+  assert.equal(noId.plan, '2');
+});
+
+test('stop: a first read older than every open dispatch falls back rather than guessing', () => {
+  // The third way the join declines: the worker read before any dispatch on the
+  // record opened, so no open row can be shown to be its own. Adopting nothing
+  // would lose a close the hook writes today; adopting the earliest row would
+  // be a guess the evidence does not support.
+  const ev = closeForStop(STOP, twoOpen(), { reads: [read(AGENT, T(-5))] });
+  assert.equal(ev.plan, '2');
+});
+
+test('stop: the join reads the EARLIEST record of that worker, not the first listed', () => {
+  // `reads.jsonl` is append-ordered across every worker in the session, so the
+  // first row carrying this id is not necessarily its earliest one.
+  const ev = closeForStop(STOP, twoOpen(), {
+    reads: [read(AGENT, T(12)), read(AGENT, T(3))],
+  });
+  assert.equal(ev.plan, '1', 'a later record of the same worker carried the answer');
+});
+
+test('stop: an open dispatch with an unreadable clock never wins the join', () => {
+  // The join is an ordering claim and a row with no readable `ts` supports
+  // none, so it is skipped HERE - while staying eligible in the newest-open
+  // fallback, which is what an all-unreadable render resolves through.
+  const r = render([
+    open('cad-executor', 'unreadable', 'not-a-timestamp'),
+    open('cad-executor', '1', T(0), { corr: '2-abc1234' }),
+  ]);
+  assert.equal(closeForStop(STOP, r, { reads: [read(AGENT, T(5))] }).plan, '1');
+  // With nothing readable at all the join declines and the fallback answers.
+  const none = render([open('cad-executor', 'only', 'not-a-timestamp')]);
+  assert.equal(closeForStop(STOP, none, { reads: [read(AGENT, T(5))] }).plan, 'only');
+});
+
+test('stop: the join never crosses roles', () => {
+  // The self-filter maps the type to a role and GATE 2 only ever sees rows of
+  // that role: a worker's own read record cannot pull in another role's
+  // dispatch just because it opened at the right moment.
+  const r = render([
+    open('cad-verifier', 'cad-verifier', T(2)),
+    open('cad-executor', '1', T(0)),
+  ]);
+  assert.equal(closeForStop(STOP, r, { reads: [read(AGENT, T(5))] }).plan, '1');
+});
+
 test('stop: the self-filter answers nothing for every non-Cadence agent type', () => {
   // The 2.1.245 `SubagentStop` runner passes no `matchQuery`, so this hook is
   // called for EVERY subagent in the session. All four types below are present
