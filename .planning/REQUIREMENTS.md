@@ -6,41 +6,13 @@
 ## Active
 
 `v3.7.3 - the record has to be right before it can be cut` opened 2026-08-26
-with four phases against the `Dispatch cost` milestone. `/cad-plan` seeds each
-Traceability row as its phase is planned - the practice `v3.5.7` established -
-so an id below that no plan has picked up yet surfaces as `unpicked` in
-`/cad-audit` rather than as a hand-written row.
+with four phases against the `Dispatch cost` milestone and CLOSED THE SAME DAY
+at phase 1, on a measured rework rate. Its four delivered ids - `TRC-04`,
+`TRC-06`, `MSR-05`, `TRC-05` - are rows under `## Shipped` below, all Complete.
+The five ids phases 2-4 would have carried are under `## Deferred`, each with
+its own promote condition. Nothing about them changed; the cycle did.
 
-- **TRC-04**: `renderTrace`'s close dedup pairs a delayed repeat close with the
-  dispatch it belongs to, never with the next dispatch of the same worker key
-- **MSR-05**: the worker's own `duration_ms` has a reader - `/cad-report` and
-  `/cad-suggest` price a dispatch with it, distinct from the bracket's `ms`
-- **TRC-06**: the `SubagentStop` close lands on the worker that actually
-  stopped OR writes nothing at all - never on the newest open dispatch of its
-  role, and never for a worker whose own transcript says it has not terminated.
-  Refusing is a delivered outcome, not a shortfall: the `dispatch` event is
-  written before the subagent exists, so it carries no id for a payload to
-  match against, and no ordering of dispatch instants separates two workers
-  dispatched in one message
-- **TRC-05**: a bracket records cache figures, so a prompt-cache claim can be
-  measured before and after a change
-- **TRC-07**: the two prompt-cache figures reach the bracket for every worker
-  that STOPPED, not only the ones the hook could both identify and call
-  terminal. Reporting what a transcript said is separable from claiming a clean
-  close, and today the termination gate conflates them. Measured 2026-08-26
-  over 1,332 subagent transcripts: 253 (19.0%) answer NOT-TERMINAL and produce
-  no hook write at all, worth 907,299,249 of 5,477,801,867 cache-read tokens
-  (16.6%); a further 21 of 390 dispatches (5.4%) open a second worker of one
-  role and lose both figures to the identity gate. TRC-05 shipped the recording
-  path and this is what makes it true of the record rather than of a fixture
-- **BUD-03**: a plan is bounded by the BYTES its `files:` frontmatter declares,
-  not by task count alone
-- **RSK-05**: the risk-routing floor reads the diff rather than whole-file body
-  lines, so a plan declaring a large file can earn the discount
-- **RNG-03**: the rung label stops foreclosing a shared cached prefix across a
-  role's rungs, with TRC-05's figures proving what it recovered
-- **COV-02**: `skim.test.mjs` walks `cadence-core/bin/planning/`, so its 30
-  modules are covered
+No cycle is open. `/cad-phase add` seeds the next one.
 
 **Issue citations.** A bare `#NNN` anywhere in this file is an issue on the public
 Forgejo archive at `git.jcrenshaw.dev/crenshawdev/cadence`, NOT on GitHub - GitHub
@@ -287,8 +259,25 @@ parses only the Traceability table).
 | HOK-02 (`self-verify` asserts every hook event name Cadence registers is in a pinned known set, so an upstream rename reddens a check by name instead of going silently quiet.) | 2 | Complete | v3.7.2 |
 | CEN-03 (a census pins the `planning-*.test.mjs` stem list, so a stem added later and not registered fails a check instead of silently running in `other`.) | 3 | Complete | v3.7.2 |
 | DOC-04 (`CADENCE-CENSUS` has a prose home in `references/conventions.md`, and `seam-calls.test.mjs`'s header names the plan it actually derives from.) | 3 | Complete | v3.7.2 |
+| TRC-04 (`renderTrace`'s close dedup pairs a delayed repeat close with the dispatch it belongs to, never the next dispatch of the same worker key) | 1 | Complete | v3.7.3 |
+| TRC-06 (the `SubagentStop` close lands on the worker that actually stopped or writes nothing at all; refusing is a delivered outcome) | 1 | Complete | v3.7.3 |
+| MSR-05 (the worker's own `duration_ms` has a reader - `/cad-report` and `/cad-suggest` price a dispatch with it) | 1 | Complete | v3.7.3 |
+| TRC-05 (a bracket records cache figures, so a prompt-cache claim can be measured before and after a change) | 1 | Complete | v3.7.3 |
 
 ## Deferred
+
+Deferred out of `v3.7.3` on 2026-08-26 as a block, closing the cycle at phase 1
+rather than running three more phases over the same subsystem. The reason is a
+measured rework rate, not a change of mind about the work: half the cycle's code
+commits were fixing the other half (7 fix against 7 feat, against 27% in
+`v3.7.1` and 22% in `v3.7.2`), four of those seven fixes were four passes at one
+question - which in-flight dispatch an async `SubagentStop` callback belongs to -
+and one real defect (`1b123d20`) landed AFTER phase 1's UAT reported 8 passed, 0
+failed. Phases 2-4 are all on that same surface, so the rate would have carried.
+
+Promote as a group when the identity join has a test that fails on the class the
+UAT missed, or individually on the conditions below.
+
 
 Deferred out of `v2.5.0` on 2026-08-08 as a block, to release the plan-size
 fix early rather than hold it behind four more phases. Nothing about these
@@ -306,6 +295,36 @@ queue triage alone.
 - **BCH-01**: N security reviews run in one process paying one cold prefix, not N invocations paying N (#174). Deferred 2026-08-21 out of `v3.5.7` on a spike that INVALIDATED it before the fidelity question was ever tested: `.planning/spikes/batched-review-fidelity/SPIKE.md`. Batching saves **1.91%** of reviewer spend - a 1,676-token fixed prefix (`skills/cad-reviewer-contract/SKILL.md` 6,240 B + `agents/cad-reviewer.md` 465 B, the definition `CAPTURE.md:271` already used for the executor) against six observed dispatches totalling 438,080 tokens. It does not flip at the "61 invocations" the issue cites: that is 2.09%, because both sides of the ratio scale with N. The bill is PAYLOAD - those six dispatches span 25,753 to 125,100 tokens, a 4.9x spread around a fixed cost of 1,676 - which reproduces `CAPTURE.md:271`'s finding that reviewer cost tracks diff and plan size, not review count. The per-commit scoping #174 correctly names as a real cost would have been traded for a rounding error. Two limits recorded rather than assumed: the 61 figure is not reproducible from `trace.jsonl` (8 reviewer brackets, 6 with tokens), and the verdict excludes the host harness prefix, which batching would also collapse - it flips only if that prefix exceeds ~7,100 tokens, and the spike names the one measurement that would settle it. Promote on that measurement, or if reviewer payloads ever shrink enough that a fixed prefix dominates. The real lever is already filed at `CAPTURE.md:271` (`workflow.max_plan_tokens`, symbol anchors in `files:`, targeted reads over whole-file)
 - **RCL-06**: External memory backends (mem-*/claude-mem/MCP) behind the same `recall(query) → snippets` contract
 - **CTX-02**: Prose that rides every dispatch is stated once rather than restated per file: a writing contract (issue #69) preloaded and asserted to resolve for every agent, and a review minimalism lens (issue #29) reporting what could be deleted, separately from the correctness pass. Deferred out of `v2.5.0` on 2026-08-08 at phase-2 context: both halves ADD resident bytes in the phase that exists to cut them, and the writing contract's premise is false in this tree — nothing restates a writing contract per agent today (grep of `skills/`, `agents/`, `cadence-core/` returns zero), so it is net-new prose on all 19 agent files rather than a deduplication. The minimalism lens as a new review trigger needs coordinated edits across at least six mutually self-verified surfaces, every one of which adds bytes. Neither issue has a statement in this tree to plan against. See `phases/4/CONTEXT.md` D-06
+
+- **TRC-07**: the two prompt-cache figures reach the bracket for every worker
+  that STOPPED, not only the ones the hook could both identify and call
+  terminal. Reporting what a transcript said is separable from claiming a clean
+  close, and today the termination gate conflates them. Measured 2026-08-26
+  over 1,332 subagent transcripts: 253 (19.0%) answer NOT-TERMINAL and produce
+  no hook write at all, worth 907,299,249 of 5,477,801,867 cache-read tokens
+  (16.6%); a further 21 of 390 dispatches (5.4%) open a second worker of one
+  role and lose both figures to the identity gate. TRC-05 shipped the recording
+  path and this is what makes it true of the record rather than of a fixture
+  Deferred 2026-08-26 out of `v3.7.3` with phases 2-4. Its gathered context -
+  seven durable decisions, six acceptance criteria and the 2026-08-26 baseline
+  measurement - is intact at `21fad7f3:.planning/phases/2/CONTEXT.md`; recover it
+  with `git show` rather than re-gathering when this is promoted.
+
+- **BUD-03**: a plan is bounded by the BYTES its `files:` frontmatter declares,
+  not by task count alone
+  Deferred 2026-08-26 out of `v3.7.3` with phases 2-4.
+
+- **RSK-05**: the risk-routing floor reads the diff rather than whole-file body
+  lines, so a plan declaring a large file can earn the discount
+  Deferred 2026-08-26 out of `v3.7.3` with phases 2-4.
+
+- **RNG-03**: the rung label stops foreclosing a shared cached prefix across a
+  role's rungs, with TRC-05's figures proving what it recovered
+  Deferred 2026-08-26 out of `v3.7.3` with phases 2-4.
+
+- **COV-02**: `skim.test.mjs` walks `cadence-core/bin/planning/`, so its 30
+  modules are covered
+  Deferred 2026-08-26 out of `v3.7.3` with phases 2-4.
 
 ## Out of Scope
 
@@ -329,10 +348,7 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TRC-04 | Phase 1 | Complete |
-| TRC-06 | Phase 1 | Complete |
-| MSR-05 | Phase 1 | Complete |
-| TRC-05 | Phase 1 | Complete |
+
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
@@ -340,4 +356,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-25 v3.7.1 closed. Ten ids traced to a verified phase across six phases - FRG-01, FRG-02, CEN-01, CEN-02, CAP-01, CAP-02, CAP-03, SPL-01, SPL-02, LOD-02 - and archived to `## Shipped`, leaving `## Traceability` empty. /cad-audit PASS on both arms: 10 of 10 requirements traced, 33 of 33 acceptance criteria covered across five phases. No cycle is open; `/cad-phase add` seeds the next one*
+*Last updated: 2026-08-26 v3.7.3 closed at phase 1. Four ids traced to a verified phase - TRC-04, TRC-06, MSR-05, TRC-05 - and archived to `## Shipped`, leaving `## Traceability` empty. Phases 2-4 were cut on a 50% rework rate and their five ids moved to `## Deferred` intact. No cycle is open; `/cad-phase add` seeds the next one*

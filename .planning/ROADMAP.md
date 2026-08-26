@@ -1,11 +1,23 @@
-# Roadmap: v3.7.3 - the record has to be right before it can be cut
+# Roadmap: v3.7.3 - the record has to be right before it can be cut (CLOSED at phase 1)
 
 ## Overview
 
-**`v3.7.3`, opened 2026-08-26.** Four phases against the `Dispatch cost`
-milestone. The subject is what a dispatch costs, and the cycle opens by fixing
-the instruments rather than the cost, because every argument for cutting the
-cost is denominated in figures this repository records about itself.
+**`v3.7.3`, opened and closed 2026-08-26.** Opened with four phases against
+the `Dispatch cost` milestone; CLOSED at phase 1. The subject was what a
+dispatch costs, and the cycle opened by fixing the instruments rather than the
+cost, because every argument for cutting the cost is denominated in figures this
+repository records about itself.
+
+**Why it closed early.** Half this cycle's code commits were fixing the other
+half - 7 fix against 7 feat, where `v3.7.1` ran 27% and `v3.7.2` 22%. Four of
+those seven fixes were four passes at one question: which in-flight dispatch an
+async `SubagentStop` callback belongs to. And one real defect (`1b123d20`,
+the bracket span ending at the first close rather than the later one) landed
+after phase 1's UAT reported 8 passed and 0 failed, so the phase gate did not
+catch the class. Phases 2, 3 and 4 all sat on that same subsystem, so the rate
+would have carried rather than settled. Phase 1 shipped and is verified; the
+five ids the other three phases carried are under `## Deferred` in
+REQUIREMENTS.md, intact, each with its own promote condition.
 
 **The measured state.** `cad-executor` is 25,587,266 of 50,145,905 recorded
 tokens, 51% of the whole record, and its dispatches re-read 3.52 times per
@@ -39,70 +51,11 @@ belongs to `Finding flood` with GH-100 and GH-135, not here.
 
 ## Open Questions
 
-- **OQ-1 - what a byte bound actually bounds.** BUD-03 can bound the declared
-  bytes, the estimated tokens, or refuse at plan time versus warn. The measured
-  case (four files, 252,473 B, ~63,000 estimated tokens inside a 70,554-token
-  dispatch) says the ratio is stable enough to bound either way. Decided at
-  phase 3 planning against the actual `files:` declarations in the archive, not
-  now.
-
-- **OQ-2 - whether the risk floor can read a diff at plan time.** RSK-05 wants
-  the floor to stop inheriting a whole file's matches, but at `check_census`
-  time there is no diff yet - the plan has not run. Whether the fix is a
-  narrower read, a waiver key, or a planner-contract line telling planners to
-  declare narrow files is decided at phase 3 planning by reading what
-  `planning/risk-check.mjs` actually has in hand at that moment.
+Both of this cycle's open questions belonged to phase 3 (`BUD-03`, `RSK-05`) and
+were deferred with it. They are recorded on those ids in REQUIREMENTS.md's
+`## Deferred` section and are not live scope until a phase picks one up.
 
 ## Phases
 
-- [x] **Phase 1: Make the record say what happened** - fix the close dedup on a repeat, land the stop close on the right worker, give `duration_ms` a reader, record cache figures
-- [ ] **Phase 2: Make the cache figures reach the record** - report what the transcript said even when the close must be withheld, and join a cache-only fact to its bracket
-- [ ] **Phase 3: Bound what a dispatch is handed** - bound a plan by declared bytes, stop the risk floor inheriting a whole file's matches, unforeclose the shared rung prefix
-- [ ] **Phase 4: Close the coverage and detector gaps** - walk `planning/` in the skim test, stop the risk detector re-tripping on stored reviewer text, home `DISPATCH_WINDOW_DEFAULTS` with its reader
 
 ## Phase Details
-
-### Phase 1: Make the record say what happened
-**Goal:** The three figures the rest of this cycle argues from are correct, consumable, and complete: a repeat close never steals the next dispatch's bracket, the worker's own duration has a reader, and a bracket records cache figures.
-**Depends on:** Nothing (first phase)
-**Requirements:** TRC-04, TRC-06, MSR-05, TRC-05
-**Success Criteria:**
-1. Replaying `dispatch A, close A, dispatch B, A's delayed repeat, close B` for one worker key renders two brackets carrying A's and B's OWN figures, and `roles.tokens` equals the sum of those two brackets, not of all three terminals.
-2. With two open dispatches of one role, a `SubagentStop` payload writes NOTHING rather than closing the wrong one, demonstrated against a fixture holding both - the `dispatch` event is written before the subagent exists, so it carries no id to match the payload's against, and no ordering of dispatch instants separates two workers dispatched in one message. The payload's id is what recognises a worker whose bracket is ALREADY closed. And a payload whose `transcript_path` shows the worker has not reached a terminal entry writes no `return` at all.
-3. The ordinary two-writer case is unchanged: one dispatch, a figureless hook close, then the hand-written close with figures renders one bracket and `dispatches: 1`.
-4. `/cad-report` and `/cad-suggest` each print a figure sourced from a bracket's `duration_ms`, labelled distinctly from the bracket's `ms`, and say `unrecorded` rather than `0` when the close carried no wall clock.
-5. A bracket close records cache figures, and `trace render` reports them; a close carrying none omits the keys rather than writing zeros.
-6. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.
-
-### Phase 2: Make the cache figures reach the record
-**Goal:** The two prompt-cache figures land on the bracket for every worker that STOPPED. Today they land only when the hook can both identify the dispatch and call the transcript terminal, and the gap is not a rounding error: 16.6% of the record's cache traffic is dropped outright.
-**Depends on:** Phase 1
-**Requirements:** TRC-07
-**Success Criteria:**
-1. A `SubagentStop` whose transcript is NOT terminal records the worker's cache figures AND still writes no `return`, demonstrated against one fixture asserting both in a single render - AC3's gate is unchanged, not relaxed.
-2. `trace render` folds a cache-only fact onto the bracket for the same worker; a bracket that already carries cache figures is not overwritten, on the same fill-only-empty rule `turns`, `duration_ms` and `agent_id` follow.
-3. With two open dispatches of one role, the cache figures still reach the correct bracket, joined by `agent_id` rather than by position or arrival order.
-4. `roles.tokens` is byte-identical with and without any cache-only fact present, so D-03's denomination rule is unchanged.
-5. Re-running the transcript measurement over this repository shows the RECORDED cache-read total within a stated tolerance of the transcript total. Baseline measured 2026-08-26: 907,299,249 of 5,477,801,867 tokens (16.6%) are unrecorded, so today's figure is 83.4%.
-6. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems, with the new event registered in its hook-events check and the flag census re-pinned per D-12.
-
-### Phase 3: Bound what a dispatch is handed
-**Goal:** A plan cannot silently hand its executor an unbounded read set, a plan declaring a large file can still earn the routing discount, and a role's rungs can share a cached prefix.
-**Depends on:** Phase 1
-**Requirements:** BUD-03, RSK-05, RNG-03
-**Success Criteria:**
-1. A plan whose `files:` frontmatter declares more than the configured byte bound is refused (or warned, per OQ-1) at plan time, naming the total and the bound; a plan under it passes unchanged.
-2. The bound is a config key present in `config.schema.json` with a stated default, and `self-verify`'s config-reach check sees it.
-3. A plan declaring one large file that matches a risk category only in lines its own change never touches resolves BELOW `shipped`, where the same plan resolves at `shipped` today.
-4. No two rungs of one role diverge before their shared contract prose, demonstrated by a byte comparison of two rung files, and phase 1's cache figures show what the change recovered.
-5. `node cadence-core/bin/test.mjs` is green.
-
-### Phase 4: Close the coverage and detector gaps
-**Goal:** The three known one-change gaps are shut: the skim test covers `planning/`, the risk detector stops re-tripping on its own stored reviewer text, and `DISPATCH_WINDOW_DEFAULTS` sits with its only reader.
-**Depends on:** Phase 1
-**Requirements:** COV-02
-**Success Criteria:**
-1. `skim.test.mjs` walks `cadence-core/bin/planning/` and its 30 modules appear in that test's covered set; deleting a line from one of them fails the test.
-2. A docs commit landing an `ADJUDICATION-*.json` whose `failure_scenario` quotes a destructive command does not trip the `destructive` category, while a real destructive change in code still does.
-3. `DISPATCH_WINDOW_DEFAULTS` is defined in the module that reads it and `planning/core.mjs` no longer exports it.
-4. `node cadence-core/bin/test.mjs` is green and `self-verify` reports no problems.
