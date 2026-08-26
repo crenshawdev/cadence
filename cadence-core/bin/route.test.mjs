@@ -2087,6 +2087,34 @@ test('replay: a file whose surface SURVIVES on a called line is not named as wit
   assert.deepEqual(row.reason.filter((x) => /no longer counts/.test(x)), []);
 });
 
+test('replay: every row carries the BYTES it read, and a path that does not exist reports 0', () => {
+  // AC6 (D-11): the read this floor pays for is on the record rather than
+  // inferred. Zero and ABSENT are different answers - a scope that opened
+  // nothing still opened nothing measurably - so the field is always present.
+  const fx = floorRoot({ ...ANSWERED }, {
+    '3/PLAN-1.md': ['src/absent.mjs'],
+    '4/PLAN-1.md': ['docs/README.md'],
+  }, { 'docs/README.md': '# Readme\n' });
+  const [absent, present] = replay(fx.file).rows;
+  assert.equal(absent.bytes_read, 0, 'a plan that CREATES its file read nothing');
+  assert.equal('bytes_read' in absent, true, 'omitting the field would read as "not measured"');
+  assert.equal(present.bytes_read, '# Readme\n'.length,
+    'the on-disk size of the one body it opened');
+});
+
+test('replay: an UNREAD declared body contributes no bytes - nothing was read to skip it', () => {
+  // The bound's own arm: a body over `MAX_BODY_BYTES` is refused unopened, so
+  // counting its size would claim a read that never happened. The scope still
+  // holds at today's level, which is the `unread` discount rule and not this
+  // figure's business.
+  const oversized = 'x'.repeat(512 * 1024 + 1);
+  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['docs/README.md', 'src/huge.mjs'] },
+    { 'docs/README.md': '# Readme\n', 'src/huge.mjs': oversized });
+  const [row] = replay(fx.file).rows;
+  assert.equal(row.bytes_read, '# Readme\n'.length, 'only the body that was opened');
+  assert.equal(row.computed, 'shipped', 'the unread file still withholds the discount');
+});
+
 test('replay: a phase whose plan cannot be read prints today\'s level and says so', () => {
   const fx = floorRoot({ ...ANSWERED }, {
     '3/PLAN-1.md': '---\nphase: 3\nplan: 1\nfiles:\n  - src/a.mjs\n  not a key line\n---\n\n# Plan\n',
