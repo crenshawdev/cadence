@@ -1,117 +1,132 @@
 {
   "status": "gaps",
-  "score": "6/9",
+  "score": "11/13",
   "truths": [
     {
       "n": 1,
-      "truth": "The record has a fifth lifecycle NAME (`worker_cache`) that opens no bracket, funds nothing, and never enters TERMINAL",
+      "truth": "All three withholding gates (not-terminal, already-closed, two-open-dispatch) state the worker's cache figures and write no `return`, and the termination gate itself is unchanged rather than relaxed",
       "status": "VERIFIED",
-      "uat_item": null,
-      "evidence": "cadence-core/bin/lib/trace.mjs:172 exports WORKER_CACHE; `node --input-type=module -e \"import {WORKER_CACHE} ...\"` prints `worker_cache`. cadence-core/bin/lib/trace.mjs:804 handles it with `continue` BEFORE the DISPATCH/TERMINAL branches, so it creates no roleRow, no bracket and no unpaired row. Test `render: a fact that names no bracket of its own run lands NOWHERE` (cadence-core/bin/trace.test.mjs) asserts brackets length 1 and unpaired [] across three shapes."
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:466 `if (stopped.state === STOP_STATE.NOT_TERMINAL) return withheld();`, :473 `if (closed) return withheld();`, :486 `if (mine.length !== 1) return withheld();`, all three routed through `withheld = () => cacheFact(...)` at :464 which can only build a WORKER_CACHE event (cacheFact, :313-325). `node --test cadence-core/bin/subagent-trace.test.mjs` -> 35 pass 0 fail, including the six named gate cases. End-to-end spot-check just run: a payload with a non-terminal agent transcript piped into `node cadence-core/bin/subagent-trace.mjs` against a temp .planning appended exactly one line, `event\":\"worker_cache\"`, no `return`, stdout and stderr empty, exit 0."
     },
     {
       "n": 2,
-      "truth": "All three withholding gates write exactly one cache-only fact and no `return`, and the termination gate is unchanged rather than relaxed",
+      "truth": "`trace render` folds a cache-only fact onto the bracket for the same worker joined by `corr` and `agent_id`, touching the bracket row alone so `roles` is byte-identical with and without the facts",
       "status": "VERIFIED",
-      "uat_item": 1,
-      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:365 (gate 0 NOT_TERMINAL), :376 (gate 2a `closed`), :392 (gate 2b `mine.length !== 1`) each `return withheld()`, which is cacheFact(...) at :362. Named tests green: `stop: gate 0/2a/2b ... states the cache figures and closes nothing`, plus the three id-less counterparts. End-to-end spot-check run by this pass (temp .planning, payload piped into `node cadence-core/bin/subagent-trace.mjs`): gate 0 appended one `worker_cache` and no return, exit 0, silent; gate 2a and gate 2b likewise. The unambiguous terminal path still appended exactly one `return` carrying both figures and no fact. The self-filter reorder (was gate 0 first, git 0715d409~11:184-191) changes no answer: both crossed cases were already do-nothing."
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/lib/trace.mjs:1114-1121 post-pass: `if (!b.agent_id || `${key(b.corr)}\\0${b.agent_id}` !== pair) continue;` then per-key fold, `break` on first match, no touch of roleTotals/out.roles/seenTerminals/pairedRows. The `folded` helper at trace.test.mjs:2999-3008 asserts roles equality on every fold case. LIVE: `.planning/trace.jsonl:2404` and `:2408` are worker_cache facts written by the host after the fix; `trace render --dir .planning` shows both folded onto the brackets carrying the same corr `3-bef7cc1e` and the same agent_id (`a2a77e81047fd348d` -> 190737/11141416, `a8ea2335c4a3472ca` -> 99449/2122956). Temp-tree spot-check reproduced the same fold with roles unchanged (`cad-verifier tokens:100`)."
     },
     {
       "n": 3,
-      "truth": "`trace render` folds a cache-only fact onto the bracket matching corr AND agent_id, fill-only-empty, first match only, and never moves the roles bill",
+      "truth": "For the two cache keys the LARGER read wins per key and independently at all three folding sites, so a short read cannot freeze a bracket and re-rendering one file is idempotent (ROADMAP criterion 2 as amended)",
       "status": "VERIFIED",
-      "uat_item": 2,
-      "evidence": "cadence-core/bin/lib/trace.mjs:1067-1073 post-pass: `if (!b.agent_id || `${key(b.corr)}\\0${b.agent_id}` !== pair) continue; for (const k of CACHE_KEYS) if (!(k in b) && k in cache) b[k] = cache[k]; break;`. Facts collected at :804 keyed by `corr\\0agent_id` in a Map, so the LAST fact for a pair wins. Six named tests green in cadence-core/bin/trace.test.mjs, each routed through the `folded()` helper that re-renders the same fixture with every `worker_cache` line deleted and asserts JSON.stringify(roles) is byte-identical. Live-shape spot-check by this pass: with two dispatches of cad-verifier in one phase run closed under W1 and W2, a fact naming W2 landed on the W2 bracket only, unfiltered and under `--phase 3` alike; the W1 sibling carried neither key."
+      "uat_item": null,
+      "evidence": "One shared predicate `moreComplete(into, from, k)` at cadence-core/bin/lib/trace.mjs:155-157, called at all three sites: :847 (cacheFacts map), :1022 (repeat-close arm), :1117 (post-pass fold). `node --test cadence-core/bin/trace.test.mjs` -> 150 pass 0 fail, including `render: a fact CORRECTS a shorter figure the close carried, never a longer one`, `render: two facts for one worker leave the LARGER sums, in either order`, and `render: rendering one fixture TWICE gives byte-identical brackets`."
     },
     {
       "n": 4,
-      "truth": "Gate 2b's candidate set is scoped to the current run, so a stale unpaired dispatch from an earlier corr no longer blocks the close",
+      "truth": "A stale unpaired dispatch of the role from an EARLIER run no longer blocks or is adopted by the gate: the run in flight is named once, before either gate reads it, off the newest dated evidence including brackets wearing this payload's agent_id",
       "status": "VERIFIED",
       "uat_item": 3,
-      "evidence": "cadence-core/bin/lib/subagent-trace.mjs `currentRun()` (:304-317) takes the corr of the newest parseable ts and filters to it; undated rows contribute no clock, and a set with no dated row is returned untouched. Named tests green: `stop: a stranded dispatch from an EARLIER run no longer blocks this one`, `two dispatches of one RUN still answer nothing`, `an undated row of the CURRENT run is still counted`. End-to-end spot-check by this pass: a trace holding an OLDRUN 2026-08-09 unpaired cad-verifier dispatch plus one RUN1 dispatch produced a `return` closing the RUN1 row; the pre-change filter (role only, no corr term) sees 2 rows for that fixture and refuses."
+      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:405-417 `currentRun(rows, clocks)` (rows read before clocks so an unpaired row wins an exact tie), :364-375 `bracketClocks` (end where parseable, else ts), called once at :455-458 with `run.corr` feeding BOTH gate 2b's candidate set and gate 2a's match. End-to-end spot-check: a temp trace holding a 2026-08-09 unpaired cad-verifier row plus a CLOSED bracket at corr 5-cur9999 wearing the payload's agent_id produced exactly one event, a worker_cache carrying corr 5-cur9999 / phase 5 - not a `return` adopting the 2026-08-09 row - and the render folded it onto that bracket with the stale row still listed in `unpaired`."
     },
     {
       "n": 5,
-      "truth": "Every `trace close` command line in the shipped prose passes `--agent-id`, and a render shows a non-executor bracket carrying agent_id",
+      "truth": "Gate 2a's already-closed match is scoped to the run in flight, so a reused agent_id cannot pull a fact onto a bracket from a dead run",
       "status": "VERIFIED",
-      "uat_item": 4,
-      "evidence": "`grep -rn 'trace close' cadence-core/workflows cadence-core/references` finds 14 occurrences, 11 of them command lines (context.md:182, minimalism-review.md:90, execute.md:210, task.md:219, review-triggers.md:143, plan.md:234, plan.md:419, verify-deep.md:19, decision-review.md:63, plan-revision.md:23, plan-revision.md:54) and every one carries `--agent-id <the id on the subagent return>`; the other 3 are prose references. No `trace close` command line exists in any other shipped .md. Render half observed in this pass's fixtures: cad-verifier brackets rendered with `\"agent_id\":\"W1\"`. seam-spawn-agent.md:150-183 now states the hook's two kinds of write and keeps exactly one `ONE statement` marker (grep -c prints 1); prose-agreement and the weight budgets pass under self-verify."
+      "uat_item": 8,
+      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:280-284 `closedBracket(render, id, corr)` filters `rows` by `corrKey(row.corr) === corrKey(corr)` before the id match, and is called at :459 with `run.corr`; unscoped only when nothing anywhere is dated. Named test `stop: a REUSED id does not reach back into a dead run` green in the 35-pass run."
     },
     {
       "n": 6,
-      "truth": "Suite, self-verify and both censuses hold",
+      "truth": "The figures come off the STOPPED WORKER's own transcript (`agent_transcript_path`) with no fallback to the session transcript, which is what made the recorded figure short",
       "status": "VERIFIED",
-      "uat_item": 7,
-      "evidence": "`node cadence-core/bin/test.mjs` -> tests 3410, pass 3410, fail 0. `node cadence-core/bin/self-verify.mjs --root .` -> {\"ok\":true,...,\"problems\":[]}. cadence-core/bin/trace.test.mjs:2136 `const known = [ANCHOR, DISPATCH, ...TERMINAL, COORDINATOR, WORKER_CACHE];` registers the name in the producer census. cadence-core/bin/arg-contract.test.mjs:304 still asserts 192 flag entries and passes."
+      "uat_item": 5,
+      "evidence": "cadence-core/bin/subagent-trace.mjs:134 `const evidence = { transcript: readTranscript(input?.agent_transcript_path) };` - no `transcript_path` read anywhere in the file (grep). Three end-to-end runs against a temp .planning: (A) session file billing 11/22 + agent file billing 5000/90000 and a null stop_reason -> one worker_cache carrying 5000/90000 and neither session figure; (B) same payload with `agent_transcript_path` removed -> one `return` carrying NO cache key (no session fallback); (C) agent file terminal -> one `return` carrying 7000/95000 plus the worker's ts `2026-08-26T10:06:00.000Z`. Exit 0 and both streams empty in all three."
     },
     {
       "n": 7,
-      "truth": "Live host stops put both cache keys on real brackets, each equal to the transcript sum",
-      "status": "UNCERTAIN",
-      "uat_item": 5,
-      "evidence": "The live record is unchanged from the baseline: .planning/trace.jsonl holds 2,387 lines, 0 with either cache key, 0 `worker_cache` events, and `trace render --phase 3` reports 87 brackets, 0 carrying a cache key (2 carrying agent_id). No subagent has stopped since the merge, so the code path has never run against the host. The two clauses that do NOT need a host are already settled: the fixture equality (hook-summed 4,608 / 150,000 reached the bracket unchanged in all three gate spot-checks) and `roles` being byte-identical with and without a fact (asserted on every fold test by the `folded()` helper, and observed in this pass's e2e renders)."
+      "truth": "On the live host after the change, a bracket carries both cache keys and each equals the sum `subagent-transcript.mjs` reports over that worker's OWN transcript",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "Two live post-fix stops: bracket corr 3-bef7cc1e / cad-executor / agent_id a2a77e81047fd348d carries 190737 / 11141416 and bracket corr 3-bef7cc1e / cad-verifier / agent_id a8ea2335c4a3472ca carries 99449 / 2122956. Running `cacheOf` over /claude/.claude/projects/-code-cadence/50b0b109-.../subagents/agent-a2a77e81047fd348d.jsonl returns {190737, 11141416} and over agent-a8ea2335c4a3472ca.jsonl returns {99449, 2122956} - exact equality, both figures, both workers. `terminalOf` answers not-terminal for both, so these rode the withholding path and were folded onto the orchestrator's own closes. This falsifies the recorded failure of items 5 and 9 (bracket 52918/528568 against cacheOf 100439/2115871), which came from the session transcript."
     },
     {
       "n": 8,
-      "truth": "Phase 2's prefix recovery is recorded with a before figure, an after figure and its method",
-      "status": "UNCERTAIN",
-      "uat_item": 6,
-      "evidence": ".planning/spikes/agent-prefix-cache-fragmentation/SPIKE.md `### Before, measured 2026-08-26` carries the figures (53,976,294 read / 2,765,064 creation over n=33 pre-`8ca0dfdc` transcripts), the exact command for each side, the per-dispatch normalisation, the stated asymmetry and a `What a zero would mean` section. `### After` (line 307) is a committed PENDING placeholder, blocked on truth 7."
+      "truth": "A bracket this hook closed carries the stopped worker's own `agent_id`, so it is joinable at all",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:534 `...(id ? { agent_id: id } : {})` on the terminal `return`, omitted rather than null. End-to-end case C above appended `\"event\":\"return\",...,\"agent_id\":\"aTEST111\"`. Named cases in subagent-trace.test.mjs pin both presence and absence; 35 pass 0 fail."
     },
     {
       "n": 9,
-      "truth": "A cache fact cannot carry one run's traffic onto a bracket from a different run",
+      "truth": "Phase 2's prefix recovery is recorded with an AFTER figure taken off brackets written under this code, the delta against the committed before side, and the dispatch count",
       "status": "FAILED",
+      "uat_item": 6,
+      "evidence": ".planning/spikes/agent-prefix-cache-fragmentation/SPIKE.md `### After` still opens `PENDING the first post-phase-3 cad-verifier dispatches.` Plan 3 task 6 is the one task of six not executed - commit 32f6518a's own subject is `docs(3-3): the spike states its method, after side still pending`. The input now EXISTS: one post-fix cad-verifier bracket carries 99,449 / 2,122,956 against the committed before-side per-dispatch figures 83,790 / 1,635,645 (SPIKE.md:322-323)."
+    },
+    {
+      "n": 10,
+      "truth": "A LIVE terminal stop and a LIVE two-open-dispatch pair each also leave a bracket carrying both cache keys",
+      "status": "UNCERTAIN",
       "uat_item": null,
-      "evidence": "cadence-core/bin/lib/subagent-trace.mjs `closedBracket()` (:250-253) searches the WHOLE record - `rows.find((row) => row && row.agent_id === id)` with no corr term - and gate 2a then quotes that bracket's `corr` and `phase` onto the fact (`withheld()` at :362, `closed || mine[0]`). The fold's corr scope therefore cannot absorb a cross-run id collision, because the fact's corr was copied FROM the colliding bracket. Observed in this pass: a trace holding an OLDRUN/phase-1 cad-verifier bracket closed under agent_id W1, plus a live RUN1/phase-3 dispatch, given a stop payload with agent_id W1 -> the hook appended `{\"corr\":\"OLDRUN\",\"phase\":1,...,\"event\":\"worker_cache\",\"agent_id\":\"W1\",\"cache_creation_input_tokens\":777,\"cache_read_input_tokens\":88888}` and the render put those figures on the 17-day-old phase-1 bracket while the current RUN1 dispatch stayed unpaired with no figures. Pre-change the same unscoped match was a silent no-op; this phase turned it into a write."
+      "evidence": "Both arms are proven by fixture only: named tests plus my own hook-to-disk-to-render run (case C above for the terminal arm, `stop: gate 2b, two open dispatches of one run states the cache figures and closes nothing` for the pair). No live instance exists on this host - measured and recorded in .planning/phases/3/CONTEXT.md, 33 of the 34 subagent transcripts written 2026-08-26 answer NOT-TERMINAL, and both live post-fix stops were non-terminal."
+    },
+    {
+      "n": 11,
+      "truth": "Suite, self-verify and both censuses hold",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/test.mjs` -> 3414 pass 0 fail (one full-suite run). `node cadence-core/bin/self-verify.mjs --root .` -> `problems: []` across 30 checks. `cadence-core/bin/arg-contract.test.mjs:304` still asserts 192 flag entries. Trace producer census `known` list at trace.test.mjs:2136 is `[ANCHOR, DISPATCH, ...TERMINAL, COORDINATOR, WORKER_CACHE]` - the same five lifecycle names, none added by plan 3."
+    },
+    {
+      "n": 12,
+      "truth": "The shipped record states which file the hook reads and no longer rests on the falsified premise, and ROADMAP criterion 2 was amended in the same commit as the code that moved it",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/references/seam-spawn-agent.md:164-183 now states the close carries the worker's own agent_id and that BOTH hook writes sum off `agent_transcript_path`, never `transcript_path`; `grep -c 'ONE statement'` -> 1 and `node --test cadence-core/bin/prose-agreement.test.mjs` -> 47 pass 0 fail. The 24,748-byte ceiling was moved to 25,299 in cadence-core/bin/weight-budgets.json in the same commit (45faf4da), self-verify reports no budget-overrun. .planning/phases/3/CONTEXT.md:217-243 carries the dated MEASURED CORRECTION naming agent_transcript_path, and D-11's larger-wins supersession. `git diff bef7cc1e..HEAD -- .planning/ROADMAP.md` touches criterion 2 and nothing else; criteria 1 and 3-7 are byte-identical."
+    },
+    {
+      "n": 13,
+      "truth": "Every `trace close` prose command site still passes `--agent-id` (regression check)",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "11 of the 15 `trace close` occurrences across cadence-core/workflows, cadence-core/references and cadence-core/skills carry `--agent-id`; the remaining 4 (conventions.md:109, seam-spawn-agent.md:136, plan-revision.md:62, execute.md:509) are prose references, not command lines. Live renders show cad-verifier and cad-executor brackets carrying agent_id."
     }
   ],
   "passes": [
-    {
-      "k": 1,
-      "name": "All three withholding gates state the cache fact and still write no return",
-      "evidence": "subagent-trace.mjs:365/:376/:392 each `return withheld()`; six named gate tests green; end-to-end per gate (payload piped into cadence-core/bin/subagent-trace.mjs against a temp .planning) appended exactly one worker_cache and no return, exit 0 and silent, and the terminal path still answers one return carrying the figures."
-    },
-    {
-      "k": 2,
-      "name": "The fold joins a cache-only fact to the right bracket",
-      "evidence": "trace.mjs:1067-1073 matches on `corr\\0agent_id`, fills only empty keys, breaks on first match; facts are Map-keyed so the later fact wins. Six named tests green including before-the-id arrival, no-overwrite, two-workers-one-role, wrong-corr/no-id/unknown-id, and two-facts. Spot-check confirmed the same result unfiltered and under `--phase 3`, with roles byte-identical."
-    },
-    {
-      "k": 3,
-      "name": "A stale unpaired dispatch from an earlier run no longer blocks the gate",
-      "evidence": "`currentRun()` at subagent-trace.mjs:304-317; three named tests green; end-to-end fixture with a 2026-08-09 OLDRUN row plus a current RUN1 dispatch closed the current one, where the pre-change role-only filter sees two rows and refuses."
-    },
-    {
-      "k": 4,
-      "name": "Every trace close prose site passes --agent-id",
-      "evidence": "All 11 `trace close` command lines across cadence-core/workflows and cadence-core/references carry `--agent-id`; no command line exists elsewhere in shipped prose. seam-spawn-agent.md:150-183 states both hook writes and keeps exactly one `ONE statement` marker. Renders show cad-verifier brackets carrying agent_id."
-    },
-    {
-      "k": 7,
-      "name": "Suite, self-verify and the two censuses",
-      "evidence": "test.mjs 3410/3410 pass; self-verify --root . `problems: []`; WORKER_CACHE in the producer census `known` list at trace.test.mjs:2136; arg-contract.test.mjs:304 still asserts 192."
-    }
+    { "k": 1, "name": "All three withholding gates state the cache fact and still write no return", "evidence": "subagent-trace.mjs:466/:473/:486 each `return withheld()`, which can only build a WORKER_CACHE event (cacheFact at :313); 35/35 named tests green; end-to-end against a temp .planning appended exactly one worker_cache line, no return, silent, exit 0. Termination gate still refuses on NOT_TERMINAL alone." },
+    { "k": 2, "name": "The fold joins a cache-only fact to the right bracket", "evidence": "trace.mjs:1114-1121 matches `corr\\0agent_id`, breaks on first match, touches the bracket row alone; the `folded` helper (trace.test.mjs:2999) asserts roles byte-identity on every case; 150/150 trace tests green. Live: both worker_cache facts at trace.jsonl:2404/:2408 landed on the brackets with the matching corr+agent_id. NOTE the rule for the two cache keys is now larger-wins, matching the amended ROADMAP criterion 2." },
+    { "k": 3, "name": "A stale unpaired dispatch from an earlier run no longer blocks the gate", "evidence": "`currentRun` at subagent-trace.mjs:405 now takes clocks from brackets wearing the payload's agent_id (`bracketClocks`, :364) as well as unpaired rows, computed once at :455 and feeding both gates. Temp-tree run with a 2026-08-09 stale row plus a closed current bracket answered one worker_cache carrying the CURRENT corr, not a return adopting the stale row." },
+    { "k": 4, "name": "Every trace close prose site passes --agent-id", "evidence": "11 command sites carry --agent-id; the 4 remaining `trace close` mentions are prose. seam-spawn-agent.md keeps exactly one `ONE statement` marker and prose-agreement.test.mjs is 47/47 green after the rewrite." },
+    { "k": 5, "name": "Live stops produce brackets carrying both cache keys", "evidence": "The recorded cause is fixed and falsified live. subagent-trace.mjs:134 reads `agent_transcript_path` with no session fallback. Two live post-fix brackets carry 190737/11141416 and 99449/2122956, and `cacheOf` over each worker's own subagents/agent-<id>.jsonl returns exactly those pairs. roles byte-identity is separately pinned by the `folded` helper. The terminal-stop and two-open-pair arms are fixture-proven only - see the human check." },
+    { "k": 7, "name": "Suite, self-verify and the two censuses", "evidence": "test.mjs 3414 pass 0 fail; self-verify --root . `problems: []`; arg-contract.test.mjs:304 asserts 192; the producer census `known` list at trace.test.mjs:2136 still names exactly the five lifecycle events." },
+    { "k": 8, "name": "A cache fact can land on a bracket from a different run when the host reuses an agent_id", "evidence": "Still fixed at HEAD and now stronger: `closedBracket(render, id, corr)` (subagent-trace.mjs:280-284) filters by corr before matching the id, and the corr it is given is the single `run.corr` computed at :455, which brackets wearing this payload's id now contribute to. `stop: a REUSED id does not reach back into a dead run` green." },
+    { "k": 9, "name": "Dispatch at least two cad-verifier workers on the live host against the merged code, then check a bracket carries both cache keys equal to cacheOf over that worker's own transcript", "evidence": "Satisfied live for the not-terminal arm, twice, with exact equality: brackets a2a77e81047fd348d (190737/11141416) and a8ea2335c4a3472ca (99449/2122956) against cacheOf over each worker's own transcript file. Both rode worker_cache facts folded onto orchestrator-written closes, which is the path the plan predicts for this host version." }
   ],
   "gaps": [
     {
-      "name": "A cache fact can land on a bracket from a different run when the host reuses an agent_id",
-      "reason": "behavior wrong - gate 2a's `closedBracket()` matches agent_id across the WHOLE record with no corr term, and the fact then quotes that bracket's corr and phase, so the fold's corr scope has nothing left to protect",
-      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:250-253 (`rows.find((row) => row && row.agent_id === id)`) and :362 (`closed || mine[0]`). Reproduced: an OLDRUN/phase-1 cad-verifier bracket closed under W1 plus a live RUN1/phase-3 dispatch, stop payload agent_id W1 -> hook wrote `corr: OLDRUN, phase: 1` and the render put 777/88,888 on the phase-1 bracket while the RUN1 dispatch stayed unpaired and figureless. CONTEXT.md's flagged assumption states the opposite - that D-10's corr scope absorbs a cross-session collision - and CONTEXT.md D-10 measured 7 of 1,323 distinct ids repeating within one project. A phase-filtered render never sees the mis-placed figure.",
-      "severity": "minor",
-      "missing": "Either scope `closedBracket` to the run the candidate set names (or to the phase in the payload's reach) so gate 2a cannot import a foreign corr, or correct CONTEXT.md's flagged assumption to say a cross-run collision is NOT absorbed. Pre-change this same unscoped match was a silent no-op, so the write is new surface this phase added."
+      "k": 6,
+      "name": "Phase 2's prefix recovery is measured before and after",
+      "reason": "missing - plan 3 task 6 was not executed; the spike's `### After` is still the committed PENDING placeholder, and its input now exists",
+      "evidence": ".planning/spikes/agent-prefix-cache-fragmentation/SPIKE.md `### After` reads `PENDING the first post-phase-3 cad-verifier dispatches.` Commit 32f6518a (`docs(3-3): the spike states its method, after side still pending`) updated the method sections only. The method, the before side (SPIKE.md:322-323: 1,635,645 cache_read and 83,790 cache_creation per dispatch, n=33), the after command (SPIKE.md:299) and the read-a-zero clause are all committed and correct.",
+      "severity": "major",
+      "missing": "Run the recorded after command over `.planning` and fill `### After` with the two per-dispatch figures, the delta against 1,635,645 / 83,790, and the dispatch count. Post-fix cad-verifier brackets carrying figures exist now (agent_id a8ea2335c4a3472ca: 99,449 creation / 2,122,956 read), and this verification pass adds a second one when it stops. Also state, as task 6 asks, that the after-side brackets came from worker_cache facts folded onto orchestrator closes rather than hook-written closes."
+    },
+    {
+      "k": 10,
+      "name": "Once those live brackets exist, fill `### After` in .planning/spikes/agent-prefix-cache-fragmentation/SPIKE.md with the command already recorded there and state the delta against the before figures",
+      "reason": "missing - same unwritten section as item 6; the data dependency it was skipped on has now cleared, so this is executable rather than blocked",
+      "evidence": "The live brackets this item waited for exist: `trace render --dir .planning` shows 411 brackets, 4 carrying a cache figure, of which the two written 2026-08-26T22:14 and 22:22 are post-fix and match `cacheOf` over each worker's own transcript exactly. `### After` is unchanged.",
+      "severity": "major",
+      "missing": "Execute rather than ask: run the after command, write the two figures, the delta and n into `### After`, and drop the PENDING wording."
     }
   ],
   "human_checks": [
     {
-      "name": "Dispatch at least two cad-verifier workers on the live host against the merged code, then run `node cadence-core/bin/planning.mjs trace render --dir .planning --phase 3` and check that a cad-verifier bracket carries cache_read_input_tokens and cache_creation_input_tokens equal to `cacheOf` over that worker's own transcript",
-      "expected": "A terminal stop, a not-terminal stop and a two-open pair each leave a bracket carrying both cache keys; roles.tokens is unchanged with and without the facts. Baseline right now: 2,387 trace lines, 0 cache keys, 0 worker_cache events, 87 phase-3 brackets with 0 carrying a figure.",
-      "why_human": "Out of reach, not merely unexercised. The instrument is the host firing SubagentStop after the merge; this pass already exercised the whole hook-to-disk-to-render path against temp .planning trees with piped payloads and it behaves, but only the host can emit a real agent_id and a real transcript_path, and no already-closed bracket can gain a fact retroactively."
-    },
-    {
-      "name": "Once those live brackets exist, fill `### After` in .planning/spikes/agent-prefix-cache-fragmentation/SPIKE.md with the command already recorded there and state the delta against the before figures",
-      "expected": "A number for cache_read and cache_creation per dispatch, the delta against 1,635,645 / 83,790, and the figure recorded even when it is zero.",
-      "why_human": "Depends on the live dispatches above; the before-side, both commands, the normalisation, the asymmetry and the read-a-zero clause are already written and were checked in this pass. Nothing here is a judgement call - it is a data dependency on a host event."
+      "name": "Observe a LIVE terminal SubagentStop and a LIVE two-open-dispatch pair each leaving a bracket with both cache keys",
+      "expected": "A worker whose transcript ends on a non-null, non-tool_use `stop_reason` produces a hook-written `return` carrying both cache figures and the worker's agent_id; two concurrent dispatches of one role each produce a worker_cache fact that folds onto its own agent_id's bracket.",
+      "why_human": "Out of reach, not merely unexercised. I exercised both arms end to end against temp .planning trees with piped payloads and they behave (the terminal arm wrote a return carrying 7000/95000 and the worker's own ts; the two-open arm has named tests), but only the host can emit a real terminal `stop_reason` and a real concurrent pair, and this host version almost never does: 33 of the 34 subagent transcripts written 2026-08-26 answer NOT-TERMINAL, and both live post-fix stops were non-terminal. I cannot dispatch agents or control what stop_reason the host writes."
     }
   ]
 }
