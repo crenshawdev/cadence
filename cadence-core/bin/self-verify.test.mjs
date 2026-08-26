@@ -2532,3 +2532,72 @@ test('check 23: the LIVE tree is clean of all three capture-writer codes', () =>
   assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-durable'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'capture-writer-redirect'), []);
 });
+
+// --- check 25: the hook event names Cadence registers ---------------------------
+//
+// A hook is the one Cadence surface the HOST names. A spelling it does not know
+// registers nothing at all - no error, no refusal, no empty result - so the only
+// evidence of a rename is the behaviour quietly not happening. These rows drive
+// the check through the CLI, which is what proves it is wired into `run(root)`
+// and not merely importable.
+
+/** A fixture plus a `hooks/hooks.json` carrying exactly `text`. */
+function hooksFixture(text, { full = false } = {}) {
+  const root = full ? fullFixture() : fixture('nothing to see\n');
+  mkdirSync(join(root, 'hooks'), { recursive: true });
+  writeFileSync(join(root, 'hooks', 'hooks.json'), text);
+  return root;
+}
+
+test('check 25: a RENAMED hook event is reported, and the problem prints the offending name', () => {
+  const root = hooksFixture(JSON.stringify({
+    hooks: {
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'node x.mjs' }] }],
+      // The rename this check exists for: one spelling wrong among several right.
+      SubagentStopped: [{ hooks: [{ type: 'command', command: 'node y.mjs' }] }],
+    },
+  }, null, 2));
+  const j = run(['--root', root]);
+  assert.equal(j.ok, false);
+  assert.match(j.checked, /hook-events/);
+  const hits = j.problems.filter((p) => p.kind === 'unregistered-hook-event');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'hooks/hooks.json');
+  // The EXACT spelling the file carries. A problem that cannot name the event
+  // is a number, and the whole failure is knowing WHICH name went wrong.
+  assert.match(hits[0].detail, /SubagentStopped/);
+  // ...and the registered name that is still right raises nothing.
+  assert.equal(hits[0].detail.includes('`PreToolUse`'), false, hits[0].detail);
+});
+
+test('check 25: a fixture with no hooks/hooks.json and no plugin manifest is lenient', () => {
+  const j = run(['--root', fixture('nothing to see\n')]);
+  assert.match(j.checked, /hook-events/);
+  assert.deepEqual(j.problems.filter((p) => p.file === 'hooks/hooks.json'), []);
+});
+
+test('check 25: a FULL tree missing the file reports missing-input', () => {
+  const hits = run(['--root', fullFixture()]).problems
+    .filter((p) => p.file === 'hooks/hooks.json');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].kind, 'missing-input');
+});
+
+test('check 25: malformed JSON is ONE problem naming the file, and the run still completes', () => {
+  const j = run(['--root', hooksFixture('{ "hooks": ')]);
+  const hits = j.problems.filter((p) => p.file === 'hooks/hooks.json');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].kind, 'unreadable-surface');
+  // The run REACHED its envelope rather than unwinding: every check still ran.
+  assert.match(j.checked, /config-keys/);
+  assert.match(j.checked, /hook-events/);
+});
+
+test('check 25: the LIVE tree registers only event names the register declares', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it, which is the assertion that reddens on a hook added without
+  // its register row.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'unregistered-hook-event'), []);
+  assert.deepEqual(p.filter((x) => x.file === 'hooks/hooks.json'), []);
+});

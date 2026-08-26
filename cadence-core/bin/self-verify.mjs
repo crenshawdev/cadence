@@ -225,6 +225,22 @@
 //                    this side only decides that it applies to the whole root.
 //                    It takes no CONTRACTS row, for the reason check 14 states
 //                    about `lib/*.mjs`.
+//  25. hook events  every event name `hooks/hooks.json` registers has a row in
+//                    lib/hook-events.mjs saying what that event is for. A hook
+//                    is the one surface the HOST names rather than Cadence, and
+//                    a name it does not know registers NOTHING - no error, no
+//                    refusal, no empty result, just a hook that never fires
+//                    again. For `SubagentStop` that is the trace bracket's
+//                    close half going quiet and the record filling with
+//                    `unpaired` rows. Nothing else here can see it: the file is
+//                    JSON, so the markdown walk never opens it, and check 3
+//                    proves only that the SCRIPT exists, which it does either
+//                    way. The register, the one-line reason on every row and
+//                    the deliberate single direction - a REMOVED registration
+//                    is an ordinary edit and is not reported - live in
+//                    lib/hook-events.mjs; this side only decides that it
+//                    applies to the whole root. It takes no CONTRACTS row, for
+//                    the reason check 14 states about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -254,6 +270,7 @@ import { textTransportIssues } from './lib/text-transport.mjs';
 import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
 import { captureWriterIssues } from './lib/capture-writers.mjs';
+import { hookEventIssues } from './lib/hook-events.mjs';
 // The subcommand/flag contract table, the accessor the prose lint reads its
 // flag NAMES through, and the evaluator that applies one row's value grammar.
 // All three are DEFINED in lib/arg-contract.mjs and imported here: one table,
@@ -1322,6 +1339,12 @@ function run(root) {
   // that it applies to the whole root.
   for (const issue of refusalHintIssues(root)) problems.push(issue);
 
+  // 25. hook events: every event name `hooks/hooks.json` registers has a
+  // register row. The register, the full-tree leniency and the one-issue
+  // handling of an unreadable or malformed file live in lib/hook-events.mjs,
+  // and this side only decides that it applies to the whole root.
+  for (const issue of hookEventIssues(root)) problems.push(issue);
+
   return problems;
 }
 
@@ -1348,7 +1371,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
