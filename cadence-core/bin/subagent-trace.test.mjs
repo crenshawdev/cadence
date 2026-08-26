@@ -127,7 +127,7 @@ test('stop: a terminal transcript stamps the event with the WORKER\'s instant', 
 
 test('stop: NO transcript evidence produces the same event, with no ts key at all', () => {
   // The gate refuses on NOT-TERMINAL alone. A payload with no
-  // `transcript_path`, a file that could not be read, an over-cap file and a
+  // `agent_transcript_path`, a file that could not be read, an over-cap file and a
   // layout that changed all arrive as `unknown` and must keep writing the close
   // this hook writes today - folding them into the refusal is how a host-side
   // rename would delete every hook close in the record at once and silently.

@@ -24,9 +24,12 @@
 // payload carries no field that separates a worker that FINISHED from one
 // handed back mid-turn - `stop_hook_active` is documented for `Stop` and is not
 // a `SubagentStop` field - so the evidence is the worker's own transcript,
-// which the payload points at through its documented `transcript_path`. The
-// disk half reads it and INJECTS the bytes (D-08); `lib/subagent-transcript.mjs`
-// holds the rule that reads them.
+// which the payload points at through `agent_transcript_path`, the field that
+// event puts the WORKER's file on. It is NEVER the `transcript_path` every hook
+// event carries: that one names the orchestrator's own session, and reading it
+// made this gate ask whether the ORCHESTRATOR had stopped. The disk half reads
+// the worker's file and INJECTS the bytes (D-08);
+// `lib/subagent-transcript.mjs` holds the rule that reads them.
 //
 // THE SELF-FILTER RUNS FIRST NOW, not this gate. Every withholding arm below
 // writes a cache-only fact, and that fact has to NAME the worker it is about:
@@ -40,7 +43,7 @@
 // only what its transcript has billed so far.
 //
 // The gate refuses on NOT-TERMINAL alone, never on UNKNOWN: a payload with no
-// `transcript_path`, a file that could not be read, an over-cap file and a
+// `agent_transcript_path`, a file that could not be read, an over-cap file and a
 // layout that changed all arrive as `unknown` and still produce the close this
 // hook produces today. Folding `unknown` into the refusal is how a host-side
 // rename would delete every hook close in the record at once and silently.
