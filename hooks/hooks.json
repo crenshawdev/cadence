@@ -23,6 +23,17 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/subagent-trace.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

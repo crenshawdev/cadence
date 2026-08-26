@@ -1199,6 +1199,14 @@ export const CONTRACTS = {
     '*': {},
     '': {},
   },
+  // subagent-trace.mjs is the SubagentStop hook that closes a bracket the
+  // orchestrator opened. Same empty shape and the same reason as the two hooks
+  // above: the payload arrives on stdin, and it takes no flags and no
+  // subcommand at all.
+  'subagent-trace.mjs': {
+    '*': {},
+    '': {},
+  },
   // skim.mjs takes a FILE as its positional argument, never a subcommand, so
   // the bare row carries the whole flag set.
   'skim.mjs': {
