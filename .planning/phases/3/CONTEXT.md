@@ -25,9 +25,9 @@ re-measures (AC4), the same way phase 1 split its two seams.
 
 ## Durable decisions
 
-- D-01 (join key): every one of the nine `trace close` prose sites passes
+- D-01 (join key): every one of the eleven `trace close` prose sites passes
   `--agent-id`, not just the executor's. Evidence:
-  `cadence-core/workflows/execute.md:210` is today's only one; the other eight
+  `cadence-core/workflows/execute.md:210` is today's only one; the other ten
   are `cadence-core/workflows/context.md`, `plan.md` (two sites), `task.md`,
   `verify-deep.md`, `decision-review.md`, `minimalism-review.md`,
   `cadence-core/references/plan-revision.md` (two sites) and
@@ -167,7 +167,7 @@ re-measures (AC4), the same way phase 1 split its two seams.
 - [ ] AC3: A fixture holding an unpaired dispatch of the same role from an
       EARLIER `corr` plus one open dispatch in the current `corr` closes the
       current one; the same fixture refuses today.
-- [ ] AC4: All nine `trace close` prose sites pass `--agent-id`, and a render
+- [ ] AC4: All eleven `trace close` prose sites pass `--agent-id`, and a render
       over a fixture shows a bracket carrying `agent_id` for a non-executor
       role.
 - [ ] AC5: After the change, a terminal stop, a not-terminal stop and a
