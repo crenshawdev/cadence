@@ -21,6 +21,15 @@
 //                                   from ROADMAP when omitted; stamps today
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
+//   replay-check --phase N [--rerun]
+//                                   has this phase's work already been
+//                                   committed - every plan's
+//                                   reports/plan-<k>.md first line reading
+//                                   PLAN COMPLETE - and which plans still need
+//                                   dispatching. `replay` and `dispatch_set`
+//                                   are what cad-execute's locate step acts on;
+//                                   --rerun clears the first and widens the
+//                                   second to every plan
 //   cite-count --phase N [--payload <file>] [--point planned|committed]
 //                                   the read-back count: how many of the prior
 //                                   decisions, captures and deviations the
@@ -197,6 +206,7 @@ import { cmdCriteriaCoverage } from './planning/criteria-coverage.mjs';
 import { cmdCriteriaSize } from './planning/criteria-size.mjs';
 import { cmdPlanSize } from './planning/plan-size.mjs';
 import { cmdPlanOverlap } from './planning/plan-overlap.mjs';
+import { cmdReplayCheck } from './planning/replay-check.mjs';
 import { cmdCiteCount } from './planning/cite-count.mjs';
 import { cmdSeedReqs } from './planning/seed-reqs.mjs';
 import { cmdRecall } from './planning/recall.mjs';
@@ -251,6 +261,7 @@ const COMMANDS = {
   'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
   'criteria-size': (dir, _sub, opts) => cmdCriteriaSize(dir, opts),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
+  'replay-check': (dir, _sub, opts) => cmdReplayCheck(dir, opts),
   'plan-size': (dir, _sub, opts) => cmdPlanSize(dir, opts),
   // The read-back count (RBK-01). ONE word, never a two-word spelling, for the
   // reason the `adjudication` arm below states: `subcommandKey` consumes a

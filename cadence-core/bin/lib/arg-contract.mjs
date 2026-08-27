@@ -559,6 +559,13 @@ export const CONTRACTS = {
     'plan-overlap': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // `--rerun` is a BARE flag - it carries no value, so `bare: 'accept'` and a
+    // value on it is refused. It is the caller's override, and the row declares
+    // it here rather than letting the seam read an undeclared flag.
+    'replay-check': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--rerun': { required: false, type: 'bool', value: 'refuse', bare: 'accept' },
+    },
     'plan-size': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--max-reqs': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
