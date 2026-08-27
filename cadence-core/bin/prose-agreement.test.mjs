@@ -775,6 +775,80 @@ test('#195: execute.md locates unconditionally and refuses an already-executed p
     'the refusal is read before the derivation it refuses on');
 });
 
+// --- EXP-03: the locate step's replay stop, and the dispatch set it feeds ----
+
+test('EXP-03: execute.md refuses a phase whose every plan already reports complete', () => {
+  // The defect (GH-137). A session that dies between the last task's commit and
+  // the SUMMARY write leaves the phase deriving `planned` with real commits on
+  // the branch, so the arm above it never fires and the next `/cad-execute <N>`
+  // re-dispatches work that is already done. The spike measured what that buys:
+  // zero commits and zero byte changes, so the cost is money and a false run
+  // record rather than a corrupted tree.
+  //
+  // Two halves come back silently if this stops reading:
+  //   - the trigger, which a later edit can loosen from EVERY plan to any plan
+  //     (stranding a genuine multi-plan continuation) or from the FIRST LINE to
+  //     a whole-file match (a `PLAN COMPLETE` quoted in an open item fires it);
+  //   - the ORDER, since an arm carrying `/cad-undo` placed above the
+  //     `executed`/`complete` one is what the #195 test finds, so a correct
+  //     change there fails that test instead of this one.
+  // No byte counts and no report-path literal beyond the shape: the current
+  // run's path is still `plan-<k>.md`, which this same commit writes.
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+  const locate = stepBody(execute, 'locate', 'execute.md');
+  const arms = locate.split(/\n- /).slice(1);
+
+  // 1. Exactly one arm carries the discriminator. Found by `PLAN COMPLETE` and
+  //    never by `/cad-undo`, which two arms now share.
+  const replayArms = arms.filter((a) => a.includes('PLAN COMPLETE'));
+  assert.equal(replayArms.length, 1,
+    "execute.md's locate step should carry exactly one arm naming `PLAN COMPLETE` - the replay "
+    + `stop - and carries ${replayArms.length}`);
+  const replay = replayArms[0];
+
+  // 2. The TRIGGER clause only, taken before `-> stop:`: a rationale sentence
+  //    below it satisfies none of these.
+  const trigger = replay.split(/->\s*stop:/)[0];
+  assert.ok(trigger && trigger !== replay,
+    "the replay arm has no `-> stop:`, so its trigger clause cannot be read apart from its "
+    + `rationale: ${replay}`);
+  assert.match(trigger, /`PLAN COMPLETE`/,
+    `the replay trigger does not name \`PLAN COMPLETE\`: ${trigger}`);
+  assert.match(trigger, /\bFIRST LINE\b[\s\S]*\bexactly\b/,
+    'the replay trigger does not pin the FIRST LINE reading EXACTLY that status, so a later '
+    + `edit loosening it to a substring or whole-body match would still pass: ${trigger}`);
+  assert.match(trigger, /\bEVERY plan\b/,
+    'the replay trigger does not quantify over EVERY plan, so a multi-plan phase with one '
+    + `finished plan would be stranded mid-flight: ${trigger}`);
+  assert.match(trigger, /--rerun/,
+    `the replay trigger does not exclude \`--rerun\`, so the documented override cannot get past it: ${trigger}`);
+
+  // 3. The whole arm: the path shape it reads, the glob it must not read, the
+  //    case that does not fire, and both remedies.
+  assert.match(replay, /reports\/plan-<k>\.md/,
+    'the replay arm names no `reports/plan-<k>.md` path, so nothing says which file it reads');
+  assert.doesNotMatch(replay, /plan-\*\.md/,
+    'the replay arm reads a `plan-*.md` glob, which lets a rotated `plan-<k>.<n>.md` report '
+    + 'from an OLDER run decide this one');
+  assert.match(replay, /PLAN PARTIAL/,
+    'the replay arm does not name `PLAN PARTIAL` as a case that does not fire, so a genuine '
+    + 'continuation reads as a replay');
+  assert.match(replay, /\/cad-undo <N>/, 'the replay arm does not name `/cad-undo <N>`');
+  assert.match(replay, /--rerun/,
+    'the replay arm names no deliberate way through, so an intentional re-run has no route '
+    + 'but editing the workflow');
+
+  // 4. Ordering, both halves - each regresses silently on its own.
+  const refusal = arms.find((a) => a.includes('/cad-undo'));
+  assert.ok(arms.indexOf(replay) > arms.indexOf(refusal),
+    'the replay arm sits ABOVE the `executed`/`complete` refusal, so `arms.find(includes '
+    + "'/cad-undo')` in the #195 test reads the replay arm as the one that must trigger on "
+    + 'those two derived statuses');
+  assert.ok(execute.indexOf('<step name="locate">') < execute.indexOf('<step name="git_guard">'),
+    '`locate` no longer opens before `git_guard`, so the replay stop lands after the '
+    + 'protected-branch question it exists to avoid asking');
+});
+
 // --- DOC-02: README counts its own skills, roles and rung files --------------
 
 test('README\'s "Today it is N skills and M agent roles across K rung files" matches the tree', () => {

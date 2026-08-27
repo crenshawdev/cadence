@@ -37,6 +37,35 @@ Resolve the phase:
   refused beside `executed`. Stop HERE, before `git_guard`: before the
   protected-branch guard, before the `phase_start` trace anchor, and before any
   executor dispatch.
+- No `--rerun` token on the command line, AND for EVERY plan file the phase
+  lists, `<plandir>/reports/plan-<k>.md` exists and its FIRST LINE reads exactly
+  `PLAN COMPLETE` -> stop: "Phase <N> already has a completed executor report
+  for every plan (<name each report path you read>). A session died between the
+  last task's commit and the SUMMARY write: the work is on the branch, so
+  dispatching again would pay for it a second time and overwrite those reports.
+  Run /cad-undo <N> first, then /cad-execute <N>. To run over that record
+  anyway: /cad-execute <N> --rerun." `k` is the number in `PLAN-<k>.md`, and `1`
+  for a bare `PLAN.md` - the same derivation `<report_file>` in
+  `skills/cad-executor-contract/SKILL.md` states. The `status` envelope OMITS
+  `plans` for a phase holding exactly one `PLAN.md`, listing them only when they
+  deviate from that, so an absent `plans` key means one plan at `k` of 1 and
+  never an empty set that would make this trigger vacuously true.
+  Read the FIRST LINE only - `head -1`, not a whole-file Read - because the
+  report holds the task table this workflow deliberately keeps out of the
+  orchestrator's context and this arm has no use for it; the first line is also
+  the only place the status word is grammatically pinned, so a `PLAN COMPLETE`
+  quoted in a Note or an open item cannot fire the stop. Name each plan's exact
+  filename and never glob the `reports/` directory: `bin/lib/report-rotation.mjs`
+  mints
+  `plan-<k>.<n>.md` siblings when an executor rotates a prior run's report
+  aside, and a glob would let an older run's rotated report decide this one.
+  Make no git read here - the report file is the whole discriminator.
+  It does NOT fire, and the run proceeds to dispatch, when the phase has no
+  `reports/` directory, when any one plan has no report, or when a first line
+  reads `PLAN PARTIAL` or `PLAN CHECKPOINT: <type>` - each of those is a genuine
+  continuation. Stop HERE, before `git_guard`: before the protected-branch
+  guard, before the `phase_start` trace anchor, and before any executor
+  dispatch.
 
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY use
 it) and the config in one message - independent, so only a call that consumes a
@@ -187,9 +216,10 @@ Repeating them in the volatile dispatch tail pays for cached content twice.
 `<plandir>/reports/plan-<k>.md` - `<plandir>` is the plan file's own directory -
 and returns a five-field digest. Derive that path from the plan file you
 dispatched; the digest deliberately does not carry it. Open a report file at
-two kinds of moment only: the `summary` step, once per plan, and a continuation
+three kinds of moment only: the `summary` step, once per plan; a continuation
 branch, where you read ONLY the task numbers and commit hashes for the `git log`
-confirmation that branch already performs. Nowhere else, and never back into a
+confirmation that branch already performs; and `locate`'s replay stop, which
+reads the FIRST LINE alone. Nowhere else, and never back into a
 dispatch prompt - re-inlining the table returns the bytes the file exists to
 move out. Before a worktree branch is merged its report lives in the worktree,
 not here: `git worktree list --porcelain` gives the worktree root for branch
