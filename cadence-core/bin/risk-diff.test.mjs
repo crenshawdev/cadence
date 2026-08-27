@@ -395,6 +395,82 @@ test('risk-check run: a diff DRIVER cannot turn a risky range into a completed E
   assert.equal(records[0].matches.length, 1, JSON.stringify(records[0]));
 });
 
+// The destructive git command the `.mjs` fixture below carries. FIFTH in the
+// destructive list where DESTRUCTIVE_LINE's pattern is FIRST, which is what the
+// second row turns on. Assembled the way DESTRUCTIVE_LINE is, for the same
+// reason: the census row feeds a whole-file add of this file to the detector.
+const DESTRUCTIVE_GIT = 'git' + ' reset --hard';
+
+/** An adjudication record shaped the way the seam writes one: the reviewer's
+ * `failure_scenario` stored VERBATIM, which is the reason these files trip the
+ * destructive category at all (references/review-record.md requires the stored
+ * restatement to match the reviewer's returned text byte for byte). */
+const adjudicationBody = (quoted) => `${JSON.stringify({
+  findings: [{ id: 'F1', ruling: 'survivor', failure_scenario: `an operator runs ${quoted} on the host` }],
+}, null, 2)}\n`;
+
+test('risk-check run: a record quoting a destructive command is a completed CLEAR, not a fire', () => {
+  // RSK-06, AC1. `ADJUDICATION-*.json` stores the reviewer's own words byte for
+  // byte by design, so the DOCS commit that files a finding quoting a recursive
+  // delete re-tripped the very gate that produced the finding, and a user
+  // reviewing their own work had to override a blocking gate to record its
+  // output. The range read now withholds the four record artifacts by pathspec,
+  // so the hunk never reaches scanDiff and no signal leaves the table.
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, '.planning/phases/1/ADJUDICATION-risk_surface-plan-1.json',
+    adjudicationBody(DESTRUCTIVE_LINE));
+  // The second file is load-bearing and not scenery: it is what leaves the
+  // SCANNED range non-empty, so the `empty:false` below reads as a completed
+  // clear over real changed lines. A fixture that committed the record alone
+  // would be asserting the EMPTY arm, which is a different claim.
+  const head = commitFile(repo, 'docs/notes.md', 'a note carrying nothing at all\n');
+
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', head]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.deepEqual(r.matches, [], JSON.stringify(r));
+  assert.equal(r.inconclusive, false, JSON.stringify(r));
+  assert.equal(r.empty, false,
+    'the scanned range was empty, so this row proves nothing about a COMPLETED clear');
+
+  // And the RECORD says the same, since that is what `risk-check status` and
+  // every later reader join on - an envelope that cleared over a record that
+  // did not is the split RSK-01 exists to stop.
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.deepEqual(records[0].matches, [], JSON.stringify(records[0]));
+  assert.equal(records[0].empty, false, JSON.stringify(records[0]));
+});
+
+test('risk-check run: withholding the record does not withhold detection from the code beside it', () => {
+  // AC2, D-03. The exclusion is BY PATH, so the same range still fires on a
+  // changed line in a `.mjs` file. WHY THE `signal` STRING IS ASSERTED and not
+  // just the category: signalIn iterates a category's PATTERNS outer and the
+  // changed lines inner, returning on the first pattern any line matches, and
+  // the recursive-delete pattern is FIRST in the destructive list where the git
+  // command is fifth. So before this phase the withheld record's own line
+  // answered first and the signal named the recursive delete (this comment may
+  // not SPELL that pattern - the census row below reads this file). Asserting
+  // the git command is what makes this row FAIL against the pre-fix tree rather
+  // than merely pass after it. Loosening it to a category check silently gives
+  // that up.
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, '.planning/phases/1/ADJUDICATION-risk_surface-plan-1.json',
+    adjudicationBody(DESTRUCTIVE_LINE));
+  const head = commitFile(repo, 'src/deploy.mjs',
+    `export const wipe = () => sh('${DESTRUCTIVE_GIT}');\n`);
+
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', head]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.equal(r.empty, false, JSON.stringify(r));
+  assert.deepEqual(r.matches,
+    [{ category: 'destructive', signal: 'changed line: a destructive git command' }],
+    JSON.stringify(r));
+});
+
 test('risk-check run: a --surfaces token outside the eight is refused, and appends NOTHING', () => {
   // A caller who mistyped the scope of a blocking gate must see a refusal, not
   // a narrowed clean answer - the rule `trace append --tokens` already states.
