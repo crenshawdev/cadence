@@ -215,3 +215,63 @@ test('fold rules: a base form is a fixed point, and a short token is untouched',
     ['us', 'us', 'a token of two characters is left alone'],
   ]);
 });
+
+// --- the equivalence groups, at the seam --------------------------------------
+//
+// The claim RCL-08 exists for, stated over the real walk: whichever member of
+// an inflected group a user types, `recall` returns the same documents. Deep
+// equality settles the returned window and equal `total` settles the whole
+// matched set behind it, and the sharp arm is the last one - the document
+// carrying ONLY another member's form has to be in the hits, or a group could
+// pass by returning documents that already shared a literal term.
+
+/** Every inflected group the fixture corpus carries a separate document for. */
+const GROUPS = [
+  ['seam', 'seams'],
+  ['close', 'closes'],
+  ['file', 'files'],
+  ['note', 'notes'],
+  ['type', 'types'],
+  ['name', 'named', 'naming'],
+  ['refuse', 'refused'],
+  ['plan', 'planned'],
+];
+
+/** The id of the one fixture document whose text carries `word` literally. */
+function docWithWord(docs, word) {
+  const hits = docs.filter((d) => new RegExp(`\\b${word}\\b`).test(d.text));
+  assert.equal(hits.length, 1,
+    `the fixture corpus must carry exactly one document with the literal word \`${word}\`, found ${hits.length}`);
+  return hits[0].id;
+}
+
+test('fold at the seam: each inflected group returns one and the same document set', () => {
+  const docs = corpus();
+  const dir = fixtureRoot();
+  for (const group of GROUPS) {
+    const owner = Object.fromEntries(group.map((w) => [w, docWithWord(docs, w)]));
+    /** @type {{json:{results:Array<{snippet:string}>, total:number}}|null} */
+    let first = null;
+    for (const member of group) {
+      const r = recall(member, dir);
+      assert.equal(r.json.ok, true);
+      // Non-empty first, or the deep equality below passes over two empty
+      // arrays and the group asserts nothing at all.
+      assert.ok(r.json.total >= 1, `query \`${member}\` matched nothing`);
+      if (first === null) first = r;
+      else {
+        assert.deepEqual(r.json.results, first.json.results,
+          `\`${member}\` and \`${group[0]}\` returned different results`);
+        assert.equal(r.json.total, first.json.total,
+          `\`${member}\` matched ${r.json.total} documents and \`${group[0]}\` matched ${first.json.total}`);
+      }
+      // The sharp arm: every OTHER member's exclusive document is in the hits.
+      const got = idsOf(r.json.results);
+      for (const other of group) {
+        if (other === member) continue;
+        assert.ok(got.includes(owner[other]),
+          `query \`${member}\` did not return ${owner[other]}, the document that carries \`${other}\` and not \`${member}\`; got ${got.join(' ') || '(nothing)'}`);
+      }
+    }
+  }
+});
