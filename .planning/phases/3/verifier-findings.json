@@ -1,0 +1,91 @@
+{
+  "status": "delivered",
+  "score": "8/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "The four withheld path shapes exist as ONE frozen, exported module-scope constant, spelled nowhere else in the tree",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/planning/risk-check.mjs:95-100 (Object.freeze of four ':(top,exclude).planning/phases/*/...' entries), exported at :883. `grep -rn \"top,exclude\" --include='*.mjs' --include='*.json' cadence-core` returns only that definition, its comment at :84, and risk-diff.test.mjs:553 which STRIPS the magic from the imported constant rather than re-spelling it."
+    },
+    {
+      "n": 2,
+      "truth": "The constant is wired into the argv the gate actually runs - it reaches the `git diff` read inside cmdRiskCheckRun, after the `--` separator, with every pre-existing argument unmoved",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/bin/planning/risk-check.mjs:272-274: execFileSync('git', ['-C', range.top, 'diff', '--no-ext-diff', '--no-textconv', baseId, headId, '--', ...REVIEWER_TEXT_PATHSPECS]). Value traced end to end on a real run: the constant enters the argv, the withheld hunks never appear in `body`, and `scanDiff(body, categories)` at :277 answers matches:[] - observed live via `node cadence-core/bin/planning.mjs --dir <scratch> risk-check run --phase 3 --plan 1 --base f70a0443 --head cf2571b8 --surfaces destructive`, the same entry point cadence-core/workflows/task.md:125 and references/execute-parallel.md:34 invoke."
+    },
+    {
+      "n": 3,
+      "truth": "A range whose only destructive text sits inside an excluded artifact answers matches:[] with checked:true and empty:false - a completed clear, and the trace RECORD says the same",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/risk-diff.test.mjs:412-445 ('a record quoting a destructive command is a completed CLEAR, not a fire') asserts ok/checked/matches/inconclusive/empty on the envelope AND matches:[] plus empty:false on the single risk_check record via riskRecords. Row passes in-tree; against a copy of the tree with the pathspec spread removed it FAILS. The fixture commits a second non-risky file so empty:false is a real clear, not the empty arm."
+    },
+    {
+      "n": 4,
+      "truth": "Detection is not weakened: the same range with a destructive construct in a .mjs file still trips `destructive`, and the signal names the construct on the .mjs line",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/risk-diff.test.mjs:447-471 asserts matches deep-equals [{category:'destructive', signal:'changed line: a destructive git command'}]. Reproduced the pre-fix failure myself in a scratch copy with only the `...REVIEWER_TEXT_PATHSPECS` spread removed: that row fails with actual signal 'changed line: an `rm -rf`' (the withheld record's own line answering first), expected 'changed line: a destructive git command'. So the row genuinely reddens pre-fix on `signal`, not merely passes after. lib/risk-diff.mjs is untouched by all four commits (git show --stat 0d049527 82c963f6 d724f613 31e053fa)."
+    },
+    {
+      "n": 5,
+      "truth": "Each of the four shapes is proved excluded under a REAL filename, a PLAN.md in the same directory still trips, and the coverage is driven by the constant so it cannot drift",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/risk-diff.test.mjs:510-522 (four separate test() rows on ADJUDICATION-risk_surface-plan-1.json, REVIEW-risk_surface-plan-1.md, FINDINGS.json, verifier-findings.json), :524-536 (PLAN.md row asserting matches.map(m=>m.category) deep-equals ['destructive']), :538-562 (iterating row, count derived on both sides: `ran` vs REVIEWER_TEXT_PATHSPECS.length). Drift door proved both directions in scratch copies: deleting the FINDINGS.json entry from the constant gives 100 pass / 1 fail with the failing row named ``risk-check run: `FINDINGS.json` is withheld from the range the gate reads``; appending a fifth ':(top,exclude).planning/phases/*/DEFERRED-*.json' entry makes the iterating row loop five times and still pass. No literal 4 is typed anywhere."
+    },
+    {
+      "n": 6,
+      "truth": "The real range that was settled with an override comes back clean on live history",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "`node cadence-core/bin/planning.mjs --dir <scratch> risk-check run --phase 3 --plan 1 --base f70a0443 --head cf2571b8 --surfaces destructive` printed {\"ok\":true,...,\"checked\":true,\"categories\":[\"destructive\"],\"matches\":[],\"inconclusive\":false,\"empty\":false}. Run with --dir into a scratch directory, so no record landed in this project's trace and the repo tree stayed clean."
+    },
+    {
+      "n": 7,
+      "truth": "Suite and self-verify are green, and the enlarged trigger contract is re-pinned rather than overrunning its budget",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`node cadence-core/bin/test.mjs`: tests 3483, pass 3483, fail 0. `node cadence-core/bin/self-verify.mjs`: {\"ok\":true,...,\"problems\":[]} across 29 checks including budgets. cadence-core/references/risk-surface.md is exactly 10768 bytes against weight-budgets.json:45 = 10768. `node --test cadence-core/bin/risk-diff.test.mjs`: 101/101."
+    },
+    {
+      "n": 8,
+      "truth": "The trigger contract states what the range read withholds, why, where the boundary is, and that detection is unchanged",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/references/risk-surface.md:24-36, inside the `## risk_surface detection` section and directly after the paragraph the withholding qualifies: names all four filename shapes, cites references/review-record.md's byte-for-byte storage requirement as the cause, states the PLAN.md boundary and its reason explicitly, states nothing outside .planning/phases/ is withheld, and states the empty:true consequence still clears as a completed check."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Destructive text inside an excluded artifact reads as a completed clear",
+      "evidence": "risk-diff.test.mjs:412-445 asserts matches:[], checked:true, inconclusive:false, empty:false on the envelope and matches:[]/empty:false on the single risk_check trace record; the fixture's second non-risky file is what makes empty:false a clear rather than an unread range. The row fails against a tree with the pathspec spread removed."
+    },
+    {
+      "k": 2,
+      "name": "Detection survives the exclusion",
+      "evidence": "risk-diff.test.mjs:447-471 asserts the exact match [{category:'destructive', signal:'changed line: a destructive git command'}]. Independently reproduced the pre-fix failure: with only `...REVIEWER_TEXT_PATHSPECS` removed the row fails, actual signal 'changed line: an `rm -rf`' from the withheld record. lib/risk-diff.mjs unchanged in all four phase commits, so no signal left the table."
+    },
+    {
+      "k": 3,
+      "name": "The excluded set is named once and bounded",
+      "evidence": "One frozen exported constant at planning/risk-check.mjs:95-100, no second spelling anywhere (grep for 'top,exclude'). Four per-artifact rows on real filenames pass, the PLAN.md boundary row asserts ['destructive'] still trips, and the iterating row is driven by the imported constant with a derived count. Deleting one entry reddens exactly that artifact's row; adding a fifth keeps the suite green with the loop running five times."
+    },
+    {
+      "k": 4,
+      "name": "The real range that was overridden now comes back clean",
+      "evidence": "risk-check run --base f70a0443 --head cf2571b8 --surfaces destructive returned checked:true, matches:[], inconclusive:false, empty:false on live history."
+    },
+    {
+      "k": 5,
+      "name": "Suite and self-verify are green",
+      "evidence": "node cadence-core/bin/test.mjs: 3483 tests, 3483 pass, 0 fail (one run, no flake observed). node cadence-core/bin/self-verify.mjs: ok:true, problems:[], no budget-overrun for risk-surface.md (file 10768 bytes, budget 10768)."
+    }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
