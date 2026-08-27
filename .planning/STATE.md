@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 4 (Keep the record writable)
+Phase: 3 of 4 (Make the cache figures reach the record)
 Status: phase complete
-Next: /cad-milestone - phase 4 was the last phase; the audit gate precedes any ship. Phase 3's ROADMAP box is still unchecked though its UAT is complete 10/10.
+Next: /cad-milestone - every phase in the roadmap is now complete; the audit gate precedes any ship
 Updated: 2026-08-27

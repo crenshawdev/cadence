@@ -419,7 +419,7 @@ section only, bounded at the next `## ` heading.
 | BUD-03 | Phase 1 | Complete |
 | RSK-05 | Phase 1 | Complete |
 | RNG-03 | Phase 2 | Complete |
-| TRC-07 | Phase 3 | Pending |
+| TRC-07 | Phase 3 | Complete |
 | TRC-08 | Phase 4 | Complete |
 
 

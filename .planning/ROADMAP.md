@@ -54,7 +54,7 @@ filed and named here so the next cycle does not have to rediscover it.
 
 - [x] **Phase 1: Bound what a dispatch is handed** - bound a plan by the bytes its `files:` declares, and stop the risk floor inheriting a whole file's matches
 - [x] **Phase 2: Unforeclose the shared rung prefix** - delete the rung sentence from every agent body so a role's rungs share a cached prefix, with a check that fails when a future rung file breaks it
-- [ ] **Phase 3: Make the cache figures reach the record** - the two prompt-cache figures reach the bracket for every worker that stopped, so phase 2's recovery can be measured instead of asserted
+- [x] **Phase 3: Make the cache figures reach the record** - the two prompt-cache figures reach the bracket for every worker that stopped, so phase 2's recovery can be measured instead of asserted
 - [x] **Phase 4: Keep the record writable** - rotate `trace.jsonl` before the 1 MiB cap makes it permanently write-dead
 
 ## Phase Details
