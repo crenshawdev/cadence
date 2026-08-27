@@ -431,6 +431,10 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| FRG-03 | Phase 1 | Pending |
+| FRG-04 | Phase 1 | Pending |
+| FRG-05 | Phase 1 | Pending |
+| FRG-06 | Phase 1 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
