@@ -21,6 +21,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanDiff, scanDeclared } from './lib/risk-diff.mjs';
 import { CATEGORIES } from './lib/surface-scan.mjs';
+import { REVIEWER_TEXT_PATHSPECS } from './planning/risk-check.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
@@ -469,6 +470,94 @@ test('risk-check run: withholding the record does not withhold detection from th
   assert.deepEqual(r.matches,
     [{ category: 'destructive', signal: 'changed line: a destructive git command' }],
     JSON.stringify(r));
+});
+
+// --- what the range read withholds, and where the boundary is ----------------
+//
+// AC3. Every row below drives off REVIEWER_TEXT_PATHSPECS, the constant the
+// seam's own `git diff` is handed, rather than off a second spelling of the
+// four (D-04) - a list and its test that are typed out twice drift apart, and
+// the drift is silent because both halves still look right.
+
+/** A range that commits ONE fixture file plus one unrelated file carrying
+ * nothing risky. The second file is load-bearing: it is what leaves the
+ * SCANNED range non-empty, so a `matches:[]` answer here reads as a COMPLETED
+ * clear and not as the empty arm, which is a different claim. */
+function clearRange(rel, body) {
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, rel, body);
+  const head = commitFile(repo, 'docs/notes.md', 'a note carrying nothing at all\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', head]);
+  return { r, dir };
+}
+
+/** Stored reviewer text of whichever shape the artifact's extension implies.
+ * The construct stays ASSEMBLED, for the reason the top of this file states. */
+const recordBody = (rel) => (rel.endsWith('.json')
+  ? adjudicationBody(DESTRUCTIVE_LINE)
+  : `stored reviewer text: an operator runs ${DESTRUCTIVE_LINE} on the host\n`);
+
+/**
+ * The four artifacts, spelled with a REAL filename this repository's own
+ * `.planning/phases/` has held, so each row proves the pathspec matches what
+ * the workflows actually WRITE and not merely what the glob was written
+ * against. A generic `ADJUDICATION-x.json` would pass while the discriminator
+ * the seam really emits missed.
+ *
+ * A `for` loop around `test()` registers four SEPARATE rows and is not the
+ * shape this file's one-row-per-test rule refuses: the hazard that rule names
+ * is a table looped INSIDE one test(), whose count hides a row that never ran.
+ * Each name below is reported and fails on its own.
+ */
+for (const name of ['ADJUDICATION-risk_surface-plan-1.json', 'REVIEW-risk_surface-plan-1.md',
+  'FINDINGS.json', 'verifier-findings.json']) {
+  test(`risk-check run: \`${name}\` is withheld from the range the gate reads`, () => {
+    const { r } = clearRange(`.planning/phases/1/${name}`, recordBody(name));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.checked, true, JSON.stringify(r));
+    assert.deepEqual(r.matches, [], JSON.stringify(r));
+    assert.equal(r.empty, false, JSON.stringify(r));
+  });
+}
+
+test('risk-check run: a PLAN.md in the SAME directory still trips - the boundary is the four shapes', () => {
+  // Where the withholding STOPS, and why it stops there. A destructive command
+  // written into a plan's Action is not a record of something a reviewer said:
+  // it is the text an executor is handed to RUN. So a plan file under the same
+  // `.planning/phases/<N>/` directory stays scanned, and this exclusion is not
+  // "documentation under `.planning/` is exempt". Deleting this row is how the
+  // scope quietly widens to all of `.planning/`.
+  const { r } = clearRange('.planning/phases/1/PLAN.md',
+    `- **Action:** run \`${DESTRUCTIVE_LINE}\` over the build directory first\n`);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.deepEqual(r.matches.map((m) => m.category), ['destructive'], JSON.stringify(r));
+});
+
+test('risk-check run: EVERY entry of the withheld set is exercised, however many it holds', () => {
+  // The drift door. The rows above name four artifacts by hand; this one is
+  // driven entirely by the constant, so a FIFTH entry added to it later - the
+  // `DEFERRED-*.json` case this phase deliberately left out is the known
+  // candidate - is exercised without anyone remembering to come back here.
+  //
+  // The count is DERIVED on both sides: `ran` is what the loop did and
+  // `.length` is what the constant holds, both read at run time. That is a
+  // measurement, not a census by lib/census-registry.mjs's definition, so it
+  // owes no marker and no registry row - and a hand-typed `4` here would owe
+  // both while protecting less.
+  let ran = 0;
+  for (const spec of REVIEWER_TEXT_PATHSPECS) {
+    // The concrete path each pathspec names: drop the magic and put a literal
+    // where each wildcard is.
+    const rel = spec.replace(':(top,exclude)', '').replace(/\*/g, 'x');
+    const { r } = clearRange(rel, recordBody(rel));
+    assert.equal(r.checked, true, `${spec}: the range was not read at all`);
+    assert.deepEqual(r.matches, [], `${spec} did not withhold ${rel}: ${JSON.stringify(r.matches)}`);
+    assert.equal(r.empty, false, `${spec}: the scanned range was empty, so the row proves nothing`);
+    ran++;
+  }
+  assert.equal(ran, REVIEWER_TEXT_PATHSPECS.length, 'the loop skipped a withheld pathspec');
 });
 
 test('risk-check run: a --surfaces token outside the eight is refused, and appends NOTHING', () => {
