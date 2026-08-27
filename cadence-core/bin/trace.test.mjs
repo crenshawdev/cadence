@@ -17,7 +17,8 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   appendEvent, correlationId, renderTrace, tracePath, rotatedTracePath,
-  MAX_TRACE_BYTES, ROTATED_TRACE_FILE, FAMILIES,
+  rotationClaimPath,
+  MAX_TRACE_BYTES, ROTATED_TRACE_FILE, ROTATION_CLAIM_FILE, FAMILIES,
   ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE, ROTATION,
 } from './lib/trace.mjs';
 
@@ -119,8 +120,19 @@ test('appendEvent: an interleaved write sequence keeps every event, in order', (
 
 // --- the bound ROTATES rather than refusing (TRC-08) -------------------------
 
-/** Every file in the planning root whose name starts with the trace's own. */
+/**
+ * Every file in the planning root whose name starts with the trace's own.
+ *
+ * The prefix filter DELIBERATELY covers the claim sidecar, which is why
+ * `ROTATION_CLAIM_FILE` had to keep the record's own `trace.` prefix: a sidecar
+ * leaked on an arm that still HOLDS the claim shows up in these assertions
+ * rather than being filtered out of them, and the six-writer race row below is
+ * what proves the release still holds under contention.
+ */
 const siblings = (dir) => readdirSync(dir).filter((e) => e.startsWith('trace.')).sort();
+
+/** What a COMPLETED rotation leaves on disk: the pair, plus the inert sidecar. */
+const ROTATED_SET = [ROTATED_TRACE_FILE, ROTATION_CLAIM_FILE, 'trace.jsonl'];
 
 /**
  * Pad the record to ONE BYTE under the bound, so the next append of any size
@@ -155,7 +167,7 @@ test('appendEvent: a record at the bound rotates, and the append lands', () => {
 
   // Exactly one rotated generation, and it is the bytes that were carried away
   // rather than a freshly written file.
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
   assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), carried);
 
   // Neither file exceeds the bound, the live one having been under it before.
@@ -295,7 +307,7 @@ test('appendEvent: writers racing at the bound leave ONE generation and lose no 
 
   // Exactly one rotated generation, and no claim or temp file left behind on
   // any arm - `.planning/` holds nothing else named after the record.
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl'],
+  assert.deepEqual(siblings(dir), ROTATED_SET,
     `a claim or temp file was left behind: ${JSON.stringify(readdirSync(dir))}`);
 
   // The generation is UNDER the bound and carries the OLDEST events - the
@@ -317,7 +329,7 @@ test('appendEvent: a second append after a rotation does not rotate again', asyn
   assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
     'the second append rotated again and destroyed the generation');
   assert.deepEqual(lines(dir).filter((e) => e.writer).map((e) => e.writer), ['a', 'b']);
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
 });
 
 test('appendEvent: a writer holding a STALE stat is refused the claim, not corrected after it', async () => {
@@ -341,7 +353,7 @@ test('appendEvent: a writer holding a STALE stat is refused the claim, not corre
     "the late writer destroyed the generation the first writer's rotation made");
   assert.equal(readFileSync(tracePath(dir), 'utf8'), live,
     "the late writer carried away the first writer's own event");
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
 });
 
 test('appendEvent: a SECOND rotation replaces the generation, so the pair stays bounded', () => {
@@ -358,7 +370,7 @@ test('appendEvent: a SECOND rotation replaces the generation, so the pair stays 
   assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
   assert.notEqual(readFileSync(rotatedTracePath(dir), 'utf8'), first,
     'the second rotation kept the FIRST generation, so the live record never got its room back');
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
   for (const f of [tracePath(dir), rotatedTracePath(dir)]) {
     assert.ok(readFileSync(f).length < MAX_TRACE_BYTES, `${f} is over the bound`);
   }

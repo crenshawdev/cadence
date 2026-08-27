@@ -111,6 +111,33 @@ export const TRACE_FILE = 'trace.jsonl';
 export const ROTATED_TRACE_FILE = 'trace.1.jsonl';
 
 /**
+ * The claim SIDECAR's spelling, stated ONCE here for the same reason the
+ * rotated generation's is: the writer, the staleness reader, this repository's
+ * `.gitignore` rule and every test read the name from this one place and cannot
+ * drift apart. DERIVED from `ROTATED_TRACE_FILE` rather than respelled, so the
+ * two names cannot come apart either, and it keeps the record's own `trace.`
+ * prefix because `siblings()` in `trace.test.mjs` filters on exactly that - a
+ * name outside the prefix would silently stop a leaked sidecar reddening the
+ * six-writer race row.
+ *
+ * WHY A SEPARATE FILE AT ALL (TRC-09, D-01). A claim abandoned by a killed
+ * process is indistinguishable from a live one on every property the claim
+ * itself carries: the claim IS a hard link, so the sibling and the live record
+ * are one inode until the swap, and every `appendFileSync` into the record
+ * bumps that shared inode's `mtime` and `ctime` (measured 2026-08-27, a
+ * sidecar-less claim's age reads 0.86-0.88 ms on every append into an ABANDONED
+ * state). `birthtime` is no better - it dates the current generation, not the
+ * claim. Only a file written beside the claim can carry the claim's own age.
+ *
+ * Its CONTENT is diagnostic only. The single property any arm in this module
+ * takes off it is its `mtime`; nothing here reads or parses its bytes, and it
+ * carries no pid, because D-01 rejected `process.kill(pid, 0)` liveness - no
+ * precedent anywhere in `bin/lib/*.mjs`, and it degrades on a foreign host and
+ * on a network `.planning` root.
+ */
+export const ROTATION_CLAIM_FILE = `${ROTATED_TRACE_FILE}.claim`;
+
+/**
  * The write-time size bound. At or over it nothing more is appended and
  * `renderTrace` reports `capped`, so an incomplete record is never read as a
  * complete one.
@@ -267,6 +294,16 @@ export function tracePath(planningRoot) {
  */
 export function rotatedTracePath(planningRoot) {
   return join(planningRoot, ROTATED_TRACE_FILE);
+}
+
+/**
+ * Where the claim sidecar lives. Derived from `ROTATION_CLAIM_FILE` the way the
+ * line above derives the generation's path, so a test or a `.gitignore` rule
+ * that has to name the file names what the writer actually produces.
+ * @param {string} planningRoot
+ */
+export function rotationClaimPath(planningRoot) {
+  return join(planningRoot, ROTATION_CLAIM_FILE);
 }
 
 /**
@@ -581,6 +618,9 @@ export function rotateTrace(planningRoot, reserve) {
   let temp = null;
   /** @type {string|null} */
   let evicted = null;
+  const claim = rotationClaimPath(planningRoot);
+  /** @type {string|null} */
+  let dated = null;
   // The claim is HELD from the link until the swap. While it is held the
   // sibling is only a second name for the live file, so every failure arm has
   // to release it - a claim left behind reads as a rotation in flight forever
@@ -590,6 +630,36 @@ export function rotateTrace(planningRoot, reserve) {
     let claimed = false;
     for (let attempt = 0; attempt < 2 && !claimed; attempt++) {
       try {
+        // DATE THE CLAIM BEFORE TAKING IT, on the first attempt and again on
+        // the retry that follows an eviction. The ordering is load-bearing and
+        // the intuitive one is wrong: writing the sidecar after the link
+        // succeeds leaves a window where the claim is HELD while the file
+        // beside it is still the aged one a previous run left, and a third
+        // process reading that age concludes ABANDONED and evicts a LIVE
+        // claim - which costs the whole record, not one rotation (the holder's
+        // `readFileSync(sibling)` then gets ENOENT, `carried` falls back to
+        // '', and it swaps a record holding only the rotation marker over the
+        // live path). Writing first cannot lose the race the other way: a
+        // sidecar with no claim behind it is never read, because every read of
+        // it is gated on `rotationInFlight` being true.
+        //
+        // A PLAIN overwrite, never `{flag:'wx'}`. The sidecar a killed process
+        // left behind is still at exactly this path when a reclaim takes the
+        // claim, so an exclusive create would throw EEXIST there and turn the
+        // reclaim TRC-09 exists to deliver into a failed rotation. The `wx` on
+        // the `temp` write below is not the precedent - that one writes a
+        // PRIVATE path carrying `priv`, where an existing file means something
+        // has gone wrong.
+        //
+        // A FAILED sidecar write is swallowed rather than allowed to decide
+        // the rotation: no sidecar reads as LIVE (D-02), which is exactly the
+        // behaviour that shipped before TRC-09, whereas letting the throw reach
+        // the arm below would send an unwritable root down the no-hard-links
+        // rename fallback it has no business taking.
+        try {
+          writeFileSync(claim, `${new Date().toISOString()}\n`);
+          dated = claim;
+        } catch { /* fail live: an absent sidecar is read as a live claim */ }
         linkSync(file, sibling);
         claimed = true;
         held = true;
@@ -600,6 +670,12 @@ export function rotateTrace(planningRoot, reserve) {
           // No hard links on this filesystem. FALL BACK to the replacing
           // rename and accept the window it leaves - never the other way
           // round, because the window is exactly what the link closes.
+          //
+          // No claim is HELD on this arm and the sibling is the generation
+          // rather than a second name for the live file, so the sidecar the
+          // line above wrote dates nothing and nothing would ever release it.
+          // Drop it before falling back.
+          if (dated) { try { unlinkSync(dated); } catch { /* nothing to clean up */ } dated = null; }
           try { renameSync(file, sibling); claimed = true; } catch { return { rotated: false }; }
           break;
         }
@@ -685,6 +761,21 @@ export function rotateTrace(planningRoot, reserve) {
     // evicted generation.
     if (temp) { try { unlinkSync(temp); } catch { /* nothing to clean up */ } }
     if (held) { try { unlinkSync(sibling); } catch { /* nothing to release */ } }
+    // GUARDED BY `held`, exactly as the release one line above is, and never
+    // unconditionally. A claimant may delete only a sidecar it still owns.
+    // `held` goes false at the swap while this process is still inside the
+    // carry-back loop below it, so an unconditional unlink here would delete
+    // the FRESH sidecar of a second process that took the claim legitimately in
+    // that window - leaving a standing claim with no sidecar, which D-02 reads
+    // as live forever and defeats TRC-09's reclaim permanently and silently.
+    //
+    // The consequence is deliberate: a rotation that COMPLETES leaves its
+    // sidecar behind. That residue is INERT - once the swap has happened the
+    // sibling is a separate inode, `rotationInFlight` is false, nothing reads
+    // the sidecar, and the next claimant overwrites it before it links. The
+    // `.gitignore` rule beside `/.planning/trace.1.jsonl` is what keeps it out
+    // of a working tree's commits.
+    if (held && dated) { try { unlinkSync(dated); } catch { /* nothing to release */ } }
     if (evicted) { try { unlinkSync(evicted); } catch { /* nothing to clean up */ } }
   }
 }
