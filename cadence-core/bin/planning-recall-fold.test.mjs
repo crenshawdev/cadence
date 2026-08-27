@@ -38,7 +38,7 @@ import { recall } from './planning-recall.test.mjs';
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
 /** The committed fixture corpus: `[{id, source, text}]`. */
-export function corpus() {
+function corpus() {
   return JSON.parse(readFileSync(join(FIXTURES, 'recall.corpus.json'), 'utf8'));
 }
 
