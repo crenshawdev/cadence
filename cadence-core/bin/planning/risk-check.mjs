@@ -6,8 +6,10 @@
 // `cmdRiskCheckRun` and `cmdRiskCheckStatus` - the second of the two
 // handler-to-handler call edges the single-file layout had (D-07).
 //
-// `surfaceVocabulary`, `RISK_TRIGGER` and `FIRE_RECEIPTS` are read by this
-// family and nothing else, so they travel with it (D-05).
+// `surfaceVocabulary`, `RISK_TRIGGER`, `FIRE_RECEIPTS` and
+// `REVIEWER_TEXT_PATHSPECS` are read by this family and nothing else, so they
+// travel with it (D-05). The last of the four is EXPORTED, for its own stated
+// reason: the suite has to drive itself off the same list the read uses.
 //
 // The `mergeLayers(` callsite in `cmdRiskCheckRun` destructures
 // `warnings: surfaceWarnings` and carries it into the envelope, which is arm (a)
@@ -46,6 +48,56 @@ import { appendEvent, renderTrace } from '../lib/trace.mjs';
 function surfaceVocabulary() {
   return routeLadder('risk_surface_categories') || CATEGORIES;
 }
+
+/**
+ * The four `.planning/phases/` artifacts the range read WITHHOLDS, spelled as
+ * git pathspecs that append after the `git diff` revision separator (D-01,
+ * D-02).
+ *
+ * WHY A PATHSPEC AND NOT AN EXEMPTION INSIDE `scanDiff`. `lib/risk-diff.mjs`
+ * states at `:424-433`, `:464-470` and `:500-505` that the exemptions
+ * `scanDeclared` carries are SCOPED TO THAT FACE and deliberately not to
+ * `scanDiff`, because `scanDiff` reads a HUNK where a match is a line someone
+ * actually ADDED, and its rule is that the fix belongs at the MENTION and never
+ * at a path or a filename. Withholding the file from the DIFF honours that rule
+ * instead of bending it: `scanDiff` never receives the hunk, its face is
+ * untouched, and no signal leaves the table (D-03).
+ *
+ * WHY THESE FOUR SHAPES AND NOT `.planning/`. Each of the four stores reviewer
+ * text VERBATIM by design - `references/review-record.md` requires a stored
+ * restatement to match the reviewer's returned text byte for byte - so a docs
+ * commit landing a finding that quotes a destructive command re-tripped the
+ * very gate that found it, and the user had to override a gate to file what the
+ * gate had told them. The scope stops at these four filename shapes: a
+ * destructive command written into a PLAN.md Action is the text an executor is
+ * handed to RUN, so a plan file under the same directory stays scanned, and
+ * nothing outside `.planning/phases/` is withheld at all.
+ *
+ * WHAT IT DOES TO `empty`. A range whose changed files are ALL withheld now
+ * reads `empty: true` - the SCANNED range held nothing, rather than the range
+ * itself being empty - and that answer still clears as a COMPLETED check, the
+ * arm `risk-check status` already treats as recorded. Taking a SECOND
+ * unexcluded `git diff` to keep `empty` meaning what it meant before is
+ * deliberately not done: it doubles the read on every gate fire to make one
+ * boolean narrower, and no decision here asks for it.
+ *
+ * `:(top,exclude)` in long form on purpose. `top` anchors each pattern at the
+ * working-tree root rather than at the process cwd, so the answer is the
+ * repository's and not the caller's. The `:!` shorthand says the same thing
+ * without naming which two magics are in play, at the site where a reader is
+ * deciding whether to widen the list.
+ *
+ * EXPORTED so the suite drives itself off this list rather than off a second
+ * spelling of it (D-04) - a second spelling is how a list and its test drift
+ * apart.
+ * @type {readonly string[]}
+ */
+const REVIEWER_TEXT_PATHSPECS = Object.freeze([
+  ':(top,exclude).planning/phases/*/ADJUDICATION-*.json',
+  ':(top,exclude).planning/phases/*/REVIEW-*.md',
+  ':(top,exclude).planning/phases/*/FINDINGS.json',
+  ':(top,exclude).planning/phases/*/verifier-findings.json',
+]);
 
 // ---------------------------------------------------------------------------
 // risk-check - the detection the blocking `risk_surface` gate fires on, and the
@@ -199,6 +251,11 @@ function cmdRiskCheckRun(dir, opts) {
       // trailing `--` ends the revision list: a ref that also names a path
       // cannot turn into a pathspec here.
       //
+      // REVIEWER_TEXT_PATHSPECS goes AFTER that separator, so the rule the line
+      // above states holds for the new arguments too, and the four record
+      // artifacts that store reviewer text verbatim never reach `scanDiff` at
+      // all. See the constant for why the fix is here and not in that face.
+      //
       // `--no-ext-diff --no-textconv` are what make the EMPTY answer mean what
       // scanDiff reports it to mean. A `diff=<driver>` attribute in a checked-in
       // `.gitattributes` binds to a `diff.<driver>.command` or `.textconv` in
@@ -212,7 +269,8 @@ function cmdRiskCheckRun(dir, opts) {
       // are diff-generation switches only - they change no id, no range and no
       // exit status, so the empty/unreadable split above is untouched.
       body = execFileSync('git',
-        ['-C', range.top, 'diff', '--no-ext-diff', '--no-textconv', baseId, headId, '--'],
+        ['-C', range.top, 'diff', '--no-ext-diff', '--no-textconv', baseId, headId, '--',
+          ...REVIEWER_TEXT_PATHSPECS],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
     } catch (e) {
       // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set`
@@ -822,4 +880,4 @@ function cmdRiskCheck(dir, sub, opts) {
   return fail('usage', 'risk-check <run|status>');
 }
 
-export { cmdRiskCheck, cmdRiskCheckRun, cmdRiskCheckStatus };
+export { REVIEWER_TEXT_PATHSPECS, cmdRiskCheck, cmdRiskCheckRun, cmdRiskCheckStatus };
