@@ -58,7 +58,10 @@ Plan shape: one plan
   rule. Filtering after the fold would delete every `notes` and `being` from the
   index, so a query for `notes` returns NOTHING rather than returning less than
   it should - strictly worse than today's no-stemming behavior. Evidence:
-  `cadence-core/bin/lib/bm25.mjs:12-16`, `:27`.
+  `cadence-core/bin/lib/bm25.mjs:12-16`, `:27`. [corrected by plan-1 deviation:
+  under the rule set D-02 locks, `noted` folds to `note`, not to the stopword
+  `not`, so `its`->`it` replaces it as the second stopword landing; the ordering
+  claim itself is untouched, `being`->`be` still lands on a stopword]
 - D-04 (what "no regression" means): The fixture pins NAMED known-good hits,
   never a byte-identical top 5. The fold changes `df`, `idf` and the matched set
   by construction. Measured 2026-08-27 over ten representative queries: totals
