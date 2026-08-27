@@ -54,7 +54,7 @@ path, and it is why phase 2 is small.
 - [x] **Phase 1: Land on a forge that is not on port 22** - a self-hosted instance on a non-default port is addressable in config, wired correctly at create, and refuses what it cannot honor
 - [x] **Phase 2: Refuse the replay** - a phase whose work is already committed stops before any executor is dispatched, rather than paying for a run that does nothing
 - [x] **Phase 3: Stop the risk detector tripping on the review record** - an adjudication record quoting a destructive command is evidence, not a destructive change
-- [ ] **Phase 4: A killed rotation must not disable rotation** - an abandoned claim is reclaimed on the next append, so the record keeps the bound it promises
+- [x] **Phase 4: A killed rotation must not disable rotation** - an abandoned claim is reclaimed on the next append, so the record keeps the bound it promises
 - [ ] **Phase 5: Recall matches the word the user typed** - `seam` finds `seams`, and the records of what failed are inside the corpus that searches them
 
 ## Phase Details
