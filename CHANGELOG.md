@@ -6,6 +6,117 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.4] - 2026-08-27
+
+`v3.7.3` fixed the instruments. This cycle spent what they measure, and the
+honest result is that the one number it existed to take came back inconclusive.
+
+A dispatch is priced by what it is handed, so the cycle started there. A plan's
+declared read set is now a measured number with a reported ceiling
+(`workflow.max_plan_bytes`, default 675,000), and the plan-time risk floor stops
+reading an import statement or a constant declaration as evidence that a file
+touches a risk surface, which is what was quietly escalating plans into
+expensive routing cells. Then the rung sentence came out of all 19 agent bodies
+so a role's rung files share one byte-identical prefix, and the record grew the
+prompt-cache figures that would show what that recovers.
+
+It does not show it yet. The after side is two `cad-verifier` dispatches at
+1,952,026 cache reads and 89,744 cache creations each, against a before side of
+33 dispatches averaging 1,635,645 and 83,790. Both moved UP, +19.3% and +7.1%,
+which is not the shape of a prefix-reuse win. The two populations are not
+comparable: the after side ran back to back in one session against a byte
+identical prompt and the before side is spread across many sessions with
+different prompts and different lengths. The figures now accumulate
+automatically on every dispatch, so the real comparison costs nothing to take
+later, and this release does not claim a win it has not measured.
+
+The cycle also closed a defect that would have taken the record with it.
+`.planning/trace.jsonl` was 604,183 bytes, 57.6% of a 1,048,576 byte cap that
+refused every append past it, forever, with no rotation. At the recent rate that
+was about eleven days out.
+
+Four phases, five requirement ids all traced to a verified phase: `BUD-03`,
+`RSK-05`, `RNG-03`, `TRC-07`, `TRC-08`. UAT 29 passed, 0 failed, 1 skipped.
+16 feat against 6 fix, where `v3.7.3` ran 7 against 7.
+
+### Added
+
+- **A plan's read set is a measured number** (`BUD-03`). `workflow.max_plan_bytes`
+  (int, default 675,000) and `plan-size --max-bytes` report what a plan's `files:`
+  declares, with an `absent` count beside the total, at `/cad-plan`'s size check.
+  A crossing is reported as `plan-too-many-bytes`, never a refusal.
+
+- **Every routing replay row carries the bytes it read.** 29 rows,
+  `regressions: []`, and a row whose evidence changed says so in the floor's own
+  words rather than silently scoring differently.
+
+- **CI refuses a rung file that drifts from its siblings.** A new self-verify
+  check, `rung-prefix`, fails the build when a role's rung bodies stop being
+  byte-identical, so the shared prefix cannot be foreclosed again by an edit
+  nobody noticed.
+
+- **The record carries prompt-cache traffic for every worker that stopped**
+  (`TRC-07`). A `worker_cache` fact is written on all three of the
+  `SubagentStop` hook's withholding gates and folded onto its bracket at render
+  time by `corr` plus `agent_id`. A gate that refuses to close a bracket can now
+  still state a fact, which is what made the figures unreachable before.
+
+- **The run record rotates instead of dying** (`TRC-08`). At the size bound
+  `.planning/trace.jsonl` rotates and the append lands, carrying the in-flight
+  run's tail from the newest phase anchor so a run keeps its correlation id and
+  its brackets across the cut. One generation is kept, the rotated sibling is
+  gitignored, and `trace render` and `trace suggest` both name the record they
+  read and report that a rotation happened.
+
+### Fixed
+
+- **The risk floor stops counting an import as a risk surface** (`RSK-05`).
+  Import statements and literal-bound constant declarations no longer evidence a
+  surface at plan time, and a file whose only evidence sat on a withheld line is
+  named in `withheld` rather than dropped without a word.
+
+- **The hook reads the stopped worker's own transcript.** It was reading
+  `transcript_path`, which names the orchestrator's session and is a different
+  actor's traffic entirely. It now reads `agent_transcript_path` with no
+  fallback, so a payload naming no worker file supplies no evidence instead of
+  the wrong one's.
+
+- **A stop arriving after its own bracket closed stops adopting a dead run.**
+  It states its figures against the bracket it belongs to rather than claiming a
+  stranded dispatch from a run that ended days ago.
+
+- **The larger cache read wins at all three folding sites**, replacing a
+  first-wins rule and a last-wins rule that disagreed with each other.
+
+### Changed
+
+- **Six roles, one body each.** The rung sentence is gone from all 19 agent
+  files (`RNG-03`), so each of the six roles carries exactly one distinct body
+  across its rung files and they can share a cached prefix. The plan checker's
+  rung arrives in its dispatch prompt instead. Routing is unmoved: all 18
+  (level, role) cells still pinned, 160 of 160 route tests green.
+
+- **`/cad-progress`, `/cad-report` and `/cad-suggest` state the retention rule**
+  beside `capped`, and say where the dropped events went, so a reader of a
+  rotated record is not left to infer it.
+
+### Known issues
+
+- **An abandoned rotation claim disables rotation permanently**
+  ([GH-146](https://github.com/crenshawdev/cadence/issues/146)). The claim is a
+  hard link released only by its own `finally`, so a kill between the link and
+  the swap leaves the sibling as a second name for the live record. Every later
+  writer then reads a rotation as in flight forever: appends still land and
+  nothing write-deads, but the record never rotates again and each append pays
+  about 266 ms. Clearing it means deleting the sibling by hand.
+
+- **`.planning/reads.jsonl` still write-deads exactly as the trace did.** It
+  refuses at its own 8 MiB bound with no rotation and shares none of this code.
+  Measured 2026-08-26 on this repository: 7,293,864 bytes, 86.9% of the bound,
+  where the trace was at 58.1% when this cycle opened it. It is the same defect,
+  closer to firing.
+
+
 ## [3.7.3] - 2026-08-26
 
 The figures this repository argues about its own cost with were wrong, and the
@@ -4130,6 +4241,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.4
 [3.7.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.3
 [3.7.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.2
 [3.7.1]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.1
