@@ -986,6 +986,97 @@ test('every model.effort enum is exactly that role\'s rung set from RUNG_FILES',
     Object.keys(RUNG_FILES).length);
 });
 
+// --- the forge grammars: a typed value refused at the WRITE face (FRG-04) ----
+
+test('set git.forge_host with a port writes, and get reads it back byte for byte', () => {
+  // The defect this closes: a user whose Forgejo lives on forge.example:3001
+  // could not state that at all, because `string_or_null` was the only rule and
+  // nothing carried a port anywhere downstream.
+  const file = join(dir, 'forge-host-port.json');
+  writeFileSync(file, JSON.stringify({}));
+  const w = run(['set', '--file', file, 'git.forge_host=forge.example:3001']);
+  assert.equal(w.ok, true);
+  assert.deepEqual(w.changed, [{ key: 'git.forge_host', value: 'forge.example:3001' }]);
+  const r = run(['get', 'git.forge_host', '--file', file], join(dir, 'no-such-global.json'));
+  assert.equal(r.values['git.forge_host'], 'forge.example:3001');
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).git.forge_host, 'forge.example:3001');
+});
+
+test('set: a git.forge_host the grammar refuses leaves the file untouched', () => {
+  const file = join(dir, 'forge-host-refused.json');
+  const before = JSON.stringify({ git: { forge_host: 'forge.example' } });
+  writeFileSync(file, before);
+  for (const bad of ['forge example.com', '-forge.example.com', 'forge.example:0443',
+    'forge.example:70000', 'forge.example.com/path']) {
+    const r = run(['set', '--file', file, `git.forge_host=${bad}`]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'invalid', bad);
+    assert.equal(r.detail.length, 1);
+    assert.equal(r.detail[0].key, 'git.forge_host', bad);
+    // The sentence says what is WRONG with the value, not merely that it failed.
+    assert.match(r.detail[0].error, /hostname/);
+    assert.equal(readFileSync(file, 'utf8'), before, `${bad} must not have written`);
+  }
+});
+
+test('set: a git.forge_repo the slug grammar refuses is refused with its OWN sentence', () => {
+  const file = join(dir, 'forge-repo-grammar.json');
+  const before = JSON.stringify({});
+  writeFileSync(file, before);
+  for (const bad of ['onlyowner', '-rf/repo', 'org/../../root', 'org/re po']) {
+    const r = run(['set', '--file', file, `git.forge_repo=${bad}`]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'invalid', bad);
+    assert.equal(r.detail[0].key, 'git.forge_repo', bad);
+    assert.match(r.detail[0].error, /owner\/name slug/);
+    assert.equal(readFileSync(file, 'utf8'), before, `${bad} must not have written`);
+  }
+  // ...and the two shapes forges really serve still write, nested subgroup included.
+  assert.equal(run(['set', '--file', file, 'git.forge_repo=owner/name']).ok, true);
+  assert.equal(run(['set', '--file', file, 'git.forge_repo=group/sub/repo']).ok, true);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).git.forge_repo, 'group/sub/repo');
+});
+
+test('null still writes on both forge keys - the grammar is skipped, not failed', () => {
+  // null is the schema default on both and means the question was never asked;
+  // failing it would refuse the scaffolded templates/config.json.
+  const file = join(dir, 'forge-null.json');
+  writeFileSync(file, JSON.stringify({}));
+  assert.equal(run(['set', '--file', file, 'git.forge_host=null']).ok, true);
+  assert.equal(run(['set', '--file', file, 'git.forge_repo=null']).ok, true);
+  const written = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(written.git.forge_host, null);
+  assert.equal(written.git.forge_repo, null);
+});
+
+test('a grammar marker the registry does not hold is an ERROR, never a silent pass', () => {
+  // The failure this pins: a future key claiming a grammar nothing enforces
+  // would otherwise accept every value while reading as validated.
+  const fixture = join(dir, 'unregistered-grammar-schema.json');
+  writeFileSync(fixture, JSON.stringify({
+    _meta: { note: 'fixture: one key names a grammar the registry does not hold' },
+    keys: {
+      'granularity': { type: 'string_or_null', default: null, grammar: 'no_such_grammar', purpose: 'the marked one' },
+      'stakes': { type: 'string_or_null', default: null, purpose: 'the unmarked sibling' },
+    },
+  }));
+  const refused = JSON.parse(runWithSchema(['check', 'granularity=anything-at-all'], fixture).stdout);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'invalid');
+  assert.equal(refused.detail[0].key, 'granularity');
+  assert.match(refused.detail[0].error, /unknown schema grammar no_such_grammar/);
+  // The unmarked sibling with the same type accepts the same value, so what
+  // refused is the marker and not the type.
+  assert.deepEqual(JSON.parse(runWithSchema(['check', 'stakes=anything-at-all'], fixture).stdout), { ok: true });
+});
+
+test('validate: this repository own config layer passes the new grammars', () => {
+  const repoRoot = join(dirname(CONFIG), '..', '..');
+  const r = run(['validate', '--file', join(repoRoot, '.planning', 'config.json')]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.errors, []);
+});
+
 // --- workflow.lint_command (QW-01) -------------------------------------------
 
 test('workflow.lint_command: get returns the schema default null', () => {
