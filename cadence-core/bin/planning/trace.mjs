@@ -862,9 +862,20 @@ function cmdTrace(dir, sub, opts) {
       : warnings;
     const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig), inDispatch);
     return ok({
+      // The record these suggestions were argued off, which this arm did not
+      // name at all until TRC-08: a retune argued off a record the reader
+      // cannot name is a number. It rides the SAME `renderTrace` result the
+      // suggestions do, so the two can never name different files.
+      file: r.file,
       scope: phase === undefined ? 'all' : String(phase),
       events_read: r.events.length,
       ...(r.capped ? { capped: true } : {}),
+      // The rotation, on the same footing it rides `trace render`: a reader
+      // seeing fewer events than it expected can tell a cut from a quiet run
+      // without inferring it from what is missing. NOT folded into `capped` -
+      // that one still means this READ was truncated at the ceiling, and a
+      // rotated record is not capped.
+      ...(r.rotated ? { rotated: r.rotated } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       suggestions,
       ...(suggestWarnings.length ? { warnings: suggestWarnings } : {}),
@@ -904,6 +915,11 @@ function cmdTrace(dir, sub, opts) {
       file: r.file,
       corr: r.corr,
       capped: r.capped,
+      // Emitted only where the record carries a rotation marker, so an envelope
+      // every reader already parses is byte-identical on a record that never
+      // rotated. It names the sibling the cut events are in; nothing reads that
+      // file, and this field is how a reader learns they are not missing.
+      ...(r.rotated ? { rotated: r.rotated } : {}),
       counts: r.counts,
       ...(Object.keys(r.roles).length ? { roles: r.roles } : {}),
       // Emitted the way `roles` is: only when there is something to say. A

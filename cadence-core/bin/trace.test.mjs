@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import {
   appendEvent, correlationId, renderTrace, tracePath, rotatedTracePath,
   MAX_TRACE_BYTES, ROTATED_TRACE_FILE, FAMILIES,
-  ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE,
+  ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE, ROTATION,
 } from './lib/trace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -241,8 +241,86 @@ test('appendEvent: a record with no anchor carries nothing forward', () => {
   // carrying nothing degrades nothing.
   assert.equal(res.corr, '7');
   const got = lines(dir);
-  assert.equal(got.length, 1, 'a record with no anchor rotates to an empty live record');
-  assert.equal(got[0].event, 'resolve');
+  // The rotation marker and the appended event, and nothing carried forward:
+  // `correlationId` already returns the bare phase where no anchor exists, so
+  // carrying nothing degrades nothing.
+  assert.equal(got.length, 2, 'a record with no anchor carried a tail forward');
+  assert.equal(got[0].event, ROTATION);
+  assert.equal('phase' in got[0], false, 'a rotation with no run carried a phase');
+  assert.equal(got[1].event, 'resolve');
+});
+
+// --- the rotation, on both reader envelopes (D-06) ---------------------------
+
+/** A planning root whose record has just rotated, with `plan` paired under it. */
+function rotatedRoot() {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: DISPATCH, plan: 1, role: 'cad-executor' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 1, role: 'cad-executor', tokens: 10 });
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'rearm', detail: 'risk_surface' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  return dir;
+}
+
+test('renderTrace: a record that never rotated carries no rotation key at all', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  const r = renderTrace(dir, 1);
+  assert.equal('rotated' in r, false,
+    'a record that never rotated must render byte-identically for every reader');
+});
+
+test('renderTrace: after a rotation the envelope names the sibling, and capped is false', () => {
+  const dir = rotatedRoot();
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(Object.keys(r.rotated).sort(), ['file', 'ts']);
+  assert.equal(r.rotated.file, rotatedTracePath(dir));
+  assert.match(r.rotated.ts, /^\d{4}-\d{2}-\d{2}T/);
+  // NOT `capped`: that one means this READ was truncated at the ceiling, and a
+  // healthy rotated record is not truncated - reusing it would make three
+  // shipped prose surfaces say events are missing about a record that is whole.
+  assert.equal(r.capped, false);
+  assert.equal(r.file, tracePath(dir));
+});
+
+test('renderTrace: the rotation reports on the RECORD, not on the --phase scope', () => {
+  const dir = rotatedRoot();
+  // A phase that never appears in the record at all. The cut took events of
+  // EVERY phase away, so the answer cannot depend on which one was asked about.
+  const r = renderTrace(dir, 9);
+  assert.equal(r.rotated.file, rotatedTracePath(dir));
+  assert.equal(r.counts.lifecycle, 0, 'the scope filter itself still holds');
+  assert.equal(renderTrace(dir).rotated.file, rotatedTracePath(dir), 'unscoped too');
+});
+
+test('seam: trace render and trace suggest each name their record and report the rotation', () => {
+  const clean = root();
+  appendEvent(clean, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(clean, { phase: 1, family: 'outcome', event: 'rearm', detail: 'risk_surface' });
+
+  // Both envelopes name the record they read, rotation or no rotation.
+  const cleanRender = run(clean, ['trace', 'render', '--phase', '1']);
+  const cleanSuggest = run(clean, ['trace', 'suggest']);
+  assert.equal(cleanRender.file, tracePath(clean));
+  assert.equal(cleanSuggest.file, tracePath(clean));
+  assert.equal('rotated' in cleanRender, false);
+  assert.equal('rotated' in cleanSuggest, false);
+  // suggest's thin-record discriminator is untouched by the new keys.
+  assert.equal(cleanSuggest.events_read, 2);
+
+  const dir = rotatedRoot();
+  const render = run(dir, ['trace', 'render', '--phase', '1']);
+  const suggest = run(dir, ['trace', 'suggest']);
+  assert.equal(render.file, tracePath(dir));
+  assert.equal(render.rotated.file, rotatedTracePath(dir));
+  assert.equal(render.capped, false);
+  assert.equal(suggest.file, tracePath(dir));
+  assert.equal(suggest.rotated.file, rotatedTracePath(dir));
+  assert.equal(suggest.rotated.ts, render.rotated.ts);
+  // A phase other than the one in flight still carries it.
+  assert.equal(run(dir, ['trace', 'render', '--phase', '9']).rotated.file, rotatedTracePath(dir));
 });
 
 test('appendEvent: one line that reaches the bound by itself is refused, and nothing moves', () => {

@@ -228,6 +228,32 @@ export const COORDINATOR = 'coordinator';
  */
 export const WORKER_CACHE = 'worker_cache';
 
+/**
+ * The lifecycle event a ROTATION writes as the last line of the record it
+ * created, so a reader can say that the cut happened rather than infer it from
+ * events that are no longer there.
+ *
+ * It is another lifecycle NAME and not a fifth FAMILY, for the reason
+ * `COORDINATOR` states two clauses above: `FAMILIES` is validated at the seam
+ * while `renderTrace`'s `counts` is a fixed four-key literal, so a new family
+ * would write fine and count nowhere. And it must NEVER join `TERMINAL`, for
+ * the reason `WORKER_CACHE` states: a name in that array re-enters the pairing
+ * and would open and close a bracket for a worker that never ran.
+ *
+ * It carries the rotated sibling's name and the instant, and it takes the
+ * `corr` and `phase` of the ANCHOR carried above it - the run in flight - so it
+ * files under the run whose record was cut rather than minting an id of its
+ * own. Where the record held no anchor to carry, it files under no phase at
+ * all, which is exactly what a rotation of a record with no run in it did.
+ *
+ * It is INERT in the renderer by design (D-08): it opens nothing, closes
+ * nothing and pairs with nothing, and it reaches none of the four shipped prose
+ * readers, whose default response carries brackets plus `outcome` events only.
+ * That is why the signal a reader acts on is the `rotated` field on the render
+ * ENVELOPE, which this event is only the evidence for.
+ */
+export const ROTATION = 'record_rotated';
+
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {
   return join(planningRoot, TRACE_FILE);
@@ -259,7 +285,7 @@ function key(v) {
  * BOUNDED at `MAX_TRACE_BYTES`, the same ceiling the writer enforces. The write
  * bound alone does not protect this side: the writer now ROTATES at that bound
  * rather than refusing, and a fresh record whose carried tail could not be
- * trimmed under it (the degenerate arm `carriedTail` states) is over the cap by
+ * trimmed under it (the degenerate arm `freshRecord` states) is over the cap by
  * construction, while a trace that was corrupted, hand-edited, or written by a
  * producer outside this seam has no bound at all. Reading it whole is a
  * synchronous `readFileSync` + `split` +
@@ -357,9 +383,9 @@ function renderEvent(planningRoot, event) {
 }
 
 /**
- * The tail a rotation carries forward: the NEWEST `lifecycle/phase_start` line
- * and every line after it, as text ending in a newline - or `''` where the
- * record holds no anchor at all.
+ * The whole body of the record a rotation writes: the NEWEST
+ * `lifecycle/phase_start` line and every line after it, then the rotation
+ * marker. Where the record holds no anchor at all, the marker alone.
  *
  * WHY A TAIL AND NOT A WHOLE-FILE RENAME (D-01). `correlationId` scans BACKWARD
  * from the end for that anchor and returns the bare `<phase>` when it finds
@@ -391,14 +417,22 @@ function renderEvent(planningRoot, event) {
  * rotation exists to remove, and dropping a bracket half would break the count;
  * the cost is that the next append rotates again, bounded by how fast one run
  * can write a bound's worth of events under a single anchor.
+ * THE MARKER is the last line of what this returns, after the carried tail, so
+ * the tail's own order is untouched and the marker sits under the anchor whose
+ * `corr` it takes. It is written as part of this one fresh-file write rather
+ * than through `appendEvent`, which would re-enter the size arm that called us.
+ * Its own bytes are counted against the bound here, so the reserve a caller
+ * passes is the pending line alone.
  * @param {string} text the whole record being carried away
- * @param {number} reserve bytes the fresh file owes beyond the tail
+ * @param {number} reserve bytes the fresh file owes beyond this content
  * @returns {string}
  */
-function carriedTail(text, reserve) {
+function freshRecord(text, reserve) {
   const lines = text.split('\n');
   let at = -1;
   let anchorCorr = '';
+  /** @type {any} */
+  let anchorPhase;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -411,9 +445,22 @@ function carriedTail(text, reserve) {
     // than re-derived: `renderEvent` stored it there at write time, and a
     // re-derivation here would answer about the file after the cut.
     anchorCorr = typeof e.corr === 'string' && e.corr ? e.corr : key(e.phase);
+    anchorPhase = e.phase;
     break;
   }
-  if (at < 0) return '';
+  // The same fixed key order `renderEvent` writes, so the marker is an ordinary
+  // line of the record rather than a differently shaped one. `phase` is
+  // `undefined` where no anchor was carried and drops out of the JSON entirely.
+  const marker = `${JSON.stringify({
+    corr: anchorCorr,
+    phase: anchorPhase,
+    ts: new Date().toISOString(),
+    family: 'lifecycle',
+    event: ROTATION,
+    file: ROTATED_TRACE_FILE,
+  })}\n`;
+  if (at < 0) return marker;
+  const owed = reserve + Buffer.byteLength(marker);
 
   /** @type {{text: string, bytes: number, mine: boolean, dropped: boolean}[]} */
   const kept = [];
@@ -437,13 +484,13 @@ function carriedTail(text, reserve) {
     total += bytes;
   }
 
-  for (let i = 1; i < kept.length && total + reserve >= MAX_TRACE_BYTES; i++) {
+  for (let i = 1; i < kept.length && total + owed >= MAX_TRACE_BYTES; i++) {
     if (kept[i].mine) continue;
     kept[i].dropped = true;
     total -= kept[i].bytes;
   }
   const survivors = kept.filter((l) => !l.dropped).map((l) => l.text);
-  return survivors.length ? `${survivors.join('\n')}\n` : '';
+  return survivors.length ? `${survivors.join('\n')}\n${marker}` : marker;
 }
 
 /**
@@ -556,7 +603,7 @@ function rotateTrace(planningRoot, reserve) {
     let seen = Buffer.byteLength(carried);
 
     temp = `${file}.rotate.${priv}`;
-    writeFileSync(temp, carriedTail(carried, reserve), { flag: 'wx' });
+    writeFileSync(temp, freshRecord(carried, reserve), { flag: 'wx' });
     renameSync(temp, file);
     temp = null;
     held = false;
@@ -703,6 +750,12 @@ export function appendEvent(planningRoot, event) {
  * @property {string} file the trace file's path
  * @property {string|null} corr the phase's derived id, or null with no `--phase`
  * @property {boolean} capped true when the file is at or over MAX_TRACE_BYTES
+ * @property {{file: string, ts: any}} [rotated] present ONLY where the record
+ *   carries a rotation marker, the way `coordinator` is present only where a
+ *   coordinator marker is - so a record that never rotated renders
+ *   byte-identically for every reader already parsing this envelope. It reports
+ *   on the RECORD and not on the `--phase` scope, the same independence
+ *   `capped` already has, because the cut took events of every phase away.
  * @property {{routing: number, provider: number, lifecycle: number, outcome: number}} counts
  * @property {number} malformed lines that did not parse as JSON
  * @property {Record<string, {dispatches: number, tokens?: number, turns?: number, unrecorded?: number, turns_unrecorded?: number}>} roles
@@ -940,6 +993,9 @@ export function renderTrace(planningRoot, phase) {
   const lines = readLines(planningRoot);
   if (lines === null) return out;
 
+  /** @type {any} the newest rotation marker in the record, or null for never */
+  let rotated = null;
+
   // PASS 1 - parse, scope, count. The accounting is a SECOND pass over the same
   // parsed objects because the repair between them needs to see events that come
   // AFTER the one being repaired; splitting the passes keeps that to one
@@ -950,10 +1006,25 @@ export function renderTrace(planningRoot, phase) {
     let e;
     try { e = JSON.parse(line); } catch { out.malformed++; continue; }
     if (!e || typeof e !== 'object' || Array.isArray(e)) { out.malformed++; continue; }
+    // AHEAD of the phase filter, deliberately: a rotation cut events of EVERY
+    // phase away, so the answer is a property of the record and not of the
+    // scope a caller asked about - the same independence `out.capped` has,
+    // taken off `statSync` before any filtering. The NEWEST marker wins, which
+    // in line order is simply the last one seen.
+    if (e.family === 'lifecycle' && e.event === ROTATION) rotated = e;
     if (wanted !== null && key(e.phase) !== wanted) continue;
     out.events.push(e);
     if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
   }
+
+  // The rotation signal, emitted the way `roles`, `coordinator` and `mismatched`
+  // are - only where there is something to say. The sibling is named as THIS
+  // reader can reach it rather than as the marker spells it: the marker's own
+  // `file` is a name a hand-edited or foreign-producer line could put anything
+  // in, and a field that pointed a reader at a path nobody read would be worse
+  // than no field. Nothing opens it either way - no reader in the tree reads
+  // the rotated generation.
+  if (rotated) out.rotated = { file: rotatedTracePath(planningRoot), ts: rotated.ts };
 
   // PASS 2 - the PRE-ANCHOR repair, at READ time only (D-01). /cad-plan's
   // resolves are written before /cad-execute writes the phase's anchor, so those
