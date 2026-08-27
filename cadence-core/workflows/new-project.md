@@ -112,7 +112,10 @@ line):
         `forge.example.com` - and NOT the SSH endpoint the remote URL carries,
         which is often a different name (`ssh.example.com`); that split is a
         normal deployment rather than a misconfiguration, this repository is one,
-        and only the browser host resolves a `tea` login. `github` and `gitlab`
+        and only the browser host resolves a `tea` login. Say that the answer may
+        carry a PORT when the instance is not on the default one, spelled
+        `host:port` - `forge.example.com:3001` - and that it is the port the
+        BROWSER reaches, never the SSH port. `github` and `gitlab`
         are never asked this; their hosts are fixed.
 
      **On "None of these" the step REFUSES and stops** - it does not fall
@@ -183,8 +186,9 @@ line):
      Those two providers' create commands wire no git remote, so the seam adds
      `origin` itself and needs the URL to point it at; `glab` wires its own. It
      is not a fourth question and neither host is guessed: on `forgejo` build it
-     from the `git.forge_host` just confirmed above, and on `github` from the
-     fixed `github.com`, each with the answered slug -
+     from the `git.forge_host` just confirmed above - WHOLE, port and all, since
+     the seam refuses a URL whose port the configured instance does not serve -
+     and on `github` from the fixed `github.com`, each with the answered slug -
      `https://<host>/<owner>/<name>.git`.
 
      On an `ok:false`, print the envelope's `reason` and `hint`, one line each,
