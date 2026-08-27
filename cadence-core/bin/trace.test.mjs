@@ -275,6 +275,46 @@ test('appendEvent: after the reclaim the next append stops paying the budget', (
   assert.ok(ms < 50, `the append still paid the rotation budget: ${ms}ms`);
 });
 
+test('rotateTrace: a claim whose sidecar reads LIVE is left standing (TRC-09)', async () => {
+  // The other side of the discriminator, and the reason it is a sidecar at all.
+  // Breaking a claim a rotation is genuinely holding costs the whole record,
+  // not one rotation: the holder's `readFileSync(sibling)` then returns ENOENT,
+  // `carried` falls back to '', and it swaps a record holding only the rotation
+  // marker over the live path while the evictor's `finally` unlinks the last
+  // remaining name of the old inode.
+  //
+  // `rotateTrace` DIRECTLY rather than through `appendEvent`, the way the
+  // stale-stat row above does, so what is asserted is the rotation's own answer.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  killedClaim(dir, 0);
+  const live = readFileSync(tracePath(dir), 'utf8');
+
+  // Roughly ROTATE_WAIT_MS in wall clock, because a live claim still waits out
+  // the budget before handing the caller back to its append. That is what the
+  // budget is FOR and must not be "fixed" by shortening it.
+  assert.deepEqual(rotateTrace(dir, 120), { rotated: false });
+  assert.equal(statSync(tracePath(dir)).ino, statSync(rotatedTracePath(dir)).ino,
+    'a LIVE claim was broken - the whole record, not one rotation');
+  assert.equal(readFileSync(tracePath(dir), 'utf8'), live);
+  assert.equal(siblings(dir).filter((e) => e.includes('.evict.')).length, 0);
+});
+
+test('rotateTrace: a claim with NO sidecar at all is left standing (TRC-09)', async () => {
+  // D-02's fail-live posture, and today's behaviour deliberately preserved
+  // rather than new behaviour: a claim taken by the code that shipped before
+  // TRC-09 carries no sidecar, and missing evidence must read as LIVE. It is
+  // what makes the change safe to ship before every claim in the wild has one.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  killedClaim(dir, null);
+
+  assert.deepEqual(rotateTrace(dir, 120), { rotated: false });
+  const held = statSync(tracePath(dir));
+  assert.equal(held.ino, statSync(rotatedTracePath(dir)).ino);
+  assert.equal(held.nlink, 2, 'the claim was evicted on missing evidence');
+});
+
 test('appendEvent: a record already PAST the bound rotates, and its sibling keeps the excess', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
