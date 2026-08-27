@@ -494,6 +494,21 @@ function freshRecord(text, reserve) {
 }
 
 /**
+ * How long a writer that finds a rotation IN FLIGHT waits for it to land before
+ * appending anyway. Milliseconds, and a ceiling rather than a deadline: the
+ * common wait is the one or two milliseconds a claim takes to read the record
+ * and swap a fresh one in. The budget only matters where the winner died
+ * holding its claim, and there the writer appends into the record it can still
+ * reach rather than failing.
+ */
+const ROTATE_WAIT_MS = 250;
+
+/** @param {number} ms */
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
  * Is the sibling that already exists a rotation IN FLIGHT, or a generation an
  * earlier rotation left behind?
  *
@@ -549,11 +564,16 @@ function rotationInFlight(file, sibling) {
  *
  * @param {string} planningRoot
  * @param {number} reserve bytes the fresh file owes beyond the carried tail
+ * EXPORTED for one reason: the losing arm cannot be reached through
+ * `appendEvent`, which re-stats the record and so can never be made to arrive
+ * here holding a stale one. Calling it directly IS a writer that decided to
+ * rotate before another writer's rotation landed, which is the interleaving the
+ * claim has to refuse. Nothing in the tree calls it but `appendEvent`.
  * @returns {{rotated: boolean, reason?: string}} `reason` ONLY where the
  *   rotation failed outright; losing the claim is `{rotated:false}` and the
  *   caller appends, because somebody else already made room.
  */
-function rotateTrace(planningRoot, reserve) {
+export function rotateTrace(planningRoot, reserve) {
   const file = tracePath(planningRoot);
   const sibling = rotatedTracePath(planningRoot);
   const priv = `${process.pid}.${Math.random().toString(36).slice(2)}`;
@@ -583,12 +603,35 @@ function rotateTrace(planningRoot, reserve) {
           try { renameSync(file, sibling); claimed = true; } catch { return { rotated: false }; }
           break;
         }
-        // Somebody else holds the claim: re-stat and append, which is what the
-        // caller does with `{rotated:false}`.
-        if (attempt > 0 || rotationInFlight(file, sibling)) return { rotated: false };
-        // A generation an earlier rotation left. Evict it SINGLE-WINNER, the
-        // way lib/capture-file.mjs breaks a stale lock: exactly one contender
-        // renames it to a private path and the losers get `ENOENT`.
+        // Somebody else holds the claim. WAIT for their swap before handing the
+        // caller back to its append (D-03's re-stat-and-append arm): while the
+        // claim is held the live PATH is still the old inode, so an append made
+        // now lands in the sibling instead of the record. It is not a lock - it
+        // acquires nothing, blocks nobody, refuses nothing, and it always
+        // proceeds when the budget runs out, so the `SubagentStop` hook never
+        // has a lock refusal to report on a path its contract forbids it to
+        // speak on. It is bounded far under that hook's own 10-second timeout.
+        if (attempt > 0 || rotationInFlight(file, sibling)) {
+          for (let waited = 0; waited < ROTATE_WAIT_MS && rotationInFlight(file, sibling); waited++) {
+            sleep(1);
+          }
+          return { rotated: false };
+        }
+        // A generation an earlier rotation left, and evicting it is the one
+        // DESTRUCTIVE act on this path - so re-stat first and never rotate a
+        // file this writer did not observe over the trigger. The interleaving
+        // that makes this load-bearing: A rotates and writes a fresh live file
+        // while B is still holding the stat that sent it here, and B would
+        // otherwise carry that fresh file away, destroy the generation A just
+        // made and leave the record with nothing in it. `EEXIST` cannot see
+        // that case - the sibling exists in both - and a check after the fact
+        // is too late, so the claim is REFUSED rather than detected.
+        let now = null;
+        try { now = statSync(file).size; } catch { return { rotated: false }; }
+        if (now + reserve < MAX_TRACE_BYTES) return { rotated: false };
+        // Evict SINGLE-WINNER, the way lib/capture-file.mjs breaks a stale
+        // lock: exactly one contender renames it to a private path and the
+        // losers get `ENOENT`.
         const path = `${sibling}.evict.${priv}`;
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;

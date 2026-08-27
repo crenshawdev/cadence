@@ -7,14 +7,14 @@
 // and the exit code a caller actually sees are what get asserted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
   copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   appendEvent, correlationId, renderTrace, tracePath, rotatedTracePath,
   MAX_TRACE_BYTES, ROTATED_TRACE_FILE, FAMILIES,
@@ -248,6 +248,124 @@ test('appendEvent: a record with no anchor carries nothing forward', () => {
   assert.equal(got[0].event, ROTATION);
   assert.equal('phase' in got[0], false, 'a rotation with no run carried a phase');
   assert.equal(got[1].event, 'resolve');
+});
+
+// --- the claim, when two writers race (D-03) ---------------------------------
+
+/** One child process appending one event through the real `appendEvent`. */
+function writer(dir, name) {
+  const code = `const { appendEvent } = await import(${'`'}${'$'}{process.env.CAD_LIB}${'`'});`
+    + " const r = appendEvent(process.env.CAD_DIR, { phase: 1, family: 'routing',"
+    + " event: 'resolve', writer: process.env.CAD_W });"
+    + ' if (!r.written) { console.error(r.reason); process.exit(1); }';
+  return new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, ['--input-type=module', '-e', code], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: {
+        ...process.env,
+        CAD_LIB: pathToFileURL(join(HERE, 'lib', 'trace.mjs')).href,
+        CAD_DIR: dir,
+        CAD_W: name,
+      },
+    });
+    let err = '';
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('error', reject);
+    p.on('exit', (c) => (c === 0 ? resolve(name) : reject(new Error(`${name}: ${err.trim()}`))));
+  });
+}
+
+test('appendEvent: writers racing at the bound leave ONE generation and lose no event', async () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  const names = ['w0', 'w1', 'w2', 'w3', 'w4', 'w5'];
+  await Promise.all(names.map((n) => writer(dir, n)));
+
+  // (a) EVERY writer's event is in the LIVE record: exactly one writer can win
+  // the claim, and the losers must not lose their event to the file it carried
+  // away.
+  const got = lines(dir);
+  assert.deepEqual(got.filter((e) => e.writer).map((e) => e.writer).sort(), names,
+    `a racing writer's event is missing: ${JSON.stringify(got.map((e) => e.writer))}`);
+  // ...under the run in flight's own id, because the anchor came across too.
+  for (const e of got) {
+    if (e.writer) assert.equal(e.corr, '1-abc1234');
+  }
+
+  // Exactly one rotated generation, and no claim or temp file left behind on
+  // any arm - `.planning/` holds nothing else named after the record.
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl'],
+    `a claim or temp file was left behind: ${JSON.stringify(readdirSync(dir))}`);
+
+  // The generation is UNDER the bound and carries the OLDEST events - the
+  // anchor line is the first thing in it.
+  const rotated = readFileSync(rotatedTracePath(dir), 'utf8');
+  assert.ok(Buffer.byteLength(rotated) < MAX_TRACE_BYTES,
+    `the rotated generation is over the bound: ${Buffer.byteLength(rotated)}`);
+  assert.equal(JSON.parse(rotated.split('\n')[0]).event, ANCHOR);
+});
+
+test('appendEvent: a second append after a rotation does not rotate again', async () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+  const generation = readFileSync(rotatedTracePath(dir), 'utf8');
+
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
+    'the second append rotated again and destroyed the generation');
+  assert.deepEqual(lines(dir).filter((e) => e.writer).map((e) => e.writer), ['a', 'b']);
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+});
+
+test('appendEvent: a writer holding a STALE stat is refused the claim, not corrected after it', async () => {
+  // The interleaving `EEXIST` alone cannot see, forced deterministically. A
+  // rotates and writes a fresh live file; B is still holding the stat that sent
+  // it to rotate, and calls the claim on a live path that exists again. A
+  // REPLACING rename would succeed silently there - A's generation destroyed,
+  // A's event carried off into the sibling, and exactly one sibling still on
+  // disk so a count would call it healthy. The claim must REFUSE.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+  const generation = readFileSync(rotatedTracePath(dir), 'utf8');
+  const live = readFileSync(tracePath(dir), 'utf8');
+
+  const late = rotateTrace(dir, 120);
+  assert.equal(late.rotated, false, 'a writer with a stale stat was allowed to rotate');
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
+    "the late writer destroyed the generation the first writer's rotation made");
+  assert.equal(readFileSync(tracePath(dir), 'utf8'), live,
+    "the late writer carried away the first writer's own event");
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+});
+
+test('appendEvent: a SECOND rotation replaces the generation, so the pair stays bounded', () => {
+  // D-05's other half: the rotated path is fixed, so there is never a
+  // `trace.2.jsonl` - and the record has to be able to rotate twice, or the
+  // live file grows without a bound after the first cut.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+  const first = readFileSync(rotatedTracePath(dir), 'utf8');
+
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
+  assert.notEqual(readFileSync(rotatedTracePath(dir), 'utf8'), first,
+    'the second rotation kept the FIRST generation, so the live record never got its room back');
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  for (const f of [tracePath(dir), rotatedTracePath(dir)]) {
+    assert.ok(readFileSync(f).length < MAX_TRACE_BYTES, `${f} is over the bound`);
+  }
+  // The run in flight survives the second cut as it survived the first: its
+  // anchor and its own events are what the tail carries, and only the padding
+  // under no corr of its own is dropped.
+  assert.deepEqual(lines(dir).filter((e) => e.writer).map((e) => e.writer), ['a', 'b']);
 });
 
 // --- the rotation, on both reader envelopes (D-06) ---------------------------
