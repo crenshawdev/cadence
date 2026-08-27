@@ -31,6 +31,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tokenize } from './lib/bm25.mjs';
 import { makeTree } from './planning.test.mjs';
 import { recall } from './planning-recall.test.mjs';
 
@@ -123,4 +124,94 @@ test('fold fixture: every committed query returns its named hits in the top 5', 
         `query ${JSON.stringify(q.query)} lost ${id} from its top 5; got ${got.join(' ') || '(nothing)'}`);
     }
   }
+});
+
+// --- the rule table, at tokenizer level ---------------------------------------
+//
+// These arms call `tokenize` directly, so the rule set is pinned independently
+// of any corpus and a later "simplification" fails HERE rather than surfacing
+// as a ranking regression nobody can read. Every row below was run before it
+// was written down; a form outside steps 1a and 1b is deliberately left
+// distinct and is not asserted as matching anything.
+
+/** The single term one word tokenizes to. */
+function folded(word) {
+  const terms = tokenize(word);
+  assert.equal(terms.length, 1, `${word} did not tokenize to exactly one term: ${JSON.stringify(terms)}`);
+  return terms[0];
+}
+
+/** Assert a table of `[input, expected, why]` rows. */
+function pinRows(rows) {
+  for (const [input, expected, why] of rows) {
+    assert.equal(folded(input), expected, `${input} -> ${folded(input)}, expected ${expected} (${why})`);
+  }
+}
+
+test('fold rules: step 1a, and `es` is NOT a rule of its own', () => {
+  pinRows([
+    ['classes', 'class', 'sses -> ss'],
+    ['passes', 'pass', 'sses -> ss'],
+    ['carries', 'carri', 'ies -> i'],
+    ['pass', 'pass', 'a final ss is kept'],
+    ['seams', 'seam', 'an otherwise-final s is dropped'],
+    ['notes', 'note', 'an otherwise-final s is dropped'],
+    ['types', 'type', 'an otherwise-final s is dropped'],
+    ['files', 'file', 'an otherwise-final s is dropped'],
+    // The negative that closes D-02's refuted reading. An `es`-before-`s` rule
+    // would give `clos` here, missing `close` - the roadmap's own worked
+    // example - and splitting file/files, note/notes and type/types with it.
+    ['closes', 'close', '`es` is never stripped as its own rule'],
+  ]);
+});
+
+test('fold rules: step 1b strips ed and ing only over a stem with a vowel', () => {
+  pinRows([
+    ['walked', 'walk', '(*v*) ed -> ""'],
+    ['counting', 'count', '(*v*) ing -> ""'],
+    // No vowel in the stem, so neither strip fires and the word is left whole.
+    ['bring', 'bring', 'the stem `br` holds no vowel'],
+    ['ring', 'ring', 'the stem `r` holds no vowel'],
+  ]);
+});
+
+test('fold rules: the eed guard turns on the measure of the stem before it', () => {
+  pinRows([
+    ['agreed', 'agree', 'the stem `agr` has measure 1, so eed -> ee'],
+    ['freed', 'freed', 'the stem `fr` has measure 0, so eed is left alone'],
+  ]);
+});
+
+test('fold rules: each of the three cleanup branches after a strip', () => {
+  pinRows([
+    ['gated', 'gate', 'a stem left ending `at` takes back an e'],
+    ['troubling', 'trouble', 'a stem left ending `bl` takes back an e'],
+    ['sizing', 'size', 'a stem left ending `iz` takes back an e'],
+    ['planned', 'plan', 'a doubled final consonant loses a letter'],
+    ['running', 'run', 'a doubled final consonant loses a letter'],
+    ['spelling', 'spell', 'a doubled final l is the exception and is kept'],
+    ['pulled', 'pull', 'a doubled final l is the exception and is kept'],
+    ['named', 'name', 'a consonant-vowel-consonant stem takes back an e'],
+    ['naming', 'name', 'a consonant-vowel-consonant stem takes back an e'],
+    // Without this row the textbook `m == 1` gate would look harmless: with the
+    // gate `refused` stops at `refus` while `refuse` stays `refuse`, and the
+    // pair AC2 pins comes apart.
+    ['refused', 'refuse', 'the m == 1 gate on that restoration is deliberately not applied'],
+  ]);
+});
+
+test('fold rules: a base form is a fixed point, and a short token is untouched', () => {
+  pinRows([
+    ['seam', 'seam', 'nothing to fold'],
+    ['close', 'close', 'nothing to fold'],
+    ['note', 'note', 'nothing to fold'],
+    ['type', 'type', 'nothing to fold'],
+    ['file', 'file', 'nothing to fold'],
+    ['name', 'name', 'nothing to fold'],
+    ['refuse', 'refuse', 'nothing to fold'],
+    ['plan', 'plan', 'nothing to fold'],
+    // Two characters or fewer are returned whole: the s rule would otherwise
+    // empty a one-letter token, and an empty term is one every document shares.
+    ['us', 'us', 'a token of two characters is left alone'],
+  ]);
 });
