@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 5 (A killed rotation must not disable rotation)
-Status: phase complete
-Next: /cad-context 5 - Recall matches the word the user typed (last phase in the cycle; /cad-audit gates any ship)
+Phase: 5 of 5 (Recall matches the word the user typed)
+Status: context gathered
+Next: /cad-plan 5
 Updated: 2026-08-27

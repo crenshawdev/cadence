@@ -400,14 +400,13 @@ queue triage alone.
   rather than milestone close because batch size grows with the gap. Adjudicated
   2026-08-26 as an accumulation defect wearing an enhancement label. Promote at
   the cycle after `v3.7.4`
-- **RCL-07**: `recall` folds common suffixes at index time and query time, so
+- **RCL-08**: `recall` folds common suffixes at index time and query time, so
   `seam` matches `seams` and `close` matches `closes` (GH-93, item 1 only).
-  `cadence-core/bin/lib/bm25.mjs:20` states the gap outright. A ~30-line
-  deterministic suffix fold in one file, zero-dep, applied identically on both
-  sides. Split 2026-08-26 from GH-93's other two items - the multi-query union
-  changes the seam signature and the failure-records item needs a scope decision
-  - which stay on the issue and are not scope. Promote at the cycle after
-  `v3.7.4`
+  `cadence-core/bin/lib/bm25.mjs:20` states the gap outright. A deterministic
+  suffix fold in one file, zero-dep, applied identically on both sides. Split
+  2026-08-26 from GH-93's other two items - the multi-query union changes the
+  seam signature and the failure-records item needs a scope decision - which
+  stay on the issue and are not scope. Promoted into `v3.7.5` as phase 5
 
 ## Out of Scope
 
