@@ -970,3 +970,25 @@ test('create: a PORTLESS or null git.forge_host fires nothing at all', () => {
     ], String(forge_host));
   }
 });
+
+// --- create: a row that wires its own remote refuses a URL (GH-105) ---------
+
+test('create: the gitlab arm REFUSES a --remote-url, naming the conflict', () => {
+  // Its pinned create argv carries `--remoteName origin`, so a URL passed here
+  // would be read by nothing and origin would be whatever glab chose. Silence
+  // was the defect; the refusal names the conflict rather than declining a flag.
+  const log = argvLog();
+  const mk = marker();
+  const dir = planningRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'gitlab', '--repo', 'o/r', '--confirmed',
+      '--remote-url', 'https://gitlab.com/o/r.git', '--dir', dir],
+    { stubs: ['glab', 'git'], dir, argvLog: log, marker: mk },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.match(envelope.reason, /--remoteName origin/);
+  assert.match(envelope.hint, /drop --remote-url/);
+  assert.deepEqual(calls(log), []);
+  assert.equal(spawned(mk), '');
+});

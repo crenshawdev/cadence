@@ -409,6 +409,19 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
         hint: 'pass --remote-url as the URL this repository will be reached at - https://<host>/<owner>/<name>.git or git@<host>:<owner>/<name>.git - so origin can be set once the repository exists' });
       return;
     }
+  } else if (remoteUrl !== undefined) {
+    // THE OTHER SIDE OF THE SAME DECISION (GH-105). A row that wires its own
+    // remote never READS `--remote-url`, so a caller who passed one got silence
+    // and an `origin` chosen by the CLI rather than by them. Keyed on
+    // `row.wiresRemote` and never on the string `gitlab`, so a fourth provider
+    // row that wires its own remote inherits the refusal rather than needing it
+    // written again - the same reason the branch above is keyed on the table.
+    // The reason names the CONFLICT rather than declining the flag: the pinned
+    // create argv wires `origin` itself.
+    emit({ ok: false, reason: `${provider}'s create wires origin itself, through the --remoteName origin pinned in its own create argv, so a --remote-url passed here would be read by nothing and origin would be whatever ${PROVIDER_TABLE[provider]} chose`,
+      detail: null,
+      hint: `drop --remote-url on ${provider} - the create sets origin, and there is no second URL for it to take` });
+    return;
   }
 
   // DOES THIS URL NAME THE INSTANCE THE REPOSITORY ALREADY CONFIGURED (FRG-06)?
