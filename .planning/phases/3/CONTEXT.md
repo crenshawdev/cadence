@@ -71,11 +71,22 @@ Plan shape: one plan
 - [ ] AC3: the four excluded paths are named in one place in the source, and a
       test asserts each of the four is excluded and that a fifth
       `.planning/phases/` file (a PLAN.md) is NOT.
-- [ ] AC4: `risk-check run` over the fixed range `f70a0443..7a8a449a` reports no
+- [ ] AC4: `risk-check run` over the fixed range `f70a0443..cf2571b8` reports no
       destructive match. The pair is FIXED rather than the roadmap's
       `f70a0443..HEAD`: HEAD has advanced through two cycles since that range
       was settled with an override, so the open-ended form now covers unrelated
-      work and can trip on anything.
+      work and can trip on anything. The head is `cf2571b8` and not the
+      `7a8a449a` this criterion first named: `.planning/trace.jsonl` records the
+      override at 2026-08-24T20:13:47Z against `head_id: cf2571b8`, and that
+      range's only destructive line sits inside
+      `.planning/phases/1/ADJUDICATION-risk_surface-plan-1.json` - precisely the
+      defect this phase closes. `7a8a449a` was chosen three days later and
+      sweeps in two unrelated cycles, whose `rm -rf` additions are in
+      `.planning/ROADMAP.md` and `cadence-core/references/risk-surface.md` -
+      neither a record artifact, neither under `.planning/phases/`, so no
+      exclusion D-02 permits can reach them and the criterion could not pass at
+      that head without contradicting D-02 and D-03. Measured during planning
+      and confirmed at the `plan` gate; amended on the user's decision.
 - [ ] AC5: `node cadence-core/bin/test.mjs` is green and
       `node cadence-core/bin/self-verify.mjs` reports `ok:true`.
 
