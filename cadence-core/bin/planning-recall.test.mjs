@@ -43,7 +43,7 @@ const test = isEntryFile() ? nodeTest : () => {};
 // AND the raw stdout (the determinism test byte-compares the raw string).
 // `query` may be an array to express the UNQUOTED form (bare words as
 // separate argv elements) - a single string cannot say that at all.
-function recall(query, dir) {
+export function recall(query, dir) {
   let raw;
   let code = 0;
   const qargs = Array.isArray(query) ? query : [query];
