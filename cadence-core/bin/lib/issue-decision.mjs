@@ -352,17 +352,27 @@ function httpPortOf(scheme, explicit) {
  * to everything downstream - two Forgejo instances on one machine, told apart
  * by nothing. The scp form carries none: its colon separates host from path,
  * and its transport is SSH, whose port is not the http(s) one this returns.
+ *
+ * `portSpelled` IS A SECOND, DIFFERENT FACT and not a second port. It comes off
+ * the SAME `AUTHORITY` match that yields the port group, so no second URL
+ * grammar appears: the schemed branch spelled a port when that group matched,
+ * and the scp branch never spells one because scp syntax has no port at all.
  * @param {string} url
- * @returns {{hostname:string, path:string, httpPort:string|null}|null} */
+ * @returns {{hostname:string, path:string, httpPort:string|null,
+ *   portSpelled:boolean}|null} */
 function splitOrigin(url) {
-  const parsed = (hostname, path, httpPort) =>
-    (NOT_ONE_LINE.test(hostname) ? null : { hostname: hostname.toLowerCase(), path, httpPort });
+  const parsed = (hostname, path, httpPort, portSpelled) =>
+    (NOT_ONE_LINE.test(hostname)
+      ? null : { hostname: hostname.toLowerCase(), path, httpPort, portSpelled });
   const schemed = new RegExp(AUTHORITY.source + '\\/(.+)$').exec(url);
-  if (schemed) return parsed(schemed[2], schemed[4], httpPortOf(schemed[1], schemed[3]));
+  if (schemed) {
+    return parsed(schemed[2], schemed[4], httpPortOf(schemed[1], schemed[3]),
+      schemed[3] !== undefined);
+  }
   // scp-shaped: the colon separates host from PATH, so the part after it must
   // not start with `/` (that spelling is a schemeless URL, not scp syntax).
   const scp = /^(?:[^@/]*@)?([^/:]+):(?!\/)(.+)$/.exec(url);
-  if (scp) return parsed(scp[1], scp[2], null);
+  if (scp) return parsed(scp[1], scp[2], null, false);
   return null;
 }
 
@@ -470,25 +480,37 @@ export function loginNamesHost(login, host, httpPort = null) {
  * port only (see `httpPortOf`): null on the scp form and on every other scheme,
  * where nothing a tea login records could be compared with it anyway.
  *
+ * `portSpelled` IS WHAT `httpPort` CANNOT SAY, and it is NOT a second port
+ * comparison. `httpPort` is null for two situations a caller may have to tell
+ * apart: a URL that spelled no port at all (the scp form `git@host:o/r.git`,
+ * whose colon separates host from path and which has no port syntax), and a URL
+ * that spelled one over a scheme whose port is not comparable to an API url's
+ * (`ssh://git@host:2222/o/r.git`). `portSpelled` answers only the narrow
+ * question a caller deciding whether this URL COULD have named a non-default
+ * endpoint has to ask. `httpPort`'s meaning and every reader of it are
+ * unchanged, and the rule `httpPortOf`'s header states about non-http(s)
+ * schemes is correct and is not revised here.
+ *
  * @param {unknown} originUrl the `git remote get-url origin` text, or ''/null
  * @returns {{verdict:'github'|'gitlab'|'no-remote'|'unrecognized',
- *   host:string|null, httpPort:string|null, slug:string|null}}
+ *   host:string|null, httpPort:string|null, portSpelled:boolean, slug:string|null}}
  */
 export function classifyOrigin(originUrl) {
   const url = typeof originUrl === 'string' ? originUrl.trim() : '';
-  if (!url) return { verdict: 'no-remote', host: null, httpPort: null, slug: null };
+  if (!url) return { verdict: 'no-remote', host: null, httpPort: null, portSpelled: false, slug: null };
   const parts = splitOrigin(url);
-  if (!parts) return { verdict: 'unrecognized', host: null, httpPort: null, slug: null };
+  if (!parts) return { verdict: 'unrecognized', host: null, httpPort: null, portSpelled: false, slug: null };
   const segments = parts.path.replace(/\.git$/, '').replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
   // Two segments minimum: without owner AND name there is no repo selector, so
   // there is no slug worth offering as a default.
   const slug = segments.length >= 2 ? segments.join('/') : null;
   const host = parts.hostname;
   const httpPort = parts.httpPort;
-  if (!slug) return { verdict: 'unrecognized', host, httpPort, slug: null };
-  if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, httpPort, slug };
-  if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, httpPort, slug };
-  return { verdict: 'unrecognized', host, httpPort, slug };
+  const portSpelled = parts.portSpelled;
+  if (!slug) return { verdict: 'unrecognized', host, httpPort, portSpelled, slug: null };
+  if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, httpPort, portSpelled, slug };
+  if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, httpPort, portSpelled, slug };
+  return { verdict: 'unrecognized', host, httpPort, portSpelled, slug };
 }
 
 /**

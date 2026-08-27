@@ -123,6 +123,32 @@ test('a hostname carrying a control character is REJECTED, never cleaned', () =>
   assert.equal(classifyOrigin('git@github.com:org/repo.git').verdict, 'github');
 });
 
+test('classifyOrigin says whether the URL SPELLED a port, which httpPort cannot', () => {
+  // httpPort is null for TWO different situations, and a caller deciding
+  // whether a URL could have named a non-default endpoint has to tell them
+  // apart: no port syntax at all (scp) versus a port over a scheme whose port
+  // is not comparable to an API url's (ssh).
+  const cases = [
+    ['https://forge.example.com/o/r.git', false, '443'],
+    ['https://forge.example.com:3001/o/r.git', true, '3001'],
+    ['http://forge.example.com/o/r.git', false, '80'],
+    ['ssh://git@forge.example.com:2222/o/r.git', true, null],
+    ['ssh://git@forge.example.com/o/r.git', false, null],
+    ['git@forge.example.com:o/r.git', false, null],
+  ];
+  for (const [url, portSpelled, httpPort] of cases) {
+    const c = classifyOrigin(url);
+    assert.equal(c.portSpelled, portSpelled, url);
+    assert.equal(c.httpPort, httpPort, url);
+  }
+});
+
+test('a classification with no URL to read spells no port either', () => {
+  for (const absent of ['', null, 'not-a-url']) {
+    assert.equal(classifyOrigin(absent).portSpelled, false, String(absent));
+  }
+});
+
 // --- teaLoginNameForHost: the persisted host becomes a login NAME ------------
 
 test('teaLoginNameForHost answers the login NAME, by any of the three fields', () => {
