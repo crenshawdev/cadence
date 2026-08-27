@@ -51,7 +51,8 @@ whose close carried a tool-call count), `outcomes` (every outcome event),
 `roles` (per-role dispatch, token and turn totals, with `unrecorded` and
 `turns_unrecorded` beside them), `coordinator` (the
 coordinator's own per-step residue, present only where markers were written),
-`unpaired`, `mismatched`, `capped`, `malformed`. Never ask for the raw `events`
+`unpaired`, `mismatched`, `capped`, `malformed`, and `rotated` where the record
+was cut at its size bound. Never ask for the raw `events`
 array: nothing here reads one, and the flag re-buys 27 KB on the one path that
 reads a record into a model's context. The third reads the SAME `brackets[]`
 rows against the per-role `workflow.max_dispatch_tokens` ceilings and
@@ -111,7 +112,7 @@ Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations;
 Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns, cross-model provider calls, and figureless returns): <total recorded; top role and its share; unrecorded dispatch count>
 Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
 Window budget (from `trace window`): <only when `problems` is non-empty: one line per crossing - the role, the dispatch it belongs to, its figure and the ceiling it crossed, both as given; then `unbudgeted` roles and `unrecorded` when either is non-zero>
-Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue (one RUN's, joined on `corr`, not the phase's) - each named, never silently dropped>
+Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, rotated record (from `rotated`: the record was cut at the newest phase anchor, so everything older than the run in flight is in the sibling it names and is not in this report - a cut, not a truncation, and not the same fact as capped), coordinator residue (one RUN's, joined on `corr`, not the phase's) - each named, never silently dropped>
 Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; then per role from `inDispatch.roles`, each row whose `ratio` is non-null - the ratio as opens per distinct file inside ONE dispatch, its `worst` file with that file's count, and beside them `inDispatch.coverage` and the `inDispatch.coordinatorFiles` it excluded; omit the whole line when the record is empty>
 ```
 
