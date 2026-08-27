@@ -210,6 +210,84 @@ export function isForgeSlug(slug) {
 }
 
 /**
+ * The longest `host[:port]` a `git.forge_host` may carry, as a byte bound
+ * rather than a taste.
+ *
+ * 253 is DNS's own ceiling on a fully qualified name, so a value above it names
+ * nothing that resolves. It is stated here the way SLUG_MAX is - a bound the
+ * grammar below does not have to reason about by way of a quantifier - and it
+ * covers the WHOLE value, port included: the port is part of what the user
+ * types and part of what is persisted, and a separate bound for the tail would
+ * be a second rule to keep in agreement with this one.
+ */
+const FORGE_HOST_MAX = 253;
+
+/** One label of a hostname: letters, digits and `-`, never opening or closing
+ * on a `-`. The leading `-` is refused for exactly the reason SLUG_SEGMENT
+ * refuses one - the value is interpolated into a `config.mjs set` shell line
+ * and then into a `tea` argument vector, where a leading `-` reads as a FLAG. */
+const HOST_LABEL = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$/;
+
+/** A port in its ONE canonical spelling: decimal digits with no leading zero.
+ * The 1-65535 range is a numeric check below rather than a wider pattern. */
+const PORT_DIGITS = /^[1-9][0-9]*$/;
+
+/**
+ * The `hostname` and `port` halves of a `git.forge_host` value, or null when
+ * the value is not one this seam will persist or compare.
+ *
+ * ONE FUNCTION JUDGES AND SPLITS, deliberately. A separate predicate beside a
+ * separate splitter would be two answers to the same question - the hazard
+ * `isForgeSlug`'s header states about callers re-deriving a grammar, and the
+ * reason `AUTHORITY` in lib/issue-decision.mjs is one spelling of an authority.
+ * A caller that wants the verdict alone asks whether the answer is null.
+ *
+ * WHAT THE HOSTNAME ADMITS: dot-separated labels of letters, digits and `-`,
+ * where no label opens or closes on a `-`. Everything outside that alphabet is
+ * REFUSED rather than stripped - whitespace, quotes, `$`, backticks, `;`, `/`,
+ * `@`, newlines and the C0/C1 control range all end an argument and start
+ * something else, and there is no honest repaired form of a host nobody can
+ * serve. Same value class as the slug: what the user types goes onto a command
+ * line, so the grammar is what makes the interpolation safe.
+ *
+ * WHAT THE PORT ADMITS: decimal digits, NO leading zero, and 1 through 65535.
+ * The no-leading-zero rule is load-bearing rather than taste. The persisted
+ * port is compared against the port `httpPortOf` reads off a `tea` login's
+ * `url`, which normalizes through a numeric conversion, so admitting `:0443`
+ * here would persist a value that compares unequal to `https://h:443` on one
+ * side and equal on the other. Refusing the non-canonical spelling at the door
+ * is what removes the second normalization rule entirely.
+ *
+ * NO BRACKETED IPv6 LITERAL - a decision, not an omission. No `tea` login
+ * record in this tree carries one, and `[::1]:3001` is a second authority
+ * grammar that `loginNamesHost`'s exact-equality vocabulary has no reading for.
+ * Accepting it would persist a value nothing downstream can ever match, which
+ * is worse than refusing it outright.
+ *
+ * CASE IS NEITHER REFUSED NOR FOLDED HERE. `teaLoginNameForHost` already
+ * lowercases the host it is handed, so folding case in a second place would be
+ * the same drift one grammar in one module exists to prevent.
+ *
+ * A PORTLESS VALUE ANSWERS A NULL PORT, never a defaulted one: "named no port"
+ * and "named 443" are different facts, and a default invented here would turn
+ * the port from a veto into a claim.
+ *
+ * @param {unknown} host @returns {{hostname: string, port: string|null}|null}
+ */
+export function splitForgeHost(host) {
+  if (typeof host !== 'string' || !host || host.length > FORGE_HOST_MAX) return null;
+  const at = host.lastIndexOf(':');
+  const hostname = at === -1 ? host : host.slice(0, at);
+  const port = at === -1 ? null : host.slice(at + 1);
+  if (!hostname || !hostname.split('.').every((label) => HOST_LABEL.test(label))) return null;
+  if (port === null) return { hostname, port: null };
+  if (!PORT_DIGITS.test(port)) return null;
+  const n = Number(port);
+  if (n < 1 || n > 65535) return null;
+  return { hostname, port };
+}
+
+/**
  * The two defaults the setup step offers for the user to CONFIRM, derived from
  * an origin classification.
  *
