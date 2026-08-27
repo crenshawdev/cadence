@@ -1,12 +1,55 @@
-# Requirements: Cadence (v3.7.4)
+# Requirements: Cadence (v3.7.5)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-**No cycle open.** Nothing here is live scope. The shipped ids are rows under
-`## Shipped` below, and `/cad-phase add` is what opens the next cycle: it is the
+`v3.7.5 - the defects a user's own project feels` opened 2026-08-26 with five
+phases. `/cad-plan` seeds each Traceability row as its phase is planned, so an
+id below that no plan has picked up yet surfaces as `unpicked` in `/cad-audit`
+rather than as a hand-written row.
+
+The cycle has no subject; it has a standard. Every open issue was re-triaged
+2026-08-26 against one question - would a user running Cadence on their own
+project ever feel this - and these eight are what answered yes. Nothing here was
+promoted out of deferral; all eight come off the public tracker.
+
+- **FRG-03**: `git.forge_host` can address an instance on a non-default port,
+  or `loginNamesHost` stops comparing a port half it is never given - one of
+  the two, decided at phase 1 planning (GH-106, OQ-1 in ROADMAP). This is the
+  hard block: today a user on `forge.example:3001` cannot state it at all
+- **FRG-04**: `forge.mjs create` refuses a `--remote-url` whose port the
+  instance does not serve, rather than wiring a wrong-port origin silently
+  (GH-103)
+- **FRG-05**: a forge slug or host the user TYPES is shape-checked before it is
+  persisted, not only the origin-derived default. The persisted record drives
+  live repository creation and issue filing, so an unvalidated value is not
+  cosmetic (GH-104)
+- **FRG-06**: the gitlab arm of `forge.mjs create` refuses a `--remote-url` by
+  naming its conflict with the pinned `--remoteName origin`, rather than
+  accepting an argument it will never read (GH-105)
+- **EXP-03**: `/cad-execute` refuses a phase whose plans are already committed,
+  before any executor is dispatched (GH-137). Its blast radius is MEASURED, not
+  assumed: `.planning/spikes/execute-replay-blast-radius/SPIKE.md` ran two real
+  executor dispatches against already-committed work, both noisy, which is why
+  this is a guard and not a resume path. Read the spike before planning phase 2
+  rather than re-deriving it
+- **RSK-06**: the risk detector stops re-tripping on reviewer text stored in
+  `ADJUDICATION-*.json`, without weakening detection on code paths (GH-108)
+- **TRC-09**: a `rotateTrace` claim abandoned by a killed process is reclaimed
+  on the next append, so the bound survives the kill (GH-146)
+- **RCL-08**: recall folds suffixes identically at index and query time, so
+  `seam` matches `seams` (GH-93)
+
+**Excluded on the same standard.** GH-148 was filed 2026-08-26 out of the
+GH-137 spike and is real, but its consequence lands in a trace record users do
+not read. GH-145 is a genuine deadline for THIS repo - `reads.jsonl` at 7.00 of
+8.00 MiB after 935 sessions of Cadence-on-Cadence - and not a user's. Both wait
+for a cycle whose standard admits them, rather than riding this one on urgency
+that belongs to the maintainer.
+
+## Shipped` below, and `/cad-phase add` is what opens the next cycle: it is the
 only workflow that appends a phase line to an existing roadmap, and `/cad-plan`
 seeds each Traceability row as its phase is planned. The ids under `## Deferred`
 keep their own reasons and their own promote conditions, and none of them is
