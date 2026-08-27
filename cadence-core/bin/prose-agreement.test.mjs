@@ -849,6 +849,62 @@ test('EXP-03: execute.md refuses a phase whose every plan already reports comple
     + 'protected-branch question it exists to avoid asking');
 });
 
+test('EXP-03: only the plans without a completed report reach a dispatch', () => {
+  // The other half of the same defect. The stop above covers the phase where
+  // EVERY plan finished; a phase whose plan 1 finished and whose plan 2 never
+  // started must still run, with plan 1 NOT re-dispatched. `execute.md` had no
+  // per-plan skip at all - `execute_sequential` opened "For each plan in order"
+  // and no report was read ahead of it - so this is new surface, and it
+  // regresses by reverting one sentence.
+  //
+  // Both dispatch SITES are pinned, not just the rail. A rail stated only in
+  // `locate` with `execute-parallel.md` still saying "per plan" is exactly how
+  // plan 1 gets re-dispatched on a non-overlapping two-plan phase, and that
+  // file is the site that ACTS on the parallel path.
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+  const locate = stepBody(execute, 'locate', 'execute.md');
+
+  // 1. `locate` defines the set, by subtraction, and names both paths.
+  const i = locate.indexOf('**The dispatch set.**');
+  assert.notEqual(i, -1,
+    "execute.md's locate step defines no dispatch set, so the read the replay arm already "
+    + 'made is spent on one all-or-nothing answer and a part-finished phase re-runs its '
+    + 'finished plans');
+  const set = locate.slice(i).split('\n\n')[0];
+  assert.match(set, /`PLAN COMPLETE`/,
+    `the dispatch set does not exclude plans by their \`PLAN COMPLETE\` report: ${set}`);
+  assert.match(set, /--rerun/,
+    `the dispatch set does not say what \`--rerun\` does to it, so the override is ambiguous: ${set}`);
+  assert.match(set, /sequential/i,
+    'the dispatch set rail does not name the sequential path');
+  assert.match(set, /parallel/i,
+    'the dispatch set rail does not name the parallel path, which is the one with its own '
+    + 'dispatch sentence in a separate file');
+
+  // 2. The sequential dispatch sentence iterates the SET, not every plan.
+  const seq = stepBody(execute, 'execute_sequential', 'execute.md');
+  const seqDispatch = sentenceAround(seq, 'dispatch ONE cad-executor',
+    "execute.md's execute_sequential step");
+  assert.match(seqDispatch, /dispatch set/,
+    'execute_sequential still dispatches every plan the phase lists rather than the dispatch '
+    + `set, so a plan with a completed report is re-dispatched: ${seqDispatch}`);
+
+  // 3. The parallel path's OWN dispatch sentence, in the file that acts on it.
+  const parallel = doc('cadence-core', 'references', 'execute-parallel.md');
+  const parDispatch = sentenceAround(parallel, 'cad-executor per plan',
+    'execute-parallel.md step 1');
+  assert.match(parDispatch, /DISPATCH SET/i,
+    'execute-parallel.md step 1 still dispatches one executor per plan rather than per plan '
+    + `in the dispatch set, so the rail stated in locate is contradicted where it acts: ${parDispatch}`);
+
+  // 4. And the set does NOT reach `summary`: SUMMARY.md is the phase's record,
+  //    so a skipped plan's report is still read there.
+  const summary = stepBody(execute, 'summary', 'execute.md');
+  assert.match(summary, /each plan's `<plandir>\/reports\/plan-<k>\.md`/,
+    "execute.md's summary step no longer reads every plan's report, so a plan skipped at "
+    + 'dispatch drops out of the phase record its work is part of');
+});
+
 // --- DOC-02: README counts its own skills, roles and rung files --------------
 
 test('README\'s "Today it is N skills and M agent roles across K rung files" matches the tree', () => {

@@ -67,6 +67,24 @@ Resolve the phase:
   guard, before the `phase_start` trace anchor, and before any executor
   dispatch.
 
+**The dispatch set.** Every plan file the phase lists, MINUS every plan whose
+`<plandir>/reports/plan-<k>.md` first line reads `PLAN COMPLETE` - the same read
+the arm above already made, spent per plan rather than collapsed into one
+answer. Under `--rerun` the dispatch set is every plan the phase lists,
+unchanged, which is what keeps that override meaning what it says. The rail,
+stated once and holding for both paths: no step below dispatches a plan outside
+the dispatch set, on the sequential path or the parallel one. A skipped plan is
+never dispatched, so it gets no bracket, no `risk-check` range and no `diff`
+fire - that follows from not being dispatched and needs no rule of its own.
+Two things the dispatch set does NOT govern. The `plan-overlap` seam call in
+`choose_path` is a question about the phase's DECLARED plan files and stays
+exactly as it is - an `overlaps` entry naming only skipped plans still routes
+sequential, because widening toward sequential is the safe direction and
+re-deciding a seam's answer in prose is how the two come to disagree. And the
+`summary` step still reads EVERY plan's report, a skipped plan's included,
+because SUMMARY.md is the phase's record and that plan's work is part of the
+phase.
+
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY use
 it) and the config in one message - independent, so only a call that consumes a
 prior call's output is serialized.
@@ -186,9 +204,9 @@ Sequential (default) unless ALL of these hold:
 </step>
 
 <step name="execute_sequential">
-For each plan in order: dispatch ONE cad-executor via the spawn-agent seam
-(references/seam-spawn-agent.md), in the normal working tree, no worktrees, and
-wait for it to finish before starting the next.
+For each plan in the dispatch set, in order: dispatch ONE cad-executor via the
+spawn-agent seam (references/seam-spawn-agent.md), in the normal working tree,
+no worktrees, and wait for it to finish before starting the next.
 
 Record the pre-plan HEAD, then dispatch with a prompt ordered stable-first, so
 successive executors in the phase share a cached prefix: phase-level context

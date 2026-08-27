@@ -7,11 +7,11 @@ before anything below runs - so an executor halting `blocked` on a missing PLAN
 on this path is a real defect to report, not the fork-point default.
 
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one
-   cad-executor per plan, each in its own git worktree on branch
-   `cadence/phase-<N>-plan-<k>` (spawn-agent seam, worktree isolation), the
-   whole batch issued in ONE message. Resolve the route ONCE for
-   (cad-executor, attempt 1) and reuse it for every executor in the batch -
-   identical role and attempt, so re-resolving per dispatch is wasted
+   cad-executor per plan IN THE DISPATCH SET `locate` defined, each in its own
+   git worktree on branch `cadence/phase-<N>-plan-<k>` (spawn-agent seam,
+   worktree isolation), the whole batch issued in ONE message. Resolve the route
+   ONCE for (cad-executor, attempt 1) and reuse it for every executor in the
+   batch - identical role and attempt, so re-resolving per dispatch is wasted
    (seam-spawn-agent.md concurrent dispatch). Same prompt as sequential except
    the mode line:
    "Worktree executor on branch {branch} - worktree rules apply."
