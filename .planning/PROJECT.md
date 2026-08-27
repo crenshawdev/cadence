@@ -219,15 +219,29 @@ user-facing narrative is `CHANGELOG.md` `## [3.7.4]`, and 78 residue rows from
 the four pruned phases are in `.planning/ARCHIVE.md`. The merge and the release
 tag are `/cad-land`'s, cut on the pulled base after the merge confirms.
 
-**What it did not settle.** The cycle exists to cut dispatch cost and the one
-measurement it was built to take came back inconclusive. `RNG-03` shipped the
-layout half, all 19 agent bodies collapsed to one distinct body per role with a
-`rung-prefix` check pinning it, but the after-side figures are n=2 `cad-verifier`
-dispatches at +19.3% cache read and +7.1% creation against a 33-dispatch before
-side. Both moved UP, which is not the shape of a prefix-reuse win, and the two
-populations are not comparable. `TRC-07` now records the figures automatically on
-every dispatch, so the real comparison costs nothing to take across many sessions
-and should be taken before anything is claimed.
+**What it did not settle, and what that does NOT mean.** `RNG-03` shipped its
+claim in full: all 19 agent bodies collapse to one distinct body per role and a
+`rung-prefix` self-verify check fails the build if a future rung file breaks
+that. GH-91's claim was structural, the byte layout forecloses cross-rung
+sharing, and it is now verified by inspection rather than asserted. GH-91 was
+closed on that basis 2026-08-27.
+
+What is NOT delivered is a measurement, and the figures this cycle took do not
+stand in for one. The after side is n=2 `cad-verifier` dispatches at +19.3%
+cache read and +7.1% creation against a 33-dispatch before side, both moving UP.
+DO NOT read that as evidence against the prefix work. Those two dispatches ran
+at the SAME rung, and cross-rung sharing is what the layout foreclosed, so the
+comparison bears on the question neither way. The populations are not comparable
+either: two dispatches back to back in one session against a byte-identical
+prompt is a best case, and the before side is 33 dispatches spread across many
+sessions with their own prompts and lengths.
+
+Settling it needs two rung FILES of one role to actually run, and this
+repository's configuration barely produces that: `model.escalate_on_failure` is
+`false` and no `model.effort.<role>` pin changed mid-cycle, which are the two
+conditions GH-91 itself named. `TRC-07` records the figures automatically now,
+so if escalation is ever turned on the comparison costs nothing to take. Until
+then it is unmeasured, not refuted.
 
 **Outstanding, carried out of the close.** GH-146: an abandoned rotation claim
 disables `trace.jsonl` rotation permanently, appends still land and nothing

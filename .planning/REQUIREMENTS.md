@@ -15,11 +15,11 @@ promoted here to fill this section.
 `v3.7.4 - cut the cost the record can now measure` opened 2026-08-26 and closed
 2026-08-27. Four phases, five ids - `BUD-03`, `RSK-05`, `RNG-03`, `TRC-07`,
 `TRC-08` - are rows under `## Shipped` below, all Complete. `RNG-03` shipped the
-shared-prefix layout and the check that pins it; the recovery it was supposed to
-demonstrate is not yet demonstrated, because the after-side figures are two
-dispatches against a 33-dispatch before side and both moved the wrong way.
-`TRC-07` records the figures automatically now, so that comparison can be taken
-properly later without re-planning anything.
+shared-prefix layout and the check that pins it, which is the whole of what
+GH-91 claimed; the cross-rung recovery is unmeasured rather than refuted. The
+after-side figures taken in phase 3 are two dispatches at the SAME rung and bear
+on cross-rung sharing neither way. `TRC-07` records the figures automatically
+now, so the real comparison can be taken whenever two rungs of one role run.
 
 `v3.7.3 - the record has to be right before it can be cut` opened and closed
 2026-08-26, at phase 1 on a measured rework rate. Its four delivered ids -
