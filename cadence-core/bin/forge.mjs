@@ -434,7 +434,14 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
   // entirely: their host key is null by contract.
   const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const instance = splitForgeHost((config.git || {}).forge_host ?? null);
-  if (instance && instance.port !== null && classified.host === instance.hostname) {
+  // CASE IS FOLDED AT THE COMPARISON, never at the grammar. `splitForgeHost`
+  // preserves the case the user typed - its header states why - while
+  // `splitOrigin` lowercases the host it parses, so an exact comparison here
+  // silently SKIPS the whole check on a persisted `Forge.Example.COM:3001` and
+  // wires the very origin this refusal exists to stop. The same fold
+  // `loginNamesHost` already applies to the same two hostnames.
+  if (instance && instance.port !== null
+    && classified.host === instance.hostname.toLowerCase()) {
     // A `--remote-url` naming a DIFFERENT host is not compared at all: that is
     // the split-endpoint deployment this repository itself has (`origin` on
     // `ssh.jcrenshaw.dev`, the instance on `git.jcrenshaw.dev`), and refusing it

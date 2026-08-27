@@ -951,6 +951,29 @@ test('create: a --remote-url on a DIFFERENT host is not compared at all', () => 
   assert.equal(calls(log).length, 3);
 });
 
+test('create: a MIXED-CASE persisted host still refuses the wrong port', () => {
+  // The check compared `classified.host` - lowercased by splitOrigin - against
+  // the persisted hostname verbatim, so one capital letter in git.forge_host
+  // skipped the refusal entirely and wired an origin on 443 against an instance
+  // serving 3001. Case is a spelling of one host, never a second host.
+  const log = argvLog();
+  const mk = marker();
+  const dir = planningRoot({
+    forge_provider: 'forgejo', forge_repo: 'o/r', forge_host: 'Forge.Example.COM:3001',
+  });
+  const { status, envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
+      '--remote-url', 'https://forge.example.com/o/r.git', '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, marker: mk, stubOpts: { tea: { login: TEA_LOGINS } } },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.match(envelope.reason, /3001/);
+  assert.match(envelope.reason, /443/);
+  assert.deepEqual(calls(log), []);
+  assert.equal(spawned(mk), '');
+});
+
 test('create: a PORTLESS or null git.forge_host fires nothing at all', () => {
   // What keeps github and gitlab out of this entirely - their host key is null
   // by contract - and what keeps every existing create arm byte for byte.
