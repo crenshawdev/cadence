@@ -11,6 +11,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
   copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
+  statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
@@ -176,6 +177,34 @@ test('appendEvent: a record at the bound rotates, and the append lands', () => {
   }
   // A rotated record is not a CAPPED read: the live file is small and whole.
   assert.equal(renderTrace(dir, 1).capped, false);
+});
+
+test('appendEvent: a completed rotation RELEASES the claim and leaves the sidecar inert', () => {
+  // The positive `rotateTrace`'s `finally` owes (TRC-09). The rotation the row
+  // above exercises, read for the one thing that row cannot see: whether the
+  // claim was let go. A sibling that still shared the live record's inode
+  // satisfies every size and content assertion in this file and is a STANDING
+  // claim - the very state a killed rotation leaves behind.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+
+  assert.notEqual(statSync(tracePath(dir)).ino, statSync(rotatedTracePath(dir)).ino,
+    'the claim is still standing: the sibling is a second name for the live record');
+
+  // The sidecar SURVIVES on purpose: `held` is already false while the
+  // carry-back loop runs, so a claimant that unlinked it unconditionally would
+  // delete the sidecar of a second claimant that legitimately took the claim in
+  // that window - leaving a claim no reclaim could ever age out. What makes the
+  // residue safe is that it is INERT: the inodes differ, so `rotationInFlight`
+  // is false, no arm consults its age, and the next append rotates nothing.
+  assert.equal(existsSync(rotationClaimPath(dir)), true);
+  const generation = readFileSync(rotatedTracePath(dir), 'utf8');
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
+    'the leftover sidecar drove a rotation of a record nowhere near the bound');
+  assert.deepEqual(siblings(dir), ROTATED_SET);
 });
 
 test('appendEvent: a record already PAST the bound rotates, and its sibling keeps the excess', () => {
