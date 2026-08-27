@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 5 (Stop the risk detector tripping on the review record)
-Status: phase complete
-Next: /cad-context 4
+Phase: 4 of 5 (A killed rotation must not disable rotation)
+Status: context gathered
+Next: /cad-plan 4
 Updated: 2026-08-27
