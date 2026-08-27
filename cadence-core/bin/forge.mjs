@@ -112,7 +112,8 @@
 //     `.planning/config.json` names the instance the URL is checked against.
 //     --remote-url is REQUIRED on the
 //     providers whose create argv wires no git remote (forgejo and github), and
-//     unread on the one that wires its own (gitlab); on forgejo it names the
+//     REFUSED on the one that wires its own (gitlab), naming its conflict with
+//     the pinned --remoteName origin; on forgejo it names the
 //     instance the login is matched against as well. Every refusal precedes the
 //     CREATE, so a refused create has created nothing.
 'use strict';
