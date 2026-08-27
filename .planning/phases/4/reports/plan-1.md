@@ -1,0 +1,14 @@
+PLAN COMPLETE
+Plan: .planning/phases/4/PLAN.md
+Tasks: 5 of 5
+| Task | Commit | Note |
+|---|---|---|
+| 1 Rotate at the bound instead of refusing | d2021f19 | `appendEvent` rotates at `MAX_TRACE_BYTES` instead of returning `size-cap`; `ROTATED_TRACE_FILE`/`rotatedTracePath` state the spelling once; the trigger moved to "this line would reach the bound"; a line at the bound on its own is refused as `oversized-event`. The two shipped `size-cap` tests repaired - cite-count's keeps its subject on the `symlinked-trace` arm. |
+| 2 Make the rotation visible on both reader envelopes | 6c92cedb | `ROTATION` (`record_rotated`) written as the fresh record's last line, taking the carried anchor's `corr`/`phase`; `renderTrace.rotated` detected in PASS 1 ahead of the `--phase` filter and emitted only when a marker exists; `trace render` carries it, `trace suggest` gains `file` and it. |
+| 3 Keep the rotated sibling out of git | 5906d331 | `.gitignore:31` covers `/.planning/trace.1.jsonl` (check-ignore exits 0 for both now); `cmdTraceIgnore` reads and writes both literals with the sibling's basename derived from `lib/trace.mjs`, `ignored` true only when both travel, the write arm adds only the missing rule. |
+| 4 One rotation and no lost events when two writers race | be7572c2 | Create-exclusive `linkSync` claim; an inode discriminator separates an in-flight claim from a stale generation; a re-stat guard refuses a stale-stat writer rather than detecting the damage after a replacing rename; a bounded in-flight wait plus a sibling-delta recovery so a loser never loses its event; `rotateTrace` exported so the refusal arm can be forced deterministically. Six-child race test stable over 15 runs. |
+| 5 State the retention rule where its readers are | a9a50fdd | progress/report/suggest each print the rotation beside `capped` and say where the dropped events went; `/cad-progress`'s read-back projects the field; `lib/trace-suggest.mjs`'s "never pruned, permanently by construction" premise corrected; all three budgets re-pinned in the same commit. |
+Deviations: none
+Open items:
+- `.planning/reads.jsonl` still write-deads exactly as the trace did: `lib/read-trace.mjs:282` refuses with `reason:'size-cap'` at `MAX_READS_BYTES` (8 MiB) with no rotation. Measured 2026-08-26 on this repository: 7,293,864 B, 86.9% of its bound, against the trace's 58.1%. CONTEXT's scope boundary names `.planning/trace.jsonl` alone, so it was left untouched; it is the same defect, closer to firing, and this phase's rotation is not shared with it.
+- Named by the plan and not tasked: `cadence-core/workflows/adopt.md`'s success-criteria line "The trace ignore line is present" stays singular now that task 3 writes two rules, and `cadence-core/bin/planning/risk-check.mjs`'s comment calls the record "append-only across the whole project", a reach claim rotation narrows. Neither is falsified by an acceptance criterion.
