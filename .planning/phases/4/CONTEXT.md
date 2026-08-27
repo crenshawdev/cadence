@@ -177,7 +177,19 @@ Plan shape: one plan.
       `git check-ignore .planning/trace.1.jsonl` exits 1.
 - [ ] AC4: After a rotation, no file in `.planning/` matching the trace or its
       rotated spelling exceeds `MAX_TRACE_BYTES`, and at most one rotated
-      generation is present on disk.
+      generation is present on disk. NARROWED 2026-08-26, by the user, at the
+      `plan` gate: this binds what rotation PRODUCES, not what it INHERITS. A
+      live file that was already over the bound when rotation first ran - the
+      state today's arm creates, since it refuses at `size >= MAX_TRACE_BYTES`
+      only after one event has already carried the file past it - rotates once
+      and its sibling carries that inherited excess; every rotation after that
+      is bounded. The same reading covers a fresh live file whose carried tail
+      cannot fit under the bound without dropping a bracket half of the run in
+      flight, which AC2 forbids. The alternative was trimming the renamed
+      sibling's head, which is the read-modify-write D-04 prohibits, and the
+      alternative to THAT was refusing the append, which AC1 forbids: the three
+      cannot all hold on an inherited over-cap file, and this is the one that
+      gave.
 - [ ] AC5: `planning.mjs trace render` and `planning.mjs trace suggest` each
       emit a `file` field naming the record read, and the first render after a
       rotation carries a field stating that a rotation happened. A caller

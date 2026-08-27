@@ -117,23 +117,26 @@ that a rotation happened.
   SUBORDINATE to AC2, which is unqualified: never drop a post-anchor line whose
   `corr` is the in-flight run's, because those lines are the dispatch and close
   halves `renderTrace` counts as brackets, and dropping one changes the bracket
-  count across the rotation. Drop only post-anchor lines under some OTHER `corr`;
-  where the anchor plus the in-flight run's own lines still do not fit, refuse
-  rather than rotate, on the same `{written:false, reason}` arm the
-  oversized-single-line case below uses - a rotation that silently destroys the
-  bracket state is worse than an append that says it did not happen.
+  count across the rotation. Drop only post-anchor lines under some OTHER `corr`.
+  Where the anchor plus the in-flight run's own lines STILL do not fit, carry them
+  anyway and let the fresh file sit over the bound: rotate, write, report
+  `written:true`. Do NOT refuse there and do NOT drop a bracket half - AC1 is
+  unconditional about an at-or-over-cap record and AC2 is unconditional about the
+  bracket count, and AC4 is the criterion the user narrowed on 2026-08-26 to make
+  room for exactly this. The next append rotates again, which is the degenerate
+  arm's cost and is bounded by how fast one run can write a bound's worth of
+  events under a single anchor.
 
-  Bound the ROTATED SIBLING too, which the rename alone does not: AC1 names a file
-  "at or over `MAX_TRACE_BYTES`" as a supported input, and today's pre-write arm
-  produces exactly that (it refuses at `size >= MAX_TRACE_BYTES` only AFTER the file
-  has already taken one event past the bound), so a whole-file rename hands AC4 a
-  sibling over the cap. After the rename - and only after, when the rotating writer
-  exclusively owns those bytes and no other writer will ever open that path again -
-  drop whole lines from the sibling's HEAD until it is under `MAX_TRACE_BYTES`. This
-  does NOT reach D-04: that decision forbids a read-modify-write on the LIVE path,
-  because interleaved appenders there are lossless only in append mode, and the
-  renamed sibling has no appenders at all. Nothing is taught to read the sibling
-  (Context above), so the dropped head costs no reader anything. Refuse rather than rotate when the
+  Do NOT trim the ROTATED SIBLING. A whole-file rename of a live file that was
+  already over the bound leaves a sibling over the bound, and that is now AC4's
+  stated behaviour rather than a violation of it: AC4 binds what rotation
+  PRODUCES, not what it INHERITS, and today's arm is what produced the inherited
+  excess (it refuses at `size >= MAX_TRACE_BYTES` only AFTER one event has already
+  carried the file past it, so the excess is one rendered line for a naturally
+  grown record). Head-trimming the sibling to bound it is a read-modify-write
+  truncation in place, which D-04 prohibits in those words; the prohibition was
+  read narrowly at the `plan` gate and the user ruled against that reading. Leave
+  the sibling byte-identical to the live file the rename carried away. Refuse rather than rotate when the
   rendered line is on its own at or past `MAX_TRACE_BYTES`, returning
   `{written:false, reason}` with a reason distinguishable from the old
   `size-cap`: rotating there throws the record away and the next append does it
@@ -155,11 +158,12 @@ that a rotation happened.
   `appendEvent` against a record padded past `MAX_TRACE_BYTES` returning
   `written:true`, that event present in `.planning/trace.jsonl` afterwards,
   `.planning/trace.1.jsonl` present, and neither file larger than
-  `MAX_TRACE_BYTES` - including the arm where the live file was padded WELL past
-  the bound before the append, so the assertion exercises the sibling head-trim and
-  not only the rename; a record whose in-flight run's own post-anchor lines exceed
-  the bound returns `written:false` and leaves both files byte-identical rather
-  than rotating a bracket half away; `renderTrace(dir, N).corr` and the number of `brackets`
+  `MAX_TRACE_BYTES` WHEN the live file was under it before the append - the
+  narrowed AC4's scope; separately, a live file padded WELL past the bound before
+  the append still returns `written:true`, and its rotated sibling is byte-identical
+  to what was carried away rather than trimmed; a record whose in-flight run's own
+  post-anchor lines exceed the bound still rotates and still reports `written:true`,
+  with the bracket count under that `corr` unchanged; `renderTrace(dir, N).corr` and the number of `brackets`
   whose `corr` equals it are identical before and after that append; a record
   with no `phase_start` rotates to an empty live file; a rendered line at or past
   the bound on its own returns `written:false` and leaves both files byte-identical.
@@ -284,12 +288,20 @@ that a rotation happened.
   that exists again, which POSIX rename silently replaces the destination for. B
   raises no error, A's event ends up in the rotated sibling, and AC6's "both events
   present in the live file" fails while exactly one sibling still exists, so the
-  count-based assertion alone would pass. Bind the claim to the GENERATION rather
-  than to the path: carry the `ino` (and `dev`) off the same `statSync` that
-  observed the file over the trigger, and after the rename confirm the sibling
-  carries that identity. A writer that finds it does not has rotated somebody
-  else's fresh file and must put it back and re-enter as the loser, exactly as the
-  `ENOENT` arm does. Leave no temporary or
+  count-based assertion alone would pass. A check AFTER the rename is too
+  late - POSIX rename has already replaced A's sibling and no rename-back recovers
+  the generation it destroyed - so the claim must be REFUSED rather than detected.
+  Use a create-exclusive claim on the sibling path instead of a replacing rename:
+  `linkSync(live, sibling)` fails `EEXIST` when the sibling already exists, which
+  is atomic and is exactly the single-winner semantics needed, and the live path is
+  then `unlinkSync`ed by the winner before it writes the fresh file. B, arriving
+  with its stale stat after A has rotated, gets `EEXIST` on the link and takes the
+  same loser arm the `ENOENT` case takes: re-stat and append. That keeps D-04
+  whole - the sibling is still produced by a whole-file claim and never by a
+  read-modify-write - and it costs one extra syscall on the rotation path only.
+  Where `link` is unavailable for the filesystem, fall back to the replacing
+  rename and accept the window, but never make the fallback the primary: the
+  detect-after-the-fact arm was ruled insufficient at the `plan` gate. Leave no temporary or
   claim file behind on any arm, including every failure arm; a rotation that
   cannot complete returns `{written:false, reason}` and leaves the record
   readable, because `appendEvent` still never throws and never speaks on a stream.
@@ -302,8 +314,10 @@ that a rotation happened.
   whose name begins with the trace's basename; (c) the re-created-live-path
   interleaving above, forced deterministically rather than left to a racing child:
   a writer holding a stat of the pre-rotation file, run after a rotation has
-  already completed, does not replace the sibling, and the event the first writer
-  landed is still in the live record;
+  already completed, is REFUSED the claim (`EEXIST` on the link) rather than
+  detecting the damage afterwards - the sibling is byte-identical before and after
+  that writer runs, and the event the first writer landed is still in the live
+  record;
   and (b) a second append after a rotation has completed does not rotate again -
   the rotated file is byte-identical before and after it, and the live record
   keeps both events.
@@ -368,6 +382,19 @@ that a rotation happened.
   bytes reserved in Task 1's capacity bound, is fixed by the same sentence that
   carries the first. Findings and rulings are in
   `.planning/phases/4/ADJUDICATION-plan-plan-1.json`.
+- The gate's ONE capped re-arm fired on that fix and all three blocker/high
+  findings survived it, correctly. Two were a collision between locked CONTEXT
+  items rather than plan defects: for a live file already over the bound, AC1
+  (the append must succeed), AC4 (no file may exceed the bound) and D-04 (never a
+  read-modify-write truncation) cannot all hold. The user resolved it on
+  2026-08-26 by NARROWING AC4 to bind what rotation produces rather than what it
+  inherits; CONTEXT's AC4 carries that narrowing and its reason. The third was a
+  real mechanism error - an identity check after `renameSync` detects the
+  destroyed generation instead of preventing it - and Task 4 now claims the
+  sibling with a create-exclusive `linkSync` instead. Round-2 findings and
+  rulings are in `.planning/phases/4/ADJUDICATION-plan-plan-1-r2.json`; the gate
+  settled as an `override` on the user's decision, since its one round was spent
+  and the trigger must not fire again in this loop.
 - AC2 was checked against the live record before planning, not assumed. Cutting
   `.planning/trace.jsonl` at its newest anchor (byte 597,177 of 605,209, a
   ~8 KB tail) leaves `renderTrace(dir, "3").corr` at `3-bef7cc1e` and the
