@@ -1,0 +1,48 @@
+{
+  "phase": "2",
+  "trigger": "plan",
+  "discriminator": "plan-ce20da59",
+  "round": 1,
+  "base": "HEAD",
+  "head": "HEAD",
+  "base_id": "ce20da5906e49c5b859f1b899990be59457b72f0",
+  "head_id": "ce20da5906e49c5b859f1b899990be59457b72f0",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/2/PLAN.md",
+      "line": 141,
+      "severity": "high",
+      "claim": "Task 2 explicitly leaves `execute_parallel` unchanged while only changing `execute_sequential` to iterate the dispatch set.",
+      "failure_scenario": "A partially reported multi-plan phase with non-overlapping plans selects the parallel path. The existing parallel implementation still has its own iteration over the declared plans, so it can dispatch plan 1 despite its `PLAN COMPLETE` report. The locate prose rail is not an operational handoff that changes that iteration, and the proposed prose test only checks that locate names both paths. This violates AC3's required single dispatch keyed to plan 2 and spends an unnecessary executor dispatch.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "ce20da5906e49c5b859f1b899990be59457b72f0",
+      "base_id": "ce20da5906e49c5b859f1b899990be59457b72f0",
+      "head_id": "ce20da5906e49c5b859f1b899990be59457b72f0"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/2/PLAN.md",
+      "line": 111,
+      "severity": "medium",
+      "claim": "The new prose-agreement test is instructed to assert only that the trigger names `PLAN COMPLETE`, quantifies over every plan, and excludes `--rerun`; it does not pin the required exact first-line discriminator.",
+      "failure_scenario": "A later edit can change the guard to search the whole report, use a prefix/substring match, or accept `PLAN COMPLETE` in a report body. The specified test still passes because it finds the required words and quantifier. A `PLAN PARTIAL` report containing a note that quotes `PLAN COMPLETE`, or a non-exact status such as `PLAN COMPLETE - archived`, can then wrongly stop a genuine continuation, contrary to AC2 and the locked D-03 discriminator.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "base_id": "ce20da5906e49c5b859f1b899990be59457b72f0",
+      "head_id": "ce20da5906e49c5b859f1b899990be59457b72f0"
+    }
+  ]
+}
