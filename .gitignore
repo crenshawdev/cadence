@@ -26,7 +26,9 @@ scratch/
 /.planning/CAPTURE.md
 
 # Joined run record — local diagnostics only, one machine's routing/provider/worker events
+# The .1 sibling is the generation a rotation at the record's size bound leaves behind
 /.planning/trace.jsonl
+/.planning/trace.1.jsonl
 /.planning/reads.jsonl
 
 # Triage working copies — these hold copies of the raw planning queue, the same
