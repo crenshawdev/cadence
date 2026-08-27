@@ -71,7 +71,12 @@ test('trace ignore: a fresh repo with no .gitignore gets the line written', () =
   assert.equal(r.ignored, false);         // the state as FOUND
   assert.equal(r.tracked, false);
   assert.equal(r.line, '.planning/trace.jsonl');
+  // BOTH rules on one call: the live record and the generation a rotation at
+  // its size bound leaves behind, which `git add .planning` would otherwise
+  // sweep into the repository.
+  assert.equal(r.rotated_line, '.planning/trace.1.jsonl');
   assert.match(gitignoreOf(root), /^\.planning\/trace\.jsonl$/m);
+  assert.match(gitignoreOf(root), /^\.planning\/trace\.1\.jsonl$/m);
 });
 
 test('trace ignore: a re-run adds no second line and touches no byte', () => {
@@ -96,6 +101,7 @@ test('trace ignore: a brownfield .gitignore keeps every line it had', () => {
     assert.ok(lines.includes(kept), `lost ${kept}: ${JSON.stringify(lines)}`);
   }
   assert.ok(lines.includes('.planning/trace.jsonl'), JSON.stringify(lines));
+  assert.ok(lines.includes('.planning/trace.1.jsonl'), JSON.stringify(lines));
 });
 
 test('trace ignore: a project ignoring .planning/ wholesale is already correct', () => {
@@ -139,7 +145,7 @@ test('trace ignore: a TRACKED record whose line is present reports ignored and w
   // nothing at all: `ignored` came back false with the rule sitting right there
   // in `.gitignore`, and the write arm - which keys off that value - appended the
   // comment and the line again on EVERY run. Two runs left three copies.
-  const root = ignoreRoot({ gitignore: '.planning/trace.jsonl\n' });
+  const root = ignoreRoot({ gitignore: '.planning/trace.jsonl\n.planning/trace.1.jsonl\n' });
   writeFileSync(join(root, '.planning', 'trace.jsonl'), '{"phase":1}\n');
   execFileSync('git', ['add', '-f', '--', '.planning/trace.jsonl'], { cwd: root });
   const check = traceIgnore(root, ['--check']);
@@ -170,6 +176,38 @@ test('trace ignore: a .git/info/exclude match does NOT satisfy the line', () => 
   const r = traceIgnore(root);
   assert.equal(r.written, true, JSON.stringify(r));
   assert.match(gitignoreOf(root), /^\.planning\/trace\.jsonl$/m);
+});
+
+test('trace ignore: a project covered for the record alone is REPORTED, then upgraded', () => {
+  // D-07's state: the live record is ignored and the generation its rotation
+  // leaves behind is not, so the first rotation drops an untracked file of up
+  // to a mebibyte for `git add .planning` to sweep in. Half-covered is not
+  // covered, and /cad-health has to say so rather than stay silent.
+  const root = ignoreRoot({ gitignore: '.planning/trace.jsonl\n' });
+  const check = traceIgnore(root, ['--check']);
+  assert.equal(check.ignored, false, JSON.stringify(check));
+  assert.equal(check.rotated_line, '.planning/trace.1.jsonl');
+  // ...and --check still writes nothing at all.
+  assert.equal(gitignoreOf(root), '.planning/trace.jsonl\n');
+
+  const r = traceIgnore(root);
+  assert.equal(r.written, true, JSON.stringify(r));
+  const lines = gitignoreOf(root).split('\n').filter((l) => l && !l.startsWith('#'));
+  // ONLY the missing rule was added: the existing one is not written twice.
+  assert.deepEqual(lines, ['.planning/trace.jsonl', '.planning/trace.1.jsonl']);
+  // ...and now the re-run is the no-op again.
+  assert.equal(traceIgnore(root).reason, 'already-ignored');
+});
+
+test('trace ignore: the sibling rule names the file the writer actually creates', async () => {
+  // The drift this derivation exists to prevent: a rule spelled by hand here
+  // and a rotated path spelled in lib/trace.mjs are two statements of one fact,
+  // and the day they disagree the ignore rule covers nothing.
+  const { ROTATED_TRACE_FILE, rotatedTracePath } = await import('./lib/trace.mjs');
+  const root = ignoreRoot();
+  const r = traceIgnore(root);
+  assert.equal(r.rotated_line, `.planning/${ROTATED_TRACE_FILE}`);
+  assert.equal(rotatedTracePath('.planning'), r.rotated_line);
 });
 
 test('trace ignore: a --root present with nothing usable is refused, never the cwd', () => {

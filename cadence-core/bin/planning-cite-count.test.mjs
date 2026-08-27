@@ -11,7 +11,7 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync, realpathSync } from 'node:fs';
+import { writeFileSync, readFileSync, realpathSync, symlinkSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -257,23 +257,30 @@ test('cite-count: the count records itself, under the phase\'s own correlation i
   assert.equal('turns' in e, false);
 });
 
-test('cite-count: a trace at the cap comes back written:false, and moves no figure', () => {
-  // D-15: `.planning/trace.jsonl` is gitignored, unpruned and bounded at
-  // MAX_TRACE_BYTES, `appendEvent` stats BEFORE it writes, and the envelope's
-  // `trace` field is the only place a caller could learn the figures were
-  // dropped. A record of a decision may not change the decision, so every
-  // other field must be byte-identical to the same run with no trace at all.
+test('cite-count: a record that refuses the write moves no figure', () => {
+  // D-15: the envelope's `trace` field is the only place a caller could learn
+  // the figures were dropped. A record of a decision may not change the
+  // decision, so every other field must be byte-identical to the same run
+  // whose record landed.
+  //
+  // The refused arm is the SYMLINKED trace, and it is deliberately no longer
+  // the size bound: at `MAX_TRACE_BYTES` the record now ROTATES and the append
+  // lands (TRC-08), so a full record is not a way for a write to fail. This
+  // test's subject is unchanged - what a caller sees when the write does not
+  // happen - only the reachable arm behind it is.
   const capped = citeTree();
   const clean = citeTree();
   const rows = [
     { score: 9, source: 'v3.5.3/phases/2/CONTEXT.md', snippet: 'D-03 (area): cited' },
     { score: 8, source: 'phases/1/CAPTURE.md', snippet: 'a capture row' },
   ];
-  writeFileSync(join(capped, 'trace.jsonl'), 'x'.repeat(1048576));
+  const outside = join(mkdtempSync(join(tmpdir(), 'cad-cite-outside-')), 'elsewhere.jsonl');
+  writeFileSync(outside, '');
+  symlinkSync(outside, join(capped, 'trace.jsonl'));
 
   const a = citeCount(['--phase', '2', '--payload', citePayload(capped, rows)], capped);
   const b = citeCount(['--phase', '2', '--payload', citePayload(clean, rows)], clean);
-  assert.deepEqual(a.json.trace, { written: false, reason: 'size-cap' });
+  assert.deepEqual(a.json.trace, { written: false, reason: 'symlinked-trace' });
   assert.deepEqual(b.json.trace, { written: true });
   assert.equal(a._exit, 0, 'a dropped record is not a refusal');
 
@@ -281,8 +288,9 @@ test('cite-count: a trace at the cap comes back written:false, and moves no figu
   assert.deepEqual(strip(a.json), strip(b.json),
     'the verdict and both figures are identical whether or not the record landed');
 
-  // And nothing was appended: the cap is enforced in FRONT of the write.
-  assert.equal(readFileSync(join(capped, 'trace.jsonl'), 'utf8').length, 1048576);
+  // And nothing was appended: the refusal is in FRONT of the write, so the
+  // append never followed the link out of the tree.
+  assert.equal(readFileSync(outside, 'utf8'), '');
 });
 
 test('cite-count: three runs are told apart by their records alone', () => {

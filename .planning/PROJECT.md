@@ -204,56 +204,56 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v3.7.3 - the record has to be right before it can be cut`, opened
-2026-08-26.** Three phases against the `Dispatch cost` milestone. The cycle's
-whole subject is what a dispatch costs, and it opens by fixing the instruments
-rather than the cost, because every argument for cutting the cost is denominated
-in figures this repo records about itself.
+**No cycle open.**
 
-**The measured state.** `cad-executor` is 25,587,266 of 50,145,905 recorded
-tokens, 51% of the whole record, and its dispatches re-read 3.52 times per
-distinct file, worst case `cadence-core/bin/planning.mjs` opened 57 times inside
-one dispatch. 39 checkpoint returns say plans exceed one context. 233 of 239
-executor dispatches across cadence and verbatim ran opus at `shipped` and the
-routing discount fired 6 times total.
+**`v3.7.4 - cut the cost the record can now measure`, opened 2026-08-26, closed
+2026-08-27.** Four phases, 71 commits off `main` (16 feat against 6 fix, where
+`v3.7.3` ran 7 against 7). Five requirement ids, all traced to a verified phase:
+`BUD-03`, `RSK-05`, `RNG-03`, `TRC-07`, `TRC-08`. `/cad-audit` PASS on both arms,
+5 of 5 requirements traced with 0 broken and 25 of 25 acceptance criteria covered
+with 0 breaks. UAT 29 passed, 0 failed, 1 skipped. Manifest bumped to `3.7.4` at
+`a25d4470`.
 
-**Why the instruments come first.** Three of the figures above cannot currently
-be trusted or extended. `renderTrace`'s close dedup pairs a delayed repeat close
-with the NEXT dispatch of the same worker key, so on a retry the bracket carries
-the wrong figures and the role is billed for all three terminals (GH-128,
-reproduced 2026-08-26). `duration_ms` is written onto every bracket by
-`planning/trace.mjs:795` and read by nothing, so the worker's own wall clock has
-no consumer (GH-129). And no cache figures are recorded at all, so no
-prompt-cache claim can be measured before or after a change (GH-92), which is
-why GH-91 declares itself blocked on it.
+Where it went: the shipped rows are in `REQUIREMENTS.md` under `## Shipped`, the
+user-facing narrative is `CHANGELOG.md` `## [3.7.4]`, and 78 residue rows from
+the four pruned phases are in `.planning/ARCHIVE.md`. The merge and the release
+tag are `/cad-land`'s, cut on the pulled base after the merge confirms.
 
-**Then the cost itself.** `workflow.max_plan_tasks` bounds a plan by task count
-and nothing bounds the bytes its `files:` frontmatter declares, which on one
-measured `PLAN-1.md` was ~90% of a 70,554-token dispatch (GH-94). The
-risk-routing floor reads whole-file BODY lines rather than the diff, so any plan
-declaring a large file inherits its matches and can never earn the discount
-(GH-112). GH-91's one-line fix lands last, once phase 1 can prove whether it
-recovered anything.
+**What it did not settle.** The cycle exists to cut dispatch cost and the one
+measurement it was built to take came back inconclusive. `RNG-03` shipped the
+layout half, all 19 agent bodies collapsed to one distinct body per role with a
+`rung-prefix` check pinning it, but the after-side figures are n=2 `cad-verifier`
+dispatches at +19.3% cache read and +7.1% creation against a 33-dispatch before
+side. Both moved UP, which is not the shape of a prefix-reuse win, and the two
+populations are not comparable. `TRC-07` now records the figures automatically on
+every dispatch, so the real comparison costs nothing to take across many sessions
+and should be taken before anything is claimed.
 
-A codex review of the v3.7.2 release, adjudicated against the code 2026-08-26,
-added a fourth defect to phase 1's list and confirmed three more. GH-136: the
-`SubagentStop` payload carries no agent identity, so `closeForStop` adopts the
-newest open dispatch of the role - live today at `parallelization.enabled` true
-with `max_concurrent_agents` 3. GH-138: `trace.jsonl` is write-dead at 1 MiB with
-no rotation and sits at 52%, which takes the whole milestone's evidence with it.
-Filed and out of this cycle: GH-137 (a phase with commits but no `SUMMARY.md`
-derives as `planned`, so execute can replay it) and GH-139 (router fence parsing
-ignores delimiter type and run length).
-
-Seeded ids: `TRC-04`, `TRC-06`, `MSR-05`, `TRC-05`, `BUD-03`, `RSK-05`,
-`RNG-03`, `COV-02`.
-
-GH-117 (`WorktreeCreate` seeds the phase dir) is deliberately HELD OUT in the
-`Worktree verdict` milestone, natively blocked by GH-119 and GH-120: if
-worktrees do not earn their cost, its remedy code is deleted rather than
-rewritten.
+**Outstanding, carried out of the close.** GH-146: an abandoned rotation claim
+disables `trace.jsonl` rotation permanently, appends still land and nothing
+write-deads but the record stops rotating and each append pays about 266 ms.
+`.planning/reads.jsonl` carries the original write-dead defect at 86.9% of its
+own 8 MiB bound, closer to firing than the trace ever was, and shares none of
+phase 4's rotation code. GH-137, a phase with commits but no `SUMMARY.md`
+deriving as `planned` so `/cad-execute` replays committed work, is still the
+highest-severity user-facing bug on the tracker and still belongs to the execute
+path. The Forge cluster (GH-102 through GH-107) is a decided seed in
+`.planning/CAPTURE.md` for whichever cycle opens next.
 
 ### Previously
+
+**`v3.7.3 - the record has to be right before it can be cut`**, opened and
+closed 2026-08-26. Four phases planned, CLOSED AT PHASE 1 on a measured rework
+rate: half the cycle's code commits were fixing the other half (7 fix against 7
+feat, where `v3.7.1` ran 27% and `v3.7.2` 22%), four of those seven were four
+passes at one question - which in-flight dispatch an async `SubagentStop`
+callback belongs to - and one real defect landed after the phase's UAT reported
+8 passed and 0 failed. Delivered `TRC-04` (a delayed repeat close stops stealing
+the next dispatch's bracket), `TRC-06` (the stop close lands on the worker that
+actually stopped, or writes nothing), `MSR-05` (`duration_ms` has a reader) and
+`TRC-05` (a bracket records cache traffic). Also moved workflow rationale out of
+the runtime path into `docs/rationale/`, taking 10,952 B off the four most-read
+workflows with no step removed and no gate weakened - v3.7.3
 
 **`v3.7.2 - the router loads late and the host writes the bracket` closed
 2026-08-26.** Three phases, 42 commits off `v3.7.1`, seven requirement ids all

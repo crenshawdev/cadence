@@ -78,6 +78,15 @@ Composing the list from prose here is what put the same categories in the first
 slot and again in the last one (#206): a list a model assembles per run is a
 list no check can read.
 
+The LEGEND is a different thing from the options, and it does ride this ask. The
+eight one-line definitions above are the only place a token like `api_contract`
+or `untrusted_input` is ever spelled out, and a user seeing them for the first
+time cannot answer a question whose vocabulary is withheld. Present them as the
+question's own context - verbatim, all eight, in the order above - beside the
+`options` array rendered exactly as the envelope returned it. That adds nothing
+to any option and composes nothing: the check still reads the seam's list, and
+the user can now read the words in it.
+
 The first entry is always the scan's `recommended` array, which is all eight
 categories, and it is the same set on both scan arms. An `inconclusive: true`
 scan changes only the REASON that entry states - no dependency manifest and no

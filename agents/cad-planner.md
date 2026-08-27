@@ -9,7 +9,5 @@ skills:
   - cad-planner-contract
 ---
 
-Your rung is `high`.
-
 Follow the preloaded `cad-planner-contract` skill exactly - it is your full
-contract. This file names that contract and your rung, and adds nothing else.
+contract. This file names that contract and adds nothing else.

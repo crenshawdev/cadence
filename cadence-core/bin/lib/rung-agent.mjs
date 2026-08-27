@@ -9,7 +9,8 @@
 // RUNG_FILES is the whole mapping story - a stated table, not a naming
 // convention, because no convention is true of all 19 files.
 // `rungBody`/`normalizeBody`/`rungBodyIssue` beside it state the one legitimate
-// BODY of a rung file, for the same single-source reason.
+// BODY of a rung file, and `rungPrefixIssues` states that one role's rung files
+// all carry it byte for byte, for the same single-source reason.
 //
 // Pure lib: no fs, no emit, no process, no Date, no randomness. It returns
 // names and problem CODES; the callers own the envelope - route.mjs decides
@@ -96,18 +97,101 @@ export function rungFiles(role) {
 }
 
 /**
- * The canonical BODY of a rung agent file: the rung line, then a pointer at
- * the contract it preloads. Stated here rather than inside self-verify for the
- * same reason the name mapping is - the check and the files it checks must
+ * Whether one role's rung files still share ONE body, byte for byte (RNG-03).
+ *
+ * A role's rungs are separate registered agents whose bodies are assembled
+ * into separate prompts, and a prompt cache can only reuse a prefix that is
+ * identical from its first byte. The rung sentence used to make that
+ * impossible by construction - every rung file opened with a different line -
+ * and deleting it bought a shared prefix that nothing then held. This is what
+ * holds it: an edit landing in one rung file and not its siblings re-forecloses
+ * the sharing, and it is invisible to every other check, because each file on
+ * its own is still a perfectly legal rung file.
+ *
+ * RAW BYTES, deliberately, and this is the one place in this lib where
+ * whitespace is load-bearing (D-04). `rungBodyIssue` normalizes whitespace away
+ * so that re-wrapping a paragraph is free - which is right for "does this file
+ * carry behaviour of its own" and exactly wrong here, since two line-break
+ * variants are two different cache prefixes. Re-wrapping ONE rung file and not
+ * its siblings is precisely the edit this rule exists to catch, so the two
+ * rules are not duplicates: they disagree about that edit on purpose.
+ *
+ * Scoped by RUNG_FILES: a stem the map does not name is not this rule's
+ * business (check 8's reachability arm owns stale and unreachable files), and
+ * a role contributing fewer than two bodies yields nothing - an absent file is
+ * already `missing-rung-agent`'s to report, and a second entry would
+ * double-count one fault.
+ *
+ * The majority body is the rank and the minority is what broke it, ties going
+ * to whichever group holds the earliest-declared rung, so the detail names the
+ * FILE a maintainer would open rather than every file in the role.
+ *
+ * @param {any} bodies stem -> that file's raw prose, frontmatter already
+ *   stripped; entries whose value is not a string are treated as absent
+ * @returns {{code: string, role: string, stems: string[], detail: string}[]}
+ */
+export function rungPrefixIssues(bodies) {
+  const read = bodies !== null && typeof bodies === 'object' && !Array.isArray(bodies)
+    ? bodies : {};
+  const bodyOf = (stem) => (Object.prototype.hasOwnProperty.call(read, stem)
+    && typeof read[stem] === 'string' ? read[stem] : null);
+
+  /** @type {{code: string, role: string, stems: string[], detail: string}[]} */
+  const out = [];
+  for (const role of Object.keys(RUNG_FILES)) {
+    // Declared rung order (low -> max), which is what makes the tie-break and
+    // the listed order below reproducible rather than filesystem-dependent.
+    const stems = Object.values(RUNG_FILES[role]).filter((s) => bodyOf(s) !== null);
+    if (stems.length < 2) continue;
+
+    /** @type {Map<string, string[]>} */
+    const groups = new Map();
+    for (const stem of stems) {
+      const body = /** @type {string} */ (bodyOf(stem));
+      const seen = groups.get(body);
+      if (seen) seen.push(stem);
+      else groups.set(body, [stem]);
+    }
+    if (groups.size === 1) continue;
+
+    // Insertion order IS declared rung order, and `>` is strict, so a tie
+    // leaves the earliest-declared group as the rank.
+    let rank = [];
+    for (const members of groups.values()) {
+      if (members.length > rank.length) rank = members;
+    }
+    const strays = stems.filter((s) => !rank.includes(s));
+    const name = (s) => `agents/${s}.md`;
+    out.push({ code: 'rung-prefix-split', role, stems: strays,
+      detail: `${strays.map(name).join(', ')} ${strays.length === 1 ? 'does' : 'do'} not carry `
+        + `the same body BYTE FOR BYTE as ${rank.map(name).join(', ')} - `
+        + `${role}'s rungs are dispatched as separate agents and share a cached prefix `
+        + 'only while their bodies are identical, so this edit has to land in every '
+        + `rung file of ${role} or in none` });
+  }
+  return out;
+}
+
+/**
+ * The canonical BODY of a rung agent file: a pointer at the contract it
+ * preloads, and nothing else. Stated here rather than inside self-verify for
+ * the same reason the name mapping is - the check and the files it checks must
  * read ONE source, or they drift and the linter blesses the drift.
- * @param {string} rung the file's frontmatter `effort`
+ *
+ * It names NO rung, and that is the point (RNG-03). The body used to open
+ * ``Your rung is `high`.``, which put a per-rung token at body line 1 and gave
+ * every rung file of one role a different prefix from its first character - so
+ * two rungs of the same role could share no cached prefix at all, however
+ * identical the rest. The rung was never lost by deleting it: the frontmatter
+ * `effort:` is what the host actually reads and what `rungEffortIssue` holds
+ * against this map. A role whose CONTRACT branches on the rung takes it from
+ * its dispatch prompt, which is billed fresh and costs no prefix.
  * @param {string} skill the contract skill the file preloads
  * @returns {string}
  */
-export function rungBody(rung, skill) {
-  return `Your rung is \`${rung}\`.\n\n`
-    + `Follow the preloaded \`${skill}\` skill exactly - it is your full\n`
-    + 'contract. This file names that contract and your rung, and adds nothing else.\n';
+export function rungBody(skill) {
+  return `Follow the preloaded \`${skill}\` skill exactly - it is your full\n`
+    + 'contract. This file names that contract and adds nothing else.\n';
 }
 
 /**
@@ -142,17 +226,22 @@ export function normalizeBody(text) {
  * them - the template names a single contract, and nothing here rules out a
  * future multi-contract agent.
  *
+ * The template no longer names a rung, so this rule no longer holds a body
+ * against its own frontmatter `effort:` (RNG-03). That arm is gone, not
+ * bypassed, and it was the redundant one: `rungEffortIssue` below holds the
+ * file's `effort:` against the rung RUNG_FILES filed it under, which is the
+ * link that decides how deep a dispatch actually thinks.
+ *
  * @param {string} body the agent file's prose, frontmatter already stripped
- * @param {string} [rung] the file's frontmatter `effort`
  * @param {string[]} [skills] the file's declared `skills:` entries
  * @returns {null|{detail: string}} null when the body IS the template
  */
-export function rungBodyIssue(body, rung, skills) {
+export function rungBodyIssue(body, skills) {
   const found = normalizeBody(body);
   const declared = (Array.isArray(skills) ? skills : [])
     .filter((s) => typeof s === 'string' && s);
   const names = declared.length ? declared : ['<contract>'];
-  const wanted = names.map((s) => normalizeBody(rungBody(rung || '', s)));
+  const wanted = names.map((s) => normalizeBody(rungBody(s)));
   if (wanted.includes(found)) return null;
   return { detail: `body is not the rung template - expected exactly ${JSON.stringify(wanted[0])}` };
 }
@@ -246,11 +335,14 @@ export function effortEnumIssues(schema, rungOrder) {
  *
  * A cell states a rung, RUNG_FILES turns it into a file NAME, and the dispatch
  * carries only that name - so the depth that actually runs is the `effort` in
- * that file's frontmatter. Two checks already sit near this and neither closes
- * it: `rungBodyIssue` holds a file's body against its OWN frontmatter, so a
- * file that is internally consistent and externally wrong passes, and check
- * 8's reachability arm reads the rung out of the FILENAME rather than out of
- * the file. Leave the gap and `route-table.json` can name `xhigh`, this map
+ * that file's frontmatter, and since RNG-03 deleted the rung sentence from the
+ * body this is the ONLY rule that reads that field against anything. Check 8's
+ * reachability arm reads the rung out of the FILENAME rather than out of the
+ * file, and `rungBodyIssue` held a file's body against its OWN frontmatter, so
+ * a file that was internally consistent and externally wrong passed it
+ * anyway - which is why losing that arm loses no coverage this one has, and
+ * why this one may not be weakened. Leave the gap and `route-table.json` can
+ * name `xhigh`, this map
  * can resolve it to a file carrying `effort: high`, and the resolver's JSON,
  * the transcript's `subagent_type` and the escalation `reason` all report
  * `xhigh` while nothing ran at it. Subagent turns record no effort anywhere,

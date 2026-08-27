@@ -77,10 +77,36 @@ function planningRoot(start) {
 }
 
 // The stopped worker's own transcript, or null for "nothing to read". The path
-// is the payload's documented `transcript_path` and is used AS GIVEN: it is not
-// reconstructed out of a session id and a project slug, so what this hook is
-// exposed to is the file's internal format alone and never its location, which
-// is the one part of an explicitly unstable layout that can be avoided.
+// is the payload's `agent_transcript_path` - the field the `SubagentStop` event
+// puts the WORKER's own file on - and never the `transcript_path` that every
+// hook event carries, which names the SESSION's transcript: the ORCHESTRATOR's
+// own conversation, a different actor entirely. Measured 2026-08-26 against the
+// installed 2.1.246 binary, a `SubagentStop` payload is the common hook input
+// plus `stop_hook_active`, `agent_id`, `agent_transcript_path`, `agent_type` and
+// an optional `last_assistant_message`, and the host derives
+// `agent_transcript_path` from the agent id.
+//
+// READING THE SESSION FILE CORRUPTED ALL THREE ANSWERS this hook takes off a
+// transcript, which is the whole of the short figure on the record. `terminalOf`
+// read the ORCHESTRATOR's `end_turn` and called the worker finished; both cache
+// sums were the orchestrator's traffic rather than the worker's; and the `ts`
+// that reached the record was the orchestrator's last assistant timestamp, which
+// is why a 378-second run rendered as a 22-second one. Measured 2026-08-26 on
+// this repository's own record: `.planning/trace.jsonl`'s only cache-bearing
+// event carries 52,918 / 528,568, exactly `cacheOf` over the orchestrator's
+// session file truncated at that event's own `ts`, while the worker's own file
+// sums 100,439 / 2,115,871.
+//
+// NO FALLBACK to `transcript_path` when the worker's field is absent. The
+// session transcript is evidence about a DIFFERENT ACTOR, so an absent field
+// means NO evidence rather than second-best evidence: `readTranscript` states
+// that as null, which `cacheOf` answers `{}` and `terminalOf` answers `unknown`
+// - the behaviour this hook had before it read any transcript at all.
+//
+// The path is used AS GIVEN: it is not reconstructed out of a session id and a
+// project slug, so what this hook is exposed to is the file's internal format
+// alone and never its location, which is the one part of an explicitly unstable
+// layout that can be avoided.
 //
 // Nothing this file contains reaches any stream or any other process. The rule
 // reads it for three answers - did the worker stop, when, and how much cache
@@ -105,9 +131,16 @@ try {
   const cwd = String(input?.cwd || process.cwd());
   const root = planningRoot(cwd);
   if (root) {
-    const evidence = { transcript: readTranscript(input?.transcript_path) };
-    const event = closeForStop(input, renderTrace(root), evidence);
-    if (event) appendEvent(root, event);
+    const evidence = { transcript: readTranscript(input?.agent_transcript_path) };
+    // A LIST, appended in the order the rule gave it (D-08). One stop can owe
+    // the record more than one event - a gate that withholds the close still
+    // holds cache figures nothing else will ever have - and the empty list is
+    // the do-nothing answer, so there is no null arm to test for. The
+    // `Array.isArray` guard is not defensive style: a non-array answer inside a
+    // hook contractually forbidden to speak on any stream must write nothing
+    // rather than throw, and the `catch` below is silent by design.
+    const events = closeForStop(input, renderTrace(root), evidence);
+    if (Array.isArray(events)) for (const event of events) appendEvent(root, event);
   }
 } catch {
   // Every failure is silent by contract: a broken recorder must never disturb

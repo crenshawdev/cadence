@@ -107,7 +107,7 @@ the scratch file is the model's own, never a phase artifact):
 ```
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-trace-XXXXXX")" \
   && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <current> > "$D/render.json" \
-  && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+process.argv[1]+" is not an object");process.exit(1)}const miss=["counts","roles","unpaired","capped"].filter((k)=>r[k]===undefined||r[k]===null);if(miss.length){console.error("scratch-shape: "+miss.join(", ")+" absent from "+process.argv[1]);process.exit(1)}console.log(JSON.stringify({counts:r.counts,roles:r.roles,unpaired:r.unpaired,capped:r.capped}))' "$D/render.json"
+  && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+process.argv[1]+" is not an object");process.exit(1)}const miss=["counts","roles","unpaired","capped"].filter((k)=>r[k]===undefined||r[k]===null);if(miss.length){console.error("scratch-shape: "+miss.join(", ")+" absent from "+process.argv[1]);process.exit(1)}console.log(JSON.stringify({counts:r.counts,roles:r.roles,unpaired:r.unpaired,capped:r.capped,rotated:r.rotated}))' "$D/render.json"
 ```
 
 The directory is made for this run and both calls are `&&`-chained to it, so no
@@ -146,7 +146,11 @@ render carrying no `roles` key prints nothing for it, exactly as an absent trace
 file already prints empty counts. Then every `unpaired` entry, which names a worker
 that was handed work and never came back with a return, checkpoint or
 escalation; then the `capped` flag when it is true, which means the record hit
-its size bound and what follows is missing rather than absent. An absent trace
+its size bound and what follows is missing rather than absent; then `rotated`
+when the render carries it, which is the OTHER thing a size bound does and not
+the same one - the record was cut at the newest phase anchor, so everything
+older than the run in flight is in the sibling it names and is not in what was
+just read. A rotated record is not a capped one. An absent trace
 file returns `ok:true` with empty counts - a phase can simply not have run yet,
 and that is an answer, not an error.
 </step>

@@ -161,11 +161,28 @@ write nothing, rather than land a late stop on whatever else is open
 dispatches of one role open and no id, that hook refuses rather than guess.
 The caller is no longer the only WRITER of a close, and is still the only one
 that can carry the three figures above: the host's `SubagentStop` hook
-(`cadence-core/bin/subagent-trace.mjs`) closes a bracket this line never
-reached - a session that died between the two halves, a return nobody billed -
-and it carries IDENTITY plus the two cache figures it sums off the stopped
-worker's own transcript, `cache_creation_input_tokens` and
-`cache_read_input_tokens`. The split is WHERE A FIGURE LIVES: `--tokens`,
+(`cadence-core/bin/subagent-trace.mjs`) now makes TWO different writes, and
+they carry different identity. When it CLOSES - a session that died between
+the two halves, a return nobody billed - it adopts the open bracket this
+line never reached and carries THAT bracket's identity plus the stopped
+worker's OWN `agent_id`, so a bracket the hook closed is joinable rather than
+a dead end. When it CANNOT claim
+a close - a worker that had not stopped when the host fired, a worker whose
+bracket the caller had already closed, a worker whose role has two open
+dispatches the evidence cannot separate - it writes a cache-only lifecycle
+fact instead, `worker_cache`, claiming no bracket and carrying the stopped
+worker's OWN `agent_id` plus the two cache figures it sums off that worker's
+own transcript, `cache_creation_input_tokens` and `cache_read_input_tokens`,
+alongside the `corr` and `phase` every lifecycle event carries. BOTH of the
+hook's writes sum those figures off the stopped WORKER's own transcript, which
+the stop payload names on `agent_transcript_path` - never the `transcript_path`
+every hook event carries, which names this caller's own SESSION and is a
+different actor's traffic entirely. That fact is
+joined to a bracket at render time on `corr` plus `agent_id` - which is
+exactly why `--agent-id` rides this caller's own line: without it there, no
+bracket in the record carries the id the fact would need to join against,
+and the same flag on the other ten close sites is what gives the fact
+somewhere to land. The split is WHERE A FIGURE LIVES: `--tokens`,
 `--turns` and `--duration-ms` are rendered on a return only this caller sees,
 and the cache figures are rendered on no return at all, which is why they have
 no flag here and why the hook is their only possible writer. They ride the
@@ -174,7 +191,9 @@ duplicate to prune: `/cad-task`'s phase-0 bracket has no subagent behind it for
 any hook to close, and a hook-only design goes silently quiet on a host rename.
 Two closes of one dispatch render as ONE bracket in either arrival order -
 `lib/trace.mjs`'s worker-key dedup folds whichever arrived second into the row
-the first opened, filling only the fields that row left empty.
+the first opened, filling only the fields that row left empty - except the two
+cache figures, where the LARGER read wins, because they have one writer and two
+values for one worker are two reads of a transcript that only grows.
 A
 figureless return is ROUTINE (`lib/trace.mjs` holds the provenance), and the
 `unrecorded` it produces names a silent return, never a skipped bracket. A

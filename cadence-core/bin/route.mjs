@@ -395,8 +395,15 @@ function providerModel(providers, name, tier) {
  * read a body still returns a whole bundle. What is never done is echo the body:
  * a refused path may hold the very evidence a discount would claim is absent, so
  * saying WHICH file was skipped and why is the whole of the report.
+ *
+ * `bytes` rides ONLY the arm that actually read (D-11), and is the file's
+ * on-disk size rather than the string's length: it is the read this floor paid
+ * for, and it is what `replay` puts on the record. A path that does not exist
+ * and a path any `unread` arm refused contributed no read, so neither carries
+ * the field at all - a zero there would be indistinguishable from an empty file
+ * somebody opened.
  * @param {string} repoRoot @param {string[]} files
- * @returns {Array<{path: string, body?: string, unread?: string}>}
+ * @returns {Array<{path: string, body?: string, unread?: string, bytes?: number}>}
  */
 function declaredBodies(repoRoot, files) {
   // Resolved ONCE, and fail-soft: a root this cannot resolve keeps its literal
@@ -453,7 +460,7 @@ function declaredBodies(repoRoot, files) {
       return { path: rel, unread: `body over ${MAX_BODY_BYTES} bytes` };
     }
     try {
-      return { path: rel, body: readFileSync(abs, 'utf8') };
+      return { path: rel, body: readFileSync(abs, 'utf8'), bytes: st.size };
     } catch {
       return { path: rel, unread: 'body could not be read' };
     }
@@ -604,15 +611,29 @@ function riskFloor(ctx) {
  * where the surface raised nothing.
  * @param {{scope: any, scoped: boolean, scopeName: string, repoRoot: string, cfg: any,
  *   surfaces: string[], waived: string[], reason: string[], warnings: string[]}} ctx
+ * `bytes` is what computing this answer COST to read (D-11): the on-disk size of
+ * the declared bodies this scope actually opened, and nothing else. Not the PLAN
+ * files' own bytes, which `declaredFilesIn` read before this function was
+ * called; not a path that took any `unread` arm or does not exist, which
+ * contributed no read at all; and counted ONCE per entry, because `evidencedBy`
+ * re-scans entries already in memory and returns to no disk. It rides every arm,
+ * including the ones that raise nothing - a scope that read 4 MB to conclude
+ * "nothing here" is exactly the row the figure exists for.
+ * @param {{scope: any, scoped: boolean, scopeName: string, repoRoot: string, cfg: any,
+ *   surfaces: string[], waived: string[], reason: string[], warnings: string[]}} ctx
  * @returns {{level: string, raised: boolean, surface: string|null, signal: string|null,
- *   file: string|null}}
+ *   file: string|null, bytes: number}}
  */
 function levelFor(ctx) {
   const { scope, scoped, scopeName, repoRoot, cfg, surfaces, waived, reason, warnings } = ctx;
   const baseline = cfg.stakes;
   const order = stakesOrder();
+  /** Set once, below, from the entries this scope actually opened. Declared
+   * here so every return arm carries it without threading a parameter. */
+  let bytes = 0;
   /** A level nothing raised - the shape every non-raise arm returns. */
-  const none = (level) => ({ level, raised: false, surface: null, signal: null, file: null });
+  const none = (level) =>
+    ({ level, raised: false, surface: null, signal: null, file: null, bytes });
   /** The configured level stands, for a stated cause the floor COMPUTED. */
   const hold = (why) => {
     reason.push(`risk floor: ${why}, so the configured "${baseline}" stands`);
@@ -621,7 +642,24 @@ function levelFor(ctx) {
 
   for (const w of scope.warnings) warnings.push(w);
   const entries = declaredBodies(repoRoot, scope.files);
-  const { matches } = scanDeclared(entries, surfaces);
+  bytes = entries.reduce((n, e) => n + (typeof e.bytes === 'number' ? e.bytes : 0), 0);
+  const { matches, withheld } = scanDeclared(entries, surfaces);
+
+  // WHAT THE LINE-KIND EXEMPTION COST THIS SCOPE (RSK-05), said before any arm
+  // below decides anything, because it is true on every arm: a raise that used
+  // to rest on an import or a literal constant now says which file and which
+  // surface stopped counting, instead of moving its evidence silently.
+  //
+  // A `reason` and not a `warning`, on the distinction this function keeps
+  // everywhere else: `warnings[]` is for an input the floor could NOT read - an
+  // oversized body, a path outside the tree, a plan out of grammar - and a
+  // withheld line is one it read and judged. Measured on this repository
+  // 2026-08-26 this fires 5 times across the 28 archived phase directories, so
+  // it is a sentence and not a flood.
+  for (const w of withheld) {
+    reason.push(`risk floor: ${scopeName}: ${w.path} evidences ${w.category} `
+      + 'only on an import or a constant declaration, which no longer counts');
+  }
 
   // THE WAIVER, applied per MATCH and not to the scan: a project that waived
   // `secrets` on a phase which also touches `destructive` still routes at the
@@ -759,7 +797,7 @@ function levelFor(ctx) {
   /** The raise's own evidence, carried beside the level for a caller that
    * prints it (`replay`) and for the rung clamp that fires only on a raise. */
   const cite = (level) => ({ level, raised: true, surface: hit.category,
-    signal: hit.signal, file: at });
+    signal: hit.signal, file: at, bytes });
   const raised = higherLevel(floor, RAISE_TARGET);
   if (raised === null) {
     // A reason claiming a baseline is "already at or above" a level nothing
@@ -1403,6 +1441,12 @@ function replay(opts) {
       // level is diagnosable without re-running the read.
       plans_found: scope.found,
       plans_clean: scope.clean,
+      // What the row COST to compute (D-11): the declared bodies this scope
+      // opened, in bytes. There is no reduction target this phase - the figure
+      // is here so the read is on the record instead of being inferred, and it
+      // is on the REPLAY row rather than in `resolve`'s envelope, whose shape is
+      // read at every dispatch site.
+      bytes_read: r.bytes,
       reason,
       ...(rowWarnings.length ? { warnings: rowWarnings } : {}),
     });

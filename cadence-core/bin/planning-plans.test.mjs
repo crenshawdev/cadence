@@ -11,7 +11,7 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeTree, run } from './planning.test.mjs';
 
@@ -160,6 +160,118 @@ test('plan-size: a missing --phase is bad-args, never the cursor', () => {
   const dir = sizeTree(['STOR-01'], {});
   assert.equal(run(['plan-size'], dir).reason, 'bad-args');
   assert.equal(run(['plan-size', '--phase', 'x'], dir).reason, 'bad-args');
+});
+
+// --- plan-size: the DECLARED BYTES a plan hands its executor (BUD-03) --------
+
+/**
+ * A one-phase tree whose PLAN.md carries `frontmatter` verbatim between the
+ * fences, plus `files` (relative path -> body) written into the REPO root - the
+ * planning root's PARENT, which is where a repo-relative declared path
+ * resolves. Returns the planning dir, so `run` addresses it like every other
+ * arm here.
+ */
+function bytesTree(frontmatter, files = {}) {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { 1: {} } });
+  const repoRoot = dirname(dir);
+  for (const [rel, body] of Object.entries(files)) {
+    const abs = join(repoRoot, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, body);
+  }
+  writeFileSync(join(dir, 'phases', '1', 'PLAN.md'),
+    `---\nphase: 1\nplan: 1\n${frontmatter}\n---\n\n# Plan 1\n`);
+  return dir;
+}
+
+test('plan-size: a plan reports the summed on-disk bytes its files: frontmatter declares', () => {
+  const dir = bytesTree('files:\n  - src/a.rs\n  - src/b.rs',
+    { 'src/a.rs': 'x'.repeat(1200), 'src/b.rs': 'y'.repeat(345) });
+  const r = run(['plan-size', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.plans.length, 1);
+  assert.equal(r.plans[0].bytes, 1545);
+  assert.equal(r.plans[0].absent, 0);
+});
+
+test('plan-size: a declared path that is not on disk counts zero bytes and one absent', () => {
+  // The creation-heavy plan D-10 exists for: without the count beside it, 1200
+  // reads as "comfortably under the ceiling" while measuring one file of two.
+  const dir = bytesTree('files:\n  - src/a.rs\n  - src/not-yet.rs',
+    { 'src/a.rs': 'x'.repeat(1200) });
+  const r = run(['plan-size', '--phase', '1'], dir);
+  assert.equal(r.plans[0].bytes, 1200);
+  assert.equal(r.plans[0].absent, 1);
+});
+
+test('plan-size: a declared DIRECTORY and a path climbing out both land on absent, unread', () => {
+  // Neither is stat'd for its size: the escape is refused by SPELLING before any
+  // stat, and a directory is refused by what the path IS. Both make the total
+  // measure less than what was declared, which is the count's whole job.
+  const dir = bytesTree('files:\n  - src\n  - ../outside.rs\n  - /etc/passwd\n  - src/a.rs',
+    { 'src/a.rs': 'x'.repeat(10) });
+  const r = run(['plan-size', '--phase', '1'], dir);
+  assert.equal(r.plans[0].bytes, 10);
+  assert.equal(r.plans[0].absent, 3);
+});
+
+test('plan-size: a plan over --max-bytes is plan-too-many-bytes, naming the plan and both numbers', () => {
+  const dir = bytesTree('files:\n  - src/a.rs\n  - src/b.rs',
+    { 'src/a.rs': 'x'.repeat(1200), 'src/b.rs': 'y'.repeat(345) });
+  const r = run(['plan-size', '--phase', '1', '--max-bytes', '1000'], dir);
+  assert.equal(r.max_bytes, 1000);
+  assert.deepEqual(r.compared, ['max_bytes']);
+  assert.equal(r.over.length, 1);
+  assert.deepEqual(r.over[0], {
+    kind: 'plan-too-many-bytes',
+    plan: 'PLAN.md',
+    measured: 1545,
+    ceiling: 1000,
+    detail: 'phase 1 PLAN.md declares 1545 bytes, ceiling 1000',
+  });
+  assert.equal(r.within, false);
+});
+
+test('plan-size: the same plan under a higher --max-bytes yields no byte entry and within: true', () => {
+  const dir = bytesTree('files:\n  - src/a.rs\n  - src/b.rs',
+    { 'src/a.rs': 'x'.repeat(1200), 'src/b.rs': 'y'.repeat(345) });
+  const r = run(['plan-size', '--phase', '1', '--max-bytes', '2000'], dir);
+  assert.deepEqual(r.over, []);
+  assert.deepEqual(r.compared, ['max_bytes']);
+  assert.equal(r.within, true);
+});
+
+test('plan-size: an out-of-grammar files: list is never compared against --max-bytes', () => {
+  // Not "under the ceiling" - not comparable at all, the arm
+  // `requirements_found: false` already follows one question over.
+  const dir = bytesTree('files:\n  - src/a.rs\n  this line is not an item',
+    { 'src/a.rs': 'x'.repeat(1200) });
+  const r = run(['plan-size', '--phase', '1', '--max-bytes', '1'], dir);
+  assert.deepEqual(r.over, []);
+  assert.deepEqual(r.compared, []);
+  assert.equal(r.within, null);
+});
+
+test('plan-size: a bare or non-integer --max-bytes is bad-args naming the flag', () => {
+  const dir = bytesTree('files: []');
+  for (const argv of [['plan-size', '--phase', '1', '--max-bytes'],
+    ['plan-size', '--phase', '1', '--max-bytes', 'lots']]) {
+    const r = run(argv, dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, /--max-bytes/);
+  }
+});
+
+test('plan-size: a files: list out of grammar reports null bytes, never 0', () => {
+  // No-salvage, `readOnePlan`'s rule: 0 would state that the plan declares
+  // nothing, which is absence of evidence reported as absence of surface.
+  const dir = bytesTree('files:\n  - src/a.rs\n  this line is not an item',
+    { 'src/a.rs': 'x'.repeat(1200) });
+  const r = run(['plan-size', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.plans[0].bytes, null);
+  assert.equal(r.plans[0].absent, null);
 });
 
 // --- frontmatter grammar: normalization + the diagnostic's both envelopes ---

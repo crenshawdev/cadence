@@ -1,23 +1,18 @@
-# Roadmap: v3.7.3 - the record has to be right before it can be cut (CLOSED at phase 1)
+# Roadmap: v3.7.4 - cut the cost the record can now measure
 
 ## Overview
 
-**`v3.7.3`, opened and closed 2026-08-26.** Opened with four phases against
-the `Dispatch cost` milestone; CLOSED at phase 1. The subject was what a
-dispatch costs, and the cycle opened by fixing the instruments rather than the
-cost, because every argument for cutting the cost is denominated in figures this
-repository records about itself.
+**`v3.7.4`, opened 2026-08-26.** Four phases against the `Dispatch cost`
+milestone, which `v3.7.3` opened and did not finish. That cycle fixed the
+instruments and closed at phase 1; this one spends what they measure - and, at
+phase 2 planning, discovered it has to finish one instrument first.
 
-**Why it closed early.** Half this cycle's code commits were fixing the other
-half - 7 fix against 7 feat, where `v3.7.1` ran 27% and `v3.7.2` 22%. Four of
-those seven fixes were four passes at one question: which in-flight dispatch an
-async `SubagentStop` callback belongs to. And one real defect (`1b123d20`,
-the bracket span ending at the first close rather than the later one) landed
-after phase 1's UAT reported 8 passed and 0 failed, so the phase gate did not
-catch the class. Phases 2, 3 and 4 all sat on that same subsystem, so the rate
-would have carried rather than settled. Phase 1 shipped and is verified; the
-five ids the other three phases carried are under `## Deferred` in
-REQUIREMENTS.md, intact, each with its own promote condition.
+**Why this scope and not the rest of the tracker.** The 31 open issues were
+triaged 2026-08-26 against one question: would a user running Cadence on their
+own project ever feel this, or does it only bite while Cadence is being
+developed on Cadence? Three issues answered the second way and were declined
+(GH-109, GH-111, GH-139). Everything in this cycle answers the first way, and
+the first three are felt as money on every dispatch a user makes.
 
 **The measured state.** `cad-executor` is 25,587,266 of 50,145,905 recorded
 tokens, 51% of the whole record, and its dispatches re-read 3.52 times per
@@ -26,34 +21,34 @@ one dispatch. 39 checkpoint returns say plans exceed one context. 233 of 239
 executor dispatches across cadence and verbatim ran opus at `shipped`, and the
 routing discount fired 6 times in total.
 
-**Why the instruments come first.** Three of those figures cannot be trusted or
-extended today. `renderTrace`'s close dedup pairs a delayed repeat close with
-the NEXT dispatch of the same worker key, so on a retry the bracket carries the
-wrong figures and the role is billed for all three terminals - reproduced
-2026-08-26 on a six-line fixture, brackets `[1000, 9999]` where the second
-should be 2222 and `roles.tokens` 13221 for two dispatches. `duration_ms` is
-written onto every bracket by `planning/trace.mjs:795` and read by nothing, so
-the worker's own wall clock has no consumer and `/cad-suggest`'s wall-time
-figure comes from the bracket's `ms`, which includes the orchestrator's own
-time. And no cache figures are recorded at all, which is why GH-91 declares
-itself blocked.
+**What changed since that was written.** `TRC-05` shipped in `v3.7.3`, so a
+bracket CAN record cache traffic. `RNG-03` declared itself blocked on exactly
+that, and its layout half is now unblocked. Its measurement half is not: phase 2
+planning replayed the `SubagentStop` hook's own rule against the live record and
+found 399 brackets carrying 0 cache figures, refused two gates earlier than the
+recording path. That is `TRC-07`, promoted out of deferral on 2026-08-26 as
+phase 3. The cycle grew a phase rather than shipping a claim it could not check.
 
-**Then the cost itself.** `workflow.max_plan_tasks` bounds a plan by task count
-and nothing bounds the bytes its `files:` frontmatter declares, which on one
-measured `PLAN-1.md` was about 90% of a 70,554-token dispatch. The risk-routing
-floor reads whole-file BODY lines rather than the diff, so any plan declaring a
-large file inherits its matches and can never earn the discount.
-
-**What this cycle is not.** It is not the worktree question and it is not a
-reviewer-calibration cycle. The `risk_surface` reviewer set looked miscalibrated
-in the v3.7.2 retune (4 of 22 adjudicated fires, 0 survivors of 2 raised); that
-belongs to `Finding flood` with GH-100 and GH-135, not here.
+**What this cycle is not.** It is not the worktree question (`Worktree verdict`,
+blocked on GH-119 and GH-120), it is not reviewer calibration (`Finding flood`,
+GH-100), and it is not GH-137, which is the highest-severity user-facing bug on
+the tracker but belongs to the execute path rather than to dispatch cost. It is
+filed and named here so the next cycle does not have to rediscover it.
 
 ## Open Questions
 
-Both of this cycle's open questions belonged to phase 3 (`BUD-03`, `RSK-05`) and
-were deferred with it. They are recorded on those ids in REQUIREMENTS.md's
-`## Deferred` section and are not live scope until a phase picks one up.
+- **OQ-1 - what a byte bound actually bounds.** `BUD-03` can bound the declared
+  bytes, the estimated tokens, or refuse at plan time versus warn. The measured
+  case (four files, 252,473 B, ~63,000 estimated tokens inside a 70,554-token
+  dispatch) says the ratio is stable enough to bound either way. Decided at
+  phase 1 planning against the actual `files:` declarations in the archive.
+
+- **OQ-2 - whether the risk floor can read a diff at plan time.** `RSK-05` wants
+  the floor to stop inheriting a whole file's matches, but at `check_census`
+  time there is no diff yet, because the plan has not run. Whether the fix is a
+  narrower read, a waiver key, or a planner-contract line telling planners to
+  declare narrow files is decided at phase 1 planning by reading what
+  `planning/risk-check.mjs` actually has in hand at that moment.
 
 ## Phases
 

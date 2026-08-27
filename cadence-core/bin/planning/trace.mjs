@@ -34,7 +34,7 @@ import { inDispatchReads, joinReads } from '../lib/read-trace.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
-import { FAMILIES, appendEvent, renderTrace } from '../lib/trace.mjs';
+import { FAMILIES, ROTATED_TRACE_FILE, appendEvent, renderTrace } from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
 // ---------------------------------------------------------------------------
@@ -58,6 +58,24 @@ import { windowBudget } from '../lib/window-budget.mjs';
 const TRACE_IGNORE_LINE = '.planning/trace.jsonl';
 const TRACE_IGNORE_COMMENT = "# Cadence's joined run record - local diagnostics"
   + " only, one machine's routing/provider/worker events";
+
+/**
+ * The SECOND rule: the generation a rotation at the record's size bound leaves
+ * behind. Without it the first rotation leaves a file of up to
+ * `MAX_TRACE_BYTES` untracked for the next `git add .planning` to sweep into
+ * the repository - the same failure the line above exists to prevent, one
+ * filename over, and on a public repo it republishes exactly the local
+ * diagnostics that line withholds.
+ *
+ * A SECOND LITERAL and not a glob on the first. `line` is what `/cad-health`
+ * reports and what `traceTracked` passes to `ls-files --error-unmatch` as a
+ * pathspec, and a glob would change the meaning of both. Its basename is
+ * DERIVED from the spelling `lib/trace.mjs` exports, so the rule and the file
+ * the writer actually creates cannot drift apart.
+ */
+const ROTATED_IGNORE_LINE = `.planning/${ROTATED_TRACE_FILE}`;
+const ROTATED_IGNORE_COMMENT = "# ...and the generation Cadence's run record"
+  + ' leaves behind when it rotates at its size bound';
 
 /**
  * Does a `check-ignore -v` match source TRAVEL with the repository?
@@ -96,9 +114,10 @@ function ignoreSourceTravels(source) {
  * TRACKED to `traceTracked`, which is the separate fact and the one that needs
  * `git rm --cached`.
  * @param {string} root
+ * @param {string} path the ignore rule to ask about, as a repo-relative path
  * @returns {{method: 'git'|'file', travels: boolean, source: string|null}}
  */
-function gitIgnoreState(root) {
+function gitIgnoreState(root, path) {
   const noGit = { method: /** @type {'file'} */ ('file'), travels: false, source: null };
   try {
     execFileSync('git', ['-C', root, 'rev-parse', '--git-dir'], { stdio: 'pipe' });
@@ -106,7 +125,7 @@ function gitIgnoreState(root) {
   let out = '';
   try {
     out = execFileSync('git',
-      ['-C', root, 'check-ignore', '--no-index', '-v', '--', TRACE_IGNORE_LINE],
+      ['-C', root, 'check-ignore', '--no-index', '-v', '--', path],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     if (e && e.status === 1) return { method: 'git', travels: false, source: null };
@@ -137,14 +156,15 @@ function traceTracked(root) {
  * it cannot see a `.planning/` wholesale ignore, which is why the git arm is
  * tried first and is not decoration.
  * @param {string} root
+ * @param {string} path the ignore rule to look for, as a repo-relative path
  */
-function gitignoreCarriesLine(root) {
+function gitignoreCarriesLine(root, path) {
   const text = read(join(root, '.gitignore'));
   if (text === null) return false;
   return text.split('\n').some((raw) => {
     const line = raw.trim();
     if (!line || line.startsWith('#')) return false;
-    return line === TRACE_IGNORE_LINE || line === `/${TRACE_IGNORE_LINE}`;
+    return line === path || line === `/${path}`;
   });
 }
 
@@ -174,28 +194,50 @@ function cmdTraceIgnore(root, opts) {
       + ' --dir, which names .planning/');
   }
   const file = join(root, '.gitignore');
-  const git = gitIgnoreState(root);
-  const ignored = git.method === 'git' ? git.travels : gitignoreCarriesLine(root);
+  const git = gitIgnoreState(root, TRACE_IGNORE_LINE);
+  const live = git.method === 'git' ? git.travels : gitignoreCarriesLine(root, TRACE_IGNORE_LINE);
+  // The SIBLING is asked about separately and by the same two readers: a
+  // `.planning/` wholesale rule covers both, a line-per-file `.gitignore`
+  // covers whichever lines it carries, and a project covered for the record and
+  // not for its rotated generation is exactly the half-covered state
+  // /cad-health has to report rather than pass over.
+  const rotatedGit = gitIgnoreState(root, ROTATED_IGNORE_LINE);
+  const rotated = rotatedGit.method === 'git'
+    ? rotatedGit.travels
+    : gitignoreCarriesLine(root, ROTATED_IGNORE_LINE);
   const common = {
     root,
     file,
+    // `line` stays the LIVE record's literal, so /cad-health's `ignored` and
+    // `tracked` reading is unchanged and that surface needs no edit; the
+    // sibling's rule is a field of its own beside it.
     line: TRACE_IGNORE_LINE,
-    ignored,
+    rotated_line: ROTATED_IGNORE_LINE,
+    ignored: live && rotated,
     tracked: traceTracked(root),
     method: git.method,
     ...(git.source ? { source: git.source } : {}),
   };
   if ('check' in opts) return ok({ ...common, written: false });
-  // Already covered by a line that travels: the no-op that makes a re-run safe.
-  if (ignored) return ok({ ...common, written: false, reason: 'already-ignored' });
+  // Already covered by lines that travel: the no-op that makes a re-run safe.
+  if (live && rotated) return ok({ ...common, written: false, reason: 'already-ignored' });
 
+  // Only what is MISSING is added, so a project scaffolded before the rotated
+  // generation existed is upgraded on its next non-`--check` run without its
+  // existing rule being written a second time. The comment above the block
+  // names whichever half is being added.
+  const missing = [
+    ...(live ? [] : [TRACE_IGNORE_LINE]),
+    ...(rotated ? [] : [ROTATED_IGNORE_LINE]),
+  ];
+  const block = `${live ? ROTATED_IGNORE_COMMENT : TRACE_IGNORE_COMMENT}\n${missing.join('\n')}\n`;
   // Every existing byte survives. The newline is added only when the current
   // contents lack a trailing one, so a brownfield `.gitignore` keeps every line
-  // it had and the new line still lands on a line of its own.
+  // it had and the new lines still land on lines of their own.
   const existing = read(file);
   const next = existing === null || existing === ''
-    ? `${TRACE_IGNORE_COMMENT}\n${TRACE_IGNORE_LINE}\n`
-    : `${existing}${existing.endsWith('\n') ? '' : '\n'}\n${TRACE_IGNORE_COMMENT}\n${TRACE_IGNORE_LINE}\n`;
+    ? block
+    : `${existing}${existing.endsWith('\n') ? '' : '\n'}\n${block}`;
   atomicWrite(file, next);
   return ok({ ...common, written: true });
 }
@@ -862,9 +904,20 @@ function cmdTrace(dir, sub, opts) {
       : warnings;
     const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig), inDispatch);
     return ok({
+      // The record these suggestions were argued off, which this arm did not
+      // name at all until TRC-08: a retune argued off a record the reader
+      // cannot name is a number. It rides the SAME `renderTrace` result the
+      // suggestions do, so the two can never name different files.
+      file: r.file,
       scope: phase === undefined ? 'all' : String(phase),
       events_read: r.events.length,
       ...(r.capped ? { capped: true } : {}),
+      // The rotation, on the same footing it rides `trace render`: a reader
+      // seeing fewer events than it expected can tell a cut from a quiet run
+      // without inferring it from what is missing. NOT folded into `capped` -
+      // that one still means this READ was truncated at the ceiling, and a
+      // rotated record is not capped.
+      ...(r.rotated ? { rotated: r.rotated } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       suggestions,
       ...(suggestWarnings.length ? { warnings: suggestWarnings } : {}),
@@ -904,6 +957,11 @@ function cmdTrace(dir, sub, opts) {
       file: r.file,
       corr: r.corr,
       capped: r.capped,
+      // Emitted only where the record carries a rotation marker, so an envelope
+      // every reader already parses is byte-identical on a record that never
+      // rotated. It names the sibling the cut events are in; nothing reads that
+      // file, and this field is how a reader learns they are not missing.
+      ...(r.rotated ? { rotated: r.rotated } : {}),
       counts: r.counts,
       ...(Object.keys(r.roles).length ? { roles: r.roles } : {}),
       // Emitted the way `roles` is: only when there is something to say. A

@@ -189,3 +189,224 @@ the three named `/cad-why` gaps and nothing else. Both are captured as a seed in
 None. Every criterion was answered by read-only inspection of files already in
 the repository plus `.planning/trace.jsonl`; nothing was built and nothing needs
 discarding.
+
+## Post-ship: what the shared rung prefix recovered (2026-08-26)
+
+Recommendation 2 shipped in `v3.7.4` phase 2 at commit `8ca0dfdc`: the rung
+label moved out of the agent body, so a role's rungs now share the ~11 KB
+contract below it instead of each carrying a private copy. Recommendation 1 -
+"record cache figures in the trace FIRST" - is phase 3 of the same cycle, and
+this section is the before/after that ordering exists to make possible. RNG-03
+was written to close here, on a number, whichever way the number fell. Corrected
+2026-08-26 when the number arrived: it does not close. `### After` below carries
+the number and says why one measurement of a best case cannot price the change.
+
+### The role, and why this one
+
+`cad-verifier`. Three reasons, carried from `.planning/phases/2/CONTEXT.md`
+D-06:
+
+- It runs in the MAIN tree, so its `SubagentStop` write lands in this
+  repository's `.planning/trace.jsonl` rather than in a worktree's, which is
+  discarded with the worktree.
+- It has four rungs, so it is a role the C4 defect could actually cost
+  something.
+- Its contract is not the one phase 2 rewrote, so neither side of the comparison
+  is contaminated by that edit.
+
+D-06 marked the choice RE-DECIDE for one reason: `cad-verifier` held one of the
+11 stale `unpaired` rows that made the `SubagentStop` hook's two-open-dispatch
+gate refuse unconditionally. Phase 3 scopes that gate's candidate set to the
+current run, which removes the objection.
+
+### The two sides, and what each of them proves
+
+They are the SAME ARITHMETIC over the same kind of file, and they are not the
+same instrument. Both are recorded here as part of the method.
+
+- **Before** - `cacheOf` (`cadence-core/bin/lib/subagent-transcript.mjs`) summed
+  over `cad-verifier`'s own subagent transcripts under the host's project
+  directory for this repository, restricted to transcripts that predate
+  `8ca0dfdc`.
+- **After** - `cache_read_input_tokens` and `cache_creation_input_tokens` on
+  that role's BRACKETS in `.planning/trace.jsonl`, once phase 3 is live and the
+  role has been dispatched again. Those bracket figures are `cacheOf` over the
+  stopped worker's OWN transcript, so the two sides are the same sum over the
+  same kind of file.
+
+That equality is NEW as of phase 3 plan 3, and stating it needs the correction
+that made it true. Until commit `68cfeddc` the `SubagentStop` hook read the
+payload's `transcript_path`, which names the ORCHESTRATOR's session rather than
+the worker that stopped, so the figures it wrote were a different actor's
+traffic. Both of the two cache-bearing brackets on the record were written that
+way, and both are wrong by more than a factor of four: the `cad-verifier`
+bracket at `3-a0fd304f` carries 52,918 / 528,568 where that worker's own
+transcript sums 100,439 / 2,115,871, and the `cad-planner` bracket beside it
+carries 50,428 / 527,186 against 240,156 / 10,405,827. Neither is an after
+figure and neither is comparable to the before side.
+
+What the after side ADDITIONALLY proves is that the RECORD carried the number.
+That is the only thing this phase exists to fix, and it is the whole reason
+reading both sides from transcripts was rejected: that comparison would pass
+even if every withholding gate still threw the figures away, and the record, not
+the transcript, is what every downstream cost claim reads. Post-`8ca0dfdc`
+`cad-verifier` transcripts are already on disk and could supply the number
+today; they are deliberately not the after figure.
+
+A before-side BRACKET cannot be produced at all. Measured on the live record
+2026-08-26 at this plan's tip: 409 brackets, 2 carrying either cache key - the
+two mis-sourced ones named above - and 64 of the 409 are `cad-verifier`'s. There
+is nothing correct to read back.
+
+The two sides also cannot hold the same number of dispatches, so the comparable
+quantity is a total over a DISPATCH COUNT, not a total. Both figures below are
+reported per dispatch for that reason.
+
+### The command behind each side
+
+Before, from the repository root. The role of a transcript is not in the
+transcript: it is in the read recorder's own rows, which carry `agent` and
+`agent_id` together, and `agent_id` is the transcript's file stem.
+
+```
+node --input-type=module -e '
+import { readFileSync, globSync } from "node:fs";
+import { cacheOf } from "./cadence-core/bin/lib/subagent-transcript.mjs";
+const SHIP = Date.parse("2026-08-26T13:42:33-04:00");   // 8ca0dfdc
+const ids = new Set();
+for (const l of readFileSync(".planning/reads.jsonl", "utf8").split("\n")) {
+  if (!l.trim()) continue;
+  const o = JSON.parse(l);
+  if (o.agent_id && /^cadence:cad-verifier(-|$)/.test(o.agent)) ids.add(o.agent_id);
+}
+let n = 0, read = 0, creation = 0;
+for (const f of globSync("/claude/.claude/projects/-code-cadence/*/subagents/*.jsonl")) {
+  const id = (f.match(/agent-([^/]+)\.jsonl$/) || [])[1];
+  if (!ids.has(id)) continue;
+  const text = readFileSync(f, "utf8");
+  const first = text.split("\n").map((x) => { try { return JSON.parse(x).timestamp; } catch { return null; } })
+    .find((x) => typeof x === "string");
+  if (!(Date.parse(first) < SHIP)) continue;
+  const c = cacheOf(text);
+  n++; read += c.cache_read_input_tokens || 0; creation += c.cache_creation_input_tokens || 0;
+}
+console.log(n, read, creation, Math.round(read / n), Math.round(creation / n));
+'
+```
+
+After, once the phase is live and `cad-verifier` has been dispatched at least
+twice. The role filter alone is not enough, which is a correction made when this
+was first run: both mis-sourced pre-fix brackets named above carry the two keys
+and one of them IS `cad-verifier`, so an unscoped run reports three brackets and
+averages a figure a third of which is the orchestrator traffic. The date clause
+is the scope - only brackets closed after `68cfeddc`, the commit that made the
+hook read the worker own file, were written by a correct instrument.
+
+```
+node cadence-core/bin/planning.mjs trace render --dir .planning \
+  | python3 -c 'import sys,json
+FIX = "2026-08-26T22:00:26Z"   # 68cfeddc; earlier figures are the orchestrator traffic
+b=[x for x in json.load(sys.stdin)["brackets"]
+   if x.get("role")=="cad-verifier" and "cache_read_input_tokens" in x
+   and (x.get("end") or x.get("ts","")) >= FIX]
+r=sum(x["cache_read_input_tokens"] for x in b); c=sum(x.get("cache_creation_input_tokens",0) for x in b)
+print(len(b), r, c, round(r/len(b)), round(c/len(b)))'
+```
+
+There is deliberately NO script for either side under `cadence-core/bin/`. A new
+bin surface drags a CONTRACTS row into the flag census, and this is a recipe
+rather than a shipped tool.
+
+### Before, measured 2026-08-26
+
+UNCHANGED and deliberately NOT re-measured by phase 3. The before side reads
+transcripts directly and never went through the hook, so nothing phase 3
+corrected touches it.
+
+54 distinct `cad-verifier` agent ids appear in the read recorder's rows. 34 of
+their transcripts are still on disk - transcripts do not outlive the record, so
+20 have been pruned by the host - and 33 of the 34 predate `8ca0dfdc`.
+
+| | total | per dispatch (n=33) |
+| --- | --- | --- |
+| `cache_read_input_tokens` | 53,976,294 | 1,635,645 |
+| `cache_creation_input_tokens` | 2,765,064 | 83,790 |
+
+### After
+
+MEASURED 2026-08-26, by the after command above, on the live record with plan
+3's tasks 1-5 committed. Two `cad-verifier` dispatches, n=2. The command reports
+`2 3904052 179487 1952026 89744`.
+
+| | total (n=2) | per dispatch | before, per dispatch (n=33) | delta |
+| --- | --- | --- | --- | --- |
+| `cache_read_input_tokens` | 3,904,052 | 1,952,026 | 1,635,645 | +316,381 (+19.3%) |
+| `cache_creation_input_tokens` | 179,487 | 89,744 | 83,790 | +5,954 (+7.1%) |
+
+The two brackets behind it, both at corr `3-bef7cc1e`: agent `a8ea2335c4a3472ca`
+at 37 turns, 99,449 creation / 2,122,956 read; agent `ac6e257dd1b043d09` at 40
+turns, 80,038 creation / 1,781,096 read. Each pair equals `cacheOf` over that
+worker's OWN `subagents/agent-<agent_id>.jsonl`, to the token, run separately
+from the render. The record carries the stopped worker's own figures, which is
+what AC5 and AC6 ask and what this phase existed to fix.
+
+WHICH STOPS THESE BRACKETS CAME FROM. Measured rather than predicted, and it is
+the path the plan expected: not hook-written closes. Both figures arrived as
+`worker_cache` facts (`.planning/trace.jsonl` lines 2408 and 2412) written by
+the hook at the worker's real stop, and the renderer folded each onto the
+`return` the orchestrator's own `trace close --agent-id` wrote five and four
+seconds later. On the installed host version nearly every worker transcript ends
+on a `null` `stop_reason`: re-measured 2026-08-26, 33 of the 34 subagent
+transcripts written that day answer NOT-TERMINAL, against 1,071 terminal across
+a 1,310-file corpus. The hook's termination gate therefore refuses the close on
+the ordinary path and writes the fact instead. That is the gate behaving as
+designed on correct evidence.
+
+### What the delta does and does not license
+
+The caveat belongs in the record, not in the message that reported the number.
+The after side is TWO `cad-verifier` dispatches fired back to back inside ONE
+session against a byte-identical prompt. That is a best case for prefix reuse
+and it is not the before side's population, which is 33 dispatches spread across
+many sessions, each with its own prompt and its own length. Same arithmetic over
+the same kind of file, different populations.
+
+What it does not license. It does not price recommendation 2 and it does not
+close RNG-03. A prefix-reuse win has a SHAPE - read up, creation down - and
+these two moved up together, which is not that shape; at n=2 there is no
+dispersion to say whether either move is real. `cache_read_input_tokens` per
+dispatch scales with how long a run is, and these two ran 37 and 40 turns, so a
++19.3% read delta measured against the mean of 33 runs of unrecorded length is
+exactly as consistent with "these two runs were long" as with anything about the
+cached prefix. Reading it as recovery would be reading a confound.
+
+What it does license. The number is not zero, and it is ON THE RECORD, which is
+the whole of what phase 3 owed: 1.95M cache reads per dispatch are being billed
+against the worker's own transcript and the trace now carries them, where the
+only two cache-bearing brackets before this were a different actor's traffic and
+wrong by more than a factor of four. The instrument RNG-03 needs exists and has
+been run end to end against a live host.
+
+RNG-03 therefore stays open, and what would close it is stated so nobody has to
+re-derive it: enough post-`68cfeddc` `cad-verifier` brackets, accumulated the
+way the before side was - across many sessions rather than back to back in one -
+that both sides are populations. No code is needed for that; the after command
+above is the whole instrument and the brackets accrue on their own. Until then
+the honest reading is: measurable, measured once, not yet comparable.
+
+### What a zero would mean
+
+Record the figure even when it is zero, and read it as an answer rather than a
+failure. The host may key its prompt cache per agent DEFINITION, in which case a
+byte-identical contract body sitting under two different rung files is still two
+different cache entries, phase 2 recovered nothing, and RNG-03 closes on a
+measured negative. That is a real result: it retires the C4 defect as
+unrecoverable rather than latent, and it removes the reason to treat
+`model.effort.*` as a cache lever at all. A positive delta closes RNG-03 the
+other way and prices the two configuration changes the Verdict names.
+
+Read against the measurement that actually arrived on 2026-08-26: neither arm
+fired. The delta is positive and it still closes nothing, because a delta only
+prices the change when both sides are populations, and at n=2 a zero would have
+been just as unreadable. The two arms above stand as written for whoever
+accumulates enough after-side brackets to use them.

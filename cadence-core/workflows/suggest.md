@@ -22,10 +22,12 @@ in `cadence-core/bin/self-verify.mjs` fixes its flag set at `--phase` alone, so
 a scoping flag would be a seam contract change, and there is no correlation-id
 scoping to reach for either.
 
-The scope is REPORTED, never narrowed. Say which record was read and what it
-spans: nothing prunes `.planning/trace.jsonl` at a close, so an unscoped run
-spans every milestone still in the file, and a `--phase <N>` run admits an older
-cycle's phase `N` beside this one's. The user reading a suggestion needs that.
+The scope is REPORTED, never narrowed. Say which record was read - the return's
+`file` names it - and what it spans: nothing prunes `.planning/trace.jsonl` at a
+close, so an unscoped run spans every milestone still in the LIVE record, and a
+`--phase <N>` run admits an older cycle's phase `N` beside this one's. The one
+thing that ever shortens it is the cut at its size bound, which `rotated`
+reports. The user reading a suggestion needs both.
 
 The same is true of the SECOND record the seam reads, `.planning/reads.jsonl`,
 and it has one more caveat of its own: nothing prunes it at a close either, and
@@ -42,8 +44,9 @@ One seam call, through the `Bash` tool:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace suggest [--phase <N>]
 ```
 
-Everything below reads off its return: `scope`, `events_read`, `suggestions`,
-and `capped` / `malformed` / `warnings` when any of the three is present - a
+Everything below reads off its return: `file`, `scope`, `events_read`,
+`suggestions`, and `capped` / `rotated` / `malformed` / `warnings` when any of
+the four is present - a
 `warnings` entry is a config layer the merge could not read whole, so a `current`
 below may be reading less than the project set, and it is relayed rather than
 swallowed. A `warnings` entry naming `.planning/reads.jsonl` is that file being
@@ -98,9 +101,11 @@ kind. An in-dispatch re-reading receipt names a remedy that is not a config key
 `evidence` names, in its own words, rather than leaving the reader holding a
 ratio with nothing to do about it. It stays a receipt, it is still not numbered,
 and it still generates no `/cad-config` token: there is no key to put in one.
-`capped` or `malformed` gets one line each here, named rather than swallowed: a
-capped file was read to a limit, a malformed count is lines the reader could not
-parse.
+`capped`, `rotated` or `malformed` gets one line each here, named rather than
+swallowed: a capped file was read to a limit, a rotated one was CUT at the
+newest phase anchor with everything older in the sibling it names, and a
+malformed count is lines the reader could not parse. Capped and rotated are
+different facts - a rotated record is whole.
 
 Relay the figures UNCHANGED and recompute none of them - including the ones
 whose denominator is arguable. The per-role escalation evidence is denominated

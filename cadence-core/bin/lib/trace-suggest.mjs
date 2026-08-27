@@ -301,10 +301,13 @@ export function suggestFromRender(render, resolution, reads) {
 
   // --- gather ---------------------------------------------------------------
   // One row per FIRE, in file order, because that is the unit a re-arm veto
-  // acts on (D-03). A trigger's lifetime totals cannot carry the veto: a
-  // `.planning/trace.jsonl` is never pruned or archived, so a re-arm recorded
-  // in one cycle muted its trigger for the life of the file - permanently, by
-  // construction, four cycles after the gate stopped finding anything.
+  // acts on (D-03). A trigger's lifetime totals cannot carry the veto: nothing
+  // prunes `.planning/trace.jsonl` at a close, so a re-arm recorded in one
+  // cycle muted its trigger four cycles after the gate stopped finding
+  // anything. The record now ROTATES at its size bound (TRC-08), which bounds
+  // "the life of the file" at that cut rather than leaving it permanent - and
+  // changes nothing here: a bound measured in mebibytes is not a scoping rule,
+  // and one row per fire is what makes the veto act on the fire it belongs to.
   /** @type {{corr: string, trigger: string, survivors: number, raised: number|null,
    *          rearm: boolean, vetoed: boolean}[]} */
   const fires = [];

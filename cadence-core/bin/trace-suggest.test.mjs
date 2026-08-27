@@ -657,6 +657,11 @@ test('seam: a real trace written through appendEvent reads back through `trace s
 
     const out = run(['trace', 'suggest']);
     assert.equal(out.ok, true);
+    // The record the suggestions were argued off, which this envelope did not
+    // name at all until TRC-08 - and no rotation key, because this record never
+    // rotated.
+    assert.equal(out.file, join('.planning', 'trace.jsonl'));
+    assert.equal('rotated' in out, false);
     assert.equal(out.scope, 'all');
     assert.equal(out.events_read, 3);
     assert.ok(out.suggestions.some((s) => s.action === 'review.triggers.plan.gate'));

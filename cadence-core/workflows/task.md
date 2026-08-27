@@ -216,7 +216,7 @@ Close the bracket first - this is the only closing call in this workflow, and
 every path that ends the run reaches it:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan <the task's slug> --role cad-task
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan <the task's slug> --role cad-task --agent-id <the id on the subagent return>
 ```
 
 On a run that ends WITHOUT reporting done - a blocking `risk_surface` FAIL that

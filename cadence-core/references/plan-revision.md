@@ -20,7 +20,7 @@ is where that bound is enforced.
    checker's close below:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
    ```
 
    ONE line, the same arms handle_return uses: an empty or unmarked return is
@@ -41,6 +41,8 @@ is where that bound is enforced.
    measured, that was ten minutes to convert two blockers into one. Pass
    `--attempt 2` (the seam climbs it to the retry rung its own cell names,
    and returns the file for it - never a rung name this prose hardcodes).
+   Name it in the prompt too - `Rung: {the effort THIS resolve returned}` -
+   since the four agent files share one body and carry no rung of their own.
    Note what a narrow pass gives up: it re-reads nothing, so a fix that is
    locally right and wrong against CONTEXT can survive it. `plan.md`'s own
    `review` step is the full-artifact second opinion, and it fires after this
@@ -49,7 +51,7 @@ is where that bound is enforced.
    verdict:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
    ```
 
    An empty or unmarked return goes to a scratch file and rides

@@ -238,7 +238,13 @@ they already gave.
    question, the first labelled `(recommended)`, and that label is a display
    convention and never a pre-selection - the user still chooses and the seam
    still blocks. Each option's own `reason` is what it states beside it, and
-   this step composes no options of its own. Say plainly that keeping the
+   this step composes no options of its own. Carry the LEGEND with the question:
+   read the eight one-line category definitions from
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/risk-surface.md` and present
+   them verbatim as the question's context. This arm is the one a user reaches
+   deliberately, so it is the one most likely to be read by someone who does not
+   already know what `api_contract` means, and it is the path that passes the
+   legend nowhere else. Say plainly that keeping the
    current answer and declining are both valid answers.
 
 5. Write ONLY on an explicit pick, through the **Validation seam**, at the repo

@@ -15,3 +15,4 @@ recall entry.
 - 2026-08-26 github crenshawdev/cadence c0f0e0bbab361ba4: [cadence c0f0e0bbab361ba4] Task 2's verification does not prove AC1's required failure mode through the suite entrypoint.
 - 2026-08-26 github crenshawdev/cadence 1cbc5bf7c15b27c6: [cadence 1cbc5bf7c15b27c6] Task 4 has no falsifiable verification of the required CADENCE-CENSUS prose content.
 - 2026-08-26 github crenshawdev/cadence f8ee8e823dcf8db3: [cadence f8ee8e823dcf8db3] Task 3's checks only prove removal of old wording, not that either replacement header accurately states the required disposition.
+- 2026-08-26 github crenshawdev/cadence 94ba51e30b566c38: [cadence 94ba51e30b566c38] The new cache-fact join key concatenates unescaped untrusted `corr` and `agent_id` fields with a NUL delimiter, so distinct pairs can collide and cache figures can be folded

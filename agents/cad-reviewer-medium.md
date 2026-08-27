@@ -10,7 +10,5 @@ skills:
   - cad-reviewer-contract
 ---
 
-Your rung is `medium`.
-
 Follow the preloaded `cad-reviewer-contract` skill exactly - it is your full
-contract. This file names that contract and your rung, and adds nothing else.
+contract. This file names that contract and adds nothing else.

@@ -200,11 +200,12 @@ function cmdCiteCount(dir, opts) {
   //
   // The write may NOT change the verdict, and `appendEvent` never throws and
   // never speaks, so its `{written, reason}` rides the envelope instead. That
-  // field is the ONLY place a caller learns the figures were dropped (D-15):
-  // `MAX_TRACE_BYTES` is 1,048,576, `appendEvent` stats before it writes, and
-  // `.planning/trace.jsonl` held 1,762 events in 419,756 B on 2026-08-23 -
-  // unpruned and gitignored, so `size-cap` is a stated failure mode rather
-  // than a silent one.
+  // field is the ONLY place a caller learns the figures were dropped (D-15).
+  // A FULL record is no longer one of those ways: at `MAX_TRACE_BYTES` the
+  // record rotates and the append lands (TRC-08), so the reachable refusals
+  // here are a symlinked trace, a stat or append failure, and a single event
+  // that reaches the bound by itself - each of them a stated failure mode
+  // rather than a silent one.
   const res = appendEvent(dir, {
     phase: parsedPhase.raw,
     family: 'outcome',

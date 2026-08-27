@@ -252,7 +252,7 @@ import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import {
-  rungBodyIssue, rungEffortIssue, rungFile, effortEnumIssues,
+  rungBodyIssue, rungEffortIssue, rungPrefixIssues, rungFile, effortEnumIssues,
 } from './lib/rung-agent.mjs';
 import { cellIssues, declaredRoles, routableAgents, vocabularyIssues } from './lib/route-cells.mjs';
 import { gateAgreementIssues } from './lib/gate-agreement.mjs';
@@ -858,6 +858,11 @@ function run(root) {
   // disagree about what is on disk.
   /** @type {string[]} */
   let agentFiles = [];
+  // Hoisted for the same reason: check 7d below compares one role's rung
+  // bodies against EACH OTHER, so it cannot run inside a per-file loop and
+  // must not re-read a directory this walk already read.
+  /** @type {Record<string, string>} */
+  const agentBodies = {};
   if (existsSync(agentsDir)) {
     try {
       agentFiles = readdirSync(agentsDir, { encoding: 'utf8' });
@@ -923,6 +928,10 @@ function run(root) {
       }
 
       const body = fm ? text.slice(fm[0].length) : text;
+      // Raw, un-normalized, frontmatter already off: check 7d after this walk
+      // holds one role's rung bodies against each other byte for byte, and a
+      // normalized copy would forgive the exact re-wrap it exists to catch.
+      agentBodies[e.slice(0, -3)] = body;
 
       // 7. an agent that preloads a contract carries no behaviour of its own.
       // Scanned on the BODY only, never on the preloaded contract prose - the
@@ -949,9 +958,7 @@ function run(root) {
           problems.push({ kind: 'agent-carries-behaviour', file: rel,
             detail: `body carries contract section ${tags.map((t) => `<${t}>`).join(', ')} - the contract belongs in the preloaded skill` });
         } else {
-          const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
-          const issue = rungBodyIssue(body, effortLine ? effortLine[1] : undefined,
-            parseSkillsField(fm[1]));
+          const issue = rungBodyIssue(body, parseSkillsField(fm[1]));
           if (issue) {
             problems.push({ kind: 'agent-carries-behaviour', file: rel,
               detail: `${issue.detail} - the contract belongs in the preloaded skill` });
@@ -961,10 +968,13 @@ function run(root) {
 
       // 7b. a rung file carries the effort the rung map filed it under.
       // Runs on the frontmatter of EVERY agent file, not only the ones
-      // preloading a contract, because the map may name any of them. Check 7
-      // above holds the body against this same field and check 8 below reads
-      // the rung out of the filename, so without this the one link that
-      // decides how deep the dispatch actually thinks goes unchecked.
+      // preloading a contract, because the map may name any of them. This is
+      // now the ONLY rule reading a rung file's `effort:` against anything:
+      // check 7 above used to hold the body against this same field, and that
+      // arm went with the rung sentence (RNG-03), while check 8 below reads
+      // the rung out of the FILENAME rather than out of the file. Without this
+      // the one link that decides how deep the dispatch actually thinks goes
+      // unchecked.
       if (fm) {
         const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
         const mismatch = rungEffortIssue(e.slice(0, -3),
@@ -1035,6 +1045,20 @@ function run(root) {
         }
       }
     }
+  }
+
+  // 7d. one role's rung files carry ONE body, byte for byte (RNG-03). A
+  // cross-file rule, so it sits after the walk rather than in it: every check
+  // above judges a file on its own, and a rung body that has drifted from its
+  // siblings is still a perfectly legal rung file by all of them. The rule
+  // itself is in lib/rung-agent.mjs beside RUNG_FILES, which is the one
+  // statement of what a rung file is; this site owns only the envelope. It
+  // runs unconditionally - an absent agents/ leaves `agentBodies` empty, and
+  // an empty input yields nothing rather than a problem about a tree that has
+  // no agents at all.
+  for (const issue of rungPrefixIssues(agentBodies)) {
+    problems.push({ kind: issue.code, file: `agents/${issue.stems[0]}.md`,
+      detail: issue.detail });
   }
 
   // 8. the rung ladder, both directions. This iterates the TABLE, not a
@@ -1371,7 +1395,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".

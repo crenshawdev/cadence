@@ -157,7 +157,8 @@ const READERS = [
       '---\nphase: 1.10\nfiles:\n  - a.txt\n---\n# Plan\n\n## Tasks\n\n'
       + '### Task 1: x\n\n- **Files:** a.txt\n- **Action:** do\n- **Verify:** check\n'),
     argv: ['plan-size'],
-    acted: (r) => assert.deepEqual(r.plans, [{ plan: 'PLAN.md', tasks: 1 }], JSON.stringify(r)),
+    acted: (r) => assert.deepEqual(r.plans,
+      [{ plan: 'PLAN.md', tasks: 1, bytes: 0, absent: 1 }], JSON.stringify(r)),
   },
   {
     label: 'plan-overlap',

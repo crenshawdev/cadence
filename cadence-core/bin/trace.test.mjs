@@ -7,17 +7,18 @@
 // and the exit code a caller actually sees are what get asserted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
   copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  appendEvent, correlationId, renderTrace, tracePath, MAX_TRACE_BYTES, FAMILIES,
-  ANCHOR, DISPATCH, TERMINAL, COORDINATOR,
+  appendEvent, correlationId, renderTrace, tracePath, rotatedTracePath,
+  MAX_TRACE_BYTES, ROTATED_TRACE_FILE, FAMILIES,
+  ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE, ROTATION,
 } from './lib/trace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -116,22 +117,341 @@ test('appendEvent: an interleaved write sequence keeps every event, in order', (
   assert.equal(new Set(got.map((e) => e.corr)).size, 1);
 });
 
-test('appendEvent: a file at the bound accepts nothing more and renders capped', () => {
+// --- the bound ROTATES rather than refusing (TRC-08) -------------------------
+
+/** Every file in the planning root whose name starts with the trace's own. */
+const siblings = (dir) => readdirSync(dir).filter((e) => e.startsWith('trace.')).sort();
+
+/**
+ * Pad the record to ONE BYTE under the bound, so the next append of any size
+ * has to rotate. Padding to the bound itself would test the inherited-excess
+ * arm instead, which is a different criterion and has its own test.
+ */
+function padToBound(dir) {
+  let at = 0;
+  try { at = readFileSync(tracePath(dir)).length; } catch { at = 0; }
+  appendFileSync(tracePath(dir), `${'x'.repeat(MAX_TRACE_BYTES - at - 2)}\n`);
+  assert.equal(readFileSync(tracePath(dir)).length, MAX_TRACE_BYTES - 1);
+}
+
+test('appendEvent: a record at the bound rotates, and the append lands', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
-  const before = lines(dir).length;
-  appendFileSync(tracePath(dir), 'x'.repeat(MAX_TRACE_BYTES));
+  // Under the bound before the append, over it with the append: the trigger is
+  // "this line would reach the bound", not "the file already did".
+  padToBound(dir);
+  const carried = readFileSync(tracePath(dir), 'utf8');
+
   const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
-  assert.deepEqual(res, { written: false, reason: 'size-cap' });
+  assert.deepEqual(res, { written: true, corr: '1-abc1234' },
+    'the record at its bound must accept the event, not report size-cap');
+
+  // The event is IN the live record afterwards - the whole of AC1.
+  const got = lines(dir);
+  assert.equal(got.filter((e) => e.family === 'routing' && e.event === 'resolve').length, 1);
+  // The anchor came with it, so the run in flight still derives its own id.
+  assert.equal(got.filter((e) => e.event === ANCHOR).length, 1);
+  assert.equal(correlationId(dir, 1), '1-abc1234');
+
+  // Exactly one rotated generation, and it is the bytes that were carried away
+  // rather than a freshly written file.
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), carried);
+
+  // Neither file exceeds the bound, the live one having been under it before.
+  for (const f of [tracePath(dir), rotatedTracePath(dir)]) {
+    assert.ok(readFileSync(f).length < MAX_TRACE_BYTES, `${f} is over the bound`);
+  }
+  // A rotated record is not a CAPPED read: the live file is small and whole.
+  assert.equal(renderTrace(dir, 1).capped, false);
+});
+
+test('appendEvent: a record already PAST the bound rotates, and its sibling keeps the excess', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendFileSync(tracePath(dir), `${'x'.repeat(MAX_TRACE_BYTES * 2)}\n`);
+  const carried = readFileSync(tracePath(dir), 'utf8');
+  assert.ok(carried.length > MAX_TRACE_BYTES);
+
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, true, 'an already-over-bound record must still accept the event');
+
+  // AC4 binds what rotation PRODUCES, not what it INHERITS: the sibling is
+  // byte-identical to the file the claim carried away, never head-trimmed,
+  // because trimming it is the read-modify-write D-04 prohibits.
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), carried);
+  assert.ok(readFileSync(tracePath(dir)).length < MAX_TRACE_BYTES,
+    'the file rotation PRODUCED must be under the bound');
+});
+
+test('appendEvent: the run in flight keeps its corr and its brackets across a rotation', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: DISPATCH, plan: 1, role: 'cad-executor' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 1, role: 'cad-executor', tokens: 10 });
+  padToBound(dir);
+
+  const before = renderTrace(dir, 1);
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, true);
+  const after = renderTrace(dir, 1);
+
+  assert.equal(after.corr, before.corr, 'the run in flight changed id across the rotation');
+  assert.equal(after.corr, '1-abc1234');
+  const under = (r) => r.brackets.filter((b) => b.corr === r.corr).length;
+  assert.equal(under(after), under(before), 'the bracket count changed across the rotation');
+  assert.equal(under(after), 1);
+});
+
+test('appendEvent: a tail bigger than the bound is carried anyway, never refused', () => {
+  // The degenerate arm: one run has written a bound's worth of its OWN events
+  // since its own anchor, so nothing post-anchor may be dropped - every line
+  // is a bracket half AC2 counts. Rotation carries them and lets the fresh
+  // record sit over the bound rather than refusing the append or dropping a
+  // half.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  let bulk = '';
+  let n = 0;
+  while (Buffer.byteLength(bulk) < MAX_TRACE_BYTES) {
+    bulk += `${JSON.stringify({ corr: '1-abc1234', phase: 1, ts: '2026-08-26T00:00:00.000Z', family: 'lifecycle', event: DISPATCH, plan: n, role: 'cad-executor' })}\n`;
+    bulk += `${JSON.stringify({ corr: '1-abc1234', phase: 1, ts: '2026-08-26T00:00:01.000Z', family: 'lifecycle', event: 'return', plan: n, role: 'cad-executor' })}\n`;
+    n += 1;
+  }
+  appendFileSync(tracePath(dir), bulk);
+  const before = renderTrace(dir, 1);
+  assert.ok(before.brackets.length > 0);
+
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, true, 'the degenerate arm must not re-create the refusal');
+  assert.ok(existsSync(rotatedTracePath(dir)), 'it still rotated');
+  const after = renderTrace(dir, 1);
+  assert.equal(after.corr, before.corr);
+  assert.equal(after.brackets.filter((b) => b.corr === after.corr).length,
+    before.brackets.filter((b) => b.corr === before.corr).length,
+    'a bracket half of the run in flight was dropped to fit the bound');
+});
+
+test('appendEvent: a record with no anchor carries nothing forward', () => {
+  const dir = root();
+  padToBound(dir);
+  const res = appendEvent(dir, { phase: 7, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, true);
+  // `correlationId` already returns the bare phase where no anchor exists, so
+  // carrying nothing degrades nothing.
+  assert.equal(res.corr, '7');
+  const got = lines(dir);
+  // The rotation marker and the appended event, and nothing carried forward:
+  // `correlationId` already returns the bare phase where no anchor exists, so
+  // carrying nothing degrades nothing.
+  assert.equal(got.length, 2, 'a record with no anchor carried a tail forward');
+  assert.equal(got[0].event, ROTATION);
+  assert.equal('phase' in got[0], false, 'a rotation with no run carried a phase');
+  assert.equal(got[1].event, 'resolve');
+});
+
+// --- the claim, when two writers race (D-03) ---------------------------------
+
+/** One child process appending one event through the real `appendEvent`. */
+function writer(dir, name) {
+  const code = `const { appendEvent } = await import(${'`'}${'$'}{process.env.CAD_LIB}${'`'});`
+    + " const r = appendEvent(process.env.CAD_DIR, { phase: 1, family: 'routing',"
+    + " event: 'resolve', writer: process.env.CAD_W });"
+    + ' if (!r.written) { console.error(r.reason); process.exit(1); }';
+  return new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, ['--input-type=module', '-e', code], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: {
+        ...process.env,
+        CAD_LIB: pathToFileURL(join(HERE, 'lib', 'trace.mjs')).href,
+        CAD_DIR: dir,
+        CAD_W: name,
+      },
+    });
+    let err = '';
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('error', reject);
+    p.on('exit', (c) => (c === 0 ? resolve(name) : reject(new Error(`${name}: ${err.trim()}`))));
+  });
+}
+
+test('appendEvent: writers racing at the bound leave ONE generation and lose no event', async () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  const names = ['w0', 'w1', 'w2', 'w3', 'w4', 'w5'];
+  await Promise.all(names.map((n) => writer(dir, n)));
+
+  // (a) EVERY writer's event is in the LIVE record: exactly one writer can win
+  // the claim, and the losers must not lose their event to the file it carried
+  // away.
+  const got = lines(dir);
+  assert.deepEqual(got.filter((e) => e.writer).map((e) => e.writer).sort(), names,
+    `a racing writer's event is missing: ${JSON.stringify(got.map((e) => e.writer))}`);
+  // ...under the run in flight's own id, because the anchor came across too.
+  for (const e of got) {
+    if (e.writer) assert.equal(e.corr, '1-abc1234');
+  }
+
+  // Exactly one rotated generation, and no claim or temp file left behind on
+  // any arm - `.planning/` holds nothing else named after the record.
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl'],
+    `a claim or temp file was left behind: ${JSON.stringify(readdirSync(dir))}`);
+
+  // The generation is UNDER the bound and carries the OLDEST events - the
+  // anchor line is the first thing in it.
+  const rotated = readFileSync(rotatedTracePath(dir), 'utf8');
+  assert.ok(Buffer.byteLength(rotated) < MAX_TRACE_BYTES,
+    `the rotated generation is over the bound: ${Buffer.byteLength(rotated)}`);
+  assert.equal(JSON.parse(rotated.split('\n')[0]).event, ANCHOR);
+});
+
+test('appendEvent: a second append after a rotation does not rotate again', async () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+  const generation = readFileSync(rotatedTracePath(dir), 'utf8');
+
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
+    'the second append rotated again and destroyed the generation');
+  assert.deepEqual(lines(dir).filter((e) => e.writer).map((e) => e.writer), ['a', 'b']);
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+});
+
+test('appendEvent: a writer holding a STALE stat is refused the claim, not corrected after it', async () => {
+  // The interleaving `EEXIST` alone cannot see, forced deterministically. A
+  // rotates and writes a fresh live file; B is still holding the stat that sent
+  // it to rotate, and calls the claim on a live path that exists again. A
+  // REPLACING rename would succeed silently there - A's generation destroyed,
+  // A's event carried off into the sibling, and exactly one sibling still on
+  // disk so a count would call it healthy. The claim must REFUSE.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+  const generation = readFileSync(rotatedTracePath(dir), 'utf8');
+  const live = readFileSync(tracePath(dir), 'utf8');
+
+  const late = rotateTrace(dir, 120);
+  assert.equal(late.rotated, false, 'a writer with a stale stat was allowed to rotate');
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
+    "the late writer destroyed the generation the first writer's rotation made");
+  assert.equal(readFileSync(tracePath(dir), 'utf8'), live,
+    "the late writer carried away the first writer's own event");
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+});
+
+test('appendEvent: a SECOND rotation replaces the generation, so the pair stays bounded', () => {
+  // D-05's other half: the rotated path is fixed, so there is never a
+  // `trace.2.jsonl` - and the record has to be able to rotate twice, or the
+  // live file grows without a bound after the first cut.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+  const first = readFileSync(rotatedTracePath(dir), 'utf8');
+
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
+  assert.notEqual(readFileSync(rotatedTracePath(dir), 'utf8'), first,
+    'the second rotation kept the FIRST generation, so the live record never got its room back');
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  for (const f of [tracePath(dir), rotatedTracePath(dir)]) {
+    assert.ok(readFileSync(f).length < MAX_TRACE_BYTES, `${f} is over the bound`);
+  }
+  // The run in flight survives the second cut as it survived the first: its
+  // anchor and its own events are what the tail carries, and only the padding
+  // under no corr of its own is dropped.
+  assert.deepEqual(lines(dir).filter((e) => e.writer).map((e) => e.writer), ['a', 'b']);
+});
+
+// --- the rotation, on both reader envelopes (D-06) ---------------------------
+
+/** A planning root whose record has just rotated, with `plan` paired under it. */
+function rotatedRoot() {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: DISPATCH, plan: 1, role: 'cad-executor' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 1, role: 'cad-executor', tokens: 10 });
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'rearm', detail: 'risk_surface' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  return dir;
+}
+
+test('renderTrace: a record that never rotated carries no rotation key at all', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
   const r = renderTrace(dir, 1);
-  assert.equal(r.capped, true);
-  assert.equal(r.counts.routing, 0);
-  assert.equal(r.counts.lifecycle, before);
-  // The padding runs past the read ceiling, so the bounded read truncates it
-  // and drops the trailing partial line rather than parsing it: a line only
-  // partly read cannot honestly be called malformed. `capped` carries the
-  // signal instead, and it is asserted above.
-  assert.equal(r.malformed, 0);
+  assert.equal('rotated' in r, false,
+    'a record that never rotated must render byte-identically for every reader');
+});
+
+test('renderTrace: after a rotation the envelope names the sibling, and capped is false', () => {
+  const dir = rotatedRoot();
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(Object.keys(r.rotated).sort(), ['file', 'ts']);
+  assert.equal(r.rotated.file, rotatedTracePath(dir));
+  assert.match(r.rotated.ts, /^\d{4}-\d{2}-\d{2}T/);
+  // NOT `capped`: that one means this READ was truncated at the ceiling, and a
+  // healthy rotated record is not truncated - reusing it would make three
+  // shipped prose surfaces say events are missing about a record that is whole.
+  assert.equal(r.capped, false);
+  assert.equal(r.file, tracePath(dir));
+});
+
+test('renderTrace: the rotation reports on the RECORD, not on the --phase scope', () => {
+  const dir = rotatedRoot();
+  // A phase that never appears in the record at all. The cut took events of
+  // EVERY phase away, so the answer cannot depend on which one was asked about.
+  const r = renderTrace(dir, 9);
+  assert.equal(r.rotated.file, rotatedTracePath(dir));
+  assert.equal(r.counts.lifecycle, 0, 'the scope filter itself still holds');
+  assert.equal(renderTrace(dir).rotated.file, rotatedTracePath(dir), 'unscoped too');
+});
+
+test('seam: trace render and trace suggest each name their record and report the rotation', () => {
+  const clean = root();
+  appendEvent(clean, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(clean, { phase: 1, family: 'outcome', event: 'rearm', detail: 'risk_surface' });
+
+  // Both envelopes name the record they read, rotation or no rotation.
+  const cleanRender = run(clean, ['trace', 'render', '--phase', '1']);
+  const cleanSuggest = run(clean, ['trace', 'suggest']);
+  assert.equal(cleanRender.file, tracePath(clean));
+  assert.equal(cleanSuggest.file, tracePath(clean));
+  assert.equal('rotated' in cleanRender, false);
+  assert.equal('rotated' in cleanSuggest, false);
+  // suggest's thin-record discriminator is untouched by the new keys.
+  assert.equal(cleanSuggest.events_read, 2);
+
+  const dir = rotatedRoot();
+  const render = run(dir, ['trace', 'render', '--phase', '1']);
+  const suggest = run(dir, ['trace', 'suggest']);
+  assert.equal(render.file, tracePath(dir));
+  assert.equal(render.rotated.file, rotatedTracePath(dir));
+  assert.equal(render.capped, false);
+  assert.equal(suggest.file, tracePath(dir));
+  assert.equal(suggest.rotated.file, rotatedTracePath(dir));
+  assert.equal(suggest.rotated.ts, render.rotated.ts);
+  // A phase other than the one in flight still carries it.
+  assert.equal(run(dir, ['trace', 'render', '--phase', '9']).rotated.file, rotatedTracePath(dir));
+});
+
+test('appendEvent: one line that reaches the bound by itself is refused, and nothing moves', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  const before = readFileSync(tracePath(dir), 'utf8');
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', detail: 'y'.repeat(MAX_TRACE_BYTES) });
+  // Its OWN reason, distinguishable from the `size-cap` this arm replaces:
+  // rotating here throws the record away for an event that still would not fit,
+  // and the next append would do it again.
+  assert.deepEqual(res, { written: false, reason: 'oversized-event' });
+  assert.equal(readFileSync(tracePath(dir), 'utf8'), before);
+  assert.deepEqual(siblings(dir), ['trace.jsonl'], 'nothing was rotated');
 });
 
 test('renderTrace: an oversized file is read bounded, not whole', () => {
@@ -2133,7 +2453,7 @@ test('census: every trace family has a producer, and every producer speaks the r
   }
 
   // A lifecycle event the renderer does not know is a bracket that never pairs.
-  const known = [ANCHOR, DISPATCH, ...TERMINAL, COORDINATOR];
+  const known = [ANCHOR, DISPATCH, ...TERMINAL, COORDINATOR, WORKER_CACHE];
   const lifecycle = prose.filter((p) => p.family === 'lifecycle');
   for (const p of lifecycle) {
     assert.ok(known.includes(String(p.event)),
@@ -2778,11 +3098,16 @@ test('render: a non-numeric cache figure contributes NOTHING to the bracket', ()
   assert.equal(row.cache_read_input_tokens, 12, 'the readable half of the same row survived');
 });
 
-test('render: the cache fold fills an empty field and never overwrites one', () => {
+test('render: two closes of one worker leave the LARGER cache read on the row', () => {
   // The two writers close one bracket in either order. The hook is the only one
   // that HAS these figures, so the ordinary live shape is the hand-written close
   // opening the row and the hook filling it - but the reverse must not lose a
   // figure either, which is what the second half pins.
+  //
+  // For these two keys the rule is the LARGER value, not fill-only-empty: one
+  // writer, and two values for one worker are two reads of a transcript that
+  // only grows. So the first half is a fill, the second is a refusal to shrink,
+  // and the third is the correction fill-only-empty would have refused.
   const dir = root();
   appendEvent(dir, {
     phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
@@ -2814,7 +3139,26 @@ test('render: the cache fold fills an empty field and never overwrites one', () 
   });
   const [folded] = renderTrace(other, 6).brackets;
   assert.equal(folded.cache_read_input_tokens, 900,
-    'the second writer overwrote a figure the first one read');
+    'the second writer shrank a figure the first one had read more of');
+
+  // ...and the SHORTER read gives way. This is the arm fill-only-empty got
+  // wrong: a hook close that landed first with a partial sum froze the row, and
+  // no later, fuller read of the same transcript could correct it.
+  const third = root();
+  appendEvent(third, {
+    phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:00:00.000Z',
+  });
+  appendEvent(third, cacheClose({
+    ts: '2026-08-26T10:05:00.000Z', cache_read_input_tokens: 7,
+  }));
+  appendEvent(third, {
+    phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+    ts: '2026-08-26T10:05:30.000Z', cache_read_input_tokens: 900,
+  });
+  const [corrected] = renderTrace(third, 6).brackets;
+  assert.equal(corrected.cache_read_input_tokens, 900,
+    'a 7-token read froze the row against a fuller one');
 });
 
 test('render: the worker id survives the hook closing the bracket first', () => {
@@ -2936,4 +3280,215 @@ test('coordinator: the residue subtracts the worker span to its LATER close', ()
   assert.equal(c.bracket_ms, 4 * MIN, 'the coordinator was billed for time the worker held');
   assert.equal(c.steps[0].residue_ms, 6 * MIN);
   assert.equal(c.residue_ms, 8 * MIN);
+});
+
+// --- the cache-only fact reaches its bracket in a post-pass (TRC-07) ---------
+//
+// Three withholding gates in the `SubagentStop` hook cannot write a close at
+// all, and used to throw the worker's two cache figures away with it. They now
+// write a `WORKER_CACHE` fact instead, and this is the half that joins one to
+// the bracket it names - AFTER the pairing pass, because the fact ordinarily
+// arrives BEFORE the `agent_id` it joins on.
+
+/** The dispatch every fixture below opens with. */
+const vDispatch = (extra) => ({
+  phase: 7, family: 'lifecycle', event: DISPATCH, plan: 'cad-verifier',
+  role: 'cad-verifier', ts: '2026-08-26T10:00:00.000Z', ...extra,
+});
+/** A close, in the shape the orchestrator's hand-written `trace close` writes. */
+const vClose = (extra) => ({
+  phase: 7, family: 'lifecycle', event: 'return', plan: 'cad-verifier',
+  role: 'cad-verifier', ts: '2026-08-26T10:05:30.000Z', tokens: 900, ...extra,
+});
+/** A cache-only fact, in the shape `lib/subagent-trace.mjs` writes one. */
+const vFact = (extra) => ({
+  phase: 7, family: 'lifecycle', event: WORKER_CACHE, role: 'cad-verifier',
+  ts: '2026-08-26T10:05:00.000Z',
+  cache_creation_input_tokens: 4096, cache_read_input_tokens: 33033480, ...extra,
+});
+
+/**
+ * Render one fixture TWICE - as written, and with every `worker_cache` line
+ * deleted - and refuse to return unless the `roles` block is byte-identical
+ * across the two. D-05 is the whole reason the fold is a pass of its own: a
+ * cache read summed over a worker's turns is a different denomination from a
+ * return's final-window `tokens`, so a fact may move a BRACKET and must never
+ * move the per-role bill. Asserting it inside the helper is what puts the
+ * assertion on every case below without restating it six times.
+ */
+function folded(rows) {
+  const dir = root();
+  for (const r of rows) appendEvent(dir, r);
+  const r = renderTrace(dir, 7);
+  const bare = root();
+  for (const row of rows) if (row.event !== WORKER_CACHE) appendEvent(bare, row);
+  assert.equal(JSON.stringify(r.roles), JSON.stringify(renderTrace(bare, 7).roles),
+    'a cache-only fact moved the per-role bill');
+  return r;
+}
+
+test('render: a cache-only fact lands on the bracket its corr and id name', () => {
+  // THE LIVE SHAPE. The hook's figureless close opens the row, the
+  // orchestrator's hand-written `trace close --agent-id` names the worker, and
+  // the fact - written by a gate that refused to close anything - carries the
+  // only cache figures the record will ever hold for that worker.
+  const r = folded([
+    vDispatch(),
+    // The hook's own close: no figure of any kind and no id, because the
+    // payload carries neither.
+    {
+      phase: 7, family: 'lifecycle', event: 'return', plan: 'cad-verifier',
+      role: 'cad-verifier', ts: '2026-08-26T10:05:00.000Z',
+    },
+    vClose({ agent_id: 'W1' }),
+    vFact({ agent_id: 'W1' }),
+  ]);
+  assert.equal(r.brackets.length, 1, 'the fact opened a bracket of its own');
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 4096);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 33033480);
+});
+
+test('render: the fact folds just as well when it arrives BEFORE the id', () => {
+  // The ORDINARY arrival order, and the reason the fold is a post-pass (D-09):
+  // the host fires `SubagentStop` the moment the worker stops, while the
+  // orchestrator writes its `--agent-id` close only after processing the
+  // return. A fold riding the forward pass would see no bracket yet and drop
+  // every figure this phase exists to keep.
+  const r = folded([
+    vDispatch(),
+    vFact({ agent_id: 'W1' }),
+    vClose({ agent_id: 'W1' }),
+  ]);
+  assert.equal(r.brackets.length, 1);
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 4096);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 33033480);
+});
+
+test('render: a fact CORRECTS a shorter figure the close carried, never a longer one', () => {
+  // THIS SUPERSEDES fill-only-empty for these two keys alone, and with it AC2's
+  // "a bracket that already carries cache figures is not overwritten" clause
+  // and D-11 as it applied to them. The reason is the writer count: these two
+  // keys have exactly ONE writer - the `SubagentStop` hook, summing the
+  // worker's own transcript - so there is no second writer for fill-only-empty
+  // to protect, and two values for one worker are two reads of a file that only
+  // GROWS. `tokens`, `turns`, `duration_ms` and `agent_id` each have two
+  // writers holding part of the truth and keep the old rule unchanged.
+  //
+  // The same clause the repeat-close arm applies, reused rather than restated:
+  // a second overwrite rule is one that disagrees with the first the day either
+  // changes.
+  const short = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1', cache_read_input_tokens: 7 }),
+    vFact({ agent_id: 'W1' }),
+  ]);
+  assert.equal(short.brackets[0].cache_read_input_tokens, 33033480,
+    'a 7-token read froze the bracket against the fact\'s fuller one');
+  // The two keys still answer INDEPENDENTLY: the half the close never carried
+  // comes off the fact regardless of what the other half did.
+  assert.equal(short.brackets[0].cache_creation_input_tokens, 4096,
+    'the key the close never carried stayed empty');
+
+  // ...and the fact never SHRINKS a figure. A close carrying the fuller read
+  // keeps its own, so the rule is larger-wins and not last-writer-wins.
+  const long = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1', cache_read_input_tokens: 99999999 }),
+    vFact({ agent_id: 'W1' }),
+  ]);
+  assert.equal(long.brackets[0].cache_read_input_tokens, 99999999,
+    'the fact shrank a figure the close had read more of');
+  assert.equal(long.brackets[0].cache_creation_input_tokens, 4096);
+});
+
+test('render: with two workers of one role open, the fact reaches the matching id', () => {
+  // Not the newest bracket and not whichever fact arrived first - the one whose
+  // `agent_id` the fact names. This is the parallel path's own shape: two
+  // dispatches of one role in one phase run, closed under two different host
+  // ids.
+  const r = folded([
+    vDispatch(),
+    vDispatch({ ts: '2026-08-26T10:01:00.000Z' }),
+    vClose({ ts: '2026-08-26T10:05:00.000Z', agent_id: 'W1' }),
+    vClose({ ts: '2026-08-26T10:06:00.000Z', tokens: 800, agent_id: 'W2' }),
+    vFact({ agent_id: 'W2' }),
+  ]);
+  assert.equal(r.brackets.length, 2);
+  const [first, second] = r.brackets;
+  assert.equal(first.agent_id, 'W1');
+  assert.equal('cache_read_input_tokens' in first, false, JSON.stringify(first));
+  assert.equal('cache_creation_input_tokens' in first, false, JSON.stringify(first));
+  assert.equal(second.agent_id, 'W2');
+  assert.equal(second.cache_read_input_tokens, 33033480);
+  assert.equal(second.cache_creation_input_tokens, 4096);
+});
+
+test('render: a fact that names no bracket of its own run lands NOWHERE', () => {
+  // The join is `corr` AND `agent_id`, never the id alone (D-10). Measured
+  // 2026-08-26 over 1,333 transcripts, 7 of 1,323 distinct host ids appear in
+  // two or more transcripts of the same project, so an unscoped equality would
+  // put one session's figures on another session's bracket - and an id-less
+  // fact has no bracket it could ever reach. None of the three is an error and
+  // none of them adds a row.
+  for (const [why, extra] of Object.entries({
+    'a fact from another run': { agent_id: 'W1', corr: 'ANOTHER-RUN' },
+    'a fact carrying no id at all': {},
+    'a fact naming an id no bracket carries': { agent_id: 'NOBODY' },
+  })) {
+    const r = folded([vDispatch(), vClose({ agent_id: 'W1' }), vFact(extra)]);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal('cache_read_input_tokens' in r.brackets[0], false, why);
+    assert.equal('cache_creation_input_tokens' in r.brackets[0], false, why);
+    assert.deepEqual(r.unpaired, [], why);
+  }
+});
+
+test('render: two facts for one worker leave the LARGER sums, in either order', () => {
+  // A transcript only GROWS, so a second `SubagentStop` for one worker is a
+  // re-sum of the same file and a superset of the first. Summing the two would
+  // double-bill every turn both reads covered; keeping the LARGER one carries
+  // the more complete read. Ordering by size rather than by arrival is what
+  // makes the answer independent of the order the lines landed in.
+  const small = { cache_creation_input_tokens: 100, cache_read_input_tokens: 1000 };
+  const big = { cache_creation_input_tokens: 150, cache_read_input_tokens: 3000 };
+  for (const [why, order] of Object.entries({ 'growing': [small, big], 'shrinking': [big, small] })) {
+    const r = folded([
+      vDispatch(),
+      vClose({ agent_id: 'W1' }),
+      vFact({ agent_id: 'W1', ...order[0] }),
+      vFact({ agent_id: 'W1', ...order[1] }),
+    ]);
+    assert.equal(r.brackets[0].cache_creation_input_tokens, 150, why);
+    assert.equal(r.brackets[0].cache_read_input_tokens, 3000, why);
+  }
+
+  // Per key and INDEPENDENTLY: a pair where each fact holds the larger half
+  // leaves both larger halves on the row, which no arrival-ordered rule gives.
+  const r = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1' }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 150, cache_read_input_tokens: 1000 }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 100, cache_read_input_tokens: 3000 }),
+  ]);
+  assert.equal(r.brackets[0].cache_creation_input_tokens, 150);
+  assert.equal(r.brackets[0].cache_read_input_tokens, 3000);
+});
+
+test('render: rendering one fixture TWICE gives byte-identical brackets', () => {
+  // Idempotence is what larger-wins buys that no arrival-ordered rule can: the
+  // answer is a function of the BYTES rather than of the order they were read
+  // in, so a reader that renders the same file again gets the same bracket. It
+  // also pins that the fold leaves no state behind between renders.
+  const dir = root();
+  for (const row of [
+    vDispatch(),
+    vClose({ agent_id: 'W1' }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 150, cache_read_input_tokens: 1000 }),
+    vFact({ agent_id: 'W1', cache_creation_input_tokens: 100, cache_read_input_tokens: 3000 }),
+  ]) appendEvent(dir, row);
+  const first = JSON.stringify(renderTrace(dir, 7).brackets);
+  assert.equal(JSON.stringify(renderTrace(dir, 7).brackets), first,
+    'a second render of the same bytes answered differently');
+  assert.equal(JSON.parse(first)[0].cache_creation_input_tokens, 150);
+  assert.equal(JSON.parse(first)[0].cache_read_input_tokens, 3000);
 });
