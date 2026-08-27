@@ -204,42 +204,41 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v3.7.4 - cut the cost the record can now measure`, opened 2026-08-26.** Three
-phases against the `Dispatch cost` milestone, which `v3.7.3` opened and did not
-finish. That cycle fixed the instruments and closed at phase 1; this one spends
-what they measure.
+**No cycle open.**
 
-**Why this scope.** The 31 open issues were triaged 2026-08-26 against one
-question: would a user running Cadence on their own project ever feel this, or
-does it only bite while Cadence is being developed on Cadence? Three answered the
-second way and were declined outright (GH-109, GH-111, GH-139). Three more were
-closed as shipped in `v3.7.3` (GH-136, GH-92, GH-128). Everything in this cycle
-answers the first way, and the first three are felt as money on every dispatch a
-user makes.
+**`v3.7.4 - cut the cost the record can now measure`, opened 2026-08-26, closed
+2026-08-27.** Four phases, 71 commits off `main` (16 feat against 6 fix, where
+`v3.7.3` ran 7 against 7). Five requirement ids, all traced to a verified phase:
+`BUD-03`, `RSK-05`, `RNG-03`, `TRC-07`, `TRC-08`. `/cad-audit` PASS on both arms,
+5 of 5 requirements traced with 0 broken and 25 of 25 acceptance criteria covered
+with 0 breaks. UAT 29 passed, 0 failed, 1 skipped. Manifest bumped to `3.7.4` at
+`a25d4470`.
 
-**The cost itself.** `workflow.max_plan_tasks` bounds a plan by task count and
-nothing bounds the bytes its `files:` frontmatter declares, which on one measured
-`PLAN-1.md` was ~90% of a 70,554-token dispatch (GH-94). The risk-routing floor
-reads whole-file BODY lines rather than the diff, so any plan declaring a large
-file inherits its matches and can never earn the discount (GH-112). The rung
-label at body line 2 forecloses cross-rung prefix sharing (GH-91), which declared
-itself blocked on cache figures and is no longer blocked, because `TRC-05`
-shipped them.
+Where it went: the shipped rows are in `REQUIREMENTS.md` under `## Shipped`, the
+user-facing narrative is `CHANGELOG.md` `## [3.7.4]`, and 78 residue rows from
+the four pruned phases are in `.planning/ARCHIVE.md`. The merge and the release
+tag are `/cad-land`'s, cut on the pulled base after the merge confirms.
 
-**And the record that measures it.** `trace.jsonl` write-deads at 1 MiB with no
-rotation and sits at 54.1% (GH-138). It is the one deliberately self-referential
-item in the cycle, included because silent permanent write-death is a bad failure
-mode whoever hits it, and because every cost argument this milestone makes is
-denominated in that file.
+**What it did not settle.** The cycle exists to cut dispatch cost and the one
+measurement it was built to take came back inconclusive. `RNG-03` shipped the
+layout half, all 19 agent bodies collapsed to one distinct body per role with a
+`rung-prefix` check pinning it, but the after-side figures are n=2 `cad-verifier`
+dispatches at +19.3% cache read and +7.1% creation against a 33-dispatch before
+side. Both moved UP, which is not the shape of a prefix-reuse win, and the two
+populations are not comparable. `TRC-07` now records the figures automatically on
+every dispatch, so the real comparison costs nothing to take across many sessions
+and should be taken before anything is claimed.
 
-Seeded ids: `BUD-03`, `RSK-05`, `RNG-03`, `TRC-08`.
-
-**Filed and out of this cycle.** GH-137, a phase with commits but no `SUMMARY.md`
-deriving as `planned` so `/cad-execute` can replay committed work, is the
-highest-severity user-facing bug on the tracker. It belongs to the execute path
-rather than to dispatch cost, and it is named here so the next cycle does not
-have to rediscover it. GH-117 stays held out in `Worktree verdict`, natively
-blocked by GH-119 and GH-120.
+**Outstanding, carried out of the close.** GH-146: an abandoned rotation claim
+disables `trace.jsonl` rotation permanently, appends still land and nothing
+write-deads but the record stops rotating and each append pays about 266 ms.
+`.planning/reads.jsonl` carries the original write-dead defect at 86.9% of its
+own 8 MiB bound, closer to firing than the trace ever was, and shares none of
+phase 4's rotation code. GH-137, a phase with commits but no `SUMMARY.md`
+deriving as `planned` so `/cad-execute` replays committed work, is still the
+highest-severity user-facing bug on the tracker and still belongs to the execute
+path. The Forge cluster (GH-102 through GH-107) is a decided seed in
+`.planning/CAPTURE.md` for whichever cycle opens next.
 
 ### Previously
 

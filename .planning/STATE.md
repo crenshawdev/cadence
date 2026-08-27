@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 4 (Make the cache figures reach the record)
-Status: phase complete
-Next: /cad-milestone - every phase in the roadmap is now complete; the audit gate precedes any ship
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-08-27

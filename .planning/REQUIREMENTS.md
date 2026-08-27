@@ -1,29 +1,25 @@
-# Requirements: Cadence (v3.7.2)
+# Requirements: Cadence (v3.7.4)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.7.4 - cut the cost the record can now measure` opened 2026-08-26 with
-three phases against the `Dispatch cost` milestone, which `v3.7.3` opened and
-did not finish. `/cad-plan` seeds each Traceability row as its phase is planned,
-so an id below that no plan has picked up yet surfaces as `unpicked` in
-`/cad-audit` rather than as a hand-written row.
+**No cycle open.** Nothing here is live scope. The shipped ids are rows under
+`## Shipped` below, and `/cad-phase add` is what opens the next cycle: it is the
+only workflow that appends a phase line to an existing roadmap, and `/cad-plan`
+seeds each Traceability row as its phase is planned. The ids under `## Deferred`
+keep their own reasons and their own promote conditions, and none of them is
+promoted here to fill this section.
 
-Three of these five ids were deferred out of `v3.7.3` and are promoted back
-unchanged. The deferral swept them up with the identity phase on the stated
-reason that every remaining phase sat on the `SubagentStop` identity subsystem.
-That was true of the identity phase and false of the other three: BUD-03, RSK-05
-and RNG-03 touch plan frontmatter, the risk-check floor and agent rung labels,
-and none of them touches that hook. They are also the most user-facing work in
-the cycle, since every user pays all three on every dispatch.
-
-`TRC-07` joined them on 2026-08-26, at phase 2 planning, on a different reason:
-the planner replayed the hook's own rule against the live record and found
-`RNG-03`'s measurement clause unbuildable without it. It is phase 3.
-
-
+`v3.7.4 - cut the cost the record can now measure` opened 2026-08-26 and closed
+2026-08-27. Four phases, five ids - `BUD-03`, `RSK-05`, `RNG-03`, `TRC-07`,
+`TRC-08` - are rows under `## Shipped` below, all Complete. `RNG-03` shipped the
+shared-prefix layout and the check that pins it; the recovery it was supposed to
+demonstrate is not yet demonstrated, because the after-side figures are two
+dispatches against a 33-dispatch before side and both moved the wrong way.
+`TRC-07` records the figures automatically now, so that comparison can be taken
+properly later without re-planning anything.
 
 `v3.7.3 - the record has to be right before it can be cut` opened and closed
 2026-08-26, at phase 1 on a measured rework rate. Its four delivered ids -
