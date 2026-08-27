@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  appendEvent, correlationId, renderTrace, tracePath, MAX_TRACE_BYTES, FAMILIES,
+  appendEvent, correlationId, renderTrace, tracePath, rotatedTracePath,
+  MAX_TRACE_BYTES, ROTATED_TRACE_FILE, FAMILIES,
   ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE,
 } from './lib/trace.mjs';
 
@@ -116,22 +117,145 @@ test('appendEvent: an interleaved write sequence keeps every event, in order', (
   assert.equal(new Set(got.map((e) => e.corr)).size, 1);
 });
 
-test('appendEvent: a file at the bound accepts nothing more and renders capped', () => {
+// --- the bound ROTATES rather than refusing (TRC-08) -------------------------
+
+/** Every file in the planning root whose name starts with the trace's own. */
+const siblings = (dir) => readdirSync(dir).filter((e) => e.startsWith('trace.')).sort();
+
+/**
+ * Pad the record to ONE BYTE under the bound, so the next append of any size
+ * has to rotate. Padding to the bound itself would test the inherited-excess
+ * arm instead, which is a different criterion and has its own test.
+ */
+function padToBound(dir) {
+  let at = 0;
+  try { at = readFileSync(tracePath(dir)).length; } catch { at = 0; }
+  appendFileSync(tracePath(dir), `${'x'.repeat(MAX_TRACE_BYTES - at - 2)}\n`);
+  assert.equal(readFileSync(tracePath(dir)).length, MAX_TRACE_BYTES - 1);
+}
+
+test('appendEvent: a record at the bound rotates, and the append lands', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
-  const before = lines(dir).length;
-  appendFileSync(tracePath(dir), 'x'.repeat(MAX_TRACE_BYTES));
+  // Under the bound before the append, over it with the append: the trigger is
+  // "this line would reach the bound", not "the file already did".
+  padToBound(dir);
+  const carried = readFileSync(tracePath(dir), 'utf8');
+
   const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
-  assert.deepEqual(res, { written: false, reason: 'size-cap' });
-  const r = renderTrace(dir, 1);
-  assert.equal(r.capped, true);
-  assert.equal(r.counts.routing, 0);
-  assert.equal(r.counts.lifecycle, before);
-  // The padding runs past the read ceiling, so the bounded read truncates it
-  // and drops the trailing partial line rather than parsing it: a line only
-  // partly read cannot honestly be called malformed. `capped` carries the
-  // signal instead, and it is asserted above.
-  assert.equal(r.malformed, 0);
+  assert.deepEqual(res, { written: true, corr: '1-abc1234' },
+    'the record at its bound must accept the event, not report size-cap');
+
+  // The event is IN the live record afterwards - the whole of AC1.
+  const got = lines(dir);
+  assert.equal(got.filter((e) => e.family === 'routing' && e.event === 'resolve').length, 1);
+  // The anchor came with it, so the run in flight still derives its own id.
+  assert.equal(got.filter((e) => e.event === ANCHOR).length, 1);
+  assert.equal(correlationId(dir, 1), '1-abc1234');
+
+  // Exactly one rotated generation, and it is the bytes that were carried away
+  // rather than a freshly written file.
+  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), carried);
+
+  // Neither file exceeds the bound, the live one having been under it before.
+  for (const f of [tracePath(dir), rotatedTracePath(dir)]) {
+    assert.ok(readFileSync(f).length < MAX_TRACE_BYTES, `${f} is over the bound`);
+  }
+  // A rotated record is not a CAPPED read: the live file is small and whole.
+  assert.equal(renderTrace(dir, 1).capped, false);
+});
+
+test('appendEvent: a record already PAST the bound rotates, and its sibling keeps the excess', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendFileSync(tracePath(dir), `${'x'.repeat(MAX_TRACE_BYTES * 2)}\n`);
+  const carried = readFileSync(tracePath(dir), 'utf8');
+  assert.ok(carried.length > MAX_TRACE_BYTES);
+
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, true, 'an already-over-bound record must still accept the event');
+
+  // AC4 binds what rotation PRODUCES, not what it INHERITS: the sibling is
+  // byte-identical to the file the claim carried away, never head-trimmed,
+  // because trimming it is the read-modify-write D-04 prohibits.
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), carried);
+  assert.ok(readFileSync(tracePath(dir)).length < MAX_TRACE_BYTES,
+    'the file rotation PRODUCED must be under the bound');
+});
+
+test('appendEvent: the run in flight keeps its corr and its brackets across a rotation', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: DISPATCH, plan: 1, role: 'cad-executor' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 1, role: 'cad-executor', tokens: 10 });
+  padToBound(dir);
+
+  const before = renderTrace(dir, 1);
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, true);
+  const after = renderTrace(dir, 1);
+
+  assert.equal(after.corr, before.corr, 'the run in flight changed id across the rotation');
+  assert.equal(after.corr, '1-abc1234');
+  const under = (r) => r.brackets.filter((b) => b.corr === r.corr).length;
+  assert.equal(under(after), under(before), 'the bracket count changed across the rotation');
+  assert.equal(under(after), 1);
+});
+
+test('appendEvent: a tail bigger than the bound is carried anyway, never refused', () => {
+  // The degenerate arm: one run has written a bound's worth of its OWN events
+  // since its own anchor, so nothing post-anchor may be dropped - every line
+  // is a bracket half AC2 counts. Rotation carries them and lets the fresh
+  // record sit over the bound rather than refusing the append or dropping a
+  // half.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  let bulk = '';
+  let n = 0;
+  while (Buffer.byteLength(bulk) < MAX_TRACE_BYTES) {
+    bulk += `${JSON.stringify({ corr: '1-abc1234', phase: 1, ts: '2026-08-26T00:00:00.000Z', family: 'lifecycle', event: DISPATCH, plan: n, role: 'cad-executor' })}\n`;
+    bulk += `${JSON.stringify({ corr: '1-abc1234', phase: 1, ts: '2026-08-26T00:00:01.000Z', family: 'lifecycle', event: 'return', plan: n, role: 'cad-executor' })}\n`;
+    n += 1;
+  }
+  appendFileSync(tracePath(dir), bulk);
+  const before = renderTrace(dir, 1);
+  assert.ok(before.brackets.length > 0);
+
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, true, 'the degenerate arm must not re-create the refusal');
+  assert.ok(existsSync(rotatedTracePath(dir)), 'it still rotated');
+  const after = renderTrace(dir, 1);
+  assert.equal(after.corr, before.corr);
+  assert.equal(after.brackets.filter((b) => b.corr === after.corr).length,
+    before.brackets.filter((b) => b.corr === before.corr).length,
+    'a bracket half of the run in flight was dropped to fit the bound');
+});
+
+test('appendEvent: a record with no anchor carries nothing forward', () => {
+  const dir = root();
+  padToBound(dir);
+  const res = appendEvent(dir, { phase: 7, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, true);
+  // `correlationId` already returns the bare phase where no anchor exists, so
+  // carrying nothing degrades nothing.
+  assert.equal(res.corr, '7');
+  const got = lines(dir);
+  assert.equal(got.length, 1, 'a record with no anchor rotates to an empty live record');
+  assert.equal(got[0].event, 'resolve');
+});
+
+test('appendEvent: one line that reaches the bound by itself is refused, and nothing moves', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  const before = readFileSync(tracePath(dir), 'utf8');
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', detail: 'y'.repeat(MAX_TRACE_BYTES) });
+  // Its OWN reason, distinguishable from the `size-cap` this arm replaces:
+  // rotating here throws the record away for an event that still would not fit,
+  // and the next append would do it again.
+  assert.deepEqual(res, { written: false, reason: 'oversized-event' });
+  assert.equal(readFileSync(tracePath(dir), 'utf8'), before);
+  assert.deepEqual(siblings(dir), ['trace.jsonl'], 'nothing was rotated');
 });
 
 test('renderTrace: an oversized file is read bounded, not whole', () => {

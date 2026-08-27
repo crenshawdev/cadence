@@ -78,12 +78,37 @@
 'use strict';
 
 import {
-  appendFileSync, closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
+  appendFileSync, closeSync, linkSync, lstatSync, openSync, readFileSync, readSync,
+  renameSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 
 /** The trace file's name inside a planning root. */
 export const TRACE_FILE = 'trace.jsonl';
+
+/**
+ * The rotated generation's spelling, stated ONCE here so the writer, the
+ * reader, this repository's `.gitignore` rule and every test read the same
+ * name and cannot drift apart.
+ *
+ * Suffix BEFORE the extension, the shape `lib/report-rotation.mjs` already uses
+ * for `plan-<k>.<n>.md`, and it keeps `.jsonl` so the sibling is still
+ * recognisably the record rather than an opaque backup.
+ *
+ * The path is FIXED, and that fixity is how exactly ONE generation is kept
+ * (D-05): a second rotation EVICTS the first rather than minting a
+ * `trace.2.jsonl` beside it, so the pair on disk is bounded at twice
+ * `MAX_TRACE_BYTES` with no retention key to tune. That is the same posture the
+ * bound itself takes one clause below - a constant beside the code that
+ * enforces it, like `MAX_READS_BYTES` in lib/read-trace.mjs and
+ * `MAX_TRANSCRIPT_BYTES` in bin/subagent-trace.mjs.
+ *
+ * NOTHING READS IT. It holds the generations of runs that have already ended,
+ * kept so a rotation stays recoverable by hand; every reader in the tree still
+ * reads `TRACE_FILE` alone, and `renderTrace` reports that a rotation happened
+ * rather than joining the two files back together.
+ */
+export const ROTATED_TRACE_FILE = 'trace.1.jsonl';
 
 /**
  * The write-time size bound. At or over it nothing more is appended and
@@ -209,6 +234,16 @@ export function tracePath(planningRoot) {
 }
 
 /**
+ * Where the rotated generation lives. Derived from `ROTATED_TRACE_FILE` so a
+ * caller that has to name the file - the `.gitignore` rule `trace ignore`
+ * writes is the only one - names what the writer actually produces.
+ * @param {string} planningRoot
+ */
+export function rotatedTracePath(planningRoot) {
+  return join(planningRoot, ROTATED_TRACE_FILE);
+}
+
+/**
  * A phase or worker key as a string, so `1` and `"1"` are the same worker and a
  * role-named worker (`cad-verifier`) keys the same way a plan number does.
  * @param {any} v
@@ -222,10 +257,12 @@ function key(v) {
  * unreadable, a planning root that is not a directory). Absence is data here.
  *
  * BOUNDED at `MAX_TRACE_BYTES`, the same ceiling the writer enforces. The write
- * bound alone does not protect this side: `appendEvent` stats BEFORE it writes,
- * so the last event admitted can carry the file past the cap, and a trace that
- * was corrupted, hand-edited, or written by a producer outside this seam has no
- * bound at all. Reading it whole is a synchronous `readFileSync` + `split` +
+ * bound alone does not protect this side: the writer now ROTATES at that bound
+ * rather than refusing, and a fresh record whose carried tail could not be
+ * trimmed under it (the degenerate arm `carriedTail` states) is over the cap by
+ * construction, while a trace that was corrupted, hand-edited, or written by a
+ * producer outside this seam has no bound at all. Reading it whole is a
+ * synchronous `readFileSync` + `split` +
  * `JSON.parse` per line inside the host process, so an oversized file turns
  * `/cad-progress --trace` - a read-only status command - into a hang.
  *
@@ -320,10 +357,259 @@ function renderEvent(planningRoot, event) {
 }
 
 /**
+ * The tail a rotation carries forward: the NEWEST `lifecycle/phase_start` line
+ * and every line after it, as text ending in a newline - or `''` where the
+ * record holds no anchor at all.
+ *
+ * WHY A TAIL AND NOT A WHOLE-FILE RENAME (D-01). `correlationId` scans BACKWARD
+ * from the end for that anchor and returns the bare `<phase>` when it finds
+ * none, so a rotation that carried nothing forward would leave every
+ * post-rotation event of the run in flight deriving `<phase>` while its own
+ * dispatch half - written before the cut - carries `<phase>-<sha>`. One run,
+ * two ids: `planning/risk-check.mjs`'s corr-scoped lookup and the triage gate's
+ * prior-`rearm` lookup would both miss, and the one-re-arm cap on the only
+ * blocking trigger would fail OPEN. Carrying the anchor is also what keeps
+ * `renderTrace`'s brackets whole across the cut, which is what a caller
+ * rendering the run immediately before and immediately after a rotation sees.
+ *
+ * Measured on this repository 2026-08-26: the newest anchor sat at byte 597,177
+ * of 604,183, so the carried tail was ~7 KB - 1.2% of the record, against 83
+ * anchors and 88 distinct `corr` in it. The cut is cheap because anchors are
+ * frequent, not because the tail is trimmed.
+ *
+ * THE BOUND, and the ONLY thing it may drop. `reserve` is what the fresh file
+ * owes beyond this tail - the pending line, plus whatever the rotation itself
+ * writes - and the tail is trimmed until the whole fresh file fits under
+ * `MAX_TRACE_BYTES`. Trimming drops post-anchor lines OLDEST-FIRST and only
+ * ones carrying some OTHER `corr`: a line under the anchor's own id is a
+ * dispatch or a close half of the run in flight, and dropping one changes the
+ * bracket count across the rotation, which is the unqualified criterion this
+ * whole rule is subordinate to. The anchor line itself is never dropped.
+ *
+ * WHERE EVEN THAT DOES NOT FIT, the tail is carried anyway and the fresh file
+ * sits over the bound. Refusing there would re-create the write-death this
+ * rotation exists to remove, and dropping a bracket half would break the count;
+ * the cost is that the next append rotates again, bounded by how fast one run
+ * can write a bound's worth of events under a single anchor.
+ * @param {string} text the whole record being carried away
+ * @param {number} reserve bytes the fresh file owes beyond the tail
+ * @returns {string}
+ */
+function carriedTail(text, reserve) {
+  const lines = text.split('\n');
+  let at = -1;
+  let anchorCorr = '';
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
+    at = i;
+    // The id the run in flight is ALREADY writing, read off the anchor rather
+    // than re-derived: `renderEvent` stored it there at write time, and a
+    // re-derivation here would answer about the file after the cut.
+    anchorCorr = typeof e.corr === 'string' && e.corr ? e.corr : key(e.phase);
+    break;
+  }
+  if (at < 0) return '';
+
+  /** @type {{text: string, bytes: number, mine: boolean, dropped: boolean}[]} */
+  const kept = [];
+  let total = 0;
+  for (let i = at; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    // A line whose `corr` cannot be read is not the run in flight's - a
+    // malformed or foreign-producer line pairs with nothing, so dropping it
+    // under pressure cannot change a bracket count.
+    let mine = true;
+    if (i > at) {
+      mine = false;
+      try {
+        const e = JSON.parse(line);
+        mine = !!e && typeof e === 'object' && !Array.isArray(e) && key(e.corr) === anchorCorr;
+      } catch { /* not this run's */ }
+    }
+    const bytes = Buffer.byteLength(line) + 1;
+    kept.push({ text: line, bytes, mine, dropped: false });
+    total += bytes;
+  }
+
+  for (let i = 1; i < kept.length && total + reserve >= MAX_TRACE_BYTES; i++) {
+    if (kept[i].mine) continue;
+    kept[i].dropped = true;
+    total -= kept[i].bytes;
+  }
+  const survivors = kept.filter((l) => !l.dropped).map((l) => l.text);
+  return survivors.length ? `${survivors.join('\n')}\n` : '';
+}
+
+/**
+ * Is the sibling that already exists a rotation IN FLIGHT, or a generation an
+ * earlier rotation left behind?
+ *
+ * The claim below is a hard LINK, so between the claim and the swap the live
+ * path and the sibling are the same inode. That identity is the discriminator,
+ * and it has to be one: treating an in-flight claim as a stale generation would
+ * evict a claim a concurrent writer is still holding, and treating a stale
+ * generation as in flight would leave the record unable to rotate a second
+ * time - the write-death this whole arm removes, one indirection down.
+ *
+ * UNKNOWABLE READS AS IN FLIGHT. Where a platform supplies no inode (Node
+ * reports `0`) or either stat fails, the safe answer is the one that never
+ * evicts: it costs a deferred rotation, and the append still lands.
+ * @param {string} file @param {string} sibling
+ */
+function rotationInFlight(file, sibling) {
+  try {
+    const a = statSync(file);
+    const b = statSync(sibling);
+    if (!a.ino || !b.ino) return true;
+    return a.ino === b.ino && a.dev === b.dev;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Claim the record, swap a fresh one in carrying the run in flight, and hand
+ * the old generation to `ROTATED_TRACE_FILE`.
+ *
+ * NO LOCK (D-03). `withPlanningFileLock` is refused here on purpose: the
+ * `SubagentStop` hook writes through this function, and its own contract
+ * forbids it to speak on the path a lock refusal would have to be reported on.
+ * The concurrency to design against is cross-PROCESS - the hook renders the
+ * record and then appends under a 10-second host timeout, so a rotation landing
+ * between those two calls is a real interleaving, not a theoretical one.
+ *
+ * THE CLAIM IS `linkSync`, NOT `renameSync`. A rename REPLACES its destination
+ * silently, so a writer still holding a stale stat would rename a live path
+ * that a completed rotation had already re-created: the winner's generation is
+ * destroyed, its events end up in the sibling, and exactly one sibling still
+ * exists - so a count-based check would call that healthy. `linkSync` fails
+ * `EEXIST` instead, which is atomic, single-winner, and REFUSES the claim
+ * rather than detecting the damage after the fact, which no rename-back could
+ * recover from. It costs one syscall on the rotation path alone.
+ *
+ * NEVER A READ-MODIFY-WRITE (D-04). The old generation is produced by the claim
+ * itself and the fresh file is written whole to a private path and renamed into
+ * place, so the live path is never absent and no writer's append is trimmed
+ * away by a rewrite it did not see. Append mode is what makes interleaved
+ * writers lossless, and an event lost that way is indistinguishable on the
+ * record from a worker that never returned.
+ *
+ * @param {string} planningRoot
+ * @param {number} reserve bytes the fresh file owes beyond the carried tail
+ * @returns {{rotated: boolean, reason?: string}} `reason` ONLY where the
+ *   rotation failed outright; losing the claim is `{rotated:false}` and the
+ *   caller appends, because somebody else already made room.
+ */
+function rotateTrace(planningRoot, reserve) {
+  const file = tracePath(planningRoot);
+  const sibling = rotatedTracePath(planningRoot);
+  const priv = `${process.pid}.${Math.random().toString(36).slice(2)}`;
+  /** @type {string|null} */
+  let temp = null;
+  /** @type {string|null} */
+  let evicted = null;
+  // The claim is HELD from the link until the swap. While it is held the
+  // sibling is only a second name for the live file, so every failure arm has
+  // to release it - a claim left behind reads as a rotation in flight forever
+  // and the record never rotates again.
+  let held = false;
+  try {
+    let claimed = false;
+    for (let attempt = 0; attempt < 2 && !claimed; attempt++) {
+      try {
+        linkSync(file, sibling);
+        claimed = true;
+        held = true;
+      } catch (e) {
+        const code = e && /** @type {any} */ (e).code;
+        if (code === 'ENOENT') return { rotated: false };
+        if (code !== 'EEXIST') {
+          // No hard links on this filesystem. FALL BACK to the replacing
+          // rename and accept the window it leaves - never the other way
+          // round, because the window is exactly what the link closes.
+          try { renameSync(file, sibling); claimed = true; } catch { return { rotated: false }; }
+          break;
+        }
+        // Somebody else holds the claim: re-stat and append, which is what the
+        // caller does with `{rotated:false}`.
+        if (attempt > 0 || rotationInFlight(file, sibling)) return { rotated: false };
+        // A generation an earlier rotation left. Evict it SINGLE-WINNER, the
+        // way lib/capture-file.mjs breaks a stale lock: exactly one contender
+        // renames it to a private path and the losers get `ENOENT`.
+        const path = `${sibling}.evict.${priv}`;
+        try { renameSync(sibling, path); } catch { return { rotated: false }; }
+        evicted = path;
+      }
+    }
+    if (!claimed) return { rotated: false };
+
+    // Read AFTER the claim: only once the sibling is ours do we exclusively own
+    // the bytes we are judging.
+    let carried;
+    try { carried = readFileSync(sibling, 'utf8'); } catch { carried = ''; }
+    let seen = Buffer.byteLength(carried);
+
+    temp = `${file}.rotate.${priv}`;
+    writeFileSync(temp, carriedTail(carried, reserve), { flag: 'wx' });
+    renameSync(temp, file);
+    temp = null;
+    held = false;
+
+    // THE WINDOW, closed. Between the claim and the swap the live path still
+    // named the old inode, so a concurrent writer's append landed in what is
+    // now the sibling. Those bytes are read back and appended to the fresh
+    // record here: a writer that was refused the claim must not also lose its
+    // event, and a duplicate copy in a file nothing reads costs nothing. Whole
+    // lines only, and bounded - a writer arriving after the swap opens the
+    // fresh file and needs no recovery at all.
+    for (let pass = 0; pass < 4; pass++) {
+      let grown = 0;
+      try { grown = statSync(sibling).size; } catch { break; }
+      if (grown <= seen) break;
+      /** @type {Buffer} */
+      let delta;
+      try {
+        const buf = Buffer.alloc(grown - seen);
+        const fd = openSync(sibling, 'r');
+        let read = 0;
+        try { read = readSync(fd, buf, 0, buf.length, seen); } finally { closeSync(fd); }
+        delta = buf.subarray(0, read);
+      } catch { break; }
+      const cut = delta.lastIndexOf(0x0a);
+      if (cut < 0) break;
+      const whole = delta.subarray(0, cut + 1);
+      try { appendFileSync(file, whole); } catch { break; }
+      seen += whole.length;
+    }
+    return { rotated: true };
+  } catch (e) {
+    return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
+  } finally {
+    // Leave nothing behind on ANY arm: no private temp, no unfinished claim, no
+    // evicted generation.
+    if (temp) { try { unlinkSync(temp); } catch { /* nothing to clean up */ } }
+    if (held) { try { unlinkSync(sibling); } catch { /* nothing to release */ } }
+    if (evicted) { try { unlinkSync(evicted); } catch { /* nothing to clean up */ } }
+  }
+}
+
+/**
  * Append one event. NEVER throws, never writes to stdout or stderr: a trace that
  * cannot be written must leave its caller's envelope byte-identical. A trace
  * path that is a SYMLINK is refused with `reason:'symlinked-trace'` and nothing
  * is appended - the append would otherwise follow it out of the tree.
+ *
+ * The SIZE bound is not a refusal (TRC-08). At `MAX_TRACE_BYTES` the record
+ * rotates and this append lands, so no writer is ever again told the record is
+ * full; the two remaining size answers are `oversized-event`, for a single line
+ * that reaches the bound by itself, and whatever code a rotation that could not
+ * complete failed with.
  * @param {string} planningRoot
  * @param {any} event `{phase, family, event, ...fields}`
  * @returns {{written: boolean, reason?: string, corr?: string}}
@@ -341,17 +627,14 @@ export function appendEvent(planningRoot, event) {
     if (lstatSync(file).isSymbolicLink()) return { written: false, reason: 'symlinked-trace' };
   } catch { /* ENOENT is the ordinary first write; the size stat below reports the rest */ }
 
-  // The bound, enforced BEFORE the write (D-07): there is no whole-file rewrite
-  // to trim from, so the only place to stop is in front of the append. An
-  // absent file is the ordinary first write; any other stat failure is the
-  // reason this append did not happen.
-  try {
-    if (statSync(file).size >= MAX_TRACE_BYTES) return { written: false, reason: 'size-cap' };
-  } catch (e) {
-    const code = e && e.code;
-    if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
-  }
-
+  // RENDERED AHEAD of the size arm, which is a reordering and not a
+  // rearrangement: the arm now needs this line's own byte length, because it
+  // fires when the file PLUS this line would reach the bound rather than when
+  // the file is already at it. The old arm admitted one last event that carried
+  // the record past the bound, which is why every naturally grown record is a
+  // line over it. Rendering is pure apart from the `correlationId` read, and
+  // that read answers the same before a rotation and after one - the newest
+  // anchor is exactly what the cut carries forward.
   let line;
   let corr;
   try {
@@ -360,6 +643,42 @@ export function appendEvent(planningRoot, event) {
     line = `${JSON.stringify(rendered)}\n`;
   } catch (e) {
     return { written: false, reason: (e && e.code) || 'unrenderable-event' };
+  }
+  const pending = Buffer.byteLength(line);
+
+  // THE BOUND, enforced BEFORE the write and no longer a refusal. A record at
+  // the bound used to answer `{written:false, reason:'size-cap'}` to every
+  // writer for the rest of the project's life - permanent, silent write-death,
+  // and the only thing that ever cleared it was a human noticing. It ROTATES
+  // instead: the old generation becomes `ROTATED_TRACE_FILE`, the run in flight
+  // is carried into a fresh record, and this append lands.
+  //
+  // Rotation lives HERE and nowhere else (D-02). Every writer in the tree - both
+  // `route.mjs` sites, `review-provider.mjs`, the `SubagentStop` hook,
+  // `planning/trace.mjs`, `task-record.mjs`, `risk-check.mjs`, `cite-count.mjs`
+  // and `lease-check.mjs` - reaches the record through this function, so no call
+  // site learns about rotation and none of them can be left write-dead.
+  //
+  // An absent file is the ordinary first write; any other stat failure is the
+  // reason this append did not happen.
+  let size = null;
+  try {
+    size = statSync(file).size;
+  } catch (e) {
+    const code = e && e.code;
+    if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
+  }
+  if (size !== null && size + pending >= MAX_TRACE_BYTES) {
+    // A single line that reaches the bound on its own is REFUSED rather than
+    // rotated. Rotating there throws the record away to make room for an event
+    // that still would not fit, and the next append does it again - so the
+    // reason is its own, distinguishable from the `size-cap` this arm replaces.
+    if (pending >= MAX_TRACE_BYTES) return { written: false, reason: 'oversized-event' };
+    const rot = rotateTrace(planningRoot, pending);
+    // Losing the claim is not a failure: somebody else already made the room,
+    // and this writer appends into the record they left. Only a rotation that
+    // FAILED carries a reason, and it is reported rather than appended past.
+    if (rot.reason) return { written: false, reason: rot.reason };
   }
 
   try {
