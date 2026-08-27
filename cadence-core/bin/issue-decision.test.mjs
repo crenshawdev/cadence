@@ -177,6 +177,50 @@ test('teaLoginNameForHost is TOTAL over every unreadable input', () => {
     'forge.example.com'), 'ok');
 });
 
+// --- the persisted host may name a PORT, and it reaches the match (FRG-05) --
+
+// Two Forgejo instances on one hostname, told apart only by the port each
+// login's own API `url` names - the shape `git.forge_host` could not state at
+// all until its write face grew a grammar.
+const TWO_ON_ONE_HOST = [
+  { name: 'three-thousand', url: 'https://forge.example.com:3000', ssh_host: 'ssh.example.com' },
+  { name: 'three-thousand-one', url: 'https://forge.example.com:3001', ssh_host: 'ssh.example.com' },
+];
+
+test('a persisted host naming a port picks the login serving THAT port', () => {
+  assert.equal(teaLoginNameForHost(TWO_ON_ONE_HOST, 'forge.example.com:3001'), 'three-thousand-one');
+  assert.equal(teaLoginNameForHost(TWO_ON_ONE_HOST, 'forge.example.com:3000'), 'three-thousand');
+});
+
+test('a persisted `:443` matches a login whose url spells no port at all', () => {
+  // `https://h` and `https://h:443` are one endpoint written two ways, which is
+  // httpPortOf's rule and the reason the port is not re-derived here.
+  const logins = [{ name: 'plain', url: 'https://forge.example.com', ssh_host: 'ssh.example.com' }];
+  assert.equal(teaLoginNameForHost(logins, 'forge.example.com:443'), 'plain');
+});
+
+test('a port no login serves resolves to NO login rather than to a neighbour', () => {
+  assert.equal(teaLoginNameForHost(TWO_ON_ONE_HOST, 'forge.example.com:9999'), null);
+});
+
+test('a PORTLESS persisted host resolves exactly as it does today', () => {
+  // The port is a VETO and not a new requirement: with none stated, the first
+  // record in tea's own list order still wins.
+  assert.equal(teaLoginNameForHost(TWO_ON_ONE_HOST, 'forge.example.com'), 'three-thousand');
+  assert.equal(teaLoginNameForHost(TEA_LOGINS, 'forge.example.com'),
+    teaLoginNameForHost(TEA_LOGINS, 'forge.example.com'));
+});
+
+test('a host the grammar REFUSES answers null rather than throwing', () => {
+  // Same answer an empty or non-string host already gets: null is the caller's
+  // cue to take its no-login line, and there is no repair for a value that
+  // could not have been persisted through the write face.
+  for (const bad of ['forge.example.com:0443', 'forge.example.com:70000', '-forge.example.com',
+    'forge example.com', 'forge.example.com/x', '[::1]:3001']) {
+    assert.equal(teaLoginNameForHost(TWO_ON_ONE_HOST, bad), null, bad);
+  }
+});
+
 // --- scanIssueRefs ----------------------------------------------------------
 
 test('scanIssueRefs finds the three forms, dedupes, sorts, and mints no near-miss', () => {

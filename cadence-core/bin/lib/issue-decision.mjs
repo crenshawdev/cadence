@@ -69,7 +69,7 @@
 
 'use strict';
 
-import { missingForgeKeys } from './forge-decision.mjs';
+import { missingForgeKeys, splitForgeHost } from './forge-decision.mjs';
 
 /** open / closed, normalized across the three CLIs' spellings.
  * @param {string} raw @returns {'open'|'closed'|null} */
@@ -387,8 +387,10 @@ function splitOrigin(url) {
  *
  * THE PORT IS A VETO, NOT A NEW REQUIREMENT, which is what keeps every login
  * that resolves today resolving. A `host` handed in with no port (`httpPort`
- * null, which is every land-time call - the persisted `git.forge_host` is a
- * host and states no port) behaves byte for byte as before. With a port, a
+ * null - which a land-time call still is whenever the persisted
+ * `git.forge_host` states no port, and it may now state one: FRG-05 gave that
+ * key a `host[:port]` grammar and `teaLoginNameForHost` splits it and passes
+ * both halves) behaves byte for byte as before. With a port, a
  * login is REFUSED when it names this same hostname under a DIFFERENT http(s)
  * port, and is otherwise judged by the three fields exactly as it was. That
  * closes the confirmed case - each rival login's own `url` names its port -
@@ -513,16 +515,34 @@ export function classifyOrigin(originUrl) {
  * off an SSH endpoint, which is the failure `loginNamesHost`'s own header
  * records.
  *
+ * IT IS HANDED A `host[:port]`, NOT A BARE HOSTNAME (FRG-05). `git.forge_host`
+ * carries an optional port since its write face grew a grammar, so this
+ * function splits the persisted value with that ONE grammar - `splitForgeHost`
+ * - and passes both halves: the hostname where the hostname goes, the port as
+ * `loginNamesHost`'s `httpPort` argument. That argument existed and was null on
+ * every land-time call, so a user with two instances on one hostname landed
+ * against whichever login came first. The port half reaches the predicate as
+ * the same comparable decimal string `httpPortOf` produces, which the grammar's
+ * no-leading-zero rule is what guarantees - there is no normalization step
+ * here, by design.
+ *
+ * A HOST THE GRAMMAR REFUSES ANSWERS NULL, the same answer an empty or
+ * non-string host already gets. Null is the caller's cue to take its `no-login`
+ * line, and there is no honest repair for a value that could not have been
+ * persisted through the write face at all.
+ *
  * @param {unknown} logins the `tea login list --output json` reading, or null
- * @param {unknown} host the persisted instance host
+ * @param {unknown} host the persisted instance host, `hostname` or `hostname:port`
  * @returns {string|null} the login's `name`, or null when none matches
  */
 export function teaLoginNameForHost(logins, host) {
   if (!Array.isArray(logins)) return null;
   if (typeof host !== 'string' || !host.trim()) return null;
-  const wanted = host.trim().toLowerCase();
+  const split = splitForgeHost(host.trim());
+  if (!split) return null;
+  const wanted = split.hostname.toLowerCase();
   for (const login of logins) {
-    if (!loginNamesHost(login, wanted)) continue;
+    if (!loginNamesHost(login, wanted, split.port)) continue;
     const name = login && typeof login === 'object' ? login.name : null;
     if (typeof name === 'string' && name) return name;
   }
