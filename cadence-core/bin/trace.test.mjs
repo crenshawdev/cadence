@@ -275,6 +275,48 @@ test('appendEvent: after the reclaim the next append stops paying the budget', (
   assert.ok(ms < 50, `the append still paid the rotation budget: ${ms}ms`);
 });
 
+test('appendEvent: a losing append does NOT restart the abandoned claim clock (TRC-09)', () => {
+  // The reclaim's evidence is the sidecar's age, and the stamp that dates a
+  // claim is written BEFORE the link - so every append that loses the claim had
+  // just overwritten the only evidence the dead claimant left. On a record
+  // appended more often than the 30 s bound that restarts the clock on every
+  // append, and the abandoned claim never ages into a reclaim at all: the
+  // permanent disable TRC-09 exists to remove, on exactly the busy record it
+  // exists for.
+  const dir = root();
+  killedClaim(dir, 20_000);
+  const before = statSync(rotationClaimPath(dir)).mtimeMs;
+
+  // This append LOSES - 20 s is inside the bound - and must leave the claim
+  // dated where it found it.
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(statSync(tracePath(dir)).nlink, 2, 'the claim was broken inside the bound');
+  const after = statSync(rotationClaimPath(dir)).mtimeMs;
+  assert.equal(after, before,
+    `the losing append refreshed the claim: it aged ${Math.round(Date.now() - after)}ms, not ${Math.round(Date.now() - before)}ms`);
+
+  // And the clock it preserved is the one that reclaims: date the SAME sidecar
+  // past the bound and the next append rotates, where an append that had reset
+  // it would have to start the 30 s over.
+  const at = (Date.now() - 60_000) / 1000;
+  utimesSync(rotationClaimPath(dir), at, at);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(statSync(tracePath(dir)).nlink, 1, 'the abandoned claim was never reclaimed');
+});
+
+test('appendEvent: a losing append leaves a sidecar-less claim sidecar-less (D-02)', () => {
+  // The same restore, on the arm where there was nothing to restore. A claim
+  // taken before TRC-09 shipped carries no sidecar, D-02 reads that as LIVE,
+  // and a losing append that left its own stamp behind would date a live claim
+  // it does not hold - handing the next reader a 30 s countdown to breaking it.
+  const dir = root();
+  killedClaim(dir, null);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(statSync(tracePath(dir)).nlink, 2, 'the claim was evicted on missing evidence');
+  assert.equal(existsSync(rotationClaimPath(dir)), false,
+    'the losing append dated a claim it never held');
+});
+
 test('rotateTrace: a claim whose sidecar reads LIVE is left standing (TRC-09)', async () => {
   // The other side of the discriminator, and the reason it is a sidecar at all.
   // Breaking a claim a rotation is genuinely holding costs the whole record,
