@@ -777,102 +777,96 @@ test('#195: execute.md locates unconditionally and refuses an already-executed p
 
 // --- EXP-03: the locate step's replay stop, and the dispatch set it feeds ----
 
-test('EXP-03: execute.md refuses a phase whose every plan already reports complete', () => {
+test('EXP-03: execute.md asks the replay seam and obeys its answer', () => {
   // The defect (GH-137). A session that dies between the last task's commit and
   // the SUMMARY write leaves the phase deriving `planned` with real commits on
   // the branch, so the arm above it never fires and the next `/cad-execute <N>`
-  // re-dispatches work that is already done. The spike measured what that buys:
-  // zero commits and zero byte changes, so the cost is money and a false run
-  // record rather than a corrupted tree.
+  // re-dispatches work that is already done.
   //
-  // Two halves come back silently if this stops reading:
-  //   - the trigger, which a later edit can loosen from EVERY plan to any plan
-  //     (stranding a genuine multi-plan continuation) or from the FIRST LINE to
-  //     a whole-file match (a `PLAN COMPLETE` quoted in an open item fires it);
-  //   - the ORDER, since an arm carrying `/cad-undo` placed above the
-  //     `executed`/`complete` one is what the #195 test finds, so a correct
-  //     change there fails that test instead of this one.
-  // No byte counts and no report-path literal beyond the shape: the current
-  // run's path is still `plan-<k>.md`, which this same commit writes.
+  // WHAT COUNTS AS A REPLAY is not asserted here, deliberately. It lives in
+  // `planning.mjs replay-check` and is pinned against real fixture directories
+  // by `planning-replay-check.test.mjs` - the FIRST-LINE-exactly rule, the EVERY
+  // plan quantifier, `PLAN PARTIAL`, a `PLAN COMPLETE` quoted in a report body,
+  // a rotated `plan-<k>.<n>.md` sibling, and `--rerun`. This test pins the only
+  // half a prose file can own: that it ASKS, that it passes the override
+  // through, that it stops on the answer, and that it stops early enough.
+  //
+  // The split is the point. While this decision was prose, its every criterion
+  // was observable only by running `/cad-execute` for real and reading
+  // `trace.jsonl`, so none of them was ever checked.
   const execute = doc('cadence-core', 'workflows', 'execute.md');
   const locate = stepBody(execute, 'locate', 'execute.md');
   const arms = locate.split(/\n- /).slice(1);
 
-  // 1. Exactly one arm carries the discriminator. Found by `PLAN COMPLETE` and
-  //    never by `/cad-undo`, which two arms now share.
-  const replayArms = arms.filter((a) => a.includes('PLAN COMPLETE'));
+  // 1. Exactly one arm asks the seam.
+  const replayArms = arms.filter((a) => a.includes('replay-check'));
   assert.equal(replayArms.length, 1,
-    "execute.md's locate step should carry exactly one arm naming `PLAN COMPLETE` - the replay "
+    "execute.md's locate step should carry exactly one arm calling `replay-check` - the replay "
     + `stop - and carries ${replayArms.length}`);
   const replay = replayArms[0];
 
-  // 2. The TRIGGER clause only, taken before `-> stop:`: a rationale sentence
-  //    below it satisfies none of these.
-  const trigger = replay.split(/->\s*stop:/)[0];
-  assert.ok(trigger && trigger !== replay,
-    "the replay arm has no `-> stop:`, so its trigger clause cannot be read apart from its "
-    + `rationale: ${replay}`);
-  assert.match(trigger, /`PLAN COMPLETE`/,
-    `the replay trigger does not name \`PLAN COMPLETE\`: ${trigger}`);
-  assert.match(trigger, /\bFIRST LINE\b[\s\S]*\bexactly\b/,
-    'the replay trigger does not pin the FIRST LINE reading EXACTLY that status, so a later '
-    + `edit loosening it to a substring or whole-body match would still pass: ${trigger}`);
-  assert.match(trigger, /\bEVERY plan\b/,
-    'the replay trigger does not quantify over EVERY plan, so a multi-plan phase with one '
-    + `finished plan would be stranded mid-flight: ${trigger}`);
-  assert.match(trigger, /--rerun/,
-    `the replay trigger does not exclude \`--rerun\`, so the documented override cannot get past it: ${trigger}`);
+  // 2. It calls the seam, and passes the override through. An arm that drops
+  //    `--rerun` makes the documented way past the stop unreachable.
+  assert.match(replay, /planning\.mjs" replay-check --phase <N>/,
+    `the replay arm does not invoke \`replay-check --phase <N>\`: ${replay}`);
+  assert.match(replay, /--rerun/,
+    'the replay arm never passes `--rerun` to the seam, so the documented override cannot get '
+    + `past the stop: ${replay}`);
 
-  // 3. The whole arm: the path shape it reads, the glob it must not read, the
-  //    case that does not fire, and both remedies.
-  assert.match(replay, /reports\/plan-<k>\.md/,
-    'the replay arm names no `reports/plan-<k>.md` path, so nothing says which file it reads');
+  // 3. It branches on the seam's OWN fields rather than re-deriving them, and
+  //    names the paths the seam handed back rather than rebuilding filenames.
+  assert.match(replay, /`replay: true`/,
+    `the replay arm does not act on the seam's \`replay\` field: ${replay}`);
+  assert.match(replay, /`replay: false`/,
+    'the replay arm states no not-fire case, so a genuine continuation has no written route '
+    + `through: ${replay}`);
+  assert.match(replay, /reports_read/,
+    'the replay arm does not name the paths from `reports_read`, so its stop text rebuilds '
+    + `filenames the seam already returned: ${replay}`);
   assert.doesNotMatch(replay, /plan-\*\.md/,
     'the replay arm reads a `plan-*.md` glob, which lets a rotated `plan-<k>.<n>.md` report '
     + 'from an OLDER run decide this one');
-  assert.match(replay, /PLAN PARTIAL/,
-    'the replay arm does not name `PLAN PARTIAL` as a case that does not fire, so a genuine '
-    + 'continuation reads as a replay');
-  assert.match(replay, /\/cad-undo <N>/, 'the replay arm does not name `/cad-undo <N>`');
-  assert.match(replay, /--rerun/,
-    'the replay arm names no deliberate way through, so an intentional re-run has no route '
-    + 'but editing the workflow');
 
-  // 4. Ordering, both halves - each regresses silently on its own.
-  const refusal = arms.find((a) => a.includes('/cad-undo'));
+  // 4. Both remedies, so a refused user is not stuck.
+  assert.match(replay, /\/cad-undo <N>/, 'the replay arm does not name `/cad-undo <N>`');
+
+  // 5. Ordering, both halves - each regresses silently on its own.
+  const refusal = arms.find((a) => a.includes('/cad-undo') && !a.includes('replay-check'));
   assert.ok(arms.indexOf(replay) > arms.indexOf(refusal),
     'the replay arm sits ABOVE the `executed`/`complete` refusal, so `arms.find(includes '
     + "'/cad-undo')` in the #195 test reads the replay arm as the one that must trigger on "
     + 'those two derived statuses');
+  assert.match(replay, /before any\s+executor dispatch/,
+    'the replay arm does not say it stops before any executor dispatch, which is the whole '
+    + `point of stopping: ${replay}`);
   assert.ok(execute.indexOf('<step name="locate">') < execute.indexOf('<step name="git_guard">'),
     '`locate` no longer opens before `git_guard`, so the replay stop lands after the '
     + 'protected-branch question it exists to avoid asking');
 });
 
 test('EXP-03: only the plans without a completed report reach a dispatch', () => {
-  // The other half of the same defect. The stop above covers the phase where
-  // EVERY plan finished; a phase whose plan 1 finished and whose plan 2 never
-  // started must still run, with plan 1 NOT re-dispatched. `execute.md` had no
-  // per-plan skip at all - `execute_sequential` opened "For each plan in order"
-  // and no report was read ahead of it - so this is new surface, and it
-  // regresses by reverting one sentence.
+  // The other half of the same defect: a phase whose plan 1 finished and whose
+  // plan 2 never started must still run, with plan 1 NOT re-dispatched. WHICH
+  // plans those are is `replay-check`'s `dispatch_set` and is pinned by
+  // `planning-replay-check.test.mjs`; what is pinned here is that both dispatch
+  // SITES honour it.
   //
-  // Both dispatch SITES are pinned, not just the rail. A rail stated only in
-  // `locate` with `execute-parallel.md` still saying "per plan" is exactly how
-  // plan 1 gets re-dispatched on a non-overlapping two-plan phase, and that
-  // file is the site that ACTS on the parallel path.
+  // Both sites, not just the rail. A rail stated only in `locate` with
+  // `execute-parallel.md` still saying "per plan" is exactly how plan 1 gets
+  // re-dispatched on a non-overlapping two-plan phase, and that file is the site
+  // that ACTS on the parallel path.
   const execute = doc('cadence-core', 'workflows', 'execute.md');
   const locate = stepBody(execute, 'locate', 'execute.md');
 
-  // 1. `locate` defines the set, by subtraction, and names both paths.
+  // 1. `locate` takes the set from the seam and names both paths.
   const i = locate.indexOf('**The dispatch set.**');
   assert.notEqual(i, -1,
-    "execute.md's locate step defines no dispatch set, so the read the replay arm already "
-    + 'made is spent on one all-or-nothing answer and a part-finished phase re-runs its '
+    "execute.md's locate step defines no dispatch set, so the answer the replay call already "
+    + 'returned is spent on one all-or-nothing decision and a part-finished phase re-runs its '
     + 'finished plans');
   const set = locate.slice(i).split('\n\n')[0];
-  assert.match(set, /`PLAN COMPLETE`/,
-    `the dispatch set does not exclude plans by their \`PLAN COMPLETE\` report: ${set}`);
+  assert.match(set, /dispatch_set/,
+    `the dispatch set is not taken from the seam's \`dispatch_set\` field: ${set}`);
   assert.match(set, /--rerun/,
     `the dispatch set does not say what \`--rerun\` does to it, so the override is ambiguous: ${set}`);
   assert.match(set, /sequential/i,

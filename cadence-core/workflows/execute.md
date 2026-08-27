@@ -37,41 +37,35 @@ Resolve the phase:
   refused beside `executed`. Stop HERE, before `git_guard`: before the
   protected-branch guard, before the `phase_start` trace anchor, and before any
   executor dispatch.
-- No `--rerun` token on the command line, AND for EVERY plan file the phase
-  lists, `<plandir>/reports/plan-<k>.md` exists and its FIRST LINE reads exactly
-  `PLAN COMPLETE` -> stop: "Phase <N> already has a completed executor report
-  for every plan (<name each report path you read>). A session died between the
-  last task's commit and the SUMMARY write: the work is on the branch, so
-  dispatching again would pay for it a second time and overwrite those reports.
-  Run /cad-undo <N> first, then /cad-execute <N>. To run over that record
-  anyway: /cad-execute <N> --rerun." `k` is the number in `PLAN-<k>.md`, and `1`
-  for a bare `PLAN.md` - the same derivation `<report_file>` in
-  `skills/cad-executor-contract/SKILL.md` states. The `status` envelope OMITS
-  `plans` for a phase holding exactly one `PLAN.md`, listing them only when they
-  deviate from that, so an absent `plans` key means one plan at `k` of 1 and
-  never an empty set that would make this trigger vacuously true.
-  Read the FIRST LINE only - `head -1`, not a whole-file Read - because the
-  report holds the task table this workflow deliberately keeps out of the
-  orchestrator's context and this arm has no use for it; the first line is also
-  the only place the status word is grammatically pinned, so a `PLAN COMPLETE`
-  quoted in a Note or an open item cannot fire the stop. Name each plan's exact
-  filename and never glob the `reports/` directory: `bin/lib/report-rotation.mjs`
-  mints
-  `plan-<k>.<n>.md` siblings when an executor rotates a prior run's report
-  aside, and a glob would let an older run's rotated report decide this one.
-  Make no git read here - the report file is the whole discriminator.
-  It does NOT fire, and the run proceeds to dispatch, when the phase has no
-  `reports/` directory, when any one plan has no report, or when a first line
-  reads `PLAN PARTIAL` or `PLAN CHECKPOINT: <type>` - each of those is a genuine
-  continuation. Stop HERE, before `git_guard`: before the protected-branch
-  guard, before the `phase_start` trace anchor, and before any executor
-  dispatch.
+- Ask the seam whether this phase's work is already committed, before anything
+  is spent. Pass `--rerun` exactly when the command line carried it:
 
-**The dispatch set.** Every plan file the phase lists, MINUS every plan whose
-`<plandir>/reports/plan-<k>.md` first line reads `PLAN COMPLETE` - the same read
-the arm above already made, spent per plan rather than collapsed into one
-answer. Under `--rerun` the dispatch set is every plan the phase lists,
-unchanged, which is what keeps that override meaning what it says. The rail,
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" replay-check --phase <N> [--rerun]
+  ```
+
+  `replay: true` -> stop: "Phase <N> already has a completed executor report for
+  every plan (name every path the envelope's `reports_read` lists). A session
+  died between the last task's commit and the SUMMARY write: the work is on the
+  branch, so dispatching again would pay for it a second time and overwrite those
+  reports. Run /cad-undo <N> first, then /cad-execute <N>. To run over that
+  record anyway: /cad-execute <N> --rerun." Stop HERE, before `git_guard`:
+  before the protected-branch guard, before the `phase_start` trace anchor, and
+  before any executor dispatch.
+  `replay: false` -> the run proceeds to dispatch. WHAT makes it false is the
+  seam's to decide and not this file's to restate: a phase with no `reports/`
+  directory, any one plan without a report, a first line reading `PLAN PARTIAL`
+  or `PLAN CHECKPOINT: <type>`, a `PLAN COMPLETE` quoted inside a report body
+  rather than on its first line, and a rotated `plan-<k>.<n>.md` sibling are each
+  a case `cadence-core/bin/planning-replay-check.test.mjs` pins against a real
+  fixture directory. Restating the rule here is how the two come to disagree, and
+  only one of them is tested.
+  `ok:false` -> relay its `reason` and `hint` and stop.
+
+**The dispatch set.** The `dispatch_set` on that same envelope - the phase's
+plan files minus every plan already reporting complete, and every plan the phase
+lists under `--rerun`. ONE call answers both questions, so a part-finished phase
+costs no second read. The rail,
 stated once and holding for both paths: no step below dispatches a plan outside
 the dispatch set, on the sequential path or the parallel one. A skipped plan is
 never dispatched, so it gets no bracket, no `risk-check` range and no `diff`
