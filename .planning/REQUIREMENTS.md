@@ -5,29 +5,34 @@
 
 ## Active
 
-`v3.7.5 - the defects a user's own project feels` opened 2026-08-26 with five
-phases. `/cad-plan` seeds each Traceability row as its phase is planned, so an
-id below that no plan has picked up yet surfaces as `unpicked` in `/cad-audit`
-rather than as a hand-written row.
+**No cycle open.** The shipped ids are rows under the `Shipped` heading below,
+and `/cad-phase add` is what opens the next cycle: it is the only workflow that
+appends a phase line to an existing roadmap, and `/cad-plan` seeds each
+Traceability row as its phase is planned. The ids under `## Deferred` keep their
+own reasons and their own promote conditions, and none of them is promoted here
+to fill this section.
 
-The cycle has no subject; it has a standard. Every open issue was re-triaged
-2026-08-26 against one question - would a user running Cadence on their own
-project ever feel this - and these eight are what answered yes. Nothing here was
-promoted out of deferral; all eight come off the public tracker.
-
+`v3.7.5 - the defects a user's own project feels` opened 2026-08-26 and closed
+2026-08-27. Five phases, eight ids - `FRG-03`, `FRG-04`, `FRG-05`, `FRG-06`,
+`EXP-03`, `RSK-06`, `TRC-09`, `RCL-08` - are rows under the `Shipped` heading
+below, all Complete. The cycle had no subject, it had a standard: every open
+issue was re-triaged 2026-08-26 against one question, would a user running
+Cadence on their own project ever feel this, and these eight are what answered
+yes. Nothing was promoted out of deferral; all eight came off the public
+tracker.
 
 **Excluded on the same standard.** GH-148 was filed 2026-08-26 out of the
 GH-137 spike and is real, but its consequence lands in a trace record users do
 not read. GH-145 is a genuine deadline for THIS repo - `reads.jsonl` at 7.00 of
 8.00 MiB after 935 sessions of Cadence-on-Cadence - and not a user's. Both wait
-for a cycle whose standard admits them, rather than riding this one on urgency
-that belongs to the maintainer.
+for a cycle whose standard admits them, rather than riding one on urgency that
+belongs to the maintainer.
 
-## Shipped` below, and `/cad-phase add` is what opens the next cycle: it is the
-only workflow that appends a phase line to an existing roadmap, and `/cad-plan`
-seeds each Traceability row as its phase is planned. The ids under `## Deferred`
-keep their own reasons and their own promote conditions, and none of them is
-promoted here to fill this section.
+**Recorded, not delivered.** Two items GH-93 names did not ship in `RCL-08` and
+are on the phase 5 residue in `.planning/ARCHIVE.md`: the multi-query union,
+which changes the `recall` seam signature that `cadence-core/references/recall.md`
+pins for three callers, and the failure records sitting outside the corpus,
+which needs a scope decision this cycle did not take.
 
 `v3.7.4 - cut the cost the record can now measure` opened 2026-08-26 and closed
 2026-08-27. Four phases, five ids - `BUD-03`, `RSK-05`, `RNG-03`, `TRC-07`,
