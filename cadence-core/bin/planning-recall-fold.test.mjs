@@ -31,7 +31,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tokenize } from './lib/bm25.mjs';
+import { STOPWORDS, buildIndex, tokenize } from './lib/bm25.mjs';
 import { makeTree } from './planning.test.mjs';
 import { recall } from './planning-recall.test.mjs';
 
@@ -273,5 +273,60 @@ test('fold at the seam: each inflected group returns one and the same document s
           `query \`${member}\` did not return ${owner[other]}, the document that carries \`${other}\` and not \`${member}\`; got ${got.join(' ') || '(nothing)'}`);
       }
     }
+  }
+});
+
+// --- the stopword filter still tests the RAW token -----------------------------
+//
+// D-03's ordering, made falsifiable rather than merely intended. The filter
+// runs BEFORE the fold, so a word whose FOLD is a stopword still reaches the
+// index. Fold first and the filter would delete it, and a query for that word
+// would return NOTHING rather than return less than it should - strictly worse
+// than the no-fold behaviour this replaced.
+
+/** Words that are not stopwords themselves but whose FOLD is one. */
+const LANDS_ON_A_STOPWORD = ['being', 'its'];
+
+test('fold ordering: a word whose fold is a stopword is still in the index', () => {
+  for (const word of LANDS_ON_A_STOPWORD) {
+    assert.ok(!STOPWORDS.has(word), `\`${word}\` is itself a stopword, so it proves nothing here`);
+    const term = folded(word);
+    assert.ok(STOPWORDS.has(term),
+      `\`${word}\` folds to \`${term}\`, which is not in STOPWORDS - this row no longer tests the ordering`);
+    const index = buildIndex([word]);
+    assert.equal(index.df.get(term), 1,
+      `indexing a document whose only word is \`${word}\` left no \`${term}\` term - the filter ran AFTER the fold`);
+    assert.equal(index.lens[0], 1);
+  }
+});
+
+// MEASURED, and it corrects CONTEXT D-03's parenthetical: `noted` does NOT land
+// on the stopword `not`. Step 1b strips the `ed` to `not` and then its cleanup
+// restores the `e`, because `not` ends consonant-vowel-consonant - the same
+// branch that carries named -> name and refused -> refuse. D-03's example reads
+// from a two-branch cleanup that D-02's own worked example rules out. The
+// ORDERING D-03 locks is untouched; `being` and `its` are what demonstrate it.
+test('fold ordering: `noted` reaches `note`, not the stopword `not`', () => {
+  assert.equal(folded('noted'), 'note');
+  assert.ok(STOPWORDS.has('not'));
+});
+
+test('fold ordering: a document of raw stopwords alone still contributes nothing', () => {
+  // Without this the arms above could be satisfied by a filter that simply
+  // stopped running.
+  const only = 'the and of is it be';
+  assert.deepEqual(tokenize(only), []);
+  const index = buildIndex([only]);
+  assert.equal(index.df.size, 0);
+  assert.equal(index.lens[0], 0);
+});
+
+test('fold ordering: at the seam, `notes` and `being` both still return results', () => {
+  const dir = fixtureRoot();
+  for (const query of ['notes', 'being']) {
+    const r = recall(query, dir);
+    assert.equal(r.json.ok, true);
+    assert.ok(r.json.total >= 1,
+      `query \`${query}\` returned nothing over the fixture corpus`);
   }
 });
