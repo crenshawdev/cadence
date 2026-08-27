@@ -1,0 +1,53 @@
+{
+  "phase": "4",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "93edea1e",
+  "head": "252ba5a9",
+  "base_id": "93edea1e391ceb1722792602c823cd988936fc82",
+  "head_id": "252ba5a9ac5d1b446e0294ebd4717957a357c42c",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/trace.mjs",
+      "line": 711,
+      "severity": "blocker",
+      "claim": "A SIGKILL in the new reclaimer's window after it refreshes the sidecar but before it evicts the stale hard-link claim can still disable rotation permanently under normal continued appends.",
+      "failure_scenario": "Start with a dead hard-link claim whose sidecar is older than 30s. A writer observes it as stale, executes `writeFileSync(claim, ...)`, then is SIGKILLed before reaching the `renameSync(sibling, path)` eviction. The original dead claim remains, but its sidecar is now fresh. Each subsequent append while the record is over the bound calls `claimAbandoned` before writing, sees the fresh sidecar as live, then overwrites its mtime again, gets EEXIST from `linkSync`, waits, and returns unrotated. Appends frequent enough to be less than 30 seconds apart keep renewing the timestamp indefinitely, so the stale claim never becomes reclaimable—the exact permanent-disable outcome this change is intended to prevent.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "aa68aa6a",
+      "base_id": "93edea1e391ceb1722792602c823cd988936fc82",
+      "head_id": "252ba5a9ac5d1b446e0294ebd4717957a357c42c"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/trace.mjs",
+      "line": 787,
+      "severity": "high",
+      "claim": "The age-only sidecar lease can evict a still-live rotation merely because its process is suspended for more than 30 seconds, causing the documented record-loss race.",
+      "failure_scenario": "A process successfully creates the hard-link claim and sidecar, then is SIGSTOPped or descheduled/suspended for over `CLAIM_STALE_MS` before it reads and swaps the record. A second writer treats the aged sidecar as abandoned and renames the live claimant's sibling at this line. When the original process resumes, its `readFileSync(sibling)` can see ENOENT and fall back to an empty carry, then swap a marker-only record over the live trace; concurrent cleanup can remove the remaining old inode. A fixed timestamp that is not renewed by the holder cannot distinguish SIGKILL from this live-but-paused holder, so reclaiming based solely on it is destructive.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": ".planning/phases/4/CONTEXT.md",
+        "line": 32,
+        "note": "D-01 rejects exactly this alternative by name - 'a suspended host or a stalled write makes it break a LIVE claim, which destroys the record' - and chooses the age-only sidecar anyway; D-03 sets the bound at 30,000 ms, about 4,600x the slowest measured rotation (6.50 ms over five 1 MiB runs). The scenario is that locked decision's stated and priced residual, not a defect this diff introduced."
+      },
+      "base_id": "93edea1e391ceb1722792602c823cd988936fc82",
+      "head_id": "252ba5a9ac5d1b446e0294ebd4717957a357c42c"
+    }
+  ]
+}

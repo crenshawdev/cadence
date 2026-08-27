@@ -1,0 +1,35 @@
+{
+  "phase": "4",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 2,
+  "base": "252ba5a9",
+  "head": "aa68aa6a",
+  "base_id": "252ba5a9ac5d1b446e0294ebd4717957a357c42c",
+  "head_id": "aa68aa6aeb2db15acad8460affe6ef8452bd0cf3",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/trace.mjs",
+      "line": 925,
+      "severity": "high",
+      "claim": "The \"still mine\" mtime check is a non-atomic check-then-rewrite, so a losing writer can rewind or delete the sidecar of a newly acquired claim.",
+      "failure_scenario": "Writer A loses an old claim, records its prior `found` mtime, stamps the sidecar, and reaches `statSync(dated).mtimeMs === mine`. Before A executes `utimesSync` (or `unlinkSync` when `found === null`), the old claimant completes and removes its claim, and writer B creates a new claim at the same paths and stamps its sidecar. A then restores/deletes B's sidecar based on its stale check. The fresh live claim now appears as old (or sidecar-less), allowing another rotation attempt to reclaim it while B is still rotating, risking concurrent rotation and trace corruption. Thus the original abandoned-claim clock issue is addressed in the uncontended losing case, but this fix introduces an unsafe concurrent-claim race.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "aa68aa6a",
+      "base_id": "252ba5a9ac5d1b446e0294ebd4717957a357c42c",
+      "head_id": "aa68aa6aeb2db15acad8460affe6ef8452bd0cf3"
+    }
+  ]
+}
