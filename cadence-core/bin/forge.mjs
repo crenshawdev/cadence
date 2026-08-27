@@ -76,9 +76,17 @@
 // pinned argv wires `origin` - through the `--remoteName origin` in it - so on
 // the other two arms this seam runs `git remote add origin <url>` itself after
 // the create. The URL is the CALLER's to supply and this seam's to validate:
-// `create` reads no config and is given no host of its own, and `tea repos
-// create`'s pinned argv carries no `--output json` to read a clone URL back
-// from, which reading the child's stdout for would sit against D-16. So the
+// `tea repos create`'s pinned argv carries no `--output json` to read a clone
+// URL back from, which reading the child's stdout for would sit against D-16.
+//
+// `create` DOES READ THE RECORD, and reads it for ONE question (FRG-06): does
+// this `--remote-url` name the port the instance the repository already
+// CONFIGURED is served on. It used to read no config at all and take the URL's
+// correctness on the caller's word, so a `--remote-url` on the wrong port wired
+// an `origin` that answers nothing, silently. The read is the merged config for
+// `--dir`, exactly as `detect` reads it, and the check is keyed on the
+// PERSISTED PORT rather than on a provider name - `github` and `gitlab` carry a
+// null `git.forge_host` by contract, so nothing fires there. So the
 // missing-URL refusal fires BEFORE the create rather than after it - refusing
 // afterwards would leave a real repository on the instance with no way to reach
 // it, which is the one outcome worse than not creating it.
@@ -100,7 +108,9 @@
 //   create --provider <p> --repo <owner/name> --confirmed [--remote-url <url>]
 //          [--dir <path>]
 //     Creates that repository, PRIVATE, through the CLI the provider names.
-//     --dir is the directory the CLI is run in. --remote-url is REQUIRED on the
+//     --dir is the directory the CLI is run in AND the planning root whose
+//     `.planning/config.json` names the instance the URL is checked against.
+//     --remote-url is REQUIRED on the
 //     providers whose create argv wires no git remote (forgejo and github), and
 //     unread on the one that wires its own (gitlab); on forgejo it names the
 //     instance the login is matched against as well. Every refusal precedes the
@@ -116,7 +126,8 @@ import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
 import { classifyOrigin, loginNamesHost } from './lib/issue-decision.mjs';
 import {
-  CREATE_TABLE, PROVIDER_TABLE, decideForge, installedProviders, originDefaults, splitSlug,
+  CREATE_TABLE, PROVIDER_TABLE, decideForge, installedProviders, originDefaults,
+  splitForgeHost, splitSlug,
 } from './lib/forge-decision.mjs';
 
 /** The bound on the ONE `git` read this seam makes. `git remote get-url` is a
@@ -328,7 +339,8 @@ function detect(dir) {
  * on every row and takes no visibility argument, so there is nothing here to
  * pass and nothing for a caller to get wrong.
  *
- * @param {string} dir the directory the CLI is run in
+ * @param {string} dir the directory the CLI is run in, and the planning root
+ *   whose persisted `git.forge_host` names the instance to check the URL against
  * @param {{provider: string, repo: string, confirmed: boolean,
  *   remoteUrl: string|undefined}} args
  */
@@ -399,10 +411,54 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
     }
   }
 
+  // DOES THIS URL NAME THE INSTANCE THE REPOSITORY ALREADY CONFIGURED (FRG-06)?
+  // Read BEFORE the PATH check and before the login probe, so a refusal here
+  // has spawned nothing at all - the ordering this function's header states.
+  //
+  // The question is keyed on the PERSISTED PORT and never on a provider name.
+  // A `git.forge_host` naming no port fires nothing below and behaviour is byte
+  // for byte what it was, which is what keeps `github` and `gitlab` out of this
+  // entirely: their host key is null by contract.
+  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
+  const instance = splitForgeHost((config.git || {}).forge_host ?? null);
+  if (instance && instance.port !== null && classified.host === instance.hostname) {
+    // A `--remote-url` naming a DIFFERENT host is not compared at all: that is
+    // the split-endpoint deployment this repository itself has (`origin` on
+    // `ssh.jcrenshaw.dev`, the instance on `git.jcrenshaw.dev`), and refusing it
+    // would refuse a working shape.
+    //
+    // (a) An http(s) URL is comparable, whether it SPELLED its port or took its
+    //     scheme's default: `https://h` and `https://h:443` are one endpoint
+    //     written two ways, so a persisted `:3001` is a mismatch against both.
+    // (b) A URL that spelled no port and is not http(s) is the scp form, whose
+    //     colon separates host from path and which has no port syntax at all -
+    //     so it can never name the instance the user configured, and it implies
+    //     SSH's own 22. The refusal must be ESCAPABLE, because a user with a
+    //     real SSH-on-22 instance has to have a way through: the hint names the
+    //     two explicit spellings that pass.
+    // (c) A port spelled over a NON-http(s) scheme is ACCEPTED. An SSH port and
+    //     a web port are different endpoints of one instance, and comparing
+    //     them is exactly the mistake `httpPortOf`'s header records.
+    //
+    // Nothing a third party printed reaches the reason: the two ports named are
+    // the persisted config value and the caller's own argument.
+    const urlPort = classified.httpPort !== null ? classified.httpPort
+      : (classified.portSpelled ? null : '22');
+    if (urlPort !== null && urlPort !== instance.port) {
+      emit({
+        ok: false,
+        reason: `this repository's forge instance is ${instance.hostname} on port ${instance.port}, but --remote-url names port ${urlPort} on that same host: an origin wired to it would answer nothing`,
+        detail: null, warnings,
+        hint: `pass --remote-url naming the configured port - https://${instance.hostname}:${instance.port}/<owner>/<name>.git, or ssh://git@${instance.hostname}:<ssh-port>/<owner>/<name>.git when the SSH endpoint is on a different port - or change git.forge_host if the instance really moved`,
+      });
+      return;
+    }
+  }
+
   const bin = PROVIDER_TABLE[provider];
   if (!onPath(bin)) {
     emit({ ok: false, reason: `${provider} was selected but ${bin} does not resolve on PATH, so there is nothing to create the repository with`,
-      detail: null,
+      detail: null, warnings,
       hint: `install ${bin} and re-run this step, or re-run setup and pick a provider whose CLI is installed` });
     return;
   }
@@ -426,7 +482,7 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
       ? null : teaLoginFor(bin, dir, classified.host, classified.httpPort);
     if (!login) {
       emit({ ok: false, reason: `no ${bin} login serves ${classified.host ?? 'that instance'}, so there is no way to tell whether ${owner} is your own account or an organization there`,
-        detail: null,
+        detail: null, warnings,
         hint: `run \`${bin} login add\` for that instance and re-run this step - ${bin} needs a login on it before a repository can be created with the right owner` });
       return;
     }
@@ -437,7 +493,7 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
     // names the provider and the operation, and a forge CLI's stderr is exactly
     // where a token or an authenticated URL turns up.
     emit({ ok: false, reason: `${bin} could not create ${owner}/${name}: the create command failed`,
-      detail: null,
+      detail: null, warnings,
       hint: `run ${bin} yourself in this directory to see why - a missing login and a name already taken are the two common answers - then re-run this step` });
     return;
   }
@@ -452,14 +508,14 @@ function create(dir, { provider, repo, confirmed, remoteUrl }) {
     if (!run('git', ['-C', dir, 'remote', 'add', 'origin', remoteUrl],
       { cwd: dir, timeout: GIT_TIMEOUT_MS }).ok) {
       emit({ ok: false, reason: `${owner}/${name} was created on ${provider}, but git remote add origin failed: the repository exists and this checkout cannot reach it`,
-        detail: null, created: true, remote_wired: false,
+        detail: null, warnings, created: true, remote_wired: false,
         hint: 'add the remote yourself - `git remote add origin <url>` in this directory - the repository is already there and must not be created again' });
       return;
     }
   }
 
   emit({ ok: true, provider, owner, repo: `${owner}/${name}`,
-    visibility: 'private', remote_wired: true, detail: null });
+    visibility: 'private', remote_wired: true, detail: null, warnings });
 }
 
 const argv = process.argv.slice(2);
