@@ -15,32 +15,6 @@ The cycle has no subject; it has a standard. Every open issue was re-triaged
 project ever feel this - and these eight are what answered yes. Nothing here was
 promoted out of deferral; all eight come off the public tracker.
 
-- **FRG-03**: `git.forge_host` can address an instance on a non-default port,
-  or `loginNamesHost` stops comparing a port half it is never given - one of
-  the two, decided at phase 1 planning (GH-106, OQ-1 in ROADMAP). This is the
-  hard block: today a user on `forge.example:3001` cannot state it at all
-- **FRG-04**: `forge.mjs create` refuses a `--remote-url` whose port the
-  instance does not serve, rather than wiring a wrong-port origin silently
-  (GH-103)
-- **FRG-05**: a forge slug or host the user TYPES is shape-checked before it is
-  persisted, not only the origin-derived default. The persisted record drives
-  live repository creation and issue filing, so an unvalidated value is not
-  cosmetic (GH-104)
-- **FRG-06**: the gitlab arm of `forge.mjs create` refuses a `--remote-url` by
-  naming its conflict with the pinned `--remoteName origin`, rather than
-  accepting an argument it will never read (GH-105)
-- **EXP-03**: `/cad-execute` refuses a phase whose plans are already committed,
-  before any executor is dispatched (GH-137). Its blast radius is MEASURED, not
-  assumed: `.planning/spikes/execute-replay-blast-radius/SPIKE.md` ran two real
-  executor dispatches against already-committed work, both noisy, which is why
-  this is a guard and not a resume path. Read the spike before planning phase 2
-  rather than re-deriving it
-- **RSK-06**: the risk detector stops re-tripping on reviewer text stored in
-  `ADJUDICATION-*.json`, without weakening detection on code paths (GH-108)
-- **TRC-09**: a `rotateTrace` claim abandoned by a killed process is reclaimed
-  on the next append, so the bound survives the kill (GH-146)
-- **RCL-08**: recall folds suffixes identically at index and query time, so
-  `seam` matches `seams` (GH-93)
 
 **Excluded on the same standard.** GH-148 was filed 2026-08-26 out of the
 GH-137 spike and is real, but its consequence lands in a trace record users do
@@ -324,6 +298,14 @@ parses only the Traceability table).
 | RNG-03 (the rung label stops foreclosing a shared cached prefix across a role's rungs, with TRC-05's figures proving what it recovered (GH-91). Promoted out of deferral 2026-08-26. Its LAYOUT half is phase 2 and is unblocked; its MEASUREMENT half rides phase 3, because TRC-05 shipped the recording path and the hook still cannot reach it (see TRC-07)) | 2 | Complete | v3.7.4 |
 | TRC-07 (the two prompt-cache figures reach the bracket for every worker that STOPPED, not only the ones the hook could both identify and call terminal. Promoted out of deferral 2026-08-26 at phase 2 planning, as phase 3. Its gathered context - seven durable decisions, six acceptance criteria and the 2026-08-26 baseline - is at `21fad7f3:.planning/phases/2/CONTEXT.md`; recover it with `git show` rather than re-gathering. Two figures in that context are now understated and must be re-measured before planning: the NOT-TERMINAL rate is 16 of 16 for transcripts written 2026-08-26 against 253 of 1,332 (19.0%) before it, and the second-worker identity loss is not the 5.4% of concurrent dispatches it records but total and permanent for five of six roles, because 11 stale `unpaired` rows spanning 2026-08-09 to 2026-08-26 are counted as open workers forever. That last point also re-opens its D-06: `cad-verifier` has a stale row, so the hook would mis-attribute to an archived phase-3 bracket rather than abstain) | 3 | Complete | v3.7.4 |
 | TRC-08 (`.planning/trace.jsonl` cannot reach a state where every append fails forever. It write-deads at 1 MiB with no rotation, reset or archive path (GH-138), measured 2026-08-26 at 567,248 B, 54.1% of the cap, across roughly nine milestones. `milestone-prune` archives phase directories and does not touch the trace, confirmed at the `v3.7.3` close) | 4 | Complete | v3.7.4 |
+| FRG-03 (`git.forge_host` can address an instance on a non-default port, or `loginNamesHost` stops comparing a port half it is never given - one of the two, decided at phase 1 planning (GH-106, OQ-1 in ROADMAP). This is the hard block: today a user on `forge.example:3001` cannot state it at all) | 1 | Complete | v3.7.5 |
+| FRG-04 (`forge.mjs create` refuses a `--remote-url` whose port the instance does not serve, rather than wiring a wrong-port origin silently (GH-103)) | 1 | Complete | v3.7.5 |
+| FRG-05 (a forge slug or host the user TYPES is shape-checked before it is persisted, not only the origin-derived default. The persisted record drives live repository creation and issue filing, so an unvalidated value is not cosmetic (GH-104)) | 1 | Complete | v3.7.5 |
+| FRG-06 (the gitlab arm of `forge.mjs create` refuses a `--remote-url` by naming its conflict with the pinned `--remoteName origin`, rather than accepting an argument it will never read (GH-105)) | 1 | Complete | v3.7.5 |
+| EXP-03 (`/cad-execute` refuses a phase whose plans are already committed, before any executor is dispatched (GH-137). Its blast radius is MEASURED, not assumed: `.planning/spikes/execute-replay-blast-radius/SPIKE.md` ran two real executor dispatches against already-committed work, both noisy, which is why this is a guard and not a resume path. Read the spike before planning phase 2 rather than re-deriving it) | 2 | Complete | v3.7.5 |
+| RSK-06 (the risk detector stops re-tripping on reviewer text stored in `ADJUDICATION-*.json`, without weakening detection on code paths (GH-108)) | 3 | Complete | v3.7.5 |
+| TRC-09 (a `rotateTrace` claim abandoned by a killed process is reclaimed on the next append, so the bound survives the kill (GH-146)) | 4 | Complete | v3.7.5 |
+| RCL-08 (recall folds suffixes identically at index and query time, so `seam` matches `seams` (GH-93)) | 5 | Complete | v3.7.5 |
 
 ## Deferred
 
@@ -430,14 +412,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FRG-03 | Phase 1 | Complete |
-| FRG-04 | Phase 1 | Complete |
-| FRG-05 | Phase 1 | Complete |
-| FRG-06 | Phase 1 | Complete |
-| EXP-03 | Phase 2 | Complete |
-| RSK-06 | Phase 3 | Complete |
-| TRC-09 | Phase 4 | Complete |
-| RCL-08 | Phase 5 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
