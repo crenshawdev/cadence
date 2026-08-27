@@ -69,7 +69,7 @@
 
 'use strict';
 
-import { missingForgeKeys } from './forge-decision.mjs';
+import { missingForgeKeys, splitForgeHost } from './forge-decision.mjs';
 
 /** open / closed, normalized across the three CLIs' spellings.
  * @param {string} raw @returns {'open'|'closed'|null} */
@@ -352,17 +352,27 @@ function httpPortOf(scheme, explicit) {
  * to everything downstream - two Forgejo instances on one machine, told apart
  * by nothing. The scp form carries none: its colon separates host from path,
  * and its transport is SSH, whose port is not the http(s) one this returns.
+ *
+ * `portSpelled` IS A SECOND, DIFFERENT FACT and not a second port. It comes off
+ * the SAME `AUTHORITY` match that yields the port group, so no second URL
+ * grammar appears: the schemed branch spelled a port when that group matched,
+ * and the scp branch never spells one because scp syntax has no port at all.
  * @param {string} url
- * @returns {{hostname:string, path:string, httpPort:string|null}|null} */
+ * @returns {{hostname:string, path:string, httpPort:string|null,
+ *   portSpelled:boolean}|null} */
 function splitOrigin(url) {
-  const parsed = (hostname, path, httpPort) =>
-    (NOT_ONE_LINE.test(hostname) ? null : { hostname: hostname.toLowerCase(), path, httpPort });
+  const parsed = (hostname, path, httpPort, portSpelled) =>
+    (NOT_ONE_LINE.test(hostname)
+      ? null : { hostname: hostname.toLowerCase(), path, httpPort, portSpelled });
   const schemed = new RegExp(AUTHORITY.source + '\\/(.+)$').exec(url);
-  if (schemed) return parsed(schemed[2], schemed[4], httpPortOf(schemed[1], schemed[3]));
+  if (schemed) {
+    return parsed(schemed[2], schemed[4], httpPortOf(schemed[1], schemed[3]),
+      schemed[3] !== undefined);
+  }
   // scp-shaped: the colon separates host from PATH, so the part after it must
   // not start with `/` (that spelling is a schemeless URL, not scp syntax).
   const scp = /^(?:[^@/]*@)?([^/:]+):(?!\/)(.+)$/.exec(url);
-  if (scp) return parsed(scp[1], scp[2], null);
+  if (scp) return parsed(scp[1], scp[2], null, false);
   return null;
 }
 
@@ -387,8 +397,10 @@ function splitOrigin(url) {
  *
  * THE PORT IS A VETO, NOT A NEW REQUIREMENT, which is what keeps every login
  * that resolves today resolving. A `host` handed in with no port (`httpPort`
- * null, which is every land-time call - the persisted `git.forge_host` is a
- * host and states no port) behaves byte for byte as before. With a port, a
+ * null - which a land-time call still is whenever the persisted
+ * `git.forge_host` states no port, and it may now state one: FRG-05 gave that
+ * key a `host[:port]` grammar and `teaLoginNameForHost` splits it and passes
+ * both halves) behaves byte for byte as before. With a port, a
  * login is REFUSED when it names this same hostname under a DIFFERENT http(s)
  * port, and is otherwise judged by the three fields exactly as it was. That
  * closes the confirmed case - each rival login's own `url` names its port -
@@ -468,25 +480,37 @@ export function loginNamesHost(login, host, httpPort = null) {
  * port only (see `httpPortOf`): null on the scp form and on every other scheme,
  * where nothing a tea login records could be compared with it anyway.
  *
+ * `portSpelled` IS WHAT `httpPort` CANNOT SAY, and it is NOT a second port
+ * comparison. `httpPort` is null for two situations a caller may have to tell
+ * apart: a URL that spelled no port at all (the scp form `git@host:o/r.git`,
+ * whose colon separates host from path and which has no port syntax), and a URL
+ * that spelled one over a scheme whose port is not comparable to an API url's
+ * (`ssh://git@host:2222/o/r.git`). `portSpelled` answers only the narrow
+ * question a caller deciding whether this URL COULD have named a non-default
+ * endpoint has to ask. `httpPort`'s meaning and every reader of it are
+ * unchanged, and the rule `httpPortOf`'s header states about non-http(s)
+ * schemes is correct and is not revised here.
+ *
  * @param {unknown} originUrl the `git remote get-url origin` text, or ''/null
  * @returns {{verdict:'github'|'gitlab'|'no-remote'|'unrecognized',
- *   host:string|null, httpPort:string|null, slug:string|null}}
+ *   host:string|null, httpPort:string|null, portSpelled:boolean, slug:string|null}}
  */
 export function classifyOrigin(originUrl) {
   const url = typeof originUrl === 'string' ? originUrl.trim() : '';
-  if (!url) return { verdict: 'no-remote', host: null, httpPort: null, slug: null };
+  if (!url) return { verdict: 'no-remote', host: null, httpPort: null, portSpelled: false, slug: null };
   const parts = splitOrigin(url);
-  if (!parts) return { verdict: 'unrecognized', host: null, httpPort: null, slug: null };
+  if (!parts) return { verdict: 'unrecognized', host: null, httpPort: null, portSpelled: false, slug: null };
   const segments = parts.path.replace(/\.git$/, '').replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
   // Two segments minimum: without owner AND name there is no repo selector, so
   // there is no slug worth offering as a default.
   const slug = segments.length >= 2 ? segments.join('/') : null;
   const host = parts.hostname;
   const httpPort = parts.httpPort;
-  if (!slug) return { verdict: 'unrecognized', host, httpPort, slug: null };
-  if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, httpPort, slug };
-  if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, httpPort, slug };
-  return { verdict: 'unrecognized', host, httpPort, slug };
+  const portSpelled = parts.portSpelled;
+  if (!slug) return { verdict: 'unrecognized', host, httpPort, portSpelled, slug: null };
+  if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, httpPort, portSpelled, slug };
+  if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, httpPort, portSpelled, slug };
+  return { verdict: 'unrecognized', host, httpPort, portSpelled, slug };
 }
 
 /**
@@ -513,16 +537,34 @@ export function classifyOrigin(originUrl) {
  * off an SSH endpoint, which is the failure `loginNamesHost`'s own header
  * records.
  *
+ * IT IS HANDED A `host[:port]`, NOT A BARE HOSTNAME (FRG-05). `git.forge_host`
+ * carries an optional port since its write face grew a grammar, so this
+ * function splits the persisted value with that ONE grammar - `splitForgeHost`
+ * - and passes both halves: the hostname where the hostname goes, the port as
+ * `loginNamesHost`'s `httpPort` argument. That argument existed and was null on
+ * every land-time call, so a user with two instances on one hostname landed
+ * against whichever login came first. The port half reaches the predicate as
+ * the same comparable decimal string `httpPortOf` produces, which the grammar's
+ * no-leading-zero rule is what guarantees - there is no normalization step
+ * here, by design.
+ *
+ * A HOST THE GRAMMAR REFUSES ANSWERS NULL, the same answer an empty or
+ * non-string host already gets. Null is the caller's cue to take its `no-login`
+ * line, and there is no honest repair for a value that could not have been
+ * persisted through the write face at all.
+ *
  * @param {unknown} logins the `tea login list --output json` reading, or null
- * @param {unknown} host the persisted instance host
+ * @param {unknown} host the persisted instance host, `hostname` or `hostname:port`
  * @returns {string|null} the login's `name`, or null when none matches
  */
 export function teaLoginNameForHost(logins, host) {
   if (!Array.isArray(logins)) return null;
   if (typeof host !== 'string' || !host.trim()) return null;
-  const wanted = host.trim().toLowerCase();
+  const split = splitForgeHost(host.trim());
+  if (!split) return null;
+  const wanted = split.hostname.toLowerCase();
   for (const login of logins) {
-    if (!loginNamesHost(login, wanted)) continue;
+    if (!loginNamesHost(login, wanted, split.port)) continue;
     const name = login && typeof login === 'object' ? login.name : null;
     if (typeof name === 'string' && name) return name;
   }

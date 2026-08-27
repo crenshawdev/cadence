@@ -11,13 +11,15 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
   copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
+  statSync, linkSync, utimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   appendEvent, correlationId, renderTrace, tracePath, rotatedTracePath,
-  MAX_TRACE_BYTES, ROTATED_TRACE_FILE, FAMILIES,
+  rotationClaimPath,
+  MAX_TRACE_BYTES, ROTATED_TRACE_FILE, ROTATION_CLAIM_FILE, FAMILIES,
   ANCHOR, DISPATCH, TERMINAL, COORDINATOR, WORKER_CACHE, ROTATION,
 } from './lib/trace.mjs';
 
@@ -119,8 +121,19 @@ test('appendEvent: an interleaved write sequence keeps every event, in order', (
 
 // --- the bound ROTATES rather than refusing (TRC-08) -------------------------
 
-/** Every file in the planning root whose name starts with the trace's own. */
+/**
+ * Every file in the planning root whose name starts with the trace's own.
+ *
+ * The prefix filter DELIBERATELY covers the claim sidecar, which is why
+ * `ROTATION_CLAIM_FILE` had to keep the record's own `trace.` prefix: a sidecar
+ * leaked on an arm that still HOLDS the claim shows up in these assertions
+ * rather than being filtered out of them, and the six-writer race row below is
+ * what proves the release still holds under contention.
+ */
 const siblings = (dir) => readdirSync(dir).filter((e) => e.startsWith('trace.')).sort();
+
+/** What a COMPLETED rotation leaves on disk: the pair, plus the inert sidecar. */
+const ROTATED_SET = [ROTATED_TRACE_FILE, ROTATION_CLAIM_FILE, 'trace.jsonl'];
 
 /**
  * Pad the record to ONE BYTE under the bound, so the next append of any size
@@ -132,6 +145,31 @@ function padToBound(dir) {
   try { at = readFileSync(tracePath(dir)).length; } catch { at = 0; }
   appendFileSync(tracePath(dir), `${'x'.repeat(MAX_TRACE_BYTES - at - 2)}\n`);
   assert.equal(readFileSync(tracePath(dir)).length, MAX_TRACE_BYTES - 1);
+}
+
+/**
+ * A root at the bound whose rotation claim was taken and never released - the
+ * state a claimant killed or timed out mid-rotation leaves behind (TRC-09).
+ *
+ * Constructed DIRECTLY: no kill, no signal, no child process. A `linkSync` and
+ * a dated sidecar reproduce the whole state a SIGKILL produces - `nlink 2`, the
+ * full 250 ms budget on every append, and a record growing past the bound with
+ * every one of them - and a spawned holder is reserved for the multi-writer
+ * race the `writer()` helper already runs.
+ *
+ * @param {string} dir
+ * @param {number|null} agoMs how long ago the claim was dated, or `null` for a
+ *   claim carrying NO sidecar at all - the shape every claim taken before
+ *   TRC-09 shipped has.
+ */
+function killedClaim(dir, agoMs) {
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  linkSync(tracePath(dir), rotatedTracePath(dir));
+  if (agoMs === null) return;
+  writeFileSync(rotationClaimPath(dir), 'held\n');
+  const at = (Date.now() - agoMs) / 1000;
+  utimesSync(rotationClaimPath(dir), at, at);
 }
 
 test('appendEvent: a record at the bound rotates, and the append lands', () => {
@@ -155,7 +193,7 @@ test('appendEvent: a record at the bound rotates, and the append lands', () => {
 
   // Exactly one rotated generation, and it is the bytes that were carried away
   // rather than a freshly written file.
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
   assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), carried);
 
   // Neither file exceeds the bound, the live one having been under it before.
@@ -164,6 +202,159 @@ test('appendEvent: a record at the bound rotates, and the append lands', () => {
   }
   // A rotated record is not a CAPPED read: the live file is small and whole.
   assert.equal(renderTrace(dir, 1).capped, false);
+});
+
+test('appendEvent: a completed rotation RELEASES the claim and leaves the sidecar inert', () => {
+  // The positive `rotateTrace`'s `finally` owes (TRC-09). The rotation the row
+  // above exercises, read for the one thing that row cannot see: whether the
+  // claim was let go. A sibling that still shared the live record's inode
+  // satisfies every size and content assertion in this file and is a STANDING
+  // claim - the very state a killed rotation leaves behind.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+
+  assert.notEqual(statSync(tracePath(dir)).ino, statSync(rotatedTracePath(dir)).ino,
+    'the claim is still standing: the sibling is a second name for the live record');
+
+  // The sidecar SURVIVES on purpose: `held` is already false while the
+  // carry-back loop runs, so a claimant that unlinked it unconditionally would
+  // delete the sidecar of a second claimant that legitimately took the claim in
+  // that window - leaving a claim no reclaim could ever age out. What makes the
+  // residue safe is that it is INERT: the inodes differ, so `rotationInFlight`
+  // is false, no arm consults its age, and the next append rotates nothing.
+  assert.equal(existsSync(rotationClaimPath(dir)), true);
+  const generation = readFileSync(rotatedTracePath(dir), 'utf8');
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
+    'the leftover sidecar drove a rotation of a record nowhere near the bound');
+  assert.deepEqual(siblings(dir), ROTATED_SET);
+});
+
+test('appendEvent: an ABANDONED claim is reclaimed and the record rotates (TRC-09)', () => {
+  // 60 s dates the claim clear of the 30 s bound with margin on either side.
+  const dir = root();
+  killedClaim(dir, 60_000);
+
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.deepEqual(res, { written: true, corr: '1-abc1234' });
+
+  // THE ASSERTION THAT CANNOT BE DROPPED. A sibling still sharing the live
+  // record's inode satisfies every size and content assertion in this file and
+  // is a STANDING claim - which is the defect, not the fix.
+  assert.notEqual(statSync(tracePath(dir)).ino, statSync(rotatedTracePath(dir)).ino,
+    'the abandoned claim was never broken: the sibling is still the live record');
+
+  assert.ok(readFileSync(tracePath(dir)).length < MAX_TRACE_BYTES,
+    'the record is still over the bound, so the next append pays the budget again');
+  // The sibling holds the PRIOR generation, oldest events first.
+  const rotated = readFileSync(rotatedTracePath(dir), 'utf8');
+  assert.equal(JSON.parse(rotated.split('\n')[0]).event, ANCHOR);
+  // ...and the event that triggered the reclaim is in the LIVE record.
+  assert.equal(lines(dir).filter((e) => e.event === 'resolve').length, 1);
+  assert.equal(correlationId(dir, 1), '1-abc1234');
+  // The pair plus the reclaimer's own sidecar, and nothing else: no `.evict.`
+  // and no `.rotate.` file left behind on the way through.
+  assert.deepEqual(siblings(dir), ROTATED_SET);
+});
+
+test('appendEvent: after the reclaim the next append stops paying the budget', () => {
+  const dir = root();
+  killedClaim(dir, 60_000);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(statSync(tracePath(dir)).nlink, 1, 'a claim is still standing on the record');
+
+  // 252, 252 and 255 ms per append were measured on 2026-08-27 while the claim
+  // stood, each one returning `{written:true}` into a record that kept growing.
+  // 50 ms is a five-fold margin under the cheapest of those, not a benchmark of
+  // the append itself - what it detects is a claim still being waited out.
+  const t0 = Date.now();
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  const ms = Date.now() - t0;
+  assert.ok(ms < 50, `the append still paid the rotation budget: ${ms}ms`);
+});
+
+test('appendEvent: a losing append does NOT restart the abandoned claim clock (TRC-09)', () => {
+  // The reclaim's evidence is the sidecar's age, and the stamp that dates a
+  // claim is written BEFORE the link - so every append that loses the claim had
+  // just overwritten the only evidence the dead claimant left. On a record
+  // appended more often than the 30 s bound that restarts the clock on every
+  // append, and the abandoned claim never ages into a reclaim at all: the
+  // permanent disable TRC-09 exists to remove, on exactly the busy record it
+  // exists for.
+  const dir = root();
+  killedClaim(dir, 20_000);
+  const before = statSync(rotationClaimPath(dir)).mtimeMs;
+
+  // This append LOSES - 20 s is inside the bound - and must leave the claim
+  // dated where it found it.
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(statSync(tracePath(dir)).nlink, 2, 'the claim was broken inside the bound');
+  const after = statSync(rotationClaimPath(dir)).mtimeMs;
+  assert.equal(after, before,
+    `the losing append refreshed the claim: it aged ${Math.round(Date.now() - after)}ms, not ${Math.round(Date.now() - before)}ms`);
+
+  // And the clock it preserved is the one that reclaims: date the SAME sidecar
+  // past the bound and the next append rotates, where an append that had reset
+  // it would have to start the 30 s over.
+  const at = (Date.now() - 60_000) / 1000;
+  utimesSync(rotationClaimPath(dir), at, at);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(statSync(tracePath(dir)).nlink, 1, 'the abandoned claim was never reclaimed');
+});
+
+test('appendEvent: a losing append leaves a sidecar-less claim sidecar-less (D-02)', () => {
+  // The same restore, on the arm where there was nothing to restore. A claim
+  // taken before TRC-09 shipped carries no sidecar, D-02 reads that as LIVE,
+  // and a losing append that left its own stamp behind would date a live claim
+  // it does not hold - handing the next reader a 30 s countdown to breaking it.
+  const dir = root();
+  killedClaim(dir, null);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(statSync(tracePath(dir)).nlink, 2, 'the claim was evicted on missing evidence');
+  assert.equal(existsSync(rotationClaimPath(dir)), false,
+    'the losing append dated a claim it never held');
+});
+
+test('rotateTrace: a claim whose sidecar reads LIVE is left standing (TRC-09)', async () => {
+  // The other side of the discriminator, and the reason it is a sidecar at all.
+  // Breaking a claim a rotation is genuinely holding costs the whole record,
+  // not one rotation: the holder's `readFileSync(sibling)` then returns ENOENT,
+  // `carried` falls back to '', and it swaps a record holding only the rotation
+  // marker over the live path while the evictor's `finally` unlinks the last
+  // remaining name of the old inode.
+  //
+  // `rotateTrace` DIRECTLY rather than through `appendEvent`, the way the
+  // stale-stat row above does, so what is asserted is the rotation's own answer.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  killedClaim(dir, 0);
+  const live = readFileSync(tracePath(dir), 'utf8');
+
+  // Roughly ROTATE_WAIT_MS in wall clock, because a live claim still waits out
+  // the budget before handing the caller back to its append. That is what the
+  // budget is FOR and must not be "fixed" by shortening it.
+  assert.deepEqual(rotateTrace(dir, 120), { rotated: false });
+  assert.equal(statSync(tracePath(dir)).ino, statSync(rotatedTracePath(dir)).ino,
+    'a LIVE claim was broken - the whole record, not one rotation');
+  assert.equal(readFileSync(tracePath(dir), 'utf8'), live);
+  assert.equal(siblings(dir).filter((e) => e.includes('.evict.')).length, 0);
+});
+
+test('rotateTrace: a claim with NO sidecar at all is left standing (TRC-09)', async () => {
+  // D-02's fail-live posture, and today's behaviour deliberately preserved
+  // rather than new behaviour: a claim taken by the code that shipped before
+  // TRC-09 carries no sidecar, and missing evidence must read as LIVE. It is
+  // what makes the change safe to ship before every claim in the wild has one.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  killedClaim(dir, null);
+
+  assert.deepEqual(rotateTrace(dir, 120), { rotated: false });
+  const held = statSync(tracePath(dir));
+  assert.equal(held.ino, statSync(rotatedTracePath(dir)).ino);
+  assert.equal(held.nlink, 2, 'the claim was evicted on missing evidence');
 });
 
 test('appendEvent: a record already PAST the bound rotates, and its sibling keeps the excess', () => {
@@ -295,7 +486,7 @@ test('appendEvent: writers racing at the bound leave ONE generation and lose no 
 
   // Exactly one rotated generation, and no claim or temp file left behind on
   // any arm - `.planning/` holds nothing else named after the record.
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl'],
+  assert.deepEqual(siblings(dir), ROTATED_SET,
     `a claim or temp file was left behind: ${JSON.stringify(readdirSync(dir))}`);
 
   // The generation is UNDER the bound and carries the OLDEST events - the
@@ -317,7 +508,7 @@ test('appendEvent: a second append after a rotation does not rotate again', asyn
   assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
     'the second append rotated again and destroyed the generation');
   assert.deepEqual(lines(dir).filter((e) => e.writer).map((e) => e.writer), ['a', 'b']);
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
 });
 
 test('appendEvent: a writer holding a STALE stat is refused the claim, not corrected after it', async () => {
@@ -341,7 +532,7 @@ test('appendEvent: a writer holding a STALE stat is refused the claim, not corre
     "the late writer destroyed the generation the first writer's rotation made");
   assert.equal(readFileSync(tracePath(dir), 'utf8'), live,
     "the late writer carried away the first writer's own event");
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
 });
 
 test('appendEvent: a SECOND rotation replaces the generation, so the pair stays bounded', () => {
@@ -358,7 +549,7 @@ test('appendEvent: a SECOND rotation replaces the generation, so the pair stays 
   assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
   assert.notEqual(readFileSync(rotatedTracePath(dir), 'utf8'), first,
     'the second rotation kept the FIRST generation, so the live record never got its room back');
-  assert.deepEqual(siblings(dir), [ROTATED_TRACE_FILE, 'trace.jsonl']);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
   for (const f of [tracePath(dir), rotatedTracePath(dir)]) {
     assert.ok(readFileSync(f).length < MAX_TRACE_BYTES, `${f} is over the bound`);
   }

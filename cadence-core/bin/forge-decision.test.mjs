@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   CREATE_TABLE, PROVIDER_TABLE, decideForge, forgeRecordComplete, installedProviders,
-  isForgeSlug, originDefaults, ownerIsLoginUser, splitSlug,
+  isForgeSlug, originDefaults, ownerIsLoginUser, splitForgeHost, splitSlug,
 } from './lib/forge-decision.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -243,6 +243,67 @@ test('isForgeSlug refuses a slug longer than any forge serves', () => {
 
 test('isForgeSlug refuses a non-string rather than throwing', () => {
   for (const bad of [null, undefined, 42, {}, ['o/r']]) assert.equal(isForgeSlug(bad), false);
+});
+
+// --- the host grammar: what a typed instance address may be ----------------
+
+test('splitForgeHost accepts a hostname and splits a ported one into two halves', () => {
+  assert.deepEqual(splitForgeHost('forge.example.com'), { hostname: 'forge.example.com', port: null });
+  assert.deepEqual(splitForgeHost('forge.example.com:3001'), { hostname: 'forge.example.com', port: '3001' });
+  assert.deepEqual(splitForgeHost('git.jcrenshaw.dev'), { hostname: 'git.jcrenshaw.dev', port: null });
+  assert.deepEqual(splitForgeHost('localhost:65535'), { hostname: 'localhost', port: '65535' });
+  assert.deepEqual(splitForgeHost('my-forge.example.com:1'), { hostname: 'my-forge.example.com', port: '1' });
+});
+
+test('a portless value splits to a NULL port rather than to a defaulted one', () => {
+  // "named no port" and "named 443" are different facts downstream: the port is
+  // a veto in `loginNamesHost`, and a default invented here would make it a
+  // requirement every portless login then failed.
+  const split = splitForgeHost('forge.example.com');
+  assert.equal(split && split.port, null);
+});
+
+test('splitForgeHost refuses every port spelling that is not the canonical one', () => {
+  // `:0443` is the load-bearing one: it would persist a value that compares
+  // unequal to `https://h:443` on one side and equal on the other.
+  for (const bad of ['forge.example.com:0443', 'forge.example.com:0', 'forge.example.com:65536',
+    'forge.example.com:22x', 'forge.example.com:', 'forge.example.com:-1', 'forge.example.com: 3001',
+    'forge.example.com:99999']) {
+    assert.equal(splitForgeHost(bad), null, bad);
+  }
+});
+
+test('splitForgeHost refuses a value that reads as a FLAG once interpolated', () => {
+  assert.equal(splitForgeHost('-forge.example.com'), null);
+  assert.equal(splitForgeHost('forge.-example.com'), null);
+  assert.equal(splitForgeHost('forge.example.com-'), null);
+});
+
+test('splitForgeHost refuses everything outside the hostname alphabet', () => {
+  const hostile = ['forge example.com', 'forge.example.com/x', 'git@forge.example.com',
+    'https://forge.example.com', 'forge.example.com;id', 'forge.example.com$(id)',
+    'forge.example.com`id`', 'forge.example.com\nother', 'forge..example.com',
+    '.forge.example.com', 'forge.example.com.', '', 'forge.example.com\tx'];
+  for (const bad of hostile) assert.equal(splitForgeHost(bad), null, JSON.stringify(bad));
+});
+
+test('splitForgeHost refuses a value longer than DNS serves', () => {
+  assert.equal(splitForgeHost('h'.repeat(254)), null);
+  assert.notEqual(splitForgeHost('h'.repeat(253)), null);
+});
+
+test('splitForgeHost refuses a bracketed IPv6 literal, as a decision', () => {
+  // `loginNamesHost` compares authorities by exact equality and no `tea` login
+  // record in this tree carries a bracket form; accepting it would persist a
+  // value nothing downstream could ever match.
+  assert.equal(splitForgeHost('[::1]:3001'), null);
+  assert.equal(splitForgeHost('[::1]'), null);
+});
+
+test('splitForgeHost refuses a non-string rather than throwing', () => {
+  for (const bad of [null, undefined, 42, {}, ['forge.example.com']]) {
+    assert.equal(splitForgeHost(bad), null);
+  }
 });
 
 // --- originDefaults: two defaults, two availabilities -----------------------

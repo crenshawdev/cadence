@@ -846,3 +846,172 @@ test('create: the gitlab arm is never asked for a --remote-url', () => {
   assert.equal(envelope.ok, true);
   assert.deepEqual(calls(log), ['glab repo create o/r --private --remoteName origin']);
 });
+
+// --- create: the URL must name the port the configured instance serves ------
+
+/** A planning root whose persisted record names a PORTED Forgejo instance -
+ *  the shape `git.forge_host` could not even state before FRG-04. */
+const portedRoot = () => planningRoot({
+  forge_provider: 'forgejo', forge_repo: 'o/r', forge_host: 'forge.example.com:3001',
+});
+
+test('create: an http(s) --remote-url on the WRONG port refuses, naming both', () => {
+  // GH-103: `create` took the URL's correctness on the caller's word, so an
+  // `origin` that answers nothing was wired in silence. `https://h` means 443
+  // here - the scheme's default is a port, not an absence.
+  const log = argvLog();
+  const mk = marker();
+  const dir = portedRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
+      '--remote-url', 'https://forge.example.com/o/r.git', '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, marker: mk, stubOpts: { tea: { login: TEA_LOGINS } } },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.match(envelope.reason, /3001/);
+  assert.match(envelope.reason, /443/);
+  // Nothing at all ran: not the login probe, not the create, not git.
+  assert.deepEqual(calls(log), []);
+  assert.equal(spawned(mk), '');
+});
+
+test('create: an scp --remote-url refuses naming the 22 it implies', () => {
+  // The scp form's colon separates host from PATH: it has no port syntax, so it
+  // can never name the instance the user configured. The refusal is ESCAPABLE -
+  // the hint names the two explicit spellings that pass.
+  const log = argvLog();
+  const mk = marker();
+  const dir = portedRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
+      '--remote-url', 'git@forge.example.com:o/r.git', '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, marker: mk, stubOpts: { tea: { login: TEA_LOGINS } } },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.match(envelope.reason, /3001/);
+  assert.match(envelope.reason, /22/);
+  assert.match(envelope.hint, /ssh:\/\//);
+  assert.match(envelope.hint, /https:\/\//);
+  assert.deepEqual(calls(log), []);
+  assert.equal(spawned(mk), '');
+});
+
+test('create: a URL naming the configured port reaches the create', () => {
+  const log = argvLog();
+  const dir = portedRoot();
+  const url = 'https://forge.example.com:3001/o/r.git';
+  const records = [{ name: 'ported', url: 'https://forge.example.com:3001', ssh_host: 'forge.example.com', user: 'jc' }];
+  const { envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed', '--remote-url', url, '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: JSON.stringify(records) } } },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(calls(log), [
+    'tea login list --output json',
+    'tea repos create --name r --owner o --login ported --private',
+    `git -C ${dir} remote add origin ${url}`,
+  ]);
+  // A torn config layer during the one face that MUTATES must not be silent.
+  assert.ok(Array.isArray(envelope.warnings));
+});
+
+test('create: an SSH port over a non-http scheme is ACCEPTED, never compared', () => {
+  // An SSH port and a web port are different endpoints of ONE instance, which
+  // is the mistake httpPortOf's header exists to record.
+  const log = argvLog();
+  const dir = portedRoot();
+  const url = 'ssh://git@forge.example.com:2222/o/r.git';
+  const records = [{ name: 'ported', url: 'https://forge.example.com:3001', ssh_host: 'forge.example.com', user: 'jc' }];
+  const { envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed', '--remote-url', url, '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: JSON.stringify(records) } } },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(calls(log), [
+    'tea login list --output json',
+    'tea repos create --name r --owner o --login ported --private',
+    `git -C ${dir} remote add origin ${url}`,
+  ]);
+});
+
+test('create: a --remote-url on a DIFFERENT host is not compared at all', () => {
+  // The split-endpoint deployment this repository itself has. Refusing it would
+  // refuse a shape that works.
+  const log = argvLog();
+  const dir = portedRoot();
+  const url = 'https://ssh.example.com/o/r.git';
+  const records = [{ name: 'ported', url: 'https://ssh.example.com', ssh_host: 'ssh.example.com', user: 'jc' }];
+  const { envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed', '--remote-url', url, '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: JSON.stringify(records) } } },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(calls(log).length, 3);
+});
+
+test('create: a MIXED-CASE persisted host still refuses the wrong port', () => {
+  // The check compared `classified.host` - lowercased by splitOrigin - against
+  // the persisted hostname verbatim, so one capital letter in git.forge_host
+  // skipped the refusal entirely and wired an origin on 443 against an instance
+  // serving 3001. Case is a spelling of one host, never a second host.
+  const log = argvLog();
+  const mk = marker();
+  const dir = planningRoot({
+    forge_provider: 'forgejo', forge_repo: 'o/r', forge_host: 'Forge.Example.COM:3001',
+  });
+  const { status, envelope } = run(
+    ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed',
+      '--remote-url', 'https://forge.example.com/o/r.git', '--dir', dir],
+    { stubs: ['tea', 'git'], dir, argvLog: log, marker: mk, stubOpts: { tea: { login: TEA_LOGINS } } },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.match(envelope.reason, /3001/);
+  assert.match(envelope.reason, /443/);
+  assert.deepEqual(calls(log), []);
+  assert.equal(spawned(mk), '');
+});
+
+test('create: a PORTLESS or null git.forge_host fires nothing at all', () => {
+  // What keeps github and gitlab out of this entirely - their host key is null
+  // by contract - and what keeps every existing create arm byte for byte.
+  for (const forge_host of [null, 'forge.example.com']) {
+    const log = argvLog();
+    const dir = planningRoot({ forge_provider: 'forgejo', forge_repo: 'o/r', forge_host });
+    const url = 'git@forge.example.com:o/r.git';
+    const { envelope } = run(
+      ['create', '--provider', 'forgejo', '--repo', 'o/r', '--confirmed', '--remote-url', url, '--dir', dir],
+      { stubs: ['tea', 'git'], dir, argvLog: log, stubOpts: { tea: { login: TEA_LOGINS } } },
+    );
+    assert.equal(envelope.ok, true, String(forge_host));
+    assert.deepEqual(calls(log), [
+      'tea login list --output json',
+      'tea repos create --name r --owner o --login forge.example.com --private',
+      `git -C ${dir} remote add origin ${url}`,
+    ], String(forge_host));
+  }
+});
+
+// --- create: a row that wires its own remote refuses a URL (GH-105) ---------
+
+test('create: the gitlab arm REFUSES a --remote-url, naming the conflict', () => {
+  // Its pinned create argv carries `--remoteName origin`, so a URL passed here
+  // would be read by nothing and origin would be whatever glab chose. Silence
+  // was the defect; the refusal names the conflict rather than declining a flag.
+  const log = argvLog();
+  const mk = marker();
+  const dir = planningRoot();
+  const { status, envelope } = run(
+    ['create', '--provider', 'gitlab', '--repo', 'o/r', '--confirmed',
+      '--remote-url', 'https://gitlab.com/o/r.git', '--dir', dir],
+    { stubs: ['glab', 'git'], dir, argvLog: log, marker: mk },
+  );
+  assert.equal(status, 1);
+  assert.equal(envelope.ok, false);
+  assert.match(envelope.reason, /--remoteName origin/);
+  assert.match(envelope.hint, /drop --remote-url/);
+  assert.deepEqual(calls(log), []);
+  assert.equal(spawned(mk), '');
+});

@@ -27,8 +27,12 @@ scratch/
 
 # Joined run record — local diagnostics only, one machine's routing/provider/worker events
 # The .1 sibling is the generation a rotation at the record's size bound leaves behind
+# The .claim sidecar dates the claim a rotation holds while it runs, and a process
+# killed mid-rotation leaves one in the working tree — so it ships ignored, not tracked
 /.planning/trace.jsonl
 /.planning/trace.1.jsonl
+/.planning/trace.1.jsonl.claim
+/.planning/trace.1.jsonl.claim.*
 /.planning/reads.jsonl
 
 # Triage working copies — these hold copies of the raw planning queue, the same

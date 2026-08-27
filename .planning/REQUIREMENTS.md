@@ -1,16 +1,38 @@
-# Requirements: Cadence (v3.7.4)
+# Requirements: Cadence (v3.7.5)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-**No cycle open.** Nothing here is live scope. The shipped ids are rows under
-`## Shipped` below, and `/cad-phase add` is what opens the next cycle: it is the
-only workflow that appends a phase line to an existing roadmap, and `/cad-plan`
-seeds each Traceability row as its phase is planned. The ids under `## Deferred`
-keep their own reasons and their own promote conditions, and none of them is
-promoted here to fill this section.
+**No cycle open.** The shipped ids are rows under the `Shipped` heading below,
+and `/cad-phase add` is what opens the next cycle: it is the only workflow that
+appends a phase line to an existing roadmap, and `/cad-plan` seeds each
+Traceability row as its phase is planned. The ids under `## Deferred` keep their
+own reasons and their own promote conditions, and none of them is promoted here
+to fill this section.
+
+`v3.7.5 - the defects a user's own project feels` opened 2026-08-26 and closed
+2026-08-27. Five phases, eight ids - `FRG-03`, `FRG-04`, `FRG-05`, `FRG-06`,
+`EXP-03`, `RSK-06`, `TRC-09`, `RCL-08` - are rows under the `Shipped` heading
+below, all Complete. The cycle had no subject, it had a standard: every open
+issue was re-triaged 2026-08-26 against one question, would a user running
+Cadence on their own project ever feel this, and these eight are what answered
+yes. Nothing was promoted out of deferral; all eight came off the public
+tracker.
+
+**Excluded on the same standard.** GH-148 was filed 2026-08-26 out of the
+GH-137 spike and is real, but its consequence lands in a trace record users do
+not read. GH-145 is a genuine deadline for THIS repo - `reads.jsonl` at 7.00 of
+8.00 MiB after 935 sessions of Cadence-on-Cadence - and not a user's. Both wait
+for a cycle whose standard admits them, rather than riding one on urgency that
+belongs to the maintainer.
+
+**Recorded, not delivered.** Two items GH-93 names did not ship in `RCL-08` and
+are on the phase 5 residue in `.planning/ARCHIVE.md`: the multi-query union,
+which changes the `recall` seam signature that `cadence-core/references/recall.md`
+pins for three callers, and the failure records sitting outside the corpus,
+which needs a scope decision this cycle did not take.
 
 `v3.7.4 - cut the cost the record can now measure` opened 2026-08-26 and closed
 2026-08-27. Four phases, five ids - `BUD-03`, `RSK-05`, `RNG-03`, `TRC-07`,
@@ -281,6 +303,14 @@ parses only the Traceability table).
 | RNG-03 (the rung label stops foreclosing a shared cached prefix across a role's rungs, with TRC-05's figures proving what it recovered (GH-91). Promoted out of deferral 2026-08-26. Its LAYOUT half is phase 2 and is unblocked; its MEASUREMENT half rides phase 3, because TRC-05 shipped the recording path and the hook still cannot reach it (see TRC-07)) | 2 | Complete | v3.7.4 |
 | TRC-07 (the two prompt-cache figures reach the bracket for every worker that STOPPED, not only the ones the hook could both identify and call terminal. Promoted out of deferral 2026-08-26 at phase 2 planning, as phase 3. Its gathered context - seven durable decisions, six acceptance criteria and the 2026-08-26 baseline - is at `21fad7f3:.planning/phases/2/CONTEXT.md`; recover it with `git show` rather than re-gathering. Two figures in that context are now understated and must be re-measured before planning: the NOT-TERMINAL rate is 16 of 16 for transcripts written 2026-08-26 against 253 of 1,332 (19.0%) before it, and the second-worker identity loss is not the 5.4% of concurrent dispatches it records but total and permanent for five of six roles, because 11 stale `unpaired` rows spanning 2026-08-09 to 2026-08-26 are counted as open workers forever. That last point also re-opens its D-06: `cad-verifier` has a stale row, so the hook would mis-attribute to an archived phase-3 bracket rather than abstain) | 3 | Complete | v3.7.4 |
 | TRC-08 (`.planning/trace.jsonl` cannot reach a state where every append fails forever. It write-deads at 1 MiB with no rotation, reset or archive path (GH-138), measured 2026-08-26 at 567,248 B, 54.1% of the cap, across roughly nine milestones. `milestone-prune` archives phase directories and does not touch the trace, confirmed at the `v3.7.3` close) | 4 | Complete | v3.7.4 |
+| FRG-03 (`git.forge_host` can address an instance on a non-default port, or `loginNamesHost` stops comparing a port half it is never given - one of the two, decided at phase 1 planning (GH-106, OQ-1 in ROADMAP). This is the hard block: today a user on `forge.example:3001` cannot state it at all) | 1 | Complete | v3.7.5 |
+| FRG-04 (`forge.mjs create` refuses a `--remote-url` whose port the instance does not serve, rather than wiring a wrong-port origin silently (GH-103)) | 1 | Complete | v3.7.5 |
+| FRG-05 (a forge slug or host the user TYPES is shape-checked before it is persisted, not only the origin-derived default. The persisted record drives live repository creation and issue filing, so an unvalidated value is not cosmetic (GH-104)) | 1 | Complete | v3.7.5 |
+| FRG-06 (the gitlab arm of `forge.mjs create` refuses a `--remote-url` by naming its conflict with the pinned `--remoteName origin`, rather than accepting an argument it will never read (GH-105)) | 1 | Complete | v3.7.5 |
+| EXP-03 (`/cad-execute` refuses a phase whose plans are already committed, before any executor is dispatched (GH-137). Its blast radius is MEASURED, not assumed: `.planning/spikes/execute-replay-blast-radius/SPIKE.md` ran two real executor dispatches against already-committed work, both noisy, which is why this is a guard and not a resume path. Read the spike before planning phase 2 rather than re-deriving it) | 2 | Complete | v3.7.5 |
+| RSK-06 (the risk detector stops re-tripping on reviewer text stored in `ADJUDICATION-*.json`, without weakening detection on code paths (GH-108)) | 3 | Complete | v3.7.5 |
+| TRC-09 (a `rotateTrace` claim abandoned by a killed process is reclaimed on the next append, so the bound survives the kill (GH-146)) | 4 | Complete | v3.7.5 |
+| RCL-08 (recall folds suffixes identically at index and query time, so `seam` matches `seams` (GH-93)) | 5 | Complete | v3.7.5 |
 
 ## Deferred
 
@@ -357,14 +387,13 @@ queue triage alone.
   rather than milestone close because batch size grows with the gap. Adjudicated
   2026-08-26 as an accumulation defect wearing an enhancement label. Promote at
   the cycle after `v3.7.4`
-- **RCL-07**: `recall` folds common suffixes at index time and query time, so
+- **RCL-08**: `recall` folds common suffixes at index time and query time, so
   `seam` matches `seams` and `close` matches `closes` (GH-93, item 1 only).
-  `cadence-core/bin/lib/bm25.mjs:20` states the gap outright. A ~30-line
-  deterministic suffix fold in one file, zero-dep, applied identically on both
-  sides. Split 2026-08-26 from GH-93's other two items - the multi-query union
-  changes the seam signature and the failure-records item needs a scope decision
-  - which stay on the issue and are not scope. Promote at the cycle after
-  `v3.7.4`
+  `cadence-core/bin/lib/bm25.mjs:20` states the gap outright. A deterministic
+  suffix fold in one file, zero-dep, applied identically on both sides. Split
+  2026-08-26 from GH-93's other two items - the multi-query union changes the
+  seam signature and the failure-records item needs a scope decision - which
+  stay on the issue and are not scope. Promoted into `v3.7.5` as phase 5
 
 ## Out of Scope
 

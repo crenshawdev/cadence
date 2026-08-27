@@ -206,55 +206,82 @@ context-gathering, and debugging — without any external memory system.
 
 **No cycle open.**
 
-**`v3.7.4 - cut the cost the record can now measure`, opened 2026-08-26, closed
-2026-08-27.** Four phases, 71 commits off `main` (16 feat against 6 fix, where
-`v3.7.3` ran 7 against 7). Five requirement ids, all traced to a verified phase:
-`BUD-03`, `RSK-05`, `RNG-03`, `TRC-07`, `TRC-08`. `/cad-audit` PASS on both arms,
-5 of 5 requirements traced with 0 broken and 25 of 25 acceptance criteria covered
-with 0 breaks. UAT 29 passed, 0 failed, 1 skipped. Manifest bumped to `3.7.4` at
-`a25d4470`.
+**`v3.7.5 - the defects a user's own project feels`, opened 2026-08-26, closed
+2026-08-27.** Five phases, 53 commits off `main` (8 feat against 7 fix, where
+`v3.7.4` ran 16 against 6). Eight requirement ids, all traced to a verified
+phase: `FRG-03`, `FRG-04`, `FRG-05`, `FRG-06`, `EXP-03`, `RSK-06`, `TRC-09`,
+`RCL-08`. `/cad-audit` PASS on both arms, 8 of 8 requirements traced with 0
+broken and 23 of 23 acceptance criteria covered with 0 breaks. UAT 38 passed, 0
+failed. Manifest bumped to `3.7.5` at `308e19f8`.
+
+**The cycle had no subject, it had a standard.** Every open issue was re-triaged
+2026-08-26 against one question, would a user running Cadence on their own
+project ever feel this, or does it only bite while Cadence is being developed on
+Cadence. Seven of 22 answered the first way and became this cycle's eight ids.
+That standard is the thing worth keeping: it is a filter that can be applied
+again without re-arguing what the roadmap is about.
 
 Where it went: the shipped rows are in `REQUIREMENTS.md` under `## Shipped`, the
-user-facing narrative is `CHANGELOG.md` `## [3.7.4]`, and 78 residue rows from
-the four pruned phases are in `.planning/ARCHIVE.md`. The merge and the release
+user-facing narrative is `CHANGELOG.md` `## [3.7.5]`, and 75 residue rows from
+the five pruned phases are in `.planning/ARCHIVE.md`. The merge and the release
 tag are `/cad-land`'s, cut on the pulled base after the merge confirms.
 
-**What it did not settle, and what that does NOT mean.** `RNG-03` shipped its
-claim in full: all 19 agent bodies collapse to one distinct body per role and a
-`rung-prefix` self-verify check fails the build if a future rung file breaks
-that. GH-91's claim was structural, the byte layout forecloses cross-rung
-sharing, and it is now verified by inspection rather than asserted. GH-91 was
-closed on that basis 2026-08-27.
+**What shipped, in one line each.** `git.forge_host` takes `host[:port]`,
+enforced at the config write face and carried whole into the `tea` login match
+and into `forge.mjs create`, which now refuses a `--remote-url` whose port the
+instance does not serve. `/cad-execute` reads each plan's report first line
+before it spends anything and refuses to re-dispatch a phase whose work is
+already committed. `risk-check run` withholds the four stored-reviewer-text
+artifacts under `.planning/phases/` from the range it reads, so filing a finding
+no longer re-trips the gate that produced it. A `trace.jsonl` rotation claim
+dates itself and a claim older than 30 s is reclaimed by the next append, so a
+SIGKILL mid-rotation costs one rotation instead of every rotation after it. And
+`recall` folds suffixes through Porter steps 1a and 1b inside `tokenize`, the
+one site both indexing and querying already pass through.
 
-What is NOT delivered is a measurement, and the figures this cycle took do not
-stand in for one. The after side is n=2 `cad-verifier` dispatches at +19.3%
-cache read and +7.1% creation against a 33-dispatch before side, both moving UP.
-DO NOT read that as evidence against the prefix work. Those two dispatches ran
-at the SAME rung, and cross-rung sharing is what the layout foreclosed, so the
-comparison bears on the question neither way. The populations are not comparable
-either: two dispatches back to back in one session against a byte-identical
-prompt is a best case, and the before side is 33 dispatches spread across many
-sessions with their own prompts and lengths.
+**What it did not settle.** Two of the three items GH-93 names did not ship. The
+multi-query union changes the `recall` seam signature that
+`cadence-core/references/recall.md` pins for three callers, `/cad-context` at
+`spend_gate`, `/cad-debug` at Hypothesize and `/cad-plan` at `spawn_planner`, so
+it is a contract change this cycle deliberately did not take. The failure
+records sitting outside the corpus needs a scope decision that was not taken,
+and three measured obstacles sit under its phrasing: `parseSummarySnippets`
+returns 0 on every live `reports/plan-<k>.md`, `REVIEW-*.md` files are JSON
+holding raw findings while the adjudicated rulings live in `ADJUDICATION-*.json`
+beside them, and any new tier inside `phases/<N>/` needs `milestone-prune`'s
+residue walk extended or it goes unreachable at the next milestone close, which
+is the exact defect `RCL-07` closed.
 
-Settling it needs two rung FILES of one role to actually run, and this
-repository's configuration barely produces that: `model.escalate_on_failure` is
-`false` and no `model.effort.<role>` pin changed mid-cycle, which are the two
-conditions GH-91 itself named. `TRC-07` records the figures automatically now,
-so if escalation is ever turned on the comparison costs nothing to take. Until
-then it is unmeasured, not refuted.
+The fold's own boundary is worth writing down here rather than rediscovering:
+steps 1a and 1b only, so `verifies` reaches `verifi` while `verify` is
+untouched, `released` reaches `releas`, and `indices` never reaches `index`.
 
-**Outstanding, carried out of the close.** GH-146: an abandoned rotation claim
-disables `trace.jsonl` rotation permanently, appends still land and nothing
-write-deads but the record stops rotating and each append pays about 266 ms.
-`.planning/reads.jsonl` carries the original write-dead defect at 86.9% of its
-own 8 MiB bound, closer to firing than the trace ever was, and shares none of
-phase 4's rotation code. GH-137, a phase with commits but no `SUMMARY.md`
-deriving as `planned` so `/cad-execute` replays committed work, is still the
-highest-severity user-facing bug on the tracker and still belongs to the execute
-path. The Forge cluster (GH-102 through GH-107) is a decided seed in
-`.planning/CAPTURE.md` for whichever cycle opens next.
+**Outstanding, carried out of the close.** GH-137, a phase with commits but no
+`SUMMARY.md` deriving as `planned`, was the target of phase 2 and the replay
+stop closes the expensive half of it. GH-146 is unchanged: `.planning/reads.jsonl`
+carries the original write-dead defect and shares none of phase 4's rotation
+code. GH-148 and GH-145 were excluded on this cycle's own standard and are
+recorded as such in `REQUIREMENTS.md`. The remainder of the Forge cluster and
+the seven todos in `.planning/CAPTURE.md` are the material a next cycle would
+triage; no theme is named, and `/cad-phase add` is what opens one.
 
 ### Previously
+
+**`v3.7.4 - cut the cost the record can now measure`**, opened 2026-08-26 and
+closed 2026-08-27. Four phases, 71 commits off `main`, five ids - `BUD-03`,
+`RSK-05`, `RNG-03`, `TRC-07`, `TRC-08`. A plan's declared read set became a
+measured number with a reported ceiling, the plan-time risk floor stopped
+reading an import statement as evidence of a risk surface, the rung sentence
+came out of all 19 agent bodies so a role's rung files share one byte-identical
+prefix, and the record grew the prompt-cache figures that would price it. The
+prefix win is UNMEASURED rather than refuted: the after side is two
+`cad-verifier` dispatches at the same rung against a 33-dispatch before side,
+which bears on cross-rung sharing neither way, and settling it needs two rung
+files of one role to actually run. `TRC-07` records the figures automatically
+now, so the comparison costs nothing to take later. The cycle also caught
+`.planning/trace.jsonl` at 57.6% of a cap that refused every append past it,
+with no rotation, about eleven days out at the then-current rate - v3.7.4
+
 
 **`v3.7.3 - the record has to be right before it can be cut`**, opened and
 closed 2026-08-26. Four phases planned, CLOSED AT PHASE 1 on a measured rework

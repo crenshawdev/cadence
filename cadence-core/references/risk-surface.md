@@ -20,6 +20,21 @@ maps the range's changed PATHS and its ADDED and REMOVED lines to
 the same record a matching one does, and "the detection step was skipped" stops
 reading like "it ran and matched nothing".
 
+That read WITHHOLDS four filename shapes under `.planning/phases/`:
+`ADJUDICATION-*.json`, `REVIEW-*.md`, `FINDINGS.json` and
+`verifier-findings.json`. All four store reviewer text VERBATIM by design -
+`references/review-record.md` requires a stored restatement to match the
+reviewer's returned text byte for byte - so a docs commit landing a finding that
+quotes a destructive command re-tripped the very gate that produced the finding,
+and a user reviewing their own work had to override a blocking gate to file what
+that gate had told them. A `PLAN.md` in the same directory is NOT withheld,
+because a destructive command written into a plan's Action is the text an
+executor is handed to RUN, and nothing outside `.planning/phases/` is withheld
+at all. Detection itself is unchanged: the withholding is BY PATH, so every
+category and every signal fires exactly as it did, and a range whose changed
+files are ALL withheld reads `empty: true` and still clears as a completed
+check.
+
 Two files carry the word surface and they answer different questions.
 `cadence-core/bin/lib/surface-scan.mjs` answers which categories a project
 SCOPES - once, from its structure, feeding the one-time ask below, and returning

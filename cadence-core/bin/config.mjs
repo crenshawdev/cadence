@@ -28,6 +28,7 @@ import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
+import { isForgeSlug, splitForgeHost } from './lib/forge-decision.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // SCHEMA is loaded lazily, inside the dispatch try block below, so a missing
@@ -54,10 +55,13 @@ const fail = (reason, detail, hint) => {
 
 // --- value typing ------------------------------------------------------------
 
-// Validate a single already-parsed value against a schema spec.
-// Returns null if ok, else an error string.
+// Validate a single already-parsed value's TYPE against a schema spec.
+// Returns null if ok, else an error string. checkValue below is what callers
+// reach: it runs this first and only then the optional per-key grammar, so a
+// value of the wrong type reports the type rather than a grammar it could never
+// have satisfied.
 /** @param {{type:string, min?:number, max?:number, values?:any[]}} spec @param {any} v */
-function checkValue(spec, v) {
+function checkType(spec, v) {
   switch (spec.type) {
     case 'bool':
       return typeof v === 'boolean' ? null : 'expected true or false';
@@ -87,6 +91,71 @@ function checkValue(spec, v) {
     default:
       return `unknown schema type ${spec.type}`;
   }
+}
+
+// The named grammars a schema key may claim, as a FROZEN registry of one
+// predicate each rather than a branch per key inside checkValue.
+//
+// WHY A NARROWING AT ALL, and why here. `git.forge_repo` and `git.forge_host`
+// are typed `string_or_null`, which admitted `forge example.com/../x` and every
+// other shape no forge serves - and both values are TYPED BY A USER at setup
+// and then interpolated onto a command line, first into the `config.mjs set`
+// line the workflow prints and then into a `tea`/`gh`/`glab` argument vector.
+// The write face is where a typed answer can still be refused with the user
+// still there to retype it, which is why the check lives at `checkValue` (the
+// one point `set`, `check` and `validate` all reach) and not at each reader.
+//
+// The predicates are IMPORTED from lib/forge-decision.mjs, never restated:
+// `isForgeSlug` is already the one answer to "what may a repository selector
+// be" and `splitForgeHost` the one answer for an instance address, and a second
+// spelling here is how a rule comes to be enforced in two strengths.
+//
+// Each entry carries its own sentence because the two keys refuse for different
+// reasons, and what a user reads has to say what is WRONG with the value rather
+// than that it failed.
+const GRAMMARS = Object.freeze({
+  forge_slug: Object.freeze({
+    ok: (v) => isForgeSlug(v),
+    error: 'expected an owner/name slug - two or more segments of letters, digits, '
+      + '`.`, `_` or `-`, no segment starting with `-`, and no `.` or `..` segment',
+  }),
+  forge_host: Object.freeze({
+    ok: (v) => splitForgeHost(v) !== null,
+    error: 'expected a hostname, optionally followed by `:<port>` - dot-separated '
+      + 'labels of letters, digits and `-` where no label starts or ends with `-`, '
+      + 'and a port of 1-65535 in decimal with no leading zero',
+  }),
+});
+
+// Evaluate a spec's optional `grammar` marker, AFTER its type has passed.
+//
+// A `null` value skips the grammar: null is the schema default on every key
+// that carries one and means the question was never asked, so failing it would
+// refuse the scaffolded templates/config.json.
+//
+// A marker naming a predicate the registry does not hold is an ERROR, in the
+// same shape checkType's `default:` arm answers an unknown `spec.type`, and
+// NEVER a no-op. A marker silently treated as satisfied would let a future key
+// claim a grammar nothing enforces - the silent pass lib/schema-eval.mjs's
+// header refuses at length, for this reason.
+/** @param {{grammar?:string}} spec @param {any} v */
+function checkGrammar(spec, v) {
+  const name = spec.grammar;
+  if (name === undefined) return null;
+  if (v === null) return null;
+  const grammar = Object.hasOwn(GRAMMARS, name) ? GRAMMARS[name] : undefined;
+  if (!grammar) return `unknown schema grammar ${name}`;
+  return grammar.ok(v) ? null : grammar.error;
+}
+
+// Validate a single already-parsed value against a schema spec: its type, then
+// the per-key grammar when the spec claims one. The one point `set`, `check`
+// and `validate` all reach.
+/** @param {{type:string, min?:number, max?:number, values?:any[], grammar?:string}} spec @param {any} v */
+function checkValue(spec, v) {
+  const typeError = checkType(spec, v);
+  if (typeError) return typeError;
+  return checkGrammar(spec, v);
 }
 
 // Parse a CLI value token: JSON where it parses (true/false/12/null/"s"/[...]),

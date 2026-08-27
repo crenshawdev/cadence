@@ -99,7 +99,10 @@ Two stops first, before anything is written.
         `forge.example.com` - and NOT the SSH endpoint the remote URL carries,
         which is often a different name (`ssh.example.com`); that split is a
         normal deployment rather than a misconfiguration, this repository is one,
-        and only the browser host resolves a `tea` login. `github` and `gitlab`
+        and only the browser host resolves a `tea` login. Say that the answer may
+        carry a PORT when the instance is not on the default one, spelled
+        `host:port` - `forge.example.com:3001` - and that it is the port the
+        BROWSER reaches, never the SSH port. `github` and `gitlab`
         are never asked this; their hosts are fixed.
 
      **On "None of these" the step REFUSES and stops** - it does not fall

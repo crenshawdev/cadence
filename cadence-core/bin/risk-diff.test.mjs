@@ -21,6 +21,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanDiff, scanDeclared } from './lib/risk-diff.mjs';
 import { CATEGORIES } from './lib/surface-scan.mjs';
+import { REVIEWER_TEXT_PATHSPECS } from './planning/risk-check.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
@@ -393,6 +394,170 @@ test('risk-check run: a diff DRIVER cannot turn a risky range into a completed E
   assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
   assert.equal(records[0].empty, false);
   assert.equal(records[0].matches.length, 1, JSON.stringify(records[0]));
+});
+
+// The destructive git command the `.mjs` fixture below carries. FIFTH in the
+// destructive list where DESTRUCTIVE_LINE's pattern is FIRST, which is what the
+// second row turns on. Assembled the way DESTRUCTIVE_LINE is, for the same
+// reason: the census row feeds a whole-file add of this file to the detector.
+const DESTRUCTIVE_GIT = 'git' + ' reset --hard';
+
+/** An adjudication record shaped the way the seam writes one: the reviewer's
+ * `failure_scenario` stored VERBATIM, which is the reason these files trip the
+ * destructive category at all (references/review-record.md requires the stored
+ * restatement to match the reviewer's returned text byte for byte). */
+const adjudicationBody = (quoted) => `${JSON.stringify({
+  findings: [{ id: 'F1', ruling: 'survivor', failure_scenario: `an operator runs ${quoted} on the host` }],
+}, null, 2)}\n`;
+
+test('risk-check run: a record quoting a destructive command is a completed CLEAR, not a fire', () => {
+  // RSK-06, AC1. `ADJUDICATION-*.json` stores the reviewer's own words byte for
+  // byte by design, so the DOCS commit that files a finding quoting a recursive
+  // delete re-tripped the very gate that produced the finding, and a user
+  // reviewing their own work had to override a blocking gate to record its
+  // output. The range read now withholds the four record artifacts by pathspec,
+  // so the hunk never reaches scanDiff and no signal leaves the table.
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, '.planning/phases/1/ADJUDICATION-risk_surface-plan-1.json',
+    adjudicationBody(DESTRUCTIVE_LINE));
+  // The second file is load-bearing and not scenery: it is what leaves the
+  // SCANNED range non-empty, so the `empty:false` below reads as a completed
+  // clear over real changed lines. A fixture that committed the record alone
+  // would be asserting the EMPTY arm, which is a different claim.
+  const head = commitFile(repo, 'docs/notes.md', 'a note carrying nothing at all\n');
+
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', head]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.deepEqual(r.matches, [], JSON.stringify(r));
+  assert.equal(r.inconclusive, false, JSON.stringify(r));
+  assert.equal(r.empty, false,
+    'the scanned range was empty, so this row proves nothing about a COMPLETED clear');
+
+  // And the RECORD says the same, since that is what `risk-check status` and
+  // every later reader join on - an envelope that cleared over a record that
+  // did not is the split RSK-01 exists to stop.
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.deepEqual(records[0].matches, [], JSON.stringify(records[0]));
+  assert.equal(records[0].empty, false, JSON.stringify(records[0]));
+});
+
+test('risk-check run: withholding the record does not withhold detection from the code beside it', () => {
+  // AC2, D-03. The exclusion is BY PATH, so the same range still fires on a
+  // changed line in a `.mjs` file. WHY THE `signal` STRING IS ASSERTED and not
+  // just the category: signalIn iterates a category's PATTERNS outer and the
+  // changed lines inner, returning on the first pattern any line matches, and
+  // the recursive-delete pattern is FIRST in the destructive list where the git
+  // command is fifth. So before this phase the withheld record's own line
+  // answered first and the signal named the recursive delete (this comment may
+  // not SPELL that pattern - the census row below reads this file). Asserting
+  // the git command is what makes this row FAIL against the pre-fix tree rather
+  // than merely pass after it. Loosening it to a category check silently gives
+  // that up.
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, '.planning/phases/1/ADJUDICATION-risk_surface-plan-1.json',
+    adjudicationBody(DESTRUCTIVE_LINE));
+  const head = commitFile(repo, 'src/deploy.mjs',
+    `export const wipe = () => sh('${DESTRUCTIVE_GIT}');\n`);
+
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', head]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.equal(r.empty, false, JSON.stringify(r));
+  assert.deepEqual(r.matches,
+    [{ category: 'destructive', signal: 'changed line: a destructive git command' }],
+    JSON.stringify(r));
+});
+
+// --- what the range read withholds, and where the boundary is ----------------
+//
+// AC3. Every row below drives off REVIEWER_TEXT_PATHSPECS, the constant the
+// seam's own `git diff` is handed, rather than off a second spelling of the
+// four (D-04) - a list and its test that are typed out twice drift apart, and
+// the drift is silent because both halves still look right.
+
+/** A range that commits ONE fixture file plus one unrelated file carrying
+ * nothing risky. The second file is load-bearing: it is what leaves the
+ * SCANNED range non-empty, so a `matches:[]` answer here reads as a COMPLETED
+ * clear and not as the empty arm, which is a different claim. */
+function clearRange(rel, body) {
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, rel, body);
+  const head = commitFile(repo, 'docs/notes.md', 'a note carrying nothing at all\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', head]);
+  return { r, dir };
+}
+
+/** Stored reviewer text of whichever shape the artifact's extension implies.
+ * The construct stays ASSEMBLED, for the reason the top of this file states. */
+const recordBody = (rel) => (rel.endsWith('.json')
+  ? adjudicationBody(DESTRUCTIVE_LINE)
+  : `stored reviewer text: an operator runs ${DESTRUCTIVE_LINE} on the host\n`);
+
+/**
+ * The four artifacts, spelled with a REAL filename this repository's own
+ * `.planning/phases/` has held, so each row proves the pathspec matches what
+ * the workflows actually WRITE and not merely what the glob was written
+ * against. A generic `ADJUDICATION-x.json` would pass while the discriminator
+ * the seam really emits missed.
+ *
+ * A `for` loop around `test()` registers four SEPARATE rows and is not the
+ * shape this file's one-row-per-test rule refuses: the hazard that rule names
+ * is a table looped INSIDE one test(), whose count hides a row that never ran.
+ * Each name below is reported and fails on its own.
+ */
+for (const name of ['ADJUDICATION-risk_surface-plan-1.json', 'REVIEW-risk_surface-plan-1.md',
+  'FINDINGS.json', 'verifier-findings.json']) {
+  test(`risk-check run: \`${name}\` is withheld from the range the gate reads`, () => {
+    const { r } = clearRange(`.planning/phases/1/${name}`, recordBody(name));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.checked, true, JSON.stringify(r));
+    assert.deepEqual(r.matches, [], JSON.stringify(r));
+    assert.equal(r.empty, false, JSON.stringify(r));
+  });
+}
+
+test('risk-check run: a PLAN.md in the SAME directory still trips - the boundary is the four shapes', () => {
+  // Where the withholding STOPS, and why it stops there. A destructive command
+  // written into a plan's Action is not a record of something a reviewer said:
+  // it is the text an executor is handed to RUN. So a plan file under the same
+  // `.planning/phases/<N>/` directory stays scanned, and this exclusion is not
+  // "documentation under `.planning/` is exempt". Deleting this row is how the
+  // scope quietly widens to all of `.planning/`.
+  const { r } = clearRange('.planning/phases/1/PLAN.md',
+    `- **Action:** run \`${DESTRUCTIVE_LINE}\` over the build directory first\n`);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.deepEqual(r.matches.map((m) => m.category), ['destructive'], JSON.stringify(r));
+});
+
+test('risk-check run: EVERY entry of the withheld set is exercised, however many it holds', () => {
+  // The drift door. The rows above name four artifacts by hand; this one is
+  // driven entirely by the constant, so a FIFTH entry added to it later - the
+  // `DEFERRED-*.json` case this phase deliberately left out is the known
+  // candidate - is exercised without anyone remembering to come back here.
+  //
+  // The count is DERIVED on both sides: `ran` is what the loop did and
+  // `.length` is what the constant holds, both read at run time. That is a
+  // measurement, not a census by lib/census-registry.mjs's definition, so it
+  // owes no marker and no registry row - and a hand-typed `4` here would owe
+  // both while protecting less.
+  let ran = 0;
+  for (const spec of REVIEWER_TEXT_PATHSPECS) {
+    // The concrete path each pathspec names: drop the magic and put a literal
+    // where each wildcard is.
+    const rel = spec.replace(':(top,exclude)', '').replace(/\*/g, 'x');
+    const { r } = clearRange(rel, recordBody(rel));
+    assert.equal(r.checked, true, `${spec}: the range was not read at all`);
+    assert.deepEqual(r.matches, [], `${spec} did not withhold ${rel}: ${JSON.stringify(r.matches)}`);
+    assert.equal(r.empty, false, `${spec}: the scanned range was empty, so the row proves nothing`);
+    ran++;
+  }
+  assert.equal(ran, REVIEWER_TEXT_PATHSPECS.length, 'the loop skipped a withheld pathspec');
 });
 
 test('risk-check run: a --surfaces token outside the eight is refused, and appends NOTHING', () => {

@@ -6,6 +6,69 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.5] - 2026-08-27
+
+This cycle had no subject, it had a standard. Every open issue got re-triaged
+against one question, would a user running Cadence on their own project ever
+feel this, or does it only bite while Cadence is being developed on Cadence.
+Eight answered the first way and those eight are the release.
+
+The hard block was the forge. `git.forge_host` only ever accepted a bare
+hostname, so anyone whose Forgejo lives on `forge.example:3001` could not state
+that at all, and Cadence would happily wire an origin at the default port and
+then fail to talk to it. The key now takes `host[:port]`, the grammar is
+enforced at the config write face rather than at the first call that trips over
+it, and the port is carried whole into the `tea` login match and into
+`forge.mjs create`. `create` also refuses a `--remote-url` whose port the
+configured instance does not serve, instead of wiring a wrong-port origin
+silently, and it refuses a `--remote-url` on a row whose create wires `origin`
+itself rather than letting the two fight.
+
+`/cad-execute` could pay for the same work twice. If a session died between the
+last task's commit and the SUMMARY write, the phase derived as `planned` again
+and the next run re-dispatched every plan on top of committed work.
+`/cad-execute` now reads each plan's `reports/plan-<k>.md` first line before it
+spends anything, refuses a phase whose every plan already reports
+`PLAN COMPLETE`, and dispatches only the plans that do not.
+
+The risk gate was tripping on its own paperwork. A `risk_surface` finding that
+quoted a destructive command got stored verbatim in the adjudication record, and
+committing that record re-tripped the very gate that produced it, so reviewing
+your own work meant overriding a blocking gate to file what the gate had told
+you. `risk-check run` now withholds the four stored-reviewer-text artifacts
+under `.planning/phases/` from the range it reads. The withholding is by path,
+so every category and every signal still fires exactly as before.
+
+A killed rotation used to disable rotation forever. `trace.jsonl` claims a
+rotation with a lock, and a SIGKILL or a host timeout mid-rotation left that
+claim behind with nobody to release it, so the record stopped rotating and every
+later append paid about 266 ms for the privilege. The claim now dates itself
+with a sidecar, a claim older than 30 s is evicted and rotated by the next
+append, and the stamp is written private and published only by an arm that owns
+the claim so a losing append never restarts the clock. One rotation lost instead
+of all of them.
+
+Last, `recall` did not fold suffixes, so a query for `seam` missed every
+document that said `seams` and `close` missed `closes`. Porter steps 1a and 1b
+now run inside `tokenize`, which is the one site both indexing and querying
+already pass through, so index time and query time are identical because there
+is one code path rather than two that agree. A 30 document fixture corpus and a
+16 query named-hits baseline are committed under `cadence-core/bin/fixtures/`
+and run in the suite, and 14 of the 16 queries return the same top hits they did
+before the fold. The fold is steps 1a and 1b only: `verifies` and `verify` are
+still two terms, and nothing here claims otherwise.
+
+Five phases, 53 commits off `main`, 8 feat against 7 fix. Eight requirement ids,
+all traced to a verified phase: `FRG-03`, `FRG-04`, `FRG-05`, `FRG-06`,
+`EXP-03`, `RSK-06`, `TRC-09`, `RCL-08`. `/cad-audit` PASS on both arms, 8 of 8
+requirements traced with 0 broken, 23 of 23 acceptance criteria covered with 0
+breaks. UAT 38 passed, 0 failed.
+
+Two items from the recall issue did not ship and are recorded rather than
+dropped: the multi-query union, which changes the `recall` seam signature three
+callers pin, and the failure records sitting outside the corpus, which needs a
+scope decision this cycle did not take.
+
 ## [3.7.4] - 2026-08-27
 
 `v3.7.3` fixed the instruments. This cycle spent what they measure, and the
@@ -4241,6 +4304,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.5]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.5
 [3.7.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.4
 [3.7.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.3
 [3.7.2]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.2

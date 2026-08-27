@@ -26,6 +26,38 @@ The refusal has to land before the protected-branch guard, before the
 them, a re-run that the workflow is about to refuse has already asked the user a
 branch question and written a lifecycle event for a run that never happens.
 
+## locate - why the replay stop is here and not in derivePhases
+
+A phase whose plans all committed but whose `SUMMARY.md` never landed derives
+`planned` (`bin/planning/core.mjs:191-206` reads artifacts, and committed work
+moves nothing), so the `executed`/`complete` refusal above never fires and the
+next run re-dispatches finished work.
+
+Minting a new derived status is the more honest fix, because the wrong answer
+IS the derivation's. Rejected on blast radius: it teaches `status`, `audit`,
+`phase-done` and the cursor a new value at once, and every consumer switching on
+the status string would have to learn it. `locate` already stops before
+`git_guard` and the `phase_start` anchor, so the ordering the stop needs is free
+there.
+
+## locate - why the report FILE decides, over every plan
+
+The spike (`.planning/spikes/execute-replay-blast-radius/SPIKE.md`) dispatched
+two real executors at already-committed work and measured zero commits and zero
+byte changes. The cost is money and a false run record, not a corrupted tree -
+which is why this is a guard and not a resume path. Both probes had
+`reports/plan-<k>.md` on disk with no `SUMMARY.md` beside it, so the report file
+alone separates the two states and `locate` cross-checks it against no git read.
+
+It quantifies over EVERY plan because the simpler rule - any `PLAN COMPLETE`
+report is a replay - would strand a multi-plan phase mid-flight and force a
+`/cad-undo` of commits that are fine.
+
+One state this cannot see, stated rather than left out: a parallel-path plan
+whose report was written inside an unmerged worktree leaves nothing at
+`.planning/phases/<N>/reports/` for `locate` to read. The stop does not fire for
+it, and that run behaves as it does today.
+
 ## git_guard - the two gaps the index check cannot close
 
 The check reads the INDEX, so it establishes that no work was staged at phase

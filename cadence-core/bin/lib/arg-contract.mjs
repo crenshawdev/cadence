@@ -559,6 +559,16 @@ export const CONTRACTS = {
     'plan-overlap': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // `--rerun` is the caller's override, declared here rather than left as a
+    // flag the seam reads without a row. `boolean` + `fallback` on both axes is
+    // what every other bare flag in this table declares (`--plan-time`,
+    // `--join`): presence IS the grammar, so neither a value nor its absence is
+    // a refusal the CLI actually carries out, and declaring one would be a
+    // refusal the adoption census then fails to exercise.
+    'replay-check': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--rerun': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
     'plan-size': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--max-reqs': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },

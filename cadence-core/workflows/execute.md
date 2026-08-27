@@ -37,6 +37,47 @@ Resolve the phase:
   refused beside `executed`. Stop HERE, before `git_guard`: before the
   protected-branch guard, before the `phase_start` trace anchor, and before any
   executor dispatch.
+- Ask the seam whether this phase's work is already committed, before anything
+  is spent. Pass `--rerun` exactly when the command line carried it:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" replay-check --phase <N> [--rerun]
+  ```
+
+  `replay: true` -> stop: "Phase <N> already has a completed executor report for
+  every plan (name every path the envelope's `reports_read` lists). A session
+  died between the last task's commit and the SUMMARY write: the work is on the
+  branch, so dispatching again would pay for it a second time and overwrite those
+  reports. Run /cad-undo <N> first, then /cad-execute <N>. To run over that
+  record anyway: /cad-execute <N> --rerun." Stop HERE, before `git_guard`:
+  before the protected-branch guard, before the `phase_start` trace anchor, and
+  before any executor dispatch.
+  `replay: false` -> the run proceeds to dispatch. WHAT makes it false is the
+  seam's to decide and not this file's to restate: a phase with no `reports/`
+  directory, any one plan without a report, a first line reading `PLAN PARTIAL`
+  or `PLAN CHECKPOINT: <type>`, a `PLAN COMPLETE` quoted inside a report body
+  rather than on its first line, and a rotated `plan-<k>.<n>.md` sibling are each
+  a case `cadence-core/bin/planning-replay-check.test.mjs` pins against a real
+  fixture directory. Restating the rule here is how the two come to disagree, and
+  only one of them is tested.
+  `ok:false` -> relay its `reason` and `hint` and stop.
+
+**The dispatch set.** The `dispatch_set` on that same envelope - the phase's
+plan files minus every plan already reporting complete, and every plan the phase
+lists under `--rerun`. ONE call answers both questions, so a part-finished phase
+costs no second read. The rail,
+stated once and holding for both paths: no step below dispatches a plan outside
+the dispatch set, on the sequential path or the parallel one. A skipped plan is
+never dispatched, so it gets no bracket, no `risk-check` range and no `diff`
+fire - that follows from not being dispatched and needs no rule of its own.
+Two things the dispatch set does NOT govern. The `plan-overlap` seam call in
+`choose_path` is a question about the phase's DECLARED plan files and stays
+exactly as it is - an `overlaps` entry naming only skipped plans still routes
+sequential, because widening toward sequential is the safe direction and
+re-deciding a seam's answer in prose is how the two come to disagree. And the
+`summary` step still reads EVERY plan's report, a skipped plan's included,
+because SUMMARY.md is the phase's record and that plan's work is part of the
+phase.
 
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY use
 it) and the config in one message - independent, so only a call that consumes a
@@ -157,9 +198,9 @@ Sequential (default) unless ALL of these hold:
 </step>
 
 <step name="execute_sequential">
-For each plan in order: dispatch ONE cad-executor via the spawn-agent seam
-(references/seam-spawn-agent.md), in the normal working tree, no worktrees, and
-wait for it to finish before starting the next.
+For each plan in the dispatch set, in order: dispatch ONE cad-executor via the
+spawn-agent seam (references/seam-spawn-agent.md), in the normal working tree,
+no worktrees, and wait for it to finish before starting the next.
 
 Record the pre-plan HEAD, then dispatch with a prompt ordered stable-first, so
 successive executors in the phase share a cached prefix: phase-level context
@@ -187,9 +228,10 @@ Repeating them in the volatile dispatch tail pays for cached content twice.
 `<plandir>/reports/plan-<k>.md` - `<plandir>` is the plan file's own directory -
 and returns a five-field digest. Derive that path from the plan file you
 dispatched; the digest deliberately does not carry it. Open a report file at
-two kinds of moment only: the `summary` step, once per plan, and a continuation
+three kinds of moment only: the `summary` step, once per plan; a continuation
 branch, where you read ONLY the task numbers and commit hashes for the `git log`
-confirmation that branch already performs. Nowhere else, and never back into a
+confirmation that branch already performs; and `locate`'s replay stop, which
+reads the FIRST LINE alone. Nowhere else, and never back into a
 dispatch prompt - re-inlining the table returns the bytes the file exists to
 move out. Before a worktree branch is merged its report lives in the worktree,
 not here: `git worktree list --porcelain` gives the worktree root for branch
