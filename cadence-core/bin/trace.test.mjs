@@ -11,7 +11,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
   copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
-  statSync,
+  statSync, linkSync, utimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
@@ -147,6 +147,31 @@ function padToBound(dir) {
   assert.equal(readFileSync(tracePath(dir)).length, MAX_TRACE_BYTES - 1);
 }
 
+/**
+ * A root at the bound whose rotation claim was taken and never released - the
+ * state a claimant killed or timed out mid-rotation leaves behind (TRC-09).
+ *
+ * Constructed DIRECTLY: no kill, no signal, no child process. A `linkSync` and
+ * a dated sidecar reproduce the whole state a SIGKILL produces - `nlink 2`, the
+ * full 250 ms budget on every append, and a record growing past the bound with
+ * every one of them - and a spawned holder is reserved for the multi-writer
+ * race the `writer()` helper already runs.
+ *
+ * @param {string} dir
+ * @param {number|null} agoMs how long ago the claim was dated, or `null` for a
+ *   claim carrying NO sidecar at all - the shape every claim taken before
+ *   TRC-09 shipped has.
+ */
+function killedClaim(dir, agoMs) {
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  linkSync(tracePath(dir), rotatedTracePath(dir));
+  if (agoMs === null) return;
+  writeFileSync(rotationClaimPath(dir), 'held\n');
+  const at = (Date.now() - agoMs) / 1000;
+  utimesSync(rotationClaimPath(dir), at, at);
+}
+
 test('appendEvent: a record at the bound rotates, and the append lands', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
@@ -205,6 +230,49 @@ test('appendEvent: a completed rotation RELEASES the claim and leaves the sideca
   assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
     'the leftover sidecar drove a rotation of a record nowhere near the bound');
   assert.deepEqual(siblings(dir), ROTATED_SET);
+});
+
+test('appendEvent: an ABANDONED claim is reclaimed and the record rotates (TRC-09)', () => {
+  // 60 s dates the claim clear of the 30 s bound with margin on either side.
+  const dir = root();
+  killedClaim(dir, 60_000);
+
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.deepEqual(res, { written: true, corr: '1-abc1234' });
+
+  // THE ASSERTION THAT CANNOT BE DROPPED. A sibling still sharing the live
+  // record's inode satisfies every size and content assertion in this file and
+  // is a STANDING claim - which is the defect, not the fix.
+  assert.notEqual(statSync(tracePath(dir)).ino, statSync(rotatedTracePath(dir)).ino,
+    'the abandoned claim was never broken: the sibling is still the live record');
+
+  assert.ok(readFileSync(tracePath(dir)).length < MAX_TRACE_BYTES,
+    'the record is still over the bound, so the next append pays the budget again');
+  // The sibling holds the PRIOR generation, oldest events first.
+  const rotated = readFileSync(rotatedTracePath(dir), 'utf8');
+  assert.equal(JSON.parse(rotated.split('\n')[0]).event, ANCHOR);
+  // ...and the event that triggered the reclaim is in the LIVE record.
+  assert.equal(lines(dir).filter((e) => e.event === 'resolve').length, 1);
+  assert.equal(correlationId(dir, 1), '1-abc1234');
+  // The pair plus the reclaimer's own sidecar, and nothing else: no `.evict.`
+  // and no `.rotate.` file left behind on the way through.
+  assert.deepEqual(siblings(dir), ROTATED_SET);
+});
+
+test('appendEvent: after the reclaim the next append stops paying the budget', () => {
+  const dir = root();
+  killedClaim(dir, 60_000);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.equal(statSync(tracePath(dir)).nlink, 1, 'a claim is still standing on the record');
+
+  // 252, 252 and 255 ms per append were measured on 2026-08-27 while the claim
+  // stood, each one returning `{written:true}` into a record that kept growing.
+  // 50 ms is a five-fold margin under the cheapest of those, not a benchmark of
+  // the append itself - what it detects is a claim still being waited out.
+  const t0 = Date.now();
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  const ms = Date.now() - t0;
+  assert.ok(ms < 50, `the append still paid the rotation budget: ${ms}ms`);
 });
 
 test('appendEvent: a record already PAST the bound rotates, and its sibling keeps the excess', () => {
