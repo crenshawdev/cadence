@@ -1,0 +1,53 @@
+{
+  "phase": "3",
+  "trigger": "plan",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "06081b94325152bb263d89103c413cc0c74aa765",
+  "head": "c2ae2a2dccd078379ed585b8d8f52817b99654ba",
+  "base_id": "06081b94325152bb263d89103c413cc0c74aa765",
+  "head_id": "c2ae2a2dccd078379ed585b8d8f52817b99654ba",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/3/CONTEXT.md",
+      "line": 59,
+      "severity": "blocker",
+      "claim": "The plan explicitly declines AC4 instead of delivering it: Task 1 verifies `f70a0443..cf2571b8`, while the Notes say the locked `f70a0443..7a8a449a` range will still match and calls the AC4 head wrong. Executing the pathspec-only change therefore leaves the required fixed range failing AC4.",
+      "failure_scenario": "After all tasks pass, running `risk-check run --base f70a0443 --head 7a8a449a --surfaces destructive` still finds the `rm -rf` lines in ROADMAP.md and risk-surface.md. The phase cannot satisfy every locked acceptance criterion or claim completion under the supplied Context.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "c2ae2a2dccd078379ed585b8d8f52817b99654ba",
+      "base_id": "06081b94325152bb263d89103c413cc0c74aa765",
+      "head_id": "c2ae2a2dccd078379ed585b8d8f52817b99654ba"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/3/CONTEXT.md",
+      "line": 52,
+      "severity": "high",
+      "claim": "AC2 requires the same destructive text to remain detectable from a `.mjs` file in the same range, but Task 2 deliberately puts `rm -rf` only in the withheld record and tests a different `.mjs` construct, `git reset --hard`. Its pre-fix red/green signal-order assertion does not test the stated input.",
+      "failure_scenario": "An implementation could accidentally make the pathspec or surrounding diff handling suppress `rm -rf` hunks from `.mjs` files while continuing to expose `git reset --hard`. Task 2 would pass because it only exercises the latter in code, but the same `rm -rf` text required by AC2 would no longer trip detection.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/risk-diff.test.mjs",
+        "line": 377,
+        "note": "The posited failure is mechanically unreachable: cadence-core/bin/planning/risk-check.mjs reads its diff through a git PATHSPEC, which selects by PATH only and never inspects line content, so it cannot suppress one destructive construct while leaving another visible in the same file. Detection outside the withheld set is already pinned - risk-diff.test.mjs:377 commits DESTRUCTIVE_LINE into `deploy.sh`, a path no D-02 exclusion covers, and asserts the destructive match; risk-diff.test.mjs:1562 asserts the same construct matches from METHOD.md. Either row reddens the moment that construct stops tripping outside `.planning/phases/`. Task 2 row two's use of a DIFFERENT construct in the .mjs is required rather than an omission: signalIn returns on the first pattern any changed line matches, so a .mjs carrying the same construct as the withheld record would produce an identical `signal` string before and after the fix and the row would pass in both states, losing exactly the pre-fix red D-03 requires."
+      },
+      "base_id": "06081b94325152bb263d89103c413cc0c74aa765",
+      "head_id": "c2ae2a2dccd078379ed585b8d8f52817b99654ba"
+    }
+  ]
+}
