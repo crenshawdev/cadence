@@ -1,0 +1,90 @@
+{
+  "status": "needs_human",
+  "score": "5/7",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "`locate` carries a replay-stop arm that fires only on no `--rerun` plus a FIRST LINE reading exactly `PLAN COMPLETE` for EVERY plan, names the phase, each report path read and both remedies, and stops before git_guard / phase_start / any dispatch - sitting BELOW the executed/complete arm",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/workflows/execute.md:40-68 is the arm ('No `--rerun` token ... AND for EVERY plan file the phase lists, `<plandir>/reports/plan-<k>.md` exists and its FIRST LINE reads exactly `PLAN COMPLETE` -> stop: ...'), naming '(<name each report path you read>)', '/cad-undo <N> first, then /cad-execute <N>' and '/cad-execute <N> --rerun', closing 'Stop HERE, before `git_guard`: before the protected-branch guard, before the `phase_start` trace anchor, and before any executor dispatch.' Ordering is real, not just asserted: `<step name=\"locate\">` is line 13, `<step name=\"git_guard\">` line 107, and the only `trace append --phase <N> ... --event phase_start` is execute.md:147, inside git_guard. The arm is second, after the executed/complete arm at execute.md:31-39. Its two load-bearing cross-references check out: `<report_file>` in skills/cad-executor-contract/SKILL.md:198-239 derives the same `<plandir>/reports/plan-<k>.md` and rotates the OLD report to `plan-<k>.<n>.md` (so the current run's report is always the un-suffixed name the arm reads), and bin/planning/status.mjs:287-291 does omit `plans` for a lone PLAN.md, so the absent-key case the arm spells out is real and the zero-plan vacuous case is already taken by the `unplanned` arm at execute.md:29. Mutation-checked: deleting the arm from a scratch copy makes `EXP-03: execute.md refuses a phase whose every plan already reports complete` fail while #195 still passes."
+    },
+    {
+      "n": 2,
+      "truth": "The same arm states its not-fire cases outright - no `reports/` directory, a missing report for any one plan, a first line reading `PLAN PARTIAL` or `PLAN CHECKPOINT: <type>` - each still reaching the dispatch",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/workflows/execute.md:60-65: 'It does NOT fire, and the run proceeds to dispatch, when the phase has no `reports/` directory, when any one plan has no report, or when a first line reads `PLAN PARTIAL` or `PLAN CHECKPOINT: <type>` - each of those is a genuine continuation.' The EVERY-plan quantifier and the FIRST-LINE-exactly clause are both pinned in cadence-core/bin/prose-agreement.test.mjs:818-823 (/\\bFIRST LINE\\b[\\s\\S]*\\bexactly\\b/ and /\\bEVERY plan\\b/), and `PLAN PARTIAL` at :878-880. Note: only the PLAN PARTIAL case of the three is asserted by a test; the other two are prose-only."
+    },
+    {
+      "n": 3,
+      "truth": "`--rerun` still reaches the dispatch on the very phase the stop would refuse, and under it the dispatch set is every plan the phase lists",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "The trigger clause at cadence-core/workflows/execute.md:40 opens 'No `--rerun` token on the command line, AND ...', so the token alone falsifies it; execute.md:22-23 parses `--rerun` off `$ARGUMENTS` as the only other token; execute.md:73-74 'Under `--rerun` the dispatch set is every plan the phase lists, unchanged'. Pinned at prose-agreement.test.mjs:824-825 (trigger excludes --rerun) and :876-877 (the set block says what --rerun does to it)."
+    },
+    {
+      "n": 4,
+      "truth": "The per-plan report read is spent end to end: `locate` defines a dispatch set by subtraction, and BOTH dispatch sites - execute_sequential and the parallel path's own file - iterate that set rather than every plan, while `summary` still reads every plan's report",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/workflows/execute.md:70-85 ('**The dispatch set.** Every plan file the phase lists, MINUS every plan whose `<plandir>/reports/plan-<k>.md` first line reads `PLAN COMPLETE`'), with the rail naming both paths and the two carve-outs (plan-overlap in choose_path, summary reading every report). Consumed at execute.md:207 ('For each plan in the dispatch set, in order: dispatch ONE cad-executor ...') and cadence-core/references/execute-parallel.md:8-9 ('dispatch one cad-executor per plan IN THE DISPATCH SET `locate` defined'); summary still reads every plan at execute.md:451. Both consumption sites are mutation-checked in a scratch copy: reverting execute.md:207 to 'For each plan in order:' and, separately, reverting execute-parallel.md to 'cad-executor per plan' each fails `EXP-03: only the plans without a completed report reach a dispatch` with the reverted sentence quoted."
+    },
+    {
+      "n": 5,
+      "truth": "On a live half-reported phase (plan 1 reports PLAN COMPLETE, plan 2 has no report), trace.jsonl shows exactly one executor dispatch, keyed to plan 2",
+      "status": "UNCERTAIN",
+      "uat_item": 3,
+      "evidence": "The prose and its pins are in place (truth 4), but no live run in that shape exists: `grep -c '\"event\":\"dispatch\"' .planning/trace.jsonl` cannot distinguish a run that never happened. SUMMARY.md's own open items record it as not observed."
+    },
+    {
+      "n": 6,
+      "truth": "Against the spike's probe shape - tasks committed, report on disk, no SUMMARY.md - a live run stops with zero executors dispatched",
+      "status": "UNCERTAIN",
+      "uat_item": 5,
+      "evidence": "The stop is present and ordered ahead of every spend (truth 1), but the criterion is a statement about .planning/trace.jsonl after a live /cad-execute, and no such run happened in this phase."
+    },
+    {
+      "n": 7,
+      "truth": "The suite and self-verify are green with the budgets re-pinned for both edited prose surfaces",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "`node cadence-core/bin/test.mjs` -> tests 3460, pass 3460, fail 0 (one full-suite run). `node cadence-core/bin/self-verify.mjs` -> {\"ok\":true, ... \"problems\":[]} with `budgets` among the checked list. cadence-core/bin/weight-budgets.json:31 execute-parallel.md 5711 and :71 execute.md 32404, both accepted by the budgets check. No debt marker (TODO/FIXME/XXX/HACK/placeholder/not implemented) appears in the added lines of 154a54fd~1..8c2720b5. EXP-03 is the phase's only mapped requirement (.planning/REQUIREMENTS.md:32-37, :438) and is claimed by the delivered arm; nothing mapped is orphaned."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "The replay stop exists in locate and is worded to stop before anything is paid for",
+      "evidence": "cadence-core/workflows/execute.md:40-68 - the arm, its trigger (no --rerun AND every plan's report first line exactly `PLAN COMPLETE`), each report path named, both remedies, and the closing 'Stop HERE, before `git_guard`' sentence. Ordering is structural: locate opens at line 13, git_guard at 107, the phase_start trace append at 147. It sits below the executed/complete arm, so prose-agreement.test.mjs:717's `#195` test still finds its own. Deleting the arm in a scratch copy fails the new EXP-03 test."
+    },
+    {
+      "k": 2,
+      "name": "The stop does not fire for a genuine continuation",
+      "evidence": "cadence-core/workflows/execute.md:60-65 names all three not-fire cases (no reports/ directory, any one plan missing its report, a first line reading PLAN PARTIAL or PLAN CHECKPOINT: <type>) and says the run proceeds to dispatch. prose-agreement.test.mjs:878-880 pins PLAN PARTIAL; the FIRST-LINE-exactly and EVERY-plan clauses are pinned at :818-823."
+    },
+    {
+      "k": 4,
+      "name": "--rerun still reaches the dispatch",
+      "evidence": "execute.md:40 - the trigger requires no --rerun token, which execute.md:22-23 parses off $ARGUMENTS; execute.md:73-74 keeps the dispatch set at every plan under --rerun. Both pinned at prose-agreement.test.mjs:824-825 and :876-877."
+    },
+    {
+      "k": 6,
+      "name": "The suite and self-verify are green",
+      "evidence": "node cadence-core/bin/test.mjs -> 3460 pass / 0 fail; node cadence-core/bin/self-verify.mjs -> ok:true with problems:[] and budgets among the checks; weight-budgets.json re-pinned to 32404 (execute.md) and 5711 (execute-parallel.md)."
+    }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "Run /cad-execute <N> against a phase whose PLAN-1 has a reports/plan-1.md reading PLAN COMPLETE on its first line and whose PLAN-2 has no report, then read .planning/trace.jsonl for that run",
+      "expected": "The run reaches the dispatch and shows exactly one executor dispatch for that run, keyed to plan 2 - plan 1 is not re-dispatched",
+      "why_human": "Out-of-reach resource, not an unexercised probe: the deliverable is prose an orchestrator obeys, so the only way to observe the dispatch count is the interactive /cad-execute command spawning real cad-executor subagents, which a verifier subagent cannot invoke and which would append real lifecycle events to .planning/trace.jsonl and buy a dispatch. Everything checkable without a live run is already verified (truths 1-4)."
+    },
+    {
+      "name": "Run /cad-execute <N> against the spike's probe shape - every task committed, reports/plan-<k>.md on disk for every plan, no SUMMARY.md - and check .planning/trace.jsonl for that run",
+      "expected": "The run stops inside locate naming the phase, each report path and both remedies, with no dispatch event and no phase_start line appended for that run, and no protected-branch question asked",
+      "why_human": "Same reason: only a live /cad-execute exercises whether the orchestrator obeys the arm, and running it spends a session against a real phase and writes to the trace record. Code inspection has already settled that the arm exists, triggers correctly and is ordered ahead of git_guard, the phase_start append and every dispatch site."
+    }
+  ]
+}
