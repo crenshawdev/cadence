@@ -21,8 +21,8 @@ would a user on their own project feel it.
   construction since the one-round cap was spent, and read 52 source files into
   the main context doing it
 - **EXP-05**: the executor contract verifies a task with the task's own test and
-  runs the full suite at one stated site per task, never as a first probe and
-  never inside the targeted fix loop. smithers baseline: 6 to 29 bare suite runs
+  runs the full suite at one stated site per dispatch, never as a first probe
+  and never inside the targeted fix loop. smithers baseline: 6 to 29 bare suite runs
   per dispatch against a 0.6 s suite
 
 **Held over from the same read**, filed in `.planning/CAPTURE.md` rather than

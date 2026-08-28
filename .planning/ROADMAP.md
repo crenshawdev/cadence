@@ -69,7 +69,7 @@ suite runs are the turns their executor bill is made of.
 **Depends on:** nothing
 **Requirements:** EXP-05
 **Success Criteria:**
-1. `skills/cad-executor-contract/SKILL.md` step 2 names the targeted run - the task's own `Verify:` command, or the test file the task's files map to - as the verification, and names the full suite's single site (per OQ-2) inside the commit protocol, run once per task and never as a first probe.
+1. `skills/cad-executor-contract/SKILL.md` step 2 names the targeted run - the task's own `Verify:` command, or the test file the task's files map to - as the verification, and names the full suite's single site (per OQ-2) immediately before the digest, run once per dispatch and never as a first probe.
 2. The contract says in one sentence that a failing targeted run is re-run targeted until green, and the suite is not touched inside that loop.
 3. `workflow.test_command`, when set, is the suite command at that one site and nowhere else; the contract's existing "if set and relevant" is replaced by the site.
 4. Measured on the next foreign-project phase: bare full-suite invocations per executor dispatch at or below one per task plus one, read from `reads.jsonl` the way the 2026-08-28 baseline (6 to 29 per dispatch) was.
