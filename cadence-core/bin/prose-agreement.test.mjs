@@ -17,7 +17,7 @@
 // *.test.mjs, so nothing here carries an @ts-check burden.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname, sep } from 'node:path';
@@ -2265,6 +2265,66 @@ test('triage-gate.md: the corr-keyed re-arm read-back survives the deferred arm 
     'the deferred arm no longer terminates - a cap with no terminal arm is the loop '
     + 'with an extra step');
 });
+
+// --- the same read-back, RUN rather than matched (phase-1 D-04) -------------
+//
+// The arm above quotes the filter byte-for-byte, which is the right test for a
+// line that must not silently lose a term - and it is blind to the one failure
+// this phase was opened on. The filter was exactly the bytes it had always
+// been and it ANSWERED THE WRONG QUESTION: a `rearm` recorded under plan 1 made
+// plan 2's cap read SPENT for the same trigger, so plan 2's fix could never be
+// reviewed, and every byte-level check in this file stayed green through it.
+// Confirmed in production on /code/smithers, whose phase-1 plan-2 `override`
+// event states the cause.
+//
+// So this arm EXECUTES the block the prose carries - the same one line a
+// coordinator copies and runs - and asks it about two plans. The record it
+// reads is written by the REAL `planning.mjs trace` seam and never by hand: a
+// check against a shape the writer never emits proves nothing about the
+// writer, which is the rule trace.test.mjs already states for its own
+// fixtures. This file is the home because its own premise is prose that copies
+// a machine-readable fact, and the copied line here is executable.
+
+test('triage-gate.md: the re-arm read-back, RUN, answers per PLAN and not per corr alone', () => {
+  const text = doc('cadence-core', 'references', 'triage-gate.md');
+  const corrFilter = 'o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr'
+    + '&&(o.plan??"")===(process.argv[3]??"")';
+  const block = text.split('```').find((b) => b.includes(corrFilter));
+  assert.ok(block, 'no fenced block in triage-gate.md carries the blocking re-arm read-back, '
+    + 'so the cap the coordinator is told to read has no command behind it');
+
+  // The record, through the seam: a `phase_start` anchor so both events derive
+  // ONE `corr`, then a single `rearm` for `risk_surface` under plan 1.
+  const cwd = mkdtempSync(join(tmpdir(), 'cad-rearm-run-'));
+  mkdirSync(join(cwd, '.planning'), { recursive: true });
+  const seam = (...args) => JSON.parse(execFileSync('node',
+    [join(HERE, 'planning.mjs'), ...args], { encoding: 'utf8', cwd }));
+  assert.equal(seam('trace', 'append', '--phase', '1', '--family', 'lifecycle',
+    '--event', 'phase_start', '--sha', 'abc1234').written, true,
+  'the fixture anchor was not written, so the two events share no corr');
+  assert.equal(seam('trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'rearm', '--trigger', 'risk_surface', '--plan', '1',
+    '--detail', 'risk_surface').written, true,
+  'the fixture rearm was not written, so both answers below would read 0 for the wrong reason');
+
+  // Only the placeholders a coordinator substitutes are substituted.
+  // `${CLAUDE_PLUGIN_ROOT}` stays a shell expansion, answered from the
+  // environment, so the block runs as the bytes the file actually carries.
+  const ask = (plan) => execFileSync('sh', ['-c', block
+    .replace('--phase <N>', '--phase 1')
+    .replace('"<trigger>"', '"risk_surface"')
+    .replace('"<k>"', `"${plan}"`)],
+  { encoding: 'utf8', cwd, env: { ...process.env, CLAUDE_PLUGIN_ROOT: REPO } }).trim();
+
+  assert.equal(ask('1'), '1',
+    "the read-back no longer sees plan 1's own rearm, so the one round never reads as SPENT "
+    + 'and the blocking gate re-arms without bound - the loop the cap exists to forbid');
+  assert.equal(ask('2'), '0',
+    "plan 1's rearm is spending plan 2's round on the same trigger. Plan 2's fix dispatch "
+    + 'then goes straight to the terminal STOP-and-ask without ever being reviewed, which is '
+    + 'this phase\'s own goal clause failing (D-04)');
+});
+
 
 // --- RDX-01: the in-dispatch figure, its coverage and its exclusions, in prose
 //
