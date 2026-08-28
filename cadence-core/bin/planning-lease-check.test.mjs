@@ -199,6 +199,52 @@ test('lease-check: PLAN-<k>.md is selected by --plan', () => {
   assert.deepEqual(one.undeclared, ['b.txt']);
 });
 
+// --- the AMENDED lease is what clears a fix commit (phase-1 AC3) ------------
+//
+// `workflows/execute.md`'s blocking FAIL arm dispatches a continuation
+// `cad-executor` to fix the findings, and a finding routinely names a path the
+// plan never declared. The ONLY unblock that arm permits is the coordinator
+// WIDENING `PLAN-<k>.md`'s `files:` before dispatching (phase-1 D-01) - never
+// an exemption flag on this seam, which would delete the one gate that catches
+// an unlicensed path, and never a `blocked` round trip to the user, which
+// consults exactly the seam the dispatch exists to keep out of the loop.
+//
+// So the REFUSAL is asserted first and in the same test, on purpose. A test
+// that only showed the widened lease passing would prove what
+// `lease-check: a clean lease is ok:true` already proves; what has to be shown
+// is that the AMENDMENT is what changed the answer.
+
+test('lease-check: widening the plan\'s files: is what clears the fix commit', () => {
+  const { repo, dir, pdir } = leaseRepo({ phase: 1, plan: 'PLAN-2.md', files: ['a.txt'] });
+
+  // The fix commit's staged set: the plan's own declared file, plus the file a
+  // blocker/high finding named, which sits outside the lease.
+  stage(repo, 'a.txt');
+  stage(repo, 'src/helper.js');
+
+  const before = leaseCheck(repo, dir, ['--phase', '1', '--plan', '2']);
+  assert.equal(before.ok, false, JSON.stringify(before));
+  assert.equal(before.reason, 'undeclared-files');
+  assert.deepEqual(before.undeclared, ['src/helper.js'],
+    'the gate must NAME the path the fix has to be licensed for - a refusal that does not '
+    + 'say which path is one the coordinator cannot act on');
+  assert.equal(before._exit, 1);
+  assert.equal(before.declared, 1);
+
+  // The coordinator's amendment, and nothing else: the same staged set, the
+  // same seam call, no flag added on either side.
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nfiles:\n  - a.txt\n  - src/helper.js\n---\n# Plan 2\n');
+
+  const after = leaseCheck(repo, dir, ['--phase', '1', '--plan', '2']);
+  assert.equal(after.ok, true, JSON.stringify(after));
+  assert.equal(after._exit, 0);
+  assert.equal(after.declared, 2, 'the widened lease is what the seam read back');
+  assert.equal(after.staged, 2);
+  assert.equal(after.undeclared, undefined);
+});
+
+
 test('lease-check: a sole declaration of ./a.txt licenses nothing - the spelling reached neither reader', () => {
   // The other half of the two-door refusal, at the enforcement end: the
   // declaration is dropped before this seam sees it, so staging the file it

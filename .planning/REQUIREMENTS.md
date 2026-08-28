@@ -1,16 +1,27 @@
-# Requirements: Cadence (v3.7.5)
+# Requirements: Cadence (v3.7.6)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-**No cycle open.** The shipped ids are rows under the `Shipped` heading below,
-and `/cad-phase add` is what opens the next cycle: it is the only workflow that
-appends a phase line to an existing roadmap, and `/cad-plan` seeds each
-Traceability row as its phase is planned. The ids under `## Deferred` keep their
-own reasons and their own promote conditions, and none of them is promoted here
-to fill this section.
+No cycle open. `/cad-phase add` is what opens the next one: it is the only
+workflow that appends a phase line to an existing roadmap, and `/cad-plan`
+seeds each Traceability row as its phase is planned. The ids under
+`## Deferred` keep their own reasons and their own promote conditions, and none
+of them is promoted here to fill this section.
+
+`v3.7.6 - the coordinator stays the coordinator` opened 2026-08-28 and closed
+2026-08-28. Two phases, two ids - `EXP-04`, `EXP-05` - are rows under the
+`Shipped` heading below, both Complete. Both came off one read of the smithers
+run record (2026-08-27 to 2026-08-28, 27 dispatches), not the tracker, on the
+standard v3.7.5 set: would a user on their own project feel it. The audit
+passed 2/2 traced with 14/14 acceptance criteria covered.
+
+**Held over from the same read**, filed in `.planning/CAPTURE.md` rather than
+here: `detect-commands` asked per dispatch, an executor hunting a plan file it
+was handed, a duplicate `risk-check run` and a runtime `--help` in the
+coordinator, and the planning docs re-read past the `status` envelope.
 
 `v3.7.5 - the defects a user's own project feels` opened 2026-08-26 and closed
 2026-08-27. Five phases, eight ids - `FRG-03`, `FRG-04`, `FRG-05`, `FRG-06`,
@@ -311,6 +322,8 @@ parses only the Traceability table).
 | RSK-06 (the risk detector stops re-tripping on reviewer text stored in `ADJUDICATION-*.json`, without weakening detection on code paths (GH-108)) | 3 | Complete | v3.7.5 |
 | TRC-09 (a `rotateTrace` claim abandoned by a killed process is reclaimed on the next append, so the bound survives the kill (GH-146)) | 4 | Complete | v3.7.5 |
 | RCL-08 (recall folds suffixes identically at index and query time, so `seam` matches `seams` (GH-93)) | 5 | Complete | v3.7.5 |
+| EXP-04 (a blocking review gate FAIL on a plan's committed range is cleared by a `cad-executor` continuation dispatched under that plan's worker key, and the coordinator writes no source outside `.planning/` in `/cad-execute`. In smithers the coordinator made the fix itself in every phase, unreviewed by construction since the one-round cap was spent, and read 52 source files into the main context doing it) | 1 | Complete | v3.7.6 |
+| EXP-05 (the executor contract verifies a task with the task's own test and runs the full suite at one stated site per dispatch, never as a first probe and never inside the targeted fix loop. smithers baseline: 6 to 29 bare suite runs per dispatch against a 0.6 s suite) | 2 | Complete | v3.7.6 |
 
 ## Deferred
 

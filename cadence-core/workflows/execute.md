@@ -329,8 +329,29 @@ On a fire, write `git diff {pre-plan HEAD}..HEAD` to
 path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
 shape (a) refs is not one of the shapes the wiring table admits for
 `risk_surface`. The file is transient: never stage it, delete it once the
-trigger returns. Blocking: on FAIL the findings are fixed or the user explicitly
-overrides, and the re-arm on that fix is CAPPED at ONE narrowed round per
+trigger returns. Blocking: on FAIL the findings are fixed by a continuation
+`cad-executor` dispatched through the spawn-agent seam under worker key `<k>` -
+"The worker key of a SECOND dispatch" above already names this as one of the
+three second dispatches against one plan's range, restated no further here - or
+the user explicitly overrides. The dispatch prompt carries four things, nothing
+distilled by the coordinator: the plan file; the findings file's PATH, already
+persisted at `.planning/phases/<N>/REVIEW-risk_surface-plan-<k>.md`
+(references/risk-surface.md); the instruction to fix the blocker/high findings
+only; and the instruction NOT to rotate the plan's report but to append its fix
+row to the existing `<plandir>/reports/plan-<k>.md`, since the executor
+contract's rotation rule is unconditional and would otherwise rename the
+completed plan's report aside. When a finding names a path outside the plan's
+declared `files:` lease, the coordinator AMENDS `PLAN-<k>.md`'s `files:` to
+cover that path BEFORE dispatching, so `lease-check` still runs and still
+answers on the fix commit's staged set - `PLAN-<k>.md` is inside `.planning/`,
+which is what the guardrail above permits with no exception clause. Rejected:
+a `lease-check`-exempt flag for the fix dispatch, which deletes the one gate
+that catches an unlicensed path; and routing the refusal back through the
+ask-user seam, which consults exactly the seam the fix dispatch exists to keep
+out of the loop. It returns on the existing complete arm,
+`PLAN COMPLETE` with `Tasks: 1 of 1`, and is bracketed exactly as "The
+lifecycle bracket (both paths)" above states, with no bracket half restated
+here. The re-arm on that fix is CAPPED at ONE narrowed round per
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
 before the fix lands, since this workflow does not preload it.
 
@@ -368,7 +389,9 @@ writer. When
 BLOCKS before the next dispatch - triage can change what ships, and answering
 about plan 1 while plan 2 commits is answering about a tree that is gone. The
 survivors are a numbered list the user triages, NONE is the default, and only
-what the user names is acted on - RE-READ
+what the user names is acted on - by the same continuation `cad-executor`
+under worker key `<k>` the FAIL arm above dispatches, restated no further
+here - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
 before presenting, since this workflow does not preload it. The
 `risk_surface` fire above is untouched by the TRIAGE rule specifically: a matched
@@ -555,6 +578,9 @@ verification runs in a fresh subagent.
   write no trace events of their own, on either path.
 - The hand-written close is a FALLBACK kept on purpose - never prune it as a
   duplicate of the hook. Two closes of one dispatch render as ONE bracket.
+- This workflow's coordinator issues no `Edit` or `Write` against a path
+  outside `.planning/`, with the single exception of the `choose_path`
+  settings merge the user accepted through the ask-user seam.
 </guardrails>
 
 <success_criteria>

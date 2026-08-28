@@ -185,6 +185,20 @@ This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a
 FAIL, since this workflow does not preload it and the cap lives only there.
+
+On the `--plan` path, the fix is owned by a continuation `cad-executor`
+dispatched with `.planning/tasks/{slug}/PLAN.md` and the persisted findings
+path, bracketed like any executor. Its worker key is the plan key `1` -
+`skills/cad-executor-contract/SKILL.md` derives `k` from the plan file's own
+name, `1` for a bare `PLAN.md` - deliberately a different key from this run's
+own `--plan {slug}` `cad-task` bracket, so the two workers do not pair FIFO
+against each other. Its lease gate does not fire at all: the executor
+contract skips `lease-check` whenever `<plandir>` is not
+`.planning/phases/<N>/`, and `/cad-task` dispatches from
+`.planning/tasks/<slug>/`. The INLINE path never writes a PLAN.md, so it mints
+no worker key for a fix to dispatch under: its `risk_surface` FAIL stays with
+the user there, the same absence that already keeps the `<guardrails>` line
+below true.
 </step>
 
 <step name="record">
@@ -212,8 +226,9 @@ success criterion actually protects.
 </step>
 
 <step name="done">
-Close the bracket first - this is the only closing call in this workflow, and
-every path that ends the run reaches it:
+Close the bracket first - this is the only close of THIS RUN's own `cad-task`
+bracket, and every path that ends the run reaches it. A dispatched fix
+worker's bracket takes its own close, keyed to that worker:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase 0 --plan <the task's slug> --role cad-task --agent-id <the id on the subagent return>

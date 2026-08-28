@@ -17,7 +17,7 @@
 // *.test.mjs, so nothing here carries an @ts-check burden.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname, sep } from 'node:path';
@@ -1319,6 +1319,87 @@ test('ENFORCEMENT, task.md: done is withheld on `written: false`', () => {
     + 'detection without enforcement is the outcome RSK-02 exists to prevent');
 });
 
+// --- ENFORCEMENT: the FAIL branch is a DISPATCH, and its guardrail ----------
+//
+// Two halves of one rule, asserted on TWO SLICES of execute.md so neither can
+// hide behind the other: the `execute_sequential` step's blocking FAIL arm
+// names a continuation `cad-executor`, and the `<guardrails>` block forbids the
+// coordinator's own `Edit`/`Write` outside `.planning/`. A whole-file grep
+// cannot serve - `cad-executor` appears a dozen times in this file for the
+// ordinary per-plan dispatch, and it would pass with the FAIL arm deleted.
+//
+// What each loss COSTS is the same and is worth stating once. Lose the FAIL
+// arm and the coordinator is the fix author again; lose the guardrail and it is
+// permitted to be. Either way the fix is written by the one participant whose
+// output nothing reviews, and by then the ONE-round re-arm cap
+// (references/triage-gate.md) is already spent on the fire that failed, so
+// every edit in that fix ships unreviewed BY CONSTRUCTION - not by oversight.
+//
+// Pinned here and not in self-verify.mjs, per phase-1 D-06: that linter's
+// problem sites are surface, config, agent and route lints, with no channel for
+// a workflow-semantics claim.
+
+test('ENFORCEMENT, execute.md: the blocking FAIL arm dispatches a continuation cad-executor', () => {
+  const wf = doc('cadence-core', 'workflows', 'execute.md');
+  const labelOf = regionLabels(wf);
+  const step = wf.split('\n')
+    .filter((l, i) => String(labelOf(i) ?? '').startsWith('execute_sequential'))
+    .join('\n').replace(/\s+/g, ' ');
+  assert.ok(step.length > 0, 'execute.md has no execute_sequential step - the whole '
+    + 'sequential path, gates included, is gone');
+
+  // The `risk_surface` arm ALONE, bounded by two seam invocations rather than
+  // by prose: `risk-check run` opens the fire and `risk-check status` closes
+  // it, and a rewrap moves neither. The whole step is too WIDE to assert on -
+  // the `diff`-at-`adjudicated` arm further down points at this same dispatch
+  // ("by the same continuation `cad-executor` ... the FAIL arm above
+  // dispatches"), so a check over the step stays green with the `risk_surface`
+  // arm deleted outright. Measured, not assumed: deleting that arm's dispatch
+  // sentence left a whole-step check passing.
+  const from = step.indexOf('risk-check run');
+  const to = step.indexOf('risk-check status');
+  assert.ok(from > -1 && to > from, 'the execute_sequential step no longer runs `risk-check '
+    + 'run` before `risk-check status`, so the risk_surface gate has no arm to assert on');
+  const arm = step.slice(from, to);
+
+  // Load-bearing facts only, each one a thing a rewrap cannot move.
+  assert.match(arm, /continuation `cad-executor`/,
+    'the execute_sequential FAIL arm no longer names a continuation `cad-executor` as the '
+    + 'owner of the fix, so the COORDINATOR writes the fix again - and the one-round re-arm '
+    + 'cap is already spent on the fire that failed, so that fix ships unreviewed by '
+    + 'construction');
+  assert.match(arm, /under worker key `<k>`/,
+    'the FAIL arm no longer names the worker key `<k>` the fix is dispatched under, so the '
+    + 'fix leaves no second bracket on the run record under the plan it belongs to and '
+    + 'nothing can show a worker rather than the coordinator authored it');
+  assert.match(arm, /\.planning\/phases\/<N>\/REVIEW-risk_surface-plan-<k>\.md/,
+    'the FAIL arm no longer carries the PERSISTED findings path, so the coordinator is back '
+    + 'to distilling the findings into the prompt itself - the reading step this dispatch '
+    + 'exists to take off it');
+});
+
+test('ENFORCEMENT, execute.md: the guardrail still forbids a coordinator Edit/Write outside .planning/', () => {
+  const wf = doc('cadence-core', 'workflows', 'execute.md');
+  const labelOf = regionLabels(wf);
+  const rails = wf.split('\n')
+    .filter((l, i) => String(labelOf(i) ?? '').startsWith('guardrails'))
+    .join('\n').replace(/\s+/g, ' ');
+  assert.ok(rails.length > 0, 'execute.md carries no <guardrails> block at all');
+
+  // Stated by PATH, never by role or artifact (phase-1 D-13): that wording is
+  // what already permits the lease amendment to `PLAN-<k>.md`, the `summary`
+  // write and the `state` write. ONE exception clause stands beside it, for
+  // `choose_path`'s `.claude/settings.json` merge - a coordinator write to a
+  // path outside `.planning/` that the same file has always required, which
+  // D-13's enumeration missed and phase-1 UAT item 8 caught.
+  assert.match(rails, /no `Edit` or `Write` against a path outside `\.planning\/`/,
+    "execute.md's guardrails no longer forbid the coordinator's own `Edit`/`Write` outside "
+    + '`.planning/`. The FAIL arm beside it can then be obeyed and bypassed in the same run: '
+    + 'the coordinator edits the source itself, and the one-round re-arm cap is already '
+    + 'spent, so those edits ship unreviewed by construction');
+});
+
+
 // --- PAR-01: the parallel branch reaches the SAME risk sequence, by pointer ---
 //
 // Watched FAILING at e4f95a3, this plan's unpatched baseline: `grep -c
@@ -2212,15 +2293,22 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
 test('triage-gate.md: the corr-keyed re-arm read-back survives the deferred arm beside it', () => {
   const text = doc('cadence-core', 'references', 'triage-gate.md');
 
-  // 1. The blocking cap, at the bytes that MAKE it corr-keyed: the filter is
-  //    quoted whole rather than matched loosely, because every word in it is
-  //    load-bearing - the event name, the trigger FIELD (never its detail
-  //    text) and the run's own id.
-  const corrFilter = 'o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr';
+  // 1. The blocking cap, at the bytes that MAKE it corr-keyed AND plan-keyed:
+  //    the filter is quoted whole rather than matched loosely, because every
+  //    word in it is load-bearing - the event name, the trigger FIELD (never
+  //    its detail text), the run's own id, and the PLAN the fire belongs to.
+  //    The plan term is the one the recording append below the block has always
+  //    written as `--plan <k>`; without it a `rearm` recorded for plan 1 spends
+  //    plan 2's round on the same trigger, so plan 2's fix can never be
+  //    reviewed (phase-1 D-04). The `??""` on both sides is what lets an
+  //    OMITTED key match the fires that carry no `--plan` at all.
+  const corrFilter = 'o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr'
+    + '&&(o.plan??"")===(process.argv[3]??"")';
   assert.equal(text.split(corrFilter).length - 1, 1,
-    'triage-gate.md no longer counts the blocking re-arm under this run\'s own corr. '
-    + 'The deferred arm reads its cap off the queue instead; that is a SECOND rule '
-    + 'beside this one, never a replacement for it (D-02).');
+    'triage-gate.md no longer counts the blocking re-arm under this run\'s own corr '
+    + 'AND this plan\'s key. The deferred arm reads its cap off the queue instead; that '
+    + 'is a SECOND rule beside this one, never a replacement for it (D-02). Dropping the '
+    + 'plan term instead spends every later plan\'s round on plan 1\'s rearm (D-04).');
   // The FENCED BLOCK, not the line: the read-back is `&&`-chained across three
   // physical lines, and the chaining is exactly what makes the count this run's
   // own - a render that failed never reaches the reader.
@@ -2258,6 +2346,66 @@ test('triage-gate.md: the corr-keyed re-arm read-back survives the deferred arm 
     'the deferred arm no longer terminates - a cap with no terminal arm is the loop '
     + 'with an extra step');
 });
+
+// --- the same read-back, RUN rather than matched (phase-1 D-04) -------------
+//
+// The arm above quotes the filter byte-for-byte, which is the right test for a
+// line that must not silently lose a term - and it is blind to the one failure
+// this phase was opened on. The filter was exactly the bytes it had always
+// been and it ANSWERED THE WRONG QUESTION: a `rearm` recorded under plan 1 made
+// plan 2's cap read SPENT for the same trigger, so plan 2's fix could never be
+// reviewed, and every byte-level check in this file stayed green through it.
+// Confirmed in production on /code/smithers, whose phase-1 plan-2 `override`
+// event states the cause.
+//
+// So this arm EXECUTES the block the prose carries - the same one line a
+// coordinator copies and runs - and asks it about two plans. The record it
+// reads is written by the REAL `planning.mjs trace` seam and never by hand: a
+// check against a shape the writer never emits proves nothing about the
+// writer, which is the rule trace.test.mjs already states for its own
+// fixtures. This file is the home because its own premise is prose that copies
+// a machine-readable fact, and the copied line here is executable.
+
+test('triage-gate.md: the re-arm read-back, RUN, answers per PLAN and not per corr alone', () => {
+  const text = doc('cadence-core', 'references', 'triage-gate.md');
+  const corrFilter = 'o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr'
+    + '&&(o.plan??"")===(process.argv[3]??"")';
+  const block = text.split('```').find((b) => b.includes(corrFilter));
+  assert.ok(block, 'no fenced block in triage-gate.md carries the blocking re-arm read-back, '
+    + 'so the cap the coordinator is told to read has no command behind it');
+
+  // The record, through the seam: a `phase_start` anchor so both events derive
+  // ONE `corr`, then a single `rearm` for `risk_surface` under plan 1.
+  const cwd = mkdtempSync(join(tmpdir(), 'cad-rearm-run-'));
+  mkdirSync(join(cwd, '.planning'), { recursive: true });
+  const seam = (...args) => JSON.parse(execFileSync('node',
+    [join(HERE, 'planning.mjs'), ...args], { encoding: 'utf8', cwd }));
+  assert.equal(seam('trace', 'append', '--phase', '1', '--family', 'lifecycle',
+    '--event', 'phase_start', '--sha', 'abc1234').written, true,
+  'the fixture anchor was not written, so the two events share no corr');
+  assert.equal(seam('trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'rearm', '--trigger', 'risk_surface', '--plan', '1',
+    '--detail', 'risk_surface').written, true,
+  'the fixture rearm was not written, so both answers below would read 0 for the wrong reason');
+
+  // Only the placeholders a coordinator substitutes are substituted.
+  // `${CLAUDE_PLUGIN_ROOT}` stays a shell expansion, answered from the
+  // environment, so the block runs as the bytes the file actually carries.
+  const ask = (plan) => execFileSync('sh', ['-c', block
+    .replace('--phase <N>', '--phase 1')
+    .replace('"<trigger>"', '"risk_surface"')
+    .replace('"<k>"', `"${plan}"`)],
+  { encoding: 'utf8', cwd, env: { ...process.env, CLAUDE_PLUGIN_ROOT: REPO } }).trim();
+
+  assert.equal(ask('1'), '1',
+    "the read-back no longer sees plan 1's own rearm, so the one round never reads as SPENT "
+    + 'and the blocking gate re-arms without bound - the loop the cap exists to forbid');
+  assert.equal(ask('2'), '0',
+    "plan 1's rearm is spending plan 2's round on the same trigger. Plan 2's fix dispatch "
+    + 'then goes straight to the terminal STOP-and-ask without ever being reviewed, which is '
+    + 'this phase\'s own goal clause failing (D-04)');
+});
+
 
 // --- RDX-01: the in-dispatch figure, its coverage and its exclusions, in prose
 //
@@ -2667,4 +2815,162 @@ test('setup: the confirmation-order check FAILS when the create is moved above i
   assert.throws(() => assertConfirmBeforeCreate('new-project.md', moved),
     /sits BEFORE the confirmation/,
     'moving the create above the confirmation does not redden the check');
+});
+
+// --- EXP-05: one targeted run per task, one suite run per dispatch -----------
+
+/**
+ * Phase 2 of v3.7.6 moved two rules into skills/cad-executor-contract:
+ * step 2 verifies a task with the run that task NAMES, and the full suite has
+ * exactly one site in the whole dispatch. Both are prose an executor obeys and
+ * nothing else enforces, so a reword that dropped either would cost a suite run
+ * per task on every future dispatch with no red anywhere.
+ *
+ * OFFSETS IN THE DOCUMENT'S OWN TEXT, never line numbers, for the reason the
+ * confirm-before-create case above states: an inserted paragraph moves every
+ * line below it and would redden a check about ORDER that nothing about the
+ * order changed.
+ */
+const EXECUTOR_CONTRACT = ['skills', 'cad-executor-contract', 'SKILL.md'];
+const VERIFIER_CONTRACT = ['skills', 'cad-verifier-contract', 'SKILL.md'];
+
+/** The slice between two needles, as an offset range, or a loud failure. */
+function region(text, from, to, where) {
+  const a = text.indexOf(from);
+  assert.ok(a > -1, `executor contract: ${where} is gone - no "${from}"`);
+  const b = text.indexOf(to, a + from.length);
+  assert.ok(b > a, `executor contract: ${where} has no end - no "${to}" after it`);
+  return text.slice(a, b);
+}
+
+/**
+ * Step 2 takes its subject from the task, not from a suite and not from config.
+ * @param {string} text
+ */
+function assertTargetedRun(text) {
+  const step = flat(region(text, '2. Verify falsifiably', '\n3. Static analysis', 'step 2'));
+
+  assert.match(step, /BEFORE running the task's `Verify:` command/,
+    'step 2 no longer names the task\'s own `Verify:` as the command it predicts against');
+  assert.match(step, /That command is what verifies the task/,
+    'step 2 no longer says the task\'s `Verify:` command is what verifies the task - '
+    + 'without it the executor is free to reach for the suite again');
+  assert.match(step, /where a task names none, the test file the task's files map to, run by name/,
+    'step 2 no longer states the by-name fallback for a task that names no `Verify:` run');
+  assert.match(step, /Never the full test suite per task/,
+    'step 2 no longer forbids the per-task suite run, which is the cost this rule exists '
+    + 'to remove');
+
+  // The key belongs to the ONE suite site below, and nowhere else in this
+  // document: "`workflow.test_command` from config if set and relevant" is the
+  // phrasing that let a suite run stand in for a targeted one.
+  assert.ok(!step.includes('test_command'),
+    'step 2 names `workflow.test_command` again - the key has exactly one site in this '
+    + 'contract, at the suite run before the digest');
+  assert.doesNotMatch(step, /pytest|npm test|cargo test|test\.mjs/,
+    'step 2 hard-codes a suite runner - the run comes from the task, not from this contract');
+}
+
+/**
+ * The suite has one site: after the last task, before the digest, once.
+ * @param {string} text
+ */
+function assertOneSuiteSite(text) {
+  const site = region(text, "After the last task's commit", '</process>', 'the suite site');
+  const flatSite = flat(site);
+
+  assert.match(flatSite, /At most one full-suite run per dispatch/,
+    'the suite site no longer bounds itself to one run per dispatch');
+  assert.match(flatSite, /immediately before the digest/,
+    'the suite site no longer says WHERE it runs');
+  assert.match(flatSite, /never as a first probe, never between tasks/,
+    'the suite site no longer excludes the first probe and the between-tasks run, which '
+    + 'are the two shapes that produced 5 to 27 suite runs per dispatch');
+  assert.match(flatSite, /Then return the digest\./,
+    'the suite site no longer ends at the digest');
+
+  // Resolved inline, at its only consumer, in the spelling every seam call in
+  // this tree carries between the filename and the subcommand.
+  const invocation = 'config.mjs" get workflow.test_command';
+  assert.ok(site.includes(invocation),
+    `the suite site no longer resolves the command with \`${invocation}\``);
+  const keyAt = text.indexOf('workflow.test_command');
+  assert.equal(text.indexOf('workflow.test_command', keyAt + 1), -1,
+    'the contract names `workflow.test_command` more than once - the key has exactly one '
+    + 'site here, which is what makes the reach row in config-reach.md checkable');
+  assert.equal(keyAt, text.indexOf(invocation) + invocation.indexOf('workflow.test_command'),
+    'the contract\'s one mention of `workflow.test_command` is not the suite site\'s own '
+    + 'inline invocation');
+  assert.match(flatSite, /Never hand-roll a read of `\.planning\/config\.json`/,
+    'the suite site no longer forbids the hand-rolled config read, which returns null on '
+    + 'the one machine that set the key');
+  assert.match(flatSite, /Where the key IS null, run the suite the project's own manifest names/,
+    'the suite site states no null arm - the measured baseline ran with the key unset, so '
+    + 'prose that binds only when it is set changes nothing');
+
+  // Order: the site sits after the last numbered item and before the digest.
+  const lastStep = text.indexOf('5. Rewrite `<plandir>/reports/plan-<k>.md`');
+  assert.ok(lastStep > -1, 'the per-task loop no longer ends at the report write');
+  assert.ok(lastStep < text.indexOf("After the last task's commit"),
+    'the suite site sits ABOVE the last per-task step, so it would run between tasks');
+
+  // And it is not ALSO in the commit protocol, which would put it back at one
+  // run per task. Invocations, not the bare word `test`: item 3 of that block
+  // lists the conventional-commit types, `test` among them.
+  const protocol = region(text, '<commit_protocol>', '</commit_protocol>', 'the commit protocol');
+  assert.doesNotMatch(protocol, /test_command|full[- ]suite|test suite|pytest|npm test|test\.mjs/i,
+    'the commit protocol carries a test invocation - D-01 put the suite at one site per '
+    + 'dispatch precisely so it could not ride the per-task commit compound');
+}
+
+test('EXP-05: the executor verifies a task with the run that task names', () => {
+  assertTargetedRun(doc(...EXECUTOR_CONTRACT));
+});
+
+test('EXP-05: the targeted-run check FAILS when the sentence is deleted', () => {
+  // The falsifier, on a scratch COPY in memory: the rule reads text, so a temp
+  // file would prove the same thing one syscall later.
+  const live = doc(...EXECUTOR_CONTRACT);
+  const sentence = 'That command is what verifies the task';
+  const at = live.indexOf(sentence);
+  const end = live.indexOf('Never the full test suite per task', at);
+  assert.ok(at > -1 && end > at, 'fixture assumption broken');
+  const without = live.slice(0, at) + live.slice(end);
+  assert.throws(() => assertTargetedRun(without),
+    /no longer says the task's `Verify:` command is what verifies the task/,
+    'deleting the targeted-run sentence does not redden the check');
+});
+
+test('EXP-05: the full suite has one site, after the last task and before the digest', () => {
+  assertOneSuiteSite(doc(...EXECUTOR_CONTRACT));
+});
+
+test('EXP-05: the suite-site check FAILS when the site is deleted', () => {
+  const live = doc(...EXECUTOR_CONTRACT);
+  const at = live.indexOf("After the last task's commit");
+  const end = live.indexOf('</process>', at);
+  assert.ok(at > -1 && end > at, 'fixture assumption broken');
+  const without = `${live.slice(0, at)}Then return the digest.\n\n${live.slice(end)}`;
+  assert.throws(() => assertOneSuiteSite(without),
+    /the suite site is gone/,
+    'deleting the suite site does not redden the check');
+});
+
+test('EXP-05: the executor and the verifier state one rule in one vocabulary', () => {
+  // D-05: the executor BORROWED the verifier contract's shipped wording rather
+  // than inventing a synonym. Pinned as a PAIR so a reword on either side
+  // reddens here instead of drifting into two rules that sound different.
+  const exec = flat(doc(...EXECUTOR_CONTRACT));
+  const verif = flat(doc(...VERIFIER_CONTRACT));
+  for (const [where, text, per, once] of [
+    ['verifier', verif, 'truth', 'verification'],
+    ['executor', exec, 'task', 'dispatch'],
+  ]) {
+    assert.match(text, new RegExp(`full test suite per ${per}`),
+      `${where} contract: "full test suite per ${per}" is gone - the two contracts state `
+      + 'the same rule and this is the phrase they share');
+    assert.match(text, new RegExp(`At most one full-suite run per ${once}`),
+      `${where} contract: "At most one full-suite run per ${once}" is gone - the two `
+      + 'contracts state the same rule and this is the phrase they share');
+  }
 });

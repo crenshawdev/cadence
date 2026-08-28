@@ -6,6 +6,49 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.6] - 2026-08-28
+
+This was the first time Cadence executed another project of mine end to end
+rather than running on itself, and reading that run record back turned up the
+same shape twice. The executor's own contract was already lean. The waste was
+in what the coordinator did around it.
+
+The first one is the fix pass. When a blocking `risk_surface` gate failed, the
+coordinator would go edit the source itself, which meant the fix never went
+through a reviewer and the plan's lease never covered it. I was reviewing my
+own work by writing it and then filing the paperwork. A FAIL now names a
+`cad-executor` continuation under the failing plan's own worker key, at every
+FAIL site that has one: `execute.md`'s `risk_surface` arm and its
+`diff`-at-`adjudicated` arm, `execute-parallel.md`'s per-plan risk sequence,
+and `task.md`'s `--plan` path. `task.md`'s inline path mints no worker key, so
+its FAIL still stays with you. `execute.md` also grew a guardrail forbidding
+the coordinator any `Edit` or `Write` outside `.planning/`, and a finding that
+lands outside the plan's `files:` is cleared by amending `PLAN-<k>.md`, never
+by exempting `lease-check`. The re-arm cap is keyed per plan now instead of
+per run, so a second plan's fix still gets its one narrowed round rather than
+finding the budget already spent by the first.
+
+Second, the executor was running the whole test suite on nearly every turn. It
+now verifies a task with the task's own `Verify:` command, falls back to the
+test file the task's `files:` map to and runs that by name, and runs the
+project's full suite at exactly one site, after the last task's commit and
+immediately before the digest. Measured on that same run, bare full-suite
+invocations went from 4, 6, 2, 1, 2, 6 per dispatch to 1, 0, 0, 0, and
+test-running tool calls per dispatch went from 6.9 to 2.6. A failing targeted
+run is re-run targeted until it is green, inside the three-attempts-per-task
+budget that already existed, so no second budget was opened.
+
+Both halves are pinned by `prose-agreement.test.mjs`, which reddens if either
+sentence is deleted from the contract, and by a paired assertion against the
+verifier contract so the two cannot drift apart.
+
+One thing worth knowing if you go looking for the same measurement in your own
+`reads.jsonl`: it records the program a Bash call ran and the files it named,
+never the command text, so `python3 -m pytest` and `python3 -c` are the same
+record. Count on the program your project actually runs tests with, or the
+number will be noise.
+
+
 ## [3.7.5] - 2026-08-27
 
 This cycle had no subject, it had a standard. Every open issue got re-triaged
@@ -4304,6 +4347,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.6]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.6
 [3.7.5]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.5
 [3.7.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.4
 [3.7.3]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.3
