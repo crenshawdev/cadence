@@ -195,7 +195,10 @@ own `--plan {slug}` `cad-task` bracket, so the two workers do not pair FIFO
 against each other. Its lease gate does not fire at all: the executor
 contract skips `lease-check` whenever `<plandir>` is not
 `.planning/phases/<N>/`, and `/cad-task` dispatches from
-`.planning/tasks/<slug>/`.
+`.planning/tasks/<slug>/`. The INLINE path never writes a PLAN.md, so it mints
+no worker key for a fix to dispatch under: its `risk_surface` FAIL stays with
+the user there, the same absence that already keeps the `<guardrails>` line
+below true.
 </step>
 
 <step name="record">
