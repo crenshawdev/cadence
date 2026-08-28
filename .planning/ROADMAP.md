@@ -49,7 +49,7 @@ suite runs are the turns their executor bill is made of.
 ## Phases
 
 - [x] **Phase 1: The fix pass is a dispatch** - on a blocking gate FAIL the coordinator dispatches a continuation executor under the same plan key and never edits source itself
-- [ ] **Phase 2: One targeted run, one suite run** - the executor contract verifies a task with its own test and runs the full suite once, not per turn
+- [x] **Phase 2: One targeted run, one suite run** - the executor contract verifies a task with its own test and runs the full suite once, not per turn
 
 ## Phase Details
 

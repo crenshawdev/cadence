@@ -1,0 +1,95 @@
+{
+  "status": "needs_human",
+  "score": "6/7",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "`<process>` step 2 of the executor contract makes the task's own `Verify:` command the verification, names the by-name test-file fallback, refuses the suite per task and as a first probe, and points at the single site; `<commit_protocol>` carries no test invocation.",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "skills/cad-executor-contract/SKILL.md:57-66 - \"BEFORE running the task's `Verify:` command\", \"That command is what verifies the task; where a task names none, the test file the task's files map to, run by name. Never the full test suite per task or as a first probe: the suite has exactly one site, stated at the end of `<process>`\", and the prediction-first discipline (`[deviation] expected X, observed Y`) is intact. Suite site at :84-101 states after the last task's commit and report write, immediately before the digest, at most once per dispatch, never a first probe, never between tasks, never inside the commit protocol. `perl -ne 'print if /<commit_protocol>/../<\\/commit_protocol>/' skills/cad-executor-contract/SKILL.md | grep -niE \"run |pytest|npm test|test\\.mjs|suite|test_command\"` -> no output (the only `test|suite` hit in that block is the conventional-commit type list at line 120, not an invocation - the documented deviation is accurate). Wired: agents/cad-executor.md:9 and agents/cad-executor-xhigh.md:9 preload `cad-executor-contract`, so this is the document a dispatched executor obeys. `grep -niE \"suite|full test|targeted\"` over the whole contract returns only lines 61-62, 84-85, 98, 159-160 - no leftover per-task suite instruction anywhere else."
+    },
+    {
+      "n": 2,
+      "truth": "One sentence says a failing targeted run is re-run targeted until green with the suite untouched, it sits inside the existing three-attempts bullet, and it opens no second budget.",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "skills/cad-executor-contract/SKILL.md:158-163, inside the `Boundaries:` bullet \"A blocker gets three bounded fix attempts per task...\": \"A failing targeted run is re-run targeted until it is green, with the suite not touched inside that loop, and those same three attempts are the loop's whole budget.\" No new bullet, no new block, no second number. It is the only occurrence: the whole-file grep for `targeted` returns lines 159-160 and nothing else."
+    },
+    {
+      "n": 3,
+      "truth": "`workflow.test_command` has exactly one site in the contract - the inline `config.mjs get` at the suite run - and the three other honouring surfaces are unchanged; the key traces end to end from its resolver to that consumer, null arm included.",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "`grep -c test_command skills/cad-executor-contract/SKILL.md` -> 1, at :91 `node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs\" get workflow.test_command`. Same grep: cadence-core/workflows/task.md -> 1, cadence-core/workflows/coverage.md -> 2, cadence-core/references/execute-parallel.md -> 1, matching the pre-phase counts. Trace: `node cadence-core/bin/config.mjs get workflow.test_command` -> `{\"ok\":true,\"values\":{\"workflow.test_command\":null},\"source\":\"global+repo\"}`, i.e. the key enters from the merged global layer and lands at the contract's one consumer; because it resolves null on this tree the binding arm is the contract's stated null arm at :96-101 (\"Where the key IS null, run the suite the project's own manifest names\"), so the prose binds on the same configuration the smithers baseline was measured under. The contract also forbids the hand-rolled `.planning/config.json` read at :93-96 with the global-only-keys reason stated."
+    },
+    {
+      "n": 4,
+      "truth": "Deleting either sentence from the real contract file turns prose-agreement.test.mjs red naming that check.",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "`node --test cadence-core/bin/prose-agreement.test.mjs` on the committed tree: 57 pass / 0 fail, including 5 new EXP-05 tests. End-to-end falsification run against a `git archive HEAD` copy in the scratchpad (repo untouched): cutting the suite site (\"After the last task's commit\" .. `</process>`) -> 3 fail, naming `the full suite has one site, after the last task and before the digest`, `the suite-site check FAILS when the site is deleted` and the D-05 pair pin; cutting the targeted-run sentence (\"That command is what verifies the task\" .. \"Never the full test suite per task\") -> 2 fail, naming `the executor verifies a task with the run that task names`. Both halves also carry in-memory falsifiers of their own (prose-agreement.test.mjs, `assertTargetedRun` / `assertOneSuiteSite` with `assert.throws`), regions located by `indexOf` offsets not line numbers, and the pair pin reads skills/cad-verifier-contract/SKILL.md asserting \"full test suite per truth|task\" and \"At most one full-suite run per verification|dispatch\" on both documents."
+    },
+    {
+      "n": 5,
+      "truth": "The config-reach `workflow.test_command` row names the contract's one suite site and matches the sentence the contract actually carries, with the reach cell and key cell unchanged.",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/references/config-reach.md:133 third cell now reads \"...and the executor contract's one suite site - one full-suite run per dispatch, immediately before the digest - but only ever with the user-global layer's value...\", which matches SKILL.md:84-85 (\"run the project's full suite once, immediately before the digest. At most one full-suite run per dispatch\"). `git show 8f72c420 -- cadence-core/references/config-reach.md` is a one-line change; first cell still `workflow.test_command`, second still \"user-global config layer only\", and the row still names `workflows/task.md`, `workflows/coverage.md`, `references/execute-parallel.md`. self-verify's `config-reach` check is in the passing set with `problems:[]`, so no `unstated-reach`."
+    },
+    {
+      "n": 6,
+      "truth": "Bare full-suite invocations per executor dispatch drop to at most one, measured by the D-09 rule on a foreign-project run.",
+      "status": "UNCERTAIN",
+      "uat_item": 6,
+      "evidence": "No post-change foreign-project dispatch exists to measure: /code/smithers/.planning/reads.jsonl was last written 2026-08-28 15:11, before this phase's first commit, so it still holds only the baseline (6, 6, 13, 14, 5, 27, 21 bare runs per executor agent_id). The contract prose that would produce the drop is verified present and binding (truths 1-3), but the effect is prescribed, not observed."
+    },
+    {
+      "n": 7,
+      "truth": "The suite is green, self-verify reports ok:true, and weight-budgets.json is re-pinned for every surface this phase grew.",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/test.mjs` -> tests 3512, pass 3512, fail 0. `node cadence-core/bin/self-verify.mjs` -> `{\"ok\":true,...,\"problems\":[]}` over 30 checks including budgets, deferred-reads, config-reach and invocations. `node cadence-core/bin/weight.mjs` measures skills/cad-executor-contract/SKILL.md at 13,965 B and cadence-core/references/config-reach.md at 23,808 B, exactly the re-pinned values in cadence-core/bin/weight-budgets.json (12,970 -> 13,965 and 23,726 -> 23,808); no other surface in the phase diff changed bytes. Anti-pattern scan over the four touched files: no TODO/FIXME/XXX/HACK/placeholder/\"not implemented\" markers introduced. REQUIREMENTS.md:446 leaves EXP-05 at `Pending`, which is correct at this point - only cad-verify advances that Status (REQUIREMENTS.md:436-437)."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Step 2 names the targeted run and points at the one suite site",
+      "evidence": "skills/cad-executor-contract/SKILL.md:57-66 (task's `Verify:` is the verification, by-name test file is the fallback, suite refused per task and as a first probe, single site pointed at) and :84-101 (the site: after the last task's commit and report write, immediately before the digest, at most once per dispatch). The commit-protocol range greps clean for every test invocation form; its only `test` hit is the conventional-commit type list at :120. agents/cad-executor.md:9 preloads the skill, so this is the document an executor dispatch obeys."
+    },
+    {
+      "k": 2,
+      "name": "The targeted re-run sentence defers to the existing three-attempt bound",
+      "evidence": "skills/cad-executor-contract/SKILL.md:158-163 - the sentence is folded into the existing \"three bounded fix attempts per task\" bullet and names those same attempts as the loop's whole budget; it is the file's only `targeted` mention."
+    },
+    {
+      "k": 3,
+      "name": "test_command has exactly one site in the contract, and the other surfaces are unchanged",
+      "evidence": "grep -c test_command: contract 1 (SKILL.md:91, `config.mjs\" get workflow.test_command`), workflows/task.md 1, workflows/coverage.md 2, references/execute-parallel.md 1. `node cadence-core/bin/config.mjs get workflow.test_command` resolves `null` from `global+repo`, and the contract's stated null arm (:96-101) is what binds on that configuration."
+    },
+    {
+      "k": 4,
+      "name": "Deleting either sentence turns prose-agreement.test.mjs red",
+      "evidence": "Committed tree: 57 pass / 0 fail. Against a scratchpad `git archive HEAD` copy, cutting the suite site produced 3 failures naming the suite-site checks; cutting the targeted-run sentence produced 2 failures naming the targeted-run checks. Both halves also ship in-memory `assert.throws` falsifiers and a D-05 pair pin against skills/cad-verifier-contract/SKILL.md."
+    },
+    {
+      "k": 5,
+      "name": "The config-reach row names the contract's one site",
+      "evidence": "cadence-core/references/config-reach.md:133 names \"the executor contract's one suite site - one full-suite run per dispatch, immediately before the digest\", matching SKILL.md:84-85 word for word in substance; one-line diff, reach and key cells untouched, self-verify raises no `unstated-reach`."
+    },
+    {
+      "k": 7,
+      "name": "Suite green, self-verify ok, budgets re-pinned",
+      "evidence": "test.mjs 3512/3512 pass, fail 0; self-verify `ok:true` with `problems:[]`; weight.mjs measurements (13,965 B and 23,808 B) equal the re-pinned weight-budgets.json rows exactly."
+    }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "After the next foreign-project executor dispatch, count bare full-suite invocations per dispatch by the D-09 rule (Bash records in .planning/reads.jsonl grouped by agent_id whose target is a runner program and that carry no files array) and compare to the 2026-08-28 baseline.",
+      "expected": "At or below 1 bare full-suite invocation per executor dispatch, against the baseline of 6, 6, 13, 14, 5, 27, 21.",
+      "why_human": "Out-of-reach resource, not an unexercised probe: the measurement needs an executor dispatch on a foreign project that has not happened yet. /code/smithers/.planning/reads.jsonl was last written 2026-08-28 15:11, before this phase's first commit, so it holds only the baseline and there is nothing post-change in this tree or that one to count."
+    }
+  ]
+}
