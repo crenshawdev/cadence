@@ -329,8 +329,21 @@ On a fire, write `git diff {pre-plan HEAD}..HEAD` to
 path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
 shape (a) refs is not one of the shapes the wiring table admits for
 `risk_surface`. The file is transient: never stage it, delete it once the
-trigger returns. Blocking: on FAIL the findings are fixed or the user explicitly
-overrides, and the re-arm on that fix is CAPPED at ONE narrowed round per
+trigger returns. Blocking: on FAIL the findings are fixed by a continuation
+`cad-executor` dispatched through the spawn-agent seam under worker key `<k>` -
+"The worker key of a SECOND dispatch" above already names this as one of the
+three second dispatches against one plan's range, restated no further here - or
+the user explicitly overrides. The dispatch prompt carries four things, nothing
+distilled by the coordinator: the plan file; the findings file's PATH, already
+persisted at `.planning/phases/<N>/REVIEW-risk_surface-plan-<k>.md`
+(references/risk-surface.md); the instruction to fix the blocker/high findings
+only; and the instruction NOT to rotate the plan's report but to append its fix
+row to the existing `<plandir>/reports/plan-<k>.md`, since the executor
+contract's rotation rule is unconditional and would otherwise rename the
+completed plan's report aside. It returns on the existing complete arm,
+`PLAN COMPLETE` with `Tasks: 1 of 1`, and is bracketed exactly as "The
+lifecycle bracket (both paths)" above states, with no bracket half restated
+here. The re-arm on that fix is CAPPED at ONE narrowed round per
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
 before the fix lands, since this workflow does not preload it.
 
