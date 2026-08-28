@@ -568,6 +568,8 @@ verification runs in a fresh subagent.
   write no trace events of their own, on either path.
 - The hand-written close is a FALLBACK kept on purpose - never prune it as a
   duplicate of the hook. Two closes of one dispatch render as ONE bracket.
+- This workflow's coordinator issues no `Edit` or `Write` against a path
+  outside `.planning/`.
 </guardrails>
 
 <success_criteria>
