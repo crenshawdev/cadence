@@ -14,16 +14,6 @@ Both ids come off one read of the smithers run record (2026-08-27 to
 2026-08-28, 27 dispatches), not the tracker. The standard is the one v3.7.5 set:
 would a user on their own project feel it.
 
-- **EXP-04**: a blocking review gate FAIL on a plan's committed range is cleared
-  by a `cad-executor` continuation dispatched under that plan's worker key, and
-  the coordinator writes no source outside `.planning/` in `/cad-execute`. In
-  smithers the coordinator made the fix itself in every phase, unreviewed by
-  construction since the one-round cap was spent, and read 52 source files into
-  the main context doing it
-- **EXP-05**: the executor contract verifies a task with the task's own test and
-  runs the full suite at one stated site per dispatch, never as a first probe
-  and never inside the targeted fix loop. smithers baseline: 6 to 29 bare suite runs
-  per dispatch against a 0.6 s suite
 
 **Held over from the same read**, filed in `.planning/CAPTURE.md` rather than
 here: `detect-commands` asked per dispatch, an executor hunting a plan file it
@@ -336,6 +326,8 @@ parses only the Traceability table).
 | RSK-06 (the risk detector stops re-tripping on reviewer text stored in `ADJUDICATION-*.json`, without weakening detection on code paths (GH-108)) | 3 | Complete | v3.7.5 |
 | TRC-09 (a `rotateTrace` claim abandoned by a killed process is reclaimed on the next append, so the bound survives the kill (GH-146)) | 4 | Complete | v3.7.5 |
 | RCL-08 (recall folds suffixes identically at index and query time, so `seam` matches `seams` (GH-93)) | 5 | Complete | v3.7.5 |
+| EXP-04 (a blocking review gate FAIL on a plan's committed range is cleared by a `cad-executor` continuation dispatched under that plan's worker key, and the coordinator writes no source outside `.planning/` in `/cad-execute`. In smithers the coordinator made the fix itself in every phase, unreviewed by construction since the one-round cap was spent, and read 52 source files into the main context doing it) | 1 | Complete | v3.7.6 |
+| EXP-05 (the executor contract verifies a task with the task's own test and runs the full suite at one stated site per dispatch, never as a first probe and never inside the targeted fix loop. smithers baseline: 6 to 29 bare suite runs per dispatch against a 0.6 s suite) | 2 | Complete | v3.7.6 |
 
 ## Deferred
 
@@ -442,8 +434,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EXP-04 | Phase 1 | Complete |
-| EXP-05 | Phase 2 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its

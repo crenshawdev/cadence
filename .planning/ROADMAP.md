@@ -48,29 +48,5 @@ suite runs are the turns their executor bill is made of.
 
 ## Phases
 
-- [x] **Phase 1: The fix pass is a dispatch** - on a blocking gate FAIL the coordinator dispatches a continuation executor under the same plan key and never edits source itself
-- [x] **Phase 2: One targeted run, one suite run** - the executor contract verifies a task with its own test and runs the full suite once, not per turn
 
 ## Phase Details
-
-### Phase 1: The fix pass is a dispatch
-**Goal:** A blocking review gate that FAILs on a plan's committed range is cleared by a `cad-executor` continuation dispatched under that plan's worker key, carrying the findings, so the coordinator writes no source and the fix is a worker's reviewed-shape commit rather than the orchestrator's unreviewed one.
-**Depends on:** nothing
-**Requirements:** EXP-04
-**Success Criteria:**
-1. `workflows/execute.md`'s FAIL branch names the owner: a continuation `cad-executor` dispatched via the spawn-agent seam under worker key `<k>`, prompt carrying the plan file, the findings (path or distilled, per OQ-1) and "fix the blocker/high findings, then return the digest". The coordinator's own Edit/Write of any path outside `.planning/` in this workflow is named as forbidden in `<guardrails>`.
-2. The continuation is bracketed like any executor - `route.mjs resolve --plan <k> --bracket-plan <k>` on dispatch, `trace close --plan <k> --role cad-executor` on return - so the run record shows the fix as an executor dispatch, not as coordinator turns.
-3. The same rule holds for the `diff` trigger at `adjudicated` and for `/cad-task`'s `risk_check` step, which share the FAIL shape; each names the dispatch rather than restating the rule.
-4. Reproduced against a fixture phase whose plan touches a risk surface: the FAIL branch produces a `dispatch` event for `cad-executor` under the original plan key and zero coordinator writes outside `.planning/`, verified from `trace.jsonl` and `reads.jsonl`.
-5. `node cadence-core/bin/test.mjs` is green and `self-verify` reports `ok:true`.
-
-### Phase 2: One targeted run, one suite run
-**Goal:** An executor verifies each task with the test the task names and runs the project's full suite at one stated site per task, so the per-task tool-call floor drops from three test invocations to two and a debugging loop reruns a file, not a suite.
-**Depends on:** nothing
-**Requirements:** EXP-05
-**Success Criteria:**
-1. `skills/cad-executor-contract/SKILL.md` step 2 names the targeted run - the task's own `Verify:` command, or the test file the task's files map to - as the verification, and names the full suite's single site (per OQ-2) immediately before the digest, run once per dispatch and never as a first probe.
-2. The contract says in one sentence that a failing targeted run is re-run targeted until green, and the suite is not touched inside that loop.
-3. `workflow.test_command`, when set, is the suite command at that one site and nowhere else; the contract's existing "if set and relevant" is replaced by the site.
-4. Measured on the next foreign-project phase: bare full-suite invocations per executor dispatch at or below one per task plus one, read from `reads.jsonl` the way the 2026-08-28 baseline (6 to 29 per dispatch) was.
-5. `node cadence-core/bin/test.mjs` is green and `self-verify` reports `ok:true`.
