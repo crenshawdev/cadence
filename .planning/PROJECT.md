@@ -204,9 +204,21 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `/cad-phase add` opens the next one.
+**`v3.7.7 - the record says what happened`, opened 2026-08-28.** Two phases,
+two tracker ids, both S2 and both found on real runs rather than on a read:
+`GH-145` and `GH-159`. The thread is that a record Cadence keeps cannot
+represent a state that actually occurs, and fails silently rather than refusing.
+
+Phase 1 gives `.planning/reads.jsonl` a rotation. It has an 8 MiB write-time
+bound and no rotation at all, so at the bound the writer drops every later
+append permanently; this repository's own file is 93% full and the fill tracks
+age rather than project size. Phase 2 closes the adjudication gap: a blocking
+gate's below-blocker/high remainder is documented as reported-and-moved-past,
+and the record refuses to store it, so the fire cannot be settled without
+writing something false.
 
 **Previously:**
+
 
 **`v3.7.6 - the coordinator stays the coordinator`, opened 2026-08-28, closed
 2026-08-28.** Two phases, 29 commits off `main` (2 feat and 2 fix against 18

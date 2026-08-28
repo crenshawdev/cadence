@@ -5,11 +5,22 @@
 
 ## Active
 
-No cycle open. `/cad-phase add` is what opens the next one: it is the only
-workflow that appends a phase line to an existing roadmap, and `/cad-plan`
-seeds each Traceability row as its phase is planned. The ids under
-`## Deferred` keep their own reasons and their own promote conditions, and none
-of them is promoted here to fill this section.
+`v3.7.7 - the record says what happened` opened 2026-08-28 with two phases.
+`/cad-plan` seeds each Traceability row as its phase is planned, so an id below
+that no plan has picked up yet surfaces as `unpicked` in `/cad-audit` rather
+than as a hand-written row.
+
+- **TRC-10**: `.planning/reads.jsonl` rotates at its write-time bound instead of
+  dropping every later append permanently, keeping one prior generation and
+  leaving the trace record's own rotation untouched.
+- **RSK-07**: a blocking gate's below-blocker/high remainder can be recorded as
+  confirmed and unfixed, without inventing a fix commit or a ruling the
+  adjudicator does not hold, and without losing the `fix_commit` typo guard.
+
+Both came off real runs rather than a read, and both are filed on the public
+tracker as S2: `GH-145` and `GH-159`. The ids under `## Deferred` keep their own
+reasons and none is promoted here to fill this section.
+
 
 `v3.7.6 - the coordinator stays the coordinator` opened 2026-08-28 and closed
 2026-08-28. Two phases, two ids - `EXP-04`, `EXP-05` - are rows under the
