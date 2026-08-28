@@ -1383,6 +1383,75 @@ test('recount: a record that is not readable as JSON is refused, never appended 
   assert.equal(traceBytes(dir), null);
 });
 
+// --- the fix pass is a SECOND executor bracket under the same key (AC5) -----
+//
+// `workflows/execute.md`'s blocking FAIL arm dispatches a continuation
+// `cad-executor` under the plan's OWN worker key `<k>`, so the fix lands inside
+// a second bracket for that key instead of in the coordinator's own turn. This
+// is the proof of that, on a fixture phase built in-test - `fireRepo` already
+// returns an `mkdtempSync` git repo carrying `.planning/phases/<phase>/`, so no
+// phase directory is checked in (phase-1 D-16) - and driven through the REAL
+// seams, never by hand-writing JSON lines, for the reason this section's own
+// comment states: a check against a shape the writer never emits proves nothing
+// about the writer.
+//
+// WHAT IT DOES NOT PROVE (phase-1 D-05). It shows that a WORKER authored the
+// commit inside its own bracket. It does NOT show that nothing else wrote: a
+// coordinator `Edit` landing in the same window would not be caught here, and
+// nothing else would catch it either, because `.planning/reads.jsonl` records
+// only the five read-shaped tools (`hooks/hooks.json` matches
+// `Read|Grep|Glob|Bash|NotebookRead`, and `lib/read-trace.mjs`'s
+// `RECORDED_TOOLS` is the same five) and so structurally cannot show a write.
+// That is the accepted weakness, recorded rather than papered over.
+
+test('the fix commit falls inside a SECOND cad-executor bracket under the plan key', () => {
+  const { repo, dir } = fireRepo(2);
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args],
+    { encoding: 'utf8', stdio: 'pipe' }).trim();
+  const K = '1';
+  const half = (sub, extra = []) => {
+    const r = run(dir, ['trace', sub, '--phase', '2', '--plan', K,
+      '--role', 'cad-executor', ...extra]);
+    assert.equal(r.written, true, `the fixture's ${sub} never landed: ${JSON.stringify(r)}`);
+  };
+
+  // 1. The plan's own bracket - dispatch, then close.
+  half('append', ['--family', 'lifecycle', '--event', 'dispatch']);
+  half('close');
+  // 2. The FAIL branch's continuation: a SECOND dispatch under the SAME key.
+  half('append', ['--family', 'lifecycle', '--event', 'dispatch']);
+  // 3. The fix commit, made while that bracket is open.
+  writeFileSync(join(repo, 'src.js'), 'let x = 3;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'fix(2-1): close the blocker risk_surface found');
+  const fixSec = Number(git('show', '-s', '--format=%ct', 'HEAD'));
+  // 4. The matching close the FAIL arm writes on the return.
+  half('close');
+
+  const mine = lines(dir).filter((e) => e.plan === K);
+  const dispatches = mine.filter((e) => e.event === DISPATCH);
+  const closes = mine.filter((e) => TERMINAL.includes(e.event));
+  assert.equal(dispatches.length, 2, 'the plan key carries no SECOND dispatch, so the fix was '
+    + 'not a worker at all - the coordinator wrote it, and the one-round re-arm cap is spent');
+  assert.equal(closes.length, 2, 'the second bracket was opened and never closed, so the fix '
+    + 'dispatch renders as a worker still running and its window has no end to test against');
+  assert.equal(dispatches[1].role, 'cad-executor',
+    'the second dispatch is not a `cad-executor` - the fix is being handed to some other role');
+  assert.equal(closes[1].role, 'cad-executor',
+    'the second close does not name `cad-executor`, so the bracket the fix commit sits in is '
+    + 'not attributable to the executor that made it');
+
+  // WHOLE SECONDS on all three. Git records a commit time in whole seconds
+  // while a trace timestamp carries milliseconds, so a millisecond comparison
+  // flakes whenever the dispatch and the commit land inside the same second.
+  const sec = (ts) => Math.floor(Date.parse(ts) / 1000);
+  const opened = sec(dispatches[1].ts);
+  const shut = sec(closes[1].ts);
+  assert.ok(opened <= fixSec && fixSec <= shut,
+    `the fix commit at ${fixSec} is outside the second bracket's window ${opened}..${shut}, so `
+    + 'the record does not place the fix inside a worker\'s dispatch');
+});
+
 test('seam: a bare or blank --role appends NOTHING at all', () => {
   // REVERSES this row's earlier guarantee, which was that a bare `--role` wrote
   // the event with no `role` key rather than the literal `true`. Dropping the
