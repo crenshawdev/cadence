@@ -204,7 +204,17 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**No cycle open.**
+**`v3.7.6 - the coordinator stays the coordinator`, opened 2026-08-28.** Two
+phases, two ids - `EXP-04`, `EXP-05` - both read off the smithers run record,
+the first foreign project Cadence executed end to end. The executor path was
+walked for operational waste with tokens out of scope; the executor's own
+contract came out lean and the waste sat around it. Phase 1 makes the blocking
+gate's fix pass a continuation dispatch, so the coordinator stops editing source
+it then cannot get reviewed. Phase 2 gives the executor one targeted run and one
+suite run per task instead of a suite per turn. Four smaller items from the same
+read are in `.planning/CAPTURE.md` as tidy-ups.
+
+**Previously:**
 
 **`v3.7.5 - the defects a user's own project feels`, opened 2026-08-26, closed
 2026-08-27.** Five phases, 53 commits off `main` (8 feat against 7 fix, where

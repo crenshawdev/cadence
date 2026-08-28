@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 0 (no active cycle)
+Phase: 1 of 2 (The fix pass is a dispatch)
 Status: ready to plan
-Next: /cad-phase add
-Updated: 2026-08-27
+Next: /cad-context 1
+Updated: 2026-08-28

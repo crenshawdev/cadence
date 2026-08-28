@@ -1,11 +1,36 @@
-# Requirements: Cadence (v3.7.5)
+# Requirements: Cadence (v3.7.6)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-**No cycle open.** The shipped ids are rows under the `Shipped` heading below,
+`v3.7.6 - the coordinator stays the coordinator` opened 2026-08-28 with two
+phases. `/cad-plan` seeds each Traceability row as its phase is planned, so an
+id below that no plan has picked up yet surfaces as `unpicked` in `/cad-audit`
+rather than as a hand-written row.
+
+Both ids come off one read of the smithers run record (2026-08-27 to
+2026-08-28, 27 dispatches), not the tracker. The standard is the one v3.7.5 set:
+would a user on their own project feel it.
+
+- **EXP-04**: a blocking review gate FAIL on a plan's committed range is cleared
+  by a `cad-executor` continuation dispatched under that plan's worker key, and
+  the coordinator writes no source outside `.planning/` in `/cad-execute`. In
+  smithers the coordinator made the fix itself in every phase, unreviewed by
+  construction since the one-round cap was spent, and read 52 source files into
+  the main context doing it
+- **EXP-05**: the executor contract verifies a task with the task's own test and
+  runs the full suite at one stated site per task, never as a first probe and
+  never inside the targeted fix loop. smithers baseline: 6 to 29 bare suite runs
+  per dispatch against a 0.6 s suite
+
+**Held over from the same read**, filed in `.planning/CAPTURE.md` rather than
+here: `detect-commands` asked per dispatch, an executor hunting a plan file it
+was handed, a duplicate `risk-check run` and a runtime `--help` in the
+coordinator, and the planning docs re-read past the `status` envelope.
+
+The shipped ids are rows under the `Shipped` heading below,
 and `/cad-phase add` is what opens the next cycle: it is the only workflow that
 appends a phase line to an existing roadmap, and `/cad-plan` seeds each
 Traceability row as its phase is planned. The ids under `## Deferred` keep their
