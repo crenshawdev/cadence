@@ -389,7 +389,9 @@ writer. When
 BLOCKS before the next dispatch - triage can change what ships, and answering
 about plan 1 while plan 2 commits is answering about a tree that is gone. The
 survivors are a numbered list the user triages, NONE is the default, and only
-what the user names is acted on - RE-READ
+what the user names is acted on - by the same continuation `cad-executor`
+under worker key `<k>` the FAIL arm above dispatches, restated no further
+here - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
 before presenting, since this workflow does not preload it. The
 `risk_surface` fire above is untouched by the TRIAGE rule specifically: a matched
