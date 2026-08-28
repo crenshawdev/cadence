@@ -1388,7 +1388,10 @@ test('ENFORCEMENT, execute.md: the guardrail still forbids a coordinator Edit/Wr
 
   // Stated by PATH, never by role or artifact (phase-1 D-13): that wording is
   // what already permits the lease amendment to `PLAN-<k>.md`, the `summary`
-  // write and the `state` write with no exception clause beside it.
+  // write and the `state` write. ONE exception clause stands beside it, for
+  // `choose_path`'s `.claude/settings.json` merge - a coordinator write to a
+  // path outside `.planning/` that the same file has always required, which
+  // D-13's enumeration missed and phase-1 UAT item 8 caught.
   assert.match(rails, /no `Edit` or `Write` against a path outside `\.planning\/`/,
     "execute.md's guardrails no longer forbid the coordinator's own `Edit`/`Write` outside "
     + '`.planning/`. The FAIL arm beside it can then be obeyed and bypassed in the same run: '
