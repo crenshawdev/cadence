@@ -117,9 +117,12 @@ blocking loop already uses (`workflows/plan.md`'s ONE revision, maximum):
    anything new?
 2. Nothing `blocker`/`high` survives that pass -> resume. One still survives ->
    STOP and ask the user (ask-user seam): proceed anyway, or stop and fix by
-   hand. Name the reason in the ask - "`<trigger>` re-armed once on its own fix
-   and still reports N blocker/high findings" - and never fire that trigger again
-   in this loop. A return that is not the `{ "findings": [...] }` object
+   hand. That hand is the USER's, outside Cadence, and this point is reached
+   only after round two's narrowed re-fire still reports a `blocker`/`high` -
+   strictly LATER than the FAIL-branch fix dispatch, which it neither replaces
+   nor licenses the coordinator to perform. Name the reason in the ask -
+   "`<trigger>` re-armed once on its own fix and still reports N blocker/high
+   findings" - and never fire that trigger again in this loop. A return that is not the `{ "findings": [...] }` object
    `skills/cad-reviewer-contract/SKILL.md`'s `<returns>` block specifies - prose
    where that object was expected, a fragment, an empty return - is NEITHER
    outcome: the gate could not be evaluated, so STOP and ask, exactly as the
