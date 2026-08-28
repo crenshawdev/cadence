@@ -81,7 +81,24 @@ For each task in the plan, in order:
 5. Rewrite `<plandir>/reports/plan-<k>.md` (see `<report_file>`) with every
    row so far.
 
-After the last task: return the digest.
+After the last task's commit and its report write, run the project's full suite
+once, immediately before the digest. At most one full-suite run per dispatch
+is the whole allowance: never as a first probe, never between tasks, and never
+inside the commit protocol below. Resolve what to run HERE, at its only
+consumer -
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command
+```
+
+Never hand-roll a read of `.planning/config.json`: that file is the STRIPPED
+repo layer and this key is honoured from the user-global layer alone
+(`cadence-core/bin/lib/global-only-keys.mjs`), so reading the file directly
+returns null on the very machine that set the key. Where the key IS null, run
+the suite the project's own manifest names - the `package.json` script, the
+`pyproject.toml` runner, the Makefile target - and say which one you ran.
+
+Then return the digest.
 </process>
 
 <commit_protocol>
