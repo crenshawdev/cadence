@@ -1319,6 +1319,84 @@ test('ENFORCEMENT, task.md: done is withheld on `written: false`', () => {
     + 'detection without enforcement is the outcome RSK-02 exists to prevent');
 });
 
+// --- ENFORCEMENT: the FAIL branch is a DISPATCH, and its guardrail ----------
+//
+// Two halves of one rule, asserted on TWO SLICES of execute.md so neither can
+// hide behind the other: the `execute_sequential` step's blocking FAIL arm
+// names a continuation `cad-executor`, and the `<guardrails>` block forbids the
+// coordinator's own `Edit`/`Write` outside `.planning/`. A whole-file grep
+// cannot serve - `cad-executor` appears a dozen times in this file for the
+// ordinary per-plan dispatch, and it would pass with the FAIL arm deleted.
+//
+// What each loss COSTS is the same and is worth stating once. Lose the FAIL
+// arm and the coordinator is the fix author again; lose the guardrail and it is
+// permitted to be. Either way the fix is written by the one participant whose
+// output nothing reviews, and by then the ONE-round re-arm cap
+// (references/triage-gate.md) is already spent on the fire that failed, so
+// every edit in that fix ships unreviewed BY CONSTRUCTION - not by oversight.
+//
+// Pinned here and not in self-verify.mjs, per phase-1 D-06: that linter's
+// problem sites are surface, config, agent and route lints, with no channel for
+// a workflow-semantics claim.
+
+test('ENFORCEMENT, execute.md: the blocking FAIL arm dispatches a continuation cad-executor', () => {
+  const wf = doc('cadence-core', 'workflows', 'execute.md');
+  const labelOf = regionLabels(wf);
+  const step = wf.split('\n')
+    .filter((l, i) => String(labelOf(i) ?? '').startsWith('execute_sequential'))
+    .join('\n').replace(/\s+/g, ' ');
+  assert.ok(step.length > 0, 'execute.md has no execute_sequential step - the whole '
+    + 'sequential path, gates included, is gone');
+
+  // The `risk_surface` arm ALONE, bounded by two seam invocations rather than
+  // by prose: `risk-check run` opens the fire and `risk-check status` closes
+  // it, and a rewrap moves neither. The whole step is too WIDE to assert on -
+  // the `diff`-at-`adjudicated` arm further down points at this same dispatch
+  // ("by the same continuation `cad-executor` ... the FAIL arm above
+  // dispatches"), so a check over the step stays green with the `risk_surface`
+  // arm deleted outright. Measured, not assumed: deleting that arm's dispatch
+  // sentence left a whole-step check passing.
+  const from = step.indexOf('risk-check run');
+  const to = step.indexOf('risk-check status');
+  assert.ok(from > -1 && to > from, 'the execute_sequential step no longer runs `risk-check '
+    + 'run` before `risk-check status`, so the risk_surface gate has no arm to assert on');
+  const arm = step.slice(from, to);
+
+  // Load-bearing facts only, each one a thing a rewrap cannot move.
+  assert.match(arm, /continuation `cad-executor`/,
+    'the execute_sequential FAIL arm no longer names a continuation `cad-executor` as the '
+    + 'owner of the fix, so the COORDINATOR writes the fix again - and the one-round re-arm '
+    + 'cap is already spent on the fire that failed, so that fix ships unreviewed by '
+    + 'construction');
+  assert.match(arm, /under worker key `<k>`/,
+    'the FAIL arm no longer names the worker key `<k>` the fix is dispatched under, so the '
+    + 'fix leaves no second bracket on the run record under the plan it belongs to and '
+    + 'nothing can show a worker rather than the coordinator authored it');
+  assert.match(arm, /\.planning\/phases\/<N>\/REVIEW-risk_surface-plan-<k>\.md/,
+    'the FAIL arm no longer carries the PERSISTED findings path, so the coordinator is back '
+    + 'to distilling the findings into the prompt itself - the reading step this dispatch '
+    + 'exists to take off it');
+});
+
+test('ENFORCEMENT, execute.md: the guardrail still forbids a coordinator Edit/Write outside .planning/', () => {
+  const wf = doc('cadence-core', 'workflows', 'execute.md');
+  const labelOf = regionLabels(wf);
+  const rails = wf.split('\n')
+    .filter((l, i) => String(labelOf(i) ?? '').startsWith('guardrails'))
+    .join('\n').replace(/\s+/g, ' ');
+  assert.ok(rails.length > 0, 'execute.md carries no <guardrails> block at all');
+
+  // Stated by PATH, never by role or artifact (phase-1 D-13): that wording is
+  // what already permits the lease amendment to `PLAN-<k>.md`, the `summary`
+  // write and the `state` write with no exception clause beside it.
+  assert.match(rails, /no `Edit` or `Write` against a path outside `\.planning\/`/,
+    "execute.md's guardrails no longer forbid the coordinator's own `Edit`/`Write` outside "
+    + '`.planning/`. The FAIL arm beside it can then be obeyed and bypassed in the same run: '
+    + 'the coordinator edits the source itself, and the one-round re-arm cap is already '
+    + 'spent, so those edits ship unreviewed by construction');
+});
+
+
 // --- PAR-01: the parallel branch reaches the SAME risk sequence, by pointer ---
 //
 // Watched FAILING at e4f95a3, this plan's unpatched baseline: `grep -c
