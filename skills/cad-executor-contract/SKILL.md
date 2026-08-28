@@ -55,14 +55,15 @@ For each task in the plan, in order:
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/lean-build.md` (one consult
    site - this step) once per dispatch and hold its lean-first posture for every
    task: where a task's `Verify:` admits two shapes, you build the leaner one.
-2. Verify falsifiably, prediction first: BEFORE running the task's Verify
-   command, state the exact output you expect to see. Then run it
-   (`workflow.test_command` from config if set and relevant, otherwise
-   directly observe the changed behavior) and compare. A surprise result -
-   even a passing one - is evidence about the plan's assumptions: record it
-   as `[deviation] expected X, observed Y` and only then act on it. Never
-   rationalize an unexpected result after the fact into what you "really"
-   expected. "It should work" is not verification.
+2. Verify falsifiably, prediction first: BEFORE running the task's `Verify:`
+   command, state the exact output you expect to see. Then run it and compare.
+   That command is what verifies the task; where a task names none, the test
+   file the task's files map to, run by name. Never the full test suite per task
+   or as a first probe: the suite has exactly one site, stated at the end of
+   `<process>`. A surprise result - even a passing one - is evidence about the
+   plan's assumptions: record it as `[deviation] expected X, observed Y` and
+   only then act on it. Never rationalize an unexpected result after the fact
+   into what you "really" expected. "It should work" is not verification.
 3. Static analysis, before the commit. Run `workflow.lint_command` when it is
    set; when it is not, ask the project once per dispatch and run what comes
    back:
@@ -138,10 +139,12 @@ Boundaries:
 - Scope: only what the current task's changes caused or directly need.
   Pre-existing problems elsewhere are open items, not your job.
 - A blocker gets three bounded fix attempts per task, then record it as an open
-  item and move on - or checkpoint if it blocks the task. ONE carve-out: a
-  static-analysis failure surviving the third attempt is always a `blocked`
-  checkpoint, never the move-on arm, because moving on there means committing
-  the failure.
+  item and move on - or checkpoint if it blocks the task. A failing targeted run
+  is re-run targeted until it is green, with the suite not touched inside that
+  loop, and those same three attempts are the loop's whole budget. ONE
+  carve-out: a static-analysis failure surviving the third attempt is always a
+  `blocked` checkpoint, never the move-on arm, because moving on there means
+  committing the failure.
 - Package installs are never auto-fixable. If an install fails, do not
   retry with a similar name and do not substitute an alternative - a failed
   install can mean a hallucinated or squatted package. Return a `blocked`
