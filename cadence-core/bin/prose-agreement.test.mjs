@@ -2816,3 +2816,161 @@ test('setup: the confirmation-order check FAILS when the create is moved above i
     /sits BEFORE the confirmation/,
     'moving the create above the confirmation does not redden the check');
 });
+
+// --- EXP-05: one targeted run per task, one suite run per dispatch -----------
+
+/**
+ * Phase 2 of v3.7.6 moved two rules into skills/cad-executor-contract:
+ * step 2 verifies a task with the run that task NAMES, and the full suite has
+ * exactly one site in the whole dispatch. Both are prose an executor obeys and
+ * nothing else enforces, so a reword that dropped either would cost a suite run
+ * per task on every future dispatch with no red anywhere.
+ *
+ * OFFSETS IN THE DOCUMENT'S OWN TEXT, never line numbers, for the reason the
+ * confirm-before-create case above states: an inserted paragraph moves every
+ * line below it and would redden a check about ORDER that nothing about the
+ * order changed.
+ */
+const EXECUTOR_CONTRACT = ['skills', 'cad-executor-contract', 'SKILL.md'];
+const VERIFIER_CONTRACT = ['skills', 'cad-verifier-contract', 'SKILL.md'];
+
+/** The slice between two needles, as an offset range, or a loud failure. */
+function region(text, from, to, where) {
+  const a = text.indexOf(from);
+  assert.ok(a > -1, `executor contract: ${where} is gone - no "${from}"`);
+  const b = text.indexOf(to, a + from.length);
+  assert.ok(b > a, `executor contract: ${where} has no end - no "${to}" after it`);
+  return text.slice(a, b);
+}
+
+/**
+ * Step 2 takes its subject from the task, not from a suite and not from config.
+ * @param {string} text
+ */
+function assertTargetedRun(text) {
+  const step = flat(region(text, '2. Verify falsifiably', '\n3. Static analysis', 'step 2'));
+
+  assert.match(step, /BEFORE running the task's `Verify:` command/,
+    'step 2 no longer names the task\'s own `Verify:` as the command it predicts against');
+  assert.match(step, /That command is what verifies the task/,
+    'step 2 no longer says the task\'s `Verify:` command is what verifies the task - '
+    + 'without it the executor is free to reach for the suite again');
+  assert.match(step, /where a task names none, the test file the task's files map to, run by name/,
+    'step 2 no longer states the by-name fallback for a task that names no `Verify:` run');
+  assert.match(step, /Never the full test suite per task/,
+    'step 2 no longer forbids the per-task suite run, which is the cost this rule exists '
+    + 'to remove');
+
+  // The key belongs to the ONE suite site below, and nowhere else in this
+  // document: "`workflow.test_command` from config if set and relevant" is the
+  // phrasing that let a suite run stand in for a targeted one.
+  assert.ok(!step.includes('test_command'),
+    'step 2 names `workflow.test_command` again - the key has exactly one site in this '
+    + 'contract, at the suite run before the digest');
+  assert.doesNotMatch(step, /pytest|npm test|cargo test|test\.mjs/,
+    'step 2 hard-codes a suite runner - the run comes from the task, not from this contract');
+}
+
+/**
+ * The suite has one site: after the last task, before the digest, once.
+ * @param {string} text
+ */
+function assertOneSuiteSite(text) {
+  const site = region(text, "After the last task's commit", '</process>', 'the suite site');
+  const flatSite = flat(site);
+
+  assert.match(flatSite, /At most one full-suite run per dispatch/,
+    'the suite site no longer bounds itself to one run per dispatch');
+  assert.match(flatSite, /immediately before the digest/,
+    'the suite site no longer says WHERE it runs');
+  assert.match(flatSite, /never as a first probe, never between tasks/,
+    'the suite site no longer excludes the first probe and the between-tasks run, which '
+    + 'are the two shapes that produced 5 to 27 suite runs per dispatch');
+  assert.match(flatSite, /Then return the digest\./,
+    'the suite site no longer ends at the digest');
+
+  // Resolved inline, at its only consumer, in the spelling every seam call in
+  // this tree carries between the filename and the subcommand.
+  const invocation = 'config.mjs" get workflow.test_command';
+  assert.ok(site.includes(invocation),
+    `the suite site no longer resolves the command with \`${invocation}\``);
+  const keyAt = text.indexOf('workflow.test_command');
+  assert.equal(text.indexOf('workflow.test_command', keyAt + 1), -1,
+    'the contract names `workflow.test_command` more than once - the key has exactly one '
+    + 'site here, which is what makes the reach row in config-reach.md checkable');
+  assert.equal(keyAt, text.indexOf(invocation) + invocation.indexOf('workflow.test_command'),
+    'the contract\'s one mention of `workflow.test_command` is not the suite site\'s own '
+    + 'inline invocation');
+  assert.match(flatSite, /Never hand-roll a read of `\.planning\/config\.json`/,
+    'the suite site no longer forbids the hand-rolled config read, which returns null on '
+    + 'the one machine that set the key');
+  assert.match(flatSite, /Where the key IS null, run the suite the project's own manifest names/,
+    'the suite site states no null arm - the measured baseline ran with the key unset, so '
+    + 'prose that binds only when it is set changes nothing');
+
+  // Order: the site sits after the last numbered item and before the digest.
+  const lastStep = text.indexOf('5. Rewrite `<plandir>/reports/plan-<k>.md`');
+  assert.ok(lastStep > -1, 'the per-task loop no longer ends at the report write');
+  assert.ok(lastStep < text.indexOf("After the last task's commit"),
+    'the suite site sits ABOVE the last per-task step, so it would run between tasks');
+
+  // And it is not ALSO in the commit protocol, which would put it back at one
+  // run per task. Invocations, not the bare word `test`: item 3 of that block
+  // lists the conventional-commit types, `test` among them.
+  const protocol = region(text, '<commit_protocol>', '</commit_protocol>', 'the commit protocol');
+  assert.doesNotMatch(protocol, /test_command|full[- ]suite|test suite|pytest|npm test|test\.mjs/i,
+    'the commit protocol carries a test invocation - D-01 put the suite at one site per '
+    + 'dispatch precisely so it could not ride the per-task commit compound');
+}
+
+test('EXP-05: the executor verifies a task with the run that task names', () => {
+  assertTargetedRun(doc(...EXECUTOR_CONTRACT));
+});
+
+test('EXP-05: the targeted-run check FAILS when the sentence is deleted', () => {
+  // The falsifier, on a scratch COPY in memory: the rule reads text, so a temp
+  // file would prove the same thing one syscall later.
+  const live = doc(...EXECUTOR_CONTRACT);
+  const sentence = 'That command is what verifies the task';
+  const at = live.indexOf(sentence);
+  const end = live.indexOf('Never the full test suite per task', at);
+  assert.ok(at > -1 && end > at, 'fixture assumption broken');
+  const without = live.slice(0, at) + live.slice(end);
+  assert.throws(() => assertTargetedRun(without),
+    /no longer says the task's `Verify:` command is what verifies the task/,
+    'deleting the targeted-run sentence does not redden the check');
+});
+
+test('EXP-05: the full suite has one site, after the last task and before the digest', () => {
+  assertOneSuiteSite(doc(...EXECUTOR_CONTRACT));
+});
+
+test('EXP-05: the suite-site check FAILS when the site is deleted', () => {
+  const live = doc(...EXECUTOR_CONTRACT);
+  const at = live.indexOf("After the last task's commit");
+  const end = live.indexOf('</process>', at);
+  assert.ok(at > -1 && end > at, 'fixture assumption broken');
+  const without = `${live.slice(0, at)}Then return the digest.\n\n${live.slice(end)}`;
+  assert.throws(() => assertOneSuiteSite(without),
+    /the suite site is gone/,
+    'deleting the suite site does not redden the check');
+});
+
+test('EXP-05: the executor and the verifier state one rule in one vocabulary', () => {
+  // D-05: the executor BORROWED the verifier contract's shipped wording rather
+  // than inventing a synonym. Pinned as a PAIR so a reword on either side
+  // reddens here instead of drifting into two rules that sound different.
+  const exec = flat(doc(...EXECUTOR_CONTRACT));
+  const verif = flat(doc(...VERIFIER_CONTRACT));
+  for (const [where, text, per, once] of [
+    ['verifier', verif, 'truth', 'verification'],
+    ['executor', exec, 'task', 'dispatch'],
+  ]) {
+    assert.match(text, new RegExp(`full test suite per ${per}`),
+      `${where} contract: "full test suite per ${per}" is gone - the two contracts state `
+      + 'the same rule and this is the phrase they share');
+    assert.match(text, new RegExp(`At most one full-suite run per ${once}`),
+      `${where} contract: "At most one full-suite run per ${once}" is gone - the two `
+      + 'contracts state the same rule and this is the phrase they share');
+  }
+});
