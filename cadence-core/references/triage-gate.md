@@ -141,7 +141,7 @@ rule; the scratch file is the model's own, never a phase artifact):
 D="$(mktemp -d "${TMPDIR:-/tmp}/cad-rearm-XXXXXX")" \
   && case "$D" in (*[!A-Za-z0-9._/-]*) echo "scratch-unsafe: $D holds a character a carried literal cannot survive" >&2; exit 1;; esac \
   && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N> > "$D/render.json" \
-  && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+process.argv[1]+" is not an object");process.exit(1)}if(!Array.isArray(r.outcomes)){console.error("scratch-shape: outcomes is not an array in "+process.argv[1]);process.exit(1)}if(!r.outcomes.every((o)=>o&&typeof o==="object")){console.error("scratch-shape: outcomes has a non-object entry in "+process.argv[1]);process.exit(1)}console.log(r.outcomes.filter((o)=>o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr).length)' "$D/render.json" "<trigger>"
+  && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+process.argv[1]+" is not an object");process.exit(1)}if(!Array.isArray(r.outcomes)){console.error("scratch-shape: outcomes is not an array in "+process.argv[1]);process.exit(1)}if(!r.outcomes.every((o)=>o&&typeof o==="object")){console.error("scratch-shape: outcomes has a non-object entry in "+process.argv[1]);process.exit(1)}console.log(r.outcomes.filter((o)=>o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr&&(o.plan??"")===(process.argv[3]??"")).length)' "$D/render.json" "<trigger>" "<k>"
 ```
 
 A carried literal is pasted into a later command unquoted-by-construction, so the guard REFUSES the directory at creation rather than trying to quote it defensively at every use site: `mktemp` builds the path from `$TMPDIR`, which the operator does not always own (a cloned repo's `.envrc`, a devcontainer, a CI runner), and one `"` in it closes the argument and runs the rest as commands. The character class is deliberately narrow - a `TMPDIR` holding a space is refused too, and fixing that is one `export` away, where a path that executes is not.
@@ -162,11 +162,23 @@ not run: STOP and ask the user. The shape this replaced defaulted a missing
 array to `[]` and printed `0`, which reads as "the round is unspent" and
 re-fires a blocking gate off a file it never managed to read.
 
-The envelope's `corr` is the current run's id, so that one number is the whole
-answer: non-zero means a `rearm` outcome for this trigger is already recorded
-under that same id and the one round is SPENT - do not fire again, go straight
-to the STOP-and-ask arm above. The match is on the event's `trigger` FIELD and
-never on its detail text, for the reason the receipt paragraph above states.
+The count is keyed on FOUR things - the event name, the trigger FIELD, this
+run's `corr` and the PLAN `<k>` - which is the same key the append below
+writes, so that one number is the whole answer: non-zero means a `rearm`
+outcome for this trigger UNDER THIS PLAN is already recorded under that same id
+and the one round is SPENT - do not fire again, go straight to the STOP-and-ask
+arm above. The match is on the event's `trigger` FIELD and never on its detail
+text, for the reason the receipt paragraph above states.
+
+The plan key rides as the THIRD argument beside the trigger, so the block stays
+the one line a coordinator copies and runs. Without that term a `rearm` written
+for plan 1 reads as SPENT for plan 2 on the same trigger, and plan 2's fix can
+never be reviewed at all. OMIT the argument on a fire that carries no plan
+(`/cad-debug`, `/cad-verify`, `/cad-task`'s inline path - the discriminator
+grammar in `references/review-triggers.md` names them): the append writes a
+`plan` field only when `--plan` was passed, so those events carry none, and an
+omitted key is what matches them.
+
 Zero -> record the round as you fire it:
 
 ```

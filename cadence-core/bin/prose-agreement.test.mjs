@@ -2212,15 +2212,22 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
 test('triage-gate.md: the corr-keyed re-arm read-back survives the deferred arm beside it', () => {
   const text = doc('cadence-core', 'references', 'triage-gate.md');
 
-  // 1. The blocking cap, at the bytes that MAKE it corr-keyed: the filter is
-  //    quoted whole rather than matched loosely, because every word in it is
-  //    load-bearing - the event name, the trigger FIELD (never its detail
-  //    text) and the run's own id.
-  const corrFilter = 'o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr';
+  // 1. The blocking cap, at the bytes that MAKE it corr-keyed AND plan-keyed:
+  //    the filter is quoted whole rather than matched loosely, because every
+  //    word in it is load-bearing - the event name, the trigger FIELD (never
+  //    its detail text), the run's own id, and the PLAN the fire belongs to.
+  //    The plan term is the one the recording append below the block has always
+  //    written as `--plan <k>`; without it a `rearm` recorded for plan 1 spends
+  //    plan 2's round on the same trigger, so plan 2's fix can never be
+  //    reviewed (phase-1 D-04). The `??""` on both sides is what lets an
+  //    OMITTED key match the fires that carry no `--plan` at all.
+  const corrFilter = 'o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr'
+    + '&&(o.plan??"")===(process.argv[3]??"")';
   assert.equal(text.split(corrFilter).length - 1, 1,
-    'triage-gate.md no longer counts the blocking re-arm under this run\'s own corr. '
-    + 'The deferred arm reads its cap off the queue instead; that is a SECOND rule '
-    + 'beside this one, never a replacement for it (D-02).');
+    'triage-gate.md no longer counts the blocking re-arm under this run\'s own corr '
+    + 'AND this plan\'s key. The deferred arm reads its cap off the queue instead; that '
+    + 'is a SECOND rule beside this one, never a replacement for it (D-02). Dropping the '
+    + 'plan term instead spends every later plan\'s round on plan 1\'s rearm (D-04).');
   // The FENCED BLOCK, not the line: the read-back is `&&`-chained across three
   // physical lines, and the chaining is exactly what makes the count this run's
   // own - a render that failed never reaches the reader.
