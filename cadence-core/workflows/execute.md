@@ -340,7 +340,15 @@ persisted at `.planning/phases/<N>/REVIEW-risk_surface-plan-<k>.md`
 only; and the instruction NOT to rotate the plan's report but to append its fix
 row to the existing `<plandir>/reports/plan-<k>.md`, since the executor
 contract's rotation rule is unconditional and would otherwise rename the
-completed plan's report aside. It returns on the existing complete arm,
+completed plan's report aside. When a finding names a path outside the plan's
+declared `files:` lease, the coordinator AMENDS `PLAN-<k>.md`'s `files:` to
+cover that path BEFORE dispatching, so `lease-check` still runs and still
+answers on the fix commit's staged set - `PLAN-<k>.md` is inside `.planning/`,
+which is what the guardrail above permits with no exception clause. Rejected:
+a `lease-check`-exempt flag for the fix dispatch, which deletes the one gate
+that catches an unlicensed path; and routing the refusal back through the
+ask-user seam, which consults exactly the seam the fix dispatch exists to keep
+out of the loop. It returns on the existing complete arm,
 `PLAN COMPLETE` with `Tasks: 1 of 1`, and is bracketed exactly as "The
 lifecycle bracket (both paths)" above states, with no bracket half restated
 here. The re-arm on that fix is CAPPED at ONE narrowed round per
