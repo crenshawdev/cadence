@@ -37,7 +37,11 @@ on this path is a real defect to report, not the fork-point default.
    fires with and its rails, and the blocking gate with its capped re-arm are
    stated ONCE, at `workflows/execute.md`'s `execute_sequential` step - the file
    this reference is read from, so it is already resident: follow it there and
-   restate none of it here. The fire is PER PLAN, so each plan's survivors
+   restate none of it here - including its FAIL arm's fix dispatch, which on
+   this path runs in the MAIN tree, never a worktree: step 4 above has already
+   removed each merged worktree and deleted its branch before this risk
+   sequence fires, so `<worktree_mode>` is entered for a fix on neither path.
+   The fire is PER PLAN, so each plan's survivors
    persist under their own `plan-<k>` discriminator and a later plan's empty
    settle cannot overwrite an earlier plan's file. Then, before that plan is
    reported done:
