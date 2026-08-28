@@ -204,17 +204,36 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v3.7.6 - the coordinator stays the coordinator`, opened 2026-08-28.** Two
-phases, two ids - `EXP-04`, `EXP-05` - both read off the smithers run record,
-the first foreign project Cadence executed end to end. The executor path was
-walked for operational waste with tokens out of scope; the executor's own
-contract came out lean and the waste sat around it. Phase 1 makes the blocking
-gate's fix pass a continuation dispatch, so the coordinator stops editing source
-it then cannot get reviewed. Phase 2 gives the executor one targeted run and one
-suite run per task instead of a suite per turn. Four smaller items from the same
-read are in `.planning/CAPTURE.md` as tidy-ups.
+No cycle open. `/cad-phase add` opens the next one.
 
 **Previously:**
+
+**`v3.7.6 - the coordinator stays the coordinator`, opened 2026-08-28, closed
+2026-08-28.** Two phases, 29 commits off `main` (2 feat and 2 fix against 18
+docs and 5 test, which is what a cycle that edits contracts rather than code
+looks like). Two requirement ids, `EXP-04` and `EXP-05`, both traced to a
+verified phase; `/cad-audit` passed 2/2 with 14/14 acceptance criteria covered
+and nothing deferred. Both ids came off one read of the first foreign project
+Cadence executed end to end, on the standard v3.7.5 set: would a user on their
+own project feel it.
+
+Phase 1 made the blocking gate's fix pass a `cad-executor` continuation under
+the failing plan's own worker key, at every FAIL site that mints one, and
+banned the coordinator from any `Edit` or `Write` outside `.planning/`. The
+record that prompted it showed the main session doing fifteen edits across
+eight files in one two-minute window, all unreviewed by construction because
+the one-round re-arm cap was already spent. Phase 2 gave the executor one
+targeted run per task and one full-suite run per dispatch: bare full-suite
+invocations went from 4, 6, 2, 1, 2, 6 per dispatch to 1, 0, 0, 0, and
+test-running tool calls per dispatch from 6.9 to 2.6. The cost was always
+turns, not seconds, against a suite that runs in 0.6 s.
+
+Shipped rows are under `## Shipped` in `REQUIREMENTS.md`, the user-facing
+narrative is `CHANGELOG.md` `## [3.7.6]`, and 32 residue rows from both phases
+are in `.planning/ARCHIVE.md`. Manifest bumped to `3.7.6` at `dcfda4e1`. The
+merge and the `v3.7.6` tag are `/cad-land`'s, cut on the pulled base after the
+merge confirms.
+
 
 **`v3.7.5 - the defects a user's own project feels`, opened 2026-08-26, closed
 2026-08-27.** Five phases, 53 commits off `main` (8 feat against 7 fix, where

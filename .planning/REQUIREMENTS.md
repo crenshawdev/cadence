@@ -5,27 +5,23 @@
 
 ## Active
 
-`v3.7.6 - the coordinator stays the coordinator` opened 2026-08-28 with two
-phases. `/cad-plan` seeds each Traceability row as its phase is planned, so an
-id below that no plan has picked up yet surfaces as `unpicked` in `/cad-audit`
-rather than as a hand-written row.
+No cycle open. `/cad-phase add` is what opens the next one: it is the only
+workflow that appends a phase line to an existing roadmap, and `/cad-plan`
+seeds each Traceability row as its phase is planned. The ids under
+`## Deferred` keep their own reasons and their own promote conditions, and none
+of them is promoted here to fill this section.
 
-Both ids come off one read of the smithers run record (2026-08-27 to
-2026-08-28, 27 dispatches), not the tracker. The standard is the one v3.7.5 set:
-would a user on their own project feel it.
-
+`v3.7.6 - the coordinator stays the coordinator` opened 2026-08-28 and closed
+2026-08-28. Two phases, two ids - `EXP-04`, `EXP-05` - are rows under the
+`Shipped` heading below, both Complete. Both came off one read of the smithers
+run record (2026-08-27 to 2026-08-28, 27 dispatches), not the tracker, on the
+standard v3.7.5 set: would a user on their own project feel it. The audit
+passed 2/2 traced with 14/14 acceptance criteria covered.
 
 **Held over from the same read**, filed in `.planning/CAPTURE.md` rather than
 here: `detect-commands` asked per dispatch, an executor hunting a plan file it
 was handed, a duplicate `risk-check run` and a runtime `--help` in the
 coordinator, and the planning docs re-read past the `status` envelope.
-
-The shipped ids are rows under the `Shipped` heading below,
-and `/cad-phase add` is what opens the next cycle: it is the only workflow that
-appends a phase line to an existing roadmap, and `/cad-plan` seeds each
-Traceability row as its phase is planned. The ids under `## Deferred` keep their
-own reasons and their own promote conditions, and none of them is promoted here
-to fill this section.
 
 `v3.7.5 - the defects a user's own project feels` opened 2026-08-26 and closed
 2026-08-27. Five phases, eight ids - `FRG-03`, `FRG-04`, `FRG-05`, `FRG-06`,
