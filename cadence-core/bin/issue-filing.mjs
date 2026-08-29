@@ -236,7 +236,9 @@ function readDeclines(dir, forge) {
  * `unfixed --payload <file>` - the findings this fire should PUT TO THE USER.
  *
  * The selection is lib/filing-decision.mjs's, off the structured payload alone;
- * what this face adds is the one lookup that removes the ones already declined.
+ * what this face adds are the two removals that module cannot make - the
+ * entries already FIXED, read off the payload, and the ones already DECLINED,
+ * read off the tracker.
  * @param {string} dir @param {string} payloadFile
  */
 function cmdUnfixed(dir, payloadFile) {
@@ -259,6 +261,22 @@ function cmdUnfixed(dir, payloadFile) {
     return;
   }
 
+  // AN ENTRY WHOSE FIX IS ALREADY COMMITTED IS NOT A QUESTION FOR THE USER.
+  // `unfixedFindings` answers "what will this fire not fix now", and since the
+  // record grammar widened, an entry can be in that set and STILL name the
+  // commit that fixed it: a voluntary fix on a medium, which
+  // lib/filing-decision.mjs keeps legal on purpose (CONTEXT D-07). "The gate
+  // will not fix it now" and "somebody already did" are different questions,
+  // and only this face holds the second - that module states its field rule as
+  // a property of its signature, so a third field read there would make the
+  // rule a sentence it no longer keeps. Opening a tracker issue asking the user
+  // about work that is already committed is the defect being closed here.
+  //
+  // The removal runs BEFORE the forge is touched, for the same reason the
+  // payload is judged before it: it costs no network call to discover, and a
+  // fire whose whole remainder is already fixed should not spend one.
+  const notYetFixed = selected.findings.filter((e) => !e.fix_commit);
+
   const forge = resolveForge(dir);
   if (forge.ok === false) {
     emit({ ok: false, reason: forge.reason, detail: forge.detail,
@@ -277,13 +295,22 @@ function cmdUnfixed(dir, payloadFile) {
   // `findingIssue` in lib/adjudication-record.mjs refuses any key outside
   // `FINDING_KEYS`, so a fingerprint written INTO a finding would make every
   // payload carrying it fail the record seam it came from.
-  const findings = selected.findings
+  const findings = notYetFixed
     .map((finding) => ({ fingerprint: fingerprint(finding), finding }))
     .filter((e) => !declines.fingerprints.has(e.fingerprint));
 
+  // THREE NUMBERS, EACH COUNTING ONE THING. `raised` stays the size of the set
+  // `unfixedFindings` answered with, and `already_declined` stays a count of
+  // DECLINES alone - folding the removed entries into either would make an
+  // existing figure mean something new to make room for a third, and
+  // `already_declined` is tracker-derived in particular, so a number the
+  // tracker never said must not land in it. What was removed is accounted for
+  // rather than dropped silently: raised - already_fixed - already_declined is
+  // `findings.length`, and a reader can check it.
   emit({ ok: true, provider: forge.provider, repo: forge.repo,
     raised: selected.findings.length,
-    already_declined: selected.findings.length - findings.length,
+    already_fixed: selected.findings.length - notYetFixed.length,
+    already_declined: notYetFixed.length - findings.length,
     findings, detail: null, warnings: forge.warnings });
 }
 
