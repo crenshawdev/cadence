@@ -1,19 +1,21 @@
-# Requirements: Cadence (v3.7.6)
+# Requirements: Cadence (v3.7.7)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.7.7 - the record says what happened` opened 2026-08-28 with two phases.
-`/cad-plan` seeds each Traceability row as its phase is planned, so an id below
-that no plan has picked up yet surfaces as `unpicked` in `/cad-audit` rather
-than as a hand-written row.
+No cycle open. `/cad-phase add` opens the next one, and `/cad-plan` seeds each
+Traceability row as its phase is planned, so an id here that no plan has picked
+up yet surfaces as `unpicked` in `/cad-audit` rather than as a hand-written row.
 
-
-Both came off real runs rather than a read, and both are filed on the public
-tracker as S2: `GH-145` and `GH-159`. The ids under `## Deferred` keep their own
-reasons and none is promoted here to fill this section.
+`v3.7.7 - the record says what happened` opened 2026-08-28 and closed
+2026-08-29. Two phases, two ids - `TRC-10`, `RSK-07` - are rows under the
+`Shipped` heading below, both Complete. Both came off real runs rather than a
+read, and both are filed on the public tracker as S2: `GH-145` and `GH-159`. The
+audit passed 2/2 traced with 14/14 acceptance criteria covered and nothing
+deferred. The ids under `## Deferred` keep their own reasons and none is promoted
+here to fill this section.
 
 
 `v3.7.6 - the coordinator stays the coordinator` opened 2026-08-28 and closed
