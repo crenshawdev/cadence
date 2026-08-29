@@ -29,7 +29,10 @@
 // reason.
 'use strict';
 
-import { appendFileSync, lstatSync, statSync } from 'node:fs';
+import {
+  appendFileSync, existsSync, linkSync, lstatSync, renameSync, statSync, unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 // The ONE statement of which agent FILE carries which rung of which role. The
 // join below needs the reverse direction - a recorded `agent_type` stem back to
@@ -65,6 +68,89 @@ export const MAX_FILES_PER_CALL = 12;
 /** @param {string} planningRoot */
 export function readsPath(planningRoot) {
   return join(planningRoot, READS_FILE);
+}
+
+/**
+ * Where the rotated generation lives. The spelling is stated ONCE, here, so the
+ * writer, the `.gitignore` rule that has to name it and every test read it from
+ * one place and cannot drift apart. It keeps the record's own `reads.` prefix
+ * because a test that filters the planning root on that prefix is how a leaked
+ * temp or a second generation reddens a row rather than going unseen.
+ */
+export const ROTATED_READS_FILE = 'reads.1.jsonl';
+
+/**
+ * The claim SIDECAR's spelling, DERIVED from `ROTATED_READS_FILE` rather than
+ * written out again, so the two names cannot come apart either - the reason
+ * `lib/trace.mjs:138` states for `ROTATION_CLAIM_FILE`. A caller that has to
+ * name the file then names what the writer actually produces.
+ */
+export const READS_CLAIM_FILE = `${ROTATED_READS_FILE}.claim`;
+
+/**
+ * The two PRIVATE paths `rotateReads` writes inside the planning root, DERIVED
+ * from the names above for the reason `READS_CLAIM_FILE` is: the fresh record
+ * before it is renamed over the live path, and the leftover generation the
+ * single-winner eviction renames aside. The `finally` clears both on every arm
+ * the process survives, so they are only ever found by a reader when the
+ * process died inside the rotation window - which the hook's 5 s timeout makes
+ * reachable, and which leaves the evict temp holding a whole generation of up
+ * to `MAX_READS_BYTES`. Stated here so the `.gitignore` rules that have to name
+ * them read the spelling the writer actually produces rather than repeating it.
+ * A PREFIX and not a whole name: each carries the writer's pid and a random
+ * suffix, so the rule that covers them can only ever be a pattern.
+ */
+export const READS_ROTATE_TEMP_FILE = `${READS_FILE}.rotate`;
+
+/** @see READS_ROTATE_TEMP_FILE - the eviction half of the same pair. */
+export const READS_EVICT_TEMP_FILE = `${ROTATED_READS_FILE}.evict`;
+
+/**
+ * Where the rotated generation lives, joined onto the planning root the way
+ * `readsPath` does.
+ * @param {string} planningRoot
+ */
+export function rotatedReadsPath(planningRoot) {
+  return join(planningRoot, ROTATED_READS_FILE);
+}
+
+/**
+ * Where the claim sidecar lives.
+ * @param {string} planningRoot
+ */
+export function readsClaimPath(planningRoot) {
+  return join(planningRoot, READS_CLAIM_FILE);
+}
+
+/**
+ * The rotation marker's `event` value, the one line a fresh record starts with.
+ *
+ * The same spelling as `lib/trace.mjs`'s `ROTATION` and a SECOND statement of
+ * it, deliberately. `bin/read-trace.mjs` loads this module on every Read, Grep,
+ * Glob, Bash and NotebookRead call under the 5-second timeout at
+ * `hooks/hooks.json:15-25`, and importing 104 KB of trace source to parse for
+ * one string is a real per-tool-call cost - the same reason this module's header
+ * already gives for being a sidecar rather than a family of `trace.jsonl`.
+ */
+export const READS_ROTATION = 'record_rotated';
+
+/**
+ * Is this record the rotation marker rather than a tool call?
+ *
+ * The marker is NOT inert here the way `lib/trace.mjs`'s is in its renderer:
+ * `summarizeReads` bills every object it is handed and `joinReads` pushes an
+ * `unresolved` row for any record with no `agent`, so an unfiltered marker
+ * becomes a phantom read that `/cad-report` prints in its Reading line as a
+ * real tool call. This predicate is what the folds filter on.
+ *
+ * `tool`-absence is safe as the second clause because `recordFromHook` writes a
+ * `tool` from `RECORDED_TOOLS` on every record it produces and never writes an
+ * `event` key at all, so no real read can satisfy both.
+ * @param {any} record
+ */
+export function isReadsRotationMarker(record) {
+  return !!record && typeof record === 'object' && !Array.isArray(record)
+    && record.event === READS_ROTATION && !('tool' in record);
 }
 
 /**
@@ -263,10 +349,391 @@ export function recordFromHook(input, now, opts) {
 }
 
 /**
+ * How long a writer that finds a rotation IN FLIGHT waits for it to land before
+ * appending anyway. Milliseconds, and a CEILING rather than a deadline: it
+ * acquires nothing, blocks nobody, refuses nothing, and it always proceeds when
+ * the budget runs out.
+ *
+ * 250 ms, the figure `lib/trace.mjs:541` uses, restated here rather than a
+ * second budget invented for the same posture. The common wait is the one or
+ * two milliseconds a rotation actually takes - 1.72, 1.76, 1.76, 2.36 and
+ * 3.90 ms measured 2026-08-28 on this repository's real 7,852,530-byte record
+ * (D-06) - the ceiling is only ever paid where the winner died holding its
+ * claim, and it is 5% of the 5,000 ms this hook gets at `hooks/hooks.json:15-25`.
+ */
+const READS_ROTATE_WAIT_MS = 250;
+
+/** @param {number} ms */
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * How old the claim's sidecar has to be before the claim is read as ABANDONED
+ * and reclaimed. A constant beside the code that enforces it, never a config
+ * key - the posture `MAX_READS_BYTES` and `READS_ROTATE_WAIT_MS` already take.
+ *
+ * 30 seconds, the figure `lib/trace.mjs:557` uses, and two figures set it for
+ * THIS record. It is roughly 7,700x the slowest rotation measured here (3.90 ms
+ * over five runs on the real 7,852,530-byte record, 2026-08-28, D-06), so a
+ * live claim is nowhere near it - the margin is against a machine suspended
+ * mid-rotation, not against a slow write. And it bounds the DEGRADED window: a
+ * claim nobody will ever release costs about one `READS_ROTATE_WAIT_MS` per
+ * append until it ages out, so a two-minute figure would charge four times as
+ * much for the same safety.
+ */
+const READS_CLAIM_STALE_MS = 30_000;
+
+/**
+ * Has the claim that `readsRotationInFlight` just called in flight actually
+ * been ABANDONED - taken by a process that was killed or timed out before it
+ * could release it?
+ *
+ * `readsRotationInFlight` cannot answer this and must not be asked to: the
+ * claim IS a hard link, so the sibling and the live record are one inode until
+ * the swap and every `appendFileSync` into the record bumps that shared inode's
+ * timestamps. Only a file written BESIDE the claim can carry the claim's own
+ * age (`lib/trace.mjs:120-137`).
+ *
+ * UNKNOWABLE READS AS LIVE, the same posture `readsRotationInFlight` takes.
+ * True only where the sidecar's `mtimeMs` is strictly further in the past than
+ * `READS_CLAIM_STALE_MS`; an absent sidecar, a stat that throws and a future
+ * mtime from a skewed clock all answer false. The asymmetry is the whole
+ * argument: a wrong LIVE answer costs one deferred rotation, and a wrong
+ * ABANDONED answer breaks a live claimant and costs the record.
+ * @param {string} claim
+ */
+function readsClaimAbandoned(claim) {
+  try {
+    return Date.now() - statSync(claim).mtimeMs > READS_CLAIM_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Is the sibling that already exists a rotation IN FLIGHT, or a generation an
+ * earlier rotation left behind?
+ *
+ * The claim below is a hard LINK, so between the claim and the swap the live
+ * path and the sibling are the same inode. That identity is the discriminator,
+ * and it has to be one: treating an in-flight claim as a leftover generation
+ * would evict a claim a concurrent writer is still holding, and treating a
+ * leftover generation as in flight would leave the record unable to rotate a
+ * SECOND time - the same write-death this whole arm removes, one indirection
+ * down.
+ *
+ * UNKNOWABLE READS AS IN FLIGHT. Where a platform supplies no inode (Node
+ * reports `0`) or either stat fails, the safe answer is the one that never
+ * evicts: it costs a deferred rotation, and the append still lands
+ * (`lib/trace.mjs:565-588`).
+ * @param {string} file @param {string} sibling
+ */
+function readsRotationInFlight(file, sibling) {
+  try {
+    const a = statSync(file);
+    const b = statSync(sibling);
+    if (!a.ino || !b.ino) return true;
+    return a.ino === b.ino && a.dev === b.dev;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Claim the record, swap a fresh one in, and hand the old generation to
+ * `ROTATED_READS_FILE`.
+ *
+ * A SECOND rotation, never a generalization of `rotateTrace` (D-01). That
+ * function is bound to the trace at four levels - its three path helpers, its
+ * re-stat trigger, the carry policy in `freshRecord` and the bound inside it -
+ * and fourteen rotation rows in `trace.test.mjs` are the proof it did not
+ * change. What is reused here is the TECHNIQUE, restated: the accepted cost is
+ * that a copy can drift from the trace's claim semantics on the next fix to
+ * either one.
+ *
+ * NO LOCK (D-05). `withPlanningFileLock` is refused for the reason
+ * `lib/trace.mjs:626-631` refuses it and for a stronger one this record has:
+ * `bin/read-trace.mjs` may emit nothing on any stream and exits 0
+ * unconditionally, so a lock refusal would have no path to be reported on. The
+ * concurrency is cross-PROCESS and ordinary rather than theoretical -
+ * `hooks/hooks.json:17` matches five tools and one OS process runs per tool
+ * call, so parallel subagents are concurrent `appendRead` processes (D-07).
+ *
+ * THE CLAIM IS `linkSync`, NOT `renameSync`. A rename REPLACES its destination
+ * silently, so a writer still holding a stale stat would destroy a generation
+ * another writer had already made and exactly one sibling would still exist, so
+ * a count-based check would call that healthy. `linkSync` fails `EEXIST`
+ * instead, which is atomic, single-winner, and REFUSES the claim rather than
+ * detecting the damage after the fact (`lib/trace.mjs:633-641`).
+ *
+ * NEVER A READ-MODIFY-WRITE. The old generation is produced by the claim
+ * itself and the fresh record is written WHOLE to a private path and renamed
+ * into place, so the live path is never absent and no concurrent append is
+ * trimmed away by a rewrite it did not see (`lib/trace.mjs:642-650`).
+ *
+ * NO CARRY-BACK, deliberately, where `lib/trace.mjs:884-909` has one. The bar
+ * is every record present ACROSS THE PAIR, and a record a loser appended into
+ * the sibling during the claim window already satisfies it; copying those bytes
+ * back would also put a previous generation's reads into a record D-02 says
+ * starts with the marker and nothing else. So a losing writer's record can be
+ * in the sibling, which is where this differs from the trace's assertion that
+ * every racing writer's event is in the LIVE record.
+ *
+ * EXACTLY ONE PRIOR GENERATION is the entire retention policy. No dated
+ * generations, no keep-N, no config key: the pair on disk is the bound, and a
+ * second rotation evicts what the first one left.
+ *
+ * NOTHING CROSSES THE CUT (D-02). The fresh record is one line - the marker -
+ * and there is no `freshRecord` analogue and no run-in-flight tail, because
+ * nothing scans this record backwards: `readReadsRecords` reads it whole and
+ * `joinReads` joins by timestamp containment against the TRACE's brackets. The
+ * trace carries a tail only because `correlationId` scans backward for its
+ * anchor.
+ *
+ * @param {string} planningRoot
+ * @param {number} reserve the pending line's byte length, what the fresh record
+ *   owes beyond the marker
+ * EXPORTED for the reason `rotateTrace` is (`lib/trace.mjs:651-655`): the
+ * losing arms cannot be reached through `appendRead`, which re-stats the record
+ * and so can never be made to arrive here holding a stale one. Nothing but
+ * `appendRead` and the tests may call it.
+ * @returns {{rotated: boolean, reason?: string}} `reason` ONLY where the
+ *   rotation failed outright; losing the claim is `{rotated:false}` and the
+ *   caller appends, because somebody else already made room.
+ */
+export function rotateReads(planningRoot, reserve) {
+  const file = readsPath(planningRoot);
+  const sibling = rotatedReadsPath(planningRoot);
+  const priv = `${process.pid}.${Math.random().toString(36).slice(2)}`;
+  const claim = readsClaimPath(planningRoot);
+  /** @type {string|null} */
+  let temp = null;
+  /** @type {string|null} */
+  let evicted = null;
+  /** @type {string|null} */
+  let dated = null;
+  // The `mtime` THIS process stamped on the sidecar, so the confirm below can
+  // tell its own write apart from a refresh some other claimant made.
+  /** @type {number|null} */
+  let mine = null;
+  // The claim is HELD from the link until the swap. While it is held the
+  // sibling is only a second name for the live file, so every failure arm has
+  // to release it - a claim left behind reads as a rotation in flight forever
+  // and the record never rotates again.
+  let held = false;
+  // The stamp this process wrote, at its PRIVATE path, until the link says it
+  // owns the claim the stamp dates. Cleared once it is renamed into place.
+  /** @type {string|null} */
+  let pending = null;
+  /**
+   * Move the private stamp onto the shared sidecar path. Called only from the
+   * two arms that have established the claim is this process's to date, and
+   * `mine` is what the confirm below tells its own publish apart by.
+   */
+  const publish = () => {
+    if (!pending) return;
+    try { renameSync(pending, claim); dated = claim; mine = statSync(claim).mtimeMs; }
+    catch { mine = null; /* fail live: an undated claim reads as live */ }
+    pending = null;
+  };
+  try {
+    let claimed = false;
+    // TWO attempts, never a loop: claim, or evict one leftover generation (or
+    // one abandoned claim) and claim once more.
+    for (let attempt = 0; attempt < 2 && !claimed; attempt++) {
+      // READ THE AGE BEFORE PUBLISHING A NEW STAMP. Every publish below
+      // overwrites the only evidence a killed claimant left, so an age read
+      // after one is this process's own and the reclaim could never fire.
+      // Declared out here because the `catch` arm is what consults it.
+      let wasStale = false;
+      try {
+        wasStale = readsClaimAbandoned(claim);
+        // STAMP PRIVATE, PUBLISH ONLY WHERE THE CLAIM IS THIS PROCESS'S. The
+        // stamp has to exist before the `linkSync`, because the window it
+        // closes is the other way round: a stamp written after the link leaves
+        // the claim HELD beside the aged file a previous run left, and a third
+        // process reading that age concludes ABANDONED and evicts a LIVE claim.
+        //
+        // But writing it straight to `claim` writes a path this process does
+        // not own yet, and then every append that LOSES the link has refreshed
+        // somebody else's claim: on a record appended far more often than
+        // `READS_CLAIM_STALE_MS` - one process per tool call, D-07 - that
+        // restarts the staleness clock on every append and the abandoned claim
+        // never ages into a reclaim at all. Having the loser put back what it
+        // overwrote is not the remedy either: that is a check-then-write on a
+        // shared path, so a writer taking the claim between the check and the
+        // rewrite gets its FRESH stamp rewound to the dead claim's age and
+        // reads as abandoned while it is live, which costs the record rather
+        // than one rotation.
+        //
+        // A PLAIN overwrite, never `{flag:'wx'}`: the retry that follows an
+        // eviction comes back through here with the same `priv`, so an
+        // exclusive create would throw on this process's own leftover and turn
+        // the reclaim into a failed rotation. A failed sidecar write is
+        // SWALLOWED rather than allowed to decide the rotation - no sidecar
+        // reads as LIVE.
+        pending = `${claim}.${priv}`;
+        try { writeFileSync(pending, `${new Date().toISOString()}\n`); }
+        catch { pending = null; /* fail live: no sidecar reads as a live claim */ }
+        linkSync(file, sibling);
+        claimed = true;
+        held = true;
+        // THE CLAIM IS OURS - publish the stamp that dates it. One atomic
+        // rename, and the only window it leaves is between the link and this
+        // line, where the sidecar is still the aged one a dead claimant left.
+        // The eviction arm's own confirm closes that.
+        publish();
+      } catch (e) {
+        const code = e && /** @type {any} */ (e).code;
+        // No record to rotate at all: the caller's append is what creates it.
+        if (code === 'ENOENT') return { rotated: false };
+        if (code !== 'EEXIST') return { rotated: false, reason: code || 'claim-failed' };
+        // A sibling already sits at that path, and `EEXIST` alone cannot say
+        // which of the two causes put it there.
+        let abandoned = false;
+        if (attempt > 0 || readsRotationInFlight(file, sibling)) {
+          // UNLESS THE CLAIM WAS ABANDONED. A claimant killed or timed out
+          // mid-rotation never runs its `finally`, so the claim stands forever:
+          // the record never write-deads, but the bound it promises is gone and
+          // every append pays the full wait budget - the state v3.7.4 phase 4's
+          // UAT recorded for the trace. Shortening the budget is not the
+          // remedy: the trigger is re-read from the record's size on every
+          // call, so only a COMPLETED rotation ends the state. The sidecar's
+          // age is consulted ONLY here, where the sibling is the same inode;
+          // where it is a different one it is a leftover generation and that
+          // arm's own discriminator answers on its own.
+          abandoned = attempt === 0 && wasStale;
+          if (!abandoned) {
+          // A rotation is genuinely IN FLIGHT and this process lost the claim.
+          // It must NOT hand the caller straight back to its append: while the
+          // claim is held the live PATH still names the old inode, so the
+          // record would land in the file about to become the sibling rather
+          // than in the record. WAIT for the swap by polling the inode
+          // identity, stop the moment it changes, and report that this process
+          // did not rotate so the caller appends into whatever the winner left.
+          //
+          // Not a lock (D-05). `withPlanningFileLock` is refused for the reason
+          // `lib/trace.mjs:626-631` refuses it and for a stronger one here:
+          // `bin/read-trace.mjs:10-16` may emit nothing on any stream and exits
+          // 0 unconditionally, so a lock refusal would have no path to be
+          // reported on.
+            for (
+              let waited = 0;
+              waited < READS_ROTATE_WAIT_MS && readsRotationInFlight(file, sibling);
+              waited++
+            ) {
+              sleep(1);
+            }
+            return { rotated: false };
+          }
+        }
+        // A generation an earlier rotation left, and evicting it is the one
+        // DESTRUCTIVE act on this path - so RE-STAT first and never rotate a
+        // record this writer did not observe over the trigger. The interleaving
+        // that makes this load-bearing: another writer rotated while this one
+        // was still holding the stat that sent it here, and carrying that fresh
+        // file away would destroy the generation the other writer just made and
+        // leave the record with nothing in it. `EEXIST` cannot see that case -
+        // the sibling exists either way - and a check afterwards is too late,
+        // so the claim is REFUSED rather than the damage detected
+        // (`lib/trace.mjs:812-825`).
+        let now = null;
+        try { now = statSync(file).size; } catch { return { rotated: false }; }
+        if (now + reserve < MAX_READS_BYTES) return { rotated: false };
+        // PUBLISH THE STAMP HERE, and on no other losing arm. Either the
+        // sibling is a leftover generation and no claim is held at all, or the
+        // sidecar read ABANDONED and this process is about to evict the claim
+        // it dates - the one thing every other loser has not established. It
+        // also has to happen BEFORE the eviction, because the confirm below
+        // tells a second reclaimer's publish from this one's by the mtime this
+        // line leaves.
+        publish();
+        // Evict SINGLE-WINNER, the way `lib/capture-file.mjs` breaks a stale
+        // lock: exactly one contender renames it to a private path and the
+        // losers get `ENOENT`. The `finally` drops that private path.
+        const path = join(planningRoot, `${READS_EVICT_TEMP_FILE}.${priv}`);
+        try { renameSync(sibling, path); } catch { return { rotated: false }; }
+        evicted = path;
+        // CONFIRM AFTER CLAIMING, on the ABANDONED arm only, and before
+        // anything is read or written. The rename above may have taken the
+        // sibling from a claimant that arrived between the age read and here: a
+        // second reclaimer wins the eviction race, re-links and stamps its own
+        // fresh sidecar, and the mtime is no longer the one this process wrote.
+        // Breaking THAT claim is not a deferred rotation, it is the whole
+        // record. Put the sibling back only where nothing has taken the path
+        // meanwhile - a plain rename back would clobber a claim a fourth writer
+        // legitimately holds - and either way CLEAR `evicted` so the release
+        // cannot delete a claim that was just restored. The leftover-generation
+        // arm has its own discriminator and does not gain a confirm
+        // (`lib/trace.mjs:837-867`).
+        if (abandoned) {
+          let refreshed = false;
+          try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
+          if (refreshed) {
+            try {
+              if (!existsSync(sibling)) renameSync(path, sibling);
+              else unlinkSync(path);
+            } catch { /* it vanished under us - there is nothing left to restore */ }
+            evicted = null;
+            return { rotated: false };
+          }
+        }
+      }
+    }
+    if (!claimed) return { rotated: false };
+    // The fresh record is written whole to a PRIVATE path - this process's pid
+    // and a random suffix, exclusive-create - and renamed over the live path.
+    temp = join(planningRoot, `${READS_ROTATE_TEMP_FILE}.${priv}`);
+    const marker = {
+      ts: new Date().toISOString(),
+      event: READS_ROTATION,
+      file: ROTATED_READS_FILE,
+    };
+    writeFileSync(temp, `${JSON.stringify(marker)}\n`, { flag: 'wx' });
+    renameSync(temp, file);
+    temp = null;
+    held = false;
+    return { rotated: true };
+  } catch (e) {
+    return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
+  } finally {
+    // Leave nothing behind on ANY arm: no private temp, no private stamp, no
+    // unfinished claim, no evicted generation.
+    if (temp) { try { unlinkSync(temp); } catch { /* nothing to clean up */ } }
+    if (held) { try { unlinkSync(sibling); } catch { /* nothing to release */ } }
+    // GUARDED BY `held`, never unconditional. A claimant may delete only a
+    // sidecar it still owns: `held` goes false at the swap, so an unconditional
+    // unlink here would delete the FRESH sidecar of a process that took the
+    // claim legitimately in that window, leaving a standing claim with no
+    // sidecar - which reads as LIVE forever and defeats the reclaim
+    // permanently and silently (`lib/trace.mjs:912-932`).
+    //
+    // The consequence is deliberate: a rotation that COMPLETES leaves its
+    // sidecar behind. That residue is INERT - once the swap has happened the
+    // sibling is a separate inode, `readsRotationInFlight` is false, nothing
+    // reads the sidecar, and the next claimant overwrites it before it links.
+    if (held && dated) { try { unlinkSync(dated); } catch { /* nothing to release */ } }
+    // A stamp this call never published dates nothing and belongs to nobody
+    // else - it is at a path carrying `priv`, so no other process can see it.
+    // Dropping it UNCONDITIONALLY is what keeps a losing append from touching
+    // the shared sidecar at all. Every arm that DID publish cleared `pending`.
+    if (pending) { try { unlinkSync(pending); } catch { /* nothing to clean up */ } }
+    if (evicted) { try { unlinkSync(evicted); } catch { /* nothing to clean up */ } }
+  }
+}
+
+/**
  * Append one record. Mirrors lib/trace.mjs's guarded append: lstat for a
- * planted symlink ahead of the size stat, the cap enforced BEFORE the write
+ * planted symlink ahead of the size stat, the bound enforced BEFORE the write
  * because an append-only file has no whole-file rewrite to trim from, and a
  * reason returned rather than thrown on every failure.
+ *
+ * The SIZE bound is not a refusal. At `MAX_READS_BYTES` the record rotates and
+ * this append lands, so no writer is ever again told the record is full; the
+ * two remaining size answers are `oversized-record`, for a single line that
+ * reaches the bound by itself, and whatever code a rotation that could not
+ * complete failed with.
  * @param {string} planningRoot
  * @param {any} record
  */
@@ -275,20 +742,50 @@ export function appendRead(planningRoot, record) {
     return { written: false, reason: 'bad-record' };
   }
   const file = readsPath(planningRoot);
+  // The symlink guard stays FIRST and unchanged, so a redirected record is
+  // refused whatever its size.
   try {
     if (lstatSync(file).isSymbolicLink()) return { written: false, reason: 'symlinked-reads' };
   } catch { /* ENOENT is the ordinary first write */ }
-  try {
-    if (statSync(file).size >= MAX_READS_BYTES) return { written: false, reason: 'size-cap' };
-  } catch (e) {
-    const code = e && /** @type {any} */ (e).code;
-    if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
-  }
+  // RENDERED AHEAD of the size arm, which is a reordering and not a
+  // rearrangement: the arm now needs this line's own byte length, because it
+  // fires when the record PLUS this line would reach the bound rather than when
+  // the record is already at it. The old post-hoc arm admitted one last record
+  // that carried the file past the bound.
   let line;
   try {
     line = `${JSON.stringify(record)}\n`;
   } catch (e) {
     return { written: false, reason: 'unserializable-record' };
+  }
+  const pending = Buffer.byteLength(line);
+  // THE BOUND, no longer a refusal. A record at the bound used to answer
+  // `{written:false}` with a full-record reason to every writer for the rest of
+  // the project's life - permanent, silent write-death that went four cycles
+  // unnoticed because `appendRead`'s return reaches no user-facing surface
+  // (D-12). It ROTATES instead: the old generation becomes
+  // `ROTATED_READS_FILE` and this append lands.
+  //
+  // An absent file is the ordinary first write; any other stat failure is the
+  // reason this append did not happen.
+  let size = null;
+  try {
+    size = statSync(file).size;
+  } catch (e) {
+    const code = e && /** @type {any} */ (e).code;
+    if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
+  }
+  if (size !== null && size + pending >= MAX_READS_BYTES) {
+    // A single line that reaches the bound on its own is REFUSED rather than
+    // rotated. Rotating there throws the record away to make room for a line
+    // that still would not fit, and the next append does it again
+    // (`lib/trace.mjs:1014-1019`).
+    if (pending >= MAX_READS_BYTES) return { written: false, reason: 'oversized-record' };
+    const rot = rotateReads(planningRoot, pending);
+    // Losing the claim is not a failure: somebody else already made the room,
+    // and this writer appends into the record they left. Only a rotation that
+    // FAILED carries a reason, and it is reported rather than appended past.
+    if (rot.reason) return { written: false, reason: rot.reason };
   }
   try {
     appendFileSync(file, line);

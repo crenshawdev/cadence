@@ -367,6 +367,19 @@ function fieldDeviation(j) {
  * `counter_evidence` is optional in the record and is omitted when absent
  * rather than rendered empty - it is the adjudicator's note, not a field every
  * entry has.
+ *
+ * `fix:` IS PRINTED ON EVERY SURVIVOR, absent value and all, which is the one
+ * line here that is not omitted when the record carries nothing. A survived
+ * finding raised at blocker or high names the commit that fixed it; one raised
+ * below them was confirmed and NOT fixed and carries no commit id because none
+ * exists. Both are the same ruling, so without this line the two render
+ * identically and a reader cannot tell a fix that landed from a finding the
+ * gate confirmed and moved past. Omitting the line on the second would make
+ * absence the statement, and absence is not a statement a reader can act on -
+ * "this was left standing" is exactly the fact `/cad-why` exists to surface.
+ * The commit id itself is printed where one exists, because an auditor runs
+ * `git show` on it, which is why lib/adjudication-record.mjs validates the
+ * value at all rather than merely its presence.
  * @param {any} f @returns {string[]}
  */
 function findingLines(f) {
@@ -375,6 +388,9 @@ function findingLines(f) {
     .filter(Boolean).join(' ');
   const out = [head, `claim: ${f.claim}`, `failure_scenario: ${f.failure_scenario}`];
   if (f.counter_evidence) out.push(`counter_evidence: ${f.counter_evidence}`);
+  out.push(f.fix_commit
+    ? `fix: ${f.fix_commit}`
+    : 'fix: none - confirmed and left standing');
   return out;
 }
 
@@ -386,6 +402,16 @@ function findingLines(f) {
  * commit is UNKNOWN. The third is never collapsed into the second - a finding
  * dropped for want of a resolvable range would read as a finding that does not
  * apply.
+ *
+ * WHETHER A SURVIVOR WAS FIXED IS A FOURTH DISTINCTION AND NOT A FOURTH
+ * ANSWER. It is drawn one level down, on the survivor line itself, where
+ * `findingLines` prints `fix:`. This line's count is unchanged by it: a
+ * confirmed-and-unfixed finding still COVERS this commit and still belongs in
+ * `kept`, so the head sentence says the same thing it said before. What changed
+ * is what each survivor says about ITSELF - the three answers above are about
+ * whether a finding applies here, and the fix state is about what was then done
+ * with it, which is a different question and would be a wrong reason to move a
+ * finding between these three.
  * @param {EntryJoin} [j] @returns {string|undefined}
  */
 function fieldReview(j) {

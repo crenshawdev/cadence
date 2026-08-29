@@ -151,6 +151,55 @@ test('the AMBIGUOUS arm is unmoved: it names every candidate and picks none', ()
     + '_archive-v9.0.0/3 (plan 1, task 4); tasks/a-slug (plan -, task 1)');
 });
 
+test('two survivors on one commit render differently when only one names a fix', () => {
+  // The widened `survived` grammar reaching the reader: a blocker or high that
+  // stood names the commit that fixed it, and a finding raised below them was
+  // confirmed and NOT fixed. Both are `survived`, both cover this commit, and
+  // before the `fix:` line the two rendered identically.
+  const survivor = (/** @type {any} */ over) => ({
+    severity: 'high',
+    file: 'src/a.mjs',
+    line: 10,
+    record: 'ADJUDICATION-risk_surface-plan-1.json',
+    claim: 'the lock is never released',
+    failure_scenario: 'a second fire blocks forever',
+    ...over,
+  });
+  const entry = {
+    sha: '5'.repeat(40), date: '2026-05-06T00:00:00-05:00', subject: 'two survivors',
+    join: {
+      state: 'resolved', label: 'phases/2', milestone: null, phase: '2',
+      plan: '1', task: '1', description: 'the task',
+      review: {
+        records: 1,
+        findings: [
+          survivor({ fix_commit: '4a1af326' }),
+          survivor({ severity: 'medium', line: 11 }),
+        ],
+        unresolved: [],
+      },
+    },
+  };
+  const { text } = renderChain([entry]);
+  const lines = text.split('\n').map((l) => l.trim());
+  const heads = lines.reduce((/** @type {number[]} */ acc, l, i) => (
+    l.startsWith('claim: ') ? [...acc, i - 1] : acc), []);
+  assert.equal(heads.length, 2, `expected two survivor blocks, got: ${text}`);
+  const [fixed, unfixed] = heads.map((i) => lines.slice(i, i + 4).join('\n'));
+
+  assert.notEqual(fixed, unfixed,
+    'a fixed survivor and a confirmed-unfixed one must not render identically');
+  assert.ok(fixed.includes('fix: 4a1af326'),
+    `the commit id itself is printed so an auditor can git show it: ${fixed}`);
+  assert.ok(unfixed.includes('fix: none - confirmed and left standing'),
+    `the unfixed survivor states its own state rather than omitting the line: ${unfixed}`);
+  // The head line's composition is other rows' property and is unmoved.
+  assert.ok(fixed.startsWith('[high] src/a.mjs:10 (ADJUDICATION-risk_surface-plan-1.json)'));
+  assert.ok(unfixed.startsWith('[medium] src/a.mjs:11 (ADJUDICATION-risk_surface-plan-1.json)'));
+  // And the count is unchanged by the distinction: both still cover the commit.
+  assert.ok(text.includes('review: 2 surviving finding(s) cover this commit'), text);
+});
+
 test('the GAP arm is unmoved: an unresolved entry still opens with NOT RESOLVED', () => {
   const entry = {
     sha: '4'.repeat(40), date: '2026-05-05T00:00:00-05:00', subject: 'an unrecorded commit',

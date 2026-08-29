@@ -1,50 +1,54 @@
-# Roadmap: v3.7.6 - the coordinator stays the coordinator
+# Roadmap: v3.7.7 - the record says what happened
 
 ## Overview
 
-**`v3.7.6`, opened 2026-08-28.** Two phases, two ids, one source: the run
-record of the first foreign project Cadence executed end to end
-(`/code/smithers`, 2.5 phases, 27 dispatches, 2026-08-27 to 2026-08-28), read
-for operational waste on the executor path with tokens deliberately out of
-scope.
+**`v3.7.7`, opened 2026-08-28.** Two phases, both filed as S2 off real runs
+rather than off a read: `GH-145` and `GH-159`. The thread between them is that a
+record Cadence keeps cannot represent a state that actually occurs, and in both
+cases it fails silently rather than refusing.
 
-**What the record showed.** The executor's own contract is lean. The waste sits
-around it, and two items account for nearly all of it. First, the coordinator
-does the risk-fix pass itself: when the blocking `risk_surface` gate fails,
-`workflows/execute.md` says "the findings are fixed" with no owner, and in every
-smithers phase the main session picked up the editor - fifteen edits across
-eight files in one 21:25-21:27 window, then again at 22:09, 12:02, 12:20, 12:50
-and 13:14. In the phase-2 execute window the coordinator made 156 tool calls and
-read 52 source and test files, more than any single executor. Every one of those
-edits is unreviewed by construction, since the one-round re-arm cap is already
-spent, and every one of those reads sits in the main context for the rest of the
-run. Second, the executor runs the full test suite per task and then again
-inside the commit compound: 6 to 29 bare `pytest -q` invocations per dispatch
-against a suite that takes 0.6 s, so the cost is turns, not seconds. Run 6 (7
-tasks, `xhigh`) ran it up to 29 times in 27 minutes.
+**What is broken.** `.planning/reads.jsonl` has a write-time bound at
+`lib/read-trace.mjs:52` (`MAX_READS_BYTES`, 8 MiB) and no rotation: at the bound
+`:282` returns `size-cap` and every later append is dropped, permanently. This
+repository's own file measured 7.5 MiB on 2026-08-28, 93% full, against 0.37 MiB
+for a project two cycles old, so the fill tracks age and not size and the oldest
+project fails first. That file is the evidence base `trace suggest` joins and the
+one the v3.7.6 AC6 result was measured from, so losing it also loses the ability
+to re-check what shipped. `lib/trace.mjs` already solves exactly this problem for
+the trace record - `rotateTrace` at `:660`, a claim sidecar with staleness
+eviction, and a `record_rotated` marker - and none of it is reachable from the
+reads writer.
 
-**Why these two and not the other four.** Four smaller items from the same read
-- `detect-commands` asked per dispatch, an executor hunting for a plan file it
-was handed, a duplicate `risk-check run` and a runtime `--help` in the
-coordinator, and STATE/ROADMAP/REQUIREMENTS re-read past the `status` envelope -
-are filed in `.planning/CAPTURE.md` and are tidy-ups. These two are the cost,
-and both change who does what rather than how much is read.
+Second, a blocking gate is documented to report its below-blocker/high findings
+and move past them, and the adjudication record refuses to store that. `RULINGS`
+at `lib/adjudication-record.mjs:79` is `survived | downgraded | refuted`, and
+`:366` requires a `fix_commit` on every `survived` entry, while
+`lib/filing-decision.mjs:76-79` and `references/triage-gate.md:41-43,277-278`
+both define a survived finding below blocker/high as one that was NOT fixed. So
+the remainder state has no representation: the fire cannot be settled without
+either fixing a finding the gate never asked to have fixed, or recording a ruling
+the adjudicator does not hold. Measured cost on one foreign-project run: three
+halts and three subagent dispatches the gate had not earned.
 
-**The standard.** Would a user on their own project feel it. Both do: the fix
-pass ships unreviewed code into their tree under their name, and the per-task
-suite runs are the turns their executor bill is made of.
+**The standard.** Would a user on their own project feel it. Both do, and both
+were found that way rather than Cadence-on-Cadence: the reads cap kills the
+record on whichever project has been running Cadence longest, and the ruling gap
+halts any run whose blocking gate returns a medium with nothing above it.
 
 ## Open Questions
 
-- **OQ-1 - what the continuation prompt carries.** The fix dispatch is a second
-  dispatch under the same worker key (`execute.md:335-340` already names it).
-  Whether it carries the adjudication file path, the surviving findings
-  distilled, or both is phase 1 planning's call; the rail is that the
-  coordinator distills nothing it would otherwise not read.
-- **OQ-2 - where the full-suite run lives.** Once per task inside the commit
-  compound, or once per dispatch before the digest. The contract's step 2 owns
-  the targeted run either way; phase 2 planning picks the suite site against the
-  smithers record.
+- **OQ-1 - shared rotation or a second one.** `rotateTrace` is written against
+  the trace filenames and carries a "run in flight" tail that `reads.jsonl` has
+  no analogue for. Whether phase 1 generalizes that function or writes a second
+  rotation beside it, reusing the link-claim technique but not the code, is
+  phase 1 planning's call. The rail is that the trace record's own rotation
+  behaviour does not change: it was fixed in v3.7.5 and is not being reopened.
+- **OQ-2 - a fourth ruling, or a conditional requirement.** `GH-159` can be
+  closed either by adding a ruling value meaning "confirmed, not fixed" or by
+  gating the `fix_commit` requirement on the raised severity being blocker or
+  high, which is the predicate `filing-decision.mjs` already uses. The typo
+  guard at `:132-137` that the requirement actually exists to serve must survive
+  either way.
 
 ## Phases
 

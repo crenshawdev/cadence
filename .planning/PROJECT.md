@@ -204,9 +204,42 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `/cad-phase add` opens the next one.
+No cycle open.
+
+**`v3.7.7 - the record says what happened`, opened 2026-08-28, closed
+2026-08-29.** Two phases, 36 commits off `main` (11 feat and 4 fix against 15
+docs, 4 test and 2 chore). Two requirement ids, `TRC-10` and `RSK-07`, both
+traced to a verified phase; `/cad-audit` passed 2/2 with 14/14 acceptance
+criteria covered and nothing deferred. Manifest bumped to 3.7.7. Both ids came
+off real runs rather than a read, both filed on the public tracker as S2:
+`GH-145` and `GH-159`. The thread was that a record Cadence keeps could not
+represent a state that actually occurs, and failed silently rather than
+refusing.
+
+Phase 1 gave `.planning/reads.jsonl` a rotation. It had an 8 MiB write-time
+bound and no rotation at all, so at the bound the writer dropped every later
+append permanently and answered `{written:false}` with nothing said; this
+repository's own file was 93% full and the fill tracked age rather than project
+size. It rotates into one prior generation now, under a `linkSync` claim with a
+250ms in-flight wait and a dated stale-claim sidecar, and both reader envelopes
+carry `reads: {file, rotated?}` so a shortened history says so. Phase 2 closed
+the adjudication gap: a blocking gate's below-blocker/high remainder is
+documented as reported-and-moved-past and the record refused to store it, so
+the fire could not be settled without writing something false. The `fix_commit`
+requirement is gated on the raised severity now, `survived` means "stood, fixed
+or not", and the override case settles on an explicit `overridden: true` marker
+rather than a commit it cannot produce.
+
+Its Traceability rows are under `## Shipped` in REQUIREMENTS.md, its narrative
+is the 3.7.7 section of CHANGELOG.md, and its per-phase residue (37 rows) is in
+`.planning/ARCHIVE.md`. Still outstanding: the merge to `main` and the release
+tag, both `/cad-land`'s. Two `medium` findings from phase 2's own `risk_surface`
+round are confirmed and unfixed on the tracker (`ca1fbd834199dfcb`,
+`dd09d6a6113e9112`), and the forge cluster seed (GH-102 through 107) is still
+unclaimed in CAPTURE.md.
 
 **Previously:**
+
 
 **`v3.7.6 - the coordinator stays the coordinator`, opened 2026-08-28, closed
 2026-08-28.** Two phases, 29 commits off `main` (2 feat and 2 fix against 18

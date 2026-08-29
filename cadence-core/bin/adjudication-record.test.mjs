@@ -26,7 +26,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildEntries, deriveCounts, RAISED_SEVERITIES, RULINGS } from './lib/adjudication-record.mjs';
+import {
+  buildEntries, deriveCounts, RAISED_SEVERITIES, RULINGS, HALTING_SEVERITIES,
+} from './lib/adjudication-record.mjs';
+import { HALTING_SEVERITIES as FILING_HALTING_SEVERITIES } from './lib/filing-decision.mjs';
 import { FINDING_SCHEMA } from './review-provider.mjs';
 
 const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
@@ -215,19 +218,151 @@ test('AC3: a refuted entry naming contradicting code is accepted and stores it',
   assert.deepEqual(res.entries[0].counter_evidence, ev);
 });
 
-test('AC3: a survived entry with no fix commit is REFUSED', () => {
-  const findings = [finding()];
+test('AC3: a survived BLOCKER or HIGH with no fix commit is REFUSED', () => {
+  // NARROWED to the two halting severities, never deleted: the refusal locked
+  // in v3.5.6 still fires wherever a blocking gate is halting to fix. The
+  // severity is spelled out at each call site rather than riding finding()'s
+  // default, so the narrowing is visible in the row instead of in a default
+  // that could change under it.
+  for (const severity of ['blocker', 'high']) {
+    const findings = [finding({ severity })];
+    const res = buildEntries(payload(voice('openai', 'gpt-5', findings, [{ ruling: 'survived' }])));
+    assert.equal(res.ok, false, `a survived ${severity} with no fix commit was accepted`);
+    assert.match(res.detail, /carries neither a usable fix_commit nor overridden: true/);
+    assert.match(res.detail, /raised at blocker or high/,
+      'the refusal has to name the severity gate, or a coordinator settling a medium goes '
+      + 'hunting a commit id it was never being asked for');
+    assert.match(res.detail, /marks the user override/,
+      'and it has to name the other way out, or a coordinator settling an OVERRIDE - who has '
+      + 'no commit to offer and never will - reads a demand it cannot meet');
+  }
+});
+
+// --- the override marker: the second way a survived blocker settles ----------
+
+test('an OVERRIDDEN survived blocker with no fix commit is accepted, and stores no commit id', () => {
+  // The run `.planning/ARCHIVE.md` records: an `override` receipt was written
+  // and no `ADJUDICATION-*.json` existed beside it, because the only ruling the
+  // adjudicator held was one this module refused.
+  const findings = [finding({ severity: 'blocker' })];
+  const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'survived', overridden: true }])));
+  assert.equal(res.ok, true, res.detail);
+  assert.equal(res.entries[0].overridden, true);
+  assert.equal('fix_commit' in res.entries[0], false,
+    'the override settle point produces a reason on the receipt and no commit at all, so a '
+    + 'SHA on this entry could only have been fabricated');
+  assert.equal(res.entries[0].ruling, 'survived');
+});
+
+test('the override marker is the boolean true and nothing else', () => {
+  // A truthy string would buy a clear nobody stated; `false` says the finding
+  // was NOT overridden, which absence already says without adding a key.
+  for (const bad of ['yes', 'true', 1, 0, false, null, {}]) {
+    const findings = [finding({ severity: 'blocker' })];
+    const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+      [{ ruling: 'survived', overridden: bad }])));
+    assert.equal(res.ok, false, `overridden ${JSON.stringify(bad)} was accepted`);
+    assert.match(res.detail, /overridden must be the boolean true or be absent/);
+  }
+});
+
+test('the override marker buys no exemption from the fix_commit VALUE check', () => {
+  // The combination the existing 'zzzzzzz' row cannot catch, because it carries
+  // no marker: an auditor runs `git show` on whatever the entry holds, so a
+  // junk id stored beside an override fails them exactly as one stored alone.
+  const findings = [finding({ severity: 'blocker' })];
+  const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'survived', overridden: true, fix_commit: 'zzzzzzz' }])));
+  assert.equal(res.ok, false, 'the marker let a malformed commit id through');
+  assert.match(res.detail, /no usable fix_commit/);
+});
+
+test('an overridden survived blocker citing a VALID fix commit carries both keys', () => {
+  // Legal, and deliberately not refused: a fix landed and the halt was also
+  // overridden. Only the value check governs the id.
+  const findings = [finding({ severity: 'blocker' })];
+  const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'survived', overridden: true, fix_commit: '1b34563' }])));
+  assert.equal(res.ok, true, res.detail);
+  assert.equal(res.entries[0].overridden, true);
+  assert.equal(res.entries[0].fix_commit, '1b34563');
+});
+
+test('the marker is not restricted to survived, nor to a severity', () => {
+  // `counter_evidence` is likewise carried with no severity or ruling
+  // condition. One locked decision does not license a second check beside it.
+  const findings = [finding({ severity: 'medium' })];
+  const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'downgraded', overridden: true }])));
+  assert.equal(res.ok, true, res.detail);
+  assert.equal(res.entries[0].overridden, true);
+});
+
+test('an ordinary entry gains no overridden key', () => {
+  const findings = [finding({ severity: 'medium' })];
+  const res = buildEntries(payload(voice('openai', 'gpt-5', findings, [{ ruling: 'survived' }])));
+  assert.equal(res.ok, true, res.detail);
+  assert.equal('overridden' in res.entries[0], false);
+});
+
+test('the marker added no fourth RULING - a survived high with neither is still REFUSED', () => {
+  const findings = [finding({ severity: 'high' })];
   const res = buildEntries(payload(voice('openai', 'gpt-5', findings, [{ ruling: 'survived' }])));
   assert.equal(res.ok, false);
-  assert.match(res.detail, /survived and carries no usable fix_commit/);
+  assert.deepEqual([...RULINGS], ['survived', 'downgraded', 'refuted'],
+    'the override is a MARKER on a survived ruling, never a fourth value - a fourth would need '
+    + 'a fourth receipt flag in planning/trace.mjs and would break the "no fourth ruling" '
+    + 'invariant lib/deferred-queue.mjs states');
+});
+
+test('a survived MEDIUM or LOW with no fix commit is ACCEPTED, and stores no such key', () => {
+  // The state GH-159 reports: a blocking gate's below-blocker/high remainder,
+  // confirmed and moved past with nothing to cite. Before this it could only
+  // be stored by downgrading the finding, which records a pass.
+  for (const severity of ['medium', 'low']) {
+    const findings = [finding({ severity })];
+    const res = buildEntries(payload(voice('openai', 'gpt-5', findings, [{ ruling: 'survived' }])));
+    assert.equal(res.ok, true, res.detail);
+    assert.equal(res.entries[0].ruling, 'survived');
+    assert.equal(res.entries[0].severity, severity);
+    assert.equal('fix_commit' in res.entries[0], false,
+      'an unfixed survivor must carry no fix_commit key at all - an empty string there is a '
+      + 'value an auditor would try to run git show on');
+    assert.deepEqual(res.counts, { raised: 1, survived: 1, downgraded: 0, refuted: 0 });
+  }
+});
+
+test('a survived MEDIUM that does cite a fix commit is accepted and stores it', () => {
+  // D-07: the requirement is gated, the CAPABILITY is not - a voluntary fix on
+  // a medium can still name the commit that made it.
+  const findings = [finding({ severity: 'medium' })];
+  const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'survived', fix_commit: '1b34563' }])));
+  assert.equal(res.ok, true, res.detail);
+  assert.equal(res.entries[0].fix_commit, '1b34563');
+});
+
+test('a survived MEDIUM citing an unusable fix commit is still REFUSED', () => {
+  // The VALUE check is not severity-gated: a junk id on a medium fails an
+  // auditor exactly as one on a blocker does.
+  for (const bad of ['zzzzzzz', '', null, 0]) {
+    const findings = [finding({ severity: 'medium' })];
+    const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+      [{ ruling: 'survived', fix_commit: bad }])));
+    assert.equal(res.ok, false, `fix_commit ${JSON.stringify(bad)} was accepted on a medium`);
+    assert.match(res.detail, /no usable fix_commit/);
+  }
 });
 
 test('AC3: a blank or non-hexadecimal fix commit is REFUSED like an absent one', () => {
   // Wider than AC3, which bounds only absence: an auditor has to run `git show`
   // on that value, and a string that cannot be a commit id fails them exactly
   // as an absent one does.
-  for (const bad of ['', '   ', 'the fix commit', 'zzzzzzz', 'abc']) {
-    const findings = [finding()];
+  // PRESENT means the key is SET, never that its value is truthy: the falsy
+  // members below are exactly the ones a truthiness read would let through.
+  for (const bad of ['', '   ', 'the fix commit', 'zzzzzzz', 'abc', null, 0, false]) {
+    const findings = [finding({ severity: 'high' })];
     const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
       [{ ruling: 'survived', fix_commit: bad }])));
     assert.equal(res.ok, false, `fix_commit ${JSON.stringify(bad)} was accepted`);
@@ -242,6 +377,8 @@ test('AC3: an abbreviated or full fix commit is accepted', () => {
       [{ ruling: 'survived', fix_commit: good }])));
     assert.equal(res.ok, true, res.detail);
     assert.equal(res.entries[0].fix_commit, good);
+    assert.equal(res.entries[0].severity, 'high', 'finding() raises at high by default, which is '
+      + 'what makes this row exercise the severity-gated presence requirement');
   }
 });
 
@@ -298,6 +435,20 @@ test('the severity vocabulary matches FINDING_SCHEMA\'s own enum', () => {
     'lib/adjudication-record.mjs RAISED_SEVERITIES has drifted from review-provider.mjs '
     + 'FINDING_SCHEMA - a record would store a severity the review subsystem does not raise, '
     + 'or refuse one it does');
+});
+
+test('the halting severities match lib/filing-decision.mjs\'s own list', () => {
+  // Hand-maintained here and compared THERE, for the reason the row above
+  // states: lib/filing-decision.mjs imports buildEntries from the module under
+  // test, so importing its list back would be a cycle. This is what stops the
+  // two drifting - a fix_commit the record demands at a severity the filing
+  // decision does not halt over, or the reverse.
+  assert.deepEqual([...HALTING_SEVERITIES], [...FILING_HALTING_SEVERITIES],
+    'lib/adjudication-record.mjs HALTING_SEVERITIES has drifted from '
+    + 'lib/filing-decision.mjs HALTING_SEVERITIES - the record and the filing decision would '
+    + 'disagree about which survivors the gate is halting to fix');
+  assert.equal(HALTING_SEVERITIES.every((s) => RAISED_SEVERITIES.includes(s)), true,
+    'every halting severity has to be one a finding can be RAISED at');
 });
 
 test('a severity outside the four is REFUSED', () => {
@@ -365,6 +516,12 @@ test('an unknown key at any level is REFUSED rather than ignored', () => {
   // otherwise store a `survived` entry with no fix commit at all.
   const typo = voice('openai', 'gpt-5', findings, [{ ruling: 'survived', fix_comit: '1b34563' }]);
   assert.match(buildEntries(payload(typo)).detail, /carries an unknown key: fix_comit/);
+
+  // The same guard over the override marker: RULING_KEYS grew by one key, and a
+  // misspelling of THAT one must be told rather than quietly stored as a
+  // survived blocker with no override on it.
+  const markerTypo = voice('openai', 'gpt-5', findings, [{ ruling: 'survived', overriden: true }]);
+  assert.match(buildEntries(payload(markerTypo)).detail, /carries an unknown key: overriden/);
 });
 
 test('a returned object carrying anything but findings is REFUSED', () => {

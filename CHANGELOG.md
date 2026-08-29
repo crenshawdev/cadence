@@ -6,6 +6,47 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.7] - 2026-08-29
+
+Two bugs, same shape. Both turned up on real runs rather than on a read, and in
+both cases a record Cadence keeps could not represent a state that actually
+occurs, so it went quiet instead of refusing.
+
+`.planning/reads.jsonl` had an 8 MiB write-time bound and no rotation at all.
+Once you hit it the writer answered `{written:false}` to every append for the
+rest of the project's life and nothing told you. It rotates now, into exactly one
+prior generation, with a `linkSync` claim so two processes cannot both cut at
+once, a 250ms ceiling to wait out an in-flight rotation, and a dated claim
+sidecar so a rotation killed halfway does not disable rotation forever. A single
+line large enough to reach the bound on its own is still refused, as
+`oversized-record`. And the cut is reported: `planning.mjs reads` and
+`trace suggest` both carry `reads: {file, rotated?}` now, so a reader can tell
+whether the history it is looking at was shortened. Three shipped documents
+promised that record is never shortened, which was my own sentence and no longer
+true. They say what shortens it and where you find out instead.
+
+The second one bit me reviewing my own work. A blocking `risk_surface` gate
+raises findings at every severity but only blocker and high halt it, so the
+mediums below the line are confirmed and deliberately not fixed. The adjudication
+record refused to store exactly that: a `survived` ruling had to name a fix
+commit at any severity, so there was no way to write down "I read this, it is
+real, I am shipping anyway" without inventing a SHA. The requirement is gated on
+the raised severity now and `survived` means "stood, fixed or not." The same
+refusal blocked the override case, where you overrule a FAIL on a blocker, and
+that one settles on an explicit `overridden: true` marker rather than a commit
+the override cannot produce. The typo guard the requirement existed for is
+untouched: `fix_comit` and `overriden` are both still refused as unknown keys,
+and the SHA format check still fires unconditionally wherever the key is set.
+
+Downstream of that widening, `issue-filing unfixed` stops offering to open a
+tracker issue for work whose fix is already committed, an overridden blocker
+reaches the filing set instead of being dropped in silence, and `why record`
+prints `fix: 3341ffb0` or `fix: none - confirmed and left standing` on every
+survivor, so a fixed survivor and a confirmed-unfixed one no longer render
+identically.
+
+Closes GH-145 and GH-159.
+
 ## [3.7.6] - 2026-08-28
 
 This was the first time Cadence executed another project of mine end to end
@@ -4347,6 +4388,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.7]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.7
 [3.7.6]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.6
 [3.7.5]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.5
 [3.7.4]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.4

@@ -130,6 +130,14 @@ const finding = (file, line, severity, claim) => ({
   file, line, severity, claim, failure_scenario: `what breaks: ${claim}`,
 });
 
+/** The severities a `survived` ruling must name a fix commit for, and the only
+ * ones `payloadFor` attaches one to. Below them a survived finding was
+ * confirmed and NOT fixed and carries no commit id, which is the state
+ * lib/adjudication-record.mjs now stores rather than refusing - so attaching a
+ * commit unconditionally here would make every fixture below assert the old
+ * rule instead of the current one. */
+const HALTING = ['blocker', 'high'];
+
 /** A composed adjudication payload over `[finding, verdict]` pairs. */
 const payloadFor = (pairs) => ({
   voices: [{
@@ -141,7 +149,8 @@ const payloadFor = (pairs) => ({
       ruling: verdict,
       claim: f.claim,
       failure_scenario: f.failure_scenario,
-      ...(verdict === 'survived' ? { fix_commit: 'a1b2c3d' } : {}),
+      ...(verdict === 'survived' && HALTING.includes(f.severity)
+        ? { fix_commit: 'a1b2c3d' } : {}),
       ...(verdict === 'refuted'
         ? { counter_evidence: { file: 'src/z.mjs', line: 1, note: 'already guarded' } }
         : {}),
@@ -226,6 +235,28 @@ test('a survived blocker never reaches the ask, so the fire has nothing to file'
   assert.equal(envelope.ok, true);
   assert.deepEqual(envelope.findings, []);
   assert.equal(envelope.raised, 0);
+});
+
+test('a survived medium whose fix is already committed is never put to the user', () => {
+  // AC4, reproducing the one entry of this shape on disk today:
+  // .planning/_archive-v3.7.3/1/ADJUDICATION-risk_surface-plan-2.json holds a
+  // `medium survived` naming commit 4a1af326. lib/filing-decision.mjs keeps it
+  // in the set on purpose - the gate is not fixing it now - and this seam is
+  // what removes it, because a tracker issue asking whether to fix it would be
+  // asking about work that is already committed.
+  const fixed = finding('src/f.mjs', 60, 'medium', 'the retry loop has no ceiling');
+  const composed = payloadFor([...FIVE.map((f) => [f, 'survived']), [fixed, 'survived']]);
+  composed.voices[0].rulings[5].fix_commit = '4a1af326';
+  const { status, envelope } = run(['unfixed', '--payload', payloadFile(composed)]);
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  // `raised` still counts what `unfixedFindings` answered with, and the removal
+  // is accounted for on its own key rather than folded into the decline count.
+  assert.equal(envelope.raised, 6);
+  assert.equal(envelope.already_fixed, 1);
+  assert.equal(envelope.already_declined, 0);
+  assert.deepEqual(envelope.findings.map((e) => e.finding.file),
+    ['src/a.mjs', 'src/b.mjs', 'src/c.mjs', 'src/d.mjs', 'src/e.mjs']);
 });
 
 test('each returned finding carries its fingerprint BESIDE it, never inside it', () => {

@@ -75,7 +75,13 @@ export function adjRun(repo, dir, args) {
 }
 
 /** One voice raising one finding, ruled `survived`. The claim carries a quote
- * and a backslash on purpose: this payload is a FILE for exactly that reason. */
+ * and a backslash on purpose: this payload is a FILE for exactly that reason.
+ *
+ * The finding is raised at `high`, so the `fix_commit` below is REQUIRED here
+ * rather than decorative - `buildEntries` gates that requirement on the raised
+ * severity, and high is one of the two severities a blocking gate halts over.
+ * The two end-to-end rows further down raise at medium and at blocker-with-an-
+ * override precisely because this one does not. */
 export function adjPayload(over) {
   return {
     voices: [{
@@ -473,4 +479,141 @@ test('risk-check status: the acceptance is FIRE_RECEIPTS membership, not any out
   assert.equal(r.reason, 'risk-fire-missing');
   assert.equal(r.plans[0].state, 'unfired');
   assert.match(r.hint, /deferral/, 'the hint no longer names the receipt vocabulary it demands');
+});
+
+// --- GH-159: the remainder a blocking gate reports and moves past ------------
+//
+// A blocking gate halts over a blocker or a high. Everything it confirmed BELOW
+// those is reported and moved past - the state the phase this row belongs to
+// exists to make representable. Until the fix-commit requirement was gated on
+// the RAISED severity, that fire could not be settled at all: the adjudicator
+// held a `survived` ruling with nothing to cite, the record seam refused it,
+// and the only ways forward were to downgrade the finding - recording a pass
+// over a report - or to invent a commit id.
+//
+// Both rows below run the REAL seams end to end, for the reason the deferral
+// pair above states: `risk-check run` records the match, `planning.mjs
+// adjudication` writes the record, `trace append` writes the receipt and
+// `risk-check status` reads them. The receipt's three figures are the
+// adjudication envelope's OWN - `recountReceipt` recomputes them from the
+// stored rulings and refuses a receipt that disagrees, so passing them through
+// is what proves the entry reached the record and was counted as a survivor
+// rather than merely returned by a function.
+
+/** A one-voice payload over one finding raised at `severity` and ruled
+ *  `survived`, citing a path that exists at head so the grounding check has
+ *  something to find. `over` carries whatever the case's ruling needs. */
+function survivedPayload(severity, over) {
+  const claim = 'the vault key is read before the session guard runs';
+  const failure_scenario = 'a caller with no session reads the key';
+  return {
+    voices: [{
+      voice: 'openai',
+      model: 'gpt-5',
+      returned: {
+        findings: [{
+          file: 'src/secrets/vault.ts', line: 1, severity, claim, failure_scenario,
+        }],
+      },
+      rulings: [{ finding: 0, ruling: 'survived', claim, failure_scenario, ...(over || {}) }],
+    }],
+  };
+}
+
+/** Write a payload beside the repo and answer its path. */
+function survivedPayloadFile(repo, name, payload) {
+  const file = join(repo, name);
+  writeFileSync(file, `${JSON.stringify(payload)}\n`);
+  return file;
+}
+
+test('GH-159: a blocking fire whose highest finding is a survived MEDIUM settles end to end', () => {
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  const recorded = plRun(repo, dir, ['risk-check', 'run', ...range]);
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+
+  const before = plRun(repo, dir, ['risk-check', 'status', ...range]);
+  assert.equal(before.ok, false, JSON.stringify(before));
+  assert.equal(before.plans[0].state, 'unfired');
+
+  // The whole of what the adjudicator held: one medium, confirmed, unfixed.
+  const payload = survivedPayloadFile(repo, 'gh159-payload.json', survivedPayload('medium'));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, `${JSON.stringify(rec)} - this is the refusal GH-159 reports`);
+  assert.deepEqual(rec.counts, { raised: 1, survived: 1, downgraded: 0, refuted: 0 });
+
+  // The seam's OWN figures, never numbers typed beside them.
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(receipt.ok, true, `${JSON.stringify(receipt)} - recountReceipt read the stored `
+    + 'rulings and disagreed with the envelope that produced them');
+
+  const after = plRun(repo, dir, ['risk-check', 'status', ...range]);
+  assert.equal(after.ok, true, JSON.stringify(after));
+  assert.equal(after._exit, 0);
+  assert.equal(after.plans[0].state, 'recorded');
+
+  const stored = JSON.parse(readFileSync(join(dir, rec.record), 'utf8'));
+  assert.equal(stored.entries.length, 1);
+  assert.equal(stored.entries[0].ruling, 'survived');
+  assert.equal(stored.entries[0].severity, 'medium');
+  assert.equal('fix_commit' in stored.entries[0], false,
+    'a confirmed-unfixed medium has no commit to name, and a fabricated one is what this '
+    + 'phase exists to stop being the only way through');
+});
+
+test('an OVERRIDDEN blocking fire settles end to end, with the record present rather than absent', () => {
+  // The run `.planning/ARCHIVE.md` records: an `override` receipt was written
+  // and no `ADJUDICATION-risk_surface-plan-1.json` existed beside it, because
+  // the only ruling the adjudicator held - a blocker that stood unfixed - was
+  // the one the record seam refused. This row is what stops that recurring.
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  const recorded = plRun(repo, dir, ['risk-check', 'run', ...range]);
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+
+  const payload = survivedPayloadFile(repo, 'override-payload.json',
+    survivedPayload('blocker', { overridden: true }));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, `${JSON.stringify(rec)} - an override has no commit to name, and `
+    + 'inventing one is the thing the marker exists to make unnecessary');
+  assert.deepEqual(rec.counts, { raised: 1, survived: 1, downgraded: 0, refuted: 0 });
+
+  // The `override` receipt is the one risk-check.mjs SKIPS when its reason is
+  // empty, so the reason rides `--detail-file`: an inline `--detail` is not the
+  // transport this receipt takes, and an empty one is not a receipt at all.
+  const reason = join(repo, 'override-reason.txt');
+  writeFileSync(reason, 'shipping behind a flag; the vault path is unreachable this release\n');
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'override', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head, '--detail-file', reason,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(receipt.ok, true, JSON.stringify(receipt));
+
+  const after = plRun(repo, dir, ['risk-check', 'status', ...range]);
+  assert.equal(after.ok, true, JSON.stringify(after));
+  assert.equal(after._exit, 0);
+  assert.equal(after.plans[0].state, 'recorded');
+
+  const stored = JSON.parse(readFileSync(join(dir, rec.record), 'utf8'));
+  assert.equal(stored.entries.length, 1);
+  assert.equal(stored.entries[0].ruling, 'survived');
+  assert.equal(stored.entries[0].severity, 'blocker');
+  assert.equal(stored.entries[0].overridden, true);
+  assert.equal('fix_commit' in stored.entries[0], false,
+    'the override settle point produces a reason on the receipt and no commit, so a SHA here '
+    + 'could only have been fabricated');
 });

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import {
   DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, fingerprint, fingerprintInTitle,
-  issueBody, issueTitle, normalizeDeclines, unfixedFindings,
+  HALTING_SEVERITIES, issueBody, issueTitle, normalizeDeclines, unfixedFindings,
 } from './lib/filing-decision.mjs';
 import { PROVIDER_TABLE } from './lib/forge-decision.mjs';
 
@@ -22,25 +22,43 @@ const finding = (file, line, severity, claim) => ({
 
 /** The ruling for finding `i`, restating the two texts VERBATIM - which is what
  *  `buildEntries` demands, and the reason a fixture builder exists here rather
- *  than 30 hand-written literals that would drift from their findings. */
+ *  than 30 hand-written literals that would drift from their findings.
+ *
+ *  The fix commit rides a `survived` ruling only at the two HALTING severities,
+ *  because that is the only place `buildEntries` asks for one. A survived low
+ *  carrying a commit id would say the gate fixed a finding it never halted
+ *  over - the shape this fixture built before the requirement was gated, and
+ *  the reason the `remainder` finding below is worth reading twice. */
 const ruling = (i, f, verdict) => ({
   finding: i,
   ruling: verdict,
   claim: f.claim,
   failure_scenario: f.failure_scenario,
-  ...(verdict === 'survived' ? { fix_commit: 'a1b2c3d' } : {}),
+  ...(verdict === 'survived' && HALTING_SEVERITIES.includes(f.severity)
+    ? { fix_commit: 'a1b2c3d' }
+    : {}),
   ...(verdict === 'refuted'
     ? { counter_evidence: { file: 'src/other.mjs', line: 4, note: 'the guard is already there' } }
     : {}),
 });
 
-/** A one-voice payload over `[finding, ruling-verdict]` pairs. */
+/** A one-voice payload over `[finding, ruling-verdict, extra]` pairs.
+ *
+ *  `extra` is merged onto the built ruling and a key set to `undefined` is
+ *  DELETED rather than left present-and-undefined, so a case can both add the
+ *  `overridden` marker and take the builder's default `fix_commit` back off -
+ *  which is the whole shape of an override, a halting finding that stood with
+ *  no commit behind it. */
 const payload = (pairs, voice = 'sonnet') => ({
   voices: [{
     voice,
     model: 'claude-sonnet-4-5',
     returned: { findings: pairs.map(([f]) => f) },
-    rulings: pairs.map(([f, verdict], i) => ruling(i, f, verdict)),
+    rulings: pairs.map(([f, verdict, extra], i) => {
+      const r = { ...ruling(i, f, verdict), ...(extra || {}) };
+      for (const k of Object.keys(r)) if (r[k] === undefined) delete r[k];
+      return r;
+    }),
   }],
 });
 
@@ -81,6 +99,69 @@ test('a survived medium and a survived low are both the blocking arm remainder',
   const low = finding('src/b.mjs', 2, 'low', 'the header names a file that moved');
   const out = unfixedFindings(payload([[med, 'survived'], [low, 'survived']]));
   assert.deepEqual(out.findings.map((f) => f.severity), ['medium', 'low']);
+});
+
+test('an OVERRIDDEN survived blocker is in the set - nobody is fixing that one', () => {
+  // The state the marker exists for, and the one place "survived at a halting
+  // severity" stops meaning "a commit is coming". Reading `ruling` and
+  // `severity` alone answers `{ok: true, findings: []}` here, which reports
+  // `raised: 0` and loses the blocker with no refusal anywhere - the collapse of
+  // "nothing to ask about" into "this payload is unreadable" that the header
+  // above says must never happen, arriving from the other direction.
+  const f = finding('src/secrets/vault.ts', 1, 'blocker', 'the token is written to the log');
+  const out = unfixedFindings(payload([[f, 'survived', { overridden: true, fix_commit: undefined }]]));
+  assert.equal(out.ok, true);
+  assert.equal(out.detail, '');
+  assert.deepEqual(out.findings.map((x) => x.claim), [f.claim]);
+  assert.equal(out.findings[0].overridden, true);
+  assert.equal('fix_commit' in out.findings[0], false);
+});
+
+test('an overridden survived HIGH is in the set too - the marker is not blocker-only', () => {
+  const f = finding('src/a.mjs', 7, 'high', 'the write is not atomic');
+  const out = unfixedFindings(payload([[f, 'survived', { overridden: true, fix_commit: undefined }]]));
+  assert.deepEqual(out.findings.map((x) => x.severity), ['high']);
+});
+
+test('a survived blocker WITHOUT the marker still stays behind', () => {
+  // The narrowing has to be exactly one case wide: the same finding, the same
+  // ruling, no marker, and the fix commit the builder attaches at a halting
+  // severity - still the thing the gate is halting over, so still not filed.
+  const f = finding('src/secrets/vault.ts', 1, 'blocker', 'the token is written to the log');
+  const out = unfixedFindings(payload([[f, 'survived']]));
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.findings, []);
+});
+
+test('the marker beside a real fix commit is in the set here, and cmdUnfixed drops it', () => {
+  // Legal and unremarkable per lib/adjudication-record.mjs: a fix landed and the
+  // halt was also overridden. This module answers on the three fields it states
+  // and does NOT read `fix_commit` (CONTEXT D-07) - removing an entry for
+  // carrying one is issue-filing.mjs's `cmdUnfixed`, one layer up.
+  const f = finding('src/a.mjs', 3, 'blocker', 'the lock is never released');
+  const out = unfixedFindings(payload([[f, 'survived', { overridden: true }]]));
+  assert.deepEqual(out.findings.map((x) => x.claim), [f.claim]);
+  assert.equal(out.findings[0].fix_commit, 'a1b2c3d');
+});
+
+test('the marker on a medium changes nothing - that entry was already in the set', () => {
+  const f = finding('src/a.mjs', 1, 'medium', 'the retry count is 3 with no reason stated');
+  const marked = unfixedFindings(payload([[f, 'survived', { overridden: true }]]));
+  const plain = unfixedFindings(payload([[f, 'survived']]));
+  assert.deepEqual(marked.findings.map((x) => x.claim), [f.claim]);
+  assert.deepEqual(plain.findings.map((x) => x.claim), [f.claim]);
+});
+
+test('an unreadable payload carrying the marker is still a REFUSAL, not an empty set', () => {
+  // `overridden` is a boolean marker in lib/adjudication-record.mjs and only the
+  // literal `true` is accepted, so a truthy string is a refused payload - and
+  // the refusal has to reach the caller rather than reading as "nothing to ask
+  // about", which is the same distinction the row above turns on.
+  const f = finding('src/a.mjs', 1, 'blocker', 'the lock is never released');
+  const out = unfixedFindings(payload([[f, 'survived', { overridden: 'yes', fix_commit: undefined }]]));
+  assert.equal(out.ok, false);
+  assert.deepEqual(out.findings, []);
+  assert.match(out.detail, /overridden must be the boolean true/);
 });
 
 // --- criterion 2: the ask follows the PAYLOAD, never the prose ---------------

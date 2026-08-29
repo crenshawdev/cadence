@@ -10,12 +10,16 @@
 // enforced before the write, a reason returned and never thrown).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, statSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, statSync,
+  appendFileSync, readdirSync, linkSync, utimesSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
+  rotatedReadsPath, readsClaimPath, isReadsRotationMarker, rotateReads,
 } from './lib/read-trace.mjs';
 
 const TS = '2026-08-14T00:00:00.000Z';
@@ -145,14 +149,236 @@ test('a symlinked reads file is refused, appending nothing', () => {
   assert.equal(readFileSync(decoy, 'utf8'), '', 'the link target was written through');
 });
 
-test('the cap is enforced BEFORE the write', () => {
+/**
+ * Pad the reads record to ONE BYTE UNDER `MAX_READS_BYTES`, so the next append
+ * is what carries it to the bound and the trigger under test is "this line
+ * would reach it" rather than "the file already did".
+ * @param {string} d
+ */
+function padToReadsBound(d) {
+  let at = 0;
+  try { at = statSync(readsPath(d)).size; } catch { at = 0; }
+  appendFileSync(readsPath(d), `${'x'.repeat(MAX_READS_BYTES - at - 2)}\n`);
+  assert.equal(statSync(readsPath(d)).size, MAX_READS_BYTES - 1);
+}
+
+/** Every line of the live record, parsed. @param {string} d */
+const liveLines = (d) => readFileSync(readsPath(d), 'utf8').trim().split('\n');
+
+test('a record at the bound ROTATES and the append lands, rather than reporting a cap', () => {
   const d = tmp();
-  writeFileSync(readsPath(d), 'x'.repeat(MAX_READS_BYTES));
-  const before = readFileSync(readsPath(d), 'utf8').length;
-  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/a' });
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-cut' });
+  padToReadsBound(d);
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/after-the-cut' });
+  assert.equal(res.written, true, `the append at the bound was refused: ${res.reason}`);
+  assert.ok(statSync(readsPath(d)).size < MAX_READS_BYTES,
+    'the live record is still at or over the bound after a rotation');
+
+  const lines = liveLines(d);
+  assert.ok(isReadsRotationMarker(JSON.parse(lines[0])),
+    'the fresh record does not start with the rotation marker');
+  assert.equal(JSON.parse(lines[lines.length - 1]).target, '/after-the-cut',
+    'the record that triggered the rotation is not in the live file');
+
+  assert.equal(existsSync(rotatedReadsPath(d)), true, 'no sibling generation was left');
+  assert.ok(readFileSync(rotatedReadsPath(d), 'utf8').includes('/before-the-cut'),
+    'the pre-rotation bytes are not in the sibling');
+  // NOTHING crosses the cut (D-02): the whole live file became the sibling.
+  assert.equal(readFileSync(readsPath(d), 'utf8').includes('/before-the-cut'), false,
+    'a pre-rotation record was carried into the fresh file');
+});
+
+/** Every file in the planning root named after the reads record. @param {string} d */
+const readsSiblings = (d) => readdirSync(d).filter((f) => f.startsWith('reads')).sort();
+
+test('the SECOND rotation evicts the generation the first one left', () => {
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-two' }).written, true);
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-three' }).written, true);
+
+  // Exactly one prior generation is the WHOLE retention policy: no dated
+  // generation, no keep-N, no leaked private temp. The `.claim` sidecar a
+  // COMPLETED rotation leaves is inert and deliberate.
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.1.jsonl.claim', 'reads.jsonl']);
+
+  const live = readFileSync(readsPath(d), 'utf8');
+  const sibling = readFileSync(rotatedReadsPath(d), 'utf8');
+  assert.ok(live.includes('/gen-three'), 'the live record lost the second rotation\'s append');
+  assert.ok(sibling.includes('/gen-two'), 'the sibling is not the generation between the cuts');
+  assert.equal(live.includes('/gen-one'), false, 'the first generation survived in the live record');
+  assert.equal(sibling.includes('/gen-one'), false, 'the first generation survived in the sibling');
+});
+
+test('a leftover sibling beside a record UNDER the bound is left exactly where it is', () => {
+  const d = tmp();
+  // The interleaving this refuses: another writer rotated while this one was
+  // still holding the stat that decided to rotate. Carrying the fresh record
+  // away would destroy the generation that writer just made.
+  writeFileSync(readsPath(d), `${JSON.stringify({ ts: TS, tool: 'Read', target: '/fresh' })}\n`);
+  writeFileSync(rotatedReadsPath(d), 'a generation an earlier rotation left\n');
+  const before = readFileSync(rotatedReadsPath(d), 'utf8');
+
+  const res = rotateReads(d, 200);
+  assert.equal(res.rotated, false);
+  assert.equal(res.reason, undefined, 'a refused claim is not a failed rotation');
+  assert.equal(readFileSync(rotatedReadsPath(d), 'utf8'), before, 'the leftover generation was evicted');
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.jsonl']);
+});
+
+// --- the claim, when two writers race (D-05, D-07) --------------------------
+
+import { spawn } from 'node:child_process';
+
+const READS_LIB = new URL('./lib/read-trace.mjs', import.meta.url).href;
+
+/**
+ * One child PROCESS appending one uniquely named record through the real
+ * `appendRead`. A process rather than a promise because that is the concurrency
+ * this record actually has: `hooks/hooks.json:17` matches five tools and the
+ * host runs one OS process per tool call, so parallel subagents ARE concurrent
+ * `appendRead` processes.
+ * @param {string} dir @param {string} name
+ */
+function readsWriter(dir, name) {
+  const code = 'const { appendRead } = await import(process.env.CAD_LIB);'
+    + " const r = appendRead(process.env.CAD_DIR, { ts: new Date().toISOString(),"
+    + " tool: 'Read', agent: 'coordinator', target: process.env.CAD_W });"
+    + ' if (!r.written) { console.error(r.reason); process.exit(1); }';
+  return new Promise((res, rej) => {
+    const p = spawn(process.execPath, ['--input-type=module', '-e', code], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: { ...process.env, CAD_LIB: READS_LIB, CAD_DIR: dir, CAD_W: name },
+    });
+    let err = '';
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('error', rej);
+    p.on('exit', (c) => (c === 0 ? res(name) : rej(new Error(`${name}: ${err.trim()}`))));
+  });
+}
+
+test('writers racing at the bound leave ONE generation, no claim and no record lost', async () => {
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-race' });
+  padToReadsBound(d);
+  const names = ['w0', 'w1', 'w2', 'w3', 'w4', 'w5'];
+  await Promise.all(names.map((n) => readsWriter(d, n)));
+
+  // (a) EVERY writer's record is present ACROSS THE PAIR. This record has no
+  // carry-back, so a loser that appended during the claim window is in the
+  // SIBLING and that satisfies the bar - unlike the trace, whose racing writers
+  // must all land in the live record because it copies those bytes back.
+  const live = readFileSync(readsPath(d), 'utf8');
+  const sibling = readFileSync(rotatedReadsPath(d), 'utf8');
+  for (const n of names) {
+    assert.ok(live.includes(`"${n}"`) || sibling.includes(`"${n}"`), `${n} is in neither file`);
+  }
+
+  // (b) The sibling is a separate FILE, not a second name for the live record:
+  // a claim left held reads as a rotation in flight forever.
+  const a = statSync(readsPath(d));
+  const b = statSync(rotatedReadsPath(d));
+  assert.notEqual(`${a.dev}:${a.ino}`, `${b.dev}:${b.ino}`, 'the claim was never released');
+
+  // (c) Exactly one generation, and no private stamp or temp left behind - the
+  // inert `.claim` sidecar of the writer that won is not one.
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.1.jsonl.claim', 'reads.jsonl']);
+});
+
+// --- the abandoned claim ----------------------------------------------------
+
+/**
+ * A planning root at the bound whose rotation claim was taken and never
+ * released - the state a claimant killed or timed out mid-rotation leaves.
+ *
+ * Constructed DIRECTLY: no kill, no signal, no child process. A `linkSync` and
+ * a dated sidecar reproduce the whole state a SIGKILL produces, and a spawned
+ * holder is reserved for the race the `readsWriter` helper already runs.
+ *
+ * @param {string} d
+ * @param {number|null} agoMs how long ago the claim was dated, or `null` for a
+ *   claim carrying NO sidecar at all - the shape every claim taken before this
+ *   rotation shipped has.
+ */
+function killedReadsClaim(d, agoMs) {
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-kill' });
+  padToReadsBound(d);
+  linkSync(readsPath(d), rotatedReadsPath(d));
+  if (agoMs === null) return;
+  writeFileSync(readsClaimPath(d), 'held\n');
+  const at = (Date.now() - agoMs) / 1000;
+  utimesSync(readsClaimPath(d), at, at);
+}
+
+/** @param {string} f */
+const idOf = (f) => { const st = statSync(f); return `${st.dev}:${st.ino}`; };
+
+test('an ABANDONED claim is reclaimed rather than disabling rotation forever', () => {
+  const d = tmp();
+  // Twice the 30 s staleness budget the rotation states.
+  killedReadsClaim(d, 60_000);
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/after-the-reclaim' });
+  assert.equal(res.written, true, `the append was refused: ${res.reason}`);
+  assert.ok(statSync(readsPath(d)).size < MAX_READS_BYTES, 'the record never rotated');
+  assert.notEqual(idOf(readsPath(d)), idOf(rotatedReadsPath(d)), 'the claim is still held');
+  assert.ok(readFileSync(rotatedReadsPath(d), 'utf8').includes('/before-the-kill'),
+    'the sibling is not the prior generation');
+  assert.ok(readFileSync(readsPath(d), 'utf8').includes('/after-the-reclaim'));
+});
+
+test('a LIVE claim is left standing, at the cost of one deferred rotation', () => {
+  const d = tmp();
+  killedReadsClaim(d, 0);
+  const stamped = statSync(readsClaimPath(d)).mtimeMs;
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/deferred' });
+  assert.equal(res.written, true, 'a deferred rotation must not cost the append');
+  assert.equal(idOf(readsPath(d)), idOf(rotatedReadsPath(d)), 'a live claim was broken');
+  // A writer that LOSES the link must not refresh a claim it does not own: that
+  // is what would restart the staleness clock on every append and stop an
+  // abandoned claim ever ageing into a reclaim.
+  assert.equal(statSync(readsClaimPath(d)).mtimeMs, stamped, 'a loser refreshed the claim');
+});
+
+test('a claim carrying NO sidecar at all reads as live, the same way', () => {
+  const d = tmp();
+  killedReadsClaim(d, null);
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/no-sidecar' });
+  assert.equal(res.written, true);
+  assert.equal(idOf(readsPath(d)), idOf(rotatedReadsPath(d)),
+    'an unknowable claim age broke a claim rather than failing live');
+  assert.equal(existsSync(readsClaimPath(d)), false, 'a loser published a stamp it does not own');
+});
+
+test('a COMPLETED rotation leaves its sidecar behind, inert, and does not rotate again', () => {
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-two' }).written, true);
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.1.jsonl.claim', 'reads.jsonl']);
+
+  const generation = readFileSync(rotatedReadsPath(d), 'utf8');
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-three' }).written, true);
+  assert.equal(readFileSync(rotatedReadsPath(d), 'utf8'), generation,
+    'the inert sidecar was read as a claim and the record rotated again');
+  assert.deepEqual(liveLines(d).length, 3, 'the live record is not marker + two appends');
+});
+
+test('a single record that reaches the bound by itself is refused, never rotated', () => {
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/a' });
+  const before = statSync(readsPath(d)).size;
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: 'x'.repeat(MAX_READS_BYTES) });
   assert.equal(res.written, false);
-  assert.equal(res.reason, 'size-cap');
-  assert.equal(readFileSync(readsPath(d), 'utf8').length, before);
+  assert.equal(res.reason, 'oversized-record');
+  assert.equal(statSync(readsPath(d)).size, before, 'the oversized record was appended anyway');
+  assert.equal(existsSync(rotatedReadsPath(d)), false,
+    'the record was thrown away to make room for a line that still would not fit');
 });
 
 test('a bad record is refused by reason, never thrown', () => {

@@ -24,6 +24,7 @@ import {
   MIN_ESCALATIONS_FOR_RUNG_SUGGESTION, MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION,
   MIN_RESIDUE_MS_FOR_COORDINATOR_INFO,
 } from './lib/trace-suggest.mjs';
+import { READS_ROTATION, ROTATED_READS_FILE } from './lib/read-trace.mjs';
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
 
@@ -931,6 +932,19 @@ test('R7: cad-executor at 3.64 emits one entry carrying the worst file, the dire
     `the coverage share is missing - the figure reads as a total: ${e.evidence}`);
   assert.ok(e.evidence.includes('nothing prunes `.planning/reads.jsonl` at a milestone close'),
     `the scope is missing - a reader cannot tell which milestones it spans: ${e.evidence}`);
+  // TRC-10: the close still prunes nothing, but the record IS cut at its size
+  // bound now, so the scope clause carries both halves and points at the
+  // envelope key that says whether this run's record was one of the cut ones.
+  assert.ok(e.evidence.includes('the cut at its size bound'),
+    `the scope names no cut - the record shortens and the entry does not say so: ${e.evidence}`);
+  assert.ok(e.evidence.includes('still in the LIVE record'),
+    `the scope does not scope itself to the live record: ${e.evidence}`);
+  assert.ok(e.evidence.includes('`reads.rotated` on this envelope'),
+    `the scope points at no key for whether this run was cut: ${e.evidence}`);
+  // The OLD conclusion, gone rather than qualified: "every milestone still in
+  // that file" was true only while nothing shortened the record.
+  assert.equal(e.evidence.includes('reaches every milestone still in that file'), false,
+    `the pre-rotation conclusion survived: ${e.evidence}`);
   // The exclusion and its reason, which no prose surface can supply for a
   // reader running the seam directly.
   assert.ok(e.evidence.includes('4,395 coordinator read(s) carrying files'), e.evidence);
@@ -1046,8 +1060,15 @@ import { writeFileSync, readFileSync, chmodSync, accessSync, constants } from 'n
 
 const REREAD = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
-/** A planning root holding the reread pair, optionally with `files` stripped. */
-function rereadRoot({ stripFiles = false, noReads = false } = {}) {
+/**
+ * A planning root holding the reread pair, optionally with `files` stripped.
+ *
+ * `rotated` prepends the line `rotateReads` writes into a fresh record - the
+ * exact shape, built from `READS_ROTATION` and `ROTATED_READS_FILE` rather than
+ * from copied strings, so a change to either spelling reddens here instead of
+ * leaving the fixture asserting a marker the writer no longer produces.
+ */
+function rereadRoot({ stripFiles = false, noReads = false, rotated = false } = {}) {
   const dir = join(mkdtempSync(join(tmpdir(), 'cad-reread-')), '.planning');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'trace.jsonl'), readFileSync(join(REREAD, 'reread.trace.jsonl'), 'utf8'));
@@ -1058,9 +1079,17 @@ function rereadRoot({ stripFiles = false, noReads = false } = {}) {
       .map((l) => { const r = JSON.parse(l); delete r.files; return JSON.stringify(r); })
       .join('\n') + '\n';
   }
+  if (rotated) reads = `${JSON.stringify(ROTATION_MARKER)}\n${reads}`;
   writeFileSync(join(dir, 'reads.jsonl'), reads);
   return dir;
 }
+
+/** The first line of a record `rotateReads` has just cut. */
+const ROTATION_MARKER = {
+  ts: '2026-08-21T08:59:00.000Z',
+  event: READS_ROTATION,
+  file: ROTATED_READS_FILE,
+};
 
 /** Run the seam and parse its one JSON line, `ok:false` included. */
 function rereadSeam(dir, args) {
@@ -1131,6 +1160,75 @@ test('seam: an UNREADABLE reads.jsonl fails `reads --join` and WARNS on `trace s
   } finally {
     chmodSync(file, 0o600);
   }
+});
+
+test('seam: the rotation marker is DROPPED at the parse and billed to nothing', () => {
+  // D-09: `summarizeReads` bills every object it is handed into `calls` and
+  // `byAgent`, so an unfiltered marker is a phantom read `/cad-report` prints
+  // in its Reading line as a real tool call. The filter lives in
+  // `readReadsRecords` - the one parse both readers cross.
+  const out = rereadSeam(rereadRoot({ rotated: true }), ['reads']);
+  assert.equal(out.ok, true, JSON.stringify(out));
+  // The 17 fixture records and not one more. Delete the filter and this is 18.
+  assert.equal(out.calls, 17, JSON.stringify(out.byAgent));
+  // The marker carries no `agent`, so an unfiltered one bills a SECOND
+  // coordinator call on top of the fixture's single `cat` read.
+  assert.deepEqual(out.byAgent.find(([a]) => a === 'coordinator'), ['coordinator', 1],
+    JSON.stringify(out.byAgent));
+  // Nothing anywhere in the figures names the sibling.
+  const marker = JSON.stringify({
+    byTool: out.byTool, topTargets: out.topTargets, topFiles: out.topFiles,
+  });
+  assert.equal(marker.includes(ROTATED_READS_FILE), false, marker);
+  assert.equal(marker.includes(READS_ROTATION), false, marker);
+  // The whole point, stated once: the figures are EXACTLY what they would be if
+  // the marker were not on disk. `reads` is the one key that differs, and it is
+  // the report OF the cut rather than a figure counting it.
+  const { reads: _cut, ...cutFigures } = out;
+  const { reads: _whole, ...wholeFigures } = rereadSeam(rereadRoot(), ['reads']);
+  assert.deepEqual(cutFigures, wholeFigures);
+});
+
+test('seam: BOTH faces name the reads record and report its cut, on a key that is not the trace\'s', () => {
+  // One root, two commands, the same shape - the risk of a per-face key is that
+  // the two diverge and a reader has to learn which envelope spells it how.
+  // The trace here never rotated, so a top-level `rotated` on `trace suggest`
+  // could only be the READS record's cut leaking onto the trace's key.
+  const dir = rereadRoot({ rotated: true });
+  const readsFile = join(dir, 'reads.jsonl');
+
+  const reads = rereadSeam(dir, ['reads', '--join']);
+  assert.equal(reads.ok, true, JSON.stringify(reads));
+  assert.deepEqual(reads.reads, {
+    file: readsFile,
+    rotated: { file: ROTATED_READS_FILE, ts: ROTATION_MARKER.ts },
+  });
+  // The marker reached NEITHER side of the join's own split: `joinReads` pushes
+  // `unresolved` for any record with no `agent`, and bills an `agent` of
+  // `coordinator` to the main thread. The fixture's one `cat` read is the only
+  // real coordinator call.
+  assert.equal(reads.unresolved, 0, JSON.stringify(reads));
+  assert.equal(reads.coordinator, 1, JSON.stringify(reads));
+
+  const suggest = rereadSeam(dir, ['trace', 'suggest']);
+  assert.equal(suggest.ok, true, JSON.stringify(suggest));
+  assert.deepEqual(suggest.reads, reads.reads);
+  // `file` still names the TRACE, and the trace's own cut key is ABSENT - the
+  // two records' rotations are not the same field.
+  assert.equal(suggest.file, join(dir, 'trace.jsonl'));
+  assert.equal('rotated' in suggest, false, JSON.stringify(suggest));
+});
+
+test('seam: a project with no reads record still names the path it looked for', () => {
+  const dir = rereadRoot({ noReads: true });
+  const out = rereadSeam(dir, ['reads']);
+  assert.equal(out.ok, true, JSON.stringify(out));
+  assert.equal(out.note, 'no reads recorded yet');
+  // Named, with NO rotation on it: the command was asked which record it read,
+  // and a record that is not there yet is still a named path.
+  assert.deepEqual(out.reads, { file: join(dir, 'reads.jsonl') });
+  // The `trace suggest` face agrees about the same absent record.
+  assert.deepEqual(rereadSeam(dir, ['trace', 'suggest']).reads, out.reads);
 });
 
 // --- R8: the worker's own wall clock, and only when there is one (MSR-05) ----

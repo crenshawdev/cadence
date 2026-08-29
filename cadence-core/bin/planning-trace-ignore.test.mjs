@@ -13,9 +13,13 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PLANNING, run } from './planning.test.mjs';
+import {
+  READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
+  ROTATED_READS_FILE, readsPath, rotatedReadsPath,
+} from './lib/read-trace.mjs';
 
 /** True iff this module is what node was told to run; realpath on both sides so
  * a symlinked checkout still matches (config-seams.test.mjs D-19). */
@@ -63,6 +67,38 @@ function traceIgnore(root, extra = []) {
 
 const gitignoreOf = (root) => readFileSync(join(root, '.gitignore'), 'utf8');
 
+/**
+ * The reads record's six rules as the writer states them, DERIVED here the
+ * same way the writer derives them: a test that copied the strings would stay
+ * green on the day the two spellings diverged, which is the only failure the
+ * derivation exists to catch.
+ */
+const READS_RULES = [
+  `.planning/${READS_FILE}`,
+  `.planning/${ROTATED_READS_FILE}`,
+  `.planning/${READS_CLAIM_FILE}`,
+  `.planning/${READS_CLAIM_FILE}.*`,
+  `.planning/${READS_ROTATE_TEMP_FILE}.*`,
+  `.planning/${READS_EVICT_TEMP_FILE}.*`,
+];
+
+/**
+ * `check-ignore -v`'s SOURCE for one path - the ignore file whose rule matched,
+ * relative to `cwd` - or null when nothing matched. The output field is
+ * `<source>:<line>:<pattern>`, so the source is everything before its last two
+ * colons, the same slice `gitIgnoreState` takes for the same reason.
+ */
+function ignoreSource(cwd, path) {
+  try {
+    const out = execFileSync('git', ['check-ignore', '--no-index', '-v', '--', path],
+      { cwd, encoding: 'utf8' });
+    const left = out.split('\n')[0].split('\t')[0];
+    const last = left.lastIndexOf(':');
+    const prev = last > 0 ? left.lastIndexOf(':', last - 1) : -1;
+    return prev >= 0 ? left.slice(0, prev) : null;
+  } catch { return null; }
+}
+
 test('trace ignore: a fresh repo with no .gitignore gets the line written', () => {
   const root = ignoreRoot();
   const r = traceIgnore(root);
@@ -77,6 +113,16 @@ test('trace ignore: a fresh repo with no .gitignore gets the line written', () =
   assert.equal(r.rotated_line, '.planning/trace.1.jsonl');
   assert.match(gitignoreOf(root), /^\.planning\/trace\.jsonl$/m);
   assert.match(gitignoreOf(root), /^\.planning\/trace\.1\.jsonl$/m);
+  // ...and the READ record's six, on the same call: the live record, the
+  // generation its own rotation leaves behind, the shared claim sidecar a
+  // completed rotation leaves inert, and the three private paths a killed one
+  // strands - its stamps, its unrenamed fresh record and the generation it
+  // evicted. Reported on a field of their own beside `line`.
+  assert.deepEqual(r.reads_lines, READS_RULES);
+  for (const rule of READS_RULES) {
+    assert.ok(gitignoreOf(root).split('\n').includes(rule),
+      `${rule} was not written: ${gitignoreOf(root)}`);
+  }
 });
 
 test('trace ignore: a re-run adds no second line and touches no byte', () => {
@@ -145,7 +191,9 @@ test('trace ignore: a TRACKED record whose line is present reports ignored and w
   // nothing at all: `ignored` came back false with the rule sitting right there
   // in `.gitignore`, and the write arm - which keys off that value - appended the
   // comment and the line again on EVERY run. Two runs left three copies.
-  const root = ignoreRoot({ gitignore: '.planning/trace.jsonl\n.planning/trace.1.jsonl\n' });
+  const root = ignoreRoot({
+    gitignore: `.planning/trace.jsonl\n.planning/trace.1.jsonl\n${READS_RULES.join('\n')}\n`,
+  });
   writeFileSync(join(root, '.planning', 'trace.jsonl'), '{"phase":1}\n');
   execFileSync('git', ['add', '-f', '--', '.planning/trace.jsonl'], { cwd: root });
   const check = traceIgnore(root, ['--check']);
@@ -193,8 +241,8 @@ test('trace ignore: a project covered for the record alone is REPORTED, then upg
   const r = traceIgnore(root);
   assert.equal(r.written, true, JSON.stringify(r));
   const lines = gitignoreOf(root).split('\n').filter((l) => l && !l.startsWith('#'));
-  // ONLY the missing rule was added: the existing one is not written twice.
-  assert.deepEqual(lines, ['.planning/trace.jsonl', '.planning/trace.1.jsonl']);
+  // ONLY the missing rules were added: the existing one is not written twice.
+  assert.deepEqual(lines, ['.planning/trace.jsonl', '.planning/trace.1.jsonl', ...READS_RULES]);
   // ...and now the re-run is the no-op again.
   assert.equal(traceIgnore(root).reason, 'already-ignored');
 });
@@ -208,6 +256,69 @@ test('trace ignore: the sibling rule names the file the writer actually creates'
   const r = traceIgnore(root);
   assert.equal(r.rotated_line, `.planning/${ROTATED_TRACE_FILE}`);
   assert.equal(rotatedTracePath('.planning'), r.rotated_line);
+});
+
+test('trace ignore: a project covered for the trace AND the live reads line gains only the rest', () => {
+  // The upgrade path for a repository that hand-wrote the live reads line
+  // before this seam existed - which is what THIS repository had. Three rules
+  // are missing, the fourth is not written a second time.
+  const root = ignoreRoot({
+    gitignore: `.planning/trace.jsonl\n.planning/trace.1.jsonl\n${READS_RULES[0]}\n`,
+  });
+  const check = traceIgnore(root, ['--check']);
+  assert.equal(check.ignored, false, JSON.stringify(check));
+  assert.equal(gitignoreOf(root).includes(READS_RULES[1]), false, '--check wrote something');
+
+  const r = traceIgnore(root);
+  assert.equal(r.written, true, JSON.stringify(r));
+  const lines = gitignoreOf(root).split('\n').filter((l) => l && !l.startsWith('#'));
+  assert.deepEqual(lines,
+    ['.planning/trace.jsonl', '.planning/trace.1.jsonl', ...READS_RULES]);
+  // The trace half was already whole, so its block is not re-emitted either.
+  assert.equal(gitignoreOf(root).match(/^\.planning\/trace\.jsonl$/gm).length, 1);
+
+  // A re-run adds no second line and changes no byte.
+  const after = gitignoreOf(root);
+  assert.equal(traceIgnore(root).reason, 'already-ignored');
+  assert.equal(gitignoreOf(root), after);
+});
+
+test('trace ignore: the reads rules name the files the writer actually produces', () => {
+  // Same drift guard the sibling rule carries, one record over: a rule spelled
+  // by hand in planning/trace.mjs and a path spelled in lib/read-trace.mjs are
+  // two statements of one fact, and the day they disagree the rule covers
+  // nothing at all.
+  const r = traceIgnore(ignoreRoot());
+  assert.equal(r.reads_lines[0], readsPath('.planning'));
+  assert.equal(r.reads_lines[1], rotatedReadsPath('.planning'));
+  assert.equal(r.reads_lines[2], `.planning/${READS_CLAIM_FILE}`);
+  // The three paths a killed rotation strands - the stamps beside the sidecar,
+  // the fresh record that never reached its rename, and the generation it
+  // evicted - each carry a pid and a random suffix, so these three and only
+  // these three are patterns.
+  assert.equal(r.reads_lines[3], `${r.reads_lines[2]}.*`);
+  assert.equal(r.reads_lines[4], `${readsPath('.planning')}.rotate.*`);
+  assert.equal(r.reads_lines[5], `${rotatedReadsPath('.planning')}.evict.*`);
+  assert.equal(r.reads_lines.length, 6);
+});
+
+test('trace ignore: git itself answers for the reads record and its sibling, from the repo\'s own .gitignore', () => {
+  const root = ignoreRoot();
+  assert.equal(traceIgnore(root).written, true);
+  for (const path of ['.planning/reads.jsonl', '.planning/reads.1.jsonl']) {
+    assert.equal(ignoreSource(root, path), '.gitignore', path);
+  }
+});
+
+test('trace ignore: THIS repository already covers the reads sibling (D-11)', () => {
+  // The rule this repo carries by hand, asserted through git rather than by
+  // reading `.gitignore`: its own record measured 93% full on 2026-08-28, so it
+  // WILL rotate, and the sibling is what `git add .planning` would sweep in.
+  const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  for (const path of ['.planning/reads.1.jsonl', '.planning/reads.1.jsonl.claim',
+    '.planning/reads.1.jsonl.claim.123.abc']) {
+    assert.equal(ignoreSource(repo, path), '.gitignore', path);
+  }
 });
 
 test('trace ignore: a --root present with nothing usable is refused, never the cwd', () => {

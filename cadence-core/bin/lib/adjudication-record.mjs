@@ -70,7 +70,38 @@
 export const RAISED_SEVERITIES = Object.freeze(['blocker', 'high', 'medium', 'low']);
 
 /**
+ * The two severities a BLOCKING gate halts over - the only ones asked to name a
+ * fix commit when they survive.
+ *
+ * Carried as this module's own frozen list rather than imported from
+ * lib/filing-decision.mjs, where the same pair drives `unfixedFindings`, and
+ * PINNED against that file by adjudication-record.test.mjs. The import cannot
+ * be taken in this direction at all: filing-decision.mjs imports
+ * `buildEntries` from HERE, so reading its list back would close a cycle. So
+ * this is the same hand-maintained-then-compared shape `RAISED_SEVERITIES`
+ * above already carries against review-provider.mjs, for the same reason - the
+ * test is what stops the two drifting.
+ */
+export const HALTING_SEVERITIES = Object.freeze(['blocker', 'high']);
+
+/**
  * The three rulings, and deliberately no fourth.
+ *
+ * WHAT `survived` MEANS: the finding STOOD - fixed or not. A `survived`
+ * finding RAISED at blocker or high is one a blocking gate is halting to fix,
+ * so its entry names the fix commit an auditor spends. A `survived` finding
+ * raised BELOW them is one that was confirmed and NOT fixed - reported, moved
+ * past, and carrying no commit id because none exists. Both are the same
+ * ruling read against the raised severity, which is why there is no fourth
+ * value for the unfixed remainder.
+ *
+ * That remainder is what a blocking gate leaves behind on nearly every fire,
+ * and before it was representable here the only way to store it was to
+ * DOWNGRADE the finding - which records "the adjudicator lowered it" over "it
+ * stood and nobody fixed it". Converting a reported-and-moved-past finding into
+ * a passed one is the exact substitution this record exists to prevent, so the
+ * record had to be able to hold the state rather than the coordinator having to
+ * misreport it.
  *
  * There is no `unadjudicated` value: a finding with no ruling is a REFUSAL, not
  * a ruling of its own, because the record's premise is one entry per finding
@@ -112,8 +143,49 @@ const MAX_TEXT_CHARS = 2000;
  * refused, because a string that cannot be a commit id fails the auditor
  * exactly as an absent one does. AC3 bounds only ABSENCE; this is the wider
  * reading, recorded as a decision rather than inherited silently.
+ *
+ * TWO SEPARATE RULES OVER THIS KEY, and only one of them is severity-gated.
+ * The VALUE check runs wherever a `survived` ruling SETS `fix_commit`, at
+ * every severity: a junk id stored on a medium fails `git show` exactly as one
+ * stored on a blocker does. What the RAISED severity gates is the PRESENCE
+ * requirement - only `HALTING_SEVERITIES` are asked to carry the key at all,
+ * because only they are the findings a blocking gate is halting to fix, and a
+ * confirmed-unfixed medium has no commit to name. A medium that DOES name one
+ * still has it checked and still stores it: a voluntary fix is allowed to cite
+ * itself.
+ *
+ * PRESENCE MEANS THE KEY IS SET, never that its value is truthy. `fix_commit:
+ * ''` and `fix_commit: null` are present and malformed, and reading them as
+ * absent would drop the refusal on exactly the values an auditor cannot run
+ * `git show` on.
  */
 const FIX_COMMIT = /^[0-9a-fA-F]{7,40}$/;
+
+/**
+ * `overridden` - the second way a survived blocker or high settles.
+ *
+ * A user can OVERRIDE a blocking gate's FAIL, and an override is by definition
+ * a blocker or high that stood UNFIXED. That is the exact shape the presence
+ * requirement above keeps refusing, so before this marker existed an overridden
+ * fire had no adjudication record at all: the `override` receipt landed on the
+ * trace with no rulings beside it, and the only way to write the record was to
+ * downgrade the finding or invent a commit id. Both are false statements about
+ * what happened, and this key exists so neither is needed.
+ *
+ * IT IS A MARKER, NOT A REASON. The user's own words already ride the
+ * `override` receipt through `--detail-file` - see references/triage-gate.md -
+ * and a second copy on the entry is a second statement that can drift, so the
+ * ruling carries only the fact.
+ *
+ * ONLY THE BOOLEAN `true` IS ACCEPTED, wherever the key is set and whatever the
+ * ruling. A truthy string would buy a clear nobody stated; `false` says the
+ * finding was NOT overridden, which is what absence already says without adding
+ * a key to the record. The check is not scoped to `survived` or to a severity,
+ * for the same reason the `fix_commit` VALUE check is not: a key this module
+ * stores has to mean one thing everywhere it appears. What IS scoped is what
+ * the marker BUYS - it satisfies the presence requirement, and nothing else.
+ */
+const OVERRIDE_MARKER = true;
 
 /**
  * A JSON object, as opposed to null, an array or a scalar.
@@ -138,7 +210,7 @@ const isText = (v) => typeof v === 'string' && v.trim() !== '';
  */
 const VOICE_KEYS = ['voice', 'model', 'returned', 'rulings'];
 const FINDING_KEYS = ['file', 'line', 'severity', 'claim', 'failure_scenario'];
-const RULING_KEYS = ['finding', 'ruling', 'claim', 'failure_scenario', 'counter_evidence', 'fix_commit'];
+const RULING_KEYS = ['finding', 'ruling', 'claim', 'failure_scenario', 'counter_evidence', 'fix_commit', 'overridden'];
 const EVIDENCE_KEYS = ['file', 'line', 'note'];
 
 /**
@@ -343,6 +415,12 @@ export function buildEntries(payload) {
             + `finding ${idx} - the record stores the reviewer's own words, never a restatement`);
         }
       }
+      if (ruling.overridden !== undefined && ruling.overridden !== OVERRIDE_MARKER) {
+        return no(`${rat}.overridden must be the boolean true or be absent, got `
+          + `${JSON.stringify(ruling.overridden)} - it is the marker recording that a user `
+          + 'OVERRODE a blocking FAIL, so a truthy string would buy a clear nobody stated and '
+          + 'false says the finding was not overridden, which absence already says');
+      }
       if (ruling.ruling === 'refuted') {
         const ev = ruling.counter_evidence;
         if (!isPlainObject(ev)) {
@@ -364,10 +442,29 @@ export function buildEntries(payload) {
         }
       }
       if (ruling.ruling === 'survived') {
-        if (typeof ruling.fix_commit !== 'string' || !FIX_COMMIT.test(ruling.fix_commit)) {
+        // The VALUE check FIRST, and unconditional: whenever the key is SET it
+        // has to be spendable, at every severity. Presence is `!== undefined`
+        // and never truthiness - '' and null are set-and-malformed, and reading
+        // them as absent would drop this refusal on the very values that fail
+        // an auditor.
+        if (ruling.fix_commit !== undefined
+          && (typeof ruling.fix_commit !== 'string' || !FIX_COMMIT.test(ruling.fix_commit))) {
           return no(`${rat} survived and carries no usable fix_commit - an auditor runs git show `
             + `on that value, so ${JSON.stringify(ruling.fix_commit)} fails them exactly as an `
             + 'absent one does');
+        }
+        // The PRESENCE requirement SECOND, gated on the RAISED severity, read
+        // off the FINDING and never off the ruling: a ruling carries no
+        // severity at all, and a `downgraded` one deliberately does not restate
+        // a new level, so the raised severity is the only one there is to read.
+        if (HALTING_SEVERITIES.includes(f.severity)
+          && ruling.fix_commit === undefined && ruling.overridden !== OVERRIDE_MARKER) {
+          return no(`${rat} survived and carries neither a usable fix_commit nor overridden: `
+            + `true - a finding raised at ${HALTING_SEVERITIES.join(' or ')} that STOOD is one a `
+            + 'blocking gate is halting over, so its entry either names the commit that fixed it '
+            + 'or marks the user override that let it stand. Only those two severities are '
+            + 'asked: a survived finding raised below them was confirmed and NOT fixed, and '
+            + 'carries no commit id because none exists');
         }
       }
     }
@@ -396,6 +493,15 @@ export function buildEntries(payload) {
         convergent: false,
         ...(ruling.counter_evidence ? { counter_evidence: ruling.counter_evidence } : {}),
         ...(ruling.fix_commit ? { fix_commit: ruling.fix_commit } : {}),
+        // Conditionally spread like the two above, so an ordinary entry gains
+        // no key. An entry carrying the marker ALONE has no commit id on it,
+        // and that is correct rather than missing: the override settle point in
+        // references/triage-gate.md produces a user's reason on the receipt and
+        // no commit at all, so a SHA there would have been fabricated. The
+        // marker beside a REAL commit is legal and unremarkable - a fix landed
+        // and the halt was also overridden - and the value check above is what
+        // keeps that combination honest.
+        ...(ruling.overridden === OVERRIDE_MARKER ? { overridden: true } : {}),
       });
     }
   }

@@ -1551,6 +1551,69 @@ test('GAT-04: every fenced outcome receipt names its trigger, plan and both rang
     'the five settle points no longer print one fenced receipt command each');
 });
 
+// --- RSK-07: what `survived` MEANS, stated the same way on all four surfaces -
+//
+// Watched FAILING as GH-159, on a real run rather than on a read. A blocking
+// `plan` gate PASSED, its below-blocker/high remainder was reported and moved
+// past, and the settle could not write its adjudication record at all: the
+// coordinator composed the payload by following
+// cadence-core/references/review-record.md, whose sentence read "a `survived`
+// one names the fix commit" with no severity on it, and
+// cadence-core/bin/lib/adjudication-record.mjs refused every entry that named
+// none. The two ways out were both false statements - downgrade the finding, or
+// invent a SHA - so the fire could not be settled without recording something
+// that did not happen.
+//
+// The fix widened `survived` to mean "the finding STOOD, fixed or not", gated
+// on the RAISED severity, and that meaning now lives on four surfaces: the
+// module that WRITES the record, the module that decides what the fire will not
+// fix, the reference a coordinator reads at the gate, and the reference it
+// reads when composing the payload. Any one of them drifting back to the
+// unconditional rule reproduces the defect at the step it was reported from,
+// and the drift is silent: every test in the tree still passes, because the
+// code is right and the instruction a human follows is wrong.
+//
+// Nothing else pins it. self-verify.mjs:927 records a standing decision against
+// text scans over this reference family, and check 14 does not reach
+// lib/adjudication-record.mjs at all - it takes no CONTRACTS row and no CLI
+// entry point.
+
+/** The four surfaces that state what `survived` means, and the phrase they
+ * state it with. One NAMED fact, never a document's shape: a reformat that
+ * changed no fact leaves this row green. */
+const SURVIVED_SURFACES = [
+  ['cadence-core', 'bin', 'lib', 'adjudication-record.mjs'],
+  ['cadence-core', 'bin', 'lib', 'filing-decision.mjs'],
+  ['cadence-core', 'references', 'triage-gate.md'],
+  ['cadence-core', 'references', 'review-record.md'],
+];
+const SURVIVED_MEANING = 'confirmed and not fixed';
+
+test('RSK-07: all four surfaces state the SEVERITY-GATED meaning of `survived`', () => {
+  for (const parts of SURVIVED_SURFACES) {
+    const where = parts.slice(1).join('/');
+    // Collapsed BEFORE matching, so a wrapped comment line and a single-line
+    // sentence read the same and rewrapping a paragraph is not a failure.
+    const flat = doc(...parts).replace(/\s+/g, ' ');
+
+    assert.ok(flat.toLowerCase().includes(SURVIVED_MEANING),
+      `${where} no longer says a survived finding below blocker/high was "${SURVIVED_MEANING}". `
+      + 'That is the half of `survived` the record can store and the coordinator has to know '
+      + `about, and the four surfaces agree on this phrase rather than on a sentiment - so edit `
+      + `${where} back into agreement rather than editing this row`);
+
+    // And none of them may state the UNCONDITIONAL rule again: a `survived`
+    // finding that names a fix commit with no severity qualifying it is the
+    // exact sentence GH-159 was reported against.
+    for (const m of flat.matchAll(/`?survived`?[^.]{0,160}?names? (?:the|its|a) fix commit/gi)) {
+      assert.match(m[0], /blocker/i,
+        `${where} states that a survived finding names its fix commit without saying at WHICH `
+        + `severities: "${m[0]}". Followed literally that instruction makes a coordinator `
+        + 'fabricate a SHA or downgrade the finding, which is GH-159 reproduced');
+    }
+  }
+});
+
 // --- MSR-01: the close-half turn rule is stated ONCE, in the spawn seam ------
 //
 // `--turns` is dead the moment its ONE statement stops naming it: nothing in
@@ -2473,6 +2536,20 @@ test('RDX-01: report.md prints the in-dispatch figure with its coverage, its exc
   assert.ok(/never narrate the null as `0`/.test(rule),
     'the reading rule does not forbid rendering a null ratio as 0 - the reading that says '
     + 'the worker opened each file exactly once');
+  // TRC-10: the SPAN claim. The record is cut at its size bound now, so the
+  // three figures span the live record rather than the project's whole history,
+  // and the composer is told which key says a cut happened on this run.
+  assert.equal(rule.includes('span every dispatch the project ever recorded'), false,
+    'the reading rule still claims the three figures span every dispatch the project ever '
+    + 'recorded - the size-bound cut moves the older generation to a sibling this report '
+    + 'never reads');
+  assert.ok(rule.includes('still in the LIVE record'),
+    'the reading rule does not scope the three figures to the live record');
+  assert.ok(/cut at its size bound/.test(rule),
+    'the reading rule names nothing that shortens the record, so a composer reading it '
+    + 'cannot tell why a figure dropped between two runs');
+  assert.ok(rule.includes('`reads.rotated`'),
+    'the reading rule points at no key for whether the record was cut on this run');
 
   // 3. The transport figure the growth of that response invalidated. It is a
   //    MEASUREMENT, so it carries the date it was taken.
@@ -2480,6 +2557,28 @@ test('RDX-01: report.md prints the in-dispatch figure with its coverage, its exc
   const transport = measured >= 0 ? text.slice(measured, measured + 120) : '(the sentence is gone)';
   assert.ok(/`reads --join` measures 2,494 B/.test(text),
     `report.md still states a stale \`reads --join\` size. Got: ${transport}`);
+});
+
+test('TRC-10: suggest.md\'s scope step names what shortens the reads record', () => {
+  // The step reports the SCOPE of both records it read. It said of the reads
+  // record only that no close prunes it, which read as "nothing shortens this
+  // file" while nothing did - true for four cycles and false the moment the
+  // size-bound cut shipped. The close clause stays (a close still prunes
+  // nothing); what it can no longer do is stand alone.
+  const text = doc('cadence-core', 'workflows', 'suggest.md');
+  const scope = stepBody(text, 'scope', 'suggest.md').replace(/\s+/g, ' ');
+
+  assert.ok(scope.includes('nothing prunes it at a close either'),
+    'suggest.md no longer carries the reads-record scope sentence this rule corrects');
+  // The un-caveated form, verbatim: the close clause running straight into the
+  // phase-scoping clause with nothing about the cut between them.
+  assert.equal(scope.includes('at a close either, and it carries NO phase scoping'), false,
+    'suggest.md\'s scope step still presents the reads record as one nothing ever shortens');
+  assert.ok(/one thing that ever shortens it is the same cut at its size bound/.test(scope),
+    'suggest.md\'s scope step names no cut, so a user is told the reads figures span a '
+    + 'history the record no longer holds');
+  assert.ok(scope.includes('`reads.rotated` reports'),
+    'suggest.md\'s scope step points at no key for whether the record was cut on this run');
 });
 
 test('RDX-01: suggest.md qualifies its no-tweak line to CONFIG KEYS and states the info exception', () => {
