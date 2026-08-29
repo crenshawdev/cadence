@@ -29,6 +29,7 @@ import {
 import { deriveCounts, recordName } from '../lib/adjudication-record.mjs';
 import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
+import { unfixedFromEntries } from '../lib/filing-decision.mjs';
 import { atomicWrite, planTaskTitles } from '../lib/planning-files.mjs';
 import {
   READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
@@ -867,6 +868,16 @@ function cmdTrace(dir, sub, opts) {
     });
     if (!recount.ok) return fail(recount.reason, recount.detail, recount.hint);
 
+    // THE SECOND CROSS-ARTIFACT CHECK, over the same resolved record: a receipt
+    // that settles a range whose record says a PERSON cleared a blocking halt
+    // has to say why. See `overrideAccounted` for why it runs on any settled
+    // figure rather than on all three, and why it is phrased as a
+    // record/receipt contradiction rather than keyed to an event name.
+    const override = overrideAccounted(dir, parsedPhase.raw, {
+      trigger, plan: flags['--plan'], sha: flags['--sha'], round, settled, reason: detail,
+    });
+    if (!override.ok) return fail(override.reason, override.detail, override.hint);
+
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
     // `escalation` store tokens identically. `--step` does not change that: the
@@ -1243,6 +1254,71 @@ function recountReceipt(dir, phaseRaw, fire) {
     }
   }
   return pass;
+}
+
+/**
+ * Does this receipt account for a halt the RECORD says a person cleared?
+ *
+ * WHY IT IS ASKED HERE, and only here. `trace append` is the one place in the
+ * tree where a fire's receipt and its adjudication record are both in hand
+ * under a key that is PROVED rather than reconstructed - `recordForFire`
+ * resolves it from the same `--trigger`, `--plan`, `--sha` and `--round` the
+ * writer used, and `recountReceipt` above already refuses on that resolution.
+ * `risk-check status` reads no records at all and the `adjudication` seam runs
+ * BEFORE the receipt exists, so neither can hold both sides.
+ *
+ * THE CONTRADICTION, not an event name. A record holding a `survived` blocker
+ * or high marked `overridden: true` is by construction a halting finding that
+ * STOOD with no commit behind it: a person cleared the gate. A receipt that
+ * settles that range while saying nothing at all is an unverifiable
+ * self-assertion - it reads as a clean settle, and the cleared halt survives
+ * only inside a record nobody downstream is obliged to open. The refusal is
+ * phrased as that contradiction and NEVER keyed to an event name: this seam
+ * carries no runtime refusal keyed to an event, and the first one would be read
+ * as drift and deleted.
+ *
+ * WHENEVER ANY SETTLED FIGURE IS PRESENT, deliberately unlike the recount
+ * above. That one needs all three because a partial set cannot be compared with
+ * a recount that answers all three; this one recounts nothing, and inheriting
+ * the all-three precondition would let a caller discharge the marker by
+ * dropping one figure from the settle line - exactly the self-assertion the
+ * guard exists to stop. `rearm` and `deferral`, which carry no figures at all,
+ * stay out of scope by carrying none rather than by being named.
+ *
+ * AN ABSENT OR UNREADABLE RECORD OMITS THE CHECK, as `recordForFire` and the
+ * recount both already declare. A cross-check that cannot resolve its record
+ * must never fail an append.
+ *
+ * WHAT COUNTS AS ACCOUNTING FOR IT is the user's own words on the receipt -
+ * `--detail-file` is the transport references/triage-gate.md states for an
+ * override, and planning/risk-check.mjs already refuses one whose reason is
+ * empty. So the test is whether the receipt carries a reason at all, and the
+ * shape this refuses is the reasonless one.
+ *
+ * @param {string} dir @param {string|number} phaseRaw
+ * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
+ *   settled: Record<string, number>, reason: any}} fire
+ * @returns {{ok: boolean, reason: string, detail: string, hint: string}}
+ */
+function overrideAccounted(dir, phaseRaw, fire) {
+  const pass = { ok: true, reason: '', detail: '', hint: '' };
+  if (!['survivors', 'downgraded', 'refuted'].some((k) => k in fire.settled)) return pass;
+  if (typeof fire.reason === 'string' && fire.reason.trim() !== '') return pass;
+  const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round);
+  if (!file) return pass;
+  let record;
+  try { record = JSON.parse(readFileSync(file, 'utf8')); } catch { return pass; }
+  const { haltingSurvivors } = unfixedFromEntries(record && record.entries);
+  if (haltingSurvivors.length === 0) return pass;
+  const rel = relative(dir, file);
+  const n = haltingSurvivors.length;
+  return { ok: false, reason: 'unaccounted-override',
+    detail: `${rel} holds ${n} finding${n === 1 ? '' : 's'} raised at blocker or high that STOOD `
+      + 'with no fix commit, marked as a halt a person cleared, and this receipt settles the '
+      + 'range without carrying a reason at all - the record and the receipt contradict each '
+      + 'other, so nothing was appended',
+    hint: 'settle this range with the user\'s own words on --detail-file, naming why the halt was '
+      + 'let stand; or fix the findings and re-write the record so no cleared halt is left in it' };
 }
 
 // Only `cmdTrace` is dispatched. `cmdTraceIgnore` is exported beside it because

@@ -570,6 +570,111 @@ test('GH-159: a blocking fire whose highest finding is a survived MEDIUM settles
     + 'phase exists to stop being the only way through');
 });
 
+/** Every line of the run's trace, so a refused append can be proved to have
+ *  written nothing rather than merely to have answered `ok:false`. */
+function traceLines(dir) {
+  let text = '';
+  try { text = readFileSync(join(dir, 'trace.jsonl'), 'utf8'); } catch { return []; }
+  return text.split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l));
+}
+
+test('RSK-08: a REASONLESS receipt over a record holding a cleared halt is refused', () => {
+  // The self-assertion the guard exists to stop: the record says a person let a
+  // blocker stand, and the receipt settles the range saying nothing at all -
+  // which reads downstream as a clean settle.
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  assert.equal(plRun(repo, dir, ['risk-check', 'run', ...range]).ok, true);
+  const payload = survivedPayloadFile(repo, 'silent-override-payload.json',
+    survivedPayload('blocker', { overridden: true }));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+
+  const before = traceLines(dir).length;
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(receipt.ok, false, JSON.stringify(receipt));
+  assert.match(receipt.detail, new RegExp(rec.record.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    'the refusal names the RECORD it read, so a caller can open the thing that contradicts it');
+  assert.match(receipt.detail, /blocker or high/);
+  assert.doesNotMatch(receipt.detail, /gate_pass|override|rearm|deferral|adjudication/,
+    'the refusal is a record/receipt CONTRADICTION and is never keyed to an event name - this '
+    + 'seam states it carries no runtime refusal keyed to an event, and the first one would be '
+    + 'read as drift and deleted');
+  assert.equal(traceLines(dir).length, before, 'a refused append writes nothing');
+
+  // And the accepted shape over the SAME record, so the guard is proved to
+  // refuse the reasonless receipt rather than the record.
+  const reason = join(repo, 'silent-override-reason.txt');
+  writeFileSync(reason, 'shipping behind a flag; the vault path is unreachable this release\n');
+  const explained = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'override', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head, '--detail-file', reason,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(explained.ok, true, JSON.stringify(explained));
+  assert.equal(traceLines(dir).length, before + 1);
+});
+
+test('RSK-08: the guard cannot be discharged by dropping one settled figure', () => {
+  // `recountReceipt` needs all three because a partial set cannot be compared
+  // with a recount that answers all three. This check recounts nothing, so
+  // inheriting that precondition would make the guard opt-out: drop `--refuted`
+  // and the cleared halt goes unmentioned again.
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  assert.equal(plRun(repo, dir, ['risk-check', 'run', ...range]).ok, true);
+  const payload = survivedPayloadFile(repo, 'partial-override-payload.json',
+    survivedPayload('high', { overridden: true }));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+
+  const before = traceLines(dir).length;
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded)]);
+  assert.equal(receipt.ok, false, JSON.stringify(receipt));
+  assert.match(receipt.detail, /blocker or high/);
+  assert.equal(traceLines(dir).length, before, 'a refused append writes nothing');
+});
+
+test('RSK-08: a record holding NO cleared halt takes a reasonless receipt unchanged', () => {
+  // The guard fires on the contradiction and on nothing else: an ordinary
+  // survived medium settles with no reason exactly as it did before.
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  assert.equal(plRun(repo, dir, ['risk-check', 'run', ...range]).ok, true);
+  const payload = survivedPayloadFile(repo, 'no-override-payload.json',
+    survivedPayload('medium'));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(receipt.ok, true, JSON.stringify(receipt));
+  assert.equal(plRun(repo, dir, ['risk-check', 'status', ...range]).plans[0].state, 'recorded');
+});
+
 test('an OVERRIDDEN blocking fire settles end to end, with the record present rather than absent', () => {
   // The run `.planning/ARCHIVE.md` records: an `override` receipt was written
   // and no `ADJUDICATION-risk_surface-plan-1.json` existed beside it, because
