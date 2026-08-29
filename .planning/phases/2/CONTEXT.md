@@ -132,6 +132,10 @@ different files, and the second only settles once the first exists.
   `ADJUDICATION-*.json` on disk: one entry is `medium survived HASFIX`
   (`.planning/_archive-v3.7.3/1/ADJUDICATION-risk_surface-plan-2.json`) - the
   exact entry `unfixed` would file an issue for over already-committed work.
+  [corrected by plan-1 deviation: `lib/filing-decision.mjs` states THREE fields,
+  not two - closing the `risk_surface` high required `unfixedFindings` to read
+  the `overridden` marker beside `ruling` and the raised `severity` (3341ffb0);
+  `fix_commit` still decides nothing there, which is the part of D-07 that held.]
 - D-09 (`why record`'s renderer): distinguish survivors by `fix_commit`
   presence, rather than leaving `why` untouched and recording the widened
   meaning in a comment. Evidence: `lib/why-record.mjs:420-433` (the D-11 reader
