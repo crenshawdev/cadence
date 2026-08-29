@@ -88,6 +88,24 @@ export const ROTATED_READS_FILE = 'reads.1.jsonl';
 export const READS_CLAIM_FILE = `${ROTATED_READS_FILE}.claim`;
 
 /**
+ * The two PRIVATE paths `rotateReads` writes inside the planning root, DERIVED
+ * from the names above for the reason `READS_CLAIM_FILE` is: the fresh record
+ * before it is renamed over the live path, and the leftover generation the
+ * single-winner eviction renames aside. The `finally` clears both on every arm
+ * the process survives, so they are only ever found by a reader when the
+ * process died inside the rotation window - which the hook's 5 s timeout makes
+ * reachable, and which leaves the evict temp holding a whole generation of up
+ * to `MAX_READS_BYTES`. Stated here so the `.gitignore` rules that have to name
+ * them read the spelling the writer actually produces rather than repeating it.
+ * A PREFIX and not a whole name: each carries the writer's pid and a random
+ * suffix, so the rule that covers them can only ever be a pattern.
+ */
+export const READS_ROTATE_TEMP_FILE = `${READS_FILE}.rotate`;
+
+/** @see READS_ROTATE_TEMP_FILE - the eviction half of the same pair. */
+export const READS_EVICT_TEMP_FILE = `${ROTATED_READS_FILE}.evict`;
+
+/**
  * Where the rotated generation lives, joined onto the planning root the way
  * `readsPath` does.
  * @param {string} planningRoot
@@ -634,7 +652,7 @@ export function rotateReads(planningRoot, reserve) {
         // Evict SINGLE-WINNER, the way `lib/capture-file.mjs` breaks a stale
         // lock: exactly one contender renames it to a private path and the
         // losers get `ENOENT`. The `finally` drops that private path.
-        const path = `${sibling}.evict.${priv}`;
+        const path = join(planningRoot, `${READS_EVICT_TEMP_FILE}.${priv}`);
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
         // CONFIRM AFTER CLAIMING, on the ABANDONED arm only, and before
@@ -666,7 +684,7 @@ export function rotateReads(planningRoot, reserve) {
     if (!claimed) return { rotated: false };
     // The fresh record is written whole to a PRIVATE path - this process's pid
     // and a random suffix, exclusive-create - and renamed over the live path.
-    temp = `${file}.rotate.${priv}`;
+    temp = join(planningRoot, `${READS_ROTATE_TEMP_FILE}.${priv}`);
     const marker = {
       ts: new Date().toISOString(),
       event: READS_ROTATION,

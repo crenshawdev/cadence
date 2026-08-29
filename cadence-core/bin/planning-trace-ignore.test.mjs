@@ -17,7 +17,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PLANNING, run } from './planning.test.mjs';
 import {
-  READS_CLAIM_FILE, READS_FILE, ROTATED_READS_FILE, readsPath, rotatedReadsPath,
+  READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
+  ROTATED_READS_FILE, readsPath, rotatedReadsPath,
 } from './lib/read-trace.mjs';
 
 /** True iff this module is what node was told to run; realpath on both sides so
@@ -67,7 +68,7 @@ function traceIgnore(root, extra = []) {
 const gitignoreOf = (root) => readFileSync(join(root, '.gitignore'), 'utf8');
 
 /**
- * The reads record's four rules as the writer states them, DERIVED here the
+ * The reads record's six rules as the writer states them, DERIVED here the
  * same way the writer derives them: a test that copied the strings would stay
  * green on the day the two spellings diverged, which is the only failure the
  * derivation exists to catch.
@@ -77,6 +78,8 @@ const READS_RULES = [
   `.planning/${ROTATED_READS_FILE}`,
   `.planning/${READS_CLAIM_FILE}`,
   `.planning/${READS_CLAIM_FILE}.*`,
+  `.planning/${READS_ROTATE_TEMP_FILE}.*`,
+  `.planning/${READS_EVICT_TEMP_FILE}.*`,
 ];
 
 /**
@@ -110,10 +113,11 @@ test('trace ignore: a fresh repo with no .gitignore gets the line written', () =
   assert.equal(r.rotated_line, '.planning/trace.1.jsonl');
   assert.match(gitignoreOf(root), /^\.planning\/trace\.jsonl$/m);
   assert.match(gitignoreOf(root), /^\.planning\/trace\.1\.jsonl$/m);
-  // ...and the READ record's four, on the same call: the live record, the
+  // ...and the READ record's six, on the same call: the live record, the
   // generation its own rotation leaves behind, the shared claim sidecar a
-  // completed rotation leaves inert, and the private stamps a killed one
-  // strands. Reported on a field of their own beside `line`.
+  // completed rotation leaves inert, and the three private paths a killed one
+  // strands - its stamps, its unrenamed fresh record and the generation it
+  // evicted. Reported on a field of their own beside `line`.
   assert.deepEqual(r.reads_lines, READS_RULES);
   for (const rule of READS_RULES) {
     assert.ok(gitignoreOf(root).split('\n').includes(rule),
@@ -288,10 +292,14 @@ test('trace ignore: the reads rules name the files the writer actually produces'
   assert.equal(r.reads_lines[0], readsPath('.planning'));
   assert.equal(r.reads_lines[1], rotatedReadsPath('.planning'));
   assert.equal(r.reads_lines[2], `.planning/${READS_CLAIM_FILE}`);
-  // The private stamps a killed rotation strands beside the sidecar carry a pid
-  // and a random suffix, so this one and only this one is a pattern.
+  // The three paths a killed rotation strands - the stamps beside the sidecar,
+  // the fresh record that never reached its rename, and the generation it
+  // evicted - each carry a pid and a random suffix, so these three and only
+  // these three are patterns.
   assert.equal(r.reads_lines[3], `${r.reads_lines[2]}.*`);
-  assert.equal(r.reads_lines.length, 4);
+  assert.equal(r.reads_lines[4], `${readsPath('.planning')}.rotate.*`);
+  assert.equal(r.reads_lines[5], `${rotatedReadsPath('.planning')}.evict.*`);
+  assert.equal(r.reads_lines.length, 6);
 });
 
 test('trace ignore: git itself answers for the reads record and its sibling, from the repo\'s own .gitignore', () => {

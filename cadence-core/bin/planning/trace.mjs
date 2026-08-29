@@ -31,7 +31,8 @@ import { CONTRACTS, evaluateFlag } from '../lib/arg-contract.mjs';
 import { mergeLayers } from '../lib/config-merge.mjs';
 import { atomicWrite, planTaskTitles } from '../lib/planning-files.mjs';
 import {
-  READS_CLAIM_FILE, READS_FILE, ROTATED_READS_FILE, inDispatchReads, joinReads,
+  READS_CLAIM_FILE, READS_EVICT_TEMP_FILE, READS_FILE, READS_ROTATE_TEMP_FILE,
+  ROTATED_READS_FILE, inDispatchReads, joinReads,
 } from '../lib/read-trace.mjs';
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
@@ -80,7 +81,7 @@ const ROTATED_IGNORE_COMMENT = "# ...and the generation Cadence's run record"
   + ' leaves behind when it rotates at its size bound';
 
 /**
- * The reads record's four rules, in one block.
+ * The reads record's six rules, in one block.
  *
  * Nothing Cadence ships wrote an ignore rule for THIS record until now (D-11),
  * so on a scaffolded project the live file is untracked and unignored and the
@@ -89,13 +90,16 @@ const ROTATED_IGNORE_COMMENT = "# ...and the generation Cadence's run record"
  * exactly what the two rules above exist to prevent for the trace, one filename
  * over.
  *
- * FOUR and not one glob, because each names a different thing a reader has to
+ * SIX and not one glob, because each names a different thing a reader has to
  * be able to recognise: the live record, the one prior generation
  * `rotateReads` keeps, the shared claim sidecar a completed rotation leaves
  * behind INERT by design (`lib/read-trace.mjs`'s release is guarded by `held`
- * precisely so it survives), and the private stamps a rotation killed between
- * its write and its rename strands beside that sidecar. Only the last is a
- * pattern, because only the last has a name no caller can predict - it carries
+ * precisely so it survives), the private stamps a rotation killed between its
+ * write and its rename strands beside that sidecar, and the two private temps
+ * that same death strands - the fresh record awaiting its rename, and the
+ * evicted generation, which is a whole `MAX_READS_BYTES` of local diagnostics
+ * for the next `git add .planning` to sweep in. The last three are patterns,
+ * because those are the three with names no caller can predict - each carries
  * the writer's pid and a random suffix.
  *
  * Every basename is DERIVED from the spelling `lib/read-trace.mjs` exports, for
@@ -104,16 +108,21 @@ const ROTATED_IGNORE_COMMENT = "# ...and the generation Cadence's run record"
  * disagree the rule covers nothing.
  *
  * The TRACE's own `.rotate` and `.evict` temps get nothing here on purpose -
- * they are the trace's residue and this phase's CONTEXT defers them.
+ * they are the trace's residue and this phase's CONTEXT defers them. The
+ * reads-side pair of the same two spellings is covered above: it is THIS
+ * record's residue, introduced by the rotation these rules exist to cover.
  */
 const READS_IGNORE_LINES = Object.freeze([
   `.planning/${READS_FILE}`,
   `.planning/${ROTATED_READS_FILE}`,
   `.planning/${READS_CLAIM_FILE}`,
   `.planning/${READS_CLAIM_FILE}.*`,
+  `.planning/${READS_ROTATE_TEMP_FILE}.*`,
+  `.planning/${READS_EVICT_TEMP_FILE}.*`,
 ]);
 const READS_IGNORE_COMMENT = "# ...and Cadence's per-tool-call read record, the"
-  + ' generation ITS rotation leaves behind, and that rotation\'s claim files';
+  + ' generation ITS rotation leaves behind, and that rotation\'s claim files'
+  + ' and killed-mid-rotation temps';
 
 /**
  * Does a `check-ignore -v` match source TRAVEL with the repository?

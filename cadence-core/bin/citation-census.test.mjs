@@ -226,9 +226,9 @@ const DOCS_CLAIMS_CITATIONS = [
   {
     id: 'EXECUTE-22',
     doc: 'cadence-core/bin/planning/trace.mjs',
-    line: '235-237',
-    start: 235,
-    end: 237,
+    line: '244-246',
+    start: 244,
+    end: 246,
     symbol: 'TRACE_IGNORE_LINE',
   },
   {
