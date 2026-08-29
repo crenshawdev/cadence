@@ -48,12 +48,30 @@ export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
 /**
  * Every finding in `payload` that the gate will NOT fix now.
  *
- * TWO FIELDS DECIDE IT AND NOTHING ELSE: the entry's `ruling` and its RAISED
- * `severity`. An entry is in the set unless it `survived` at `blocker` or
- * `high` - that one is the thing the gate is halting over, so it is being
- * fixed, not filed. Which makes the set exactly criterion 1's three sources at
- * once: the blocking arm's below-blocker/high remainder, the adjudicated arm's
- * non-survivors, and any `recorded not fixed` disposition.
+ * THREE FIELDS DECIDE IT AND NOTHING ELSE: the entry's `ruling`, its RAISED
+ * `severity`, and the `overridden` marker. An entry is in the set unless it
+ * `survived` at `blocker` or `high` AND was not overridden - that one is the
+ * thing the gate is halting over, so it is being fixed, not filed. Which makes
+ * the set exactly criterion 1's three sources at once: the blocking arm's
+ * below-blocker/high remainder, the adjudicated arm's non-survivors, and any
+ * `recorded not fixed` disposition.
+ *
+ * THE MARKER IS THE THIRD FIELD BECAUSE AN OVERRIDE IS THE ONE SURVIVING
+ * BLOCKER NOBODY IS FIXING. `overridden` in lib/adjudication-record.mjs records
+ * that a user let a blocking FAIL stand, so an overridden blocker or high is by
+ * construction unfixed - the single case where "survived at a halting severity"
+ * stops implying "a commit is coming". Reading only the first two fields drops
+ * it from the set silently, and silence is the worst answer available here: the
+ * finding is then never fixed, never filed, never declined and never put to the
+ * user. Before the marker existed the same payload was a loud REFUSAL from
+ * `buildEntries`, which is the state this must not quietly replace.
+ *
+ * `fix_commit` IS STILL NOT ONE OF THE FIELDS (CONTEXT D-07). A voluntary fix
+ * on a medium is legal and cites its commit, and dropping an entry for carrying
+ * one belongs to bin/issue-filing.mjs's `cmdUnfixed`, the face that already
+ * adds the live lookup on top of this pure selection. An overridden entry that
+ * ALSO names a commit is in the set here and is removed there, which is that
+ * split working rather than a case this function missed.
  *
  * The severity read is the RAISED one, which is the only one an entry carries -
  * a `downgraded` ruling records that the adjudicator lowered the finding and
@@ -76,6 +94,7 @@ export function unfixedFindings(payload) {
   if (!built.ok) return { ok: false, detail: built.detail, findings: [] };
   const findings = built.entries.filter((e) => !(
     e.ruling === 'survived' && HALTING_SEVERITIES.includes(e.severity)
+    && e.overridden !== true
   ));
   return { ok: true, detail: '', findings };
 }
