@@ -22,3 +22,4 @@ recall entry.
 - 2026-08-29 github crenshawdev/cadence eb3c4bdae2b8fb82: [cadence eb3c4bdae2b8fb82] `unfixedFromEntries` classifies every survived blocker/high with `overridden: true` as a `haltingSurvivor` without considering whether that otherwise-valid entry also carrie
 - 2026-08-29 github crenshawdev/cadence 35057ee7993d82dc: [cadence 35057ee7993d82dc] The instruction to change no assertion text conflicts with migrating the named byte-exact receipt tests.
 - 2026-08-29 github crenshawdev/cadence b9d6e61dcffadc72: [cadence b9d6e61dcffadc72] The presence check inspects every raw `--event` occurrence rather than the effective event that `planning.mjs` dispatches with.
+- 2026-08-29 github crenshawdev/cadence ca31319a4c232c0c: [cadence ca31319a4c232c0c] The new agreement tests do not exercise the claimed prerequisite that a Too big task has no matching roadmap phase, nor the fact that the displayed number must remain correc
