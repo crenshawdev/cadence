@@ -64,7 +64,10 @@ and tests in two existing files with no new fixture harness.
   CONTRADICTION, never keyed on an event name. `gate_pass` means "nothing
   blocker/high survived" while an overridden entry is by construction a
   survived blocker/high with no `fix_commit`, so the contradiction is
-  already documented and needs no new coupling. Evidence:
+  already documented and needs no new coupling. [corrected by plan-1 deviation: the record
+  schema PERMITS both `overridden: true` and a `fix_commit` on one entry -
+  `cadence-core/bin/lib/adjudication-record.mjs:473` refuses only when NEITHER is present -
+  so an overridden entry is not by construction one with no fix commit] Evidence:
   `cadence-core/bin/planning/trace.mjs:870-875` states the seam stays
   event-agnostic with "never a runtime refusal keyed to an event name", and
   `:860-864` states an absent record OMITS the check;

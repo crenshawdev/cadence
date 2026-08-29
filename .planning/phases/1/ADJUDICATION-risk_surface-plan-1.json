@@ -1,0 +1,53 @@
+{
+  "phase": "1",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "8bf8971e",
+  "head": "aa61edf1",
+  "base_id": "8bf8971e7e7f3ef8b38d27c6872aa5b1638b833a",
+  "head_id": "aa61edf1afe41eaf39b2fd74c6226f84a182dcd7",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/planning/trace.mjs",
+      "line": 1309,
+      "severity": "high",
+      "claim": "A malformed or hostile adjudication record makes the cleared-halt check fail open.",
+      "failure_scenario": "After a valid record containing an overridden blocker/high is written, truncate or replace it with invalid JSON, then append a receipt with settled figures and no reason. The JSON.parse exception is caught and immediately returns success; the preceding recount is also documented to omit its check for an unreadable record. The receipt is therefore appended and can settle the range without accounting for the cleared halt.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "776c67ef",
+      "base_id": "8bf8971e7e7f3ef8b38d27c6872aa5b1638b833a",
+      "head_id": "aa61edf1afe41eaf39b2fd74c6226f84a182dcd7"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/planning/trace.mjs",
+      "line": 1305,
+      "severity": "medium",
+      "claim": "The override refusal is discharged by any non-whitespace text, without establishing that the receipt actually names why the halt was cleared.",
+      "failure_scenario": "For a record containing an overridden blocker, provide a detail file containing only `x` or `approved`. Because the guard returns success solely on `reason.trim() !== ` before even reading the record, the receipt is accepted despite carrying no rationale for letting the finding stand, contrary to the documented requirement that it name why the halt was cleared.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/planning/trace.mjs",
+        "line": 1292,
+        "note": "The behaviour the finding calls a defect is the stated contract of the guard it cites, and the code matches it. cadence-core/bin/planning/trace.mjs:1292-1296 declares that what counts as accounting for the override is the user OWN words on the receipt, that planning/risk-check.mjs already refuses one whose reason is empty, and that the shape this guard refuses is the reasonless one. The acceptance criterion this phase was written to (.planning/phases/1/CONTEXT.md AC3) says the refusal fires when the receipt asserts no override, not when its wording is judged insufficient. Judging whether a reason is semantically adequate is not something a seam can do, so the finding argues for a rule the design named and rejected rather than reporting a departure from it."
+      },
+      "base_id": "8bf8971e7e7f3ef8b38d27c6872aa5b1638b833a",
+      "head_id": "aa61edf1afe41eaf39b2fd74c6226f84a182dcd7"
+    }
+  ]
+}
