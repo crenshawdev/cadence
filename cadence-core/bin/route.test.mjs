@@ -1030,7 +1030,7 @@ test('the SCAFFOLDED template carries no triggers block, so nothing overrides th
 
   const asShipped = rawCfg(template, 'pd-template-shipped.json');
   const rs = resolve('cad-executor', asShipped);
-  assert.equal(rs.stakes, 'shipped', 'the template ships at shipped');
+  assert.equal(rs.stakes, 'shipped', 'the template writes no stakes, so the schema default stands');
   assert.equal(rs.review.phase_diff, 'off');
   assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
 
