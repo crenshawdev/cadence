@@ -1551,6 +1551,69 @@ test('GAT-04: every fenced outcome receipt names its trigger, plan and both rang
     'the five settle points no longer print one fenced receipt command each');
 });
 
+// --- RSK-07: what `survived` MEANS, stated the same way on all four surfaces -
+//
+// Watched FAILING as GH-159, on a real run rather than on a read. A blocking
+// `plan` gate PASSED, its below-blocker/high remainder was reported and moved
+// past, and the settle could not write its adjudication record at all: the
+// coordinator composed the payload by following
+// cadence-core/references/review-record.md, whose sentence read "a `survived`
+// one names the fix commit" with no severity on it, and
+// cadence-core/bin/lib/adjudication-record.mjs refused every entry that named
+// none. The two ways out were both false statements - downgrade the finding, or
+// invent a SHA - so the fire could not be settled without recording something
+// that did not happen.
+//
+// The fix widened `survived` to mean "the finding STOOD, fixed or not", gated
+// on the RAISED severity, and that meaning now lives on four surfaces: the
+// module that WRITES the record, the module that decides what the fire will not
+// fix, the reference a coordinator reads at the gate, and the reference it
+// reads when composing the payload. Any one of them drifting back to the
+// unconditional rule reproduces the defect at the step it was reported from,
+// and the drift is silent: every test in the tree still passes, because the
+// code is right and the instruction a human follows is wrong.
+//
+// Nothing else pins it. self-verify.mjs:927 records a standing decision against
+// text scans over this reference family, and check 14 does not reach
+// lib/adjudication-record.mjs at all - it takes no CONTRACTS row and no CLI
+// entry point.
+
+/** The four surfaces that state what `survived` means, and the phrase they
+ * state it with. One NAMED fact, never a document's shape: a reformat that
+ * changed no fact leaves this row green. */
+const SURVIVED_SURFACES = [
+  ['cadence-core', 'bin', 'lib', 'adjudication-record.mjs'],
+  ['cadence-core', 'bin', 'lib', 'filing-decision.mjs'],
+  ['cadence-core', 'references', 'triage-gate.md'],
+  ['cadence-core', 'references', 'review-record.md'],
+];
+const SURVIVED_MEANING = 'confirmed and not fixed';
+
+test('RSK-07: all four surfaces state the SEVERITY-GATED meaning of `survived`', () => {
+  for (const parts of SURVIVED_SURFACES) {
+    const where = parts.slice(1).join('/');
+    // Collapsed BEFORE matching, so a wrapped comment line and a single-line
+    // sentence read the same and rewrapping a paragraph is not a failure.
+    const flat = doc(...parts).replace(/\s+/g, ' ');
+
+    assert.ok(flat.toLowerCase().includes(SURVIVED_MEANING),
+      `${where} no longer says a survived finding below blocker/high was "${SURVIVED_MEANING}". `
+      + 'That is the half of `survived` the record can store and the coordinator has to know '
+      + `about, and the four surfaces agree on this phrase rather than on a sentiment - so edit `
+      + `${where} back into agreement rather than editing this row`);
+
+    // And none of them may state the UNCONDITIONAL rule again: a `survived`
+    // finding that names a fix commit with no severity qualifying it is the
+    // exact sentence GH-159 was reported against.
+    for (const m of flat.matchAll(/`?survived`?[^.]{0,160}?names? (?:the|its|a) fix commit/gi)) {
+      assert.match(m[0], /blocker/i,
+        `${where} states that a survived finding names its fix commit without saying at WHICH `
+        + `severities: "${m[0]}". Followed literally that instruction makes a coordinator `
+        + 'fabricate a SHA or downgrade the finding, which is GH-159 reproduced');
+    }
+  }
+});
+
 // --- MSR-01: the close-half turn rule is stated ONCE, in the spawn seam ------
 //
 // `--turns` is dead the moment its ONE statement stops naming it: nothing in
