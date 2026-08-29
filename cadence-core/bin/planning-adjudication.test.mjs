@@ -760,6 +760,46 @@ test('RSK-08: the guard cannot be discharged by dropping one settled figure', ()
   assert.equal(traceLines(dir).length, before, 'a refused append writes nothing');
 });
 
+test('RSK-08: an UNREADABLE record over a partial settle line is refused, never passed', () => {
+  // The other way to discharge the marker: edit the file the guard reads. An
+  // ABSENT record still omits the check - nobody wrote one - but this record
+  // exists and was CHANGED, and passing on it would clear the marker with
+  // nobody having read what it held. `recountReceipt` refuses an unparseable
+  // record only once all THREE figures are present, so the two-figure settle
+  // line below never reaches that refusal and the one asserted here is
+  // necessarily this guard's own.
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  assert.equal(plRun(repo, dir, ['risk-check', 'run', ...range]).ok, true);
+  const payload = survivedPayloadFile(repo, 'edited-record-payload.json',
+    survivedPayload('blocker', { overridden: true }));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+
+  // Truncated after the seam wrote it, which is what a record somebody edited
+  // looks like from here.
+  const file = join(dir, rec.record);
+  writeFileSync(file, readFileSync(file, 'utf8').slice(0, 40));
+  assert.throws(() => JSON.parse(readFileSync(file, 'utf8')), 'the fixture record is unreadable');
+
+  const before = traceLines(dir).length;
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded)]);
+  assert.equal(receipt.ok, false, JSON.stringify(receipt));
+  assert.equal(receipt.reason, 'bad-record');
+  assert.match(receipt.detail, new RegExp(rec.record.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    'the refusal names the FILE it could not read, which is what a caller acts on here');
+  assert.doesNotMatch(receipt.detail, /gate_pass|override|rearm|deferral|adjudication/,
+    'still a record/receipt contradiction, never keyed to an event name');
+  assert.equal(traceLines(dir).length, before, 'a refused append writes nothing');
+});
+
 test('RSK-08: a record holding NO cleared halt takes a reasonless receipt unchanged', () => {
   // The guard fires on the contradiction and on nothing else: an ordinary
   // survived medium settles with no reason exactly as it did before.

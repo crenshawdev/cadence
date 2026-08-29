@@ -1285,9 +1285,21 @@ function recountReceipt(dir, phaseRaw, fire) {
  * guard exists to stop. `rearm` and `deferral`, which carry no figures at all,
  * stay out of scope by carrying none rather than by being named.
  *
- * AN ABSENT OR UNREADABLE RECORD OMITS THE CHECK, as `recordForFire` and the
- * recount both already declare. A cross-check that cannot resolve its record
- * must never fail an append.
+ * AN ABSENT RECORD OMITS THE CHECK, as `recordForFire` and the recount both
+ * already declare - a fire predating the format, or an advisory arm that wrote
+ * none. A cross-check whose record does not exist must never fail an append.
+ *
+ * AN UNREADABLE ONE IS REFUSED, exactly as the recount refuses it, and the two
+ * cases are not one case: an absent record is a record nobody wrote, an
+ * unreadable one is a record somebody CHANGED. The seam writes it as a single
+ * atomic JSON object, so unparseable means truncated or edited - and passing
+ * there would hand back the discharge the any-figure rule above exists to
+ * close, by a second route. The recount refuses a bad record only once all
+ * three figures are present, so a partial settle line never reaches that
+ * refusal; if this one passed too, editing the file the guard reads would clear
+ * the marker with nobody having read what it held. A receipt that DOES carry a
+ * reason is answered before the file is opened at all, because it has already
+ * accounted for whatever the record holds.
  *
  * WHAT COUNTS AS ACCOUNTING FOR IT is the user's own words on the receipt -
  * `--detail-file` is the transport references/triage-gate.md states for an
@@ -1306,11 +1318,24 @@ function overrideAccounted(dir, phaseRaw, fire) {
   if (typeof fire.reason === 'string' && fire.reason.trim() !== '') return pass;
   const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round);
   if (!file) return pass;
+  const rel = relative(dir, file);
+
   let record;
-  try { record = JSON.parse(readFileSync(file, 'utf8')); } catch { return pass; }
+  try { record = JSON.parse(readFileSync(file, 'utf8')); } catch {
+    // REFUSED, never passed - see the docblock above. The caught message is
+    // deliberately NOT quoted back, the same idiom the recount states: the
+    // detail names the FILE, which is the whole of what a caller acts on, and
+    // echoing a caught message is what planning.test.mjs's redaction census
+    // counts.
+    return { ok: false, reason: 'bad-record',
+      detail: `${rel} exists but is not readable as JSON, so the rulings this receipt settles `
+        + 'cannot be read - a record that was truncated or edited may hold a halting finding '
+        + 'that STOOD with a person clearing it, and nothing was appended',
+      hint: 'restore or re-write the record for this fire and settle the range again - or, if a '
+        + 'halt was let stand, carry the reason on --detail-file' };
+  }
   const { haltingSurvivors } = unfixedFromEntries(record && record.entries);
   if (haltingSurvivors.length === 0) return pass;
-  const rel = relative(dir, file);
   const n = haltingSurvivors.length;
   return { ok: false, reason: 'unaccounted-override',
     detail: `${rel} holds ${n} finding${n === 1 ? '' : 's'} raised at blocker or high that STOOD `
