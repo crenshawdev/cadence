@@ -144,12 +144,17 @@ const MAX_TEXT_CHARS = 2000;
  * exactly as an absent one does. AC3 bounds only ABSENCE; this is the wider
  * reading, recorded as a decision rather than inherited silently.
  *
- * TWO SEPARATE RULES OVER THIS KEY, and only one of them is severity-gated.
- * The VALUE check runs wherever a `survived` ruling SETS `fix_commit`, at
- * every severity: a junk id stored on a medium fails `git show` exactly as one
- * stored on a blocker does. What the RAISED severity gates is the PRESENCE
- * requirement - only `HALTING_SEVERITIES` are asked to carry the key at all,
- * because only they are the findings a blocking gate is halting to fix, and a
+ * TWO SEPARATE RULES OVER THIS KEY, and only one of them is conditional at
+ * all. The VALUE check runs wherever the key is SET, on EVERY ruling and at
+ * every severity: a junk id fails `git show` identically whether the entry
+ * ruled `survived`, `downgraded` or `refuted`, and whether it was raised at a
+ * blocker or at a low. `RULING_KEYS` stays one flat allow-list and the key
+ * stays representable on a non-survived ruling - a fix that landed while the
+ * finding was being downgraded is a real thing to record - so this validates
+ * the key there rather than forbidding it. What the RAISED severity gates is
+ * the PRESENCE requirement, and only on a `survived` ruling: only
+ * `HALTING_SEVERITIES` are asked to carry the key at all, because only they
+ * are the findings a blocking gate is halting to fix, and a
  * confirmed-unfixed medium has no commit to name. A medium that DOES name one
  * still has it checked and still stores it: a voluntary fix is allowed to cite
  * itself.
@@ -421,6 +426,21 @@ export function buildEntries(payload) {
           + 'OVERRODE a blocking FAIL, so a truthy string would buy a clear nobody stated and '
           + 'false says the finding was not overridden, which absence already says');
       }
+      // The VALUE check, on EVERY ruling and unconditional: whenever the key is
+      // SET it has to be spendable. Hoisted out of the `survived` arm below,
+      // where it let a `downgraded` or `refuted` entry store an arbitrary
+      // unspendable string that an auditor's `git show` can do nothing with.
+      // Presence is `!== undefined` and never truthiness - '' and null are
+      // set-and-malformed, and reading them as absent would drop this refusal
+      // on the very values that fail an auditor. This does not forbid the key
+      // on a non-survived ruling; `RULING_KEYS` stays flat and it is merely
+      // validated there.
+      if (ruling.fix_commit !== undefined
+        && (typeof ruling.fix_commit !== 'string' || !FIX_COMMIT.test(ruling.fix_commit))) {
+        return no(`${rat} is ${ruling.ruling} and carries no usable fix_commit - an auditor runs `
+          + `git show on that value, so ${JSON.stringify(ruling.fix_commit)} fails them exactly `
+          + 'as an absent one does');
+      }
       if (ruling.ruling === 'refuted') {
         const ev = ruling.counter_evidence;
         if (!isPlainObject(ev)) {
@@ -442,21 +462,13 @@ export function buildEntries(payload) {
         }
       }
       if (ruling.ruling === 'survived') {
-        // The VALUE check FIRST, and unconditional: whenever the key is SET it
-        // has to be spendable, at every severity. Presence is `!== undefined`
-        // and never truthiness - '' and null are set-and-malformed, and reading
-        // them as absent would drop this refusal on the very values that fail
-        // an auditor.
-        if (ruling.fix_commit !== undefined
-          && (typeof ruling.fix_commit !== 'string' || !FIX_COMMIT.test(ruling.fix_commit))) {
-          return no(`${rat} survived and carries no usable fix_commit - an auditor runs git show `
-            + `on that value, so ${JSON.stringify(ruling.fix_commit)} fails them exactly as an `
-            + 'absent one does');
-        }
-        // The PRESENCE requirement SECOND, gated on the RAISED severity, read
-        // off the FINDING and never off the ruling: a ruling carries no
-        // severity at all, and a `downgraded` one deliberately does not restate
-        // a new level, so the raised severity is the only one there is to read.
+        // The PRESENCE requirement, gated on the RAISED severity, read off the
+        // FINDING and never off the ruling: a ruling carries no severity at
+        // all, and a `downgraded` one deliberately does not restate a new
+        // level, so the raised severity is the only one there is to read. The
+        // VALUE check that used to sit above this one is HOISTED out of this
+        // arm - see the `fix_commit` guard before the `refuted` block - because
+        // it was never a property of the ruling, only of the key.
         if (HALTING_SEVERITIES.includes(f.severity)
           && ruling.fix_commit === undefined && ruling.overridden !== OVERRIDE_MARKER) {
           return no(`${rat} survived and carries neither a usable fix_commit nor overridden: `
@@ -492,7 +504,12 @@ export function buildEntries(payload) {
         ruling: ruling.ruling,
         convergent: false,
         ...(ruling.counter_evidence ? { counter_evidence: ruling.counter_evidence } : {}),
-        ...(ruling.fix_commit ? { fix_commit: ruling.fix_commit } : {}),
+        // `!== undefined`, never truthiness: this module's rule is that PRESENCE
+        // MEANS THE KEY IS SET, and the truthiness read here was the silent drop
+        // site - `fix_commit: ''` and `fix_commit: null` were stored as ABSENT
+        // under an `ok:true`. After the hoist above the two forms are
+        // behaviour-identical, because no falsy value reaches this line.
+        ...(ruling.fix_commit !== undefined ? { fix_commit: ruling.fix_commit } : {}),
         // Conditionally spread like the two above, so an ordinary entry gains
         // no key. An entry carrying the marker ALONE has no commit id on it,
         // and that is correct rather than missing: the override settle point in

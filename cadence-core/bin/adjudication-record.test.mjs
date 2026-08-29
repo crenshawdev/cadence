@@ -382,6 +382,70 @@ test('AC3: an abbreviated or full fix commit is accepted', () => {
   }
 });
 
+// --- RSK-08: the VALUE check runs wherever the key is SET --------------------
+//
+// Issue #165. The check sat inside the `ruling.ruling === 'survived'` arm while
+// the module's own `FIX_COMMIT` comment said it ran "wherever the key is SET",
+// so a `downgraded` or `refuted` entry stored any string at all. Measured on
+// the pre-hoist tree: `{ruling:'downgraded', fix_commit:'not-a-sha'}` returned
+// `ok:true` and STORED the garbage, and `''` and `null` returned `ok:true` with
+// the key silently absent from the entry.
+
+test('RSK-08: an unusable fix commit on a DOWNGRADED or REFUTED ruling is REFUSED', () => {
+  // '' and null are the two the pre-hoist tree dropped rather than refused, and
+  // they are exactly the members a truthiness read lets through.
+  for (const ruled of ['downgraded', 'refuted']) {
+    for (const bad of ['not-a-sha', '', null]) {
+      const findings = [finding()];
+      const res = buildEntries(payload(voice('openai', 'gpt-5', findings, [{
+        ruling: ruled,
+        fix_commit: bad,
+        // Supplied so a refuted row is refused for its fix_commit rather than
+        // for the counter-evidence it would otherwise be missing.
+        ...(ruled === 'refuted'
+          ? { counter_evidence: { file: 'cadence-core/bin/planning.mjs', line: 7 } }
+          : {}),
+      }])));
+      assert.equal(res.ok, false,
+        `fix_commit ${JSON.stringify(bad)} was accepted on a ${ruled} ruling`);
+      assert.match(res.detail, /no usable fix_commit/);
+      assert.match(res.detail, new RegExp(ruled),
+        'the refusal names the RULING as well as the field, so a coordinator reading it knows '
+        + 'which entry of the payload to fix');
+      assert.deepEqual(res.entries, [], 'a refusal stores nothing');
+    }
+  }
+});
+
+test('RSK-08: a WELL-FORMED fix commit on a downgraded or refuted ruling is still accepted', () => {
+  // D-01's rejected stronger arm, pinned as rejected: the hoist VALIDATES the
+  // key on a non-survived ruling, it does not forbid it. `RULING_KEYS` stays
+  // one flat allow-list.
+  for (const ruled of ['downgraded', 'refuted']) {
+    const findings = [finding()];
+    const res = buildEntries(payload(voice('openai', 'gpt-5', findings, [{
+      ruling: ruled,
+      fix_commit: '1b34563',
+      ...(ruled === 'refuted'
+        ? { counter_evidence: { file: 'cadence-core/bin/planning.mjs', line: 7 } }
+        : {}),
+    }])));
+    assert.equal(res.ok, true, res.detail);
+    assert.equal(res.entries[0].fix_commit, '1b34563');
+    assert.equal(res.entries[0].ruling, ruled);
+  }
+});
+
+test('RSK-08: the SURVIVED arm is refused by that one same check, naming its ruling', () => {
+  const findings = [finding()];
+  const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'survived', fix_commit: 'not-a-sha' }])));
+  assert.equal(res.ok, false);
+  assert.match(res.detail, /no usable fix_commit/);
+  assert.match(res.detail, /survived/,
+    'one check covers all three rulings, so the survived case names its ruling too');
+});
+
 // --- the derived counts ------------------------------------------------------
 
 test('the counts are DERIVED by counting rulings over a mixed-ruling fixture', () => {
