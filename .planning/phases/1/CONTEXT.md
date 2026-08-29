@@ -168,7 +168,7 @@ and tests in two existing files with no new fixture harness.
   invisible to that group and to its CI matrix cell.
 - D-15 (no new flag): the guard is unconditional on the paths that already
   exist, so this phase adds no CLI flag, no `CONTRACTS` row at
-  `cadence-core/bin/lib/arg-contract.mjs:752`/`:835`, and no self-verify
+  `cadence-core/bin/lib/arg-contract.mjs:823`/`:906`, and no self-verify
   registration. An opt-in flag would make the guard something a caller can
   decline, which is the shape OQ-1 already rejects for the receipt itself.
 

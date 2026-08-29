@@ -1571,9 +1571,17 @@ test('seam: --trigger stores the review trigger an event belongs to, as a string
 });
 
 test('seam: --trigger is stored VERBATIM, trimmed, with no vocabulary of its own', () => {
-  // Event-agnostic like every other flag on this seam: no coupling to an event
-  // NAME and no refusal keyed to one. A trigger the seam does not recognise is
-  // the caller's business, exactly as `--reviewer` treats a backend name.
+  // Event-agnostic like every other flag IN THIS SEAM: planning/trace.mjs
+  // couples no flag to an event NAME and mints no refusal keyed to one. A
+  // trigger the seam does not recognise is the caller's business, exactly as
+  // `--reviewer` treats a backend name.
+  //
+  // The sentence is about the SEAM and not about the CLI in front of it. The
+  // argument door in planning.mjs does know three event names - it refuses a
+  // settle receipt carrying none of the figures it settles on, off
+  // lib/arg-contract.mjs's `PRESENCE_RULES` - which is why the call below
+  // carries all three. The two layers are the point: the seam stays
+  // event-agnostic, the declaration at the door holds the event knowledge.
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
     '--event', 'gate_pass', '--survivors', '0', '--downgraded', '0', '--refuted', '0',

@@ -35,6 +35,19 @@
 // choose to read it (route.mjs's `--role`, review-provider.mjs's handlers),
 // never a rule the shared door enforces.
 //
+// ONE PRESENCE QUESTION IS DECLARABLE, and it is a different question from the
+// one that carve-out answers: not "is this flag missing" but "does this VALUE
+// oblige one of these flags". `PRESENCE_RULES` states those and
+// `evaluatePresence` answers them. The carve-out above is untouched, because
+// the sentence an UNCONDITIONALLY required flag would need is the generic one
+// it rejects, while a conditional rule's diagnostic IS the flags it names.
+// They are a SECOND declared structure beside `CONTRACTS` and never a fifth
+// field inside a row: `flagNames` is `Object.keys(row)`, self-verify check 2
+// unions those keys as the FLAG names prose may spell, planning/trace.mjs's
+// `TRACE_GRAMMAR` spreads both trace rows as flag specs, and
+// arg-contract.test.mjs asserts every row key holds exactly `bare`, `required`,
+// `type` and `value` - all four would read a non-flag key as a flag name.
+//
 // TWO HALVES, both in this file (D-06/D-10). The declarations are DATA - per
 // script, per subcommand, per flag - and the evaluator is a pure CLASSIFIER
 // beside them. Data alone would be a second table drifting from the code that
@@ -408,6 +421,64 @@ export function evaluateRow(argv, table, key) {
     }
   }
   return { ok: true, detail: '', values, warned };
+}
+
+/**
+ * Answer the ONE presence question a `CONTRACTS` row cannot state: does a
+ * flag's VALUE oblige at least one of a set of OTHER flags to be present.
+ *
+ * `evaluateRow` above is a value door and deliberately not a presence door,
+ * and this does not reverse that (see the header). The carve-out is about an
+ * unconditionally required flag, whose diagnostic a declaration cannot write;
+ * a conditional rule's diagnostic is exactly the flags it names. The rule
+ * `PRESENCE_RULES` declares today is the settle receipt: a `trace append`
+ * whose `--event` settles a review fire has to carry at least one of the
+ * figures it settles ON, or the receipt clears a blocking range while
+ * asserting nothing about it (RSK-08).
+ *
+ * EVERY OCCURRENCE OF THE CONDITIONING FLAG IS JUDGED, for the reason
+ * `evaluateFlag` states about its own axis and with a sharper edge here:
+ * planning.mjs's `parseArgs` keeps the LAST occurrence while an `indexOf`
+ * reader answers about the FIRST, so `--event rearm --event gate_pass` would
+ * otherwise walk a settle event past a door that had already made up its mind
+ * on `rearm`. The first conditioned occurrence wins wherever it sits.
+ *
+ * THE VALUE IS COMPARED AS GIVEN, untrimmed. `trace append` stores `--event`
+ * verbatim and planning/risk-check.mjs joins its receipt vocabulary by exact
+ * string, so a padded spelling settles nothing downstream and is not this
+ * rule's business to catch.
+ *
+ * SATISFACTION IS ANY ONE of the required flags, never all of them. This door
+ * compares nothing and recounts nothing; the seam's own `recountReceipt` is
+ * what needs a complete triple, because a partial set cannot be compared with
+ * a recount that answers all three. Demanding the full set here would refuse a
+ * shape the seam accepts and states its own separate refusal for.
+ *
+ * IT CARRIES NO WORDING AND NO REASON CODE (D-07), exactly as `evaluateRow`
+ * does not. It names the conditioning flag, the value that armed the rule and
+ * the flags one of which was owed; the caller composes the sentence.
+ *
+ * @param {string[]} argv the whole argument list, subcommand words included
+ * @param {Record<string, {when: string, is: string[], requires: string[]}>|undefined} table
+ *   one script's presence rules
+ * @param {string} key the subcommand key `subcommandKey` resolved
+ * @returns {{ok: boolean, flag: string, value: string, requires: string[]}}
+ *   `ok:false` names the conditioning `flag`, the `value` it carried, and every
+ *   flag in `requires`, ONE of which the caller has to add. On the accepted
+ *   path all three are empty, so no caller has to test for undefined.
+ */
+export function evaluatePresence(argv, table, key) {
+  const pass = { ok: true, flag: '', value: '', requires: [] };
+  const rule = (table || {})[key];
+  if (!rule) return pass;
+  /** @type {string|undefined} */
+  let value;
+  for (let i = 0; i < argv.length && value === undefined; i++) {
+    if (argv[i] === rule.when && rule.is.includes(argv[i + 1])) value = argv[i + 1];
+  }
+  if (value === undefined) return pass;
+  if (rule.requires.some((flag) => argv.includes(flag))) return pass;
+  return { ok: false, flag: rule.when, value, requires: [...rule.requires] };
 }
 
 // --- the contract table: script -> subcommand -> flag -> grammar ------------
@@ -1253,6 +1324,43 @@ export const CONTRACTS = {
     },
     '': {
       '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+  },
+};
+
+// --- the conditional presence rules: script -> subcommand -> one rule --------
+//
+// The SECOND declared structure the header names, read by `evaluatePresence`
+// and by nothing else. `when` is the conditioning flag, `is` the values that
+// arm the rule, and `requires` the flags ONE of which must then be present.
+// Every flag a rule names is declared on that same subcommand's `CONTRACTS`
+// row, which arg-contract.test.mjs walks: a rule naming a flag no row declares
+// is a requirement a caller cannot satisfy without tripping self-verify check
+// 2, and a misspelled one is a rule that silently never fires.
+//
+// THE ONE RULE TODAY, and what it closes. A review fire is settled by an
+// `adjudication`, `gate_pass` or `override` receipt, and the figures it settles
+// on are what planning/trace.mjs recounts against the committed
+// `ADJUDICATION-*.json`. Carrying NONE of them skipped that recount before it
+// opened anything: measured on the shipped tree, a `gate_pass` naming only
+// `--trigger`, `--plan`, `--base` and `--sha`, over a record holding a survived
+// blocker marked `overridden: true`, was appended, and `risk-check status` then
+// reported the range `recorded` - a blocking range cleared by a receipt that
+// asserted nothing (RSK-08, UAT item 3). `rearm` and `deferral` stay unbound on
+// purpose: neither settles anything, and references/triage-gate.md's fenced
+// commands for both carry no figures by contract, so binding them would refuse
+// a documented line.
+//
+// IT LIVES AT THE ARGUMENT DOOR and not in the seam. planning/trace.mjs states
+// it carries "never a runtime refusal keyed to an event name" and that property
+// is unchanged; planning/risk-check.mjs's `if (e.event === 'override')` arm is
+// the shipped precedent for event-name knowledge living outside that seam.
+export const PRESENCE_RULES = {
+  'planning.mjs': {
+    'trace append': {
+      when: '--event',
+      is: ['adjudication', 'gate_pass', 'override'],
+      requires: ['--survivors', '--downgraded', '--refuted'],
     },
   },
 };
