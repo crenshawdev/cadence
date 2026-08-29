@@ -70,7 +70,38 @@
 export const RAISED_SEVERITIES = Object.freeze(['blocker', 'high', 'medium', 'low']);
 
 /**
+ * The two severities a BLOCKING gate halts over - the only ones asked to name a
+ * fix commit when they survive.
+ *
+ * Carried as this module's own frozen list rather than imported from
+ * lib/filing-decision.mjs, where the same pair drives `unfixedFindings`, and
+ * PINNED against that file by adjudication-record.test.mjs. The import cannot
+ * be taken in this direction at all: filing-decision.mjs imports
+ * `buildEntries` from HERE, so reading its list back would close a cycle. So
+ * this is the same hand-maintained-then-compared shape `RAISED_SEVERITIES`
+ * above already carries against review-provider.mjs, for the same reason - the
+ * test is what stops the two drifting.
+ */
+export const HALTING_SEVERITIES = Object.freeze(['blocker', 'high']);
+
+/**
  * The three rulings, and deliberately no fourth.
+ *
+ * WHAT `survived` MEANS: the finding STOOD - fixed or not. A `survived`
+ * finding RAISED at blocker or high is one a blocking gate is halting to fix,
+ * so its entry names the fix commit an auditor spends. A `survived` finding
+ * raised BELOW them is one that was confirmed and NOT fixed - reported, moved
+ * past, and carrying no commit id because none exists. Both are the same
+ * ruling read against the raised severity, which is why there is no fourth
+ * value for the unfixed remainder.
+ *
+ * That remainder is what a blocking gate leaves behind on nearly every fire,
+ * and before it was representable here the only way to store it was to
+ * DOWNGRADE the finding - which records "the adjudicator lowered it" over "it
+ * stood and nobody fixed it". Converting a reported-and-moved-past finding into
+ * a passed one is the exact substitution this record exists to prevent, so the
+ * record had to be able to hold the state rather than the coordinator having to
+ * misreport it.
  *
  * There is no `unadjudicated` value: a finding with no ruling is a REFUSAL, not
  * a ruling of its own, because the record's premise is one entry per finding
@@ -112,6 +143,21 @@ const MAX_TEXT_CHARS = 2000;
  * refused, because a string that cannot be a commit id fails the auditor
  * exactly as an absent one does. AC3 bounds only ABSENCE; this is the wider
  * reading, recorded as a decision rather than inherited silently.
+ *
+ * TWO SEPARATE RULES OVER THIS KEY, and only one of them is severity-gated.
+ * The VALUE check runs wherever a `survived` ruling SETS `fix_commit`, at
+ * every severity: a junk id stored on a medium fails `git show` exactly as one
+ * stored on a blocker does. What the RAISED severity gates is the PRESENCE
+ * requirement - only `HALTING_SEVERITIES` are asked to carry the key at all,
+ * because only they are the findings a blocking gate is halting to fix, and a
+ * confirmed-unfixed medium has no commit to name. A medium that DOES name one
+ * still has it checked and still stores it: a voluntary fix is allowed to cite
+ * itself.
+ *
+ * PRESENCE MEANS THE KEY IS SET, never that its value is truthy. `fix_commit:
+ * ''` and `fix_commit: null` are present and malformed, and reading them as
+ * absent would drop the refusal on exactly the values an auditor cannot run
+ * `git show` on.
  */
 const FIX_COMMIT = /^[0-9a-fA-F]{7,40}$/;
 
@@ -364,10 +410,27 @@ export function buildEntries(payload) {
         }
       }
       if (ruling.ruling === 'survived') {
-        if (typeof ruling.fix_commit !== 'string' || !FIX_COMMIT.test(ruling.fix_commit)) {
+        // The VALUE check FIRST, and unconditional: whenever the key is SET it
+        // has to be spendable, at every severity. Presence is `!== undefined`
+        // and never truthiness - '' and null are set-and-malformed, and reading
+        // them as absent would drop this refusal on the very values that fail
+        // an auditor.
+        if (ruling.fix_commit !== undefined
+          && (typeof ruling.fix_commit !== 'string' || !FIX_COMMIT.test(ruling.fix_commit))) {
           return no(`${rat} survived and carries no usable fix_commit - an auditor runs git show `
             + `on that value, so ${JSON.stringify(ruling.fix_commit)} fails them exactly as an `
             + 'absent one does');
+        }
+        // The PRESENCE requirement SECOND, gated on the RAISED severity, read
+        // off the FINDING and never off the ruling: a ruling carries no
+        // severity at all, and a `downgraded` one deliberately does not restate
+        // a new level, so the raised severity is the only one there is to read.
+        if (HALTING_SEVERITIES.includes(f.severity) && ruling.fix_commit === undefined) {
+          return no(`${rat} survived and carries no usable fix_commit - a finding raised at `
+            + `${HALTING_SEVERITIES.join(' or ')} that STOOD is one a blocking gate is halting `
+            + 'to fix, so its entry names the commit. Only those two are asked: a survived '
+            + 'finding raised below them was confirmed and NOT fixed, and carries no commit id '
+            + 'because none exists');
         }
       }
     }
