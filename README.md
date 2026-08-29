@@ -2,7 +2,19 @@
 
 [![test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
 
-Cadence is an engineering methodology for Claude Code, for code that has to keep working after you ship it. It assumes you are the engineer of record. The model plans, builds and reviews, and you approve the plan, triage what the reviewers find, and authorize every push. Nothing is certified by the thing that wrote it. It costs you attention at each of those points: if you want to describe a feature and come back to a merged PR, this is the wrong tool.
+**Appearance is cheap. Verification is the work.**
+
+Cadence is for developers using Claude Code on software they will still own after the session ends.
+
+Claude can write a convincing plan, produce working code, and tell you the job is finished. The harder part is keeping the decisions that led there, stopping a long session from becoming the project record, and establishing that what you got is what you asked for.
+
+Cadence keeps the project in the repository. Decisions, plans, progress, review findings and verification live under `.planning/`, where a new session reads them off disk. A planner, an executor, reviewers and a verifier each work in fresh context, and nothing is certified by the thing that wrote it. You are the engineer of record: you approve the plan, triage what the reviewers find, and authorize every push.
+
+![Running /cadence:cad-progress in the Verbatim repo. Cadence reports phase 1 of 4 executed with its SUMMARY written and UAT not passed, lists the three unplanned phases after it, confirms the state cursor agrees with disk, and offers to run /cad-verify 1.](./docs/screenshots/cad-progress-resume.png)
+
+*Cadence rebuilds Verbatim's state from the repo, finds phase 1 executed and awaiting UAT, and offers `/cad-verify 1` as the next step.*
+
+Cadence is deliberately not an autopilot. If you want to describe a feature and come back to a merged PR, this is the wrong tool.
 
 The methodology ships as controls. Each step of the loop has named checks around it, each check records that it ran, and a check that did not run is not a check that passed. The record is a file in your repo, not a claim in a chat window.
 
@@ -51,6 +63,16 @@ Eight of them, and every one hands its decision to you rather than deciding for 
 | Traceability audit | before a release ships | `/cad-audit` traces every requirement to a phase, a plan and a verification, both directions |
 | Coverage audit | on a completed phase | `/cad-coverage` reads the assertions rather than counting test files |
 | The record | every dispatch, always | `.planning/trace.jsonl` prices each subagent, `/cad-report` reads it back as receipts |
+
+Two of those rows, at work:
+
+![The deep verifier finishing a goal-backward pass over phase 1's eight UAT items. It reports 6 of 8 passed and 2 failed, and for the failed item it separates a criterion that no developer-run test asserts from a debug-profile cost that belongs to an earlier release, then asks how the criterion should be resolved.](./docs/screenshots/cad-verify.png)
+
+*The goal-backward pass scores 6 of 8, and both failures are specific: an acceptance criterion no developer-run test actually asserts, and a performance cost that belongs to an earlier version rather than this phase. It asks how to resolve the failure rather than deciding.*
+
+![Running /cadence:cad-audit. The audit returns PASS over the one active requirement in REQUIREMENTS.md, showing INJ-07 traced to phase 1 and phases/1/PLAN-1.md with its verification box checked, counts of 1 traced and 0 broken, criteria coverage of 6 of 6, and no dropped, orphan or version-drift entries.](./docs/screenshots/cad-audit.png)
+
+*With verification resolved, the audit traces Verbatim's active requirement to its phase, its plan and a checked verification box, and reports the criteria coverage behind it.*
 
 `/cad-report` renders one phase's record as a narrative, and `/cad-suggest` reads the same record back the other way: it turns what the dispatches actually cost and what the gates actually caught into retune suggestions, each carrying its config key, the value in force, a direction and a target, and it offers to route the ones you accept to `/cad-config`. The controls generate the evidence, and that is what the evidence is for.
 
