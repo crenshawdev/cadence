@@ -1,0 +1,57 @@
+{
+  "phase": "1",
+  "trigger": "risk_surface",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "5b2b54e8",
+  "head": "3d470fea",
+  "base_id": "5b2b54e84034c03b3b4ad1200a9f634e9842da64",
+  "head_id": "3d470fea339408807ed1574afdea088c2c810476",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning/core.mjs",
+      "line": 372,
+      "severity": "medium",
+      "claim": "Any parseable record that satisfies `isReadsRotationMarker` is treated as authoritative rotation metadata and removed from the read records.",
+      "failure_scenario": "A tool-call record is untrusted JSON and can forge the rotation shape (for example, `{ \"event\": \"reads_rotation\", \"file\": \"reads.1.jsonl\", \"ts\": \"...\", \"agent\": \"worker\", ... }`). This code drops that real call from all summaries/join results and emits `reads.rotated`, falsely claiming the record was cut. Conversely, a forged later marker can overwrite the metadata from a genuine marker because `rotated` is assigned for every matching line.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/read-trace.mjs",
+        "line": 281,
+        "note": "recordFromHook builds every reads record from a fixed key set - ts, tool, agent, agent_id, tool_use_id, target, offset, limit, mode, files, bytes - copies no attacker-controlled key through, and always sets tool from RECORDED_TOOLS. isReadsRotationMarker at line 133 requires !(\"tool\" in record), so no record the hook can produce satisfies the predicate and no tool call can forge a marker. The finding's own example also carries event: \"reads_rotation\", which is not the READS_ROTATION constant (\"record_rotated\") the predicate compares against. The overwrite half fails on the same construction: rotateReads writes exactly one marker into a file that is fresh by rename, so a live record holds at most one marker line."
+      },
+      "base_id": "5b2b54e84034c03b3b4ad1200a9f634e9842da64",
+      "head_id": "3d470fea339408807ed1574afdea088c2c810476"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning/core.mjs",
+      "line": 371,
+      "severity": "medium",
+      "claim": "Malformed JSON is skipped indiscriminately, including a truncated rotation marker that is the only evidence that the live reads record was cut.",
+      "failure_scenario": "If rotation has moved the old record aside and the process is killed while writing the first marker line of the new `reads.jsonl`, the truncated marker fails `JSON.parse` and is silently skipped. `readReadsRecords` then returns no `rotated` field at line 378, so both `reads` and `trace suggest` report the run record as not cut even though the rotated sibling was already created.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/read-trace.mjs",
+        "line": 675,
+        "note": "The marker is never written into the live path incrementally. rotateReads writes the whole marker line to a private temp with writeFileSync(temp, ..., {flag: \"wx\"}) and then renameSync(temp, file), so the live reads.jsonl is swapped atomically and a process killed mid-write leaves the temp behind, cleaned by the finally arm, never a truncated marker at the live path. The scenario requires a partial first line to become visible at the live path, which this construction does not permit."
+      },
+      "base_id": "5b2b54e84034c03b3b4ad1200a9f634e9842da64",
+      "head_id": "3d470fea339408807ed1574afdea088c2c810476"
+    }
+  ]
+}

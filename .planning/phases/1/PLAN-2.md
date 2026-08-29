@@ -14,6 +14,8 @@ files:
   - cadence-core/bin/trace.test.mjs
   - cadence-core/bin/planning-lease-check.test.mjs
   - cadence-core/bin/phase-spelling.test.mjs
+  - cadence-core/bin/citation-census.test.mjs
+  - .planning/DOCS-CLAIMS.md
 ---
 
 # Phase 1: reads.jsonl rotates instead of dying at the cap - Plan 2
