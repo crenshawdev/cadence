@@ -53,7 +53,7 @@ halts any run whose blocking gate returns a medium with nothing above it.
 ## Phases
 
 - [x] **Phase 1: reads.jsonl rotates instead of dying at the cap**
-- [ ] **Phase 2: a confirmed finding can be recorded unfixed**
+- [x] **Phase 2: a confirmed finding can be recorded unfixed**
 
 ## Phase Details
 
