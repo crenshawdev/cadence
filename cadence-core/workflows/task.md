@@ -31,9 +31,15 @@ Classify $TASK before touching anything:
 - **Planned**: `--plan` was passed, OR the task is multi-step enough that you
   would want a written breakdown (4+ edits, ordering matters, partial
   completion would leave the repo broken).
-- **Too big**: feature-sized, belongs on the roadmap. Say so and stop:
-  "This is phase-sized. Route it through /cad-context -> /cad-plan, or
-  /cad-capture it for later."
+- **Too big**: feature-sized, belongs on the roadmap, and no phase carries it
+  yet - so the first stop is the one command that creates one. Resolve the
+  number it will land on: run
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and take
+  `total + 1` as `{N}`. Then say so and stop, substituting `$TASK` and the
+  resolved `{N}` rather than printing either literally:
+  "This is phase-sized. Run /cad-phase add $TASK to put it on the roadmap as
+  phase {N}, then /cad-context {N} and /cad-plan {N}. Or /cad-capture it for
+  later."
 
 When unsure between inline and planned, pick planned.
 </step>
