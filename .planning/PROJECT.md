@@ -204,7 +204,17 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open.
+**`v3.7.8 - what Cadence already knows`, opened 2026-08-29.** Five phases, five
+ids - `RSK-08`, `RNG-04`, `PHS-02`, `LND-02`, `TRC-11` - off the scan taken
+immediately after the v3.7.7 tag plus three findings standing against the v3.7.7
+adjudication work. The thread is one shape: Cadence holds the answer on disk and
+the code beside it declines to read it. The template pins `stakes` before the
+resolver that distinguishes unset is ever asked; land reads raw review artifacts
+rather than their rulings; `/cad-task` recognises a phase-sized task and routes
+to a command that refuses one. `GH-167`, the outbound review payload's missing
+secret fence, is a spike this cycle rather than a phase.
+
+**Previously:**
 
 **`v3.7.7 - the record says what happened`, opened 2026-08-28, closed
 2026-08-29.** Two phases, 36 commits off `main` (11 feat and 4 fix against 15
