@@ -109,6 +109,16 @@ empty - a blank override is indistinguishable from a manufactured clear:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] --detail-file <path>
 ```
 
+The settle receipt is where that reason becomes CHECKABLE. When the record this
+fire wrote holds a `survived` `blocker` or `high` marked `overridden: true` - a
+halting finding that STOOD with no fix commit, cleared by a person rather than
+by a fix - the seam reads that record beside the receipt and REFUSES a receipt
+carrying no reason at all, appending nothing. The accepted shape is the fenced
+one above: the user's own words on `--detail-file <path>`, alongside the three
+settled figures. What is refused is the record and the receipt CONTRADICTING
+each other rather than any particular event name, so omitting one of the three
+figures does not discharge it either.
+
 **The blocking re-arm is capped at ONE round.** A fix made to clear a blocking
 FAIL is itself reviewable work, so the trigger re-arms on it; unbounded, that is
 a loop with no terminal state. It is bounded in the vocabulary the spine's other
