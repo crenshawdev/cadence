@@ -3163,3 +3163,100 @@ test('EXP-05: the executor and the verifier state one rule in one vocabulary', (
       + 'contracts state the same rule and this is the phrase they share');
   }
 });
+
+// --- PHS-02: the too-big arm opens a door instead of naming a locked one -----
+//
+// The defect: `/cad-task`'s "Too big" arm told the user to "Route it through
+// /cad-context -> /cad-plan", and `/cad-context` on a phase the roadmap does
+// not carry STOPS. So the one arm that fires when Cadence has correctly
+// recognised phase-sized work handed the user a command guaranteed to refuse.
+// `/cad-phase add` is the only command in the plugin that appends a phase to an
+// existing roadmap, so it is the first stop and everything else follows it.
+//
+// Asserted on ORDER and on the NAMED site, never on a tree-wide `/cad-context`
+// count: the corrected arm legitimately names `/cad-context` as its SECOND
+// stop, so a check forbidding the string outright would go red on exactly the
+// prose this phase shipped. No line numbers either - both files are edited
+// often enough that a pinned number would rot before it caught anything.
+
+const TASK_WF = ['cadence-core', 'workflows', 'task.md'];
+
+/** The `- **Too big**` bullet of task.md's `scope` step, by its own anchors. */
+const tooBigArm = (text) => {
+  const step = stepBody(text, 'scope', 'task.md');
+  const at = step.indexOf('- **Too big**');
+  assert.ok(at > -1, "task.md's scope step carries no `- **Too big**` bullet");
+  const end = step.indexOf('\n\n', at);
+  return step.slice(at, end === -1 ? step.length : end);
+};
+
+test('PHS-02 (1): the too-big arm names /cad-phase add before the commands that need a phase', () => {
+  const arm = tooBigArm(doc(...TASK_WF));
+  const regressed = "PHS-02: task.md's too-big arm no longer routes a phase-sized task to "
+    + '/cad-phase add FIRST - the user is sent at /cad-context or /cad-plan for a phase the '
+    + 'roadmap does not carry yet, which is the refusal this arm exists to avoid';
+  const add = arm.indexOf('/cad-phase add');
+  const context = arm.indexOf('/cad-context');
+  const plan = arm.indexOf('/cad-plan');
+  assert.ok(add > -1, regressed);
+  assert.ok(context > -1, regressed);
+  assert.ok(plan > -1, regressed);
+  assert.ok(add < context && context < plan, regressed);
+});
+
+test('PHS-02 (2): the arm resolves the phase number rather than printing a placeholder', () => {
+  const arm = tooBigArm(doc(...TASK_WF));
+  const regressed = "PHS-02: task.md's too-big arm no longer resolves the phase number from "
+    + '`planning.mjs status` and `total + 1` - it hands the user a number to substitute, '
+    + 'which is the defect this cycle exists to close';
+  assert.match(arm, /planning\.mjs"?\s+status/, regressed);
+  assert.match(arm, /total \+ 1/, regressed);
+  // The other half: the rule the prose states is one the resolver can actually
+  // answer. A prose rule reading a field the envelope does not carry would
+  // print nothing at all, and no amount of grepping the prose would show it.
+  const out = JSON.parse(execFileSync('node', [join(HERE, 'planning.mjs'), 'status'],
+    { cwd: REPO, encoding: 'utf8' }));
+  assert.equal(out.ok, true, 'planning.mjs status does not answer ok:true on this repo');
+  assert.ok(Number.isInteger(out.total),
+    'planning.mjs status returns no integer `total`, so the arm\'s `total + 1` rule '
+    + 'resolves to nothing and the printed sequence carries no phase number');
+});
+
+test('PHS-02 (3): the first stop carries the task\'s own description, and /cad-phase advertises it', () => {
+  const regressed = 'PHS-02: the printed sequence no longer hands the task description to '
+    + '/cad-phase add, or /cad-phase stopped advertising that `add` takes one - either way '
+    + 'the user retypes what Cadence already holds';
+  assert.match(tooBigArm(doc(...TASK_WF)), /\/cad-phase add \$TASK/, regressed);
+  const hint = doc('skills', 'cad-phase', 'SKILL.md').match(/^argument-hint: "(.*)"$/m);
+  assert.ok(hint, 'skills/cad-phase/SKILL.md carries no argument-hint field');
+  const addAlternative = hint[1].split('|')[0];
+  assert.match(addAlternative, /description/i, regressed);
+});
+
+test('PHS-02 (4): no /cad-task surface sends phase-sized work to /cad-context first', () => {
+  const regressed = 'PHS-02: a /cad-task surface routes phase-sized work at /cad-context '
+    + 'again - the mid-task guardrail or the SKILL objective that rides every session prompt, '
+    + 'either of which advertises the locked door while the arm names the open one';
+  assert.doesNotMatch(doc('skills', 'cad-task', 'SKILL.md'), /\/cad-context/, regressed);
+  const task = doc(...TASK_WF);
+  const open = task.lastIndexOf('<guardrails>');
+  const close = task.lastIndexOf('</guardrails>');
+  assert.ok(open > -1 && close > open, 'task.md has no <guardrails> block');
+  const guardrails = task.slice(open, close);
+  assert.match(guardrails, /\/cad-phase add/, regressed);
+  // Absence as well as presence: a guardrail reading "re-route to /cad-context,
+  // then /cad-phase add" would satisfy the match above while the mid-task path
+  // still walks into the refusal.
+  assert.doesNotMatch(guardrails, /\/cad-context/, regressed);
+});
+
+test('PHS-02 (5): the /cad-context off-roadmap stop names the command that creates the phase', () => {
+  const context = doc('cadence-core', 'workflows', 'context.md');
+  const at = context.indexOf('not in the roadmap');
+  assert.ok(at > -1, "context.md's resolve_phase step no longer stops on an off-roadmap phase");
+  const end = context.indexOf('\n\n', at);
+  const stop = context.slice(at, end === -1 ? context.length : end);
+  assert.match(stop, /\/cad-phase add/,
+    "PHS-02: /cad-context's off-roadmap stop names no next action again, so a user arriving "
+    + 'by a stale cursor or a typed number meets a refusal with no exit');
+});
