@@ -1,0 +1,67 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "cad-plan-0e4f65b",
+  "round": 1,
+  "base": "29baa394",
+  "head": "0e4f65bdca14f3599ba9ce8e5ade5131f768ebfe",
+  "base_id": "29baa394046f1c95d54b47f32f153af0700103a8",
+  "head_id": "0e4f65bdca14f3599ba9ce8e5ade5131f768ebfe",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-2.md",
+      "line": 100,
+      "severity": "high",
+      "claim": "PLAN-2 never verifies the migrated tree against the new conditional contract, so its eleven-test failure census cannot prove that all figureless settle invocations were migrated.",
+      "failure_scenario": "The prototype run identifies failing test arms, but Node tests stop at the first failed assertion or rejected append. A named arm containing a second figureless settle append can therefore contribute only one observed failure. After Task 1 fixes the first call, the current suite and the literal grep still pass because the rule is not installed; PLAN-3 then installs the rule and exposes the later call. If that call is in plan-key.test.mjs, risk-diff.test.mjs, or trace-suggest.test.mjs, PLAN-3 does not lease the file and cannot keep the sequential suite green. PLAN-2 needs a post-migration run with the prototype constraint, or an invocation-level exhaustive check rather than a failing-test count.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "0e4f65bdca14f3599ba9ce8e5ade5131f768ebfe",
+      "base_id": "29baa394046f1c95d54b47f32f153af0700103a8",
+      "head_id": "0e4f65bdca14f3599ba9ce8e5ade5131f768ebfe"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-2.md",
+      "line": 98,
+      "severity": "high",
+      "claim": "The instruction to change no assertion text conflicts with migrating the named byte-exact receipt tests.",
+      "failure_scenario": "For an adjudication/gate_pass/override receipt with no settled figure, both permitted repairs alter its serialized output: adding a figure adds a key, while changing to rearm or deferral changes the event value. The arms named “an append with no --raised is byte-identical to today's” and “an append with no --trigger is byte-identical to today's” assert byte-exact output, so their existing expected bytes cannot remain unchanged under either repair. An executor following the prohibition literally cannot make those tests green once PLAN-3 lands; alternatively it must violate the task by editing the assertions.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/trace.test.mjs",
+        "line": 1128,
+        "note": "Both named arms assert ONE key's ABSENCE, not byte-exact serialized output. :1128 is `assert.equal('raised' in e, false, JSON.stringify(e));` and :1588 is `assert.equal('trigger' in e, false, JSON.stringify(e));` - the only assertion in either arm besides the append itself. Adding --survivors 0 adds a `survivors` key and leaves `'raised' in e` and `'trigger' in e` both false, so each assertion holds verbatim and no assertion text is edited. The finding read the test NAMES, which say \"byte-identical to today's\", and inferred a byte-exact expected-output comparison the bodies do not contain."
+      },
+      "base_id": "29baa394046f1c95d54b47f32f153af0700103a8",
+      "head_id": "0e4f65bdca14f3599ba9ce8e5ade5131f768ebfe"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-3.md",
+      "line": 63,
+      "severity": "low",
+      "claim": "The plan edits arg-contract.mjs without leasing or repinning the phase context that cites exact line numbers in that file.",
+      "failure_scenario": "CONTEXT D-15 cites cadence-core/bin/lib/arg-contract.mjs:752 and :835. Task 1 inserts a second declaration and evaluator around CONTRACTS/evaluateRow, shifting those locations, but CONTEXT.md is absent from both the plan file list and the task files. After execution, those durable-decision citations point at unrelated lines even though the plan's notes only checked DOCS-CLAIMS and CITATIONS rows for affected references.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "0e4f65bdca14f3599ba9ce8e5ade5131f768ebfe",
+      "base_id": "29baa394046f1c95d54b47f32f153af0700103a8",
+      "head_id": "0e4f65bdca14f3599ba9ce8e5ade5131f768ebfe"
+    }
+  ]
+}
