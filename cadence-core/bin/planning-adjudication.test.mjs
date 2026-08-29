@@ -75,7 +75,13 @@ export function adjRun(repo, dir, args) {
 }
 
 /** One voice raising one finding, ruled `survived`. The claim carries a quote
- * and a backslash on purpose: this payload is a FILE for exactly that reason. */
+ * and a backslash on purpose: this payload is a FILE for exactly that reason.
+ *
+ * The finding is raised at `high`, so the `fix_commit` below is REQUIRED here
+ * rather than decorative - `buildEntries` gates that requirement on the raised
+ * severity, and high is one of the two severities a blocking gate halts over.
+ * The two end-to-end rows further down raise at medium and at blocker-with-an-
+ * override precisely because this one does not. */
 export function adjPayload(over) {
   return {
     voices: [{

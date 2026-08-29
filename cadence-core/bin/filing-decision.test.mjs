@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import {
   DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, fingerprint, fingerprintInTitle,
-  issueBody, issueTitle, normalizeDeclines, unfixedFindings,
+  HALTING_SEVERITIES, issueBody, issueTitle, normalizeDeclines, unfixedFindings,
 } from './lib/filing-decision.mjs';
 import { PROVIDER_TABLE } from './lib/forge-decision.mjs';
 
@@ -22,13 +22,21 @@ const finding = (file, line, severity, claim) => ({
 
 /** The ruling for finding `i`, restating the two texts VERBATIM - which is what
  *  `buildEntries` demands, and the reason a fixture builder exists here rather
- *  than 30 hand-written literals that would drift from their findings. */
+ *  than 30 hand-written literals that would drift from their findings.
+ *
+ *  The fix commit rides a `survived` ruling only at the two HALTING severities,
+ *  because that is the only place `buildEntries` asks for one. A survived low
+ *  carrying a commit id would say the gate fixed a finding it never halted
+ *  over - the shape this fixture built before the requirement was gated, and
+ *  the reason the `remainder` finding below is worth reading twice. */
 const ruling = (i, f, verdict) => ({
   finding: i,
   ruling: verdict,
   claim: f.claim,
   failure_scenario: f.failure_scenario,
-  ...(verdict === 'survived' ? { fix_commit: 'a1b2c3d' } : {}),
+  ...(verdict === 'survived' && HALTING_SEVERITIES.includes(f.severity)
+    ? { fix_commit: 'a1b2c3d' }
+    : {}),
   ...(verdict === 'refuted'
     ? { counter_evidence: { file: 'src/other.mjs', line: 4, note: 'the guard is already there' } }
     : {}),

@@ -1178,7 +1178,13 @@ function fireRepo(phase = 2) {
   return { repo, dir, head: git('rev-parse', 'HEAD') };
 }
 
-/** One voice, one finding per ruling, each ruling carrying what its arm needs. */
+/** One voice, one finding per ruling, each ruling carrying what its arm needs.
+ *
+ *  Every finding here is raised at `high`, which is what makes the
+ *  unconditional `fix_commit` below correct rather than incidental: the
+ *  requirement `buildEntries` applies is gated on the RAISED severity, and high
+ *  is one of the two it is gated to. A fixture raising at medium would have to
+ *  drop the commit. */
 function firePayload(rulings) {
   const findings = rulings.map((_, i) => ({
     file: 'src.js', line: i + 1, severity: 'high',
