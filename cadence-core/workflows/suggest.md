@@ -30,8 +30,10 @@ thing that ever shortens it is the cut at its size bound, which `rotated`
 reports. The user reading a suggestion needs both.
 
 The same is true of the SECOND record the seam reads, `.planning/reads.jsonl`,
-and it has one more caveat of its own: nothing prunes it at a close either, and
-it carries NO phase scoping at all - it is one file per project. A `--phase <N>`
+and it has one more caveat of its own: nothing prunes it at a close either, the
+one thing that ever shortens it is the same cut at its size bound - which
+`reads.rotated` reports - and it carries NO phase scoping at all: it is one
+file per project. A `--phase <N>`
 run therefore reaches its reads only through that phase's dispatch BRACKETS,
 which is the join doing the scoping rather than the flag. Say that where an
 in-dispatch figure is presented.
@@ -45,7 +47,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace suggest [--phas
 ```
 
 Everything below reads off its return: `file`, `scope`, `events_read`,
-`suggestions`, and `capped` / `rotated` / `malformed` / `warnings` when any of
+`suggestions`, `reads` (the second record's path, and `reads.rotated` when that
+record was cut), and `capped` / `rotated` / `malformed` / `warnings` when any of
 the four is present - a
 `warnings` entry is a config layer the merge could not read whole, so a `current`
 below may be reading less than the project set, and it is relayed rather than

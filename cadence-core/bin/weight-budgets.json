@@ -77,7 +77,7 @@
     "cadence-core/workflows/plan.md": 29658,
     "cadence-core/workflows/progress.md": 13513,
     "cadence-core/workflows/spike.md": 2720,
-    "cadence-core/workflows/suggest.md": 9727,
+    "cadence-core/workflows/suggest.md": 9912,
     "cadence-core/workflows/task.md": 14131,
     "cadence-core/workflows/undo.md": 3103,
     "cadence-core/workflows/verify-deep.md": 3958,
@@ -117,6 +117,6 @@
     "skills/cad-verify/SKILL.md": 1049,
     "skills/cad-report/SKILL.md": 755,
     "skills/cad-why/SKILL.md": 1293,
-    "cadence-core/workflows/report.md": 20332
+    "cadence-core/workflows/report.md": 20801
   }
 }

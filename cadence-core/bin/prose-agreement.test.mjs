@@ -2473,6 +2473,20 @@ test('RDX-01: report.md prints the in-dispatch figure with its coverage, its exc
   assert.ok(/never narrate the null as `0`/.test(rule),
     'the reading rule does not forbid rendering a null ratio as 0 - the reading that says '
     + 'the worker opened each file exactly once');
+  // TRC-10: the SPAN claim. The record is cut at its size bound now, so the
+  // three figures span the live record rather than the project's whole history,
+  // and the composer is told which key says a cut happened on this run.
+  assert.equal(rule.includes('span every dispatch the project ever recorded'), false,
+    'the reading rule still claims the three figures span every dispatch the project ever '
+    + 'recorded - the size-bound cut moves the older generation to a sibling this report '
+    + 'never reads');
+  assert.ok(rule.includes('still in the LIVE record'),
+    'the reading rule does not scope the three figures to the live record');
+  assert.ok(/cut at its size bound/.test(rule),
+    'the reading rule names nothing that shortens the record, so a composer reading it '
+    + 'cannot tell why a figure dropped between two runs');
+  assert.ok(rule.includes('`reads.rotated`'),
+    'the reading rule points at no key for whether the record was cut on this run');
 
   // 3. The transport figure the growth of that response invalidated. It is a
   //    MEASUREMENT, so it carries the date it was taken.
@@ -2480,6 +2494,28 @@ test('RDX-01: report.md prints the in-dispatch figure with its coverage, its exc
   const transport = measured >= 0 ? text.slice(measured, measured + 120) : '(the sentence is gone)';
   assert.ok(/`reads --join` measures 2,494 B/.test(text),
     `report.md still states a stale \`reads --join\` size. Got: ${transport}`);
+});
+
+test('TRC-10: suggest.md\'s scope step names what shortens the reads record', () => {
+  // The step reports the SCOPE of both records it read. It said of the reads
+  // record only that no close prunes it, which read as "nothing shortens this
+  // file" while nothing did - true for four cycles and false the moment the
+  // size-bound cut shipped. The close clause stays (a close still prunes
+  // nothing); what it can no longer do is stand alone.
+  const text = doc('cadence-core', 'workflows', 'suggest.md');
+  const scope = stepBody(text, 'scope', 'suggest.md').replace(/\s+/g, ' ');
+
+  assert.ok(scope.includes('nothing prunes it at a close either'),
+    'suggest.md no longer carries the reads-record scope sentence this rule corrects');
+  // The un-caveated form, verbatim: the close clause running straight into the
+  // phase-scoping clause with nothing about the cut between them.
+  assert.equal(scope.includes('at a close either, and it carries NO phase scoping'), false,
+    'suggest.md\'s scope step still presents the reads record as one nothing ever shortens');
+  assert.ok(/one thing that ever shortens it is the same cut at its size bound/.test(scope),
+    'suggest.md\'s scope step names no cut, so a user is told the reads figures span a '
+    + 'history the record no longer holds');
+  assert.ok(scope.includes('`reads.rotated` reports'),
+    'suggest.md\'s scope step points at no key for whether the record was cut on this run');
 });
 
 test('RDX-01: suggest.md qualifies its no-tweak line to CONFIG KEYS and states the info exception', () => {

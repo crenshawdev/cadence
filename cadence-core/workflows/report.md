@@ -64,7 +64,8 @@ over `.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and
 `ambiguous`, `unjoined`, `floor`, `coordinator`, `unresolved`, and `inDispatch`
 (per-role `roles[]` with `ratio`, `worst` and their bracket counts, plus
 `coverage` and `coordinatorFiles`) - the SAME fold `/cad-suggest` reads, so
-neither surface recomputes it.
+neither surface recomputes it. Both arms also carry `reads`: the record's own
+path, plus `reads.rotated` naming the sibling when that record was cut.
 Then open the scoped
 phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/SUMMARY.md` (deviations, gate-fix commits),
@@ -113,7 +114,7 @@ Tokens on subagent returns (the host's own per-dispatch figure, not the run's co
 Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
 Window budget (from `trace window`): <only when `problems` is non-empty: one line per crossing - the role, the dispatch it belongs to, its figure and the ceiling it crossed, both as given; then `unbudgeted` roles and `unrecorded` when either is non-zero>
 Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, rotated record (from `rotated`: the record was cut at the newest phase anchor, so everything older than the run in flight is in the sibling it names and is not in this report - a cut, not a truncation, and not the same fact as capped), coordinator residue (one RUN's, joined on `corr`, not the phase's) - each named, never silently dropped>
-Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; then per role from `inDispatch.roles`, each row whose `ratio` is non-null - the ratio as opens per distinct file inside ONE dispatch, its `worst` file with that file's count, and beside them `inDispatch.coverage` and the `inDispatch.coordinatorFiles` it excluded; omit the whole line when the record is empty>
+Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; then per role from `inDispatch.roles`, each row whose `ratio` is non-null - the ratio as opens per distinct file inside ONE dispatch, its `worst` file with that file's count, and beside them `inDispatch.coverage` and the `inDispatch.coordinatorFiles` it excluded; then only when `reads.rotated` is present: the record was cut at its size bound, so everything older than the cut is in the sibling it names and is not in this report - a cut, not a truncation; omit the whole line when the record is empty>
 ```
 
 Rules, all load-bearing:
@@ -201,9 +202,11 @@ Rules, all load-bearing:
   those two prose sites, to fix THERE - never a correction to make in this
   report.
 - The reading line prices `.planning/reads.jsonl`, which carries NO phase
-  scoping: `fileCalls`, `fileRedundancy` and `topFiles` span every dispatch the
-  project ever recorded, so the line says so even when the report is scoped to
-  one phase - it does not price the phase. Report every figure as returned,
+  scoping: `fileCalls`, `fileRedundancy` and `topFiles` span every dispatch
+  still in the LIVE record, so the line says so even when the report is scoped
+  to one phase - it does not price the phase. No close prunes that record; the
+  one thing that shortens it is the cut at its size bound, and `reads.rotated`
+  on the return is how you know it happened. Report every figure as returned,
   recomputed nowhere. `inDispatch` is that same file read PER ROLE and PER
   DISPATCH - `roles[].ratio` is opens per distinct file INSIDE one bracket and
   `roles[].worst` names the file that bracket opened most - so it answers a
