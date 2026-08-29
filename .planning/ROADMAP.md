@@ -52,49 +52,5 @@ halts any run whose blocking gate returns a medium with nothing above it.
 
 ## Phases
 
-- [x] **Phase 1: reads.jsonl rotates instead of dying at the cap**
-- [x] **Phase 2: a confirmed finding can be recorded unfixed**
 
 ## Phase Details
-
-### Phase 1: reads.jsonl rotates instead of dying at the cap
-
-`.planning/reads.jsonl` reaches its 8 MiB bound and stops recording forever
-instead of rotating. Give it a rotation, keeping exactly one prior generation,
-without changing how the trace record rotates.
-
-**Success criteria**
-
-- A writer that reaches `MAX_READS_BYTES` rotates rather than returning
-  `size-cap`, and the append that triggered it lands.
-- Exactly one prior generation is kept, evicted by the next rotation, so the
-  pair on disk is bounded and there is no retention key to tune.
-- Two processes appending across the bound at once lose no record and leave no
-  claim behind that would stop a later rotation.
-- A killed rotation does not disable rotation permanently: an abandoned claim is
-  reclaimed by a later append.
-- `lib/trace.mjs`'s own rotation behaviour is unchanged, proven by its existing
-  rotation rows still passing untouched.
-- A reader can tell a rotated record from a whole one rather than reading a
-  truncated file as complete.
-
-### Phase 2: a confirmed finding can be recorded unfixed
-
-A blocking gate's below-blocker/high remainder is documented as reported and
-moved past, and `adjudication-record.mjs` cannot store that state. Close the gap
-without losing the typo guard the `fix_commit` requirement actually exists for.
-
-**Success criteria**
-
-- A finding confirmed at a severity below blocker/high can be adjudicated and
-  recorded without inventing a fix commit or a ruling the adjudicator does not
-  hold.
-- A `survived` blocker or high still requires its fix commit, and a misspelled
-  `fix_commit` key is still refused rather than silently stored.
-- `issue-filing unfixed` no longer returns an entry that carries a real fix
-  commit, so the filing step cannot open issues for committed work.
-- `adjudication-record.mjs`, `filing-decision.mjs` and
-  `references/triage-gate.md` agree on what `survived` means, with a test that
-  reddens if they drift apart again.
-- The reproduction in GH-159 settles cleanly end to end: a blocking fire
-  returning a medium with nothing above it can be closed.

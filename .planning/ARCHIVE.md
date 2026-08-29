@@ -1162,3 +1162,43 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/2/CONTEXT.md`: D-02 (Key reach): "and nowhere else" is scoped to the EXECUTOR CONTRACT's own
 - `phases/2/CONTEXT.md`: D-03 (Command path): the site names `config.mjs get workflow.test_command`
 - `phases/2/CONTEXT.md`: D-05 (Fallback wording): the "test file the task's files map to" fallback
+
+## v3.7.7
+
+- `phases/1/SUMMARY.md`: plan 1, task 1: the Verify asserts `grep -rn "size-cap"
+- `phases/1/SUMMARY.md`: plan 2, task 3: the plan's Notes assert that the census surfaces
+- `phases/1/SUMMARY.md`: Plan 1 declined the no-hard-links `renameSync` fallback that
+- `phases/1/SUMMARY.md`: `cadence-core/workflows/report.md:25` states "`reads --join` measures 2,494 B"
+- `phases/1/SUMMARY.md`: The `risk_surface` gate on plan 1 downgraded a finding to low and it is filed
+- `phases/1/SUMMARY.md`: Plan 3 reported that the dispatch prompt names a project-root `CLAUDE.md` that
+- `phases/1/UAT.md`: Append at the bound lands instead of being refused With .planning/reads.jsonl at or over MAX_READS_BYTES, appendRead reports the record written and reading the live file afterward finds that record - no {written:false, reason:"size-cap"}.
+- `phases/1/UAT.md`: Two rotations keep exactly one prior generation After two rotations .planning/ holds the live record plus exactly one sibling, and the first generation's records are present in neither file.
+- `phases/1/UAT.md`: Concurrent appends at the bound lose nothing and leave no blocking claim Two appendRead processes appending at the bound at once leave every record they wrote present across the live file and the sibling, with no held hard-link claim and no private stamp left behind that would stop a later rotation.
+- `phases/1/UAT.md`: An abandoned claim does not disable rotation forever With a stale claim on disk and the record at the bound, the next append rotates rather than refusing.
+- `phases/1/UAT.md`: The trace's own rotation is untouched cadence-core/bin/trace.test.mjs's existing rotation rows pass with no edit to that file.
+- `phases/1/UAT.md`: Both reader envelopes name the record and report the cut planning.mjs reads and trace suggest each name the reads record they read and report a reads rotation on a key distinct from the trace's `rotated`; the rotation marker appears in none of calls, byAgent, or the unresolved/coordinator split.
+- `phases/1/UAT.md`: The never-shortened claims are gone and the sibling is ignored R7's evidence string, workflows/suggest.md and workflows/report.md no longer claim the reads record is never shortened, their pinning tests assert the new wording, and a .gitignore write covers the reads sibling and its claim files.
+- `phases/1/UAT.md`: A killed reads rotation strands an unignored temp of up to 8 MiB in .planning/ missing - rotateReads writes two private paths inside the planning root that no ignore rule, shipped or local, covers
+- `phases/1/CONTEXT.md`: D-01 (Where the rotation lives - ROADMAP OQ-1): write a SECOND rotation in
+- `phases/1/CONTEXT.md`: D-02 (Carry policy): the reads record carries NOTHING across the cut - the
+- `phases/1/CONTEXT.md`: D-03 (Write trigger): move to the pre-emptive `size + pending >=
+- `phases/1/CONTEXT.md`: D-04 (Rotation signal): the cut reaches both reader envelopes on a key
+- `phases/2/SUMMARY.md`: plan 1: CONTEXT D-07 asserts `lib/filing-decision.mjs` keeps its
+- `phases/2/SUMMARY.md`: plan 2: Task 3's `Verify:` says 7 `ADJUDICATION-*.json` files exist under
+- `phases/2/SUMMARY.md`: `references/triage-gate.md:275-281` still enumerates the returned set as excluding
+- `phases/2/SUMMARY.md`: The override case has no consumer in `issue-filing unfixed` beyond reaching the filing
+- `phases/2/SUMMARY.md`: AC7's second half is narrowed: the corpus check covers the 8 `ADJUDICATION-*.json` on
+- `phases/2/SUMMARY.md`: `counter_evidence` disagrees across the writer and the reader.
+- `phases/2/SUMMARY.md`: `workflow.lint_command` is null and `detect-commands` resolves no lint command for this
+- `phases/2/SUMMARY.md`: Two `medium` findings from plan 1's `risk_surface` round are confirmed and unfixed, both
+- `phases/2/UAT.md`: A survived medium with no fix commit is stored Writing an adjudication record whose survived entry is raised at medium or below and carries no fix_commit is accepted, and that entry appears in the written ADJUDICATION-*.json - not a refusal.
+- `phases/2/UAT.md`: A survived blocker/high with no fix commit is still refused A survived entry raised at blocker or high with no fix_commit is still refused, and an entry carrying the misspelled key fix_comit is still refused as an unknown key.
+- `phases/2/UAT.md`: An overridden blocker writes a record and satisfies risk-check An overridden blocker/high writes an ADJUDICATION-*.json carrying its override marker with no fabricated commit SHA, and `risk-check status` joins that receipt as satisfied.
+- `phases/2/UAT.md`: issue-filing unfixed skips already-committed findings `issue-filing unfixed` returns no entry carrying a fix_commit: fed the `medium survived HASFIX` entry in .planning/_archive-v3.7.3/1/ADJUDICATION-risk_surface-plan-2.json it offers nothing for that entry.
+- `phases/2/UAT.md`: The four survived surfaces agree and drift reddens lib/adjudication-record.mjs, lib/filing-decision.mjs, references/triage-gate.md and references/review-record.md state the same meaning of `survived`, and a prose-agreement.test.mjs row goes red when any one of them is edited apart from the others.
+- `phases/2/UAT.md`: why record tells a fixed survivor from an unfixed one Two survivors on one commit, one with a fix_commit and one without, do not render identically in `why record` output.
+- `phases/2/UAT.md`: The GH-159 reproduction closes and old records still read A blocking fire whose highest finding is a medium reaches a written receipt and a satisfied `risk-check status` with no halt, and `trace recount`, `why record` and the deferred readers still read the pre-change records on disk without refusing.
+- `phases/2/UAT.md`: triage-gate.md still tells the coordinator a survived blocker/high can never be in the unfixed set behavior wrong - the reference disagrees with the seam this phase changed. `references/triage-gate.md:281-282` states "A survived `blocker` or `high` is NOT in it", but 3341ffb0 deliberately made an OVERRIDDEN survived blocker a member so it would stop being dropped silently. A coordinator following that paragraph at the ask step reads the one entry the override case exists to surface as impossible.
+- `phases/2/CONTEXT.md`: D-01 (The ruling vocabulary - ROADMAP OQ-2): close GH-159 by gating the
+- `phases/2/CONTEXT.md`: D-02 (The override case): an OVERRIDDEN blocker/high is in scope this phase
+- `phases/2/CONTEXT.md`: D-08 (No rule on the read path): nothing this phase adds is applied when a

@@ -10,12 +10,6 @@
 that no plan has picked up yet surfaces as `unpicked` in `/cad-audit` rather
 than as a hand-written row.
 
-- **TRC-10**: `.planning/reads.jsonl` rotates at its write-time bound instead of
-  dropping every later append permanently, keeping one prior generation and
-  leaving the trace record's own rotation untouched.
-- **RSK-07**: a blocking gate's below-blocker/high remainder can be recorded as
-  confirmed and unfixed, without inventing a fix commit or a ruling the
-  adjudicator does not hold, and without losing the `fix_commit` typo guard.
 
 Both came off real runs rather than a read, and both are filed on the public
 tracker as S2: `GH-145` and `GH-159`. The ids under `## Deferred` keep their own
@@ -335,6 +329,8 @@ parses only the Traceability table).
 | RCL-08 (recall folds suffixes identically at index and query time, so `seam` matches `seams` (GH-93)) | 5 | Complete | v3.7.5 |
 | EXP-04 (a blocking review gate FAIL on a plan's committed range is cleared by a `cad-executor` continuation dispatched under that plan's worker key, and the coordinator writes no source outside `.planning/` in `/cad-execute`. In smithers the coordinator made the fix itself in every phase, unreviewed by construction since the one-round cap was spent, and read 52 source files into the main context doing it) | 1 | Complete | v3.7.6 |
 | EXP-05 (the executor contract verifies a task with the task's own test and runs the full suite at one stated site per dispatch, never as a first probe and never inside the targeted fix loop. smithers baseline: 6 to 29 bare suite runs per dispatch against a 0.6 s suite) | 2 | Complete | v3.7.6 |
+| TRC-10 (`.planning/reads.jsonl` rotates at its write-time bound instead of dropping every later append permanently, keeping one prior generation and leaving the trace record's own rotation untouched.) | 1 | Complete | v3.7.7 |
+| RSK-07 (a blocking gate's below-blocker/high remainder can be recorded as confirmed and unfixed, without inventing a fix commit or a ruling the adjudicator does not hold, and without losing the `fix_commit` typo guard.) | 2 | Complete | v3.7.7 |
 
 ## Deferred
 
@@ -441,8 +437,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TRC-10 | Phase 1 | Complete |
-| RSK-07 | Phase 2 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
