@@ -15,9 +15,9 @@
     "providers": {
       "openai": {
         "tiers": {
-          "flagship": "gpt-5.3-codex",
-          "balanced": "gpt-5.4-mini",
-          "cheap": "gpt-5.4-nano"
+          "flagship": "gpt-5.6-sol",
+          "balanced": "gpt-5.6-terra",
+          "cheap": "gpt-5.6-luna"
         }
       }
     }
