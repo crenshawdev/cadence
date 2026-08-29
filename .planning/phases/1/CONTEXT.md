@@ -147,7 +147,12 @@ and the second only settles once the first exists.
 - [ ] AC2: After two rotations, `.planning/` holds the live record plus exactly
       one sibling, and the first generation's records are present in neither.
 - [ ] AC3: Two `appendRead` processes appending at the bound at once leave every
-      record they wrote present across the pair on disk, and no claim file behind.
+      record they wrote present across the pair on disk, and leave no claim
+      behind that would stop a later rotation - no held hard-link claim and no
+      private stamp. The shared `.claim` sidecar a completed rotation leaves is
+      inert and is not such a claim: unlinking it after the swap would delete
+      the fresh sidecar of a process that legitimately claimed in that window,
+      which `lib/trace.mjs:912-932` records as costing the reclaim permanently.
 - [ ] AC4: With an abandoned claim on disk and the record at the bound, the next
       append rotates rather than refusing.
 - [ ] AC5: `cadence-core/bin/trace.test.mjs`'s existing rotation rows pass with
