@@ -33,7 +33,13 @@ scratch/
 /.planning/trace.1.jsonl
 /.planning/trace.1.jsonl.claim
 /.planning/trace.1.jsonl.claim.*
+
+# Per-tool-call read record — same posture, same four rules: the live record,
+# the generation ITS rotation leaves behind, and that rotation's claim files
 /.planning/reads.jsonl
+/.planning/reads.1.jsonl
+/.planning/reads.1.jsonl.claim
+/.planning/reads.1.jsonl.claim.*
 
 # Triage working copies — these hold copies of the raw planning queue, the same
 # candid text the /.planning/CAPTURE.md line above withholds, so tracking them
