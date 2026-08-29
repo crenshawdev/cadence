@@ -228,6 +228,64 @@ test('a leftover sibling beside a record UNDER the bound is left exactly where i
   assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.jsonl']);
 });
 
+// --- the claim, when two writers race (D-05, D-07) --------------------------
+
+import { spawn } from 'node:child_process';
+
+const READS_LIB = new URL('./lib/read-trace.mjs', import.meta.url).href;
+
+/**
+ * One child PROCESS appending one uniquely named record through the real
+ * `appendRead`. A process rather than a promise because that is the concurrency
+ * this record actually has: `hooks/hooks.json:17` matches five tools and the
+ * host runs one OS process per tool call, so parallel subagents ARE concurrent
+ * `appendRead` processes.
+ * @param {string} dir @param {string} name
+ */
+function readsWriter(dir, name) {
+  const code = 'const { appendRead } = await import(process.env.CAD_LIB);'
+    + " const r = appendRead(process.env.CAD_DIR, { ts: new Date().toISOString(),"
+    + " tool: 'Read', agent: 'coordinator', target: process.env.CAD_W });"
+    + ' if (!r.written) { console.error(r.reason); process.exit(1); }';
+  return new Promise((res, rej) => {
+    const p = spawn(process.execPath, ['--input-type=module', '-e', code], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: { ...process.env, CAD_LIB: READS_LIB, CAD_DIR: dir, CAD_W: name },
+    });
+    let err = '';
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('error', rej);
+    p.on('exit', (c) => (c === 0 ? res(name) : rej(new Error(`${name}: ${err.trim()}`))));
+  });
+}
+
+test('writers racing at the bound leave ONE generation, no claim and no record lost', async () => {
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-race' });
+  padToReadsBound(d);
+  const names = ['w0', 'w1', 'w2', 'w3', 'w4', 'w5'];
+  await Promise.all(names.map((n) => readsWriter(d, n)));
+
+  // (a) EVERY writer's record is present ACROSS THE PAIR. This record has no
+  // carry-back, so a loser that appended during the claim window is in the
+  // SIBLING and that satisfies the bar - unlike the trace, whose racing writers
+  // must all land in the live record because it copies those bytes back.
+  const live = readFileSync(readsPath(d), 'utf8');
+  const sibling = readFileSync(rotatedReadsPath(d), 'utf8');
+  for (const n of names) {
+    assert.ok(live.includes(`"${n}"`) || sibling.includes(`"${n}"`), `${n} is in neither file`);
+  }
+
+  // (b) The sibling is a separate FILE, not a second name for the live record:
+  // a claim left held reads as a rotation in flight forever.
+  const a = statSync(readsPath(d));
+  const b = statSync(rotatedReadsPath(d));
+  assert.notEqual(`${a.dev}:${a.ino}`, `${b.dev}:${b.ino}`, 'the claim was never released');
+
+  // (c) Exactly one generation, and no private stamp or temp left behind.
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.jsonl']);
+});
+
 test('a single record that reaches the bound by itself is refused, never rotated', () => {
   const d = tmp();
   appendRead(d, { ts: TS, tool: 'Read', target: '/a' });

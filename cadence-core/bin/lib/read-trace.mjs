@@ -330,6 +330,26 @@ export function recordFromHook(input, now, opts) {
 }
 
 /**
+ * How long a writer that finds a rotation IN FLIGHT waits for it to land before
+ * appending anyway. Milliseconds, and a CEILING rather than a deadline: it
+ * acquires nothing, blocks nobody, refuses nothing, and it always proceeds when
+ * the budget runs out.
+ *
+ * 250 ms, the figure `lib/trace.mjs:541` uses, restated here rather than a
+ * second budget invented for the same posture. The common wait is the one or
+ * two milliseconds a rotation actually takes - 1.72, 1.76, 1.76, 2.36 and
+ * 3.90 ms measured 2026-08-28 on this repository's real 7,852,530-byte record
+ * (D-06) - the ceiling is only ever paid where the winner died holding its
+ * claim, and it is 5% of the 5,000 ms this hook gets at `hooks/hooks.json:15-25`.
+ */
+const READS_ROTATE_WAIT_MS = 250;
+
+/** @param {number} ms */
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
  * Is the sibling that already exists a rotation IN FLIGHT, or a generation an
  * earlier rotation left behind?
  *
@@ -390,6 +410,14 @@ function readsRotationInFlight(file, sibling) {
  * into place, so the live path is never absent and no concurrent append is
  * trimmed away by a rewrite it did not see (`lib/trace.mjs:642-650`).
  *
+ * NO CARRY-BACK, deliberately, where `lib/trace.mjs:884-909` has one. The bar
+ * is every record present ACROSS THE PAIR, and a record a loser appended into
+ * the sibling during the claim window already satisfies it; copying those bytes
+ * back would also put a previous generation's reads into a record D-02 says
+ * starts with the marker and nothing else. So a losing writer's record can be
+ * in the sibling, which is where this differs from the trace's assertion that
+ * every racing writer's event is in the LIVE record.
+ *
  * EXACTLY ONE PRIOR GENERATION is the entire retention policy. No dated
  * generations, no keep-N, no config key: the pair on disk is the bound, and a
  * second rotation evicts what the first one left.
@@ -443,8 +471,25 @@ export function rotateReads(planningRoot, reserve) {
         // which of the two causes put it there.
         if (attempt > 0 || readsRotationInFlight(file, sibling)) {
           // A rotation is genuinely IN FLIGHT and this process lost the claim.
-          // Somebody else is making the room and this writer appends into what
-          // they leave.
+          // It must NOT hand the caller straight back to its append: while the
+          // claim is held the live PATH still names the old inode, so the
+          // record would land in the file about to become the sibling rather
+          // than in the record. WAIT for the swap by polling the inode
+          // identity, stop the moment it changes, and report that this process
+          // did not rotate so the caller appends into whatever the winner left.
+          //
+          // Not a lock (D-05). `withPlanningFileLock` is refused for the reason
+          // `lib/trace.mjs:626-631` refuses it and for a stronger one here:
+          // `bin/read-trace.mjs:10-16` may emit nothing on any stream and exits
+          // 0 unconditionally, so a lock refusal would have no path to be
+          // reported on.
+          for (
+            let waited = 0;
+            waited < READS_ROTATE_WAIT_MS && readsRotationInFlight(file, sibling);
+            waited++
+          ) {
+            sleep(1);
+          }
           return { rotated: false };
         }
         // A generation an earlier rotation left, and evicting it is the one
