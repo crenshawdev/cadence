@@ -90,7 +90,7 @@ consequence lands in a record users do not read.
 ## Phases
 
 - [x] **Phase 1: The record's guards hold for every ruling** - the `fix_commit` value check and the `overridden` escape are validated on the rulings that can carry them, not only inside the `survived` branch
-- [ ] **Phase 2: Adaptive routing is reachable** - a project Cadence initialises can reach the unset `stakes` behaviour its own schema documents
+- [x] **Phase 2: Adaptive routing is reachable** - a project Cadence initialises can reach the unset `stakes` behaviour its own schema documents
 - [ ] **Phase 3: The too-big arm opens a door** - `/cad-task` routes a phase-sized task through phase creation before context
 - [ ] **Phase 4: Land reads rulings, not raw findings** - the autonomous close halts on genuinely-unfixed findings, using the derivation issue filing already uses
 - [ ] **Phase 5: A contended rotation loses no event** - the second rotation and its admission check account for every writer and for the marker line

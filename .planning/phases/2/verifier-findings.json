@@ -1,0 +1,101 @@
+{
+  "status": "delivered",
+  "score": "8/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "The shipped template writes no `stakes` at all, and a config copied from it still validates clean.",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "`node -e \"'stakes' in JSON.parse(...)\"` over cadence-core/templates/config.json -> false; `grep -n stakes cadence-core/templates/config.json` -> exit 1, no match. `node cadence-core/bin/config.mjs validate --file cadence-core/templates/config.json` -> {\"ok\":true,\"checked\":46,\"errors\":[]}. `git diff --unified=0 5fc6c6c0~1..HEAD -- cadence-core/templates/config.json` shows exactly one removed line (`\"stakes\": \"shipped\",` at :3) and zero added lines, so nothing was deleted collaterally; the surviving key list is granularity,model,workflow,parallelization,git,planning,memory,review."
+    },
+    {
+      "n": 2,
+      "truth": "The whole init path a real project walks - template copy plus the forge writes both workflows make - leaves `stakes` unset, so the resolver rather than the file on disk decides the level. (The goal itself, traced from the init seam to the routing envelope.)",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "Reproduced the shipped sequence in a scratch repo: `cp cadence-core/templates/config.json .planning/config.json` (new-project.md:56, adopt.md:41 are verbatim copies - `grep 'set stakes\\|stakes=' ` in both files returns nothing, so neither writes the key), then `config.mjs set git.forge_provider=github` and `config.mjs set git.forge_repo=owner/repo` (both {\"ok\":true}). `'stakes' in config` is still false afterwards, and `route.mjs resolve --role cad-executor --phase 3` over that post-forge-write config returns {'ok':True,'stakes':'solo','stakes_set':False,'model':'sonnet'}. Wiring on the other side: seam-spawn-agent.md:242-243 and route.mjs:846/:1561 - `--phase` decides the floor's scope and the STATE cursor decides it when the flag is absent, and plan.md:102 / plan.md:382 pass `--phase {N}` explicitly."
+    },
+    {
+      "n": 3,
+      "truth": "Both floor arms are reachable from a repo built from the shipped template, shown from resolve output: clean plans discount to solo/sonnet, one unreadable plan fails closed at ok:true / shipped.",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Fixture = template copied to .planning/config.json, one plan declaring docs/README.md ('# Readme'), CADENCE_GLOBAL_CONFIG pointed at a missing path. Clean arm: {'ok':True,'stakes':'solo','stakes_set':False,'model':'sonnet','verify':'off','surfaces_answered':False}. Unreadable arm (PLAN-2.md created as a DIRECTORY): {'ok':True,'stakes':'shipped','stakes_set':False,'model':'opus'} with warnings ['risk floor: cannot read .../PLAN-2.md (not a regular file); no risk surface was computed from it']. The shipped test that pins this is route.test.mjs:1877 'template-initialised: a repo scaffolded from the SHIPPED template reaches both arms' - green in a 164/164 pass, 0 fail run of route.test.mjs. Pre-plan role also fails closed correctly: `resolve --role cad-planner --phase 4` on a fresh template project with no plans returns shipped/opus with reason 'no risk-floor computation: cad-planner is dispatched before a plan exists and reads none; the configured \"shipped\" stands'."
+    },
+    {
+      "n": 4,
+      "truth": "Set-ness is machine-checkable on the envelope, on both faces, and resolve and replay agree over the same config.",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "resolve over a stakes-less template copy -> {'ok':True,'stakes':'shipped','stakes_set':False}; over the same file with stakes:'critical' -> {'stakes':'critical','stakes_set':True}. replay over the fixture repo unset -> {\"ok\":true,\"stakes\":\"shipped\",\"stakes_set\":false,...}; with stakes:'solo' written -> {\"ok\":true,\"stakes\":\"solo\",\"stakes_set\":true,...}. Traced end to end rather than re-derived: route.mjs:1386 and :1476 both emit `stakes_set: cfg.stakesSet`, the same flag readConfig maintains at :252 and the floor's discount predicate reads, so the reported set-ness and the routing it qualifies cannot drift. Held by route.test.mjs:733/:740 (resolve, both arms at the SAME level so only the flag separates them) and :2208 (replay, cross-checked against resolve off one config). NOTE on the contract: ROADMAP criterion 1 spells the observable `stakesSet`; CONTEXT D-04 deliberately renamed it to snake_case `stakes_set` on the envelope's own convention beside `surfaces_answered`, and the UAT items and CONTEXT AC2 use the new spelling. Substance met; the spelling deviation is a recorded decision, not a silent drop. No shipped surface consumes the field yet (grep shows route.mjs only) - D-04 scoped it to the envelope, so this is an observation, not a gap."
+    },
+    {
+      "n": 5,
+      "truth": "`config.mjs get stakes` distinguishes unset from configured, names route.mjs resolve as the seam that answers it, and the keyless read stays silent.",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Unset: {\"ok\":true,\"values\":{\"stakes\":\"shipped\"},\"source\":\"global+repo\",\"warnings\":[\"stakes is unset: no config layer sets it, so the level is decided per phase from the plans in scope - `route.mjs resolve` answers it for a dispatch\"]} - names both `stakes` and `route.mjs resolve`, and the value line still reports the schema default. Set (stakes:critical): {\"ok\":true,\"values\":{\"stakes\":\"critical\"},\"source\":\"global+repo\"} with no `warnings` key at all. Keyless `get --file <stakes-less config>`: 0 warnings, none mentioning stakes - checked on both a bare fixture and the full post-init config. Implementation at config.mjs:466 is gated on `keys.length && layered[k] === undefined && k === 'stakes'`, the same two gates the LEVEL_KEY arm uses, as a separate arm rather than a widened regex. config.test.mjs 102/102 pass, 0 fail, including the three new named arms."
+    },
+    {
+      "n": 6,
+      "truth": "Both init workflows state what is actually written, name both arms of unset, and sit AT (not over) their re-pinned byte ceilings.",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`grep -rn \"shipped stakes\" cadence-core/workflows/` -> exit 1, no match (repo-wide, the only survivors are .planning records D-09 leaves alone; no shipped doc - README.md, DESIGN.md, INTERNALS.md, config-catalog.md, config-reach.md - claims the template writes a level). Both files now carry, whitespace-normalised identically: \"Config written with defaults (standard granularity, research and plan check off, verifier on). Stakes is left unset: it floors at solo when every plan in the phase reads clean, and at the shipped default when any of them cannot be read. /cad-config changes any of it.\" Both arms are true of the resolver, not just stated: truth 3 observed solo on clean plans and shipped on an unreadable one. Ceilings re-pinned to the MEASURED counts, not merely above them: weight.mjs reports new-project.md 26373 / adopt.md 21162 and weight-budgets.json now holds 26373 / 26373-row-equal and 21162, equal on both rows (wc -c agrees). Template row left at 1420 against a measured 1397 - it only shrank, which D-08 exempts. self-verify problems: []."
+    },
+    {
+      "n": 7,
+      "truth": "The README's adaptive-routing claim is held by a test that would RED on the pre-phase tree, and the four existing floor tests are unedited and green.",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "prose-agreement.test.mjs 60/60 pass, 0 fail, including 'README: a template-initialised phase touching no surface really does route BELOW the default'. The arm reads the live README claim by substring, copies the SHIPPED template into a temp repo, resolves with --phase, and asserts route-table.json's stakes_order places the resolved level strictly below config.schema.json's keys.stakes.default - both figures read from artifacts, neither hardcoded. Falsified independently: restoring \"stakes\":\"shipped\" into a copy of the template and resolving the same clean-plan fixture returns {'ok':True,'stakes':'shipped','stakes_set':True}, which makes BOTH of that test's assertions fail - so the arm proves this phase and not the resolver. Floor tests: `git diff 5fc6c6c0~1..HEAD -- route.test.mjs` has no hunk touching them; they now sit at :1566 ('an explicit stakes=critical is never resolved below'), :1579 (unset -> solo), :1608 ('stakes=solo is a FLOOR'), :2258 (waived surface holds at the configured stakes), all green. The contradicting text is gone: route.test.mjs:1055's message is now 'the template writes no stakes, so the schema default stands', and `grep -rn \"ships at shipped\"` finds nothing."
+    },
+    {
+      "n": 8,
+      "truth": "The full suite and self-verify are green on the delivered tree.",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/test.mjs` -> tests 3574, pass 3574, fail 0, duration 23.1s. `node cadence-core/bin/self-verify.mjs` -> ok:true, problems: [], 30 checks including budgets and invocations. Anti-pattern scan over every added line of the phase diff (5fc6c6c0~1..HEAD, cadence-core/): zero TODO/FIXME/XXX/HACK/placeholder/not-implemented markers, zero empty returns, no log-only handlers. The AC7 repair at why.test.mjs:695 (`--top 20`) is not vacuous - the test still asserts the four record fields and the absence of the NOT RESOLVED block - and it is not fragile: commit 093408c9 is 7th of the 22 commits touching templates/config.json, so the lifted window holds 13 commits of headroom, matching what the sibling test at :192-195 already does."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Template ships no stakes key",
+      "evidence": "'stakes' in JSON.parse(template) -> false; grep for stakes in the file -> no match; `config.mjs validate --file cadence-core/templates/config.json` -> {\"ok\":true,\"checked\":46,\"errors\":[]}. The diff is exactly one removed line and zero added, so no collateral key loss. End to end: a template copy plus the two forge `config.mjs set` writes the init workflows make still has no stakes, and resolves solo/sonnet on a clean phase."
+    },
+    {
+      "k": 2,
+      "name": "resolve and replay report stakes_set",
+      "evidence": "resolve: stakes_set false on a stakes-less template copy (stakes 'shipped'), true on the same file with stakes:'critical'. replay over the fixture repo: stakes_set false unset, true with stakes:'solo' written, and route.test.mjs:2208 cross-checks replay against resolve off one config. Carried from readConfig's own stakesSet at route.mjs:1386/:1476, never re-derived. Spelling is snake_case `stakes_set` per CONTEXT D-04, not the ROADMAP's literal `stakesSet`."
+    },
+    {
+      "k": 3,
+      "name": "Both floor arms from a template-built fixture",
+      "evidence": "Template-built fixture, clean plan: {'ok':True,'stakes':'solo','stakes_set':False,'model':'sonnet','verify':'off'}. Same phase with PLAN-2.md as a directory: {'ok':True,'stakes':'shipped','model':'opus'} plus the withheld-discount warning naming the plan. Both from route.mjs resolve output, reproduced by hand and pinned by route.test.mjs:1877 (164/164 green)."
+    },
+    {
+      "k": 4,
+      "name": "config.mjs get stakes answers unset",
+      "evidence": "Unset -> ok:true, values.stakes 'shipped', one warning naming both `stakes` and `route.mjs resolve` and naming no gate or model. Set -> the configured value with no `warnings` key at all. Keyless -> zero warnings mentioning stakes, on both a bare fixture and a real post-init config. config.test.mjs 102/102, 0 fail."
+    },
+    {
+      "k": 5,
+      "name": "Both init workflows state stakes is unset",
+      "evidence": "`grep -rn \"shipped stakes\" cadence-core/workflows/` returns nothing; both files carry the same sentence (identical after whitespace normalisation) naming solo for all-clean plans and the shipped default for an unreadable one, and both arms are true of the real resolver. Budget rows equal the measured bytes exactly: new-project.md 26373=26373, adopt.md 21162=21162 (weight.mjs and wc -c agree). No budget-overrun and no unknown-flag in self-verify."
+    },
+    {
+      "k": 6,
+      "name": "README claim held by a test; floor tests green unchanged",
+      "evidence": "prose-agreement.test.mjs 60/60 with the new arm, which reads the claim by substring and asserts a template-initialised resolve lands strictly below config.schema.json's default per route-table.json's stakes_order. Independently falsified: with \"stakes\":\"shipped\" restored the same fixture resolves shipped/stakes_set:true, failing both assertions. The four floor tests are untouched by the diff and green at :1566, :1579, :1608, :2258; the 'the template ships at shipped' message is gone (grep finds no occurrence repo-wide)."
+    },
+    {
+      "k": 7,
+      "name": "Full suite and self-verify green",
+      "evidence": "node cadence-core/bin/test.mjs -> 3574 pass / 0 fail. node cadence-core/bin/self-verify.mjs -> ok:true, problems: []. No debt markers introduced anywhere in the phase diff."
+    }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
