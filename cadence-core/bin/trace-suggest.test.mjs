@@ -1176,6 +1176,48 @@ test('seam: the rotation marker is DROPPED at the parse and billed to nothing', 
   assert.deepEqual(cutFigures, wholeFigures);
 });
 
+test('seam: BOTH faces name the reads record and report its cut, on a key that is not the trace\'s', () => {
+  // One root, two commands, the same shape - the risk of a per-face key is that
+  // the two diverge and a reader has to learn which envelope spells it how.
+  // The trace here never rotated, so a top-level `rotated` on `trace suggest`
+  // could only be the READS record's cut leaking onto the trace's key.
+  const dir = rereadRoot({ rotated: true });
+  const readsFile = join(dir, 'reads.jsonl');
+
+  const reads = rereadSeam(dir, ['reads', '--join']);
+  assert.equal(reads.ok, true, JSON.stringify(reads));
+  assert.deepEqual(reads.reads, {
+    file: readsFile,
+    rotated: { file: ROTATED_READS_FILE, ts: ROTATION_MARKER.ts },
+  });
+  // The marker reached NEITHER side of the join's own split: `joinReads` pushes
+  // `unresolved` for any record with no `agent`, and bills an `agent` of
+  // `coordinator` to the main thread. The fixture's one `cat` read is the only
+  // real coordinator call.
+  assert.equal(reads.unresolved, 0, JSON.stringify(reads));
+  assert.equal(reads.coordinator, 1, JSON.stringify(reads));
+
+  const suggest = rereadSeam(dir, ['trace', 'suggest']);
+  assert.equal(suggest.ok, true, JSON.stringify(suggest));
+  assert.deepEqual(suggest.reads, reads.reads);
+  // `file` still names the TRACE, and the trace's own cut key is ABSENT - the
+  // two records' rotations are not the same field.
+  assert.equal(suggest.file, join(dir, 'trace.jsonl'));
+  assert.equal('rotated' in suggest, false, JSON.stringify(suggest));
+});
+
+test('seam: a project with no reads record still names the path it looked for', () => {
+  const dir = rereadRoot({ noReads: true });
+  const out = rereadSeam(dir, ['reads']);
+  assert.equal(out.ok, true, JSON.stringify(out));
+  assert.equal(out.note, 'no reads recorded yet');
+  // Named, with NO rotation on it: the command was asked which record it read,
+  // and a record that is not there yet is still a named path.
+  assert.deepEqual(out.reads, { file: join(dir, 'reads.jsonl') });
+  // The `trace suggest` face agrees about the same absent record.
+  assert.deepEqual(rereadSeam(dir, ['trace', 'suggest']).reads, out.reads);
+});
+
 // --- R8: the worker's own wall clock, and only when there is one (MSR-05) ----
 
 /** A render whose brackets carry whatever wall clocks a case needs. */

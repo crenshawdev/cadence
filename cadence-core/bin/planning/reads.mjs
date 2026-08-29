@@ -13,8 +13,23 @@ import { renderTrace } from '../lib/trace.mjs';
 // run since the hook was installed has nothing to report, and that is not an
 // error.
 function cmdReads(dir, opts) {
-  const { status, records, file } = readReadsRecords(dir);
-  if (status === 'absent') return ok({ calls: 0, distinct: 0, redundancy: null, fileCalls: 0, distinctFiles: 0, fileTouches: 0, fileRedundancy: null, byAgent: [], byTool: [], topTargets: [], topFiles: [], note: 'no reads recorded yet' });
+  const { status, records, file, rotated } = readReadsRecords(dir);
+  // WHICH record these figures came off, and whether it was CUT. One nested
+  // key spelled the same on both faces `readReadsRecords` serves, so a reader
+  // has no per-envelope special case to learn - and nested rather than two top
+  // level keys because `trace suggest`'s envelope already spends `file` on the
+  // TRACE path and `rotated` on the trace's own size-bound cut (D-04). A second
+  // top-level `rotated` would make one key mean two records and silently
+  // falsify `workflows/suggest.md`'s sentence about it.
+  //
+  // Not `warnings[]`: that channel means a partial or failed read that degraded
+  // the answer, and a rotation degraded nothing. It is a fact about the span of
+  // the record these figures cover, and `/cad-report` would otherwise present a
+  // routine cut as a warning.
+  const reads = { file, ...(rotated ? { rotated } : {}) };
+  // It rides the ABSENT arm too: the command was asked which record it read,
+  // and a record that is not there yet is still a named path.
+  if (status === 'absent') return ok({ calls: 0, distinct: 0, redundancy: null, fileCalls: 0, distinctFiles: 0, fileTouches: 0, fileRedundancy: null, byAgent: [], byTool: [], topTargets: [], topFiles: [], note: 'no reads recorded yet', reads });
   // UNREADABLE stays a failure, unchanged. This is the single production site
   // of that arm: swallowing an EACCES here would change `reads`'s contract with
   // nothing red, and `/cad-report`'s Reading line would go quiet as though the
@@ -33,7 +48,7 @@ function cmdReads(dir, opts) {
   // per project - and the brackets it joins to therefore have to span every
   // phase, or a read caused by phase 3 would report unjoined while phase 3's
   // bracket sat one scope away.
-  if (!('join' in opts)) return ok(summary);
+  if (!('join' in opts)) return ok({ ...summary, reads });
   const j = joinReads(records, renderTrace(dir).brackets);
   // SIX figures, not one ratio. `joined` and `unjoined` are the join working
   // and not working; `ambiguous` is it declining to guess between overlapping
@@ -45,6 +60,7 @@ function cmdReads(dir, opts) {
   // a failure, which is exactly the distinction the join exists to make.
   return ok({
     ...summary,
+    reads,
     joined: j.joined,
     ambiguous: j.ambiguous,
     unjoined: j.unjoined,

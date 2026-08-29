@@ -919,6 +919,18 @@ function cmdTrace(dir, sub, opts) {
       // rotated record is not capped.
       ...(r.rotated ? { rotated: r.rotated } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
+      // The SECOND record this arm read, named and - where it was cut - dated,
+      // on the SAME nested key `reads` returns so a reader has one shape to
+      // learn (D-04). Sourced from the `readReadsRecords` result this arm
+      // already holds, so the name here and the figures below can never come
+      // off different files. NOT the top-level `rotated` above: that one means
+      // the TRACE was cut, `workflows/suggest.md:29-30` ties it to that record
+      // specifically, and one key meaning two records is the thing this nesting
+      // exists to prevent.
+      reads: {
+        file: readRecord.file,
+        ...(readRecord.rotated ? { rotated: readRecord.rotated } : {}),
+      },
       suggestions,
       ...(suggestWarnings.length ? { warnings: suggestWarnings } : {}),
     });
