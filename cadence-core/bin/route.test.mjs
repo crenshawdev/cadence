@@ -1834,6 +1834,42 @@ test('fail-closed: the paired POSITIVE - both plans clean and surfaceless resolv
   assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
 });
 
+// --- what a TEMPLATE-INITIALISED project actually resolves to (RNG-04) -------
+//
+// Every fixture above hands `floorRoot` a hand-written config, which proves the
+// resolver's arithmetic and says nothing about the file `/cad-new-project` and
+// `/cad-adopt` copy onto disk. This row closes that gap by making the shipped
+// template ITSELF the fixture config, so it reddens if the template ever pins
+// `stakes` again rather than leaving the level to the resolver.
+
+test('template-initialised: a repo scaffolded from the SHIPPED template reaches both arms', () => {
+  const template = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'config.json'), 'utf8'));
+  // No ANSWERED overlay: the template writes no `review.triggers` block, so a
+  // template-initialised project carries all eight categories at
+  // `surfaces_answered: false`. Overlaying an answered set would test a project
+  // this template does not produce.
+
+  // Arm one - every plan in the phase read clean and declared a file touching
+  // no surface, so the unset default is discounted to the floor.
+  const clean = floorRoot(template, { '3/PLAN-1.md': CLEAN_PLAN }, CLEAN_FILES);
+  const rc = resolve('cad-executor', clean.file, ['--phase', '3']);
+  assert.equal(rc.ok, true);
+  assert.equal(rc.stakes, 'solo', JSON.stringify(rc.reason));
+  assert.equal(rc.model, 'sonnet');
+
+  // Arm two - the same phase with one plan nobody can read, as a DIRECTORY at
+  // the plan's own name for the reason the file-mode row above states. The
+  // withheld-discount warning naming that plan is expected here and is part of
+  // what fail-closed means, so this arm asserts the level and never an empty
+  // `warnings`.
+  const broken = floorRoot(template, { '3/PLAN-1.md': CLEAN_PLAN }, CLEAN_FILES);
+  mkdirSync(join(broken.planning, 'phases', '3', 'PLAN-2.md'), { recursive: true });
+  const rb = resolve('cad-executor', broken.file, ['--phase', '3']);
+  assert.equal(rb.ok, true, JSON.stringify(rb));
+  assert.equal(rb.stakes, 'shipped', JSON.stringify(rb.reason));
+});
+
 // --- a scope that declared NOTHING proves nothing (UAT item 11) --------------
 //
 // The same argument as the rows above, one step further in: `found` and `clean`
