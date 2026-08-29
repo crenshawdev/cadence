@@ -669,8 +669,10 @@ export function suggestFromRender(render, resolution, reads) {
         + ` over ${row.brackets} dispatch(es), and DOWN is the direction that helps`
         + ` - worst inside one dispatch: read \`${worst.path}\` ${worst.count} times${where}.`
         + ` Computed over ${coverage}.`
-        + ' SCOPE: nothing prunes `.planning/reads.jsonl` at a milestone close, so an unscoped run'
-        + ' reaches every milestone still in that file.'
+        + ' SCOPE: nothing prunes `.planning/reads.jsonl` at a milestone close, and the one thing'
+        + ' that ever shortens it is the cut at its size bound, which moves the older generation'
+        + ' to a sibling no fold here reads - so an unscoped run reaches every milestone still in'
+        + ' the LIVE record, and `reads.rotated` on this envelope says whether the record was cut.'
         + ` Excludes ${excluded.toLocaleString('en-US')} coordinator read(s) carrying files:`
         + ' the main thread has no dispatch bracket by construction, so its re-reading cannot be'
         + ' attributed to one and cannot be measured here.'

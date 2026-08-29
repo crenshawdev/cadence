@@ -932,6 +932,19 @@ test('R7: cad-executor at 3.64 emits one entry carrying the worst file, the dire
     `the coverage share is missing - the figure reads as a total: ${e.evidence}`);
   assert.ok(e.evidence.includes('nothing prunes `.planning/reads.jsonl` at a milestone close'),
     `the scope is missing - a reader cannot tell which milestones it spans: ${e.evidence}`);
+  // TRC-10: the close still prunes nothing, but the record IS cut at its size
+  // bound now, so the scope clause carries both halves and points at the
+  // envelope key that says whether this run's record was one of the cut ones.
+  assert.ok(e.evidence.includes('the cut at its size bound'),
+    `the scope names no cut - the record shortens and the entry does not say so: ${e.evidence}`);
+  assert.ok(e.evidence.includes('still in the LIVE record'),
+    `the scope does not scope itself to the live record: ${e.evidence}`);
+  assert.ok(e.evidence.includes('`reads.rotated` on this envelope'),
+    `the scope points at no key for whether this run was cut: ${e.evidence}`);
+  // The OLD conclusion, gone rather than qualified: "every milestone still in
+  // that file" was true only while nothing shortened the record.
+  assert.equal(e.evidence.includes('reaches every milestone still in that file'), false,
+    `the pre-rotation conclusion survived: ${e.evidence}`);
   // The exclusion and its reason, which no prose surface can supply for a
   // reader running the seam directly.
   assert.ok(e.evidence.includes('4,395 coordinator read(s) carrying files'), e.evidence);
