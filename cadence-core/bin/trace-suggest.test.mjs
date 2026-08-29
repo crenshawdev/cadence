@@ -649,10 +649,14 @@ test('seam: a real trace written through appendEvent reads back through `trace s
     const run = (args) => JSON.parse(execFileSync('node', [BIN, ...args],
       { cwd: dir, encoding: 'utf8' }).trim().split('\n').pop() || '{}');
 
+    // Twice, deliberately: `trace suggest` is being shown a REPEATED event, so
+    // both calls carry the settled figures and neither collapses into the other.
     execFileSync('node', [BIN, 'trace', 'append', '--phase', '1', '--family', 'outcome',
-      '--event', 'adjudication', '--detail', 'plan: 0 survivors; voices claude-subagent'], { cwd: dir });
+      '--event', 'adjudication', '--survivors', '0', '--downgraded', '0', '--refuted', '0',
+      '--detail', 'plan: 0 survivors; voices claude-subagent'], { cwd: dir });
     execFileSync('node', [BIN, 'trace', 'append', '--phase', '1', '--family', 'outcome',
-      '--event', 'adjudication', '--detail', 'plan: 0 survivors; voices claude-subagent'], { cwd: dir });
+      '--event', 'adjudication', '--survivors', '0', '--downgraded', '0', '--refuted', '0',
+      '--detail', 'plan: 0 survivors; voices claude-subagent'], { cwd: dir });
     execFileSync('node', [BIN, 'trace', 'append', '--phase', '1', '--family', 'outcome',
       '--event', 'rearm', '--detail', 'risk_surface'], { cwd: dir });
 

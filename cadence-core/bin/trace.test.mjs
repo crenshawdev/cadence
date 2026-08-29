@@ -1097,7 +1097,8 @@ test('seam: --tokens 0 is a recorded figure, not an omission', () => {
 test('seam: --raised rides an adjudication event as a NUMBER', () => {
   const dir = root();
   const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--detail', 'plan: 0 survivors; voices openai', '--raised', '9']);
+    '--event', 'adjudication', '--detail', 'plan: 0 survivors; voices openai',
+    '--survivors', '0', '--downgraded', '0', '--refuted', '0', '--raised', '9']);
   assert.equal(r.ok, true);
   assert.equal(r.written, true);
   const [e] = lines(dir);
@@ -1111,7 +1112,8 @@ test('seam: --raised rides an adjudication event as a NUMBER', () => {
 test('seam: --raised 0 is a recorded figure, not an omission', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--detail', 'plan: 0 survivors', '--raised', '0']);
+    '--event', 'adjudication', '--detail', 'plan: 0 survivors',
+    '--survivors', '0', '--downgraded', '0', '--refuted', '0', '--raised', '0']);
   const [e] = lines(dir);
   assert.equal(e.raised, 0);
   // `0 of 0` and "nobody recorded it" are different fires, and this key is what
@@ -1122,7 +1124,8 @@ test('seam: --raised 0 is a recorded figure, not an omission', () => {
 test('seam: an append with no --raised is byte-identical to today\'s', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--detail', 'plan: 2 survivors']);
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors',
+    '--survivors', '2', '--downgraded', '0', '--refuted', '0']);
   const [e] = lines(dir);
   assert.equal('raised' in e, false, JSON.stringify(e));
 });
@@ -1134,7 +1137,8 @@ test('seam: a malformed --raised appends NOTHING at all', () => {
   for (const bad of ['abc', '-1', '1.5', '', '1,234']) {
     const before = traceBytes(dir);
     const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-      '--event', 'adjudication', '--detail', 'plan: 0 survivors', '--raised', bad]);
+      '--event', 'adjudication', '--detail', 'plan: 0 survivors',
+      '--survivors', '0', '--downgraded', '0', '--refuted', '0', '--raised', bad]);
     assert.equal(r.ok, false, bad);
     assert.equal(r.reason, 'bad-args', bad);
     assert.equal(traceBytes(dir), before, bad);
@@ -1142,7 +1146,8 @@ test('seam: a malformed --raised appends NOTHING at all', () => {
   assert.equal(traceBytes(dir), null);
   // A bare `--raised` (parsed as boolean true) is refused the same way.
   const bare = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--raised']);
+    '--event', 'adjudication',
+    '--survivors', '0', '--downgraded', '0', '--refuted', '0', '--raised']);
   assert.equal(bare.ok, false);
   assert.equal(bare.reason, 'bad-args');
   assert.equal(traceBytes(dir), null);
@@ -1227,9 +1232,11 @@ function fireRecord(repo, dir, { phase = 2, trigger = 'plan', discriminator = 'p
   return r;
 }
 
-/** The receipt a settle point copies, minus the counts. */
-const receipt = (extra) => ['trace', 'append', '--phase', '2', '--family', 'outcome',
-  '--event', 'adjudication', '--trigger', 'plan', '--plan', '1',
+/** The receipt a settle point copies, minus the counts. The EVENT is a
+ *  parameter because one arm below spawns a receipt carrying no settled figure
+ *  at all, and that shape belongs on an event which settles nothing. */
+const receipt = (extra, event = 'adjudication') => ['trace', 'append', '--phase', '2',
+  '--family', 'outcome', '--event', event, '--trigger', 'plan', '--plan', '1',
   '--base', 'HEAD~1', '--sha', 'deadbee', ...extra];
 
 test('seam: the three settled counts ride an outcome event as NUMBERS', () => {
@@ -1255,7 +1262,10 @@ test('seam: a settled count of 0 is a recorded figure, an absent one omits the k
   assert.ok('survivors' in e);
 
   const other = root();
-  run(other, receipt([]));
+  // On `rearm` rather than `adjudication`: what this half proves is that an
+  // append carrying no settled figure writes none of the keys, and a re-arm is
+  // the shipped receipt that carries none by contract.
+  run(other, receipt([], 'rearm'));
   const [bare] = lines(other);
   for (const key of ['survivors', 'downgraded', 'refuted', 'round']) {
     assert.equal(key in bare, false, `${key}: ${JSON.stringify(bare)}`);
@@ -1265,21 +1275,25 @@ test('seam: a settled count of 0 is a recorded figure, an absent one omits the k
 test('seam: a malformed settled count appends NOTHING at all', () => {
   for (const flag of ['--survivors', '--downgraded', '--refuted', '--round']) {
     const dir = root();
+    // `--round` is not itself one of the three settled figures, so its receipts
+    // carry one: the subject of every row here is the malformed VALUE, and a
+    // settle receipt naming no figure at all is a different call entirely.
+    const settle = flag === '--round' ? ['--survivors', '0'] : [];
     // No comma-grouping exception, unlike `--tokens`: a finding count is never
     // PRINTED grouped, so `1,234` is a typo rather than a transcription.
     for (const bad of ['abc', '-1', '1.5', '', '1,234']) {
-      const r = run(dir, receipt([flag, bad]));
+      const r = run(dir, receipt([...settle, flag, bad]));
       assert.equal(r.ok, false, `${flag} ${bad}`);
       assert.equal(r.reason, 'bad-args', `${flag} ${bad}`);
       assert.equal(traceBytes(dir), null, `${flag} ${bad}`);
     }
     // `--round 0` is malformed for a flag whose rounds start at 1.
     if (flag === '--round') {
-      assert.equal(run(dir, receipt([flag, '0'])).ok, false);
+      assert.equal(run(dir, receipt([...settle, flag, '0'])).ok, false);
       assert.equal(traceBytes(dir), null);
     }
     // A bare flag (parsed as boolean true) is refused the same way.
-    const r = run(dir, receipt([flag]));
+    const r = run(dir, receipt([...settle, flag]));
     assert.equal(r.ok, false, flag);
     assert.equal(r.reason, 'bad-args', flag);
     assert.equal(traceBytes(dir), null, flag);
@@ -1544,6 +1558,7 @@ test('seam: --trigger stores the review trigger an event belongs to, as a string
   const dir = root();
   const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
     '--event', 'adjudication', '--plan', '2', '--trigger', 'risk_surface',
+    '--survivors', '1', '--downgraded', '0', '--refuted', '0',
     '--detail', 'risk_surface plan-2: 1 survivor']);
   assert.equal(r.ok, true, JSON.stringify(r));
   const [e] = lines(dir);
@@ -1561,7 +1576,8 @@ test('seam: --trigger is stored VERBATIM, trimmed, with no vocabulary of its own
   // the caller's business, exactly as `--reviewer` treats a backend name.
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'gate_pass', '--trigger', '  risk_surface  ']);
+    '--event', 'gate_pass', '--survivors', '0', '--downgraded', '0', '--refuted', '0',
+    '--trigger', '  risk_surface  ']);
   assert.equal(lines(dir)[0].trigger, 'risk_surface');
 });
 
@@ -1573,7 +1589,8 @@ test('seam: a bare or blank --trigger appends NOTHING at all', () => {
   const dir = root();
   for (const args of [['--trigger'], ['--trigger', ''], ['--trigger', '  ']]) {
     const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-      '--event', 'adjudication', '--plan', '2', ...args]);
+      '--event', 'adjudication', '--plan', '2',
+      '--survivors', '0', '--downgraded', '0', '--refuted', '0', ...args]);
     assert.equal(r.ok, false, JSON.stringify(args));
     assert.equal(r.reason, 'bad-args', JSON.stringify(args));
   }
@@ -1583,7 +1600,8 @@ test('seam: a bare or blank --trigger appends NOTHING at all', () => {
 test('seam: an append with no --trigger is byte-identical to today\'s', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--detail', 'plan: 2 survivors']);
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors',
+    '--survivors', '2', '--downgraded', '0', '--refuted', '0']);
   const [e] = lines(dir);
   assert.equal('trigger' in e, false, JSON.stringify(e));
 });
@@ -1889,7 +1907,8 @@ test('seam: --detail-file carries a detail no shell could expand', () => {
   const dir = root();
   const payload = 'reviewer said $(touch /tmp/cad-trace-should-not-exist) and `id`';
   const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'outcome',
-    '--event', 'adjudication', '--detail-file', valueFile(dir, `${payload}\n`)]);
+    '--event', 'adjudication', '--survivors', '0', '--downgraded', '0', '--refuted', '0',
+    '--detail-file', valueFile(dir, `${payload}\n`)]);
   assert.equal(r.ok, true);
   // Byte-equal to the file's trimmed contents: nothing between the file and the
   // record may touch the value.
