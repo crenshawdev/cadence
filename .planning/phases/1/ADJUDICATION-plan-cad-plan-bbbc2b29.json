@@ -1,0 +1,71 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "cad-plan-bbbc2b29",
+  "round": 1,
+  "base": "06be3d6ccf6fedbd197c8233820e7ab8b79dbae6",
+  "head": "bbbc2b29699e078f22889e9150dff512a094ce7c",
+  "base_id": "06be3d6ccf6fedbd197c8233820e7ab8b79dbae6",
+  "head_id": "bbbc2b29699e078f22889e9150dff512a094ce7c",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN-1.md",
+      "line": 96,
+      "severity": "blocker",
+      "claim": "Task 1 requires the `finally` used on “EVERY arm” to unlink the sibling that was created by `linkSync`, including after the live-path swap succeeds.",
+      "failure_scenario": "On a successful first rotation, that sibling is the only path to the prior generation. Unlinking it in the unconditional cleanup removes the generation immediately, so the required sibling does not exist, the pre-rotation bytes cannot be retained, and AC1/AC2's required on-disk pair cannot be true. Making the unlink conditional on failure would be a materially different cleanup rule than the task specifies.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/trace.mjs",
+        "line": 678,
+        "note": "PLAN-1.md's own clause is `unlinks the sibling while the claim is still held`, not an unconditional unlink. trace.mjs:678-680 declares `let held = false` with the comment `The claim is HELD from the link until the swap. While it is held the sibling is only a second name for the live file, so every failure arm has to release it`; :683 sets it true immediately after `linkSync`, and the swap ends it. On the success arm the sibling names the prior generation rather than a held claim, so the release arm does not fire and the generation survives. The scenario described cannot occur."
+      },
+      "base_id": "06be3d6ccf6fedbd197c8233820e7ab8b79dbae6",
+      "head_id": "bbbc2b29699e078f22889e9150dff512a094ce7c"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN-1.md",
+      "line": 190,
+      "severity": "blocker",
+      "claim": "Task 4 explicitly treats a missing claim sidecar as a live claim that must remain standing, despite requiring the sidecar to be published only after the process has won the hard-link claim.",
+      "failure_scenario": "A process can die after `linkSync(live, sibling)` succeeds but before its private sidecar is renamed into `reads.1.jsonl.claim`. The live and sibling paths then remain hard links, but no shared sidecar exists. Every later append follows the plan's missing-sidecar/live-claim path, waits 250 ms, appends without reclaiming, and leaves rotation disabled indefinitely. This is a killed rotation that permanently disables future rotations, violating the roadmap success criterion and the phase goal; the proposed missing-sidecar test codifies rather than catches it.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/trace.mjs",
+        "line": 706,
+        "note": "The window is real but narrow and inherited, and it is not introduced by this plan. trace.mjs:706-712 writes the stamp to a PRIVATE path BEFORE `linkSync`, with the comment `The stamp has to exist before the linkSync, because the window it closes is the other way round`, and publishes it by rename the line after the link succeeds. trace.mjs:745-749 records the deliberate trade: `A FAILED sidecar write is swallowed rather than allowed to decide the rotation: no sidecar reads as LIVE (D-02)`, because treating a missing sidecar as abandoned lets a third process evict a LIVE claim, which the same comment measures as costing the whole record rather than one rotation. v3.7.5 phase 4's UAT ships that behaviour as a passing row. CONTEXT AC4 reads `With an abandoned claim on disk`, and a state with no sidecar at all is not that. The ROADMAP rail forbids changing trace rotation behaviour, so this residual is recorded rather than closed here."
+      },
+      "base_id": "06be3d6ccf6fedbd197c8233820e7ab8b79dbae6",
+      "head_id": "bbbc2b29699e078f22889e9150dff512a094ce7c"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN-1.md",
+      "line": 239,
+      "severity": "high",
+      "claim": "The plan deliberately leaves `READS_CLAIM_FILE` on disk after every completed rotation and redefines AC3's “no claim file behind” to mean no held hard-link claim.",
+      "failure_scenario": "After two concurrent appenders complete normally, `.planning/reads.1.jsonl.claim` still exists by design. AC3 requires “no claim file behind,” and AC7 requires ignore coverage for the sibling and its claim files; this is plainly the named claim file, not merely an implementation-internal state. The plan's Notes cannot narrow the locked acceptance criterion, so its own required successful state fails AC3 even if the sidecar is inert.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "bbbc2b29",
+      "base_id": "06be3d6ccf6fedbd197c8233820e7ab8b79dbae6",
+      "head_id": "bbbc2b29699e078f22889e9150dff512a094ce7c"
+    }
+  ]
+}
