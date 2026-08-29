@@ -725,6 +725,29 @@ test('missing config file uses schema defaults, does not crash', () => {
   assert.match(r.reason[0], /stakes default "shipped" \(unset in layers: defaults\)/);
 });
 
+// --- set-ness of stakes on the envelope (RNG-04) ------------------------------
+//
+// `stakes` is ALWAYS a level, so on its own it cannot tell the two states the
+// floor routes differently on apart - a level a layer chose, and DEFAULTS
+// standing in the layers' silence. `stakes_set` is the pairing `surfaces` +
+// `surfaces_answered` already ships. Both arms below resolve to the SAME level
+// on purpose: the flag is the only thing that separates them, which is exactly
+// what a caller reading `stakes` alone cannot recover.
+
+test('a config carrying no stakes reports stakes_set:false beside the default level', () => {
+  const r = resolve('cad-planner', cfg({}, 'stakes-unset.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the schema default, not a configured value');
+  assert.equal(r.stakes_set, false);
+});
+
+test('a config setting stakes reports stakes_set:true at that same level', () => {
+  const r = resolve('cad-planner', cfg({ stakes: 'shipped' }, 'stakes-set-shipped.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the level the arm above reports from silence');
+  assert.equal(r.stakes_set, true, 'a chosen level read as the default');
+});
+
 // --- global config layer -----------------------------------------------------
 
 test('global layer applies when no repo config is present', () => {
@@ -2180,6 +2203,34 @@ test('replay: a bare --file is REFUSED, exactly as resolve\'s is', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
   assert.match(r.detail, /--file/);
+});
+
+test('replay: stakes_set qualifies the today column, and agrees with what resolve reports', () => {
+  // `today` IS `cfg.stakes`, which is the schema default when no layer set the
+  // key, so the column has exactly the two states the resolve envelope does and
+  // a replay without the flag reports a default as a configured level. Both
+  // fixtures answer `shipped` for `today`; only the flag tells them apart. The
+  // cross-check against `resolve` over the SAME file is `levelFor`'s rule held
+  // one field over - a replay may not come to report what no resolve would.
+  const plans = { '3/PLAN-1.md': ['docs/README.md'] };
+  const files = { 'docs/README.md': '# Readme\n' };
+  const unset = floorRoot({ ...ANSWERED }, plans, files);
+  const set = floorRoot({ stakes: 'shipped', ...ANSWERED }, plans, files);
+
+  const ru = replay(unset.file);
+  assert.equal(ru.ok, true);
+  assert.equal(ru.rows.length, 1, 'the fixture produced no row to qualify');
+  assert.equal(ru.stakes, 'shipped');
+  assert.equal(ru.stakes_set, false);
+  assert.equal(resolve('cad-executor', unset.file).stakes_set, false,
+    'resolve and replay report different set-ness off one config');
+
+  const rs = replay(set.file);
+  assert.equal(rs.ok, true);
+  assert.equal(rs.stakes, 'shipped', 'the level the unset fixture reports from silence');
+  assert.equal(rs.stakes_set, true);
+  assert.equal(resolve('cad-executor', set.file).stakes_set, true,
+    'resolve and replay report different set-ness off one config');
 });
 
 // --- lowering below the computed floor takes a named waiver (AC4) ------------
