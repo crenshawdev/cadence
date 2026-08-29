@@ -29,7 +29,9 @@
 // reason.
 'use strict';
 
-import { appendFileSync, lstatSync, statSync } from 'node:fs';
+import {
+  appendFileSync, linkSync, lstatSync, renameSync, statSync, unlinkSync, writeFileSync,
+} from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 // The ONE statement of which agent FILE carries which rung of which role. The
 // join below needs the reverse direction - a recorded `agent_type` stem back to
@@ -65,6 +67,71 @@ export const MAX_FILES_PER_CALL = 12;
 /** @param {string} planningRoot */
 export function readsPath(planningRoot) {
   return join(planningRoot, READS_FILE);
+}
+
+/**
+ * Where the rotated generation lives. The spelling is stated ONCE, here, so the
+ * writer, the `.gitignore` rule that has to name it and every test read it from
+ * one place and cannot drift apart. It keeps the record's own `reads.` prefix
+ * because a test that filters the planning root on that prefix is how a leaked
+ * temp or a second generation reddens a row rather than going unseen.
+ */
+export const ROTATED_READS_FILE = 'reads.1.jsonl';
+
+/**
+ * The claim SIDECAR's spelling, DERIVED from `ROTATED_READS_FILE` rather than
+ * written out again, so the two names cannot come apart either - the reason
+ * `lib/trace.mjs:138` states for `ROTATION_CLAIM_FILE`. A caller that has to
+ * name the file then names what the writer actually produces.
+ */
+export const READS_CLAIM_FILE = `${ROTATED_READS_FILE}.claim`;
+
+/**
+ * Where the rotated generation lives, joined onto the planning root the way
+ * `readsPath` does.
+ * @param {string} planningRoot
+ */
+export function rotatedReadsPath(planningRoot) {
+  return join(planningRoot, ROTATED_READS_FILE);
+}
+
+/**
+ * Where the claim sidecar lives.
+ * @param {string} planningRoot
+ */
+export function readsClaimPath(planningRoot) {
+  return join(planningRoot, READS_CLAIM_FILE);
+}
+
+/**
+ * The rotation marker's `event` value, the one line a fresh record starts with.
+ *
+ * The same spelling as `lib/trace.mjs`'s `ROTATION` and a SECOND statement of
+ * it, deliberately. `bin/read-trace.mjs` loads this module on every Read, Grep,
+ * Glob, Bash and NotebookRead call under the 5-second timeout at
+ * `hooks/hooks.json:15-25`, and importing 104 KB of trace source to parse for
+ * one string is a real per-tool-call cost - the same reason this module's header
+ * already gives for being a sidecar rather than a family of `trace.jsonl`.
+ */
+export const READS_ROTATION = 'record_rotated';
+
+/**
+ * Is this record the rotation marker rather than a tool call?
+ *
+ * The marker is NOT inert here the way `lib/trace.mjs`'s is in its renderer:
+ * `summarizeReads` bills every object it is handed and `joinReads` pushes an
+ * `unresolved` row for any record with no `agent`, so an unfiltered marker
+ * becomes a phantom read that `/cad-report` prints in its Reading line as a
+ * real tool call. This predicate is what the folds filter on.
+ *
+ * `tool`-absence is safe as the second clause because `recordFromHook` writes a
+ * `tool` from `RECORDED_TOOLS` on every record it produces and never writes an
+ * `event` key at all, so no real read can satisfy both.
+ * @param {any} record
+ */
+export function isReadsRotationMarker(record) {
+  return !!record && typeof record === 'object' && !Array.isArray(record)
+    && record.event === READS_ROTATION && !('tool' in record);
 }
 
 /**
@@ -263,10 +330,112 @@ export function recordFromHook(input, now, opts) {
 }
 
 /**
+ * Claim the record, swap a fresh one in, and hand the old generation to
+ * `ROTATED_READS_FILE`.
+ *
+ * A SECOND rotation, never a generalization of `rotateTrace` (D-01). That
+ * function is bound to the trace at four levels - its three path helpers, its
+ * re-stat trigger, the carry policy in `freshRecord` and the bound inside it -
+ * and fourteen rotation rows in `trace.test.mjs` are the proof it did not
+ * change. What is reused here is the TECHNIQUE, restated: the accepted cost is
+ * that a copy can drift from the trace's claim semantics on the next fix to
+ * either one.
+ *
+ * NO LOCK (D-05). `withPlanningFileLock` is refused for the reason
+ * `lib/trace.mjs:626-631` refuses it and for a stronger one this record has:
+ * `bin/read-trace.mjs` may emit nothing on any stream and exits 0
+ * unconditionally, so a lock refusal would have no path to be reported on. The
+ * concurrency is cross-PROCESS and ordinary rather than theoretical -
+ * `hooks/hooks.json:17` matches five tools and one OS process runs per tool
+ * call, so parallel subagents are concurrent `appendRead` processes (D-07).
+ *
+ * THE CLAIM IS `linkSync`, NOT `renameSync`. A rename REPLACES its destination
+ * silently, so a writer still holding a stale stat would destroy a generation
+ * another writer had already made and exactly one sibling would still exist, so
+ * a count-based check would call that healthy. `linkSync` fails `EEXIST`
+ * instead, which is atomic, single-winner, and REFUSES the claim rather than
+ * detecting the damage after the fact (`lib/trace.mjs:633-641`).
+ *
+ * NEVER A READ-MODIFY-WRITE. The old generation is produced by the claim
+ * itself and the fresh record is written WHOLE to a private path and renamed
+ * into place, so the live path is never absent and no concurrent append is
+ * trimmed away by a rewrite it did not see (`lib/trace.mjs:642-650`).
+ *
+ * NOTHING CROSSES THE CUT (D-02). The fresh record is one line - the marker -
+ * and there is no `freshRecord` analogue and no run-in-flight tail, because
+ * nothing scans this record backwards: `readReadsRecords` reads it whole and
+ * `joinReads` joins by timestamp containment against the TRACE's brackets. The
+ * trace carries a tail only because `correlationId` scans backward for its
+ * anchor.
+ *
+ * @param {string} planningRoot
+ * @param {number} reserve the pending line's byte length, what the fresh record
+ *   owes beyond the marker
+ * EXPORTED for the reason `rotateTrace` is (`lib/trace.mjs:651-655`): the
+ * losing arms cannot be reached through `appendRead`, which re-stats the record
+ * and so can never be made to arrive here holding a stale one. Nothing but
+ * `appendRead` and the tests may call it.
+ * @returns {{rotated: boolean, reason?: string}} `reason` ONLY where the
+ *   rotation failed outright; losing the claim is `{rotated:false}` and the
+ *   caller appends, because somebody else already made room.
+ */
+export function rotateReads(planningRoot, reserve) {
+  const file = readsPath(planningRoot);
+  const sibling = rotatedReadsPath(planningRoot);
+  const priv = `${process.pid}.${Math.random().toString(36).slice(2)}`;
+  /** @type {string|null} */
+  let temp = null;
+  // The claim is HELD from the link until the swap. While it is held the
+  // sibling is only a second name for the live file, so every failure arm has
+  // to release it - a claim left behind reads as a rotation in flight forever
+  // and the record never rotates again.
+  let held = false;
+  try {
+    try {
+      linkSync(file, sibling);
+      held = true;
+    } catch (e) {
+      const code = e && /** @type {any} */ (e).code;
+      // No record to rotate at all: the caller's append is what creates it.
+      if (code === 'ENOENT') return { rotated: false };
+      // A sibling already sits at that path. Somebody else made the room and
+      // this writer appends into what they left.
+      if (code === 'EEXIST') return { rotated: false };
+      return { rotated: false, reason: code || 'claim-failed' };
+    }
+    // The fresh record is written whole to a PRIVATE path - this process's pid
+    // and a random suffix, exclusive-create - and renamed over the live path.
+    temp = `${file}.rotate.${priv}`;
+    const marker = {
+      ts: new Date().toISOString(),
+      event: READS_ROTATION,
+      file: ROTATED_READS_FILE,
+    };
+    writeFileSync(temp, `${JSON.stringify(marker)}\n`, { flag: 'wx' });
+    renameSync(temp, file);
+    temp = null;
+    held = false;
+    return { rotated: true };
+  } catch (e) {
+    return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
+  } finally {
+    // Leave nothing behind on ANY arm: no private temp, no unfinished claim.
+    if (temp) { try { unlinkSync(temp); } catch { /* nothing to clean up */ } }
+    if (held) { try { unlinkSync(sibling); } catch { /* nothing to release */ } }
+  }
+}
+
+/**
  * Append one record. Mirrors lib/trace.mjs's guarded append: lstat for a
- * planted symlink ahead of the size stat, the cap enforced BEFORE the write
+ * planted symlink ahead of the size stat, the bound enforced BEFORE the write
  * because an append-only file has no whole-file rewrite to trim from, and a
  * reason returned rather than thrown on every failure.
+ *
+ * The SIZE bound is not a refusal. At `MAX_READS_BYTES` the record rotates and
+ * this append lands, so no writer is ever again told the record is full; the
+ * two remaining size answers are `oversized-record`, for a single line that
+ * reaches the bound by itself, and whatever code a rotation that could not
+ * complete failed with.
  * @param {string} planningRoot
  * @param {any} record
  */
@@ -275,20 +444,50 @@ export function appendRead(planningRoot, record) {
     return { written: false, reason: 'bad-record' };
   }
   const file = readsPath(planningRoot);
+  // The symlink guard stays FIRST and unchanged, so a redirected record is
+  // refused whatever its size.
   try {
     if (lstatSync(file).isSymbolicLink()) return { written: false, reason: 'symlinked-reads' };
   } catch { /* ENOENT is the ordinary first write */ }
-  try {
-    if (statSync(file).size >= MAX_READS_BYTES) return { written: false, reason: 'size-cap' };
-  } catch (e) {
-    const code = e && /** @type {any} */ (e).code;
-    if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
-  }
+  // RENDERED AHEAD of the size arm, which is a reordering and not a
+  // rearrangement: the arm now needs this line's own byte length, because it
+  // fires when the record PLUS this line would reach the bound rather than when
+  // the record is already at it. The old post-hoc arm admitted one last record
+  // that carried the file past the bound.
   let line;
   try {
     line = `${JSON.stringify(record)}\n`;
   } catch (e) {
     return { written: false, reason: 'unserializable-record' };
+  }
+  const pending = Buffer.byteLength(line);
+  // THE BOUND, no longer a refusal. A record at the bound used to answer
+  // `{written:false}` with a full-record reason to every writer for the rest of
+  // the project's life - permanent, silent write-death that went four cycles
+  // unnoticed because `appendRead`'s return reaches no user-facing surface
+  // (D-12). It ROTATES instead: the old generation becomes
+  // `ROTATED_READS_FILE` and this append lands.
+  //
+  // An absent file is the ordinary first write; any other stat failure is the
+  // reason this append did not happen.
+  let size = null;
+  try {
+    size = statSync(file).size;
+  } catch (e) {
+    const code = e && /** @type {any} */ (e).code;
+    if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
+  }
+  if (size !== null && size + pending >= MAX_READS_BYTES) {
+    // A single line that reaches the bound on its own is REFUSED rather than
+    // rotated. Rotating there throws the record away to make room for a line
+    // that still would not fit, and the next append does it again
+    // (`lib/trace.mjs:1014-1019`).
+    if (pending >= MAX_READS_BYTES) return { written: false, reason: 'oversized-record' };
+    const rot = rotateReads(planningRoot, pending);
+    // Losing the claim is not a failure: somebody else already made the room,
+    // and this writer appends into the record they left. Only a rotation that
+    // FAILED carries a reason, and it is reported rather than appended past.
+    if (rot.reason) return { written: false, reason: rot.reason };
   }
   try {
     appendFileSync(file, line);

@@ -10,12 +10,16 @@
 // enforced before the write, a reason returned and never thrown).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, statSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, statSync,
+  appendFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
+  rotatedReadsPath, isReadsRotationMarker,
 } from './lib/read-trace.mjs';
 
 const TS = '2026-08-14T00:00:00.000Z';
@@ -145,14 +149,57 @@ test('a symlinked reads file is refused, appending nothing', () => {
   assert.equal(readFileSync(decoy, 'utf8'), '', 'the link target was written through');
 });
 
-test('the cap is enforced BEFORE the write', () => {
+/**
+ * Pad the reads record to ONE BYTE UNDER `MAX_READS_BYTES`, so the next append
+ * is what carries it to the bound and the trigger under test is "this line
+ * would reach it" rather than "the file already did".
+ * @param {string} d
+ */
+function padToReadsBound(d) {
+  let at = 0;
+  try { at = statSync(readsPath(d)).size; } catch { at = 0; }
+  appendFileSync(readsPath(d), `${'x'.repeat(MAX_READS_BYTES - at - 2)}\n`);
+  assert.equal(statSync(readsPath(d)).size, MAX_READS_BYTES - 1);
+}
+
+/** Every line of the live record, parsed. @param {string} d */
+const liveLines = (d) => readFileSync(readsPath(d), 'utf8').trim().split('\n');
+
+test('a record at the bound ROTATES and the append lands, rather than reporting a cap', () => {
   const d = tmp();
-  writeFileSync(readsPath(d), 'x'.repeat(MAX_READS_BYTES));
-  const before = readFileSync(readsPath(d), 'utf8').length;
-  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/a' });
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-cut' });
+  padToReadsBound(d);
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/after-the-cut' });
+  assert.equal(res.written, true, `the append at the bound was refused: ${res.reason}`);
+  assert.ok(statSync(readsPath(d)).size < MAX_READS_BYTES,
+    'the live record is still at or over the bound after a rotation');
+
+  const lines = liveLines(d);
+  assert.ok(isReadsRotationMarker(JSON.parse(lines[0])),
+    'the fresh record does not start with the rotation marker');
+  assert.equal(JSON.parse(lines[lines.length - 1]).target, '/after-the-cut',
+    'the record that triggered the rotation is not in the live file');
+
+  assert.equal(existsSync(rotatedReadsPath(d)), true, 'no sibling generation was left');
+  assert.ok(readFileSync(rotatedReadsPath(d), 'utf8').includes('/before-the-cut'),
+    'the pre-rotation bytes are not in the sibling');
+  // NOTHING crosses the cut (D-02): the whole live file became the sibling.
+  assert.equal(readFileSync(readsPath(d), 'utf8').includes('/before-the-cut'), false,
+    'a pre-rotation record was carried into the fresh file');
+});
+
+test('a single record that reaches the bound by itself is refused, never rotated', () => {
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/a' });
+  const before = statSync(readsPath(d)).size;
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: 'x'.repeat(MAX_READS_BYTES) });
   assert.equal(res.written, false);
-  assert.equal(res.reason, 'size-cap');
-  assert.equal(readFileSync(readsPath(d), 'utf8').length, before);
+  assert.equal(res.reason, 'oversized-record');
+  assert.equal(statSync(readsPath(d)).size, before, 'the oversized record was appended anyway');
+  assert.equal(existsSync(rotatedReadsPath(d)), false,
+    'the record was thrown away to make room for a line that still would not fit');
 });
 
 test('a bad record is refused by reason, never thrown', () => {
