@@ -40,7 +40,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
   PASS - report that the gate could not be evaluated and ask. The re-arm on that
   fix is CAPPED - see below. Its below-blocker/high REMAINDER - the findings it
   reports and moves past - is settled in the same step, by "What happens to a
-  finding this fire will not fix" below.
+  finding this fire will not fix" below. That remainder is RECORDABLE: a
+  `survived` finding raised below blocker/high is one that was confirmed and
+  NOT fixed, so the record holds it as it happened instead of forcing a
+  downgrade. How the entry is composed is `references/review-record.md`'s.
 
 **Every blocking settle leaves a JOINABLE receipt.** `planning.mjs risk-check
 status` refuses a range its detector matched until an outcome event says the

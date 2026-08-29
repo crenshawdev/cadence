@@ -35,6 +35,15 @@ import { buildEntries } from './adjudication-record.mjs';
  *
  * Everything else is that arm's remainder - the findings it reports and moves
  * past - and the remainder is what this phase files rather than parks.
+ *
+ * THE REMAINDER IS NOW RECORDABLE AS WHAT IT IS. A `survived` finding raised
+ * BELOW this pair is one that was confirmed and NOT fixed, carrying no commit
+ * id because none exists, and lib/adjudication-record.mjs stores that entry
+ * rather than refusing it. Before it could, the only way to write the
+ * remainder down was to DOWNGRADE the finding, which records "the adjudicator
+ * lowered it" over "it stood and nobody fixed it" - so the set this module
+ * returns and the record the same fire writes now say the same thing about the
+ * same findings.
  */
 export const HALTING_SEVERITIES = Object.freeze(['blocker', 'high']);
 
