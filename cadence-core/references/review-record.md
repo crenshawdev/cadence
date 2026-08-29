@@ -83,8 +83,29 @@ and there is no fourth value. Each ruling RESTATES the claim and the failure
 scenario it rules on, and the seam REFUSES the payload when a restatement
 differs from the returned text by one byte: the entry is stored from the
 reviewer's own words, so a paraphrase is refused rather than recorded. A
-`refuted` ruling names the contradicting code in its counter-evidence; a
-`survived` one names the fix commit.
+`refuted` ruling names the contradicting code in its counter-evidence.
+
+A `survived` ruling is severity-gated, and this is the sentence to follow when
+the gate will not fix a finding. A `survived` finding RAISED at `blocker` or
+`high` names its fix commit in `fix_commit` - an auditor runs `git show` on that
+value, so it has to be a real one. A `survived` finding raised BELOW them is one
+that was confirmed and NOT fixed - reported, moved past - and carries no commit
+id because none exists: leave `fix_commit` off the ruling entirely. Do not
+downgrade a finding to make it storable and do not invent a SHA to fill the
+field; both are false statements about what happened, and the record accepts the
+true one.
+
+A `blocker` or `high` the USER OVERRODE carries `overridden: true` instead of a
+commit - the one survived-at-a-halting-severity case where no fix is coming, so
+no SHA exists to name. The marker is the fact ALONE: the user's own reason rides
+the `override` receipt's `--detail-file` (see `references/triage-gate.md`) and a
+second copy on the entry is a second statement that can drift. Only the boolean
+`true` is accepted, and `false` is refused because absence already says the
+finding was not overridden.
+
+Neither case is a fourth `ruling` value. The vocabulary is still `survived`,
+`downgraded`, `refuted`, and what varies is what a `survived` entry carries
+beside the ruling.
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload <path>
