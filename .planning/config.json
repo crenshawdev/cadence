@@ -36,5 +36,6 @@
     "forge_provider": "github",
     "forge_repo": "crenshawdev/cadence",
     "forge_host": null
-  }
+  },
+  "stakes": "critical"
 }
