@@ -96,6 +96,77 @@ test('cad-plan-checker-contract states one dimension count in all three places',
     `<success_criteria> says ${claimedCount} but <dimensions> enumerates ${enumerated}`);
 });
 
+// --- RNG-04: the README's adaptive-routing claim, held against a real resolve -
+//
+// "leaving `stakes` unset is what lets a phase touching none of them route
+// below the old default" was FALSE of every project Cadence initialised until
+// the template stopped writing the key: the resolver's discount shipped in
+// v3.5.7, but no new project could ever reach it. So the sentence is held
+// against a resolve over a repo built from the SHIPPED TEMPLATE, not against a
+// hand-written config - a check that only grepped the README for the sentence
+// would pass on exactly the broken tree this closes.
+
+/** The README sentence the arm below measures, located by a stable substring. */
+const UNSET_CLAIM = 'leaving `stakes` unset is what lets a phase touching none '
+  + 'of them route below the old default';
+
+/**
+ * `route.mjs resolve` over a repo INITIALISED FROM THE SHIPPED TEMPLATE: the
+ * template copied to `.planning/config.json` exactly as both init workflows
+ * copy it, one phase holding one plan, and the one repo file that plan declares
+ * touching no risk surface. Beside `resolvedReview` rather than folded into it
+ * - that helper writes a bare config carrying one `stakes` value and asserts
+ * the resolve came back AT it, which is the opposite of the case here, and it
+ * builds no repo tree, no phase directory and no declared file.
+ *
+ * The global layer is pointed at a path that does not exist, so a dev machine
+ * whose user-global config pins `stakes` cannot answer for the template.
+ */
+function resolvedFromTemplate(phase = 3) {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-prose-template-'));
+  const planning = join(repo, '.planning');
+  mkdirSync(join(planning, 'phases', String(phase)), { recursive: true });
+  writeFileSync(join(planning, 'config.json'),
+    doc('cadence-core', 'templates', 'config.json'));
+  writeFileSync(join(planning, 'phases', String(phase), 'PLAN-1.md'),
+    `---\nphase: ${phase}\nplan: 1\nfiles:\n  - docs/README.md\n---\n\n# Plan\n`);
+  mkdirSync(join(repo, 'docs'), { recursive: true });
+  writeFileSync(join(repo, 'docs', 'README.md'), '# Readme\n');
+  const line = execFileSync('node',
+    [ROUTE, 'resolve', '--role', 'cad-executor', '--phase', String(phase),
+      '--file', join(planning, 'config.json')],
+    { encoding: 'utf8', env: { ...process.env,
+      CADENCE_GLOBAL_CONFIG: join(repo, 'no-global.json') } });
+  const r = JSON.parse(line);
+  assert.equal(r.ok, true, line);
+  return r;
+}
+
+test('README: a template-initialised phase touching no surface really does route BELOW the default', () => {
+  const readme = doc('README.md');
+  assert.ok(readme.includes(UNSET_CLAIM),
+    `README no longer makes the claim this arm measures: ${UNSET_CLAIM}`);
+
+  // "below" and "the old default" both come off the artifacts, never off this
+  // file: the order is route-table.json's own `stakes_order` and the default is
+  // config.schema.json's `keys.stakes.default`, so a change to either is read
+  // here rather than silently disagreed with.
+  const order = JSON.parse(doc('cadence-core', 'route-table.json')).stakes_order;
+  const dflt = JSON.parse(doc('cadence-core', 'config.schema.json')).keys.stakes.default;
+  const r = resolvedFromTemplate();
+  assert.ok(order.indexOf(r.stakes) > -1 && order.indexOf(dflt) > -1,
+    `stakes_order ${JSON.stringify(order)} does not place ${r.stakes} and ${dflt}`);
+  // FIRST, and deliberately: on a tree whose template pins a level again this
+  // is the assertion that must speak, because its message carries the two
+  // figures a reader needs - what the resolve returned and what it is measured
+  // against. The `stakes_set` pin below is the same fact said upstream, and
+  // asserting it first would answer a level question with a set-ness message.
+  assert.ok(order.indexOf(r.stakes) < order.indexOf(dflt),
+    `the README says a surfaceless phase routes below the default, but a `
+    + `template-initialised repo resolved ${r.stakes} against the default ${dflt}`);
+  assert.equal(r.stakes_set, false, 'the shipped template pins a stakes level');
+});
+
 // --- DFC-02: both statements of phase_diff's gates match the RESOLVER --------
 
 const LEVELS = ['solo', 'shipped', 'critical'];
