@@ -28,6 +28,24 @@ one over a record that cannot be read.
 - Both rules stated in `cadence-core/references/review-record.md` and
   `cadence-core/references/triage-gate.md`, with their ceilings re-pinned in `weight-budgets.json`
 
+Then, after UAT found AC3 still open (plans 2 and 3, the `--gaps` closure):
+
+- 15 shipped settle-receipt `trace append` spawns carried onto the new shape across
+  `trace.test.mjs`, `plan-key.test.mjs`, `risk-diff.test.mjs` and `trace-suggest.test.mjs`, so the
+  constraint below landed against a tree that already obeyed it
+- `PRESENCE_RULES` + `evaluatePresence` as a SECOND declared structure beside `CONTRACTS`, keyed
+  the same way, stating that a `trace append` whose `--event` is `adjudication`, `gate_pass` or
+  `override` requires at least one of `--survivors`, `--downgraded`, `--refuted` -
+  `cadence-core/bin/lib/arg-contract.mjs`
+- That rule enforced as the second arm of `planning.mjs`'s existing if/else dispatch chain, so a
+  malformed VALUE still names its own flag first - `cadence-core/bin/planning.mjs`
+- An end-to-end arm proving a figureless `gate_pass` over a record holding a survived blocker
+  marked `overridden: true` is refused with nothing appended, while the `override --detail-file`
+  receipt carrying its figures still settles the range `recorded` -
+  `cadence-core/bin/planning-adjudication.test.mjs`
+- `cadence-core/bin/planning/trace.mjs` byte-unchanged and D-04 unamended, by decision: the seam
+  keeps its event-agnostic property and the event-name knowledge lives at the argument door
+
 ## Commits
 
 | Plan | Task | Commit | Description |
@@ -39,6 +57,9 @@ one over a record that cannot be read.
 | 1 | 5 | 96d32686 | State both guards in the two references and re-pin their ceilings |
 | 1 | 5 (cont.) | aa61edf1 | Re-pin EXECUTE-22 to the line trace.mjs's new import shifted it to |
 | 1 | risk_surface fix | 776c67ef | Refuse an unreadable record in the cleared-halt check |
+| 2 | 1 | 211c92f1 | Carry the settled figures on every shipped settle-receipt append |
+| 3 | 1 | 0ad99a98 | Refuse a settle receipt that carries no settled figures |
+| 3 | 2 | 3f68cf78 | Prove a cleared halt cannot be settled by a figureless receipt |
 
 ## Deviations
 
@@ -76,6 +97,16 @@ one over a record that cannot be read.
   at blocker or high. Record at `ADJUDICATION-diff-plan-1.json`.
 - Filed: the `diff` survivor accepted as a GitHub issue; both `risk_surface` non-survivors
   declined with the decline label.
+- Plans 2 and 3 (the `--gaps` closure) each fired `risk_surface` on their committed range with no
+  matches, and each fired `diff` blocking. Plan 2 PASSED with 0 raised
+  (`ADJUDICATION-diff-plan-2.json`). Plan 3 PASSED with 1 raised and 1 survived at `medium`,
+  nothing at blocker or high (`ADJUDICATION-diff-plan-3.json`): `evaluatePresence` scans every raw
+  `--event` occurrence while `planning.mjs:242` keeps the LAST, so `--event gate_pass --event
+  rearm` refuses naming `gate_pass` even though a `rearm` would have been stored. Confirmed at
+  `cadence-core/bin/lib/arg-contract.mjs:474` against a throwaway repo and accepted as a GitHub
+  issue. Only reachable by passing `--event` twice, which no shipped call site does.
+- The `plan` review of these two plans was `adjudicated`: 3 raised, 2 survived and applied to the
+  plan files before execution, 1 refuted. Record at `ADJUDICATION-plan-cad-plan-0e4f65b.json`.
 
 ## Open items
 
@@ -90,6 +121,18 @@ one over a record that cannot be read.
 - The adjudication record is unsigned plaintext with no hash or chain, so a record rewritten to
   `{"entries":[]}` plus a partial settle line still discharges the override marker. Downgraded
   rather than fixed: tamper-evidence for the record format is work this phase did not scope.
+- `evaluatePresence` reads every raw `--event` occurrence while `parseArgs` keeps the last, so a
+  duplicated `--event` refuses on the wrong one. Filed on the tracker; nothing ships that shape.
+- `PRESENCE_RULES` holds ONE rule per subcommand key rather than a list, and `evaluatePresence`
+  answers that one `when`/`is`/`requires` form. Nothing needed a second rule on any subcommand;
+  make it a list when a task states one.
+- The claim carried into PLAN-2 by the plan review - that `seam: a malformed --raised appends
+  NOTHING at all` would "stay green while silently ceasing to prove" its own validation - is
+  measured FALSE. Every one of those flags is declared in `CONTRACTS` with `value: 'refuse'` and
+  `bare: 'refuse'`, and the presence door is wired only after `evaluateRow` returns ok, so the
+  VALUE door answers first and those arms keep proving their own refusal either way. The figures
+  were added regardless and the census is clean under every reading, so nothing shipped is wrong -
+  but the reasoning that justified the ninth arm was not.
 
 ## Goal check
 
@@ -105,8 +148,24 @@ missing against the six acceptance criteria: AC1-AC2 are 9f52e361's arms, AC3 is
 AC4's unchanged-vocabulary tests are green at `adjudication-record.test.mjs:292-300` and
 `:309-317`, AC5 is e61bc8f9's one primitive driving both faces, and AC6 is 6541bd8d. Full suite
 is green at 776c67ef - 3563 tests, 3562 pass, 0 fail, 1 skipped, exit 0 - and
-`self-verify.mjs` reports `ok:true` with `problems: []`. The one honest gap is not a gap in the
-goal but in what the goal assumed: D-04 claimed an overridden entry carries no `fix_commit` by
+`self-verify.mjs` reports `ok:true` with `problems: []`.
+
+CORRECTED after UAT. The paragraph above claimed AC3 was delivered by 36ba2652; UAT item 3 then
+failed it. `overrideAccounted`'s precondition at `cadence-core/bin/planning/trace.mjs:1317` is
+`!['survivors','downgraded','refuted'].some((k) => k in fire.settled)`, so a receipt carrying NONE
+of the three returned pass before the record was opened - the docblock had reasoned only about a
+caller dropping ONE figure - and a figureless `gate_pass` settled a cleared halt with
+`risk-check status` reporting the range `recorded`. Plans 2 and 3 close it at the CLI argument
+door instead of inside that seam, which is what keeps D-04 intact. Measured after 3f68cf78 from a
+throwaway repo: a figureless `gate_pass` answers `ok:false` / `bad-args` naming all three flags
+and writes nothing, the same receipt carrying its figures is accepted, and a figureless `rearm`
+still appends - so the constraint binds settle receipts alone. The executor also ran the
+redden-on-demand: with `is: []` in the declared rule the new arm fails on `receipt.ok` actual
+`true` expected `false`. Full suite 3566 tests, 3565 pass, 0 fail, 1 skipped (+3 arms);
+`self-verify.mjs` `ok:true` with `problems: []`; `npx tsc -p tsconfig.ci.json` exit 0. AC3 now
+holds as written.
+
+The one honest gap is not a gap in the goal but in what the goal assumed: D-04 claimed an overridden entry carries no `fix_commit` by
 construction, the shipped schema permits both, and the predicate at `filing-decision.mjs:117`
 was written to the false claim. That is filed rather than fixed, because closing it changes
 which receipts `overrideAccounted` refuses and no plan task authorized that.

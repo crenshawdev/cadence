@@ -21,3 +21,4 @@ recall entry.
 - 2026-08-29 github crenshawdev/cadence dd09d6a6113e9112: [cadence dd09d6a6113e9112] The rewritten fix_commit VALUE check is still scoped inside the `ruling === 'survived'` branch, so a `downgraded` or `refuted` ruling stores an arbitrary unspendable string
 - 2026-08-29 github crenshawdev/cadence eb3c4bdae2b8fb82: [cadence eb3c4bdae2b8fb82] `unfixedFromEntries` classifies every survived blocker/high with `overridden: true` as a `haltingSurvivor` without considering whether that otherwise-valid entry also carrie
 - 2026-08-29 github crenshawdev/cadence 35057ee7993d82dc: [cadence 35057ee7993d82dc] The instruction to change no assertion text conflicts with migrating the named byte-exact receipt tests.
+- 2026-08-29 github crenshawdev/cadence b9d6e61dcffadc72: [cadence b9d6e61dcffadc72] The presence check inspects every raw `--event` occurrence rather than the effective event that `planning.mjs` dispatches with.
