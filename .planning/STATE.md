@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 5 (The record's guards hold for every ruling)
-Status: phase complete
-Next: /cad-context 2
+Phase: 2 of 5 (Adaptive routing is reachable)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-08-29
