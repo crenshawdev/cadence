@@ -692,7 +692,9 @@ test('a commit only a task record names resolves at the seam, to the task and to
 // and its own reader agree - which a fixture built by this file cannot falsify.
 
 test('the record on disk answers /cad-why for a file that task touched, end to end', () => {
-  const env = oneJsonLine(run(['cadence-core/templates/config.json', '--dir', REPO]).stdout);
+  // The cap is lifted for the same reason the sibling test at :195 lifts it:
+  // the commit under test is older than the default six-commit window.
+  const env = oneJsonLine(run(['cadence-core/templates/config.json', '--dir', REPO, '--top', '20']).stdout);
   assert.equal(env.ok, true);
   assert.deepEqual(env.warnings, []);
 
