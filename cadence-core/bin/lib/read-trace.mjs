@@ -330,6 +330,35 @@ export function recordFromHook(input, now, opts) {
 }
 
 /**
+ * Is the sibling that already exists a rotation IN FLIGHT, or a generation an
+ * earlier rotation left behind?
+ *
+ * The claim below is a hard LINK, so between the claim and the swap the live
+ * path and the sibling are the same inode. That identity is the discriminator,
+ * and it has to be one: treating an in-flight claim as a leftover generation
+ * would evict a claim a concurrent writer is still holding, and treating a
+ * leftover generation as in flight would leave the record unable to rotate a
+ * SECOND time - the same write-death this whole arm removes, one indirection
+ * down.
+ *
+ * UNKNOWABLE READS AS IN FLIGHT. Where a platform supplies no inode (Node
+ * reports `0`) or either stat fails, the safe answer is the one that never
+ * evicts: it costs a deferred rotation, and the append still lands
+ * (`lib/trace.mjs:565-588`).
+ * @param {string} file @param {string} sibling
+ */
+function readsRotationInFlight(file, sibling) {
+  try {
+    const a = statSync(file);
+    const b = statSync(sibling);
+    if (!a.ino || !b.ino) return true;
+    return a.ino === b.ino && a.dev === b.dev;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Claim the record, swap a fresh one in, and hand the old generation to
  * `ROTATED_READS_FILE`.
  *
@@ -361,6 +390,10 @@ export function recordFromHook(input, now, opts) {
  * into place, so the live path is never absent and no concurrent append is
  * trimmed away by a rewrite it did not see (`lib/trace.mjs:642-650`).
  *
+ * EXACTLY ONE PRIOR GENERATION is the entire retention policy. No dated
+ * generations, no keep-N, no config key: the pair on disk is the bound, and a
+ * second rotation evicts what the first one left.
+ *
  * NOTHING CROSSES THE CUT (D-02). The fresh record is one line - the marker -
  * and there is no `freshRecord` analogue and no run-in-flight tail, because
  * nothing scans this record backwards: `readReadsRecords` reads it whole and
@@ -385,24 +418,57 @@ export function rotateReads(planningRoot, reserve) {
   const priv = `${process.pid}.${Math.random().toString(36).slice(2)}`;
   /** @type {string|null} */
   let temp = null;
+  /** @type {string|null} */
+  let evicted = null;
   // The claim is HELD from the link until the swap. While it is held the
   // sibling is only a second name for the live file, so every failure arm has
   // to release it - a claim left behind reads as a rotation in flight forever
   // and the record never rotates again.
   let held = false;
   try {
-    try {
-      linkSync(file, sibling);
-      held = true;
-    } catch (e) {
-      const code = e && /** @type {any} */ (e).code;
-      // No record to rotate at all: the caller's append is what creates it.
-      if (code === 'ENOENT') return { rotated: false };
-      // A sibling already sits at that path. Somebody else made the room and
-      // this writer appends into what they left.
-      if (code === 'EEXIST') return { rotated: false };
-      return { rotated: false, reason: code || 'claim-failed' };
+    let claimed = false;
+    // TWO attempts, never a loop: claim, or evict one leftover generation and
+    // claim once more.
+    for (let attempt = 0; attempt < 2 && !claimed; attempt++) {
+      try {
+        linkSync(file, sibling);
+        claimed = true;
+        held = true;
+      } catch (e) {
+        const code = e && /** @type {any} */ (e).code;
+        // No record to rotate at all: the caller's append is what creates it.
+        if (code === 'ENOENT') return { rotated: false };
+        if (code !== 'EEXIST') return { rotated: false, reason: code || 'claim-failed' };
+        // A sibling already sits at that path, and `EEXIST` alone cannot say
+        // which of the two causes put it there.
+        if (attempt > 0 || readsRotationInFlight(file, sibling)) {
+          // A rotation is genuinely IN FLIGHT and this process lost the claim.
+          // Somebody else is making the room and this writer appends into what
+          // they leave.
+          return { rotated: false };
+        }
+        // A generation an earlier rotation left, and evicting it is the one
+        // DESTRUCTIVE act on this path - so RE-STAT first and never rotate a
+        // record this writer did not observe over the trigger. The interleaving
+        // that makes this load-bearing: another writer rotated while this one
+        // was still holding the stat that sent it here, and carrying that fresh
+        // file away would destroy the generation the other writer just made and
+        // leave the record with nothing in it. `EEXIST` cannot see that case -
+        // the sibling exists either way - and a check afterwards is too late,
+        // so the claim is REFUSED rather than the damage detected
+        // (`lib/trace.mjs:812-825`).
+        let now = null;
+        try { now = statSync(file).size; } catch { return { rotated: false }; }
+        if (now + reserve < MAX_READS_BYTES) return { rotated: false };
+        // Evict SINGLE-WINNER, the way `lib/capture-file.mjs` breaks a stale
+        // lock: exactly one contender renames it to a private path and the
+        // losers get `ENOENT`. The `finally` drops that private path.
+        const path = `${sibling}.evict.${priv}`;
+        try { renameSync(sibling, path); } catch { return { rotated: false }; }
+        evicted = path;
+      }
     }
+    if (!claimed) return { rotated: false };
     // The fresh record is written whole to a PRIVATE path - this process's pid
     // and a random suffix, exclusive-create - and renamed over the live path.
     temp = `${file}.rotate.${priv}`;
@@ -419,9 +485,11 @@ export function rotateReads(planningRoot, reserve) {
   } catch (e) {
     return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
   } finally {
-    // Leave nothing behind on ANY arm: no private temp, no unfinished claim.
+    // Leave nothing behind on ANY arm: no private temp, no unfinished claim,
+    // no evicted generation.
     if (temp) { try { unlinkSync(temp); } catch { /* nothing to clean up */ } }
     if (held) { try { unlinkSync(sibling); } catch { /* nothing to release */ } }
+    if (evicted) { try { unlinkSync(evicted); } catch { /* nothing to clean up */ } }
   }
 }
 

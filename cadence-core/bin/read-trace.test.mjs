@@ -12,14 +12,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, statSync,
-  appendFileSync,
+  appendFileSync, readdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
-  rotatedReadsPath, isReadsRotationMarker,
+  rotatedReadsPath, isReadsRotationMarker, rotateReads,
 } from './lib/read-trace.mjs';
 
 const TS = '2026-08-14T00:00:00.000Z';
@@ -187,6 +187,45 @@ test('a record at the bound ROTATES and the append lands, rather than reporting 
   // NOTHING crosses the cut (D-02): the whole live file became the sibling.
   assert.equal(readFileSync(readsPath(d), 'utf8').includes('/before-the-cut'), false,
     'a pre-rotation record was carried into the fresh file');
+});
+
+/** Every file in the planning root named after the reads record. @param {string} d */
+const readsSiblings = (d) => readdirSync(d).filter((f) => f.startsWith('reads')).sort();
+
+test('the SECOND rotation evicts the generation the first one left', () => {
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-two' }).written, true);
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-three' }).written, true);
+
+  // Exactly one prior generation is the WHOLE retention policy: no dated
+  // generation, no keep-N, no leaked private temp.
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.jsonl']);
+
+  const live = readFileSync(readsPath(d), 'utf8');
+  const sibling = readFileSync(rotatedReadsPath(d), 'utf8');
+  assert.ok(live.includes('/gen-three'), 'the live record lost the second rotation\'s append');
+  assert.ok(sibling.includes('/gen-two'), 'the sibling is not the generation between the cuts');
+  assert.equal(live.includes('/gen-one'), false, 'the first generation survived in the live record');
+  assert.equal(sibling.includes('/gen-one'), false, 'the first generation survived in the sibling');
+});
+
+test('a leftover sibling beside a record UNDER the bound is left exactly where it is', () => {
+  const d = tmp();
+  // The interleaving this refuses: another writer rotated while this one was
+  // still holding the stat that decided to rotate. Carrying the fresh record
+  // away would destroy the generation that writer just made.
+  writeFileSync(readsPath(d), `${JSON.stringify({ ts: TS, tool: 'Read', target: '/fresh' })}\n`);
+  writeFileSync(rotatedReadsPath(d), 'a generation an earlier rotation left\n');
+  const before = readFileSync(rotatedReadsPath(d), 'utf8');
+
+  const res = rotateReads(d, 200);
+  assert.equal(res.rotated, false);
+  assert.equal(res.reason, undefined, 'a refused claim is not a failed rotation');
+  assert.equal(readFileSync(rotatedReadsPath(d), 'utf8'), before, 'the leftover generation was evicted');
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.jsonl']);
 });
 
 test('a single record that reaches the bound by itself is refused, never rotated', () => {
