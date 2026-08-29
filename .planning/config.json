@@ -8,6 +8,18 @@
           "untrusted_input"
         ]
       }
+    },
+    "reviewers": [
+      "openai"
+    ],
+    "providers": {
+      "openai": {
+        "tiers": {
+          "flagship": "gpt-5.3-codex",
+          "balanced": "gpt-5.4-mini",
+          "cheap": "gpt-5.4-nano"
+        }
+      }
     }
   },
   "model": {
