@@ -1,0 +1,102 @@
+{
+  "status": "needs_human",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "/cad-task's phase-sized arm names /cad-phase add as its FIRST action and prints the three stops in order, with no route in the arm starting at /cad-context",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/workflows/task.md:33-42 - the `- **Too big**` bullet reads \"Run /cad-phase add $TASK to put it on the roadmap as phase {N}, then /cad-context {N} and /cad-plan {N}. Or /cad-capture it for later.\" String-index probe over the captured 556-byte arm: indexOf('/cad-phase add') < indexOf('/cad-context') < indexOf('/cad-plan'). `node --test --test-name-pattern=PHS-02 cadence-core/bin/prose-agreement.test.mjs` -> PHS-02 (1) passes. Falsification probe: the same assertion evaluated against the retired sentence \"Route it through /cad-context -> /cad-plan\" is false, so the test is not vacuous."
+    },
+    {
+      "n": 2,
+      "truth": "The phase number is one Cadence resolves from planning.mjs status as total + 1, not a literal and not a placeholder the user substitutes; the rule is answerable on this repo and points at where /cad-phase add actually lands",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/workflows/task.md:35-38 states: run `node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs\" status` and take `total + 1` as `{N}`, substituting the resolved value \"rather than printing either literally\". `node cadence-core/bin/planning.mjs status` on this repo returns {\"ok\":true,\"current\":3,\"total\":5,...}, so the stated rule yields 6. Traced across the seam: cadence-core/workflows/phase.md:14 appends `add` at \"current total + 1\", the same 6, so the printed number names the phase add creates. `status` is invoked flagless, matching the `status: {}` row in cadence-core/bin/lib/arg-contract.mjs (self-verify check 2 clean). PHS-02 (2) runs the resolver live via execFileSync and asserts an integer `total`; passes."
+    },
+    {
+      "n": 3,
+      "truth": "The task's own description carries into /cad-phase add as its argument, and /cad-phase advertises that add accepts one",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "$TASK enters at cadence-core/workflows/task.md:16-18 (\"Parse `$ARGUMENTS`: task description plus optional `--plan` flag.\" / \"Store as $TASK.\") and lands at :40 as the /cad-phase add argument - one real value traced end to end. skills/cad-phase/SKILL.md:4 argument-hint is \"add [description] | insert <N> | remove <N> | edit <N>\": only the `add` alternative changed, insert/remove/edit are byte-identical. Consumer confirmed: cadence-core/workflows/phase.md:15 takes name, description and criteria \"from args or the ask-user seam\", so the carried value is not handed to a seam that ignores it. PHS-02 (3) passes."
+    },
+    {
+      "n": 4,
+      "truth": "No surface outside .planning still sends phase-sized work to /cad-context first - not the mid-task guardrail, not the SKILL objective that rides every session prompt",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "cadence-core/workflows/task.md:275 - the <guardrails> re-route bullet now reads \"stop and re-route to /cad-phase add rather than improvising a phase inline\", keeping the rail clause; the block contains no /cad-context at all. skills/cad-task/SKILL.md:20 reads \"Feature-sized requests get re-routed to /cad-phase add\"; `grep -n cad-context skills/cad-task/SKILL.md` returns nothing. The only surviving /cad-context in task.md is :41, the arm's legitimate second stop. Tree-wide `grep -rn \"Route it through /cad-context\"` and `grep -rn \"to /cad-context\"` outside .planning/ return no prose site - only the test file's own assertion and comment. PHS-02 (4) pins presence of /cad-phase add AND absence of /cad-context inside <guardrails>, so a \"re-route to /cad-context, then /cad-phase add\" rewrite would redden; passes."
+    },
+    {
+      "n": 5,
+      "truth": "/cad-context on an off-roadmap phase still stops, and the stop now names /cad-phase add as the action that creates the phase, without creating it inline",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/workflows/context.md:31-32 - \"If the phase number is not in the roadmap, stop: 'Phase {N} is not in the roadmap. Run /cad-phase add to put it there, then re-run this command.'\" Same shape as the sibling ROADMAP-absent stop directly above it. Behaviour unchanged: resolve_phase still stops and the step contains no create/append path, so it does not collide with the guardrail's \"rather than improvising a phase inline\" rail. PHS-02 (5) passes."
+    },
+    {
+      "n": 6,
+      "truth": "Following the printed sequence in a live session, from a repo whose roadmap carries no matching phase, reaches a planned phase with no command refusing - and the message the user actually sees carries a resolved number and the real description rather than the literal tokens {N} and $TASK",
+      "status": "UNCERTAIN",
+      "uat_item": 6,
+      "evidence": "No probe in this repo executes three slash-command workflows end to end; the arm is prose interpreted by a live model, so whether the substitution the prose directs at task.md:38 actually happens is not observable from the files. The mechanical half is covered by truth 2 (the resolver answers an integer total on this repo) and truth 3 (phase.md:15 consumes the carried description). Downstream gates were read and do not refuse a freshly appended phase (context.md:24-32 parses $ARGUMENTS for a number; cadence-core/workflows/plan.md), but that is inspection, not observed behaviour."
+    },
+    {
+      "n": 7,
+      "truth": "The suite and self-verify are green, and weight-budgets.json was re-pinned in the SAME commit as each prose change so no intermediate commit sits over its ceiling",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/test.mjs` -> tests 3579, pass 3579, fail 0. `node cadence-core/bin/self-verify.mjs` -> {\"ok\":true, ...,\"problems\":[]} across all 30 checks. Per-commit walk of the five phase commits: every changed prose file's byte count equals its weight-budgets.json ceiling in the commit that changed it - 8b4dd932 task.md 14516/14516, deaa20c1 task.md 14518/14518 + cad-task/SKILL.md 739/739, 044d7653 context.md 19507/19507, dcbff533 cad-phase/SKILL.md 1126/1126. `git show --name-only` confirms weight-budgets.json rides each of those four commits; b73c2965 is tests only and touches no prose. Working tree wc -c matches every ceiling exactly."
+    },
+    {
+      "n": 8,
+      "truth": "The rewritten arm stays terminal - it says so and stops, opening no trace bracket and writing nothing under .planning/tasks/<slug>/",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/workflows/task.md:44-46 - the `bracket` step's parenthetical still reads \"(Both work paths, and NOT the \\\"too big\\\" arm: that arm says so and stops, so a bracket opened there would have nothing left to close it.)\", unedited by this phase. The rewritten arm's 556 captured bytes contain no `trace append`, no `mktemp`, no `.planning/tasks/` path and no config token, so the parenthetical is still true and the arm adds no unclosed bracket and no dotted config key (self-verify checks 1 and 3 clean)."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "The too-big arm names /cad-phase add first",
+      "evidence": "cadence-core/workflows/task.md:33-42 prints \"/cad-phase add $TASK ... then /cad-context {N} and /cad-plan {N}\"; index order add < context < plan confirmed by probe; PHS-02 (1) passes and goes false against the retired sentence."
+    },
+    {
+      "k": 2,
+      "name": "The phase number is resolved, not a placeholder",
+      "evidence": "task.md:35-38 names `planning.mjs status` (flagless, matching arg-contract) and `total + 1`; `node cadence-core/bin/planning.mjs status` returns total:5 so the rule yields 6, which is exactly where phase.md:14 lands `add`; PHS-02 (2) runs the resolver live and passes."
+    },
+    {
+      "k": 3,
+      "name": "The task description carries into /cad-phase add",
+      "evidence": "$TASK stored at task.md:16-18, consumed at :40; skills/cad-phase/SKILL.md:4 advertises \"add [description]\" with the other three alternatives untouched; phase.md:15 consumes a description from args; PHS-02 (3) passes."
+    },
+    {
+      "k": 4,
+      "name": "No old-route site survives",
+      "evidence": "task.md:275 guardrail names /cad-phase add and no /cad-context; skills/cad-task/SKILL.md has zero /cad-context hits and :20 names /cad-phase add; the only task.md /cad-context is :41, the arm's second stop; tree-wide grep outside .planning finds no surviving old-route prose; PHS-02 (4) pins presence and absence."
+    },
+    {
+      "k": 5,
+      "name": "/cad-context's off-roadmap stop names the open door",
+      "evidence": "cadence-core/workflows/context.md:31-32 stops with \"Phase {N} is not in the roadmap. Run /cad-phase add to put it there, then re-run this command.\"; the step still stops and creates nothing inline; PHS-02 (5) passes."
+    },
+    {
+      "k": 7,
+      "name": "Tests and self-verify are green with budgets re-pinned",
+      "evidence": "test.mjs 3579/3579 pass, 0 fail; self-verify ok:true with problems []; each of the four prose commits carries its own weight-budgets.json re-pin and every intermediate commit's byte count equals its ceiling."
+    }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "In a live Claude Code session on a repo whose roadmap has no matching phase, give /cad-task a feature-sized request, then follow the message it prints: /cad-phase add <description>, then /cad-context <N>, then /cad-plan <N>.",
+      "expected": "The stop message shows a real phase number (planning.mjs status total + 1 for that repo) and the task's own words, not the literal tokens {N} or $TASK. /cad-phase add appends that phase at that number, and /cad-context and /cad-plan on it both proceed - no command refuses with 'Phase N is not in the roadmap'.",
+      "why_human": "Out of reach, not merely unexercised: the arm is prose a live model interprets, and there is no runner in this repo that executes three slash-command workflows end to end - so whether the substitution directed at task.md:38 actually happens can only be seen in a real session. Running it also appends a phase to a real ROADMAP.md, which this pass is not allowed to mutate. The mechanical halves are already verified: planning.mjs status answers total:5 here, and phase.md:15 consumes the description the arm hands it."
+    }
+  ]
+}

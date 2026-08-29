@@ -478,7 +478,7 @@ section only, bounded at the next `## ` heading.
 |-------------|-------|--------|
 | RSK-08 | Phase 1 | Complete |
 | RNG-04 | Phase 2 | Complete |
-| PHS-02 | Phase 3 | Pending |
+| PHS-02 | Phase 3 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
