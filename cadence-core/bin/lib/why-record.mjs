@@ -447,6 +447,16 @@ export function parseDeviations(text) {
 // that writer, and refusing the whole file would delete the other findings'
 // evidence to punish one entry's shape. So a bad entry is skipped with an
 // issue, and a file that will not parse yields one issue and no findings.
+//
+// A SURVIVOR NAMING NO FIX COMMIT IS A LEGITIMATE STORED STATE, not a
+// malformed entry, and this reader gained the FIELD that says which - never a
+// rule that judges it (CONTEXT D-08). Every record written before this cycle
+// named a commit on every `survived` entry, because the writer refused any
+// that did not; since the widening, a `survived` finding raised below blocker
+// or high is one that was confirmed and NOT fixed and carries no commit id
+// because none exists. Both parse to exactly the survivors they parsed to
+// before, with `fix_commit` simply carrying whatever the entry held - so an old
+// record reads unchanged and a new one reads honestly, and neither is refused.
 // ---------------------------------------------------------------------------
 
 /**
@@ -474,7 +484,8 @@ const str = (/** @type {unknown} */ v) => (typeof v === 'string' && v.trim() !==
  * @param {string} text one ADJUDICATION-*.json's bytes
  * @returns {{ok: boolean, baseId: string|null, headId: string|null,
  *   survivors: Array<{claim: string, failure_scenario: string,
- *     counter_evidence: string|null, file: string|null, line: number|null,
+ *     counter_evidence: string|null, fix_commit: string|null,
+ *     file: string|null, line: number|null,
  *     severity: string|null, baseId: string|null, headId: string|null}>,
  *   issues: string[]}}
  */
@@ -511,6 +522,10 @@ export function parseAdjudication(text) {
       claim: str(e.claim) || '',
       failure_scenario: str(e.failure_scenario) || '',
       counter_evidence: str(e.counter_evidence),
+      // Read through `str` like the optional field above it: an absent value
+      // and a blank one are the same answer to the only question asked here,
+      // which is whether this survivor names a fix an auditor can spend.
+      fix_commit: str(e.fix_commit),
       file: str(e.file),
       line: Number.isInteger(e.line) ? e.line : null,
       severity: str(e.severity),

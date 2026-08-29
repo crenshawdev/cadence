@@ -349,6 +349,49 @@ test("a real record's survived entry returns with the reviewer's own words byte-
   assert.ok(s.claim.includes('regular-file shape'));
 });
 
+test('two survivors on one record differ on fix_commit and on nothing else', () => {
+  // The widened `survived` grammar, read back: one entry names the commit that
+  // fixed it and the other was confirmed and left standing. The reader gained a
+  // FIELD and no rule (CONTEXT D-08), so both parse and every field they
+  // already carried is untouched.
+  const raw = JSON.parse(RECOVERED);
+  const [e] = raw.entries;
+  const fixed = { ...e, severity: 'high', fix_commit: '4a1af326' };
+  const unfixed = { ...e, severity: 'medium', line: e.line + 1 };
+  delete unfixed.fix_commit;
+  const parsed = parseAdjudication(JSON.stringify({ ...raw, entries: [fixed, unfixed] }));
+
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.issues, []);
+  assert.equal(parsed.survivors.length, 2);
+  const [a, b] = parsed.survivors;
+  assert.equal(a.fix_commit, '4a1af326');
+  assert.equal(b.fix_commit, null, 'no commit is null, the same answer a blank one gives');
+  // Everything else the two carry is identical, so the new field is the only
+  // difference the caller sees.
+  for (const k of ['claim', 'failure_scenario', 'counter_evidence', 'file', 'baseId', 'headId']) {
+    assert.deepEqual(a[k], b[k], `${k} must not move when fix_commit does`);
+  }
+  assert.equal(a.severity, 'high');
+  assert.equal(b.severity, 'medium');
+});
+
+test('a record an earlier writer produced parses to the same survivors, commit carried', () => {
+  // Every `survived` entry in the pre-widening corpus named a commit, because
+  // the writer refused any that did not. Such a record must read exactly as it
+  // read before, with the new field simply carrying that commit.
+  const raw = JSON.parse(RECOVERED);
+  const old = { ...raw, entries: [{ ...raw.entries[0], fix_commit: '4a1af326' }] };
+  const parsed = parseAdjudication(JSON.stringify(old));
+  const before = parseAdjudication(RECOVERED);
+  assert.deepEqual(parsed.issues, before.issues);
+  assert.equal(parsed.survivors.length, before.survivors.length);
+  assert.equal(parsed.survivors[0].fix_commit, '4a1af326');
+  const { fix_commit: _drop, ...rest } = parsed.survivors[0];
+  const { fix_commit: _drop2, ...restBefore } = before.survivors[0];
+  assert.deepEqual(rest, restBefore, 'the field is additive: nothing else moved');
+});
+
 test('a non-survived entry does not return', () => {
   // A real record whose two entries were both DOWNGRADED, so the filter is
   // proved against the corpus and not only against a hand-built copy. It read
