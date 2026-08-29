@@ -29,7 +29,9 @@ import { fileURLToPath } from 'node:url';
 import {
   buildEntries, deriveCounts, RAISED_SEVERITIES, RULINGS, HALTING_SEVERITIES,
 } from './lib/adjudication-record.mjs';
-import { HALTING_SEVERITIES as FILING_HALTING_SEVERITIES } from './lib/filing-decision.mjs';
+import {
+  HALTING_SEVERITIES as FILING_HALTING_SEVERITIES, unfixedFindings, unfixedFromEntries,
+} from './lib/filing-decision.mjs';
 import { FINDING_SCHEMA } from './review-provider.mjs';
 
 const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
@@ -444,6 +446,81 @@ test('RSK-08: the SURVIVED arm is refused by that one same check, naming its rul
   assert.match(res.detail, /no usable fix_commit/);
   assert.match(res.detail, /survived/,
     'one check covers all three rulings, so the survived case names its ruling too');
+});
+
+// --- RSK-08: ONE statement of the unfixed halting survivor, two faces --------
+//
+// The three-field test used to exist only inside `unfixedFindings`, a
+// payload-level function, so a caller holding a written record's `entries[]`
+// and no payload had to restate it. `unfixedFromEntries` is the primitive now
+// and `unfixedFindings` is the wrapper; this arm is what fails if the two ever
+// stop being one statement.
+
+test('RSK-08: the entries face and the payload face answer identically over one fixture', () => {
+  const findings = [
+    // The unfixed halting survivor: a blocker that STOOD, cleared by a person
+    // rather than by a commit.
+    finding({ severity: 'blocker', line: 1 }),
+    // A blocker that stood and IS being fixed - the one entry not in the set.
+    finding({ severity: 'blocker', line: 2 }),
+    finding({ severity: 'medium', line: 3 }),
+    finding({ severity: 'high', line: 4 }),
+    finding({ severity: 'low', line: 5 }),
+  ];
+  const pl = payload(voice('openai', 'gpt-5', findings, [
+    { ruling: 'survived', overridden: true },
+    { ruling: 'survived', fix_commit: '1b34563' },
+    { ruling: 'survived' },
+    { ruling: 'downgraded' },
+    { ruling: 'refuted', counter_evidence: { file: 'cadence-core/bin/planning.mjs', line: 9 } },
+  ]));
+
+  const built = buildEntries(pl);
+  assert.equal(built.ok, true, built.detail);
+
+  const fromEntries = unfixedFromEntries(built.entries);
+  const fromPayload = unfixedFindings(pl);
+  assert.equal(fromPayload.ok, true, fromPayload.detail);
+  assert.deepEqual(fromEntries.filing, fromPayload.findings,
+    'the entries face and the payload face read one statement of the three-field test, so the '
+    + 'sets they return over the same data are the same set');
+
+  assert.deepEqual(fromEntries.filing.map((e) => e.line), [1, 3, 4, 5],
+    'the survived blocker citing a real commit is the one entry being FIXED rather than filed');
+  assert.equal(fromEntries.haltingSurvivors.length, 1);
+  assert.equal(fromEntries.haltingSurvivors[0].line, 1);
+  assert.equal(fromEntries.haltingSurvivors[0].severity, 'blocker');
+  assert.equal(fromEntries.haltingSurvivors[0].overridden, true,
+    'the overridden blocker is the unfixed halting survivor, and it is named on its own rather '
+    + 'than only folded into the filing set');
+});
+
+test('RSK-08: a record with no override names no unfixed halting survivor', () => {
+  const findings = [finding({ severity: 'blocker' }), finding({ severity: 'medium', line: 9 })];
+  const built = buildEntries(payload(voice('openai', 'gpt-5', findings, [
+    { ruling: 'survived', fix_commit: '1b34563' },
+    { ruling: 'survived' },
+  ])));
+  assert.equal(built.ok, true, built.detail);
+  const out = unfixedFromEntries(built.entries);
+  assert.deepEqual(out.haltingSurvivors, []);
+  assert.deepEqual(out.filing.map((e) => e.severity), ['medium'],
+    'the confirmed-and-not-fixed medium is still filed; the fixed blocker is not');
+});
+
+test('RSK-08: the entries face reads a RECORD off disk, not only a freshly built payload', () => {
+  // The array a written ADJUDICATION-*.json stores is byte-for-byte the array
+  // `buildEntries` returns, and a non-entry in it is skipped rather than thrown
+  // on - the module's stated discipline for unknown input.
+  const findings = [finding({ severity: 'high' })];
+  const built = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'survived', overridden: true }])));
+  assert.equal(built.ok, true, built.detail);
+  const roundTripped = JSON.parse(JSON.stringify({ entries: built.entries })).entries;
+  const out = unfixedFromEntries([...roundTripped, null, 'not an entry', 7]);
+  assert.equal(out.haltingSurvivors.length, 1);
+  assert.equal(out.filing.length, 1);
+  assert.deepEqual(unfixedFromEntries(undefined), { filing: [], haltingSurvivors: [] });
 });
 
 // --- the derived counts ------------------------------------------------------

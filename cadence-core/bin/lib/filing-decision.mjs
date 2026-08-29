@@ -55,11 +55,18 @@ export const HALTING_SEVERITIES = Object.freeze(['blocker', 'high']);
 export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
 
 /**
- * Every finding in `payload` that the gate will NOT fix now.
+ * The ONE statement of which entries of a record the gate will not fix now.
+ *
+ * Takes the ENTRIES rather than the payload: the array `buildEntries` returns,
+ * which is byte-for-byte the array a written `ADJUDICATION-*.json` stores, so a
+ * reader holding only the record on disk asks the same question the composer
+ * asks over the payload. `unfixedFindings` below is the payload face and is a
+ * wrapper over this one - the meaning lives HERE, once, because a second
+ * statement of it is the drift a downstream halt decision would be resting on.
  *
  * THREE FIELDS DECIDE IT AND NOTHING ELSE: the entry's `ruling`, its RAISED
- * `severity`, and the `overridden` marker. An entry is in the set unless it
- * `survived` at `blocker` or `high` AND was not overridden - that one is the
+ * `severity`, and the `overridden` marker. An entry is in the filing set unless
+ * it `survived` at `blocker` or `high` AND was not overridden - that one is the
  * thing the gate is halting over, so it is being fixed, not filed. Which makes
  * the set exactly criterion 1's three sources at once: the blocking arm's
  * below-blocker/high remainder, the adjudicated arm's non-survivors, and any
@@ -75,6 +82,13 @@ export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
  * user. Before the marker existed the same payload was a loud REFUSAL from
  * `buildEntries`, which is the state this must not quietly replace.
  *
+ * Those overridden entries come back NAMED, on `haltingSurvivors`, as well as
+ * folded into `filing`. They are the subset a caller settling the fire has to
+ * be able to see on its own: a record holding one is a record whose blocking
+ * halt was cleared by a person rather than by a commit, and the receipt that
+ * settles it has to say so. Answered in the SAME pass as `filing` so the two
+ * can never disagree about one entry.
+ *
  * `fix_commit` IS STILL NOT ONE OF THE FIELDS (CONTEXT D-07). A voluntary fix
  * on a medium is legal and cites its commit, and dropping an entry for carrying
  * one belongs to bin/issue-filing.mjs's `cmdUnfixed`, the face that already
@@ -86,6 +100,38 @@ export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
  * a `downgraded` ruling records that the adjudicator lowered the finding and
  * does not restate a new level, so there is no second severity to pick the
  * wrong one of.
+ *
+ * A NON-ENTRY IS SKIPPED, never counted into either set. `buildEntries` cannot
+ * produce one, so the wrapper below is unaffected; a record read off disk can
+ * hold anything, and the discipline this module states is that unknown input
+ * never throws. `deriveCounts` skips the same shape for the same reason.
+ *
+ * @param {unknown} entries a built record's `entries[]`
+ * @returns {{filing: Array<Record<string, any>>,
+ *   haltingSurvivors: Array<Record<string, any>>}}
+ */
+export function unfixedFromEntries(entries) {
+  /** @type {Array<Record<string, any>>} */
+  const filing = [];
+  /** @type {Array<Record<string, any>>} */
+  const haltingSurvivors = [];
+  for (const e of Array.isArray(entries) ? entries : []) {
+    if (e === null || typeof e !== 'object' || Array.isArray(e)) continue;
+    const stoodAtAHalt = e.ruling === 'survived' && HALTING_SEVERITIES.includes(e.severity);
+    if (stoodAtAHalt && e.overridden !== true) continue;
+    filing.push(e);
+    if (stoodAtAHalt) haltingSurvivors.push(e);
+  }
+  return { filing, haltingSurvivors };
+}
+
+/**
+ * Every finding in `payload` that the gate will NOT fix now.
+ *
+ * The PAYLOAD face of `unfixedFromEntries`: it validates and pairs through
+ * `buildEntries`, then reads its set off that one statement rather than
+ * restating the three-field test here. The returned array is the same array,
+ * over the same data, that the entries face returns on `filing`.
  *
  * A PAYLOAD `buildEntries` REFUSES COMES BACK AS A REFUSAL, never as an empty
  * set. "Nothing to ask about" and "this payload is unreadable" send the fire
@@ -101,11 +147,7 @@ export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
 export function unfixedFindings(payload) {
   const built = buildEntries(payload);
   if (!built.ok) return { ok: false, detail: built.detail, findings: [] };
-  const findings = built.entries.filter((e) => !(
-    e.ruling === 'survived' && HALTING_SEVERITIES.includes(e.severity)
-    && e.overridden !== true
-  ));
-  return { ok: true, detail: '', findings };
+  return { ok: true, detail: '', findings: unfixedFromEntries(built.entries).filing };
 }
 
 /**
