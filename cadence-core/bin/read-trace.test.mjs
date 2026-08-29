@@ -12,14 +12,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, statSync,
-  appendFileSync, readdirSync,
+  appendFileSync, readdirSync, linkSync, utimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
-  rotatedReadsPath, isReadsRotationMarker, rotateReads,
+  rotatedReadsPath, readsClaimPath, isReadsRotationMarker, rotateReads,
 } from './lib/read-trace.mjs';
 
 const TS = '2026-08-14T00:00:00.000Z';
@@ -201,8 +201,9 @@ test('the SECOND rotation evicts the generation the first one left', () => {
   assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-three' }).written, true);
 
   // Exactly one prior generation is the WHOLE retention policy: no dated
-  // generation, no keep-N, no leaked private temp.
-  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.jsonl']);
+  // generation, no keep-N, no leaked private temp. The `.claim` sidecar a
+  // COMPLETED rotation leaves is inert and deliberate.
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.1.jsonl.claim', 'reads.jsonl']);
 
   const live = readFileSync(readsPath(d), 'utf8');
   const sibling = readFileSync(rotatedReadsPath(d), 'utf8');
@@ -282,8 +283,89 @@ test('writers racing at the bound leave ONE generation, no claim and no record l
   const b = statSync(rotatedReadsPath(d));
   assert.notEqual(`${a.dev}:${a.ino}`, `${b.dev}:${b.ino}`, 'the claim was never released');
 
-  // (c) Exactly one generation, and no private stamp or temp left behind.
-  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.jsonl']);
+  // (c) Exactly one generation, and no private stamp or temp left behind - the
+  // inert `.claim` sidecar of the writer that won is not one.
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.1.jsonl.claim', 'reads.jsonl']);
+});
+
+// --- the abandoned claim ----------------------------------------------------
+
+/**
+ * A planning root at the bound whose rotation claim was taken and never
+ * released - the state a claimant killed or timed out mid-rotation leaves.
+ *
+ * Constructed DIRECTLY: no kill, no signal, no child process. A `linkSync` and
+ * a dated sidecar reproduce the whole state a SIGKILL produces, and a spawned
+ * holder is reserved for the race the `readsWriter` helper already runs.
+ *
+ * @param {string} d
+ * @param {number|null} agoMs how long ago the claim was dated, or `null` for a
+ *   claim carrying NO sidecar at all - the shape every claim taken before this
+ *   rotation shipped has.
+ */
+function killedReadsClaim(d, agoMs) {
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-kill' });
+  padToReadsBound(d);
+  linkSync(readsPath(d), rotatedReadsPath(d));
+  if (agoMs === null) return;
+  writeFileSync(readsClaimPath(d), 'held\n');
+  const at = (Date.now() - agoMs) / 1000;
+  utimesSync(readsClaimPath(d), at, at);
+}
+
+/** @param {string} f */
+const idOf = (f) => { const st = statSync(f); return `${st.dev}:${st.ino}`; };
+
+test('an ABANDONED claim is reclaimed rather than disabling rotation forever', () => {
+  const d = tmp();
+  // Twice the 30 s staleness budget the rotation states.
+  killedReadsClaim(d, 60_000);
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/after-the-reclaim' });
+  assert.equal(res.written, true, `the append was refused: ${res.reason}`);
+  assert.ok(statSync(readsPath(d)).size < MAX_READS_BYTES, 'the record never rotated');
+  assert.notEqual(idOf(readsPath(d)), idOf(rotatedReadsPath(d)), 'the claim is still held');
+  assert.ok(readFileSync(rotatedReadsPath(d), 'utf8').includes('/before-the-kill'),
+    'the sibling is not the prior generation');
+  assert.ok(readFileSync(readsPath(d), 'utf8').includes('/after-the-reclaim'));
+});
+
+test('a LIVE claim is left standing, at the cost of one deferred rotation', () => {
+  const d = tmp();
+  killedReadsClaim(d, 0);
+  const stamped = statSync(readsClaimPath(d)).mtimeMs;
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/deferred' });
+  assert.equal(res.written, true, 'a deferred rotation must not cost the append');
+  assert.equal(idOf(readsPath(d)), idOf(rotatedReadsPath(d)), 'a live claim was broken');
+  // A writer that LOSES the link must not refresh a claim it does not own: that
+  // is what would restart the staleness clock on every append and stop an
+  // abandoned claim ever ageing into a reclaim.
+  assert.equal(statSync(readsClaimPath(d)).mtimeMs, stamped, 'a loser refreshed the claim');
+});
+
+test('a claim carrying NO sidecar at all reads as live, the same way', () => {
+  const d = tmp();
+  killedReadsClaim(d, null);
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/no-sidecar' });
+  assert.equal(res.written, true);
+  assert.equal(idOf(readsPath(d)), idOf(rotatedReadsPath(d)),
+    'an unknowable claim age broke a claim rather than failing live');
+  assert.equal(existsSync(readsClaimPath(d)), false, 'a loser published a stamp it does not own');
+});
+
+test('a COMPLETED rotation leaves its sidecar behind, inert, and does not rotate again', () => {
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-two' }).written, true);
+  assert.deepEqual(readsSiblings(d), ['reads.1.jsonl', 'reads.1.jsonl.claim', 'reads.jsonl']);
+
+  const generation = readFileSync(rotatedReadsPath(d), 'utf8');
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-three' }).written, true);
+  assert.equal(readFileSync(rotatedReadsPath(d), 'utf8'), generation,
+    'the inert sidecar was read as a claim and the record rotated again');
+  assert.deepEqual(liveLines(d).length, 3, 'the live record is not marker + two appends');
 });
 
 test('a single record that reaches the bound by itself is refused, never rotated', () => {

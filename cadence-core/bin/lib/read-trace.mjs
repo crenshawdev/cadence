@@ -30,7 +30,8 @@
 'use strict';
 
 import {
-  appendFileSync, linkSync, lstatSync, renameSync, statSync, unlinkSync, writeFileSync,
+  appendFileSync, existsSync, linkSync, lstatSync, renameSync, statSync, unlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 // The ONE statement of which agent FILE carries which rung of which role. The
@@ -350,6 +351,49 @@ function sleep(ms) {
 }
 
 /**
+ * How old the claim's sidecar has to be before the claim is read as ABANDONED
+ * and reclaimed. A constant beside the code that enforces it, never a config
+ * key - the posture `MAX_READS_BYTES` and `READS_ROTATE_WAIT_MS` already take.
+ *
+ * 30 seconds, the figure `lib/trace.mjs:557` uses, and two figures set it for
+ * THIS record. It is roughly 7,700x the slowest rotation measured here (3.90 ms
+ * over five runs on the real 7,852,530-byte record, 2026-08-28, D-06), so a
+ * live claim is nowhere near it - the margin is against a machine suspended
+ * mid-rotation, not against a slow write. And it bounds the DEGRADED window: a
+ * claim nobody will ever release costs about one `READS_ROTATE_WAIT_MS` per
+ * append until it ages out, so a two-minute figure would charge four times as
+ * much for the same safety.
+ */
+const READS_CLAIM_STALE_MS = 30_000;
+
+/**
+ * Has the claim that `readsRotationInFlight` just called in flight actually
+ * been ABANDONED - taken by a process that was killed or timed out before it
+ * could release it?
+ *
+ * `readsRotationInFlight` cannot answer this and must not be asked to: the
+ * claim IS a hard link, so the sibling and the live record are one inode until
+ * the swap and every `appendFileSync` into the record bumps that shared inode's
+ * timestamps. Only a file written BESIDE the claim can carry the claim's own
+ * age (`lib/trace.mjs:120-137`).
+ *
+ * UNKNOWABLE READS AS LIVE, the same posture `readsRotationInFlight` takes.
+ * True only where the sidecar's `mtimeMs` is strictly further in the past than
+ * `READS_CLAIM_STALE_MS`; an absent sidecar, a stat that throws and a future
+ * mtime from a skewed clock all answer false. The asymmetry is the whole
+ * argument: a wrong LIVE answer costs one deferred rotation, and a wrong
+ * ABANDONED answer breaks a live claimant and costs the record.
+ * @param {string} claim
+ */
+function readsClaimAbandoned(claim) {
+  try {
+    return Date.now() - statSync(claim).mtimeMs > READS_CLAIM_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Is the sibling that already exists a rotation IN FLIGHT, or a generation an
  * earlier rotation left behind?
  *
@@ -444,24 +488,84 @@ export function rotateReads(planningRoot, reserve) {
   const file = readsPath(planningRoot);
   const sibling = rotatedReadsPath(planningRoot);
   const priv = `${process.pid}.${Math.random().toString(36).slice(2)}`;
+  const claim = readsClaimPath(planningRoot);
   /** @type {string|null} */
   let temp = null;
   /** @type {string|null} */
   let evicted = null;
+  /** @type {string|null} */
+  let dated = null;
+  // The `mtime` THIS process stamped on the sidecar, so the confirm below can
+  // tell its own write apart from a refresh some other claimant made.
+  /** @type {number|null} */
+  let mine = null;
   // The claim is HELD from the link until the swap. While it is held the
   // sibling is only a second name for the live file, so every failure arm has
   // to release it - a claim left behind reads as a rotation in flight forever
   // and the record never rotates again.
   let held = false;
+  // The stamp this process wrote, at its PRIVATE path, until the link says it
+  // owns the claim the stamp dates. Cleared once it is renamed into place.
+  /** @type {string|null} */
+  let pending = null;
+  /**
+   * Move the private stamp onto the shared sidecar path. Called only from the
+   * two arms that have established the claim is this process's to date, and
+   * `mine` is what the confirm below tells its own publish apart by.
+   */
+  const publish = () => {
+    if (!pending) return;
+    try { renameSync(pending, claim); dated = claim; mine = statSync(claim).mtimeMs; }
+    catch { mine = null; /* fail live: an undated claim reads as live */ }
+    pending = null;
+  };
   try {
     let claimed = false;
-    // TWO attempts, never a loop: claim, or evict one leftover generation and
-    // claim once more.
+    // TWO attempts, never a loop: claim, or evict one leftover generation (or
+    // one abandoned claim) and claim once more.
     for (let attempt = 0; attempt < 2 && !claimed; attempt++) {
+      // READ THE AGE BEFORE PUBLISHING A NEW STAMP. Every publish below
+      // overwrites the only evidence a killed claimant left, so an age read
+      // after one is this process's own and the reclaim could never fire.
+      // Declared out here because the `catch` arm is what consults it.
+      let wasStale = false;
       try {
+        wasStale = readsClaimAbandoned(claim);
+        // STAMP PRIVATE, PUBLISH ONLY WHERE THE CLAIM IS THIS PROCESS'S. The
+        // stamp has to exist before the `linkSync`, because the window it
+        // closes is the other way round: a stamp written after the link leaves
+        // the claim HELD beside the aged file a previous run left, and a third
+        // process reading that age concludes ABANDONED and evicts a LIVE claim.
+        //
+        // But writing it straight to `claim` writes a path this process does
+        // not own yet, and then every append that LOSES the link has refreshed
+        // somebody else's claim: on a record appended far more often than
+        // `READS_CLAIM_STALE_MS` - one process per tool call, D-07 - that
+        // restarts the staleness clock on every append and the abandoned claim
+        // never ages into a reclaim at all. Having the loser put back what it
+        // overwrote is not the remedy either: that is a check-then-write on a
+        // shared path, so a writer taking the claim between the check and the
+        // rewrite gets its FRESH stamp rewound to the dead claim's age and
+        // reads as abandoned while it is live, which costs the record rather
+        // than one rotation.
+        //
+        // A PLAIN overwrite, never `{flag:'wx'}`: the retry that follows an
+        // eviction comes back through here with the same `priv`, so an
+        // exclusive create would throw on this process's own leftover and turn
+        // the reclaim into a failed rotation. A failed sidecar write is
+        // SWALLOWED rather than allowed to decide the rotation - no sidecar
+        // reads as LIVE.
+        pending = `${claim}.${priv}`;
+        try { writeFileSync(pending, `${new Date().toISOString()}\n`); }
+        catch { pending = null; /* fail live: no sidecar reads as a live claim */ }
         linkSync(file, sibling);
         claimed = true;
         held = true;
+        // THE CLAIM IS OURS - publish the stamp that dates it. One atomic
+        // rename, and the only window it leaves is between the link and this
+        // line, where the sidecar is still the aged one a dead claimant left.
+        // The eviction arm's own confirm closes that.
+        publish();
       } catch (e) {
         const code = e && /** @type {any} */ (e).code;
         // No record to rotate at all: the caller's append is what creates it.
@@ -469,7 +573,20 @@ export function rotateReads(planningRoot, reserve) {
         if (code !== 'EEXIST') return { rotated: false, reason: code || 'claim-failed' };
         // A sibling already sits at that path, and `EEXIST` alone cannot say
         // which of the two causes put it there.
+        let abandoned = false;
         if (attempt > 0 || readsRotationInFlight(file, sibling)) {
+          // UNLESS THE CLAIM WAS ABANDONED. A claimant killed or timed out
+          // mid-rotation never runs its `finally`, so the claim stands forever:
+          // the record never write-deads, but the bound it promises is gone and
+          // every append pays the full wait budget - the state v3.7.4 phase 4's
+          // UAT recorded for the trace. Shortening the budget is not the
+          // remedy: the trigger is re-read from the record's size on every
+          // call, so only a COMPLETED rotation ends the state. The sidecar's
+          // age is consulted ONLY here, where the sibling is the same inode;
+          // where it is a different one it is a leftover generation and that
+          // arm's own discriminator answers on its own.
+          abandoned = attempt === 0 && wasStale;
+          if (!abandoned) {
           // A rotation is genuinely IN FLIGHT and this process lost the claim.
           // It must NOT hand the caller straight back to its append: while the
           // claim is held the live PATH still names the old inode, so the
@@ -483,14 +600,15 @@ export function rotateReads(planningRoot, reserve) {
           // `bin/read-trace.mjs:10-16` may emit nothing on any stream and exits
           // 0 unconditionally, so a lock refusal would have no path to be
           // reported on.
-          for (
-            let waited = 0;
-            waited < READS_ROTATE_WAIT_MS && readsRotationInFlight(file, sibling);
-            waited++
-          ) {
-            sleep(1);
+            for (
+              let waited = 0;
+              waited < READS_ROTATE_WAIT_MS && readsRotationInFlight(file, sibling);
+              waited++
+            ) {
+              sleep(1);
+            }
+            return { rotated: false };
           }
-          return { rotated: false };
         }
         // A generation an earlier rotation left, and evicting it is the one
         // DESTRUCTIVE act on this path - so RE-STAT first and never rotate a
@@ -505,12 +623,44 @@ export function rotateReads(planningRoot, reserve) {
         let now = null;
         try { now = statSync(file).size; } catch { return { rotated: false }; }
         if (now + reserve < MAX_READS_BYTES) return { rotated: false };
+        // PUBLISH THE STAMP HERE, and on no other losing arm. Either the
+        // sibling is a leftover generation and no claim is held at all, or the
+        // sidecar read ABANDONED and this process is about to evict the claim
+        // it dates - the one thing every other loser has not established. It
+        // also has to happen BEFORE the eviction, because the confirm below
+        // tells a second reclaimer's publish from this one's by the mtime this
+        // line leaves.
+        publish();
         // Evict SINGLE-WINNER, the way `lib/capture-file.mjs` breaks a stale
         // lock: exactly one contender renames it to a private path and the
         // losers get `ENOENT`. The `finally` drops that private path.
         const path = `${sibling}.evict.${priv}`;
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
+        // CONFIRM AFTER CLAIMING, on the ABANDONED arm only, and before
+        // anything is read or written. The rename above may have taken the
+        // sibling from a claimant that arrived between the age read and here: a
+        // second reclaimer wins the eviction race, re-links and stamps its own
+        // fresh sidecar, and the mtime is no longer the one this process wrote.
+        // Breaking THAT claim is not a deferred rotation, it is the whole
+        // record. Put the sibling back only where nothing has taken the path
+        // meanwhile - a plain rename back would clobber a claim a fourth writer
+        // legitimately holds - and either way CLEAR `evicted` so the release
+        // cannot delete a claim that was just restored. The leftover-generation
+        // arm has its own discriminator and does not gain a confirm
+        // (`lib/trace.mjs:837-867`).
+        if (abandoned) {
+          let refreshed = false;
+          try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
+          if (refreshed) {
+            try {
+              if (!existsSync(sibling)) renameSync(path, sibling);
+              else unlinkSync(path);
+            } catch { /* it vanished under us - there is nothing left to restore */ }
+            evicted = null;
+            return { rotated: false };
+          }
+        }
       }
     }
     if (!claimed) return { rotated: false };
@@ -530,10 +680,27 @@ export function rotateReads(planningRoot, reserve) {
   } catch (e) {
     return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
   } finally {
-    // Leave nothing behind on ANY arm: no private temp, no unfinished claim,
-    // no evicted generation.
+    // Leave nothing behind on ANY arm: no private temp, no private stamp, no
+    // unfinished claim, no evicted generation.
     if (temp) { try { unlinkSync(temp); } catch { /* nothing to clean up */ } }
     if (held) { try { unlinkSync(sibling); } catch { /* nothing to release */ } }
+    // GUARDED BY `held`, never unconditional. A claimant may delete only a
+    // sidecar it still owns: `held` goes false at the swap, so an unconditional
+    // unlink here would delete the FRESH sidecar of a process that took the
+    // claim legitimately in that window, leaving a standing claim with no
+    // sidecar - which reads as LIVE forever and defeats the reclaim
+    // permanently and silently (`lib/trace.mjs:912-932`).
+    //
+    // The consequence is deliberate: a rotation that COMPLETES leaves its
+    // sidecar behind. That residue is INERT - once the swap has happened the
+    // sibling is a separate inode, `readsRotationInFlight` is false, nothing
+    // reads the sidecar, and the next claimant overwrites it before it links.
+    if (held && dated) { try { unlinkSync(dated); } catch { /* nothing to release */ } }
+    // A stamp this call never published dates nothing and belongs to nobody
+    // else - it is at a path carrying `priv`, so no other process can see it.
+    // Dropping it UNCONDITIONALLY is what keeps a losing append from touching
+    // the shared sidecar at all. Every arm that DID publish cleared `pending`.
+    if (pending) { try { unlinkSync(pending); } catch { /* nothing to clean up */ } }
     if (evicted) { try { unlinkSync(evicted); } catch { /* nothing to clean up */ } }
   }
 }
