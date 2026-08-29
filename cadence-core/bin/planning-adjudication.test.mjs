@@ -733,6 +733,68 @@ test('RSK-08: a REASONLESS receipt over a record holding a cleared halt is refus
   assert.equal(traceLines(dir).length, before + 1);
 });
 
+test('RSK-08: a FIGURELESS receipt cannot settle the range at all', () => {
+  // UAT item 3, going the other way. `overrideAccounted` is reached only once a
+  // settled figure is PRESENT, so a receipt carrying none of the three skipped
+  // the record before it was opened: measured on the shipped tree, this exact
+  // call was appended and `risk-check status` then reported the range
+  // `recorded`. The requirement that closes it is DECLARED - lib/arg-contract.mjs's
+  // `PRESENCE_RULES` - and refuses at the argument door, so the seam keeps its
+  // "never a runtime refusal keyed to an event name" property untouched.
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  assert.equal(plRun(repo, dir, ['risk-check', 'run', ...range]).ok, true);
+  const payload = survivedPayloadFile(repo, 'figureless-override-payload.json',
+    survivedPayload('blocker', { overridden: true }));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+
+  // Every join key a documented receipt carries, and not one settled figure.
+  const before = traceLines(dir).length;
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head]);
+  assert.equal(receipt.ok, false, JSON.stringify(receipt));
+  assert.equal(receipt.reason, 'bad-args');
+  for (const flag of ['--survivors', '--downgraded', '--refuted']) {
+    assert.match(receipt.detail, new RegExp(flag),
+      'the refusal names the flags the caller has to add, or it is a rule with no repair');
+  }
+  // It NAMES the event, and that is the decision rather than an oversight: this
+  // refusal comes from the argument door, which is exactly where the event-name
+  // knowledge lives. The sibling arms' `doesNotMatch` assertion pins the SEAM's
+  // refusal, which stays a record/receipt contradiction; copying it here would
+  // pin the opposite of what this door is for.
+  assert.match(receipt.detail, /gate_pass/);
+  assert.ok(receipt.hint, 'a refusal a user reads names the next step');
+  assert.equal(traceLines(dir).length, before, 'a refused append writes nothing');
+
+  // And the range is still unsettled, which is the whole of what UAT item 3
+  // measured going the other way - there the figureless receipt was appended
+  // and the range then read `recorded`.
+  const unsettled = plRun(repo, dir, ['risk-check', 'status', ...range]);
+  assert.equal(unsettled.ok, false, JSON.stringify(unsettled));
+  assert.equal(unsettled.reason, 'risk-fire-missing');
+  assert.equal(unsettled.plans[0].state, 'unfired');
+
+  // The accepted shape over the SAME record, so the arm is proved to refuse the
+  // figureless CALL and not the fixture.
+  const reason = join(repo, 'figureless-override-reason.txt');
+  writeFileSync(reason, 'shipping behind a flag; the vault path is unreachable this release\n');
+  const explained = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'override', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head, '--detail-file', reason,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(explained.ok, true, JSON.stringify(explained));
+  assert.equal(traceLines(dir).length, before + 1);
+  assert.equal(plRun(repo, dir, ['risk-check', 'status', ...range]).plans[0].state, 'recorded');
+});
+
 test('RSK-08: the guard cannot be discharged by dropping one settled figure', () => {
   // `recountReceipt` needs all three because a partial set cannot be compared
   // with a recount that answers all three. This check recounts nothing, so
