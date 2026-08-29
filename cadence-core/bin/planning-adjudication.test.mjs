@@ -569,3 +569,51 @@ test('GH-159: a blocking fire whose highest finding is a survived MEDIUM settles
     'a confirmed-unfixed medium has no commit to name, and a fabricated one is what this '
     + 'phase exists to stop being the only way through');
 });
+
+test('an OVERRIDDEN blocking fire settles end to end, with the record present rather than absent', () => {
+  // The run `.planning/ARCHIVE.md` records: an `override` receipt was written
+  // and no `ADJUDICATION-risk_surface-plan-1.json` existed beside it, because
+  // the only ruling the adjudicator held - a blocker that stood unfixed - was
+  // the one the record seam refused. This row is what stops that recurring.
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  const recorded = plRun(repo, dir, ['risk-check', 'run', ...range]);
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+
+  const payload = survivedPayloadFile(repo, 'override-payload.json',
+    survivedPayload('blocker', { overridden: true }));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, `${JSON.stringify(rec)} - an override has no commit to name, and `
+    + 'inventing one is the thing the marker exists to make unnecessary');
+  assert.deepEqual(rec.counts, { raised: 1, survived: 1, downgraded: 0, refuted: 0 });
+
+  // The `override` receipt is the one risk-check.mjs SKIPS when its reason is
+  // empty, so the reason rides `--detail-file`: an inline `--detail` is not the
+  // transport this receipt takes, and an empty one is not a receipt at all.
+  const reason = join(repo, 'override-reason.txt');
+  writeFileSync(reason, 'shipping behind a flag; the vault path is unreachable this release\n');
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'override', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head, '--detail-file', reason,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(receipt.ok, true, JSON.stringify(receipt));
+
+  const after = plRun(repo, dir, ['risk-check', 'status', ...range]);
+  assert.equal(after.ok, true, JSON.stringify(after));
+  assert.equal(after._exit, 0);
+  assert.equal(after.plans[0].state, 'recorded');
+
+  const stored = JSON.parse(readFileSync(join(dir, rec.record), 'utf8'));
+  assert.equal(stored.entries.length, 1);
+  assert.equal(stored.entries[0].ruling, 'survived');
+  assert.equal(stored.entries[0].severity, 'blocker');
+  assert.equal(stored.entries[0].overridden, true);
+  assert.equal('fix_commit' in stored.entries[0], false,
+    'the override settle point produces a reason on the receipt and no commit, so a SHA here '
+    + 'could only have been fabricated');
+});
