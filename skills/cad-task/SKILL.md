@@ -17,7 +17,7 @@ allowed-tools:
 Do a small task now, outside the roadmap, keeping Cadence's guarantees:
 protected-branch guard and atomic conventional commits. Inline by default -
 no subagents, no plan files. `--plan` writes a short PLAN.md first for
-multi-step work. Feature-sized requests get re-routed to /cad-context.
+multi-step work. Feature-sized requests get re-routed to /cad-phase add.
 </objective>
 
 <execution_context>

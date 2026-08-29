@@ -272,7 +272,7 @@ No next-step menu.
 - Never use worktrees - cad-task is always sequential.
 - Never write STATE.md or any activity log for a task - git is the record.
 - If mid-task the scope grows past "planned", stop and re-route to
-  /cad-context rather than improvising a phase inline.
+  /cad-phase add rather than improvising a phase inline.
 </guardrails>
 
 <success_criteria>
