@@ -13,6 +13,7 @@ files:
   - cadence-core/bin/weight-budgets.json
   - cadence-core/bin/prose-agreement.test.mjs
   - cadence-core/bin/self-verify.test.mjs
+  - cadence-core/bin/why.test.mjs
 ---
 
 # Phase 2: Adaptive routing is reachable - Plan
