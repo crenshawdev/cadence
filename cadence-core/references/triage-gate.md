@@ -278,8 +278,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" unfixed --payload
 from - the `{voices: [...]}` object, not the rendered findings. What comes back
 is exactly the same set on all three arms that reach here: the `blocking` arm's
 below-blocker/high remainder, the `adjudicated` arm's non-survivors, and any
-`recorded not fixed` disposition. A survived `blocker` or `high` is NOT in it -
-that one is what the gate is halting over. A finding already declined on a
+`recorded not fixed` disposition. THREE things are held back, and one case that
+reads like a fourth is not. A survived `blocker` or `high` is NOT in it - that
+one is what the gate is halting over - UNLESS it carries `overridden: true`, and
+an overridden one IS in the set: the user has already chosen to ship past it, so
+nothing is halting, and holding it back would drop the one finding the override
+exists to surface. An entry naming its `fix_commit` is not in it, because the
+work it would ask about is already committed. A finding already declined on a
 previous fire is not in it either, so the same question is never asked twice.
 
 **ONE ask STEP for the fire, however many findings it holds.** Present what
