@@ -746,7 +746,12 @@ test('#195: execute.md locates unconditionally and refuses an already-executed p
   // 2. The refusal arm, found by the recovery path it names - a refusal that
   //    named no way forward would fail this at the anchor itself.
   const arms = locate.split(/\n- /).slice(1);
-  const refusal = arms.find((a) => a.includes('/cad-undo'));
+  // NOT the first arm naming /cad-undo. Since GH-179 the replay arm names it too
+  // and sits ABOVE this one, because the refusal now reads that arm's
+  // `dispatch_set`. A bare `find` here would grab the replay arm, whose trigger
+  // clause carries neither derived status, and this test would fail describing
+  // the wrong arm.
+  const refusal = arms.find((a) => a.includes('/cad-undo') && !a.includes('replay-check'));
   assert.ok(refusal,
     "execute.md's locate step names no /cad-undo route, so it either refuses nothing or "
     + 'refuses without naming the supported path');
@@ -767,6 +772,16 @@ test('#195: execute.md locates unconditionally and refuses an already-executed p
   assert.match(refusal, /--rerun/,
     'the refusal names no deliberate way through, so an intentional re-run has no route but '
     + 'editing the workflow');
+  // GH-179. The status alone is not the trigger: a phase carrying a `/cad-plan
+  // --gaps` plan derives `executed` with real outstanding work, and refusing on
+  // the status made every gap plan unrunnable while `--rerun`, the only
+  // documented way past, widened the set back over the committed plans.
+  assert.match(trigger, /dispatch_set/,
+    'that refusal triggers on the derived status alone, with no empty-`dispatch_set` term, so '
+    + 'it refuses a phase whose gap plans have never run');
+  assert.match(trigger, /empty/i,
+    'the refusal names `dispatch_set` without requiring it to be EMPTY, so the term does not '
+    + 'actually narrow the refusal');
 
   // 3. It stops BEFORE the guard and the trace anchor, which is what makes it a
   //    refusal rather than a late apology: `locate` is the first step, and the
@@ -832,10 +847,14 @@ test('EXP-03: execute.md asks the replay seam and obeys its answer', () => {
 
   // 5. Ordering, both halves - each regresses silently on its own.
   const refusal = arms.find((a) => a.includes('/cad-undo') && !a.includes('replay-check'));
-  assert.ok(arms.indexOf(replay) > arms.indexOf(refusal),
-    'the replay arm sits ABOVE the `executed`/`complete` refusal, so `arms.find(includes '
-    + "'/cad-undo')` in the #195 test reads the replay arm as the one that must trigger on "
-    + 'those two derived statuses');
+  // INVERTED at GH-179, and the direction is the fix. The refusal reads this
+  // arm's `dispatch_set`, so it has to come after it; before it, the refusal
+  // fires on the derived status with no knowledge of what is left to run, which
+  // is what made `/cad-plan --gaps` unreachable. The #195 test no longer depends
+  // on this ordering - it excludes the replay arm by name.
+  assert.ok(arms.indexOf(replay) < arms.indexOf(refusal),
+    'the replay arm sits BELOW the `executed`/`complete` refusal, so that refusal cannot read '
+    + 'the `dispatch_set` it must be gated on and refuses a phase whose gap plans never ran');
   assert.match(replay, /before any\s+executor dispatch/,
     'the replay arm does not say it stops before any executor dispatch, which is the whole '
     + `point of stopping: ${replay}`);
