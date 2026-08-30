@@ -240,20 +240,24 @@ test('a survived blocker never reaches the ask, so the fire has nothing to file'
 test('a survived medium whose fix is already committed is never put to the user', () => {
   // AC4, reproducing the one entry of this shape on disk today:
   // .planning/_archive-v3.7.3/1/ADJUDICATION-risk_surface-plan-2.json holds a
-  // `medium survived` naming commit 4a1af326. lib/filing-decision.mjs keeps it
-  // in the set on purpose - the gate is not fixing it now - and this seam is
-  // what removes it, because a tracker issue asking whether to fix it would be
-  // asking about work that is already committed.
+  // `medium survived` naming commit 4a1af326. A tracker issue asking whether
+  // to fix it would be asking about work that is already committed, and what
+  // reaches the forge is what this row has always asserted - the five that are
+  // genuinely unfixed. What MOVED is where the removal happens: it is
+  // lib/filing-decision.mjs's now (LND-02), so the fixed entry is never in the
+  // set this face is handed, and the two figures below say so.
   const fixed = finding('src/f.mjs', 60, 'medium', 'the retry loop has no ceiling');
   const composed = payloadFor([...FIVE.map((f) => [f, 'survived']), [fixed, 'survived']]);
   composed.voices[0].rulings[5].fix_commit = '4a1af326';
   const { status, envelope } = run(['unfixed', '--payload', payloadFile(composed)]);
   assert.equal(status, 0);
   assert.equal(envelope.ok, true);
-  // `raised` still counts what `unfixedFindings` answered with, and the removal
-  // is accounted for on its own key rather than folded into the decline count.
-  assert.equal(envelope.raised, 6);
-  assert.equal(envelope.already_fixed, 1);
+  // `raised` still counts what `unfixedFindings` answered with - five now,
+  // because the fixed entry is not in that answer - and `already_fixed` still
+  // counts what THIS face removed, which is none of them. The removal is not
+  // folded into the decline count, which stays tracker-derived.
+  assert.equal(envelope.raised, 5);
+  assert.equal(envelope.already_fixed, 0);
   assert.equal(envelope.already_declined, 0);
   assert.deepEqual(envelope.findings.map((e) => e.finding.file),
     ['src/a.mjs', 'src/b.mjs', 'src/c.mjs', 'src/d.mjs', 'src/e.mjs']);

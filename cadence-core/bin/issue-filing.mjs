@@ -261,21 +261,19 @@ function cmdUnfixed(dir, payloadFile) {
     return;
   }
 
-  // AN ENTRY WHOSE FIX IS ALREADY COMMITTED IS NOT A QUESTION FOR THE USER.
-  // `unfixedFindings` answers "what will this fire not fix now", and since the
-  // record grammar widened, an entry can be in that set and STILL name the
-  // commit that fixed it: a voluntary fix on a medium, which
-  // lib/filing-decision.mjs keeps legal on purpose (CONTEXT D-07). "The gate
-  // will not fix it now" and "somebody already did" are different questions,
-  // and only this face holds the second - that module states its field rule as
-  // a property of its signature, so a third field read there would make the
-  // rule a sentence it no longer keeps. Opening a tracker issue asking the user
-  // about work that is already committed is the defect being closed here.
-  //
-  // The removal runs BEFORE the forge is touched, for the same reason the
-  // payload is judged before it: it costs no network call to discover, and a
-  // fire whose whole remainder is already fixed should not spend one.
-  const notYetFixed = selected.findings.filter((e) => !e.fix_commit);
+  // AN ENTRY WHOSE FIX IS ALREADY COMMITTED IS NOT A QUESTION FOR THE USER,
+  // AND lib/filing-decision.mjs IS WHERE THAT IS DECIDED (CONTEXT D-04).
+  // `unfixedFindings` reads the commit itself, so the set it answers with is
+  // already the set to file: an entry citing one is not in it, whether the
+  // commit is a voluntary fix on a medium or a halt somebody also overrode.
+  // This face used to re-filter that here, which spelled "genuinely unfixed"
+  // in two places - and a close-time gate asking the same question would then
+  // have had to restate it a third time, which is the drift LND-02 closes.
+  // Opening a tracker issue asking a user about work that is already committed
+  // is still the defect the removal exists for; it simply happens one layer
+  // down, and it still happens BEFORE the forge is touched, because the module
+  // answers before `resolveForge` runs and a fire whose whole remainder is
+  // already fixed should not spend a network call to discover it.
 
   const forge = resolveForge(dir);
   if (forge.ok === false) {
@@ -295,22 +293,28 @@ function cmdUnfixed(dir, payloadFile) {
   // `findingIssue` in lib/adjudication-record.mjs refuses any key outside
   // `FINDING_KEYS`, so a fingerprint written INTO a finding would make every
   // payload carrying it fail the record seam it came from.
-  const findings = notYetFixed
+  const findings = selected.findings
     .map((finding) => ({ fingerprint: fingerprint(finding), finding }))
     .filter((e) => !declines.fingerprints.has(e.fingerprint));
 
-  // THREE NUMBERS, EACH COUNTING ONE THING. `raised` stays the size of the set
-  // `unfixedFindings` answered with, and `already_declined` stays a count of
-  // DECLINES alone - folding the removed entries into either would make an
-  // existing figure mean something new to make room for a third, and
-  // `already_declined` is tracker-derived in particular, so a number the
-  // tracker never said must not land in it. What was removed is accounted for
-  // rather than dropped silently: raised - already_fixed - already_declined is
-  // `findings.length`, and a reader can check it.
+  // THREE NUMBERS, EACH COUNTING ONE THING, AND THE MIDDLE ONE COUNTS THIS
+  // FACE'S OWN REMOVALS. `raised` stays the size of the set `unfixedFindings`
+  // answered with and `already_declined` stays a count of DECLINES alone -
+  // folding one into the other would make an existing figure mean something
+  // new, and `already_declined` is tracker-derived in particular, so a number
+  // the tracker never said must not land in it. `already_fixed` counts what
+  // was dropped HERE for naming a commit, which is now none of them: the
+  // module removes them before the set is handed over, so `raised` no longer
+  // counts them either and the identity a reader checks - raised minus
+  // already_fixed minus already_declined is `findings.length` - reads the same
+  // as it always did. The key stays rather than being deleted so an envelope
+  // reader learns no new shape, and it stays a REMOVAL count rather than being
+  // repointed at the module's answer, because a figure that changed what it
+  // counted while keeping its name is worse than one that reads zero.
   emit({ ok: true, provider: forge.provider, repo: forge.repo,
     raised: selected.findings.length,
-    already_fixed: selected.findings.length - notYetFixed.length,
-    already_declined: notYetFixed.length - findings.length,
+    already_fixed: 0,
+    already_declined: selected.findings.length - findings.length,
     findings, detail: null, warnings: forge.warnings });
 }
 
