@@ -277,17 +277,32 @@ test('gate: a refuted or downgraded ruling stops no close, at any severity', () 
   }
 });
 
-test('gate: `unruled` is read off the same stdin object, and a non-array reads as none', () => {
+test('gate: `unruled` is read off the same stdin object, and a malformed one fails CLOSED', () => {
   const dir = fixture({ auto_close: true });
   const named = seam(['gate', '--dir', dir],
     '{"findings":[],"unruled":[".planning/phases/9/REVIEW-risk_surface-plan-1.md"]}');
   assert.equal(named.action, 'halt');
   assert.ok(named.reason.includes('unruled-review'), named.reason);
   assert.ok(named.reason.includes('.planning/phases/9/REVIEW-risk_surface-plan-1.md'), named.reason);
-  // Additive and soft on the way in: an absent key and a wrong-typed one are
-  // the same answer, so an old caller that names nothing is not an error here.
+  // Additive on the way in: an ABSENT key is not an error, and `null` is how
+  // JSON spells absent, so an old caller that names nothing still proceeds.
   assert.equal(seam(['gate', '--dir', dir], '{"findings":[]}').action, 'proceed');
-  assert.equal(seam(['gate', '--dir', dir], '{"findings":[],"unruled":"R.md"}').action, 'proceed');
+  assert.equal(seam(['gate', '--dir', dir], '{"findings":[],"unruled":null}').action, 'proceed');
+  // A PRESENT one that is not a list is the opposite case and used to give the
+  // same answer, which was a fail-open: the payload names a review nothing
+  // ruled, one producer serialization bug (or one hostile line) turns the list
+  // into a bare string, and the fifth-state halt was thrown away silently while
+  // the unattended merge ran. It halts now, and the reason names the value's
+  // TYPE rather than quoting an untrusted, unparseable payload onto stdout.
+  const bare = seam(['gate', '--dir', dir],
+    '{"findings":[],"unruled":".planning/phases/9/REVIEW-risk_surface-plan-1.md"}');
+  assert.equal(bare.action, 'halt', bare.reason);
+  assert.ok(bare.reason.includes('unruled-review'), bare.reason);
+  assert.ok(!bare.reason.includes('phases/9'),
+    `the payload's own bytes must not ride the reason: ${bare.reason}`);
+  const object = seam(['gate', '--dir', dir], '{"findings":[],"unruled":{"0":"R.md"}}');
+  assert.equal(object.action, 'halt', object.reason);
+  assert.ok(object.reason.includes('unruled-review'), object.reason);
   // ...but a payload carrying ONLY `unruled` is still the fourth unreadable
   // state: the explicit findings list is what the four-name contract requires.
   const noList = seam(['gate', '--dir', dir], '{"unruled":["R.md"]}');

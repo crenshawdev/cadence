@@ -48,7 +48,8 @@
 //     carrying no such sibling record - a legacy artifact, another tool's, or a
 //     deferred fire, which writes none by design. That is the FIFTH state,
 //     `unruled-review`, and it halts under auto_close beside the four above: a
-//     fire nothing ruled says nothing about what survived.
+//     fire nothing ruled says nothing about what survived. A PRESENT `unruled`
+//     that is not a list halts on that state too rather than reading as none.
 //     A halt a person already CLEARED rides back out on `overridden` and moves
 //     nothing - `action` is unchanged, and cad-land keeps branching on it alone.
 //     The gate reads STDIN AND NOTHING ELSE: it opens no ADJUDICATION file of
@@ -101,6 +102,32 @@ function readMergedBranches(dir, base) {
 }
 
 /**
+ * What the caller named on `unruled`, and the ONE place a malformed one is
+ * decided. ABSENT reads as `[]` - an old caller that names nothing is not an
+ * error, and `null` is how JSON spells absent, so it reads the same way.
+ * PRESENT BUT NOT A LIST DOES NOT. It used to coerce to `[]` as well, which
+ * meant a payload that explicitly carried evidence of an unadjudicated review
+ * - `"unruled": ".planning/phases/9/REVIEW-risk_surface-plan-1.md"`, one
+ * producer serialization bug or one hostile line away - threw the fifth-state
+ * halt away without a word and let the autonomous merge run. It fails CLOSED
+ * now: one member standing for the malformation, so the list is non-empty and
+ * `unruled-review` halts exactly as a named review would.
+ *
+ * That member names the value's TYPE and never the value. This payload is
+ * untrusted and unreadable at once, so copying its bytes into a reason string
+ * on stdout is the one thing not to do; `typeof` is one of eight fixed words,
+ * which is bounded by construction.
+ *
+ * @param {unknown} value
+ * @returns {unknown[]}
+ */
+function readUnruled(value) {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value;
+  return [`(unruled: ${typeof value}, not a list of review paths)`];
+}
+
+/**
  * The ADJUDICATION RECORD ENTRIES from stdin, the reviews the caller found that
  * nothing ruled, and WHICH of the four unreadable states was seen when there
  * are no entries. All four used to collapse to `[]`, which `decideGateHalt`
@@ -116,10 +143,10 @@ function readMergedBranches(dir, base) {
  * in, the empty-stdin rule and the bare-array form are ALL unchanged, because
  * they are what the four-name contract is (D-13).
  *
- * `unruled` IS ADDITIVE AND FAILS SOFT ON THE WAY IN, not on the way out:
- * absent, or present but not an array, reads as `[]`, so an old caller that
- * names nothing is not an error here. It is the FIFTH state
- * (`unruled-review`) that halts on it, and only when it is non-empty.
+ * `unruled` IS ADDITIVE: an ABSENT one reads as `[]`, so an old caller that
+ * names nothing is not an error here. A PRESENT one that is not a list does
+ * NOT read as none - `readUnruled` below fails it closed. It is the FIFTH
+ * state (`unruled-review`) that halts on it, and only when it is non-empty.
  *
  * EMPTY stdin is one of the four (D-09): the gate requires an explicit
  * `{"findings":[]}` to proceed, because a forgotten pipe is the likeliest
@@ -142,7 +169,7 @@ function readFindings() {
   if (Array.isArray(parsed)) return { findings: parsed, unreadable: null, unruled: [] };
   if (parsed && Array.isArray(parsed.findings)) {
     return { findings: parsed.findings, unreadable: null,
-      unruled: Array.isArray(parsed.unruled) ? parsed.unruled : [] };
+      unruled: readUnruled(parsed.unruled) };
   }
   return { findings: [], unreadable: 'not-a-findings-payload', unruled: [] };
 }
