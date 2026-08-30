@@ -1973,6 +1973,45 @@ test('seam: a close with --tokens and no --detail is still a `return` (D-06)', (
   assert.equal(lines(dir)[1].event, 'checkpoint');
 });
 
+test('seam: --replay marks a close that performed no work, and stays a `return`', () => {
+  // A replayed dispatch costs real tokens and commits nothing, and its bracket
+  // is otherwise byte-identical in shape to a real one - two measured replays
+  // charged 30,588 and 24,570 tokens a cost read counted as execution. The arm
+  // matters as much as the field: the flag must NOT push the close onto the
+  // checkpoint arm, which is what a `--detail` note would have done.
+  const dir = root();
+  const r = run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '30588', '--replay']);
+  assert.equal(r.ok, true);
+  const [e] = lines(dir);
+  assert.equal(e.event, 'return', 'a replay was billed as a checkpoint');
+  assert.equal(e.replay, true);
+  assert.equal(e.tokens, 30588, 'the replay still carries what it cost');
+});
+
+test('seam: a close without --replay carries no replay key at all', () => {
+  // Present-only-when-true, the shape every optional field on this event takes:
+  // `false` and absent say the same thing, and writing `replay: false` onto
+  // every close would put the field on thousands of dispatches that were not
+  // one. This is also the byte-for-byte guarantee that an ordinary close writes
+  // what it always wrote.
+  const dir = root();
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '1', '--role', 'cad-executor']);
+  const [e] = lines(dir);
+  assert.equal('replay' in e, false);
+});
+
+test('seam: --replay does not fight the checkpoint arm', () => {
+  // The two flags answer different questions - WHAT came back, and whether it
+  // did any work - so a detail still decides the arm and the mark still lands.
+  const dir = root();
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+    '--role', 'cad-executor', '--detail', 'came back empty', '--replay']);
+  const [e] = lines(dir);
+  assert.equal(e.event, 'checkpoint');
+  assert.equal(e.replay, true);
+});
+
 test('seam: a malformed --tokens on a close appends NOTHING at all', () => {
   const dir = root();
   for (const bad of ['abc', '-1', '1.5', '1,2,3']) {

@@ -258,8 +258,16 @@ declared files (references/seam-spawn-agent.md's Routing block states the rule).
 Once that executor comes back, append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path> [--replay]
 ```
+
+`--replay` ONLY when the digest's `Commits:` read `none (already applied)`: the
+dispatch cost real tokens and performed no work, and without the flag its
+bracket is byte-identical in shape to a real one. Two measured replays charged
+30,588 and 24,570 tokens that a cost read over `trace.jsonl` counted as
+execution. It is a structured flag and never a `--detail` note, because the
+close arm infers `checkpoint` from a non-blank detail - a replay written there
+would bill a finished dispatch as an unusable one.
 
 ONE line per executor, and the detail is the executor's own return line - write
 it to a scratch file and pass the PATH (caller-derived text -
@@ -293,7 +301,10 @@ file's job.
 Handle the executor's return:
 - **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
   path `<plandir>/reports/plan-<k>.md`. Do not open the file here; `summary`
-  reads it.
+  reads it. A digest whose `Commits:` reads `none (already applied)` is STILL
+  complete - the work is in HEAD - but this dispatch performed none of it, so
+  its close carries `--replay` and its tokens are subtractable from any cost
+  read rather than counted as execution.
 - **checkpoint** -> handle_checkpoint, then dispatch a fresh continuation.
 - **partial** (`PLAN PARTIAL`, a digest but no checkpoint) -> the report FILE
   is authoritative: open `<plandir>/reports/plan-<k>.md` for the task numbers

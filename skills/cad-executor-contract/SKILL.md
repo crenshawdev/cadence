@@ -282,10 +282,19 @@ load-bearing outside it:
 ```
 PLAN {COMPLETE | PARTIAL}
 Tasks: {n} of {m}
-Commits: {first..last short hash, or "none"}
+Commits: {first..last short hash | none | none (already applied)}
 Deviations: {count}
 Open items: {count}
 ```
+
+`none (already applied)` when your tasks were ALREADY satisfied in HEAD before
+you ran, so you committed nothing and nothing was missing. Never the prior run's
+hashes in the field for your own, and never a sentence of your own devising:
+both have happened, and neither is a value the orchestrator parses. Plain `none`
+stays what it always was - a dispatch that produced nothing. `Tasks: {n} of {m}`
+counts tasks SATISFIED, not tasks you performed, so it reads `2 of 2` on a
+replay truthfully and misleadingly at once; this is the field that separates
+them, and the two are read together.
 
 No task table, no deviation text, no open-item text, no plan-file line, and no
 report path - the orchestrator derives the path from the plan file it

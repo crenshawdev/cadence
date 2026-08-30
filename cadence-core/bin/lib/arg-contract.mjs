@@ -1002,6 +1002,13 @@ export const CONTRACTS = {
       // caller believes the close was bound, which is the one failure this
       // flag exists to remove.
       '--agent-id': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // THIS DISPATCH PERFORMED NO WORK because the work was already in HEAD.
+      // Structured, and deliberately not a `--detail`: the close arm INFERS
+      // `checkpoint` vs `return` from that flag being non-blank, so a replay
+      // note written there would bill a finished dispatch as an unusable one -
+      // the exact arm the record exists to keep separate. It rides the event
+      // only when true, so an ordinary close writes the bytes it always did.
+      '--replay': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     // `--events` asks for the RAW event array. The default response carries the
     // paired `brackets` rows plus every `outcome` event instead, which is what
