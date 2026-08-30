@@ -1362,6 +1362,56 @@ test('LND-02: milestone.md carries the rulings BEFORE the prune, and stops on ok
     + 'by landing manually otherwise leaves the records behind to halt the next milestone too');
 });
 
+// --- LND-02: the gate's caller pipes rulings, and names what nothing ruled ---
+//
+// The seam cannot check its own input. `land-cleanup.mjs gate` reads stdin and
+// nothing else (D-07), so WHAT the coordinator unions is decided entirely by
+// this bullet: a sentence that sent it back to the REVIEW files' `findings`
+// arrays would halt every close on the reviewer's raw claims - the pre-fix,
+// pre-refutation, pre-downgrade text - and the seam would report that halt as
+// correct. `unruled` and `overridden` are the two payload/envelope keys only
+// this prose can populate or surface, so an unnamed one is a dead key.
+
+test('LND-02: cad-land 3(b) unions the RULINGS from both roots, not the review findings', () => {
+  const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const lines = skill.split('\n');
+  const start = lines.findIndex((l) => l.includes('land-cleanup.mjs\" gate'));
+  assert.ok(start > -1, 'cad-land no longer pipes anything to land-cleanup.mjs gate');
+  // The bullet is the block the gate call sits in: back to its `- **` opener,
+  // forward to the next one, so a neighbouring bullet cannot satisfy a row here.
+  const open = lines.slice(0, start + 1).map((l, i) => [l, i])
+    .filter(([l]) => /^\s*- \*\*/.test(String(l))).pop();
+  assert.ok(open, 'the gate call no longer sits inside a bullet of step 3');
+  const end = lines.findIndex((l, i) => i > Number(open[1]) && /^\s*- \*\*/.test(l));
+  const bullet = lines.slice(Number(open[1]), end > -1 ? end : lines.length)
+    .join(' ').replace(/\s+/g, ' ');
+
+  for (const [needle, why] of [
+    ['ADJUDICATION-risk_surface*.json', 'the record it reads'],
+    ['.planning/phases/*/', 'the live record root'],
+    ['.planning/risk-carry/*/', 'the carried record root, the only one left after a prune'],
+    ['entries[]', 'the array the union is taken from'],
+    ['unruled', 'the payload key that halts on a fire nothing ruled'],
+    ['overridden', 'the envelope key carrying a halt a person already cleared'],
+    ['{\"findings\":[]}', 'the only spelling of "nothing survived"'],
+  ]) {
+    assert.ok(bullet.includes(needle),
+      `cad-land's gate bullet no longer names \`${needle}\` (${why})`);
+  }
+  assert.match(bullet, /every round/i,
+    "the bullet no longer says EVERY round is unioned - round 2's record is not round 1's, "
+    + 'and taking the highest alone drops what only an earlier round stated');
+  assert.match(bullet, /never parsed/,
+    'the bullet dropped the sentence that the gate never reports "no surviving finding" '
+    + 'about input it never parsed');
+
+  // The negative half, and it is the requirement itself: nothing here may send
+  // the coordinator back to the raw review text.
+  assert.doesNotMatch(bullet, /union (?:their|the) `?findings`? arrays/i,
+    "cad-land unions the REVIEW files' raw `findings` arrays again, which halts the close on "
+    + 'findings already fixed, refuted, downgraded or overridden - LND-02 exactly');
+});
+
 test('progress.md: the deferred count is read off the envelope at both its sites', () => {
   // D-05's enforcement. The COUNT comes from `status`, never parsed back out of
   // the cursor's `Next:` free text - the substitution this repository already

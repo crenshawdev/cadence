@@ -119,23 +119,36 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
    the 3a ask). The integration branch is local-only
    (references/git-publish.md rail 3 never
    auto-pushes).
-   - **Gate the unattended merge on surviving findings.** Nobody is watching
-     this arm, so a surviving blocker/high finding is a HARD halt before any
-     merge rather than an ask. This skill fires no review of its own: the
-     findings are the ones this branch's `risk_surface` fires already settled
-     and persisted, in TWO places: `.planning/phases/*/REVIEW-risk_surface*.md`,
-     and `.planning/REVIEW-risk_surface-*.md`. Read every such file in the tree,
-     union their `findings` arrays, and pipe
-     `{"findings": [...]}` on stdin to
+   - **Gate the unattended merge on the RULINGS, not the raw findings.** Nobody
+     is watching this arm, so a blocker/high finding still genuinely unfixed is
+     a HARD halt before any merge rather than an ask. This skill fires no review
+     of its own: what it reads is what this branch's `risk_surface` fires
+     already ADJUDICATED. Read every `ADJUDICATION-risk_surface*.json` under
+     BOTH record roots - `.planning/phases/*/` and `.planning/risk-carry/*/`,
+     the copies `/cad-milestone` leaves when it prunes the phase dirs before
+     chaining this command - and union every round's `entries[]`. Every round,
+     never the highest alone: a re-arm is a second fire on the same
+     discriminator and round 2 is not the record of round 1. Do NOT read the
+     `findings` arrays out of the `REVIEW-risk_surface*.md` files - those are
+     the reviewer's raw claims, before anything was fixed, refuted, downgraded
+     or overridden, and halting on them halts on work already done.
+     Then name on `unruled` every `REVIEW-risk_surface*.md` carrying no sibling
+     record of the same basename - from those two roots plus a legacy
+     `.planning/REVIEW-risk_surface-*.md` an interrupted older close may have
+     left behind. A fire nothing ruled says nothing about what survived, so it
+     halts by name rather than being read past. Pipe
+     `{"findings": [...], "unruled": [...]}` on stdin to
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate`; on
-     `action:"halt"` stop the chain and surface the findings instead of merging
-     over them. BOTH globs, always: `/cad-milestone` prunes the phase dirs
-     before it chains this command, so there the second is the only producer
-     left. When no such file exists, pipe an explicit `{"findings":[]}` -
-     that is the only spelling of "nothing survived", and `action:"halt"` also
-     fires when the payload could not be read at all (empty stdin, malformed
-     JSON, or a valid envelope carrying no findings list), since the gate never
-     reports "no surviving finding" about input it never parsed.
+     `action:"halt"` stop the chain and surface the `findings` instead of
+     merging over them, and surface a non-empty `overridden` with them - those
+     are halting survivors a person already cleared, so they never move
+     `action`, but a close that showed neither is a close nobody can answer.
+     When neither root holds a record or a review, pipe an explicit
+     `{"findings":[]}` - that is the only spelling of "nothing survived", and
+     `action:"halt"` also fires when the payload could not be read at all
+     (empty stdin, malformed JSON, or a valid envelope carrying no findings
+     list), since the gate never reports "no surviving finding" about input it
+     never parsed.
    - **Read the publish rails first.** Read
      `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
      consult site - step 3a or 3b, never both) before the
