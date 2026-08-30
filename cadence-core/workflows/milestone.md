@@ -100,17 +100,29 @@ after the merge is confirmed - this close's job ends at the bump commit.
 
 ## 3. Prune completed phases + cleanup
 
-**Carry the `risk_surface` survivors forward FIRST.** The prune below removes
+**Carry the `risk_surface` RULINGS forward FIRST.** The prune below removes
 `.planning/phases/<N>/`, which holds the only producer `/cad-land`'s unattended
 halt has, and step 7 chains `/cad-land` AFTER this - so pruning first leaves
 that gate globbing empty, which reads as "nothing survived" and merges over a
-held blocker. Union every `.planning/phases/*/REVIEW-risk_surface*.md` into one
-`{"findings": [...]}` at `.planning/REVIEW-risk_surface-<label>.md`, outside
-`phases/`. Empty union -> write nothing.
+held blocker.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-carry --phase <N>
+```
+
+Run it for every phase this close prunes, BEFORE the prune seam call below. It
+COPIES that phase's `REVIEW-risk_surface*.md` files and every
+`ADJUDICATION-risk_surface*.json` sitting beside them - every round, basenames
+preserved, because the land gate pairs a review with its ruling BY NAME - into
+`.planning/risk-carry/<N>/`. A COPY and not the move `deferred carry` makes:
+under `--mode archive` the records have to stay in `_archive-<label>/<N>/` too,
+which is the tier `/cad-why` reads. It refuses rather than overwriting a carried
+ruling that differs, so relay any `ok:false` and STOP - the prune below deletes
+what this could not carry.
 
 **TRANSIENT, never staged**, deleted by step 7 when the close resolves. Commit
-it and a survivor rides onto base, where every later autonomous land unions it
-again and halts on a finding answered a milestone ago.
+`.planning/risk-carry/` and a ruling rides onto base, where every later
+autonomous land reads it again and halts on a finding answered a milestone ago.
 
 **Then carry the DEFERRED queue out of each pruned phase, per phase, before the
 seam call below.** Same reason one paragraph up and a different artifact: a
@@ -126,7 +138,7 @@ members to `.planning/deferred/<N>/`, leaves the settled ones behind to be
 pruned with the phase, and refuses rather than overwriting - relay any
 `ok:false` and stop, because the next step deletes what it could not carry.
 
-The difference from the `risk_surface` union above, stated once: that union is
+The difference from the `risk_surface` carry above, stated once: that carry is
 TRANSIENT and step 7 deletes it, while the carried queue is COMMITTED and stays
 until it is adjudicated. Deleting it at step 7 would delete the only thing
 stopping the chained land.
@@ -169,10 +181,11 @@ construction - a milestone can close with deferred work that rolls to the next.
 
 Commit this as `chore: prune <label> completed phases` (label = the version on
 a release, else the milestone name), staging ROADMAP.md, REQUIREMENTS.md,
-`.planning/ARCHIVE.md` and any `_archive-<label>/` move. NOT the carry-forward
-file - it is transient, and ARCHIVE.md is its opposite: that file exists to be
-consumed and deleted by step 7, while the residue IS the recall corpus for every
-milestone this project has closed and dies with the working tree untracked.
+`.planning/ARCHIVE.md` and any `_archive-<label>/` move. NOT
+`.planning/risk-carry/` - it is transient, and ARCHIVE.md is its opposite: that
+directory exists to be read and deleted by step 7, while the residue IS the
+recall corpus for every milestone this project has closed and dies with the
+working tree untracked.
 
 ## 4. Evolve PROJECT.md - or close only
 First the arm, asked through the ask-user seam with no preselected default: does
@@ -234,14 +247,15 @@ publishing are the user's separate `/cad-land` call (step 8's note). When
 `git.auto_close` is `true`, chain the publish end-to-end - invoke `/cad-land`
 via the SlashCommand tool so it runs PR -> merge -> tag -> reset with no
 per-step prompts (audit -> bump already ran above). The close gate inside
-cad-land still applies: a surviving blocker/high `risk_surface` finding from this
-branch's own fires stops the chain before merge (nothing is force-merged) - and
-only because step 3 carried those survivors out of the phase dirs it pruned.
-Skip that and this sentence is false: the gate globs empty and merges.
+cad-land still applies: a blocker/high `risk_surface` finding from this branch's
+own fires that the rulings show genuinely unfixed - and a fire nothing ruled at
+all - stops the chain before merge (nothing is force-merged), and only because
+step 3 carried those rulings out of the phase dirs it pruned. Skip that and this
+sentence is false: the gate reads an empty set and merges.
 
-Delete `.planning/REVIEW-risk_surface-<label>.md` once the close resolves, on
-BOTH arms - the halt included, or a halt the user answers by landing manually
-leaves the file behind to halt the next milestone too.
+Delete `.planning/risk-carry/` once the close resolves, on BOTH arms - the halt
+included, or a halt the user answers by landing manually leaves the records
+behind to halt the next milestone too.
 
 Ordering note (intentional, not a latent bug): this chain runs AFTER step 4
 evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer

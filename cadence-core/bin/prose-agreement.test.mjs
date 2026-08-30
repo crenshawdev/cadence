@@ -1307,6 +1307,61 @@ test('cad-land step 3: the deferred queue refuses ahead of BOTH publish arms', (
     'the guardrails no longer name the one thing that stops a land');
 });
 
+// --- LND-02: the carry runs BEFORE the prune that deletes what it carries ----
+//
+// FILE POSITION, because nothing else can see it. self-verify's check 2
+// resolves `risk-carry --phase` against its CONTRACTS row and a grep proves no
+// raw-findings union survives, but both are blind to WHERE in step 3 the call
+// sits - and a carry written below `milestone-prune` reads a directory that
+// `--mode delete` already `rmSync`ed, so it copies nothing, exits `ok:true`,
+// and the /cad-land chained after it reads an empty set as "nothing survived".
+// That is LND-02's own defect rebuilt one paragraph out of order.
+
+test('LND-02: milestone.md carries the rulings BEFORE the prune, and stops on ok:false', () => {
+  const text = doc('cadence-core', 'workflows', 'milestone.md');
+  const lines = text.split('\n');
+  const at = (needle) => lines.findIndex((l) => l.includes(needle));
+
+  const stepStart = at('## 3. Prune completed phases + cleanup');
+  const stepEnd = lines.findIndex((l, i) => i > stepStart && l.startsWith('## 4.'));
+  assert.ok(stepStart > -1 && stepEnd > stepStart, 'milestone.md no longer spells step 3');
+
+  const carry = at('planning.mjs" risk-carry --phase');
+  const prune = at('planning.mjs" milestone-prune');
+  assert.ok(carry > -1, 'milestone.md step 3 no longer runs the risk_surface carry at all, so '
+    + 'the prune below it deletes the only rulings the unattended close can halt on');
+  assert.ok(prune > -1, 'milestone.md no longer runs milestone-prune');
+  assert.ok(carry > stepStart && carry < stepEnd,
+    'the risk_surface carry left step 3, the step that runs before the prune');
+  assert.ok(carry < prune,
+    'milestone.md runs the risk_surface carry AFTER milestone-prune, which removes the '
+    + 'phases/<N>/ directory the carry reads its rulings out of');
+
+  // The relay is a STOP, not a note, and it is read out of the carry's OWN
+  // paragraph - the deferred carry below it states the same rule about a
+  // different artifact, so an unscoped match would pass on that one alone.
+  const deferred = at('planning.mjs" deferred carry');
+  assert.ok(deferred > carry,
+    'the deferred carry no longer follows the risk_surface carry, so the region below is unbounded');
+  const region = lines.slice(carry, deferred).join(' ').replace(/\s+/g, ' ');
+  assert.match(region, /ok:false[^.]{0,80}stop/i,
+    'milestone.md no longer says an `ok:false` from the risk_surface carry STOPS the close. '
+    + 'Continuing past one prunes exactly the rulings the carry could not copy');
+  assert.match(region, /\.planning\/risk-carry\//,
+    'the carry paragraph no longer names `.planning/risk-carry/`, which is the root '
+    + '/cad-land globs for the records the phase dirs no longer hold');
+
+  // And step 7 deletes it on BOTH arms: committed, a carried ruling rides onto
+  // base and halts every later autonomous land on a finding answered here.
+  const seven = lines.findIndex((l) => l.startsWith('## 7.'));
+  const eight = lines.findIndex((l, i) => i > seven && l.startsWith('## 8.'));
+  assert.ok(seven > -1 && eight > seven, 'milestone.md no longer spells step 7');
+  const step7 = lines.slice(seven, eight).join(' ').replace(/\s+/g, ' ');
+  assert.match(step7, /Delete `\.planning\/risk-carry\/`[^.]*BOTH arms/,
+    'step 7 no longer deletes `.planning/risk-carry/` on both arms - a halt the user answers '
+    + 'by landing manually otherwise leaves the records behind to halt the next milestone too');
+});
+
 test('progress.md: the deferred count is read off the envelope at both its sites', () => {
   // D-05's enforcement. The COUNT comes from `status`, never parsed back out of
   // the cursor's `Next:` free text - the substitution this repository already
