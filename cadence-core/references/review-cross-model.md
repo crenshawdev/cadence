@@ -105,7 +105,12 @@ taken, and nothing else in the review subsystem reads it.
   field are what make two fires of ONE trigger - one cross-model, one subagent -
   distinguishable in the record afterwards.
   Read the one JSON line.
-  - `ok:true` -> use `findings`.
+  - `ok:true` -> use `findings`. An envelope carrying `redactions: <n>` means
+    the seam's outbound fence replaced that many credential-shaped spans before
+    sending (references/seam-review-provider.md); say so in one line, since the
+    reviewer read a smaller artifact than this step composed. Do NOT filter here
+    as well: a second copy of that regex is the drift D-14 keeps out of the
+    tree, and it would sit outside what `assertUnderCap` measures.
   **Run this with an explicit command timeout of at least
   `review.request_timeout_ms`** (default 540000; the host's own default is
   120000 and its ceiling 600000). Without one the host kills the command

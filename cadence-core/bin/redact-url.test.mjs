@@ -9,7 +9,7 @@
 // alone, and it would make `detail` useless for the thing it exists for.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { redactUrl, redactCredentials } from './lib/redact-url.mjs';
+import { redactUrl, redactCredentials, REDACTION_MARK } from './lib/redact-url.mjs';
 
 /** The credential halves every arm below asserts are absent. */
 const USER = 'cad';
@@ -322,4 +322,99 @@ test('redactCredentials: a quoted value cut before its closing quote still goes'
   // And a lone unmatched quote carrying no credential name is still not a
   // credential span.
   assert.equal(redactCredentials('the "quick brown fox'), 'the "quick brown fox');
+});
+
+test('REDACTION_MARK is the string both redactors actually write', () => {
+  // A caller that COUNTS redactions - review-provider.mjs's outbound payload
+  // fence - reads this constant rather than a copy of the literal, so it has to
+  // be the same string the two functions put on the page. A drift here would
+  // make that fence report zero on a payload it had redacted.
+  assert.ok(redactUrl('git://cad:s3cr3t-tok@host.invalid/r.git').includes(REDACTION_MARK));
+  assert.ok(redactCredentials('{"password":"hunter2"}').includes(REDACTION_MARK));
+});
+
+test('cost: a whole ARTIFACT is linear, not quadratic (#167)', () => {
+  // WATCHED FAILING. Before the whitespace segmentation and the literal
+  // pre-checks, `redactUrl` backtracked once per start position: measured
+  // 2026-08-30, 431ms on 16,000 characters, 6.4s on 64,000 and 25.5s on
+  // 128,000 - so a review payload at the 120,000-token default cap (~480,000
+  // characters) took minutes and hung the suite outright.
+  //
+  // This is a COST arm, and the bound is deliberately loose - two orders of
+  // magnitude above the 9ms the shipped form measures - so it fails on the
+  // return of the quadratic walk and not on a slow machine or a cold JIT.
+  const cases = {
+    'no whitespace at all, the base64 / hash shape': 'A'.repeat(480000),
+    // The shape bound 2 alone let through, and the reason each rule carries a
+    // lookbehind: one segment holding both the literal a pre-check looks for
+    // and a long delimiter-free run. Measured at 84 SECONDS before the
+    // lookbehinds, on the cut rule alone.
+    'one segment, a colon, and two long runs': 'A'.repeat(240000) + ':' + 'B'.repeat(240000) + '/',
+    'the same with an @, so the terminated rules run too':
+      'A'.repeat(240000) + ':' + 'B'.repeat(240000) + '/@',
+    // The scheme rules' own version, which a lookbehind of "not preceded by a
+    // letter" did NOT bound: a scheme continues with digits, so in an
+    // alternating run every letter was still a legal start. Measured at 99.6
+    // SECONDS before the continuation class went into the lookbehind.
+    'alternating letters and digits, a scheme, and no userinfo':
+      '1a'.repeat(240000) + ':///@',
+    'a minified bundle, every delimiter present': 'a:b/c;d(e)'.repeat(48000),
+    'an ordinary diff of ordinary code': Array(6000).fill(
+      '+  const value = compute(alpha, beta); // https://cad:tok@host.invalid/r.git').join('\n'),
+    'dense @ with no other delimiter': ('x'.repeat(100) + '@').repeat(4752),
+  };
+  for (const [name, body] of Object.entries(cases)) {
+    const started = Date.now();
+    const out = redactCredentials(redactUrl(body));
+    const ms = Date.now() - started;
+    assert.ok(ms < 2000, `${name}: the fence took ${ms}ms on ${body.length} characters`);
+    assert.ok(out.length > 0, `${name}: redacted to nothing`);
+  }
+  // And the coverage the speed is not allowed to cost: the credential in the
+  // ordinary-diff case is still gone, at that size, through the same call.
+  const diff = Array(6000).fill(
+    '+  const value = compute(alpha, beta); // https://cad:tok@host.invalid/r.git').join('\n');
+  const out = redactCredentials(redactUrl(diff));
+  assert.equal(out.includes('cad:tok'), false, 'the userinfo survived at artifact scale');
+  assert.ok(out.includes('compute(alpha, beta)'), 'the code a reviewer needs was eaten');
+});
+
+test('the start lookbehinds remove attempts, never matches', () => {
+  // Each rule is pinned to the beginning of a run for cost. The claim that
+  // makes that safe is that a match starting mid-run never survived leftmost
+  // anyway, so these are the spans where a naive pin WOULD have cost coverage:
+  // a run character sitting immediately before the credential, with no
+  // delimiter between them.
+  for (const [body, gone] of [
+    // A digit immediately before a scheme - the scheme rule starts at a letter,
+    // so the run begins at the digit and the match begins one later.
+    ['see 9abc://cad:s3cr3t-tok@host.invalid/r.git now', 's3cr3t-tok'],
+    ['x9https://ghp_deadbeef@host/r.git', 'ghp_deadbeef'],
+    // A `+`, a `.` and a `-` are scheme-class characters in the same position.
+    ['v1.2+git://cad:s3cr3t-tok@host.invalid/r.git', 's3cr3t-tok'],
+    // The scheme-less rule, with an ordinary word character in front.
+    ['prefixcad:s3cr3t-tok@host.invalid/r.git', 's3cr3t-tok'],
+    // And the two cut rules, which end the input rather than at an `@`.
+    ['9abc://cad:s3cr3t-tok', 's3cr3t-tok'],
+    ['9a9b://ghp_deadbeef', 'ghp_deadbeef'],
+    ['prefixcad:s3cr3t-tok', 's3cr3t-tok'],
+  ]) {
+    const out = redactUrl(body);
+    assert.equal(out.includes(gone), false, `the credential survived: ${out}`);
+    assert.ok(out.includes(REDACTION_MARK), `nothing was redacted in ${out}`);
+  }
+});
+
+test('the scheme pin writes back the prefix it absorbed', () => {
+  // The scheme rules are pinned at the START of a run, and a run may begin with
+  // a character a scheme may not: `[0-9+.-]*` inside the capture is what lets
+  // the match begin there anyway. Inside, because `$1` is written back - a
+  // prefix matched outside it would be deleted from the output rather than
+  // preserved, which is a corruption and not a redaction.
+  assert.equal(redactUrl('9a9b://x@'), `9a9b://${REDACTION_MARK}@`);
+  assert.equal(redactUrl('x9https://ghp_tok@h'), `x9https://${REDACTION_MARK}@h`);
+  assert.equal(redactUrl('v1.2+git://cad:tok@host/r.git'),
+    `v1.2+git://${REDACTION_MARK}@host/r.git`);
+  // And the cut twin, which ends the input instead of at an `@`.
+  assert.equal(redactUrl('9a9b://ghp_tok'), `9a9b://${REDACTION_MARK}`);
 });

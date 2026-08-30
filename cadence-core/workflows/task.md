@@ -187,6 +187,13 @@ path never does:
   neither is a `.planning/` artifact, so the success criterion holds. The same
   applies when `.planning/` does not exist at all.
 
+The settle writes its record with `--task {slug}` - `/cad-task` fires with
+`--phase 0` on purpose and keeps its artifacts under `.planning/tasks/{slug}/`,
+so that flag is what puts the ruling beside the sibling REVIEW file instead of
+in a `phases/0/` that does not exist (`references/review-record.md`). The INLINE
+path owns no directory, so it owns no home for a record either: its FAIL stays
+with the user, the same absence the `<guardrails>` line below already states.
+
 This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a

@@ -1031,13 +1031,18 @@ function providerEvents() {
  */
 function fakeTransport(wire, seen) {
   return (/** @type {URL} */ url, /** @type {any} */ options, /** @type {any} */ cb) => {
-    const record = { url: String(url), options, chunksEmitted: 0 };
+    const record = { url: String(url), options, chunksEmitted: 0, body: '' };
     seen.push(record);
     let destroyed = false;
     /** @type {any} */
     let live = null;
     const req = Object.assign(new EventEmitter(), {
-      write: () => true,
+      // The REQUEST body, kept rather than dropped. It used to be discarded
+      // (`write: () => true`), which meant no arm could assert what the seam
+      // actually put on the wire - and the outbound fence (#167) is precisely a
+      // claim about those bytes. Concatenated the way a socket receives it, so a
+      // seam that wrote in pieces reads back whole.
+      write: (/** @type {any} */ chunk) => { record.body += String(chunk); return true; },
       destroy: (/** @type {any} */ err) => {
         destroyed = true;
         // A real `ClientRequest.destroy()` during an ACTIVE response aborts the
@@ -1083,7 +1088,7 @@ function fakeTransport(wire, seen) {
  * @param {string[]} argv @param {any} wire @param {Record<string,string>} [env]
  */
 async function runFaked(argv, wire, env = {}) {
-  /** @type {{url: string, options: any}[]} */
+  /** @type {{url: string, options: any, chunksEmitted: number, body: string}[]} */
   const seen = [];
   const restore = __setTransportForTests(fakeTransport(wire, seen));
   const prevCwd = process.cwd();
@@ -1216,6 +1221,152 @@ test('fault: the destination is the adapter base, and no environment variable mo
     .replace(/process\.env\.XDG_CONFIG_HOME\b/g, '')
     .replace(/process\.env\[name\]/g, '');
   assert.equal(count(residue), 0);
+});
+
+// --- the outbound secret fence (#167) -------------------------------------------
+//
+// The claim under test is about BYTES ON THE WIRE, not about an envelope field,
+// so every arm reads `seen[0].body` - what the transport was actually handed.
+// An arm that only checked the envelope would pass against a seam that reported
+// a redaction count and sent the raw artifact anyway, which is the exact bug
+// shape a fence can have.
+
+/** A well-formed review response, so the fence arms reach `ok` rather than a fault. */
+const FENCE_OK_BODY = JSON.stringify({
+  output_text: JSON.stringify({
+    findings: [{
+      file: 'a.mjs', line: 1, severity: 'low',
+      claim: 'a finding, so the arm reaches the ok path',
+      failure_scenario: 'none - the response half is fixture, the request half is the subject',
+    }],
+  }),
+});
+
+/** @param {string} name @param {any} payload @returns {string[]} argv for runFaked */
+function fencePayloadArgs(name, payload) {
+  const file = join(faultCwd, name);
+  writeFileSync(file, JSON.stringify(payload));
+  return ['review', '--provider', 'openai', '--model', 'gpt-fault-fixture', '--payload', file];
+}
+
+test('fence: a credential in the artifact does not reach the wire (#167)', async () => {
+  // Two shapes in one artifact, one per redactor, because the two exports are a
+  // deliberate split and neither is a superset of the other: a `name=value`
+  // pair (redactCredentials) and a URL userinfo (redactUrl). An arm carrying
+  // only one would pass against a fence that composed only half.
+  const SECRET = 'sk-ant-not-a-real-key-0123456789';
+  const artifact = [
+    'diff --git a/.env b/.env',
+    '+OPENAI_API_KEY=' + SECRET,
+    '+remote = https://cad:s3cr3t-tok@host.invalid/r.git',
+    'the surrounding prose a reviewer needs to act on the diff',
+  ].join('\n');
+  const before = providerEvents().length;
+  const r = await runFaked(
+    fencePayloadArgs('fence-payload.json', { instruction: 'refute this', artifact }),
+    { status: 200, body: FENCE_OK_BODY });
+
+  const wire = r.seen[0].body;
+  assert.ok(wire.length > 0, 'the fake recorded no request body - the arm cannot fail correctly');
+  assert.equal(wire.includes(SECRET), false, 'the api key reached the wire');
+  assert.equal(wire.includes('s3cr3t-tok'), false, 'the url userinfo reached the wire');
+  assert.ok(wire.includes('<redacted>'), 'nothing was redacted');
+  // The other half, the one a redactor returning the empty string would fail:
+  // what a reviewer needs in order to review still arrives.
+  assert.ok(wire.includes('the surrounding prose a reviewer needs'), 'the artifact was eaten');
+  assert.ok(wire.includes('diff --git'), 'the diff header was eaten');
+
+  // Two spans removed, and the count is reported in both places rather than
+  // swallowed - a reviewer that read `<redacted>` saw less than was composed.
+  assert.equal(r.envelope.ok, true);
+  assert.equal(r.envelope.redactions, 2);
+  const ev = providerEvents().slice(before);
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].redactions, 2);
+});
+
+test('fence: a clean artifact crosses byte-identical and adds no field (#167)', async () => {
+  // The cost side. A fence that fired on ordinary code would silently degrade
+  // every review in the repository, so the no-op case is asserted as hard as
+  // the catching one: same bytes, and no `redactions` key at all - the same
+  // non-zero-only shape `config_warnings` uses, so a call over a clean artifact
+  // writes the event it wrote before this existed.
+  const artifact = 'export function add(a, b) { return a + b; }\n// john@jcrenshaw.dev owns this\n';
+  const before = providerEvents().length;
+  const r = await runFaked(
+    fencePayloadArgs('fence-clean.json', { instruction: 'refute this', artifact }),
+    { status: 200, body: FENCE_OK_BODY });
+
+  const sent = JSON.parse(r.seen[0].body);
+  assert.equal(sent.input[1].content, artifact, 'a clean artifact was altered');
+  assert.equal(sent.input[0].content, 'refute this', 'a clean instruction was altered');
+  assert.equal(r.envelope.ok, true);
+  assert.equal('redactions' in r.envelope, false);
+  const ev = providerEvents().slice(before);
+  assert.equal(ev.length, 1);
+  assert.equal('redactions' in ev[0], false);
+});
+
+test('fence: consult fences its situation too (#167)', async () => {
+  // consult is the second PAID command and carries repository text under a
+  // different key. It shares the header's design contract, so it shares the arm.
+  const SECRET = 'hunter2-not-a-real-password';
+  const file = join(faultCwd, 'fence-consult.json');
+  writeFileSync(file, JSON.stringify({
+    situation: 'the deploy fails and password=' + SECRET + ' is in the log',
+  }));
+  const body = JSON.stringify({
+    output_text: JSON.stringify({
+      angles: [{ hypothesis: 'a', rationale: 'b', how_to_check: 'c' }],
+    }),
+  });
+  const r = await runFaked(
+    ['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture', '--payload', file],
+    { status: 200, body });
+  assert.equal(r.seen[0].body.includes(SECRET), false, 'the password reached the wire');
+  assert.ok(r.seen[0].body.includes('the deploy fails'), 'the situation was eaten');
+  assert.equal(r.envelope.ok, true);
+  assert.equal(r.envelope.redactions, 1);
+});
+
+test('fence: an artifact that already holds the mark still reports a redaction (#167)', async () => {
+  // Net marks added is not spans removed. Here a credential pair COLLAPSES onto
+  // a mark the artifact already carried - one mark in, one mark out - so the
+  // arithmetic alone comes back 0 and both the envelope and the trace would say
+  // the reviewer got the whole artifact. It did not.
+  const SECRET = 's3cr3t-value-that-must-not-ship';
+  const artifact = 'password="already <redacted> and then ' + SECRET + '"';
+  const before = providerEvents().length;
+  const r = await runFaked(
+    fencePayloadArgs('fence-premarked.json', { instruction: 'refute this', artifact }),
+    { status: 200, body: FENCE_OK_BODY });
+  assert.equal(r.seen[0].body.includes(SECRET), false, 'the secret reached the wire');
+  assert.equal(r.envelope.ok, true);
+  assert.ok(r.envelope.redactions >= 1,
+    `the payload was altered but reported ${r.envelope.redactions} redactions`);
+  const ev = providerEvents().slice(before);
+  assert.ok(ev[0].redactions >= 1, 'the trace reported no redaction on an altered payload');
+});
+
+test('fence: the cap measures the FENCED text, not the raw payload (#167)', async () => {
+  // Ordering, asserted rather than assumed. The fence runs after the string
+  // gate and before `assertUnderCap`, so what the cap counts is what leaves the
+  // process. Redaction changes the length, and a cap applied to the raw text
+  // would be bounding something the provider never sees.
+  //
+  // The fixture config pins a small cap, so an artifact whose RAW form is over
+  // it and whose FENCED form is under it separates the two orderings by outcome
+  // rather than by inspection.
+  const raw = 'api_key=' + 'A'.repeat(400);
+  const fenced = raw.replace(/api_key=A+/, '<redacted>');
+  assert.ok(raw.length > fenced.length + 300, 'the fixture does not separate the two lengths');
+  const r = await runFaked(
+    fencePayloadArgs('fence-cap.json', { instruction: 'x', artifact: raw }),
+    { status: 200, body: FENCE_OK_BODY });
+  // Whatever the configured cap is, the two orderings cannot both be true: the
+  // wire body is the fenced text, and it is the fenced text the cap admitted.
+  assert.equal(r.envelope.ok, true, `the fenced payload was refused: ${r.line}`);
+  assert.equal(r.seen[0].body.includes('A'.repeat(400)), false);
 });
 
 test('fault mode 1/6 - request timeout: the caller sees transport, and the trace names it', async () => {

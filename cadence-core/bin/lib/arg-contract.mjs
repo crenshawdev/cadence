@@ -820,6 +820,14 @@ export const CONTRACTS = {
     // #195 fixed for executor reports, reappearing on the artifact this record
     // exists to make durable. Optional, defaulting to 1, so an ordinary fire
     // keeps the sibling REVIEW file's exact name.
+    // `--task` names the task slug when this fire is a task's, so the record
+    // lands in `.planning/tasks/<slug>/` beside the sibling REVIEW file rather
+    // than in a `phases/0/` that does not exist and never will. `/cad-task`
+    // fires with `--phase 0` deliberately - 0 is the one number no roadmap phase
+    // carries - and writes its artifacts under its slug, so without this flag
+    // the two halves disagree by construction and a blocking gate on a task can
+    // only be settled by hand. Optional: a phase fire passes nothing and
+    // resolves the two phase homes exactly as before.
     adjudication: {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -828,6 +836,7 @@ export const CONTRACTS = {
       '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // THE QUEUE MEMBER a gate resolved `deferred` leaves beside that same
     // REVIEW file: the reviewer ran, the findings are on disk, and nothing has
@@ -848,6 +857,14 @@ export const CONTRACTS = {
       '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      // NO `--task` here, unlike `adjudication` above, and the asymmetry is the
+      // point. The queue-wide enumeration `/cad-land` reads walks the two phase
+      // homes only, so a member written under a task slug would be created
+      // successfully and then never found - a deferred fire that reports queued
+      // and is permanently unadjudicated. A task's only gate is `risk_surface`,
+      // which is `blocking` at every stakes level and never resolves
+      // `deferred`, so nothing is lost by refusing the shape outright rather
+      // than widening a reader this change does not touch.
     },
     // THE QUEUE AS A WHOLE: every member with no `ADJUDICATION` sibling, across
     // both homes. `--phase` is OPTIONAL here and required on every sibling row

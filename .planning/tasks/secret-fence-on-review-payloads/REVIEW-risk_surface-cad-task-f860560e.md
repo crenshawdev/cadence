@@ -1,0 +1,25 @@
+{
+  "findings": [
+    {
+      "file": "cadence-core/bin/planning/core.mjs",
+      "line": 675,
+      "severity": "high",
+      "claim": "The task-home containment check only lstats the final slug path, so an intermediate `tasks` symlink is followed and can place the record outside `.planning/tasks`.",
+      "failure_scenario": "A checkout contains `.planning/tasks` as a symlink to another directory and that target has a directory matching a valid slug. `lstatSync(tdir)` sees the final target as a directory, `fireHome` accepts it, and the subsequent adjudication or deferred write follows the parent symlink, writing attacker-controlled payload data outside the promised planning tree."
+    },
+    {
+      "file": "cadence-core/bin/planning/core.mjs",
+      "line": 622,
+      "severity": "medium",
+      "claim": "The new identity accepts `--phase 0` without `--task` and accepts `--task` with any phase, so it does not enforce the documented task-mode invariant that a task fire is phase 0 with a required slug.",
+      "failure_scenario": "If a task invocation omits `--task` and `.planning/phases/0` already exists, `fireHome` takes the ordinary phase branch, writes the task adjudication into that phase directory, and reports success while the sibling review under `tasks/<slug>` remains unsettled. The added test only proves that an explicitly supplied task does not fall back."
+    },
+    {
+      "file": "cadence-core/bin/planning/deferred-record.mjs",
+      "line": 80,
+      "severity": "high",
+      "claim": "A task deferred member is now written under `tasks/<slug>`, but the queue-wide enumeration remains limited to the two `QUEUE_HOMES` phase/deferred locations and has no task selector or task-tree scan.",
+      "failure_scenario": "When a task review is resolved `deferred`, its `DEFERRED-*` member is successfully created in the task directory. A later queue recount cannot discover that third home, reports no pending member, and the task fire can remain permanently unadjudicated."
+    }
+  ]
+}

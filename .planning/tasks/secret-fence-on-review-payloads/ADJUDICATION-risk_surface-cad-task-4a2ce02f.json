@@ -1,0 +1,85 @@
+{
+  "phase": "0",
+  "trigger": "risk_surface",
+  "discriminator": "cad-task-4a2ce02f",
+  "round": 1,
+  "base": "443bcd8f",
+  "head": "364be4dc",
+  "base_id": "443bcd8f93cb5acb955c4131bb6b7ea028b8332e",
+  "head_id": "364be4dc7c85fdc43d9ca26670ab47ed431e0976",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/lib/redact-url.mjs",
+      "line": 187,
+      "severity": "high",
+      "claim": "Whitespace segmentation disables the cut-URL redactions when the artifact ends with a single line feed.",
+      "failure_scenario": "For an artifact ending in `https://cad:s3cr3t\\n`, the previous whole-string `SCHEME_USERINFO_CUT` matches before the final newline because JavaScript's `$` permits that position. After splitting, the URL is not the last segment—the final empty string is—so neither cut rule runs on it and `s3cr3t` reaches the provider.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/redact-url.mjs",
+        "line": 168,
+        "note": "In JavaScript `$` without the `m` flag matches only at end of input and never before a final newline - /x$/.test(\"x\\n\") is false - and every class in the cut rules excludes whitespace, so the rule could not reach across the newline on the ORIGINAL whole-string form either. Measured on both trees: redactUrl(\"https://cad:s3cr3t\\n\") returns its input byte-identical at 443bcd8f and byte-identical after segmentation, so no cut redaction was lost."
+      },
+      "base_id": "443bcd8f93cb5acb955c4131bb6b7ea028b8332e",
+      "head_id": "364be4dc7c85fdc43d9ca26670ab47ed431e0976"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/lib/redact-url.mjs",
+      "line": 189,
+      "severity": "high",
+      "claim": "The literal pre-check does not provide the claimed worst-case cost bound; one colon is enough to admit a quadratic failing match.",
+      "failure_scenario": "A whitespace-free artifact such as `'A'.repeat(240000) + ':' + 'B'.repeat(240000) + '/'` passes the `colon` pre-check and runs `BARE_USERINFO_CUT`. The trailing slash prevents a match, causing the unanchored leading class and long suffix to be retried from successive start positions. An allowed-size or larger pre-cap payload can therefore spend minutes in the fence before any request or request timeout begins, causing the review command to hang.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "2499e211",
+      "base_id": "443bcd8f93cb5acb955c4131bb6b7ea028b8332e",
+      "head_id": "364be4dc7c85fdc43d9ca26670ab47ed431e0976"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/review-provider.mjs",
+      "line": 1227,
+      "severity": "medium",
+      "claim": "The user/config-controlled model string is serialized into the provider request without crossing the outbound fence.",
+      "failure_scenario": "A project or invocation supplying a model value such as `password=s3cr3t` reaches `adapter.structuredRequest` verbatim. The provider receives and may log that credential-shaped value even though the command reports that outbound string fields are fenced; the same bypass exists in the consult request.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/review-provider.mjs",
+        "line": 35,
+        "note": "The model id is a config value resolved from review.providers.<name>.tiers by the caller, not repository contents, and the provider requires it to route the call at all. Nothing claims it is fenced: this design-contract bullet and references/seam-review-provider.md both scope the fence to the string fields of the review/consult PAYLOAD, which is the artifact the caller composed."
+      },
+      "base_id": "443bcd8f93cb5acb955c4131bb6b7ea028b8332e",
+      "head_id": "364be4dc7c85fdc43d9ca26670ab47ed431e0976"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/review-provider.mjs",
+      "line": 464,
+      "severity": "medium",
+      "claim": "Counting the net change in `<redacted>` occurrences does not count spans removed and can suppress the redaction report after the payload was altered.",
+      "failure_scenario": "For `password=\"existing <redacted> plus s3cr3t\"`, the input contains one marker and credential redaction replaces the entire quoted value with one marker. The secret is removed and the wire payload differs from the caller's artifact, but the computed count is `1 - 1 = 0`, so both the success envelope and trace omit `redactions` and downstream treats the review as if it received the full artifact.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "2499e211",
+      "base_id": "443bcd8f93cb5acb955c4131bb6b7ea028b8332e",
+      "head_id": "364be4dc7c85fdc43d9ca26670ab47ed431e0976"
+    }
+  ]
+}

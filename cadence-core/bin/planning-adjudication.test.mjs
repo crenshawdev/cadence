@@ -11,7 +11,7 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync, existsSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -282,6 +282,139 @@ test('adjudication: a phase directory that does not exist is refused rather than
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'no-phase-dir');
   assert.deepEqual(readdirSync(join(dir, 'phases')), ['2']);
+});
+
+test('adjudication: --task lands the record in the task\'s own home (GH-227)', () => {
+  // /cad-task fires with --phase 0 deliberately - 0 is the one number no
+  // roadmap phase carries - and writes its artifacts under its slug, so there
+  // is no phases/0/ and there never will be. Before --task the two halves
+  // disagreed by construction: the sibling REVIEW file landed under
+  // tasks/<slug>/ and the record beside it was refused no-phase-dir, which left
+  // a hand-append as the only way to settle a gate that BLOCKS at every level.
+  const { repo, dir, base } = adjRepo();
+  mkdirSync(join(dir, 'tasks', 'a-task-slug'), { recursive: true });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '0', '--task', 'a-task-slug',
+    '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.record,
+    'tasks/a-task-slug/ADJUDICATION-risk_surface-cad-task-abc1234.json');
+  assert.ok(existsSync(join(dir, r.record)), 'the record is not at the path the envelope names');
+  // The phase homes are untouched - a task run is not a phase run.
+  assert.deepEqual(readdirSync(join(dir, 'phases')), ['2']);
+});
+
+test('adjudication: --task naming no directory is refused by that name, not as a phase', () => {
+  // The directory has to already exist, the same rule the phase homes take: a
+  // seam that recorded a fire would otherwise mint a directory for a mistyped
+  // slug. And the refusal names tasks/<slug>/, because "no phases/0/" sends the
+  // reader to fix the wrong thing.
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '0', '--task', 'never-written',
+    '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-task-dir');
+  assert.match(r.detail, /tasks\/never-written\//);
+  assert.equal(existsSync(join(dir, 'tasks')), false, 'the home was minted');
+});
+
+test('adjudication: --task never falls back to a phase home that does exist', () => {
+  // The fallback is the dangerous half. A task run is not a phase run with a
+  // missing directory, so a slug that names nothing must refuse rather than put
+  // a task's rulings into whichever phase directory happens to be there.
+  const { repo, dir, base } = adjRepo({ phase: 0 });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '0', '--task', 'never-written',
+    '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-task-dir');
+  assert.deepEqual(readdirSync(join(dir, 'phases', '0')), [],
+    'a phase 0 that exists absorbed the task record');
+});
+
+test('adjudication: a --task that could reach outside its own home is refused', () => {
+  // The slug reaches a DIRECTORY name, so it takes the same rail --trigger and
+  // --discriminator take. A traversal or a separator here would write the
+  // record wherever the caller pointed.
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  for (const slug of ['../escape', 'a/b', '.', '', '-leading']) {
+    const r = adjRun(repo, dir, ['--phase', '0', '--task', slug,
+      '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+      '--base', base, '--head', 'HEAD', '--payload', payload]);
+    assert.equal(r.ok, false, `${JSON.stringify(slug)} was accepted: ${JSON.stringify(r)}`);
+    assert.equal(r.reason, 'bad-args', `${JSON.stringify(slug)}: ${JSON.stringify(r)}`);
+  }
+});
+
+test('adjudication: --phase 0 without --task is refused, even where phases/0 exists', () => {
+  // Phase 0 is the TASK's number - /cad-task fires with it precisely because no
+  // roadmap phase carries it. Unenforced, a task fire that forgot --task fell
+  // through to the ordinary phase branch, and a repo holding a phases/0/ took
+  // the record into it and answered ok:true while the sibling REVIEW file under
+  // the slug stayed unsettled: a fire reported as recorded, filed where nothing
+  // reads it.
+  const { repo, dir, base } = adjRepo({ phase: 0 });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '0', '--trigger', 'risk_surface',
+    '--discriminator', 'cad-task-abc1234', '--base', base, '--head', 'HEAD',
+    '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.hint, /--task/);
+  assert.deepEqual(readdirSync(join(dir, 'phases', '0')), [],
+    'the record landed in a phase directory a task fire must never reach');
+});
+
+test('adjudication: a SYMLINKED tasks/ is refused, not followed out of the tree', () => {
+  // lstatSync declines to follow only its OWN last component, so a leaf-only
+  // test resolved a symlinked parent on the way past and reported the TARGET's
+  // directory. The write then landed outside the planning tree it names.
+  const { repo, dir, base } = adjRepo();
+  const outside = join(repo, 'elsewhere');
+  mkdirSync(join(outside, 'a-task-slug'), { recursive: true });
+  symlinkSync(outside, join(dir, 'tasks'));
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '0', '--task', 'a-task-slug',
+    '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-task-dir');
+  assert.deepEqual(readdirSync(join(outside, 'a-task-slug')), [],
+    'the record was written through the symlink');
+});
+
+test('adjudication: a SYMLINKED phases/ is refused the same way', () => {
+  // The same hole on the home this function always had - it was never only the
+  // task branch, so the guard is not only on the task branch.
+  const { repo, dir, base } = adjRepo();
+  const outside = join(repo, 'elsewhere');
+  mkdirSync(join(outside, '2'), { recursive: true });
+  rmSync(join(dir, 'phases'), { recursive: true });
+  symlinkSync(outside, join(dir, 'phases'));
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.deepEqual(readdirSync(join(outside, '2')), [],
+    'the record was written through the symlink');
+});
+
+test('adjudication: without --task the two phase homes resolve exactly as before', () => {
+  // The regression pin. --task is optional, and a phase fire that passes none
+  // has to reach phases/<N>/ on the same bytes it always did.
+  const { repo, dir, base } = adjRepo();
+  mkdirSync(join(dir, 'tasks', 'a-task-slug'), { recursive: true });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.record, 'phases/2/ADJUDICATION-plan-plan-1.json');
 });
 
 test('adjudication: an absent --payload is bad-args, never a read of stdin', () => {

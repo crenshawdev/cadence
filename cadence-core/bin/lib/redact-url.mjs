@@ -5,7 +5,7 @@
 // retired-keys.mjs pattern: node builtins only (it uses none), no I/O, no emit,
 // never throws.
 //
-// TWO exports, deliberately split (RVP-01):
+// TWO REDACTORS, deliberately split (RVP-01), plus the mark they both write:
 //   `redactUrl`         - credentials in URL POSITION and nothing else. Its
 //                         coverage is stated in exactly those words at
 //                         issue-check.mjs:41-47, and that statement stays true
@@ -18,9 +18,14 @@
 //                         whatever a provider or an intermediary proxy chose to
 //                         echo back - including, on a misconfigured gateway, the
 //                         request headers.
-// A caller that wants both composes them; neither is a superset of the other.
-// The split is what lets a per-site regex stay out of the tree (D-14) without
-// making one function's documented coverage a lie.
+//   `REDACTION_MARK`    - the string both write in place of what they removed.
+//                         Exported because a caller that COUNTS redactions - the
+//                         outbound payload fence in review-provider.mjs - needs
+//                         the same constant, and a copied literal is the drift
+//                         D-14 exists to keep out of the tree.
+// A caller that wants both redactors composes them; neither is a superset of the
+// other. The split is what lets a per-site regex stay out of the tree (D-14)
+// without making one function's documented coverage a lie.
 //
 // ONE shared helper rather than a regex at each emit site (D-14). Four sites put
 // a caught error's message into a `detail` - git-publish.mjs's push-failed,
@@ -45,20 +50,77 @@
 // anonymizing them is depending on a behaviour no test here owns, and the two
 // forms above are proof the coverage is per-transport rather than universal.
 //
+// COST, and the two things that bound it (#167). This helper used to run against
+// a 4096-byte excerpt only, so its cost never showed. The outbound payload fence
+// in `review-provider.mjs` hands it a whole artifact - up to
+// `review.max_prompt_tokens`, ~480,000 characters at the default - and measured
+// there the unbounded form took 25 seconds on 128,000 characters and would have
+// taken minutes on a real payload. Both rules were QUADRATIC: a greedy class
+// with no `:` or `@` after it backtracks once per start position, and a long
+// run without either character is every long run.
+//
+// Two bounds, together linear in practice and bounded in the worst case:
+//
+//   1. `redactUrl` segments on WHITESPACE and applies the rules per segment.
+//      Every class in all four rules excludes whitespace, so a match cannot
+//      cross a run of it and the segmentation changes no verdict. Measured on a
+//      462,000-character diff of ordinary code: 25.5s -> 23ms.
+//   2. A segment is only handed to a rule when it CONTAINS the literal that
+//      rule cannot match without - `@` for the two terminated rules, `:` for
+//      the scheme-less ones, `://` for the scheme-anchored ones. One `indexOf`
+//      per rule, and it skips a delimiter-free run outright.
+//   3. Each rule carries a LOOKBEHIND that pins its start to the beginning of a
+//      run, which is what bounds the case bound 2 lets through: a single
+//      whitespace-free segment holding both the literal and a long run, which
+//      is an ordinary minified bundle or a data URI. Measured before this,
+//      `'A'x240000 + ':' + 'B'x240000 + '/'` spent 84 SECONDS inside the fence.
+//
+//      Each lookbehind is a NO-OP on the verdict, and provably so rather than
+//      by inspection: a rule's first class is greedy over one character class,
+//      so if it can match starting mid-run it can also match starting one
+//      character earlier - the earlier attempt consumes the same characters and
+//      reaches the same separator. Leftmost-match means the engine returns that
+//      earlier one anyway, so a start whose PREVIOUS character is in the class
+//      never produced a match that survived. Blocking it removes attempts, not
+//      matches.
+//
+//      The SCHEME rules need one more piece, because their first character is
+//      narrower than their continuation: a scheme must START with a letter but
+//      may CONTINUE with a digit, `+`, `.` or `-`. Pinning them at "not preceded
+//      by a letter" therefore left every letter in an alternating run a legal
+//      start - `'1a'x240000 + ':///@'` measured 99.6 SECONDS with that form.
+//      So the lookbehind excludes the whole continuation class, and a
+//      `[0-9+.-]*` INSIDE the capture absorbs whatever non-letter prefix the run
+//      begins with. Inside the capture and not before it: `$1` is written back,
+//      so a prefix left outside would be dropped from the output. `9a9b://x@`
+//      and `x9https://ghp_tok@h` both come back byte-identical to what the
+//      unpinned form produced.
+//
+// None of the three moves a verdict, and that is deliberate: the QUANTIFIERS
+// are still unbounded, because bounding them at 1024 was tried and it re-opened
+// EXP-02 (#215) - a 2000-character userinfo cut before its `@` came back
+// redacted from its tail with 985 bytes of the secret surviving. A cost bound
+// that reintroduces a measured leak is not a cost bound worth having.
+//
 // Redaction is by SHAPE - the userinfo POSITION in a URL - never by matching
 // known token prefixes. A prefix list (`ghp_`, `glpat-`, `x-access-token`) is a
 // list of the credentials somebody already thought of, and the next forge's
 // scheme is not on it.
 
-/** What replaces the userinfo. Fixed, so a caller can grep for it. */
-const MARK = '<redacted>';
+/**
+ * What replaces the userinfo, and every other span these redactors remove.
+ * Fixed, so a caller can grep for it - and exported, so a caller that counts
+ * occurrences of it counts the same string this file writes.
+ */
+export const REDACTION_MARK = '<redacted>';
+const MARK = REDACTION_MARK;
 
 // 1. Scheme-anchored: `<scheme>://<userinfo>@`. The `://` is unambiguous, so
 //    this covers a password-less `https://ghp_token@host/r.git` where the whole
 //    credential IS the user part. The userinfo class excludes `/ ? # @` and
 //    whitespace, so an authority carrying no `@` (`https://host/r.git`) cannot
 //    match and comes back byte-identical.
-const SCHEME_USERINFO = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
+const SCHEME_USERINFO = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
 
 // 2. Scheme-less: `<user>:<secret>@<host>`, which is what the two leaking forms
 //    above actually print, and also the scp-shaped `user:token@host:path`. The
@@ -68,7 +130,7 @@ const SCHEME_USERINFO = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
 //    falls after the `@` and carries a path rather than a secret. Neither class
 //    crosses whitespace or `/`, so the userinfo cannot run backwards out of its
 //    own token.
-const BARE_USERINFO = /([^\s/:@]+:[^\s/@]+)@/g;
+const BARE_USERINFO = /(?<![^\s/:@])([^\s/:@]+:[^\s/@]+)@/g;
 
 // 1b + 2b. The SAME two spans with their `@` cut off, anchored to end-of-input.
 //    Both rules above are `@`-anchored, so a userinfo span whose `@` falls
@@ -103,8 +165,8 @@ const BARE_USERINFO = /([^\s/:@]+:[^\s/@]+)@/g;
 //    One bounded quantifier per rule and no nesting, so the linear-time
 //    property this file's header pays for is unchanged. No `g`: end-of-input
 //    can match at most once.
-const SCHEME_USERINFO_CUT = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@"']+)$/;
-const BARE_USERINFO_CUT = /[^\s/:@"']+:[^\s/@"']+$/;
+const SCHEME_USERINFO_CUT = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@"']+)$/;
+const BARE_USERINFO_CUT = /(?<![^\s/:@"'])[^\s/:@"']+:[^\s/@"']+$/;
 
 /**
  * `s` with the userinfo of every URL-shaped and scp-shaped remote replaced by
@@ -122,11 +184,39 @@ const BARE_USERINFO_CUT = /[^\s/:@"']+:[^\s/@"']+$/;
  * @returns {string}
  */
 export function redactUrl(s) {
-  return String(s)
-    .replace(SCHEME_USERINFO, `$1${MARK}@`)
-    .replace(BARE_USERINFO, `${MARK}@`)
-    .replace(SCHEME_USERINFO_CUT, `$1${MARK}`)
-    .replace(BARE_USERINFO_CUT, MARK);
+  const text = String(s);
+  // SEGMENTED ON WHITESPACE, and the header above says why. Every class in the
+  // four rules excludes whitespace, so no match can cross a run of it: applying
+  // the rules per segment is EQUIVALENT to applying them to the whole string,
+  // and it is what keeps the cost linear in the total length rather than
+  // quadratic in it.
+  //
+  // `split(/(\s+)/)` keeps the separators as members, so the join is
+  // byte-identical on an input with nothing to redact.
+  const parts = text.split(/(\s+)/);
+  // The two CUT rules are `$`-anchored, so only the LAST segment can carry one -
+  // and if the input ends in whitespace that segment is the empty string, which
+  // matches nothing, exactly as an `$` after whitespace would.
+  const last = parts.length - 1;
+  for (let i = 0; i <= last; i += 1) {
+    // The LITERAL each rule cannot match without. Checking for it first is a
+    // linear `indexOf`; running the rule without it is the quadratic walk the
+    // header describes, because a class with no terminator ahead of it
+    // backtracks the whole segment once per start position. A segment carrying
+    // the literal is scanned exactly as before, so no verdict moves.
+    const at = parts[i].indexOf('@') !== -1;
+    const colon = parts[i].indexOf(':') !== -1;
+    const scheme = parts[i].indexOf('://') !== -1;
+    let p = parts[i];
+    if (at && scheme) p = p.replace(SCHEME_USERINFO, `$1${MARK}@`);
+    if (at && colon) p = p.replace(BARE_USERINFO, `${MARK}@`);
+    if (i === last) {
+      if (scheme) p = p.replace(SCHEME_USERINFO_CUT, `$1${MARK}`);
+      if (colon) p = p.replace(BARE_USERINFO_CUT, MARK);
+    }
+    parts[i] = p;
+  }
+  return parts.join('');
 }
 
 // 3. An HTTP authorization echo: `Bearer <token>`, optionally with its header
