@@ -1,0 +1,92 @@
+{
+  "status": "gaps",
+  "score": "6/7",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A racing writer's event that reached only the generation survives the second rotation, on BOTH records - present in exactly one of the live record or the sibling, never in neither",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Falsified against the pre-phase library (git archive d646006d into scratch, post-fix test files copied in): `node --test --test-name-pattern=\"second rotation carries back the event that only reached the generation\" cadence-core/bin/trace.test.mjs` -> AssertionError \"the racing writer's event is in NEITHER file\". Shipped code: the same row passes (trace.test.mjs:636, whole file 179/179). Reads twin proved by standalone probe driving the real `appendRead` (the test file cannot load pre-fix, it imports the new `READS_MARKER_BYTES`): pre-fix `racer copies live=0 sibling=0`, shipped `live=1 sibling=0`; row read-trace.test.mjs:236 passes in-suite (suite.txt:2108)."
+    },
+    {
+      "n": 2,
+      "truth": "The admission check reserves the mandatory rotation marker, so a near-bound pending record never leaves the fresh record over its bound on the first write - on both records",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "Probe through the real `appendEvent`/`appendRead` at a padded root, pending line sized MAX-8. Pre-fix library: trace `written=true size=1048822 bound=1048576 over=246`, reads `written=true size=8388682 bound=8388608 over=74` (the 74 B matches CONTEXT D-01's measurement). Shipped: trace `written=false reason=oversized-event`, reads `written=false reason=oversized-record`, record left at MAX-1 in both, nothing rotated. Guard against over-tightening is real too: the row 'an event that DOES fit beside the marker rotates under the bound (AC2)' (trace.test.mjs:860) passes pre-fix AND post-fix. Pre-fix the refusal rows fail: 'an event with no room BESIDE the marker is refused, not rotated for' -> AssertionError."
+    },
+    {
+      "n": 3,
+      "truth": "A leftover-generation eviction that cannot confirm the claim it published puts the generation back, and the writer's own event still lands in the live record - both records",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Pre-fix run of trace.test.mjs:385 ('a LEFTOVER eviction that cannot confirm its claim puts the generation back (D-02)') -> AssertionError 'the generation was destroyed by an eviction that could not confirm its claim'; passes on shipped code. Reads arm by standalone probe (undatable sidecar: `mkdirSync(readsClaimPath(d))`): pre-fix `generation-intact=false`, shipped `generation-intact=true`, `written=true`, own record in the live file, no `.evict` temp left behind. Row read-trace.test.mjs:431 passes in-suite."
+    },
+    {
+      "n": 4,
+      "truth": "After a SECOND rotation both seams still report the cut on their own key, and the reads marker is billed in none of calls / byAgent / the unresolved-coordinator split",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Live CLI on a purpose-built doubly-rotated root (/tmp/cad-ac4-*/.planning, two reads cuts and two trace cuts through the real appenders). `node cadence-core/bin/planning.mjs --dir <root> reads` -> {\"calls\":1,\"byAgent\":[[\"coordinator\",1]],\"topTargets\":[[\"/gen-three\",1]],\"reads\":{...\"rotated\":{\"file\":\"reads.1.jsonl\",\"ts\":...}}}. `... trace suggest` -> \"rotated\":{\"file\":\".../trace.1.jsonl\",\"ts\":...}. `reads --join` -> coordinator 1, unresolved 0, ambiguous 0. `carried_bytes` appears in no envelope (grep count 0). planning/core.mjs, planning/reads.mjs and planning/trace.mjs are untouched by the phase (git diff d646006d..65a2e304 --name-only lists only the two libs and their two test files), so the filter site is unchanged, as D-12 requires."
+    },
+    {
+      "n": 5,
+      "truth": "The whole suite and self-verify are green on the shipped tree",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`node cadence-core/bin/test.mjs` exit 0, `tests 3638 / pass 3638 / fail 0`; the new rows ran inside it (suite.txt:2108, :2165). `node cadence-core/bin/self-verify.mjs` -> {\"ok\":true,...,\"problems\":[]}. Working tree under cadence-core is clean, so the run is of the committed code."
+    },
+    {
+      "n": 6,
+      "truth": "The seal the marker carries is a real value written by one seam and consumed by the other - it states the generation's byte size and is what the next rotation's rescue reads from",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "End-to-end on the doubly-rotated root: `.planning/reads.jsonl` marker carries \"carried_bytes\":8388607 and `stat -c%s reads.1.jsonl` is 8388607; both trace markers carry \"carried_bytes\":1048575 against a 1048575-byte trace.1.jsonl. Consumed at lib/trace.mjs:1012-1050 (newest marker scanned backwards, non-numeric/negative rejected) and lib/read-trace.mjs:869-893 via `sealOf(sibling)`; the consumption is what makes truth 1's probe land the racer at live=1. No debt markers (TODO/FIXME/HACK/placeholder) on any of the four touched files - the only XXXX hits are secret-redaction test fixtures in read-trace.test.mjs."
+    },
+    {
+      "n": 7,
+      "truth": "The goal's second clause holds on every arm: after a second rotation the tail is complete, or the shortfall is stated",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "Probe on the shipped library: a live record whose marker is v3.7.7-shaped ({ts,event,file}, no carried_bytes) plus a leftover generation carrying one racing record, driven through the real `rotateReads` -> `return={\"rotated\":true}  racer-in-live=false  racer-in-sibling=false`. The record is in neither file and nothing is stated. The guard is `if (at !== null)` at lib/read-trace.mjs:869 with no else, same shape at lib/trace.mjs:1027, both falling through to `return shortfall === undefined ? { rotated: true } : ...` (read-trace.mjs:898, trace.mjs:1056). Documented deliberately at read-trace.mjs:851-854 ('NO SEAL, NO RESCUE ... It fails closed') and named in SUMMARY.md Open items."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "A racing writer's event survives a second rotation",
+      "evidence": "Pre-phase library reproduces the loss (trace row: AssertionError 'the racing writer's event is in NEITHER file'; reads probe: live=0 sibling=0). Shipped: trace.test.mjs:636 and read-trace.test.mjs:236 both pass, reads probe gives live=1 sibling=0 - exactly one copy, in the file readers read."
+    },
+    {
+      "k": 2,
+      "name": "A near-bound event never leaves the fresh record over its bound",
+      "evidence": "MAX-8 pending line through the real appenders: pre-fix 246 B over MAX_TRACE_BYTES and 74 B over MAX_READS_BYTES; shipped refuses with oversized-event / oversized-record, record byte-identical at MAX-1 and nothing rotated. The 'does fit beside the marker' rows still pass, so the reserve did not over-tighten."
+    },
+    {
+      "k": 3,
+      "name": "A writer that claims during a leftover eviction keeps its event",
+      "evidence": "Undatable-sidecar fixture on both records: pre-fix the trace row fails with 'the generation was destroyed by an eviction that could not confirm its claim' and the reads probe reports generation-intact=false; shipped keeps the generation, lands the writer's own event in the live record, and leaves no .evict temp."
+    },
+    {
+      "k": 4,
+      "name": "Both seams still report the rotation and never bill the reads marker",
+      "evidence": "Real CLI on a doubly-rotated root: `planning.mjs reads` reports rotated.file=reads.1.jsonl with calls 1, byAgent [[coordinator,1]], and `reads --join` unresolved 0 / coordinator 1; `planning.mjs trace suggest` reports rotated.file=trace.1.jsonl. No carried_bytes in any envelope."
+    },
+    {
+      "k": 5,
+      "name": "The whole suite and self-verify are green",
+      "evidence": "test.mjs exit 0 with tests 3638 / pass 3638 / fail 0; self-verify.mjs {\"ok\":true,\"problems\":[]}. cadence-core working tree clean."
+    }
+  ],
+  "gaps": [
+    {
+      "name": "A generation whose marker carries no seal is destroyed with nothing stated",
+      "reason": "behavior wrong - the goal's second clause ('or the shortfall is stated') does not hold on the no-seal arm. Where the leftover generation was sealed by pre-phase code (a v3.7.7 marker has no carried_bytes) or by a corrupt marker line, no rescue runs, the generation is unlinked, and the rotation returns a clean {rotated: true}. Measured: a racing record in that generation ends up in NEITHER file with no shortfall reported.",
+      "evidence": "lib/read-trace.mjs:869 `if (at !== null) {` has no else and falls through to :898 `return shortfall === undefined ? { rotated: true } : ...`; identical shape at lib/trace.mjs:1027 and :1056. The choice is stated deliberately at lib/read-trace.mjs:851-854. Probe through the real `rotateReads` with a v3.7.7-shaped marker: `return={\"rotated\":true}  racer-in-live=false  racer-in-sibling=false`. Already named in .planning/phases/5/SUMMARY.md Open items and ruled `downgraded` by the plan-2 risk_surface review; no regression, since before this phase every leftover generation died silently. It is the one arm of the phase goal that is not delivered, and it fires on the first rotation after an upgrade rather than only in theory.",
+      "severity": "minor",
+      "missing": "Set `shortfall = null` on the no-seal arm in both `rotateTrace` (lib/trace.mjs, the missing else on :1027) and `rotateReads` (lib/read-trace.mjs, the missing else on :869), so an unreadable seal states 'cut by an unknown amount' the way the failed-stat arm already does, plus one row per record asserting `res.shortfall === null` for a marker with no `carried_bytes`."
+    }
+  ],
+  "human_checks": []
+}

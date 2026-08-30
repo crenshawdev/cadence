@@ -93,7 +93,7 @@ consequence lands in a record users do not read.
 - [x] **Phase 2: Adaptive routing is reachable** - a project Cadence initialises can reach the unset `stakes` behaviour its own schema documents
 - [x] **Phase 3: The too-big arm opens a door** - `/cad-task` routes a phase-sized task through phase creation before context
 - [x] **Phase 4: Land reads rulings, not raw findings** - the autonomous close halts on genuinely-unfixed findings, using the derivation issue filing already uses
-- [ ] **Phase 5: A contended rotation loses no event** - the second rotation and its admission check account for every writer and for the marker line
+- [x] **Phase 5: A contended rotation loses no event** - the second rotation and its admission check account for every writer and for the marker line
 
 ## Phase Details
 
