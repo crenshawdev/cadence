@@ -21,7 +21,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync, symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -739,4 +741,82 @@ test('`unfixed` writes nothing at all - the ask is not a filing', () => {
   const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
   const { dir } = run(['unfixed', '--payload', payload]);
   assert.equal(filedText(dir), '');
+});
+
+// --- the decline record is the ONLY record, so losing a row is losing an answer
+// Every case here is a way a decline could go missing while the run still
+// reported success. They are grouped because they share one consequence: a
+// question the user already settled is asked again, forever.
+
+test('an unreadable EXISTING DECLINED.md is never replaced by this batch alone', () => {
+  // The catch used to fold every read error into an empty file and then WRITE,
+  // so one mode-000 record under a writable `.planning` erased every row in it.
+  const { status, envelope, dir } = run(['file', '--payload', dispositions([[FIVE[0], 'decline']])], {
+    prepare: (d) => {
+      declinedWith([FIVE[2], FIVE[3]])(d);
+      chmodSync(join(d, '.planning', 'DECLINED.md'), 0o000);
+    },
+  });
+  // Whatever the run reports, the rows that were there must still be there.
+  chmodSync(join(dir, '.planning', 'DECLINED.md'), 0o644);
+  const text = readFileSync(join(dir, '.planning', 'DECLINED.md'), 'utf8');
+  assert.ok(text.includes(fingerprint(FIVE[2])), 'an existing decline was erased');
+  assert.ok(text.includes(fingerprint(FIVE[3])), 'an existing decline was erased');
+  assert.equal(status, 1, JSON.stringify(envelope));
+  assert.equal(envelope.ok, false);
+});
+
+test('a row the grammar rejects refuses rather than reporting the batch recorded', () => {
+  // `appendDeclinedRow` refuses by returning the text unchanged, which is right
+  // for a pure function and silent for its caller. A slug with a space is the
+  // cheapest way to reach that arm through real configuration.
+  const { status, envelope, dir } = run(['file', '--payload', dispositions([[FIVE[0], 'decline']])],
+    { git: { forge_provider: 'github', forge_repo: 'acme/the widget' } });
+  assert.equal(status, 1, JSON.stringify(envelope));
+  assert.equal(envelope.ok, false);
+  assert.match(JSON.stringify(envelope), new RegExp(fingerprint(FIVE[0])));
+  assert.equal(declinedText(dir), '', 'a refused row must not half-land');
+});
+
+test('a DANGLING SYMLINK at DECLINED.md refuses; it is an entry, not an absence', () => {
+  // readFileSync answers ENOENT for both, and only one of them means "nothing
+  // has been declined yet". The other is a record this process cannot reach.
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const { status, envelope } = run(['unfixed', '--payload', payload], {
+    prepare: (d) => {
+      mkdirSync(join(d, '.planning'), { recursive: true });
+      symlinkSync(join(d, '.planning', 'nowhere.md'), join(d, '.planning', 'DECLINED.md'));
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'declines-unreadable');
+  assert.equal(envelope.findings, undefined);
+});
+
+test('a conflicted DECLINED.md refuses rather than reading past the damage', () => {
+  // The grammar skips any line that is not a row, which is right for a human
+  // note and wrong for a row a merge mangled: the fingerprint leaves the set
+  // silently and the gate re-asks a settled question.
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const { status, envelope } = run(['unfixed', '--payload', payload], {
+    prepare: (d) => {
+      declinedWith([FIVE[0]])(d);
+      const f = join(d, '.planning', 'DECLINED.md');
+      writeFileSync(f, `${readFileSync(f, 'utf8')}<<<<<<< HEAD\n- a row\n=======\n- another\n>>>>>>> other\n`);
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'declines-conflicted');
+  assert.match(envelope.hint, /BOTH sides/);
+});
+
+test('a create failure AFTER a decline still lands that decline row', () => {
+  // The refuted half of the same review: the mirror runs BEFORE the refusal is
+  // emitted, so a decline accumulated ahead of a failed create is written.
+  const payload = dispositions([[FIVE[1], 'decline'], [FIVE[0], 'accept']]);
+  const { status, envelope, dir } = run(['file', '--payload', payload], { stub: { failAt: 1 } });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'create-failed');
+  assert.ok(declinedText(dir).includes(fingerprint(FIVE[1])),
+    'the decline was reported filed and never written');
 });

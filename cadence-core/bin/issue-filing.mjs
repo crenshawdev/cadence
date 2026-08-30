@@ -43,7 +43,7 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { withPlanningFileLock } from './lib/capture-file.mjs';
@@ -232,7 +232,13 @@ function readDeclines(dir) {
   const file = join(dir, '.planning', 'DECLINED.md');
   let text;
   try { text = readFileSync(file, 'utf8'); } catch (e) {
-    if (e && /** @type {any} */ (e).code === 'ENOENT') return { ok: true, fingerprints: new Set() };
+    // ENOENT ALONE IS NOT ABSENCE. A DANGLING SYMLINK READS ENOENT TOO, and
+    // that is an entry that EXISTS pointing at a record this process cannot
+    // reach - every decline in it would resurface. `lstatSync` answers about
+    // the LINK rather than its target, so it succeeds exactly where the path is
+    // there and the read was not, which is the case that must refuse.
+    const absent = /** @type {any} */ (e)?.code === 'ENOENT' && !entryExists(file);
+    if (absent) return { ok: true, fingerprints: new Set() };
     return { ok: false, reason: 'declines-unreadable',
       detail: `${file}: ${redactUrl(e && e.message ? e.message : String(e))}`,
       hint: 'this fire cannot tell which findings were already declined, so it refuses rather '
@@ -240,7 +246,33 @@ function readDeclines(dir) {
         + 'symlink are the two common answers - then re-run this step; nothing has been filed '
         + 'and no finding is lost' };
   }
+  // A CONFLICTED RECORD IS NOT A PARTIAL ONE, IT IS AN UNTRUSTWORTHY ONE. The
+  // grammar skips any line that is not a row, which is right for a human note
+  // and wrong for a row a merge damaged: the fingerprint silently leaves the
+  // set and the gate re-asks a settled question. Conflict markers are the one
+  // damage shape that is unambiguous on sight, so they refuse here rather than
+  // being read past. A row corrupted some other way is still skipped silently,
+  // and that residual is stated rather than papered over - the grammar cannot
+  // tell a mangled row from a sentence somebody wrote.
+  if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) {
+    return { ok: false, reason: 'declines-conflicted',
+      detail: `${file} holds git conflict markers, so its rows cannot be trusted`,
+      hint: 'resolve the conflict in that file - every `- ` row from BOTH sides is wanted, '
+        + 'the record is append-only and a row on either side is a question somebody already '
+        + 'answered - then re-run this step; nothing has been filed and no finding is lost' };
+  }
   return { ok: true, fingerprints: new Set(parseDeclinedRows(text).map((r) => r.fingerprint)) };
+}
+
+/** Does the path exist as an ENTRY, whatever it points at? `lstatSync` never
+ * follows, so a dangling symlink answers true here and a genuinely absent path
+ * answers false. Any other stat error is treated as existing: the caller is on
+ * its refusal arm already and the safe reading of "cannot tell" is "do not
+ * claim nothing was declined". @param {string} file */
+function entryExists(file) {
+  try { lstatSync(file); return true; } catch (e) {
+    return /** @type {any} */ (e)?.code !== 'ENOENT';
+  }
 }
 
 /**
@@ -375,11 +407,30 @@ function mirrorFiled(dir, provider, repo, filed) {
       // parent directory to be there.
       mkdirSync(join(dir, '.planning'), { recursive: true });
       const guarded = withPlanningFileLock(file, () => {
+        // AN UNREADABLE EXISTING FILE IS NOT AN EMPTY ONE. This used to catch
+        // every read error into `text = ''`, and the write that followed
+        // REPLACED the file: a mode-000 record under a writable `.planning`
+        // meant one successful-looking run erased every row already in it.
+        // ENOENT is the only absence, and on this file that loss is total -
+        // DECLINED.md is the sole record of every question already answered.
         let text = '';
-        try { text = readFileSync(file, 'utf8'); } catch { text = ''; }
+        try { text = readFileSync(file, 'utf8'); } catch (e) {
+          if (/** @type {any} */ (e)?.code !== 'ENOENT') throw e;
+        }
         for (const row of rows) {
+          const before = text;
           text = arm.append(text, { date, provider, slug: repo,
             fingerprint: row.fingerprint, title: row.title });
+          // THE APPENDER REFUSES BY RETURNING THE TEXT UNCHANGED, which is the
+          // right shape for a pure function and the wrong thing to ignore here:
+          // a slug or a fingerprint the grammar rejects would leave the row
+          // absent while this call still reported the batch recorded. On the
+          // decline arm that is a settled question asked again; on the accept
+          // arm it is an issue nothing points at.
+          if (text === before) {
+            throw new Error(`the row for ${row.fingerprint} does not fit ${arm.name}'s grammar `
+              + `and was not written (slug ${JSON.stringify(repo)})`);
+          }
         }
         atomicWrite(file, text);
       }, arm.lock);
