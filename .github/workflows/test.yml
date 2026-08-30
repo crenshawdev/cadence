@@ -30,10 +30,10 @@ jobs:
       # corpus - archived SUMMARY tables joined to the commits they name - so a
       # depth-1 checkout fails 23 of its arms with `invalid object name <sha>^`.
       # The other jobs below walk no history and keep the shallow default.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
       # Zero-dep repo: no install step, the built-in runner is the framework.
@@ -44,8 +44,8 @@ jobs:
     # plugin-root path named in the live prose must exist in the code.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
       - run: node cadence-core/bin/self-verify.mjs
@@ -55,8 +55,8 @@ jobs:
     # @types/node are installed ephemerally for this job only (tsconfig.ci.json).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
       - run: npm install --no-save --no-package-lock typescript @types/node
