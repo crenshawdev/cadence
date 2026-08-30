@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import {
   DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, fingerprint, fingerprintInTitle,
   HALTING_SEVERITIES, issueBody, issueTitle, normalizeDeclines, unfixedFindings,
+  unfixedFromEntries,
 } from './lib/filing-decision.mjs';
 import { PROVIDER_TABLE } from './lib/forge-decision.mjs';
 
@@ -133,15 +134,17 @@ test('a survived blocker WITHOUT the marker still stays behind', () => {
   assert.deepEqual(out.findings, []);
 });
 
-test('the marker beside a real fix commit is in the set here, and cmdUnfixed drops it', () => {
-  // Legal and unremarkable per lib/adjudication-record.mjs: a fix landed and the
-  // halt was also overridden. This module answers on the three fields it states
-  // and does NOT read `fix_commit` (CONTEXT D-07) - removing an entry for
-  // carrying one is issue-filing.mjs's `cmdUnfixed`, one layer up.
+test('the marker beside a real fix commit is in NO set - the commit wins (D-05)', () => {
+  // Legal and unremarkable per lib/adjudication-record.mjs, which refuses an
+  // entry only when NEITHER marker is present: a fix landed and the halt was
+  // also overridden. The commit decides that entry, HERE, in the one pass that
+  // answers all three sets. It used to be in this set and dropped one layer up
+  // by issue-filing.mjs's `cmdUnfixed`, and that split is exactly what left the
+  // precedence to the order two filters happened to run in (CONTEXT D-04).
   const f = finding('src/a.mjs', 3, 'blocker', 'the lock is never released');
   const out = unfixedFindings(payload([[f, 'survived', { overridden: true }]]));
-  assert.deepEqual(out.findings.map((x) => x.claim), [f.claim]);
-  assert.equal(out.findings[0].fix_commit, 'a1b2c3d');
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.findings, []);
 });
 
 test('the marker on a medium changes nothing - that entry was already in the set', () => {
@@ -162,6 +165,81 @@ test('an unreadable payload carrying the marker is still a REFUSAL, not an empty
   assert.equal(out.ok, false);
   assert.deepEqual(out.findings, []);
   assert.match(out.detail, /overridden must be the boolean true/);
+});
+
+// --- the entries face: three answers, one pass (LND-02) ----------------------
+//
+// `unfixedFromEntries` is the primitive, and these arms drive it DIRECTLY with
+// stored entries rather than through the payload wrapper. That is the shape a
+// gate reading a written ADJUDICATION-*.json holds, and it is the only way to
+// express the `halting` set at all: `buildEntries` REFUSES the entry that lands
+// there, so no payload-built fixture can produce one.
+
+/** One stored entry, at the raised severity the case cares about; `over`
+ *  carries the ruling-side keys the case is actually about. */
+const entry = (severity, over) => ({
+  file: 'src/a.mjs', line: 1, severity, claim: 'the lock is never released',
+  failure_scenario: 'the next caller blocks forever', ruling: 'survived', ...over,
+});
+
+/** The three sets as their sizes, so each case below reads as one comparison
+ *  against all three at once - a case that named only the set it cared about
+ *  would pass while the entry was ALSO in one of the other two. */
+const sets = (e) => {
+  const out = unfixedFromEntries([e]);
+  return {
+    filing: out.filing.length,
+    haltingSurvivors: out.haltingSurvivors.length,
+    halting: out.halting.length,
+  };
+};
+
+test('a survived blocker naming a fix commit is FIXED, and is in none of the three', () => {
+  assert.deepEqual(sets(entry('blocker', { fix_commit: 'a1b2c3d' })),
+    { filing: 0, haltingSurvivors: 0, halting: 0 });
+});
+
+test('an OVERRIDDEN survived blocker with no commit is filed and named, never halting', () => {
+  assert.deepEqual(sets(entry('blocker', { overridden: true })),
+    { filing: 1, haltingSurvivors: 1, halting: 0 });
+});
+
+test('D-05: both markers on one entry is FIXED - the commit beats the override', () => {
+  // Without a stated precedence this one entry becomes a permanent unfixed
+  // override, re-surfaced at every close that reads the record again.
+  assert.deepEqual(sets(entry('blocker', { overridden: true, fix_commit: 'a1b2c3d' })),
+    { filing: 0, haltingSurvivors: 0, halting: 0 });
+});
+
+test('a survived blocker with NEITHER marker is `halting` alone - the fail-closed rail', () => {
+  // The shape lib/adjudication-record.mjs refuses outright, so it reaches this
+  // function only off a record something else wrote or a person hand-edited.
+  // Not filed, not an override: the entry a close has to stop on.
+  assert.deepEqual(sets(entry('blocker', {})),
+    { filing: 0, haltingSurvivors: 0, halting: 1 });
+});
+
+test('a survived MEDIUM naming a fix commit is FIXED too - the exclusion is not severity-gated', () => {
+  // A voluntary fix below the halting pair is legal and cites its commit.
+  // Opening a tracker issue asking a user about work that is already committed
+  // is the defect the two-face split produced.
+  assert.deepEqual(sets(entry('medium', { fix_commit: 'a1b2c3d' })),
+    { filing: 0, haltingSurvivors: 0, halting: 0 });
+});
+
+test('a survived medium with no commit is `filing` alone - confirmed and not fixed', () => {
+  assert.deepEqual(sets(entry('medium', {})),
+    { filing: 1, haltingSurvivors: 0, halting: 0 });
+});
+
+test('a BLANK fix_commit is not a usable one, so that entry still halts', () => {
+  // Usable means a non-blank string and nothing more: the VALUE check belongs
+  // to lib/adjudication-record.mjs at composition time, and a second validator
+  // here would be a second grammar for one field. But a blank string off a
+  // hand-edited record must not read as a fix, or the rail opens on the exact
+  // input it exists for.
+  assert.deepEqual(sets(entry('blocker', { fix_commit: '   ' })),
+    { filing: 0, haltingSurvivors: 0, halting: 1 });
 });
 
 // --- criterion 2: the ask follows the PAYLOAD, never the prose ---------------

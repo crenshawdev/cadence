@@ -55,7 +55,9 @@ export const HALTING_SEVERITIES = Object.freeze(['blocker', 'high']);
 export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
 
 /**
- * The ONE statement of which entries of a record the gate will not fix now.
+ * The ONE statement of what a record's entries mean to a fire that is settling:
+ * which of them reach the user's ask, which cleared halt a caller has to see,
+ * and which of them STOP a close.
  *
  * Takes the ENTRIES rather than the payload: the array `buildEntries` returns,
  * which is byte-for-byte the array a written `ADJUDICATION-*.json` stores, so a
@@ -64,65 +66,91 @@ export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
  * wrapper over this one - the meaning lives HERE, once, because a second
  * statement of it is the drift a downstream halt decision would be resting on.
  *
- * THREE FIELDS DECIDE IT AND NOTHING ELSE: the entry's `ruling`, its RAISED
- * `severity`, and the `overridden` marker. An entry is in the filing set unless
- * it `survived` at `blocker` or `high` AND was not overridden - that one is the
- * thing the gate is halting over, so it is being fixed, not filed. Which makes
- * the set exactly criterion 1's three sources at once: the blocking arm's
- * below-blocker/high remainder, the adjudicated arm's non-survivors, and any
- * `recorded not fixed` disposition.
+ * FOUR FIELDS DECIDE ALL THREE ANSWERS AND NOTHING ELSE: the entry's `ruling`,
+ * its RAISED `severity`, the `overridden` marker, and `fix_commit`. All three
+ * sets are answered in ONE pass, so no two of them can disagree about one
+ * entry, and every entry lands in at most one disposition.
  *
- * THE MARKER IS THE THIRD FIELD BECAUSE AN OVERRIDE IS THE ONE SURVIVING
- * BLOCKER NOBODY IS FIXING. `overridden` in lib/adjudication-record.mjs records
- * that a user let a blocking FAIL stand, so an overridden blocker or high is by
- * construction unfixed - the single case where "survived at a halting severity"
- * stops implying "a commit is coming". Reading only the first two fields drops
- * it from the set silently, and silence is the worst answer available here: the
- * finding is then never fixed, never filed, never declined and never put to the
- * user. Before the marker existed the same payload was a loud REFUSAL from
- * `buildEntries`, which is the state this must not quietly replace.
+ * A USABLE `fix_commit` IS ASKED FIRST AND ENDS THE QUESTION (CONTEXT D-04,
+ * D-05). An entry naming one is FIXED, and a fixed entry is in NONE of the
+ * three sets: the work is committed, so there is nothing to put to a user,
+ * nothing for a person to have cleared, and nothing for a close to stop over.
+ * That holds even when the same entry ALSO carries `overridden: true` - the
+ * schema permits both on one entry, since lib/adjudication-record.mjs refuses
+ * only when NEITHER is present, and leaving the precedence to the ORDER of two
+ * filters is how one entry becomes a permanent unfixed override at every close.
+ * The exclusion used to live one layer up, at bin/issue-filing.mjs's own face,
+ * so the gate deciding a close and the face filing issues held two spellings of
+ * one meaning; this is where that split ends.
  *
- * Those overridden entries come back NAMED, on `haltingSurvivors`, as well as
- * folded into `filing`. They are the subset a caller settling the fire has to
- * be able to see on its own: a record holding one is a record whose blocking
- * halt was cleared by a person rather than by a commit, and the receipt that
- * settles it has to say so. Answered in the SAME pass as `filing` so the two
- * can never disagree about one entry.
+ * USABLE MEANS A NON-BLANK STRING, deliberately and nothing more.
+ * lib/adjudication-record.mjs already refuses a malformed value at composition
+ * time, this module's stated discipline is that unknown input never throws, and
+ * a second validator here would be a second grammar for one field.
  *
- * `fix_commit` IS STILL NOT ONE OF THE FIELDS (CONTEXT D-07). A voluntary fix
- * on a medium is legal and cites its commit, and dropping an entry for carrying
- * one belongs to bin/issue-filing.mjs's `cmdUnfixed`, the face that already
- * adds the live lookup on top of this pure selection. An overridden entry that
- * ALSO names a commit is in the set here and is removed there, which is that
- * split working rather than a case this function missed.
+ * `filing` IS WHAT THIS FIRE WILL NOT FIX NOW, which is what reaches the user's
+ * ask: every entry except a fixed one and except the unfixed survivor a
+ * blocking gate is halting over. Which makes the set exactly criterion 1's
+ * three sources at once: the blocking arm's below-blocker/high remainder, the
+ * adjudicated arm's non-survivors, and any `recorded not fixed` disposition.
+ *
+ * `haltingSurvivors` IS THE SUBSET A PERSON CLEARED - ruled `survived` at
+ * `blocker` or `high`, carrying no commit, marked `overridden: true`. It is
+ * folded into `filing` as well as named here, because it is both things at
+ * once: nobody is fixing it, and a caller settling the fire has to be able to
+ * see on its own that this range's blocking halt was cleared by a human
+ * decision rather than by committed work. `overridden` is read at all because
+ * an override is the one surviving blocker nobody is fixing - the single case
+ * where "stood at a halting severity" stops implying "a commit is coming".
+ * Reading the ruling and the severity alone drops it from `filing` silently,
+ * and silence is the worst answer available here: the finding is then never
+ * fixed, never filed, never declined and never put to the user.
+ *
+ * `halting` IS THE FAIL-CLOSED RAIL, and it is not dead code even though a
+ * VALID record can never hold one. An entry lands there when it is ruled
+ * `survived` at `blocker` or `high`, is NOT overridden and cites no usable
+ * commit - and `buildEntries` REFUSES exactly that shape at composition time,
+ * so a record this tree wrote holds none of them and every ruled outcome
+ * resolves to fixed, overridden, downgraded, refuted or below-halting. The set
+ * is non-empty only over a record something else wrote, a person edited by
+ * hand, or an artifact older than the requirement, which is precisely the input
+ * a close has to stop on rather than read past. The name is deliberately not
+ * `haltingSurvivors`: those two hold opposite dispositions of one shape,
+ * cleared and uncleared, and two near-identical names for opposite answers is
+ * the confusion this paragraph exists to prevent.
  *
  * The severity read is the RAISED one, which is the only one an entry carries -
  * a `downgraded` ruling records that the adjudicator lowered the finding and
  * does not restate a new level, so there is no second severity to pick the
  * wrong one of.
  *
- * A NON-ENTRY IS SKIPPED, never counted into either set. `buildEntries` cannot
- * produce one, so the wrapper below is unaffected; a record read off disk can
- * hold anything, and the discipline this module states is that unknown input
- * never throws. `deriveCounts` skips the same shape for the same reason.
+ * A NON-ENTRY IS SKIPPED, never counted into any of the three sets.
+ * `buildEntries` cannot produce one, so the wrapper below is unaffected; a
+ * record read off disk can hold anything, and the discipline this module states
+ * is that unknown input never throws. `deriveCounts` skips the same shape for
+ * the same reason.
  *
  * @param {unknown} entries a built record's `entries[]`
  * @returns {{filing: Array<Record<string, any>>,
- *   haltingSurvivors: Array<Record<string, any>>}}
+ *   haltingSurvivors: Array<Record<string, any>>,
+ *   halting: Array<Record<string, any>>}}
  */
 export function unfixedFromEntries(entries) {
   /** @type {Array<Record<string, any>>} */
   const filing = [];
   /** @type {Array<Record<string, any>>} */
   const haltingSurvivors = [];
+  /** @type {Array<Record<string, any>>} */
+  const halting = [];
   for (const e of Array.isArray(entries) ? entries : []) {
     if (e === null || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (typeof e.fix_commit === 'string' && e.fix_commit.trim() !== '') continue;
     const stoodAtAHalt = e.ruling === 'survived' && HALTING_SEVERITIES.includes(e.severity);
-    if (stoodAtAHalt && e.overridden !== true) continue;
+    if (stoodAtAHalt && e.overridden !== true) { halting.push(e); continue; }
     filing.push(e);
     if (stoodAtAHalt) haltingSurvivors.push(e);
   }
-  return { filing, haltingSurvivors };
+  return { filing, haltingSurvivors, halting };
 }
 
 /**
@@ -130,7 +158,7 @@ export function unfixedFromEntries(entries) {
  *
  * The PAYLOAD face of `unfixedFromEntries`: it validates and pairs through
  * `buildEntries`, then reads its set off that one statement rather than
- * restating the three-field test here. The returned array is the same array,
+ * restating the four-field test here. The returned array is the same array,
  * over the same data, that the entries face returns on `filing`.
  *
  * A PAYLOAD `buildEntries` REFUSES COMES BACK AS A REFUSAL, never as an empty

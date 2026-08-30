@@ -520,7 +520,9 @@ test('RSK-08: the entries face reads a RECORD off disk, not only a freshly built
   const out = unfixedFromEntries([...roundTripped, null, 'not an entry', 7]);
   assert.equal(out.haltingSurvivors.length, 1);
   assert.equal(out.filing.length, 1);
-  assert.deepEqual(unfixedFromEntries(undefined), { filing: [], haltingSurvivors: [] });
+  assert.equal(out.halting.length, 0);
+  assert.deepEqual(unfixedFromEntries(undefined),
+    { filing: [], haltingSurvivors: [], halting: [] });
 });
 
 // --- the derived counts ------------------------------------------------------
