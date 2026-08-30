@@ -203,9 +203,11 @@ const LOCK_SUFFIX = '.lock';
  * What it buys: an ORDINARY overlap - two writers arriving inside each other's
  * write - lets BOTH bullets land instead of one refusing. What bounds it: this
  * seam sits inside an interactive `/cad-capture` step, so a lock that is really
- * held has to be refused in well under a second rather than hang the command.
+ * held still has to be refused promptly rather than hang the command. Two
+ * seconds leaves enough scheduling margin for the promised twenty-writer burst
+ * on a busy runner while keeping a genuinely held lock visibly bounded.
  */
-const LOCK_WAIT_MS = 500;
+const LOCK_WAIT_MS = 2_000;
 
 /**
  * One poll interval, jittered up to double. The jitter is what stops N writers
