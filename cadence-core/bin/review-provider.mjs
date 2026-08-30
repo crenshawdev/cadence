@@ -32,6 +32,16 @@
 //     non-string payload field is refused as bad-payload first, since an
 //     unmeasurable field is an unbounded one. The free claude-subagent
 //     reviewer never runs this script and is exempt.
+//   - The outbound PAYLOAD is fenced (#167): every string field crosses
+//     `fence()` - `redactUrl` composed with `redactCredentials`, the same shared
+//     helper the inbound excerpt uses - after the shape gate and before the cap,
+//     so what is measured is what is sent and no raw field reaches the request.
+//     The fence is by SHAPE, never by a known-token prefix list, so it lowers
+//     the exposure of a path that had none rather than making the payload safe
+//     to fill with secrets. How many spans it removed rides the `ok` envelope
+//     and the `provider/request` event as `redactions`, non-zero only: a
+//     reviewer reading `<redacted>` saw less than the caller composed, and the
+//     record has to be able to say so.
 //   - The RESPONSE is bounded too, by bytes rather than by the host's wrapping
 //     command timeout (RVP-01): every command's read path crosses one counter
 //     inside `request()`, and a body past `MAX_RESPONSE_BYTES` destroys the
@@ -90,7 +100,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { measure } from './lib/surface-weight.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
-import { redactUrl, redactCredentials } from './lib/redact-url.mjs';
+import { redactUrl, redactCredentials, REDACTION_MARK } from './lib/redact-url.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -114,7 +124,7 @@ function ok(obj) { emit({ ok: true, ...obj }); throw DONE; }
 // the wire refused. `null` means no command has begun, so `fail('bad-command')`
 // from `main()` records nothing by construction rather than by a check.
 /** @type {{command: string, provider: any, model: any, effort: any,
- *   trigger?: any, started: number}|null} */
+ *   trigger?: any, started: number, redactions?: number}|null} */
 let activeMeta = null;
 
 // Exactly one event per call, whichever site records first. The explicit
@@ -423,6 +433,53 @@ export function estimatePromptTokens(...parts) {
   return measure(parts.filter((p) => typeof p === 'string').join('')).estTokens;
 }
 
+// The OUTBOUND secret fence (#167). The payload is raw repository contents - a
+// plan, a diff, whole files - and it leaves this machine for a third party the
+// moment a project configures a cross-model reviewer, which is the shipped
+// default here. Every byte of it crosses this function first.
+//
+// The redaction machinery already existed and ran the WRONG WAY: `bodyExcerpt`
+// below sanitizes the INBOUND response body through the same two exports. This
+// is the same read-then-send rule pointed at the direction that actually
+// carries the repository off the machine.
+//
+// COMPOSED, not reimplemented. `lib/redact-url.mjs`'s header states that
+// neither export is a superset of the other and that a caller wanting both
+// composes them; D-14 states that a security-relevant regex duplicated across
+// sites is how the copies drift. So no pattern is added here, and widening the
+// fence is a change to that one file, which its own tests already own.
+//
+// WHAT IT CANNOT DO, stated where the call is rather than left to be
+// rediscovered: redaction is by SHAPE - a credential-shaped NAME beside its
+// value, a userinfo POSITION in a URL, an `authorization` echo - and never by a
+// known-prefix list, because a prefix list is a list of the credentials somebody
+// already thought of. A bare `sk-ant-...` sitting in a diff with no
+// credential-shaped name beside it is NOT caught. This lowers the exposure of a
+// path that had none; it does not license sending a secrets file to a reviewer.
+//
+// The count comes back with the text because a fenced payload is a SMALLER
+// artifact than the caller composed: a reviewer reading `<redacted>` where a
+// value was is working from less than it was handed, and both the envelope and
+// the run record have to be able to say so.
+/**
+ * @param {string} s @returns {{text: string, redactions: number}}
+ */
+function fence(s) {
+  const before = occurrences(s, REDACTION_MARK);
+  const text = redactCredentials(redactUrl(s));
+  return { text, redactions: occurrences(text, REDACTION_MARK) - before };
+}
+
+// Counted rather than `split().length - 1`, which allocates a copy of an
+// artifact that may be the whole cap. `indexOf` from a moving offset is one
+// linear pass and holds no second string.
+/** @param {string} hay @param {string} needle @returns {number} */
+function occurrences(hay, needle) {
+  let n = 0;
+  for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + needle.length)) n += 1;
+  return n;
+}
+
 // The refusal both paid commands share. It happens BEFORE any request is
 // issued and is neither a truncation nor a warning: truncating still pays the
 // provider and returns findings on a fragment while reporting as though it saw
@@ -512,7 +569,7 @@ function tierOf(provider, model) {
  *
  * Never throws, never writes to a stream, never touches the caller's envelope.
  * @param {{command: string, provider: any, model: any, effort: any,
- *   trigger?: any, started: number}} meta
+ *   trigger?: any, started: number, redactions?: number}} meta
  * @param {string} outcome the fail() reason, or 'ok'
  * @param {string} [detail]
  */
@@ -551,6 +608,14 @@ function traceProvider(meta, outcome, detail) {
       outcome,
       ...(detail ? { degraded: true, detail: String(detail).slice(0, 200) } : {}),
       ...(warnings.length ? { config_warnings: warnings.length } : {}),
+      // HOW MANY spans the outbound fence removed from this payload, and only
+      // when it removed any - the same non-zero-only shape `config_warnings`
+      // uses one line up, so a call over an artifact carrying no credential
+      // writes byte-for-byte the event it wrote before. A count, never the
+      // spans: the whole point of the fence is that those bytes stop here, and
+      // a record that carried them would be the leak wearing a different hat.
+      ...(typeof meta.redactions === 'number' && meta.redactions > 0
+        ? { redactions: meta.redactions } : {}),
     });
   } catch { /* a record of a call may never change the call */ }
 }
@@ -1149,10 +1214,17 @@ async function cmdReview(opts) {
     fail('bad-payload', 'payload needs {instruction, artifact}, both strings',
       'fix the file --payload names so it holds both keys as strings, then re-run - a caller that hand-built this file is the usual cause');
   }
-  assertUnderCap(payload.instruction, payload.artifact);
+  // Fenced AFTER the string gate above and BEFORE the cap: the cap has to
+  // measure what is actually sent, and the request below is built from the
+  // fenced strings only - a second reference to `payload.artifact` past this
+  // point would route the raw bytes around the fence.
+  const instruction = fence(payload.instruction);
+  const artifact = fence(payload.artifact);
+  meta.redactions = instruction.redactions + artifact.redactions;
+  assertUnderCap(instruction.text, artifact.text);
   const parsed = await callStructured(adapter, key, adapter.structuredRequest({
     model: opts.model, effort: opts.effort,
-    system: payload.instruction, user: payload.artifact,
+    system: instruction.text, user: artifact.text,
     schema: FINDING_SCHEMA, schemaName: 'cadence_review',
   }), meta);
   const bad = validateFindings(parsed);
@@ -1164,7 +1236,12 @@ async function cmdReview(opts) {
   // An EMPTY findings set is `ok` and carries no `degraded` flag (D-22):
   // a reviewer that legitimately found nothing is not a drop-out.
   traceProvider(meta, 'ok');
-  ok({ provider, model: opts.model, findings: parsed.findings });
+  // `redactions` rides the envelope on the same non-zero-only rule the trace
+  // event uses, so the caller relaying this can say the reviewer read a fenced
+  // artifact. references/review-triggers.md reads `{ok:false}` reasons; this is
+  // an additive key on the `ok` side and no existing arm moves without it.
+  ok({ provider, model: opts.model, findings: parsed.findings,
+    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}) });
 }
 
 async function cmdConsult(opts) {
@@ -1176,7 +1253,9 @@ async function cmdConsult(opts) {
     fail('bad-payload', 'payload needs {situation}, a string',
       'fix the file --payload names so it holds that key as a string, then re-run - a caller that hand-built this file is the usual cause');
   }
-  assertUnderCap(payload.situation);
+  const situation = fence(payload.situation);
+  meta.redactions = situation.redactions;
+  assertUnderCap(situation.text);
   const system =
     'You are a second-opinion consultant to an engineer stuck at a dead-end. ' +
     'Return angles to investigate - concrete things to try or check, each with ' +
@@ -1185,7 +1264,7 @@ async function cmdConsult(opts) {
     'decides. Be specific to the situation, not generic advice.';
   const parsed = await callStructured(adapter, key, adapter.structuredRequest({
     model: opts.model, effort: opts.effort,
-    system, user: payload.situation,
+    system, user: situation.text,
     schema: CONSULT_SCHEMA, schemaName: 'cadence_consult',
   }), meta);
   const bad = validateConsult(parsed);
@@ -1195,7 +1274,8 @@ async function cmdConsult(opts) {
       'the provider parsed as JSON but not as an angles list - re-run once, and name a different model for this consult if it repeats');
   }
   traceProvider(meta, 'ok');
-  ok({ provider, model: opts.model, angles: parsed.angles });
+  ok({ provider, model: opts.model, angles: parsed.angles,
+    ...(meta.redactions > 0 ? { redactions: meta.redactions } : {}) });
 }
 
 async function cmdDetect(opts) {
