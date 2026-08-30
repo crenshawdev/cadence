@@ -484,6 +484,12 @@ function readsRotationInFlight(file, sibling) {
  * generations, no keep-N, no config key: the pair on disk is the bound, and a
  * second rotation evicts what the first one left.
  *
+ * THE MARKER SEALS THE GENERATION. Its `carried_bytes` is the size the live
+ * record had at the instant this call claimed it, so a later writer can tell
+ * which of the generation's bytes this cut accounted for. Its only consumer is
+ * the leftover-generation eviction below, which is the last moment the bytes
+ * past that offset can be carried anywhere.
+ *
  * NOTHING CROSSES THE CUT (D-02). The fresh record is one line - the marker -
  * and there is no `freshRecord` analogue and no run-in-flight tail, because
  * nothing scans this record backwards: `readReadsRecords` reads it whole and
@@ -526,6 +532,11 @@ export function rotateReads(planningRoot, reserve) {
   // owns the claim the stamp dates. Cleared once it is renamed into place.
   /** @type {string|null} */
   let pending = null;
+  // The size of the live record at the instant this call claimed it - the
+  // number the marker publishes as `carried_bytes`. `null` where the stat
+  // could not be taken, which seals nothing rather than guessing.
+  /** @type {number|null} */
+  let sealed = null;
   /**
    * Move the private stamp onto the shared sidecar path. Called only from the
    * two arms that have established the claim is this process's to date, and
@@ -576,6 +587,16 @@ export function rotateReads(planningRoot, reserve) {
         pending = `${claim}.${priv}`;
         try { writeFileSync(pending, `${new Date().toISOString()}\n`); }
         catch { pending = null; /* fail live: no sidecar reads as a live claim */ }
+        // SEAL THE GENERATION HERE, BEFORE THE LINK, and never after it.
+        // Linking does not freeze the inode: the live path still names it until
+        // the swap, so a writer appending in the window between the link and a
+        // later stat would have its bytes folded into `carried_bytes` - and the
+        // eviction below reads that number as already accounted for and never
+        // rescues them, which is the exact loss the seal exists to close.
+        // Sealing early can only make that rescue window LARGER, and the widest
+        // it can be is the bytes appended between this line and the eviction,
+        // every one of which is a byte no cut ever accounted for.
+        try { sealed = statSync(file).size; } catch { sealed = null; }
         linkSync(file, sibling);
         claimed = true;
         held = true;
@@ -685,10 +706,30 @@ export function rotateReads(planningRoot, reserve) {
     // The fresh record is written whole to a PRIVATE path - this process's pid
     // and a random suffix, exclusive-create - and renamed over the live path.
     temp = join(planningRoot, `${READS_ROTATE_TEMP_FILE}.${priv}`);
+    // `carried_bytes` SEALS THE GENERATION, and it is not telemetry. It is the
+    // size the live record had at the instant this call claimed it - how much of
+    // the file this cut carried away and therefore accounted for. Its ONE
+    // consumer is the leftover-generation eviction in this same function: a
+    // writer that appended into the old inode after this cut sealed it left its
+    // bytes ONLY in the generation, and the next rotation is about to destroy
+    // that generation. The sealed number is what tells that writer where this
+    // cut stopped accounting, so it can carry the bytes past it rather than
+    // guess an offset or re-append a whole generation.
+    //
+    // A stat that threw seals NOTHING: the field is omitted rather than written
+    // as a guess, because the eviction reads an absent field as "rescue
+    // nothing" and a wrong offset would re-append a whole generation into a
+    // record readers actually read.
+    //
+    // It rides after `file` as an ordinary trailing field.
+    // `isReadsRotationMarker` keys on `event` plus the absence of `tool` and
+    // tolerates extra fields, and `planning/core.mjs`'s reads filter reads only
+    // `file` and `ts` off the marker, so it reaches no envelope.
     const marker = {
       ts: new Date().toISOString(),
       event: READS_ROTATION,
       file: ROTATED_READS_FILE,
+      ...(sealed === null ? {} : { carried_bytes: sealed }),
     };
     writeFileSync(temp, `${JSON.stringify(marker)}\n`, { flag: 'wx' });
     renameSync(temp, file);

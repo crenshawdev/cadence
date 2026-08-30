@@ -192,6 +192,25 @@ test('a record at the bound ROTATES and the append lands, rather than reporting 
 /** Every file in the planning root named after the reads record. @param {string} d */
 const readsSiblings = (d) => readdirSync(d).filter((f) => f.startsWith('reads')).sort();
 
+test('the marker SEALS the generation it carried away, in bytes', () => {
+  // `carried_bytes` is how much of the generation this cut accounted for. The
+  // eviction of a leftover generation is its only consumer: everything past
+  // that offset arrived after the cut stopped accounting and is the tail no
+  // rotation ever carried.
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-cut' });
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/after-the-cut' }).written, true);
+
+  const marker = JSON.parse(liveLines(d)[0]);
+  assert.ok(isReadsRotationMarker(marker), 'the new field stopped the marker reading as one');
+  assert.equal(typeof marker.carried_bytes, 'number');
+  assert.equal(marker.carried_bytes, statSync(rotatedReadsPath(d)).size,
+    'the seal is not the size of the generation this cut carried away');
+  // The marker is still the whole fresh record: nothing crosses the cut.
+  assert.deepEqual(Object.keys(marker), ['ts', 'event', 'file', 'carried_bytes']);
+});
+
 test('the SECOND rotation evicts the generation the first one left', () => {
   const d = tmp();
   appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
