@@ -1,6 +1,9 @@
 # Cadence
 
-[![test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
+[![Test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
+[![Release](https://github.com/crenshawdev/cadence/actions/workflows/release.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/crenshawdev/cadence?label=release)](https://github.com/crenshawdev/cadence/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/crenshawdev/cadence)](LICENSE)
 
 **Appearance is cheap. Verification is the work.**
 
