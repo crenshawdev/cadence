@@ -486,6 +486,9 @@ const CALLSITES = [
     why: 'lists the phase directory plans and echoes phase: <value>' },
   { file: 'replay-check.mjs', fn: 'cmdReplayCheck', ordinal: 1, disposition: 'tree-aware',
     why: "reads each plan's reports/plan-<k>.md under the phase directory and echoes phase: <value>" },
+  { file: 'risk-carry.mjs', fn: 'cmdRiskCarry', ordinal: 1, disposition: 'tree-aware',
+    why: 'copies the phase directory\'s risk_surface review and adjudication records out to'
+      + ' risk-carry/<N>/ and echoes phase: <value> over them' },
   { file: 'risk-check.mjs', fn: 'cmdRiskCheckRun', ordinal: 1, disposition: 'exempt',
     why: 'the raw spelling scopes a .planning/trace.jsonl filter through renderTrace and reaches no path' },
   { file: 'risk-check.mjs', fn: 'cmdRiskCheckStatus', ordinal: 1, disposition: 'exempt',
@@ -527,10 +530,10 @@ test('census: every phase-argument callsite under planning/ carries a dispositio
     'CALLSITES names a callsite the walk no longer finds - delete the row if the callsite is gone,'
     + ' or re-key it if its enclosing function was renamed.');
 
-  // CADENCE-CENSUS: phase-spelling-callsites | asserts: 22 phase-argument callsites under cadence-core/bin/planning/, 13 of them resolving a phases/<N>/ path - 11 through the tree-aware check and 2 through the unconditional one
-  assert.equal(found.length, 22, `callsite count moved: ${found.length}`);
+  // CADENCE-CENSUS: phase-spelling-callsites | asserts: 23 phase-argument callsites under cadence-core/bin/planning/, 14 of them resolving a phases/<N>/ path - 12 through the tree-aware check and 2 through the unconditional one
+  assert.equal(found.length, 23, `callsite count moved: ${found.length}`);
   const by = (d) => CALLSITES.filter((c) => c.disposition === d).length;
-  assert.equal(by('tree-aware'), 11);
+  assert.equal(by('tree-aware'), 12);
   assert.equal(by('unconditional'), 2);
   assert.equal(by('exempt'), 9);
 });
