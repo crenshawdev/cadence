@@ -273,9 +273,14 @@ size.
 
 **Stated once, here, and both arms above point at it.** A gate that produces
 findings it will not fix NOW asks the user about them IN THE STEP THAT DECIDED,
-and every answer becomes an issue on this repository's own tracker. Nothing is
-written to `.planning/CAPTURE.md` on either answer, nothing is annotated, and
-nothing is carried to a later batch.
+and every answer is recorded - an ACCEPTED one as an issue on this repository's
+own tracker, a DECLINED one as a row in `.planning/DECLINED.md` and nowhere
+else. Nothing is written to `.planning/CAPTURE.md` on either answer, nothing is
+annotated, and nothing is carried to a later batch.
+
+**The tracker states real work, so a decline stays off it.** A refusal still has
+to persist or this gate re-asks it forever, but the fingerprint is the whole of
+what that needs and a local file holds it.
 
 **The set is READ, never judged.** It is not a list the model assembles and it
 is never re-parsed out of the REVIEW file's prose. Run:
@@ -285,7 +290,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" unfixed --payload
 ```
 
 `<path>` is THE SAME composed payload file the adjudication record was written
-from - the `{voices: [...]}` object, not the rendered findings. What comes back
+from - the `{voices: [...]}` object, not the rendered findings. It reads
+`.planning/DECLINED.md`, spawns nothing, and has no page to fill. What comes back
 is exactly the same set on all three arms that reach here: the `blocking` arm's
 below-blocker/high remainder, the `adjudicated` arm's non-survivors, and any
 `recorded not fixed` disposition. THREE things are held back, and one case that
@@ -306,8 +312,9 @@ attractive, and it is the thing this replaces.
 **Say plainly what each answer does**, in the question itself:
 
 - a finding the user NAMES becomes an issue on the tracker;
-- a finding the user does NOT name is filed carrying the decline label, which is
-  what stops a later fire asking the same question forever;
+- a finding the user does NOT name is written to `.planning/DECLINED.md`, which
+  is what stops a later fire asking the same question forever, and it never
+  reaches the tracker in any form;
 - either way NOTHING is written to `.planning/CAPTURE.md`, and no finding is
   annotated, parked or carried.
 
@@ -319,7 +326,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" file --payload <p
 
 `<path>` here holds `{"entries": [{"finding": ..., "disposition": "accept" |
 "decline"}, ...]}` - the findings the call above returned, each paired with what
-the user chose. A refusal from EITHER call is reported and the findings are
+the user chose. Only the accepts cross the network. A refusal from EITHER call is reported and the findings are
 STILL IN HAND: an unreachable tracker is not a reason to drop a finding, and a
 refusal names which ones were not filed. Add no receipt and no trace event -
 this is a step inside a fire that already leaves one.
