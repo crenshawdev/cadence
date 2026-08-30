@@ -228,6 +228,7 @@ import { cmdAdjudication } from './planning/adjudication.mjs';
 import { cmdDeferredRecord } from './planning/deferred-record.mjs';
 import { cmdDeferredList } from './planning/deferred-list.mjs';
 import { cmdDeferredCarry } from './planning/deferred-carry.mjs';
+import { cmdRiskCarry } from './planning/risk-carry.mjs';
 import { cmdRenumber } from './planning/renumber.mjs';
 
 function parseArgs(argv) {
@@ -302,6 +303,13 @@ const COMMANDS = {
   // word, never a two-word spelling: `subcommandKey` consumes a second word only
   // for the `TWO_WORD` families, and one operation does not earn widening it.
   adjudication: (dir, _sub, opts) => cmdAdjudication(dir, opts),
+  // The risk_surface rulings OUT of the phase directory a milestone close is
+  // about to delete (LND-02). ONE word, never a two-word spelling, for the
+  // reason the `adjudication` arm above states: `subcommandKey` consumes a
+  // second word only for the `TWO_WORD` families, one operation does not earn
+  // widening it, and widening it would change how every existing spelling
+  // resolves.
+  'risk-carry': (dir, _sub, opts) => cmdRiskCarry(dir, opts),
   // The DEFERRED gate's queue member, beside that same REVIEW file. TWO words,
   // unlike `adjudication` above: this is one of three operations on the queue,
   // which is the `risk-check run|status` precedent for widening `TWO_WORD`
