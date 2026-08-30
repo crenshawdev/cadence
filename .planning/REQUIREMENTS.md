@@ -5,16 +5,19 @@
 
 ## Active
 
-`v3.7.8 - what Cadence already knows` opened 2026-08-29 with five phases.
-`/cad-plan` seeds each Traceability row as its phase is planned, so an id below
-that no plan has picked up yet surfaces as `unpicked` in `/cad-audit` rather
-than as a hand-written row.
+No cycle open. `/cad-phase add` opens the next one, and `/cad-plan` seeds each
+Traceability row as its phase is planned.
 
-The source is the scan taken immediately after the v3.7.7 tag, which produced
-five `S2-real` issues, plus three findings filed against the v3.7.7 adjudication
-work and never triaged. The standard is the one v3.7.5 set: would a user on
-their own project feel it. In each of these Cadence already holds the answer and
-the code beside it does not read it.
+`v3.7.8 - what Cadence already knows` opened 2026-08-29 and closed 2026-08-30.
+Five phases, five ids - `RSK-08`, `RNG-04`, `PHS-02`, `LND-02`, `TRC-11` - are
+rows under the `Shipped` heading below, all five Complete. The source was the
+scan taken immediately after the v3.7.7 tag, which produced five `S2-real`
+issues, plus three findings filed against the v3.7.7 adjudication work and never
+triaged. The standard was the one v3.7.5 set: would a user on their own project
+feel it. In each of these Cadence already held the answer and the code beside it
+did not read it. The audit passed 5/5 traced with 33/33 acceptance criteria
+covered and nothing deferred. The ids under `## Deferred` keep their own reasons
+and none is promoted here to fill this section.
 
 
 **Out of scope, deliberately.** `GH-167` - review payloads carry no secret

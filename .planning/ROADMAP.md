@@ -2,7 +2,10 @@
 
 ## Overview
 
-**`v3.7.8`, opened 2026-08-29.** Five phases. The source is the scan taken
+**`v3.7.8`, opened 2026-08-29, closed 2026-08-30.** Five phases, all five
+shipped and pruned from the list below; their rows are under `## Shipped` in
+REQUIREMENTS.md and their residue in `.planning/ARCHIVE.md`. `/cad-phase add`
+opens the next cycle. The source was the scan taken
 immediately after the v3.7.7 tag, which produced five `S2-real` issues, plus
 three findings filed against the v3.7.7 adjudication work itself and never
 triaged.
