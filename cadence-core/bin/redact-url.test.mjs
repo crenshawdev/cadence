@@ -352,6 +352,12 @@ test('cost: a whole ARTIFACT is linear, not quadratic (#167)', () => {
     'one segment, a colon, and two long runs': 'A'.repeat(240000) + ':' + 'B'.repeat(240000) + '/',
     'the same with an @, so the terminated rules run too':
       'A'.repeat(240000) + ':' + 'B'.repeat(240000) + '/@',
+    // The scheme rules' own version, which a lookbehind of "not preceded by a
+    // letter" did NOT bound: a scheme continues with digits, so in an
+    // alternating run every letter was still a legal start. Measured at 99.6
+    // SECONDS before the continuation class went into the lookbehind.
+    'alternating letters and digits, a scheme, and no userinfo':
+      '1a'.repeat(240000) + ':///@',
     'a minified bundle, every delimiter present': 'a:b/c;d(e)'.repeat(48000),
     'an ordinary diff of ordinary code': Array(6000).fill(
       '+  const value = compute(alpha, beta); // https://cad:tok@host.invalid/r.git').join('\n'),
@@ -390,10 +396,25 @@ test('the start lookbehinds remove attempts, never matches', () => {
     ['prefixcad:s3cr3t-tok@host.invalid/r.git', 's3cr3t-tok'],
     // And the two cut rules, which end the input rather than at an `@`.
     ['9abc://cad:s3cr3t-tok', 's3cr3t-tok'],
+    ['9a9b://ghp_deadbeef', 'ghp_deadbeef'],
     ['prefixcad:s3cr3t-tok', 's3cr3t-tok'],
   ]) {
     const out = redactUrl(body);
     assert.equal(out.includes(gone), false, `the credential survived: ${out}`);
     assert.ok(out.includes(REDACTION_MARK), `nothing was redacted in ${out}`);
   }
+});
+
+test('the scheme pin writes back the prefix it absorbed', () => {
+  // The scheme rules are pinned at the START of a run, and a run may begin with
+  // a character a scheme may not: `[0-9+.-]*` inside the capture is what lets
+  // the match begin there anyway. Inside, because `$1` is written back - a
+  // prefix matched outside it would be deleted from the output rather than
+  // preserved, which is a corruption and not a redaction.
+  assert.equal(redactUrl('9a9b://x@'), `9a9b://${REDACTION_MARK}@`);
+  assert.equal(redactUrl('x9https://ghp_tok@h'), `x9https://${REDACTION_MARK}@h`);
+  assert.equal(redactUrl('v1.2+git://cad:tok@host/r.git'),
+    `v1.2+git://${REDACTION_MARK}@host/r.git`);
+  // And the cut twin, which ends the input instead of at an `@`.
+  assert.equal(redactUrl('9a9b://ghp_tok'), `9a9b://${REDACTION_MARK}`);
 });

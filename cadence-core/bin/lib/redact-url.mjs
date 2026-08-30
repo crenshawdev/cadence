@@ -84,6 +84,18 @@
 //      never produced a match that survived. Blocking it removes attempts, not
 //      matches.
 //
+//      The SCHEME rules need one more piece, because their first character is
+//      narrower than their continuation: a scheme must START with a letter but
+//      may CONTINUE with a digit, `+`, `.` or `-`. Pinning them at "not preceded
+//      by a letter" therefore left every letter in an alternating run a legal
+//      start - `'1a'x240000 + ':///@'` measured 99.6 SECONDS with that form.
+//      So the lookbehind excludes the whole continuation class, and a
+//      `[0-9+.-]*` INSIDE the capture absorbs whatever non-letter prefix the run
+//      begins with. Inside the capture and not before it: `$1` is written back,
+//      so a prefix left outside would be dropped from the output. `9a9b://x@`
+//      and `x9https://ghp_tok@h` both come back byte-identical to what the
+//      unpinned form produced.
+//
 // None of the three moves a verdict, and that is deliberate: the QUANTIFIERS
 // are still unbounded, because bounding them at 1024 was tried and it re-opened
 // EXP-02 (#215) - a 2000-character userinfo cut before its `@` came back
@@ -108,7 +120,7 @@ const MARK = REDACTION_MARK;
 //    credential IS the user part. The userinfo class excludes `/ ? # @` and
 //    whitespace, so an authority carrying no `@` (`https://host/r.git`) cannot
 //    match and comes back byte-identical.
-const SCHEME_USERINFO = /(?<![A-Za-z])([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
+const SCHEME_USERINFO = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
 
 // 2. Scheme-less: `<user>:<secret>@<host>`, which is what the two leaking forms
 //    above actually print, and also the scp-shaped `user:token@host:path`. The
@@ -153,7 +165,7 @@ const BARE_USERINFO = /(?<![^\s/:@])([^\s/:@]+:[^\s/@]+)@/g;
 //    One bounded quantifier per rule and no nesting, so the linear-time
 //    property this file's header pays for is unchanged. No `g`: end-of-input
 //    can match at most once.
-const SCHEME_USERINFO_CUT = /(?<![A-Za-z])([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@"']+)$/;
+const SCHEME_USERINFO_CUT = /(?<![A-Za-z0-9+.-])([0-9+.-]*[A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@"']+)$/;
 const BARE_USERINFO_CUT = /(?<![^\s/:@"'])[^\s/:@"']+:[^\s/@"']+$/;
 
 /**
