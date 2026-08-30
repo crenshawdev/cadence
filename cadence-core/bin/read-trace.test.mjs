@@ -287,6 +287,29 @@ test('a rescue that cannot READ states the bytes it did not carry, rather than n
   assert.equal(res.shortfall, unreadable, 'the cut tail was not stated in bytes');
 });
 
+test('a generation whose marker carries NO seal states an UNKNOWN shortfall, not silence', () => {
+  // The pre-upgrade shape, and the one that fires on the FIRST rotation after an
+  // upgrade rather than only in theory: a generation sealed by the code that
+  // shipped before `carried_bytes`. No offset can be guessed, so nothing is
+  // rescued - but the generation is destroyed either way, and destroying it with
+  // no field at all is the one silence the `shortfall` contract forbids.
+  const d = tmp();
+  // A v3.7.7-shaped marker: the rotation marker, with the field this phase added
+  // absent. A corrupt marker line reaches the same arm by the same route -
+  // neither yields a number.
+  const marker = { ts: TS, event: 'record_rotated', file: 'reads.1.jsonl' };
+  writeFileSync(readsPath(d), `${JSON.stringify(marker)}\n`);
+  padToReadsBound(d);
+  writeFileSync(rotatedReadsPath(d),
+    `${JSON.stringify({ ts: TS, tool: 'Read', target: '/raced-the-cut' })}\n`);
+
+  const res = rotateReads(d, 200);
+  assert.equal(res.rotated, true, `the rotation itself failed: ${res.reason}`);
+  assert.equal(res.reason, undefined, 'a rescue that could not start was reported as a failed rotation');
+  assert.equal('shortfall' in res, true, 'the generation was destroyed with nothing stated at all');
+  assert.equal(res.shortfall, null, 'an unguessable seal states the unknown, never a byte count');
+});
+
 test('a leftover sibling beside a record UNDER the bound is left exactly where it is', () => {
   const d = tmp();
   // The interleaving this refuses: another writer rotated while this one was

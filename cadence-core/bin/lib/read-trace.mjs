@@ -848,10 +848,14 @@ export function rotateReads(planningRoot, reserve) {
     // own marker and `carried_bytes` is the size it sealed the generation at.
     // Reading the head is what keeps this off an 8 MB read on the rotation path.
     //
-    // NO SEAL, NO RESCUE. A generation left by the code that shipped before this
-    // field carries no `carried_bytes`, and no offset can be guessed for it: the
-    // choices are failing closed at the cost of one old record, or re-appending
-    // a whole generation into a file readers actually read. It fails closed.
+    // NO SEAL, NO RESCUE - BUT NOT NO ANSWER. A generation left by the code that
+    // shipped before this field carries no `carried_bytes`, and no offset can be
+    // guessed for it: the choices are failing closed at the cost of one old
+    // record, or re-appending a whole generation into a file readers actually
+    // read. It fails closed, and states `shortfall: null` on the way out - the
+    // same "cut by an unknown amount" the failed-stat arm reports, because a
+    // generation destroyed with no field at all is exactly the silence the
+    // paragraph below refuses.
     //
     // AND IT NEVER DECIDES WHETHER THE ROTATION ROTATED. `reason` appears only
     // where the rotation failed outright, and a failed rescue is not that. But
@@ -890,7 +894,7 @@ export function rotateReads(planningRoot, reserve) {
           } catch { /* stated on `shortfall`, never thrown and never a `reason` */ }
           if (!done) shortfall = beyond;
         }
-      }
+      } else shortfall = null;
     }
     // Where the rescued lines leave the live record over `MAX_READS_BYTES` they
     // are carried anyway: refusing here would lose them for good, and the next

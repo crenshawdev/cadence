@@ -706,6 +706,40 @@ test('rotateTrace: a rescue that cannot READ the generation STATES the tail it c
     'fixture: the shortfall must be stating a tail that really was cut');
 });
 
+test('rotateTrace: a generation whose marker carries NO seal states an UNKNOWN shortfall', async () => {
+  // The pre-upgrade shape, and the one that fires on the FIRST rotation after
+  // an upgrade rather than only in theory: a generation sealed by the code that
+  // shipped before `carried_bytes`. No offset can be guessed, so nothing is
+  // rescued - but the generation is destroyed either way, and destroying it
+  // with no field at all is the one silence the `shortfall` contract forbids.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  rotatedOnce(dir);
+  appendFileSync(rotatedTracePath(dir), planted('racer'));
+
+  // Strip the field this phase added off the marker the FIRST cut wrote, which
+  // is the line the rescue reads its offset from. A corrupt marker line reaches
+  // the same arm by the same route - neither yields a number.
+  const live = readFileSync(tracePath(dir), 'utf8').split('\n');
+  const at = live.findIndex((l) => l && JSON.parse(l).event === ROTATION);
+  assert.ok(at >= 0, 'fixture: the first cut must have written a marker to strip');
+  const marker = JSON.parse(live[at]);
+  assert.equal(typeof marker.carried_bytes, 'number',
+    'fixture: the marker must be carrying a seal, or this row proves nothing');
+  delete marker.carried_bytes;
+  live[at] = JSON.stringify(marker);
+  writeFileSync(tracePath(dir), live.join('\n'));
+
+  padToBound(dir);
+  const res = rotateTrace(dir, 120);
+  assert.equal(res.rotated, true, 'a rescue that could not START changed whether the rotation rotated');
+  assert.equal('reason' in res, false, 'a rescue that could not start was reported as a failed rotation');
+  assert.equal('shortfall' in res, true, 'the generation was destroyed with nothing stated at all');
+  assert.equal(res.shortfall, null, 'an unguessable seal states the unknown, never a byte count');
+  assert.equal(carrying(tracePath(dir), 'racer') + carrying(rotatedTracePath(dir), 'racer'), 0,
+    'fixture: the shortfall must be stating a tail that really was cut');
+});
+
 // --- the rotation, on both reader envelopes (D-06) ---------------------------
 
 /** A planning root whose record has just rotated, with `plan` paired under it. */

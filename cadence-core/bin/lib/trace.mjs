@@ -982,10 +982,14 @@ export function rotateTrace(planningRoot, reserve) {
     // 1's own and `carried_bytes` is the size that cut sealed the generation at.
     // Everything past that offset arrived after rotation 1 stopped accounting.
     //
-    // NO SEAL, NO RESCUE. A generation left by the code that shipped before this
-    // field carries no `carried_bytes`, and no offset can be guessed for it: the
-    // choices are failing closed at the cost of one old event, or re-appending a
-    // whole generation into a file readers actually read. It fails closed.
+    // NO SEAL, NO RESCUE - BUT NOT NO ANSWER. A generation left by the code that
+    // shipped before this field carries no `carried_bytes`, and no offset can be
+    // guessed for it: the choices are failing closed at the cost of one old
+    // event, or re-appending a whole generation into a file readers actually
+    // read. It fails closed, and states `shortfall: null` on the way out - the
+    // same "cut by an unknown amount" the failed-stat arm reports, because a
+    // generation destroyed with no field at all is exactly the silence the
+    // `shortfall` paragraph below refuses.
     //
     // SKIP WHAT IS ALREADY HERE, which is the one difference from the loop
     // above. There a duplicate lands in the generation, a file nothing reads;
@@ -1048,7 +1052,7 @@ export function rotateTrace(planningRoot, reserve) {
           } catch { /* stated on `shortfall`, never thrown and never a `reason` */ }
           if (!done) shortfall = beyond;
         }
-      }
+      } else shortfall = null;
     }
     // Where the rescued lines leave the live record over the bound they are
     // carried anyway: that is the arm `freshRecord` already states, `renderTrace`
