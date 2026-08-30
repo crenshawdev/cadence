@@ -529,7 +529,9 @@ const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
  * @param {string} dir the planning directory, for the tree-aware spelling check
  * @param {any} opts
  * @returns {{n: string, trigger: string, discriminator: string, round: number,
- *            base: string, head: string} | null}
+ *            base: string, head: string, task?: string} | null}
+ *   `task` is present only on a fire that named one, so a phase fire's identity
+ *   is the shape it always was.
  */
 function fireIdentity(face, dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
