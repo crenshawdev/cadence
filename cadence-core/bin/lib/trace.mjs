@@ -668,9 +668,13 @@ function claimAbandoned(claim) {
  * here holding a stale one. Calling it directly IS a writer that decided to
  * rotate before another writer's rotation landed, which is the interleaving the
  * claim has to refuse. Nothing in the tree calls it but `appendEvent`.
- * @returns {{rotated: boolean, reason?: string}} `reason` ONLY where the
- *   rotation failed outright; losing the claim is `{rotated:false}` and the
- *   caller appends, because somebody else already made room.
+ * @returns {{rotated: boolean, reason?: string, shortfall?: number|null}}
+ *   `reason` ONLY where the rotation failed outright; losing the claim is
+ *   `{rotated:false}` and the caller appends, because somebody else already
+ *   made room. `shortfall` rides a rotation that DID rotate and states the
+ *   bytes of the destroyed generation its rescue could not carry - a number, or
+ *   `null` where even their count could not be established. Absent means the
+ *   tail is complete.
  */
 export function rotateTrace(planningRoot, reserve) {
   const file = tracePath(planningRoot);
@@ -680,6 +684,13 @@ export function rotateTrace(planningRoot, reserve) {
   let temp = null;
   /** @type {string|null} */
   let evicted = null;
+  // The evicted path, but ONLY where what was evicted is a leftover GENERATION.
+  // That is the one eviction with bytes worth rescuing, and it has to be told
+  // apart from the abandoned-claim eviction: there the evicted path is a second
+  // name for the LIVE inode, so a rescue reading it would re-append the live
+  // record to itself at an offset that seals some other generation entirely.
+  /** @type {string|null} */
+  let leftover = null;
   const claim = rotationClaimPath(planningRoot);
   /** @type {string|null} */
   let dated = null;
@@ -849,6 +860,7 @@ export function rotateTrace(planningRoot, reserve) {
         const path = `${sibling}.evict.${priv}`;
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
+        if (!abandoned) leftover = path;
         // CONFIRM AFTER CLAIMING, on the abandoned arm only, and before
         // anything is read or written - the same shape `lib/capture-file.mjs`
         // uses to break a stale lock. The rename above may have taken the
@@ -922,7 +934,94 @@ export function rotateTrace(planningRoot, reserve) {
       try { appendFileSync(file, whole); } catch { break; }
       seen += whole.length;
     }
-    return { rotated: true };
+
+    // THE SECOND WINDOW, closed - the one the loop above cannot reach (D-05).
+    // The loss is a TWO-STEP. Rotation 1 breaks off its carry-back the instant
+    // the sibling stops growing, so a writer whose append landed in the old
+    // inode a moment later has its bytes ONLY in the generation. Rotation 2 then
+    // evicts that generation and the `finally` below unlinks it: the event is in
+    // neither file, and nothing ever said so. So the writer that is about to
+    // DESTROY a leftover generation finishes the carry-back the earlier rotation
+    // started, here, at the last moment it can - after the swap, into the live
+    // path, whole lines only, exactly as the loop above does.
+    //
+    // WHERE IT STARTS FROM. `carried` is the record this cut carried away, which
+    // is the record rotation 1 wrote, so its newest rotation marker is rotation
+    // 1's own and `carried_bytes` is the size that cut sealed the generation at.
+    // Everything past that offset arrived after rotation 1 stopped accounting.
+    //
+    // NO SEAL, NO RESCUE. A generation left by the code that shipped before this
+    // field carries no `carried_bytes`, and no offset can be guessed for it: the
+    // choices are failing closed at the cost of one old event, or re-appending a
+    // whole generation into a file readers actually read. It fails closed.
+    //
+    // SKIP WHAT IS ALREADY HERE, which is the one difference from the loop
+    // above. There a duplicate lands in the generation, a file nothing reads;
+    // here it lands in the live record, where a second copy of a bracket half
+    // would change what `renderTrace` counts. Rotation 1's own carry-back
+    // already put part of this delta into the record being carried, so the
+    // overlap is expected rather than exceptional.
+    //
+    // AND IT NEVER DECIDES WHETHER THE ROTATION ROTATED. This function's
+    // contract is that `reason` appears only where the rotation failed outright,
+    // and a failed rescue is not that. But it must not be SILENT either - a tail
+    // that cannot be completed has to be STATED, or the record is short by an
+    // amount no reader can learn. Every failure arm - the stat, the read, the
+    // line split, the append - reports `shortfall`: the bytes past the sealed
+    // offset this call did not carry, taken from the stat rather than from what
+    // was successfully read, because a read that threw established no count at
+    // all. Where even the stat fails, `shortfall` is `null`: the tail was cut by
+    // an unknown amount, which is still an answer. A caller that ignores the
+    // field behaves exactly as it did before.
+    /** @type {number|null|undefined} */
+    let shortfall;
+    if (leftover) {
+      /** @type {number|null} the offset rotation 1 sealed its generation at */
+      let sealed = null;
+      const prior = carried.split('\n');
+      for (let i = prior.length - 1; i >= 0; i--) {
+        const line = prior[i].trim();
+        if (!line) continue;
+        let e;
+        try { e = JSON.parse(line); } catch { continue; }
+        if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+        if (e.family !== 'lifecycle' || e.event !== ROTATION) continue;
+        // The NEWEST marker decides, and a non-numeric or negative seal is no
+        // seal - a hand-edited or foreign-producer line must not aim a read.
+        if (typeof e.carried_bytes === 'number' && Number.isFinite(e.carried_bytes)
+          && e.carried_bytes >= 0) sealed = e.carried_bytes;
+        break;
+      }
+      if (sealed !== null) {
+        /** @type {number|null} */
+        let beyond = null;
+        try { beyond = Math.max(0, statSync(leftover).size - sealed); } catch { beyond = null; }
+        if (beyond === null) shortfall = null;
+        else if (beyond > 0) {
+          let done = false;
+          try {
+            const buf = Buffer.alloc(beyond);
+            const fd = openSync(leftover, 'r');
+            let read = 0;
+            try { read = readSync(fd, buf, 0, buf.length, sealed); } finally { closeSync(fd); }
+            const delta = buf.subarray(0, read);
+            const cut = delta.lastIndexOf(0x0a);
+            if (cut >= 0) {
+              const already = new Set(prior);
+              const rescue = delta.subarray(0, cut + 1).toString('utf8')
+                .split('\n').filter((l) => l && !already.has(l));
+              if (rescue.length) appendFileSync(file, `${rescue.join('\n')}\n`);
+              done = true;
+            }
+          } catch { /* stated on `shortfall`, never thrown and never a `reason` */ }
+          if (!done) shortfall = beyond;
+        }
+      }
+    }
+    // Where the rescued lines leave the live record over the bound they are
+    // carried anyway: that is the arm `freshRecord` already states, `renderTrace`
+    // reports it as `capped`, and the next append rotates again.
+    return shortfall === undefined ? { rotated: true } : { rotated: true, shortfall };
   } catch (e) {
     return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
   } finally {

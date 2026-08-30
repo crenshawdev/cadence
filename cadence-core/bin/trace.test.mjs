@@ -584,6 +584,97 @@ test('appendEvent: a SECOND rotation replaces the generation, so the pair stays 
   assert.deepEqual(lines(dir).filter((e) => e.writer).map((e) => e.writer), ['a', 'b']);
 });
 
+/** One well-formed event line of the run in flight, as a racing writer wrote it. */
+const planted = (writer) => `${JSON.stringify({
+  corr: '1-abc1234', phase: 1, ts: '2026-08-30T00:00:00.000Z',
+  family: 'routing', event: 'resolve', writer,
+})}\n`;
+
+/** A root that has rotated ONCE, with the run in flight anchored under it. */
+function rotatedOnce(dir) {
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+}
+
+/** How many lines of a file carry this writer's name. */
+const carrying = (f, writer) => (existsSync(f)
+  ? readFileSync(f, 'utf8').split('\n').filter((l) => l.includes(`"${writer}"`)).length
+  : 0);
+
+test('appendEvent: a second rotation carries back the event that only reached the generation', () => {
+  // The two-step loss (D-05). Rotation 1's carry-back stops the instant the
+  // sibling stops growing, so a writer that appended into the old inode a
+  // moment later left its bytes ONLY in the generation. Rotation 2 destroys
+  // that generation - and before this phase the event was then in NEITHER file.
+  const dir = root();
+  rotatedOnce(dir);
+  appendFileSync(rotatedTracePath(dir), planted('racer'));
+
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
+
+  const live = carrying(tracePath(dir), 'racer');
+  const generation = carrying(rotatedTracePath(dir), 'racer');
+  assert.equal(live + generation, 1,
+    `the racing writer's event is in ${live + generation === 0 ? 'NEITHER file' : 'both files'}`);
+  assert.equal(live, 1, 'the rescue put it somewhere other than the record readers read');
+  // The rescued line parses as an ordinary event of the run in flight.
+  assert.equal(lines(dir).filter((e) => e.writer === 'racer').length, 1);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
+});
+
+test('appendEvent: the rescue never puts back a line the live record already carries', () => {
+  // Rotation 1's own carry-back leaves a duplicate copy in the generation on
+  // purpose - "a duplicate copy in a file nothing reads costs nothing". The
+  // rescue reads that same delta, and a second copy in the LIVE record is not
+  // free: a bracket half counted twice changes what `renderTrace` reports.
+  const dir = root();
+  rotatedOnce(dir);
+  const dup = readFileSync(tracePath(dir), 'utf8').split('\n')
+    .filter(Boolean).find((l) => l.includes('"writer":"a"'));
+  assert.ok(dup, 'fixture: the live record must already carry the line being planted');
+  appendFileSync(rotatedTracePath(dir), `${dup}\n`);
+
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
+
+  assert.equal(lines(dir).filter((e) => e.writer === 'a').length, 1,
+    'the rescue re-appended a line the record already held');
+});
+
+test('rotateTrace: a rescue that cannot READ the generation STATES the tail it cut', async () => {
+  // A rescue that fails must not be SILENT. It never changes whether the
+  // rotation rotated - `reason` is for a rotation that failed outright - but
+  // the bytes it could not carry are stated, and they come off the stat rather
+  // than off a read that never established a count.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  rotatedOnce(dir);
+  appendFileSync(rotatedTracePath(dir), planted('racer'));
+
+  const marker = lines(dir).find((e) => e.event === ROTATION);
+  const beyond = statSync(rotatedTracePath(dir)).size - marker.carried_bytes;
+  assert.ok(beyond > 0, 'fixture: the generation must have grown past its seal');
+
+  chmodSync(rotatedTracePath(dir), 0o000);
+  // Running as root defeats the mode bits; the row would then assert nothing.
+  try {
+    accessSync(rotatedTracePath(dir), constants.R_OK);
+    chmodSync(rotatedTracePath(dir), 0o600);
+    return;
+  } catch { /* not root, carry on */ }
+
+  padToBound(dir);
+  const res = rotateTrace(dir, 120);
+  assert.equal(res.rotated, true, 'a failed rescue changed whether the rotation rotated');
+  assert.equal('reason' in res, false, 'a failed rescue was reported as a failed rotation');
+  assert.equal(res.shortfall, beyond,
+    'the cut tail was destroyed silently, or counted from a read that never happened');
+  assert.equal(carrying(tracePath(dir), 'racer') + carrying(rotatedTracePath(dir), 'racer'), 0,
+    'fixture: the shortfall must be stating a tail that really was cut');
+});
+
 // --- the rotation, on both reader envelopes (D-06) ---------------------------
 
 /** A planning root whose record has just rotated, with `plan` paired under it. */
