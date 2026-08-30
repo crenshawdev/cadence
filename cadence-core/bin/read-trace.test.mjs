@@ -232,6 +232,60 @@ test('the SECOND rotation evicts the generation the first one left', () => {
   assert.equal(sibling.includes('/gen-one'), false, 'the first generation survived in the sibling');
 });
 
+test('a record that only reached the generation SURVIVES the second rotation (AC1)', () => {
+  // The two-step loss D-05 names. This record has no carry-back, so a writer
+  // that appended during a claim window is only in the sibling - the bar the
+  // race row accepts. The SECOND rotation evicts that sibling and unlinks it,
+  // and the record is in neither file with nothing said. The writer about to
+  // destroy the generation finishes the carry the first cut never made.
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-two' }).written, true);
+
+  // A racing writer's record, landing in the OLD inode after the cut sealed it.
+  // Hand-planted rather than raced: forcing the interleaving deterministically
+  // is what makes this a reproduction rather than a 1-in-60 flake (D-10).
+  const racer = `${JSON.stringify({ ts: TS, tool: 'Read', agent: 'coordinator', target: '/raced-the-cut' })}\n`;
+  appendFileSync(rotatedReadsPath(d), racer);
+
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-three' }).written, true);
+
+  const live = readFileSync(readsPath(d), 'utf8');
+  const sibling = readFileSync(rotatedReadsPath(d), 'utf8');
+  const hits = (t) => t.split('\n').filter((l) => l.includes('/raced-the-cut')).length;
+  assert.equal(hits(live) + hits(sibling), 1,
+    hits(live) + hits(sibling) === 0
+      ? "the racing writer's record is in NEITHER file"
+      : "the racing writer's record was carried twice");
+  // It is in the LIVE record, because that is the only file that outlives the
+  // eviction - and it parses, so a reader gets the record and not a torn line.
+  assert.equal(hits(live), 1);
+  assert.ok(live.split('\n').some((l) => l && JSON.parse(l).target === '/raced-the-cut'));
+});
+
+test('a rescue that cannot READ states the bytes it did not carry, rather than nothing', () => {
+  // The goal is a tail that is complete OR a shortfall that is stated. A rescue
+  // that fails before it reads a byte still knows the size past the seal, so
+  // that is what it reports - and the rotation still rotated.
+  const d = tmp();
+  const marker = { ts: TS, event: 'record_rotated', file: 'reads.1.jsonl', carried_bytes: 0 };
+  writeFileSync(readsPath(d), `${JSON.stringify(marker)}\n`);
+  padToReadsBound(d);
+  // A generation nothing can read past its own offset: `statSync` answers with
+  // a size, `readSync` refuses. The seal is 0, so every one of those bytes is
+  // beyond it.
+  mkdirSync(rotatedReadsPath(d));
+  const unreadable = statSync(rotatedReadsPath(d)).size;
+  assert.ok(unreadable > 0, 'fixture: the unreadable generation has no bytes past the seal');
+
+  const res = rotateReads(d, 200);
+  assert.equal(res.rotated, true, `the rotation itself failed: ${res.reason}`);
+  assert.equal(res.reason, undefined, 'a failed rescue was reported as a failed rotation');
+  assert.equal(res.shortfall, unreadable, 'the cut tail was not stated in bytes');
+});
+
 test('a leftover sibling beside a record UNDER the bound is left exactly where it is', () => {
   const d = tmp();
   // The interleaving this refuses: another writer rotated while this one was

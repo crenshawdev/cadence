@@ -30,8 +30,8 @@
 'use strict';
 
 import {
-  appendFileSync, existsSync, linkSync, lstatSync, renameSync, statSync, unlinkSync,
-  writeFileSync,
+  appendFileSync, closeSync, existsSync, linkSync, lstatSync, openSync, readSync, renameSync,
+  statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 // The ONE statement of which agent FILE carries which rung of which role. The
@@ -441,6 +441,39 @@ function readsRotationInFlight(file, sibling) {
 }
 
 /**
+ * The offset the cut that wrote `record` sealed its own generation at, or
+ * `null` where that record names none.
+ *
+ * The HEAD of the file and never the whole of it. A record a rotation wrote
+ * starts with the marker and nothing else, so the first line is the only place
+ * a seal can be - and this runs on the rotation path, where reading an 8 MB
+ * record to find one number would be the cost the bound exists to avoid.
+ *
+ * `null` is the fail-closed answer for every unreadable, unparseable,
+ * marker-less or non-numeric case, including a generation sealed by the code
+ * that shipped before `carried_bytes` existed. The consumer rescues nothing
+ * there, because a guessed offset re-appends a whole generation.
+ * @param {string} record path to a record whose first line may be a marker
+ * @returns {number|null}
+ */
+function sealOf(record) {
+  try {
+    const buf = Buffer.alloc(4096);
+    const fd = openSync(record, 'r');
+    let read = 0;
+    try { read = readSync(fd, buf, 0, buf.length, 0); } finally { closeSync(fd); }
+    const nl = buf.subarray(0, read).indexOf(0x0a);
+    if (nl < 0) return null;
+    const head = JSON.parse(buf.subarray(0, nl).toString('utf8'));
+    if (!isReadsRotationMarker(head)) return null;
+    const at = head.carried_bytes;
+    return typeof at === 'number' && Number.isFinite(at) && at >= 0 ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Claim the record, swap a fresh one in, and hand the old generation to
  * `ROTATED_READS_FILE`.
  *
@@ -490,12 +523,15 @@ function readsRotationInFlight(file, sibling) {
  * the leftover-generation eviction below, which is the last moment the bytes
  * past that offset can be carried anywhere.
  *
- * NOTHING CROSSES THE CUT (D-02). The fresh record is one line - the marker -
- * and there is no `freshRecord` analogue and no run-in-flight tail, because
- * nothing scans this record backwards: `readReadsRecords` reads it whole and
- * `joinReads` joins by timestamp containment against the TRACE's brackets. The
- * trace carries a tail only because `correlationId` scans backward for its
- * anchor.
+ * NOTHING CROSSES THE CUT (D-02), with ONE stated exception. The fresh record
+ * is one line - the marker - and there is no `freshRecord` analogue and no
+ * run-in-flight tail, because nothing scans this record backwards:
+ * `readReadsRecords` reads it whole and `joinReads` joins by timestamp
+ * containment against the TRACE's brackets. The trace carries a tail only
+ * because `correlationId` scans backward for its anchor. The exception is the
+ * rescue at the EVICTION of a leftover generation, below: bytes the earlier
+ * cut's seal shows no rotation ever accounted for, carried at the last moment
+ * they exist. It never runs on the ordinary rotation path.
  *
  * @param {string} planningRoot
  * @param {number} reserve the pending line's byte length, what the fresh record
@@ -504,9 +540,13 @@ function readsRotationInFlight(file, sibling) {
  * losing arms cannot be reached through `appendRead`, which re-stats the record
  * and so can never be made to arrive here holding a stale one. Nothing but
  * `appendRead` and the tests may call it.
- * @returns {{rotated: boolean, reason?: string}} `reason` ONLY where the
- *   rotation failed outright; losing the claim is `{rotated:false}` and the
- *   caller appends, because somebody else already made room.
+ * @returns {{rotated: boolean, reason?: string, shortfall?: number|null}}
+ *   `reason` ONLY where the rotation failed outright; losing the claim is
+ *   `{rotated:false}` and the caller appends, because somebody else already
+ *   made room. `shortfall` rides a rotation that DID rotate and states the
+ *   bytes of the destroyed generation its rescue could not carry - a number, or
+ *   `null` where even their count could not be established. Absent means the
+ *   tail is complete.
  */
 export function rotateReads(planningRoot, reserve) {
   const file = readsPath(planningRoot);
@@ -517,6 +557,13 @@ export function rotateReads(planningRoot, reserve) {
   let temp = null;
   /** @type {string|null} */
   let evicted = null;
+  // The evicted path, but ONLY where what was evicted is a leftover GENERATION.
+  // That is the one eviction with bytes worth rescuing, and it has to be told
+  // apart from the abandoned-claim eviction: there the evicted path is a second
+  // name for the LIVE inode, so a rescue reading it would re-append the live
+  // record to itself at an offset that seals some other generation entirely.
+  /** @type {string|null} */
+  let leftover = null;
   /** @type {string|null} */
   let dated = null;
   // The `mtime` THIS process stamped on the sidecar, so the confirm below can
@@ -676,6 +723,7 @@ export function rotateReads(planningRoot, reserve) {
         const path = join(planningRoot, `${READS_EVICT_TEMP_FILE}.${priv}`);
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
+        if (!abandoned) leftover = path;
         // CONFIRM AFTER CLAIMING, on the ABANDONED arm only, and before
         // anything is read or written. The rename above may have taken the
         // sibling from a claimant that arrived between the age read and here: a
@@ -735,7 +783,74 @@ export function rotateReads(planningRoot, reserve) {
     renameSync(temp, file);
     temp = null;
     held = false;
-    return { rotated: true };
+
+    // THE SECOND WINDOW, closed - and the ONE thing that ever crosses the cut
+    // (D-05). The loss is a TWO-STEP. This record has no carry-back by design,
+    // so a writer that appended into the old inode while an earlier cut held its
+    // claim has its bytes ONLY in the generation - which the "present across the
+    // pair" bar accepts. Then a second rotation evicts that generation and the
+    // `finally` below unlinks it: the record is in NEITHER file, and nothing
+    // ever said so. So the writer about to DESTROY a leftover generation
+    // finishes the carry the earlier cut never made, here, at the last moment it
+    // can - after the swap, into the live path, whole lines only.
+    //
+    // This does NOT contradict "nothing crosses the cut" above. The ordinary
+    // rotation path still writes the marker and nothing else; this arm runs only
+    // at an eviction, and only over bytes no cut ever accounted for.
+    //
+    // WHERE IT STARTS FROM. `sibling` is now the record this cut carried away,
+    // which is the record the earlier cut wrote, so its FIRST line is that cut's
+    // own marker and `carried_bytes` is the size it sealed the generation at.
+    // Reading the head is what keeps this off an 8 MB read on the rotation path.
+    //
+    // NO SEAL, NO RESCUE. A generation left by the code that shipped before this
+    // field carries no `carried_bytes`, and no offset can be guessed for it: the
+    // choices are failing closed at the cost of one old record, or re-appending
+    // a whole generation into a file readers actually read. It fails closed.
+    //
+    // AND IT NEVER DECIDES WHETHER THE ROTATION ROTATED. `reason` appears only
+    // where the rotation failed outright, and a failed rescue is not that. But
+    // it must not be SILENT either - a tail that cannot be completed has to be
+    // STATED, or the record is short by an amount no reader can learn. Every
+    // failure arm - the stat, the read, the line split, the append - reports
+    // `shortfall`: the bytes past the sealed offset this call did not carry,
+    // taken from the stat rather than from what was read, because a read that
+    // threw established no count at all. Where even the stat fails, `shortfall`
+    // is `null` - the tail was cut by an unknown amount, which is still an
+    // answer. A caller that ignores the field behaves exactly as it did before.
+    /** @type {number|null|undefined} */
+    let shortfall;
+    if (leftover) {
+      const at = sealOf(sibling);
+      if (at !== null) {
+        /** @type {number|null} */
+        let beyond = null;
+        try { beyond = Math.max(0, statSync(leftover).size - at); } catch { beyond = null; }
+        if (beyond === null) shortfall = null;
+        else if (beyond > 0) {
+          let done = false;
+          try {
+            const buf = Buffer.alloc(beyond);
+            const fd = openSync(leftover, 'r');
+            let read = 0;
+            try { read = readSync(fd, buf, 0, buf.length, at); } finally { closeSync(fd); }
+            const delta = buf.subarray(0, read);
+            // WHOLE LINES ONLY, so a torn tail is dropped rather than appended
+            // as a half-record the reader would have to skip.
+            const cut = delta.lastIndexOf(0x0a);
+            if (cut >= 0) {
+              appendFileSync(file, delta.subarray(0, cut + 1));
+              done = true;
+            }
+          } catch { /* stated on `shortfall`, never thrown and never a `reason` */ }
+          if (!done) shortfall = beyond;
+        }
+      }
+    }
+    // Where the rescued lines leave the live record over `MAX_READS_BYTES` they
+    // are carried anyway: refusing here would lose them for good, and the next
+    // append rotates.
+    return shortfall === undefined ? { rotated: true } : { rotated: true, shortfall };
   } catch (e) {
     return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
   } finally {
