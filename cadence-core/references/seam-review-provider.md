@@ -37,6 +37,14 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   1024-byte excerpt, always a string, never the body. On `no-key`
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
+- The payload is FENCED before the cap: every string field crosses one filter -
+  URL userinfo, an `authorization` echo, a credential-shaped `name=value` - so
+  `over-cap` measures what actually leaves the machine. `redactions: <n>` on the
+  envelope and on the `provider/request` event says how many spans went, written
+  only when non-zero; relay it, because that reviewer read less than the caller
+  composed. By SHAPE, never a known-token prefix list, so a bare token with no
+  credential-shaped name beside it crosses - do not send an artifact you know
+  holds one.
 - The default backend `claude-subagent` does NOT use this seam - it goes
   through spawn-agent with a fresh-context, refute-prompted reviewer, and takes
   that seam's turn cap as its bound in place of anything stated here.
