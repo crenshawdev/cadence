@@ -4,7 +4,7 @@
 // its verdict from them.
 'use strict';
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fail, ok, phaseSpellingCollision } from './core.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
@@ -135,7 +135,24 @@ function cmdRiskCarry(dir, opts) {
   const skipped = [];
   for (const name of moving) {
     const to = join(dest, name);
-    if (!lstatSync(to, { throwIfNoEntry: false })) { copying.push(name); continue; }
+    const destStat = lstatSync(to, { throwIfNoEntry: false });
+    if (!destStat) { copying.push(name); continue; }
+    // A REGULAR FILE OR NOTHING, asked HERE rather than left to the comparison
+    // below - the two-level rail above is the same rail, and this is it
+    // reaching the individual entries. `lstatSync` answers "something is here"
+    // for a symlink, but the comparison is a `readFileSync` and `readFileSync`
+    // FOLLOWS: a link pointed back at `phases/<N>/<name>` compares
+    // byte-identical to its own target and would be marked `skipped`, and then
+    // `milestone-prune` deletes that target and the carried ruling is a
+    // dangling link the gate cannot read at the moment it has to decide.
+    if (!destStat.isFile()) {
+      return fail('carry-dest-unusable',
+        `risk-carry/${n}/${name} exists and is not a regular file`
+        + `${destStat.isSymbolicLink() ? ' (it is a symlink, which the prune leaves dangling however its target compares today)' : ''}`
+        + ' - move or remove it, then re-run',
+        'clear that path and re-run BEFORE milestone-prune - nothing has been copied yet, and the'
+        + ' rulings are still in the phase directory the prune deletes');
+    }
     let same = false;
     try { same = readFileSync(to).equals(readFileSync(join(src, name))); }
     catch { same = false; }
@@ -147,19 +164,14 @@ function cmdRiskCarry(dir, opts) {
       + ' record of what was ruled, and the gate reads it at close time');
   }
 
-  // ALL-OR-NOTHING, staged beside the destination and renamed in. `copyFileSync`
-  // is one syscall per file, so a partial failure mid-loop would leave some
-  // rulings carried and some not - and the close that follows would then derive
-  // its verdict from a set nobody chose, silently. `renameSync` within one
-  // directory is the cheapest atomic-enough commit available here.
+  // A plain copy loop, the shape `deferred carry` uses for its rename loop, and
+  // no staging directory in front of it. A partial carry here SELF-HEALS on the
+  // next run, which is what the skip-identical rule above buys: what already
+  // arrived is skipped and the rest is copied. Staging would put a transient
+  // directory inside the very destination the gate's caller globs, to protect
+  // against a case a re-run already fixes.
   mkdirSync(dest, { recursive: true });
-  if (copying.length) {
-    const stage = mkdtempSync(join(dest, '.staging-'));
-    try {
-      for (const name of copying) copyFileSync(join(src, name), join(stage, name));
-      for (const name of copying) renameSync(join(stage, name), join(dest, name));
-    } finally { rmSync(stage, { recursive: true, force: true }); }
-  }
+  for (const name of copying) copyFileSync(join(src, name), join(dest, name));
   return ok({
     phase: n,
     carried: copying.map((name) => ({ from: `phases/${n}/${name}`, to: `risk-carry/${n}/${name}` })),

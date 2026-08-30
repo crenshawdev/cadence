@@ -16,7 +16,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync,
   symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -210,6 +210,26 @@ test('risk-carry: a symlink squatting the PARENT is refused too', () => {
   assert.deepEqual(readdirSync(join(dir, 'elsewhere')), [],
     'the carry built its destination outside the planning root');
   assert.equal(existsSync(join(dir, 'phases', '3', review('plan-1'))), true);
+});
+
+test('risk-carry: a symlink at a carried NAME is refused, never read as already carried', () => {
+  // The per-entry half of the destination rail. `lstatSync` answers "something
+  // is here" for a symlink, but the byte comparison that follows is a
+  // `readFileSync` and `readFileSync` FOLLOWS: a link pointed back at the phase
+  // directory compares byte-identical to its own target, so it would be marked
+  // `skipped` - and `milestone-prune` then deletes the target, leaving the
+  // carried ruling a dangling link the gate cannot read at close time.
+  const dir = carryTree(3, { [record('plan-1')]: recordBody('plan-1', 1, [entry()]) });
+  mkdirSync(join(dir, 'risk-carry', '3'), { recursive: true });
+  symlinkSync(join(dir, 'phases', '3', record('plan-1')),
+    join(dir, 'risk-carry', '3', record('plan-1')));
+
+  const r = riskCarry(dir, ['--phase', '3']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'carry-dest-unusable');
+  assert.match(r.detail, /is not a regular file/);
+  assert.equal(lstatSync(join(dir, 'risk-carry', '3', record('plan-1'))).isSymbolicLink(), true,
+    'the refusal overwrote the link instead of leaving it for the caller to clear');
 });
 
 test('risk-carry: a mistyped phase spelling refuses before anything is copied', () => {
