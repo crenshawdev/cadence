@@ -9,7 +9,7 @@
 // alone, and it would make `detail` useless for the thing it exists for.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { redactUrl, redactCredentials } from './lib/redact-url.mjs';
+import { redactUrl, redactCredentials, REDACTION_MARK } from './lib/redact-url.mjs';
 
 /** The credential halves every arm below asserts are absent. */
 const USER = 'cad';
@@ -322,4 +322,46 @@ test('redactCredentials: a quoted value cut before its closing quote still goes'
   // And a lone unmatched quote carrying no credential name is still not a
   // credential span.
   assert.equal(redactCredentials('the "quick brown fox'), 'the "quick brown fox');
+});
+
+test('REDACTION_MARK is the string both redactors actually write', () => {
+  // A caller that COUNTS redactions - review-provider.mjs's outbound payload
+  // fence - reads this constant rather than a copy of the literal, so it has to
+  // be the same string the two functions put on the page. A drift here would
+  // make that fence report zero on a payload it had redacted.
+  assert.ok(redactUrl('git://cad:s3cr3t-tok@host.invalid/r.git').includes(REDACTION_MARK));
+  assert.ok(redactCredentials('{"password":"hunter2"}').includes(REDACTION_MARK));
+});
+
+test('cost: a whole ARTIFACT is linear, not quadratic (#167)', () => {
+  // WATCHED FAILING. Before the whitespace segmentation and the literal
+  // pre-checks, `redactUrl` backtracked once per start position: measured
+  // 2026-08-30, 431ms on 16,000 characters, 6.4s on 64,000 and 25.5s on
+  // 128,000 - so a review payload at the 120,000-token default cap (~480,000
+  // characters) took minutes and hung the suite outright.
+  //
+  // This is a COST arm, and the bound is deliberately loose - two orders of
+  // magnitude above the 9ms the shipped form measures - so it fails on the
+  // return of the quadratic walk and not on a slow machine or a cold JIT.
+  const cases = {
+    'no whitespace at all, the base64 / hash shape': 'A'.repeat(480000),
+    'a minified bundle, every delimiter present': 'a:b/c;d(e)'.repeat(48000),
+    'an ordinary diff of ordinary code': Array(6000).fill(
+      '+  const value = compute(alpha, beta); // https://cad:tok@host.invalid/r.git').join('\n'),
+    'dense @ with no other delimiter': ('x'.repeat(100) + '@').repeat(4752),
+  };
+  for (const [name, body] of Object.entries(cases)) {
+    const started = Date.now();
+    const out = redactCredentials(redactUrl(body));
+    const ms = Date.now() - started;
+    assert.ok(ms < 2000, `${name}: the fence took ${ms}ms on ${body.length} characters`);
+    assert.ok(out.length > 0, `${name}: redacted to nothing`);
+  }
+  // And the coverage the speed is not allowed to cost: the credential in the
+  // ordinary-diff case is still gone, at that size, through the same call.
+  const diff = Array(6000).fill(
+    '+  const value = compute(alpha, beta); // https://cad:tok@host.invalid/r.git').join('\n');
+  const out = redactCredentials(redactUrl(diff));
+  assert.equal(out.includes('cad:tok'), false, 'the userinfo survived at artifact scale');
+  assert.ok(out.includes('compute(alpha, beta)'), 'the code a reviewer needs was eaten');
 });
