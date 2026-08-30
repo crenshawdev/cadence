@@ -200,3 +200,15 @@ CLEAN rather than erroring:
   copy is TRANSIENT and never staged (the `/cad-land` that merges deletes it at
   its step 4, never the close that halted): committed, it would hard-halt every
   later land on an answered finding.
+
+**One pre-`risk-carry` leftover clears BY HAND.** Before that carry existed,
+`/cad-milestone` unioned every phase's survivors into one aggregate
+`.planning/REVIEW-risk_surface-<label>.md` and deleted it at its step 7; step 7
+deletes nothing now, so a close interrupted before this version can leave that
+aggregate at the `.planning/` root. It is a union of RAW findings under no
+discriminator, so no record can ever sit beside it: it reads `unruled` and halts
+every unattended close, which is the SAFE answer, because it may still carry a
+blocker nobody settled. Nothing deletes it for the user, for that same reason -
+an aggregate cleared unread is the merge-over-a-blocker the gate exists to stop.
+The remedy is one act per repository, stated at `/cad-land`'s own gate bullet:
+read it, settle whatever is still genuinely unfixed, delete the file.

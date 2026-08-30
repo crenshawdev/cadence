@@ -1454,11 +1454,38 @@ test('LND-02: cad-land 3(b) unions the RULINGS from both roots, not the review f
     "the bullet dropped the asymmetry v3.7.7's phase 2 forces - a round-1 REVIEW whose only "
     + 'record is `-r2.json` - so a strict same-round test halts a close that was fully ruled');
 
+  // The legacy root aggregate is a halt WITH A REMEDY, never a permanent one.
+  // `.planning/REVIEW-risk_surface-<label>.md` is what a pre-`risk-carry`
+  // /cad-milestone wrote - ONE union of RAW findings under no discriminator -
+  // so no ADJUDICATION-*.json can ever sit beside it and it lands in `unruled`
+  // at every close. Both ways of leaving it there are bugs: scanned with no
+  // remedy stated it halts every unattended close forever, and dropped from the
+  // scan a real leftover blocker goes invisible. The bullet has to do both.
+  assert.ok(bullet.includes('.planning/REVIEW-risk_surface-*.md'),
+    'cad-land stopped scanning the legacy `.planning/` root aggregate, so an interrupted '
+    + 'pre-`risk-carry` close leaves a file that may carry an unfixed blocker and no close '
+    + 'ever looks at it again');
+  assert.match(bullet, /can ever sit beside it/,
+    'the bullet no longer says the legacy aggregate can NEVER be ruled, so a coordinator '
+    + 'retries the close waiting for an adjudication that cannot exist');
+  assert.match(bullet, /ONCE and BY HAND/,
+    'the bullet no longer states who answers the legacy halt, which is the whole difference '
+    + 'between a one-time gate and a permanent one');
+  assert.match(bullet, /then delete the file/,
+    'the bullet no longer names the act that clears the legacy halt, so one stale '
+    + 'pre-upgrade file halts every unattended close forever with no remedy');
+
   // The same rule, in the reference a reader consults instead of this bullet.
   const ref = doc('cadence-core', 'references', 'risk-surface.md');
   assert.doesNotMatch(ref, /no sibling record of the same basename/,
     'risk-surface.md still states the basename pairing no filename pair can satisfy, so the '
     + 'bug returns through the reference door');
+  assert.match(ref, /REVIEW-risk_surface-<label>\.md/,
+    'risk-surface.md says nothing about the legacy root aggregate, so the reference that '
+    + 'documents this pairing disagrees with the gate bullet that halts on it');
+  assert.doesNotMatch(ref, /step 7 deletes (?:it|this|the)/,
+    'risk-surface.md claims milestone.md step 7 deletes a carried file again. Step 7 deletes '
+    + 'nothing now, and a stale cleanup claim is how a permanent halt gets designed in');
 });
 
 test('progress.md: the deferred count is read off the envelope at both its sites', () => {

@@ -134,8 +134,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
      or overridden, and halting on them halts on work already done.
      Then name on `unruled` every `REVIEW-risk_surface*.md` nothing ruled - from
      those two roots plus a legacy `.planning/REVIEW-risk_surface-*.md` an
-     interrupted older close may have left behind. A review and its record never
-     share a basename, so do not look for one:
+     interrupted pre-`risk-carry` close may have left at the `.planning/` root.
+     A review and its record never share a basename, so do not look for one:
      `REVIEW-<trigger>-<discriminator>[-rN].md` is ruled by
      `ADJUDICATION-<trigger>-<discriminator>[-rN].json` in the same directory -
      same trigger, same discriminator, same round, with `REVIEW-` swapped for
@@ -147,8 +147,18 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
      `ADJUDICATION-risk_surface-plan-1-r2.json` beside it. So a review is
      `unruled` only when its `<trigger>-<discriminator>` has no record at its own
      round and none at any later one. A fire nothing ruled says nothing about
-     what survived, so it halts by name rather than being read past. Pipe
-     `{"findings": [...], "unruled": [...]}` on stdin to
+     what survived, so it halts by name rather than being read past.
+     That legacy root file is the one `unruled` entry no adjudication can ever
+     answer, so state its remedy in the halt instead of only its path: it is the
+     pre-`risk-carry` AGGREGATE carry - one union of RAW findings under no
+     discriminator - so no `ADJUDICATION-*.json` can ever sit beside it, and
+     every retry re-halts on it identically. It is answered ONCE and BY HAND:
+     read its findings, settle any still genuinely unfixed against this branch,
+     then delete the file. That delete is the answer, and nothing in this skill
+     does it for the user - step 4 clears the carry alone - because nothing here
+     can tell an aggregate somebody read from one nobody has, and clearing it
+     unread is the merge-over-a-blocker this gate exists to stop.
+     Pipe `{"findings": [...], "unruled": [...]}` on stdin to
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate`; on
      `action:"halt"` stop the chain and surface the `findings` instead of
      merging over them, and surface a non-empty `overridden` with them - those
