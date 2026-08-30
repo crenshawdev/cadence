@@ -21,7 +21,13 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PLANNING } from './planning.test.mjs';
+import { fileURLToPath } from 'node:url';
+import { PLANNING, makeTree } from './planning.test.mjs';
+
+/** The close gate this carry exists to keep fed. */
+const LAND = fileURLToPath(new URL('./land-cleanup.mjs', import.meta.url));
+/** A hermetic user-global config layer, so no arm reads the dev's real one. */
+const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-risk-carry-global-')), 'global.json');
 
 /** A bare `.planning` root with `phases/<phase>/` holding `files`. */
 function carryTree(phase, files) {
@@ -229,4 +235,95 @@ test('risk-carry: a phase with no risk_surface fire is an answer, not a refusal'
   assert.equal(r.copied, 0);
   assert.equal(existsSync(join(dir, 'risk-carry')), false,
     'an empty carry minted a destination directory nothing accounts for');
+});
+
+// --- the whole point: the ruling survives the prune (AC6) -------------------
+
+/** Run `land-cleanup.mjs gate` over `root` with `payload` on stdin. */
+function gate(root, payload) {
+  try {
+    return JSON.parse(execFileSync('node', [LAND, 'gate', '--dir', root],
+      { encoding: 'utf8',
+        input: JSON.stringify(payload),
+        env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL } }));
+  } catch (e) { return JSON.parse(e.stdout); }
+}
+
+/**
+ * The gate's payload, composed the way its caller composes it: the UNION of
+ * every `ADJUDICATION-risk_surface*.json` in `home`, `entries[]` flattened, plus
+ * every `REVIEW-risk_surface*.md` with no sibling record named as `unruled`.
+ *
+ * BOTH ROUNDS, never the highest alone (D-08). The join is by BASENAME, which
+ * is what the carry preserves and why it may not rename.
+ */
+function unionFrom(home) {
+  const names = readdirSync(home).sort();
+  const findings = [];
+  for (const name of names) {
+    if (!name.startsWith('ADJUDICATION-risk_surface') || !name.endsWith('.json')) continue;
+    findings.push(...JSON.parse(readFileSync(join(home, name), 'utf8')).entries);
+  }
+  const unruled = names.filter((name) =>
+    name.startsWith('REVIEW-risk_surface') && name.endsWith('.md')
+    && !names.includes(`ADJUDICATION${name.slice('REVIEW'.length, -'.md'.length)}.json`));
+  return { findings, unruled };
+}
+
+test('risk-carry + milestone-prune --mode delete: the same verdict, off the carried records', () => {
+  // AC6 end to end, and the failure it closes: `--mode delete` `rmSync`s
+  // `phases/<N>` whole, records included, and `/cad-milestone` chains
+  // `/cad-land` straight after it. Before this carry the gate had nothing left
+  // to read at the moment it had to decide.
+  const dir = makeTree({ roadmap: [{ n: 3, name: 'Ruled', checked: true }] });
+  const root = join(dir, '..');
+  writeFileSync(join(dir, 'config.json'), JSON.stringify({ git: { auto_close: true } }));
+  const pdir = join(dir, 'phases', '3');
+  mkdirSync(pdir, { recursive: true });
+  writeFileSync(join(pdir, review('plan-1')), '{"findings":[]}\n');
+  // Round one holds a survivor NOTHING ELSE names; round two holds the one that
+  // was fixed. A carry - or a union - that took the highest round alone would
+  // drop the round-one entry and flip this verdict from halt to proceed.
+  writeFileSync(join(pdir, record('plan-1')),
+    recordBody('plan-1', 1, [entry({ line: 111, claim: 'round one names this and nothing else does' })]));
+  writeFileSync(join(pdir, record('plan-1', 2)),
+    recordBody('plan-1', 2, [entry({ line: 460, fix_commit: '3341ffb0' })]));
+
+  const before = unionFrom(pdir);
+  assert.equal(before.findings.length, 2, 'the union took one round, not both');
+  assert.ok(before.findings.some((f) => f.line === 111),
+    'the entry only round one names is missing from the payload');
+  assert.deepEqual(before.unruled, [], 'the review has a sibling record and is not unruled');
+  const first = gate(root, before);
+  assert.equal(first.action, 'halt', JSON.stringify(first));
+  assert.equal(first.findings.length, 1, 'the fixed entry halted anyway');
+
+  assert.equal(riskCarry(dir, ['--phase', '3']).ok, true);
+  const pruned = JSON.parse(execFileSync('node',
+    [PLANNING, '--dir', dir, 'milestone-prune', '--label', 'v9.9.9', '--mode', 'delete'],
+    { encoding: 'utf8' }));
+  assert.equal(pruned.ok, true, JSON.stringify(pruned));
+  assert.deepEqual(pruned.dirs.deleted, [3]);
+  assert.equal(existsSync(pdir), false, 'the prune left the phase directory standing');
+
+  // Both records still readable at the carry destination, and the SAME decision
+  // rebuilt from them alone.
+  assert.deepEqual(carried(dir, 3),
+    [record('plan-1'), record('plan-1', 2), review('plan-1')].sort());
+  const after = unionFrom(join(dir, 'risk-carry', '3'));
+  assert.deepEqual(after, before, 'the payload rebuilt after the prune is not the one before it');
+  const second = gate(root, after);
+  assert.equal(second.action, first.action);
+  assert.equal(second.reason, first.reason);
+  assert.deepEqual(second.findings, first.findings);
+  assert.deepEqual(second.overridden, first.overridden);
+
+  // THE FALSIFIER, run rather than described: take the carry away and the close
+  // has nothing to rebuild from, so the verdict flips to the one that merges a
+  // live blocker. This is the state every close was in before LND-02.
+  rmSync(join(dir, 'risk-carry'), { recursive: true });
+  assert.throws(() => unionFrom(join(dir, 'risk-carry', '3')),
+    'the records outlived a carry that was deleted');
+  assert.equal(gate(root, { findings: [], unruled: [] }).action, 'proceed',
+    'with the rulings gone the gate proceeds - which is exactly what the carry exists to prevent');
 });
