@@ -455,6 +455,11 @@ test('RSK-08: the SURVIVED arm is refused by that one same check, naming its rul
 // and no payload had to restate it. `unfixedFromEntries` is the primitive now
 // and `unfixedFindings` is the wrapper; this arm is what fails if the two ever
 // stop being one statement.
+//
+// LND-02 ADDED THE FOURTH FIELD. `fix_commit` used to be read one layer up, at
+// bin/issue-filing.mjs's own face, which was a second spelling of one meaning -
+// so the module answers it too now, and an entry naming a usable commit is in
+// none of the three sets it returns.
 
 test('RSK-08: the entries face and the payload face answer identically over one fixture', () => {
   const findings = [
@@ -466,6 +471,12 @@ test('RSK-08: the entries face and the payload face answer identically over one 
     finding({ severity: 'medium', line: 3 }),
     finding({ severity: 'high', line: 4 }),
     finding({ severity: 'low', line: 5 }),
+    // BOTH markers on one entry, which the record grammar permits on purpose:
+    // a fix landed and the halt was ALSO cleared by a person. The commit wins,
+    // so this one is neither filed nor named as an unfixed override - leaving
+    // that precedence to the order two filters happen to run in is how exactly
+    // this entry becomes a permanent unfixed override at every close.
+    finding({ severity: 'high', line: 6 }),
   ];
   const pl = payload(voice('openai', 'gpt-5', findings, [
     { ruling: 'survived', overridden: true },
@@ -473,6 +484,7 @@ test('RSK-08: the entries face and the payload face answer identically over one 
     { ruling: 'survived' },
     { ruling: 'downgraded' },
     { ruling: 'refuted', counter_evidence: { file: 'cadence-core/bin/planning.mjs', line: 9 } },
+    { ruling: 'survived', overridden: true, fix_commit: '23121a3' },
   ]));
 
   const built = buildEntries(pl);
@@ -482,17 +494,23 @@ test('RSK-08: the entries face and the payload face answer identically over one 
   const fromPayload = unfixedFindings(pl);
   assert.equal(fromPayload.ok, true, fromPayload.detail);
   assert.deepEqual(fromEntries.filing, fromPayload.findings,
-    'the entries face and the payload face read one statement of the three-field test, so the '
+    'the entries face and the payload face read one statement of the four-field test, so the '
     + 'sets they return over the same data are the same set');
 
   assert.deepEqual(fromEntries.filing.map((e) => e.line), [1, 3, 4, 5],
-    'the survived blocker citing a real commit is the one entry being FIXED rather than filed');
+    'the two survived entries citing a real commit are the ones being FIXED rather than filed, '
+    + 'and the second of them carries the override marker as well - the commit still wins');
   assert.equal(fromEntries.haltingSurvivors.length, 1);
   assert.equal(fromEntries.haltingSurvivors[0].line, 1);
   assert.equal(fromEntries.haltingSurvivors[0].severity, 'blocker');
   assert.equal(fromEntries.haltingSurvivors[0].overridden, true,
     'the overridden blocker is the unfixed halting survivor, and it is named on its own rather '
     + 'than only folded into the filing set');
+
+  assert.deepEqual(fromEntries.halting, [],
+    'buildEntries refuses a survived blocker or high carrying NEITHER marker, so a record it '
+    + 'accepted holds nothing for a close to stop over - `halting` is the fail-closed rail over '
+    + 'records this tree did not write, and it must stay empty here');
 });
 
 test('RSK-08: a record with no override names no unfixed halting survivor', () => {

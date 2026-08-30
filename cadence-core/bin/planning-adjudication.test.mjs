@@ -733,6 +733,45 @@ test('RSK-08: a REASONLESS receipt over a record holding a cleared halt is refus
   assert.equal(traceLines(dir).length, before + 1);
 });
 
+test('LND-02: a cleared halt that ALSO names a fix commit takes a reasonless receipt', () => {
+  // The other side of the row above, and the case D-05 settles. The record
+  // grammar permits both markers on one entry - lib/adjudication-record.mjs
+  // refuses only when NEITHER is present - so a blocker whose fix landed AND
+  // whose halt a person also cleared is legal and stored with both. It is
+  // FIXED, and `overrideAccounted` reads `haltingSurvivors`, which no longer
+  // holds it: nothing is being asserted away, because the commit says what
+  // happened. Without the precedence the fix commit wins on, this entry would
+  // demand a reason on every receipt that ever settles this range again, and
+  // the reason would have to be written about work that is already committed.
+  const { repo, dir, base, head } = deferralRepo();
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  assert.equal(plRun(repo, dir, ['risk-check', 'run', ...range]).ok, true);
+  const payload = survivedPayloadFile(repo, 'fixed-override-payload.json',
+    survivedPayload('blocker', { overridden: true, fix_commit: head.slice(0, 7) }));
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '1', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', head, '--payload', payload]);
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+
+  // Both markers reached the RECORD, so the case is the one it claims to be
+  // rather than an entry that quietly lost one of them at composition time.
+  const stored = JSON.parse(readFileSync(join(dir, rec.record), 'utf8'));
+  assert.equal(stored.entries[0].overridden, true);
+  assert.equal(stored.entries[0].fix_commit, head.slice(0, 7));
+
+  const before = traceLines(dir).length;
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(receipt.ok, true, JSON.stringify(receipt));
+  assert.equal(traceLines(dir).length, before + 1, 'the reasonless receipt was appended');
+  assert.equal(plRun(repo, dir, ['risk-check', 'status', ...range]).plans[0].state, 'recorded');
+});
+
 test('RSK-08: a FIGURELESS receipt cannot settle the range at all', () => {
   // UAT item 3, going the other way. `overrideAccounted` is reached only once a
   // settled figure is PRESENT, so a receipt carrying none of the three skipped
