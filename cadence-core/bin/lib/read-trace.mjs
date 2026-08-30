@@ -441,6 +441,66 @@ function readsRotationInFlight(file, sibling) {
 }
 
 /**
+ * The whole fresh record a cut of this file writes: the rotation marker, one
+ * line, and nothing else.
+ *
+ * ONE SPELLING, TWO CALLERS. `rotateReads` writes this line; `appendRead`'s
+ * size arm reserves its width before it decides whether the pending record has
+ * room to sit beside it. Building it in one place is what stops the reserve
+ * drifting away from the line the rotation actually writes - a reserve short by
+ * one byte is exactly the defect the reserve exists to close.
+ *
+ * `carried_bytes` SEALS THE GENERATION, and it is not telemetry. It is the size
+ * the live record had at the instant the cut claimed it - how much of the file
+ * that cut carried away and therefore accounted for. Its ONE consumer is the
+ * leftover-generation eviction in `rotateReads`: a writer that appended into the
+ * old inode after the cut sealed it left its bytes ONLY in the generation, and
+ * the next rotation is about to destroy that generation. The sealed number is
+ * what tells that writer where the cut stopped accounting, so it can carry the
+ * bytes past it rather than guess an offset or re-append a whole generation.
+ *
+ * A seal of `null` writes NO field rather than a guess, because the eviction
+ * reads an absent field as "rescue nothing" and a wrong offset would re-append
+ * a whole generation into a record readers actually read.
+ *
+ * The field rides after `file` as an ordinary trailing one.
+ * `isReadsRotationMarker` keys on `event` plus the absence of `tool` and
+ * tolerates extra fields, and `planning/core.mjs`'s reads filter reads only
+ * `file` and `ts` off the marker, so it reaches no envelope.
+ * @param {number|null} sealed the size of the record this cut carried away
+ * @returns {string} the marker line, newline included
+ */
+function readsRotationMarker(sealed) {
+  return `${JSON.stringify({
+    ts: new Date().toISOString(),
+    event: READS_ROTATION,
+    file: ROTATED_READS_FILE,
+    ...(sealed === null ? {} : { carried_bytes: sealed }),
+  })}\n`;
+}
+
+/**
+ * An UPPER BOUND on the marker's width, not a measurement of one instance.
+ *
+ * This record's marker is fixed-shape and carries nothing caller-supplied - the
+ * opposite of the trace's, which embeds the carried anchor's `corr` and an
+ * unvalidated `phase` and so can only be measured (D-07). `ts` is always the 24
+ * characters of an ISO instant, so the one field whose printed width varies is
+ * `carried_bytes`, and it is rendered here at the widest value a FILE SIZE can
+ * take: past `Number.MAX_SAFE_INTEGER` a size is no longer exactly
+ * representable and no file system produces one.
+ *
+ * Do not "correct" this to the width of a real marker. A reserve narrower than
+ * the line the rotation writes admits a record that then lands the fresh file
+ * over its bound, which is the defect this constant closes.
+ *
+ * EXPORTED so `read-trace.test.mjs` can pin the admission threshold to this
+ * number rather than restating the shape - a second statement of it in a test
+ * would go green against a reserve that had drifted.
+ */
+export const READS_MARKER_BYTES = Buffer.byteLength(readsRotationMarker(Number.MAX_SAFE_INTEGER));
+
+/**
  * The offset the cut that wrote `record` sealed its own generation at, or
  * `null` where that record names none.
  *
@@ -754,32 +814,7 @@ export function rotateReads(planningRoot, reserve) {
     // The fresh record is written whole to a PRIVATE path - this process's pid
     // and a random suffix, exclusive-create - and renamed over the live path.
     temp = join(planningRoot, `${READS_ROTATE_TEMP_FILE}.${priv}`);
-    // `carried_bytes` SEALS THE GENERATION, and it is not telemetry. It is the
-    // size the live record had at the instant this call claimed it - how much of
-    // the file this cut carried away and therefore accounted for. Its ONE
-    // consumer is the leftover-generation eviction in this same function: a
-    // writer that appended into the old inode after this cut sealed it left its
-    // bytes ONLY in the generation, and the next rotation is about to destroy
-    // that generation. The sealed number is what tells that writer where this
-    // cut stopped accounting, so it can carry the bytes past it rather than
-    // guess an offset or re-append a whole generation.
-    //
-    // A stat that threw seals NOTHING: the field is omitted rather than written
-    // as a guess, because the eviction reads an absent field as "rescue
-    // nothing" and a wrong offset would re-append a whole generation into a
-    // record readers actually read.
-    //
-    // It rides after `file` as an ordinary trailing field.
-    // `isReadsRotationMarker` keys on `event` plus the absence of `tool` and
-    // tolerates extra fields, and `planning/core.mjs`'s reads filter reads only
-    // `file` and `ts` off the marker, so it reaches no envelope.
-    const marker = {
-      ts: new Date().toISOString(),
-      event: READS_ROTATION,
-      file: ROTATED_READS_FILE,
-      ...(sealed === null ? {} : { carried_bytes: sealed }),
-    };
-    writeFileSync(temp, `${JSON.stringify(marker)}\n`, { flag: 'wx' });
+    writeFileSync(temp, readsRotationMarker(sealed), { flag: 'wx' });
     renameSync(temp, file);
     temp = null;
     held = false;
@@ -936,7 +971,18 @@ export function appendRead(planningRoot, record) {
     // rotated. Rotating there throws the record away to make room for a line
     // that still would not fit, and the next append does it again
     // (`lib/trace.mjs:1014-1019`).
-    if (pending >= MAX_READS_BYTES) return { written: false, reason: 'oversized-record' };
+    // THE MARKER IS RESERVED, not just the pending line. A rotation always
+    // writes its marker into the fresh record too, so a record that fits under
+    // the bound by itself but not BESIDE the marker used to rotate and then land
+    // a file over its bound on the very first write (measured 2026-08-30: 74 B
+    // over, against an 82-byte marker). Reserving it DELIBERATELY moves a narrow
+    // band of record sizes - between `MAX_READS_BYTES - READS_MARKER_BYTES` and
+    // `MAX_READS_BYTES` - from "rotate and land" into the refusal below (D-09).
+    // That is the intended change, not a regression: those records cannot be
+    // written under the bound either way.
+    if (pending + READS_MARKER_BYTES >= MAX_READS_BYTES) {
+      return { written: false, reason: 'oversized-record' };
+    }
     const rot = rotateReads(planningRoot, pending);
     // Losing the claim is not a failure: somebody else already made the room,
     // and this writer appends into the record they left. Only a rotation that

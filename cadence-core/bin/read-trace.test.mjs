@@ -20,6 +20,7 @@ import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
   rotatedReadsPath, readsClaimPath, isReadsRotationMarker, rotateReads,
+  READS_MARKER_BYTES,
 } from './lib/read-trace.mjs';
 
 const TS = '2026-08-14T00:00:00.000Z';
@@ -452,6 +453,53 @@ test('a single record that reaches the bound by itself is refused, never rotated
   assert.equal(statSync(readsPath(d)).size, before, 'the oversized record was appended anyway');
   assert.equal(existsSync(rotatedReadsPath(d)), false,
     'the record was thrown away to make room for a line that still would not fit');
+});
+
+/**
+ * Append one record whose serialized line is exactly `bytes` long.
+ * @param {string} d @param {number} bytes
+ */
+function sizedRead(d, bytes) {
+  const skeleton = `${JSON.stringify({ ts: TS, tool: 'Read', agent: 'coordinator', target: '' })}\n`;
+  const n = bytes - Buffer.byteLength(skeleton);
+  assert.ok(n >= 0, 'fixture: the skeleton is already longer than the requested line');
+  return appendRead(d, { ts: TS, tool: 'Read', agent: 'coordinator', target: 'y'.repeat(n) });
+}
+
+test('a record with no room BESIDE the marker is refused, not rotated for (AC2)', () => {
+  // The rotation always writes its marker into the fresh record too, so a
+  // record that fits under the bound alone but not beside the marker used to
+  // rotate and then land a file over its bound on the first write (measured
+  // 2026-08-30: 74 B over). It is refused now - the deliberate band D-09 names.
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before' });
+  padToReadsBound(d);
+  const before = readFileSync(readsPath(d), 'utf8');
+
+  const res = sizedRead(d, MAX_READS_BYTES - 8);
+  assert.deepEqual(res, { written: false, reason: 'oversized-record' });
+  assert.equal(readFileSync(readsPath(d), 'utf8'), before,
+    'the record it would have rotated is not byte-identical');
+  assert.deepEqual(readsSiblings(d), ['reads.jsonl'], 'nothing was rotated');
+});
+
+test('a record that DOES fit beside the marker rotates under the bound (AC2)', () => {
+  // ONE BYTE inside the reserve, which is the tightest admission there is. The
+  // reserve is an upper BOUND rather than a measurement, so a real marker is
+  // narrower than it by the digits `carried_bytes` does not use - which is why
+  // the row binds to the constant and not to a marker it measured.
+  assert.ok(READS_MARKER_BYTES > Buffer.byteLength(
+    `${JSON.stringify({ ts: TS, event: 'record_rotated', file: 'reads.1.jsonl', carried_bytes: MAX_READS_BYTES })}\n`,
+  ), 'the reserve is narrower than a real marker at the bound');
+
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before' });
+  padToReadsBound(d);
+  assert.equal(sizedRead(d, MAX_READS_BYTES - READS_MARKER_BYTES - 1).written, true,
+    'the reserve is wider than the marker the rotation writes');
+  assert.ok(existsSync(rotatedReadsPath(d)), 'it still rotated');
+  assert.ok(statSync(readsPath(d)).size <= MAX_READS_BYTES,
+    `the rotation's FIRST write left the record ${statSync(readsPath(d)).size - MAX_READS_BYTES} B over its bound`);
 });
 
 test('a bad record is refused by reason, never thrown', () => {
