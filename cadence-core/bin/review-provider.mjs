@@ -461,13 +461,26 @@ export function estimatePromptTokens(...parts) {
 // artifact than the caller composed: a reviewer reading `<redacted>` where a
 // value was is working from less than it was handed, and both the envelope and
 // the run record have to be able to say so.
+//
+// The count is a LOWER BOUND, and the floor is what makes it honest. Net marks
+// added is not the same as spans removed: an artifact that already contains the
+// literal `<redacted>` - a diff of this fence, a log that was already
+// sanitized - can have a credential span collapse onto an existing mark, so the
+// arithmetic comes back 0 or negative on a payload that WAS altered, and both
+// the envelope and the trace would then report a full artifact. So the change
+// is decided by comparing the STRINGS, which cannot be fooled, and the count is
+// floored at 1 whenever they differ. Exactness would mean the redactors
+// counting their own replacements, which is a wider change to a file two other
+// callers depend on; a number that can under-state by a mark is worth less than
+// a zero that can be false.
 /**
  * @param {string} s @returns {{text: string, redactions: number}}
  */
 function fence(s) {
-  const before = occurrences(s, REDACTION_MARK);
   const text = redactCredentials(redactUrl(s));
-  return { text, redactions: occurrences(text, REDACTION_MARK) - before };
+  if (text === s) return { text, redactions: 0 };
+  const net = occurrences(text, REDACTION_MARK) - occurrences(s, REDACTION_MARK);
+  return { text, redactions: net > 0 ? net : 1 };
 }
 
 // Counted rather than `split().length - 1`, which allocates a copy of an

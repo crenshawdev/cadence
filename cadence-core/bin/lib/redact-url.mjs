@@ -67,13 +67,25 @@
 //      462,000-character diff of ordinary code: 25.5s -> 23ms.
 //   2. A segment is only handed to a rule when it CONTAINS the literal that
 //      rule cannot match without - `@` for the two terminated rules, `:` for
-//      the scheme-less ones, `://` for the scheme-anchored ones. That is one
-//      `indexOf` per rule, and it is what holds the whitespace-free case - a
-//      minified bundle, a base64 blob, a long hash in a diff - to a linear
-//      scan rather than a quadratic one.
+//      the scheme-less ones, `://` for the scheme-anchored ones. One `indexOf`
+//      per rule, and it skips a delimiter-free run outright.
+//   3. Each rule carries a LOOKBEHIND that pins its start to the beginning of a
+//      run, which is what bounds the case bound 2 lets through: a single
+//      whitespace-free segment holding both the literal and a long run, which
+//      is an ordinary minified bundle or a data URI. Measured before this,
+//      `'A'x240000 + ':' + 'B'x240000 + '/'` spent 84 SECONDS inside the fence.
 //
-// Neither bound moves a verdict, and that is deliberate: the QUANTIFIERS are
-// still unbounded, because bounding them at 1024 was tried and it re-opened
+//      Each lookbehind is a NO-OP on the verdict, and provably so rather than
+//      by inspection: a rule's first class is greedy over one character class,
+//      so if it can match starting mid-run it can also match starting one
+//      character earlier - the earlier attempt consumes the same characters and
+//      reaches the same separator. Leftmost-match means the engine returns that
+//      earlier one anyway, so a start whose PREVIOUS character is in the class
+//      never produced a match that survived. Blocking it removes attempts, not
+//      matches.
+//
+// None of the three moves a verdict, and that is deliberate: the QUANTIFIERS
+// are still unbounded, because bounding them at 1024 was tried and it re-opened
 // EXP-02 (#215) - a 2000-character userinfo cut before its `@` came back
 // redacted from its tail with 985 bytes of the secret surviving. A cost bound
 // that reintroduces a measured leak is not a cost bound worth having.
@@ -96,7 +108,7 @@ const MARK = REDACTION_MARK;
 //    credential IS the user part. The userinfo class excludes `/ ? # @` and
 //    whitespace, so an authority carrying no `@` (`https://host/r.git`) cannot
 //    match and comes back byte-identical.
-const SCHEME_USERINFO = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
+const SCHEME_USERINFO = /(?<![A-Za-z])([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
 
 // 2. Scheme-less: `<user>:<secret>@<host>`, which is what the two leaking forms
 //    above actually print, and also the scp-shaped `user:token@host:path`. The
@@ -106,7 +118,7 @@ const SCHEME_USERINFO = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@]+)@/g;
 //    falls after the `@` and carries a path rather than a secret. Neither class
 //    crosses whitespace or `/`, so the userinfo cannot run backwards out of its
 //    own token.
-const BARE_USERINFO = /([^\s/:@]+:[^\s/@]+)@/g;
+const BARE_USERINFO = /(?<![^\s/:@])([^\s/:@]+:[^\s/@]+)@/g;
 
 // 1b + 2b. The SAME two spans with their `@` cut off, anchored to end-of-input.
 //    Both rules above are `@`-anchored, so a userinfo span whose `@` falls
@@ -141,8 +153,8 @@ const BARE_USERINFO = /([^\s/:@]+:[^\s/@]+)@/g;
 //    One bounded quantifier per rule and no nesting, so the linear-time
 //    property this file's header pays for is unchanged. No `g`: end-of-input
 //    can match at most once.
-const SCHEME_USERINFO_CUT = /([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@"']+)$/;
-const BARE_USERINFO_CUT = /[^\s/:@"']+:[^\s/@"']+$/;
+const SCHEME_USERINFO_CUT = /(?<![A-Za-z])([A-Za-z][A-Za-z0-9+.-]*:\/\/)([^\s/?#@"']+)$/;
+const BARE_USERINFO_CUT = /(?<![^\s/:@"'])[^\s/:@"']+:[^\s/@"']+$/;
 
 /**
  * `s` with the userinfo of every URL-shaped and scp-shaped remote replaced by

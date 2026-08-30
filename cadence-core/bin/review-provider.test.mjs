@@ -1329,6 +1329,25 @@ test('fence: consult fences its situation too (#167)', async () => {
   assert.equal(r.envelope.redactions, 1);
 });
 
+test('fence: an artifact that already holds the mark still reports a redaction (#167)', async () => {
+  // Net marks added is not spans removed. Here a credential pair COLLAPSES onto
+  // a mark the artifact already carried - one mark in, one mark out - so the
+  // arithmetic alone comes back 0 and both the envelope and the trace would say
+  // the reviewer got the whole artifact. It did not.
+  const SECRET = 's3cr3t-value-that-must-not-ship';
+  const artifact = 'password="already <redacted> and then ' + SECRET + '"';
+  const before = providerEvents().length;
+  const r = await runFaked(
+    fencePayloadArgs('fence-premarked.json', { instruction: 'refute this', artifact }),
+    { status: 200, body: FENCE_OK_BODY });
+  assert.equal(r.seen[0].body.includes(SECRET), false, 'the secret reached the wire');
+  assert.equal(r.envelope.ok, true);
+  assert.ok(r.envelope.redactions >= 1,
+    `the payload was altered but reported ${r.envelope.redactions} redactions`);
+  const ev = providerEvents().slice(before);
+  assert.ok(ev[0].redactions >= 1, 'the trace reported no redaction on an altered payload');
+});
+
 test('fence: the cap measures the FENCED text, not the raw payload (#167)', async () => {
   // Ordering, asserted rather than assumed. The fence runs after the string
   // gate and before `assertUnderCap`, so what the cap counts is what leaves the

@@ -345,6 +345,13 @@ test('cost: a whole ARTIFACT is linear, not quadratic (#167)', () => {
   // return of the quadratic walk and not on a slow machine or a cold JIT.
   const cases = {
     'no whitespace at all, the base64 / hash shape': 'A'.repeat(480000),
+    // The shape bound 2 alone let through, and the reason each rule carries a
+    // lookbehind: one segment holding both the literal a pre-check looks for
+    // and a long delimiter-free run. Measured at 84 SECONDS before the
+    // lookbehinds, on the cut rule alone.
+    'one segment, a colon, and two long runs': 'A'.repeat(240000) + ':' + 'B'.repeat(240000) + '/',
+    'the same with an @, so the terminated rules run too':
+      'A'.repeat(240000) + ':' + 'B'.repeat(240000) + '/@',
     'a minified bundle, every delimiter present': 'a:b/c;d(e)'.repeat(48000),
     'an ordinary diff of ordinary code': Array(6000).fill(
       '+  const value = compute(alpha, beta); // https://cad:tok@host.invalid/r.git').join('\n'),
@@ -364,4 +371,29 @@ test('cost: a whole ARTIFACT is linear, not quadratic (#167)', () => {
   const out = redactCredentials(redactUrl(diff));
   assert.equal(out.includes('cad:tok'), false, 'the userinfo survived at artifact scale');
   assert.ok(out.includes('compute(alpha, beta)'), 'the code a reviewer needs was eaten');
+});
+
+test('the start lookbehinds remove attempts, never matches', () => {
+  // Each rule is pinned to the beginning of a run for cost. The claim that
+  // makes that safe is that a match starting mid-run never survived leftmost
+  // anyway, so these are the spans where a naive pin WOULD have cost coverage:
+  // a run character sitting immediately before the credential, with no
+  // delimiter between them.
+  for (const [body, gone] of [
+    // A digit immediately before a scheme - the scheme rule starts at a letter,
+    // so the run begins at the digit and the match begins one later.
+    ['see 9abc://cad:s3cr3t-tok@host.invalid/r.git now', 's3cr3t-tok'],
+    ['x9https://ghp_deadbeef@host/r.git', 'ghp_deadbeef'],
+    // A `+`, a `.` and a `-` are scheme-class characters in the same position.
+    ['v1.2+git://cad:s3cr3t-tok@host.invalid/r.git', 's3cr3t-tok'],
+    // The scheme-less rule, with an ordinary word character in front.
+    ['prefixcad:s3cr3t-tok@host.invalid/r.git', 's3cr3t-tok'],
+    // And the two cut rules, which end the input rather than at an `@`.
+    ['9abc://cad:s3cr3t-tok', 's3cr3t-tok'],
+    ['prefixcad:s3cr3t-tok', 's3cr3t-tok'],
+  ]) {
+    const out = redactUrl(body);
+    assert.equal(out.includes(gone), false, `the credential survived: ${out}`);
+    assert.ok(out.includes(REDACTION_MARK), `nothing was redacted in ${out}`);
+  }
 });
