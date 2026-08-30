@@ -3,13 +3,13 @@
 // land-cleanup.mjs - the workflow-facing seam over lib/close-decision.mjs. It
 // ADVISES cad-land whether a land should clean up (return to base + pull + reap
 // the merged integration branch) and whether an autonomous close halts before
-// merge on a blocking risk_surface finding. Like git-branch.mjs / git-guard.mjs it
-// only advises: it NEVER runs `checkout`, `pull`, or `branch -D` - that is
-// cad-land prose's job, gated by this advice. One JSON line on stdout (seam
-// convention, lib/seam-io.mjs): every piece of ADVICE is ok:true and exits 0,
-// and the only ok:false/exit-1 shapes are a malformed CALL - a bad subcommand,
-// or an empty or valueless --dir. The tested logic lives in
-// lib/close-decision.mjs; this wraps it with config + git-read I/O.
+// merge on a genuinely-unfixed risk_surface finding. Like git-branch.mjs /
+// git-guard.mjs it only advises: it NEVER runs `checkout`, `pull`, or
+// `branch -D` - that is cad-land prose's job, gated by this advice. One JSON
+// line on stdout (seam convention, lib/seam-io.mjs): every piece of ADVICE is
+// ok:true and exits 0, and the only ok:false/exit-1 shapes are a malformed
+// CALL - a bad subcommand, or an empty or valueless --dir. The tested logic
+// lives in lib/close-decision.mjs; this wraps it with config + git-read I/O.
 //
 // Subcommands (each prints one JSON line):
 //   cleanup [--dir <path>] [--branch <name>] [--base <name>] [--merged <true|false>]
@@ -31,13 +31,28 @@
 //     EMPTY stdin, malformed JSON and a valid non-findings envelope are each
 //     reported by NAME rather than collapsed to [], and under auto_close each
 //     halts (D-09). Then, under the MERGED git.auto_close (the value the prose
-//     branched on - see gate() below), decide whether a surviving blocker/high
-//     risk_surface finding - or a payload that could not be read - halts the
-//     chain before merge. cad-land supplies those findings by unioning the
-//     .planning/phases/*/REVIEW-risk_surface*.md files this branch's fires
-//     persisted PLUS .planning/REVIEW-risk_surface-*.md, which is where
-//     /cad-milestone carries them before it prunes the phase dirs out from
-//     under an autonomous close; it fires no review of its own.
+//     branched on - see gate() below), decide whether that payload halts the
+//     chain before merge.
+//     WHAT RIDES `findings` IS RULINGS, NOT RAW REVIEW TEXT (LND-02, and this
+//     is the only statement in code of where the gate's input comes from).
+//     cad-land unions the `entries[]` of every ADJUDICATION-risk_surface*.json
+//     this branch's fires wrote - EVERY round of a fire, because a re-arm is a
+//     second fire on the same discriminator and round 2 is not the record of
+//     round 1 - taken from .planning/phases/*/ and, after /cad-milestone prunes
+//     those dirs out from under an autonomous close, from the copies
+//     `planning.mjs risk-carry` leaves at .planning/risk-carry/<N>/. This seam
+//     classifies them through lib/filing-decision.mjs, so a finding that was
+//     fixed, refuted, downgraded or overridden stops no close and only a
+//     genuinely-unfixed survivor does. /cad-land fires no review of its own.
+//     The caller ALSO names on `unruled` every REVIEW-risk_surface*.md it found
+//     carrying no such sibling record - a legacy artifact, another tool's, or a
+//     deferred fire, which writes none by design. That is the FIFTH state,
+//     `unruled-review`, and it halts under auto_close beside the four above: a
+//     fire nothing ruled says nothing about what survived.
+//     A halt a person already CLEARED rides back out on `overridden` and moves
+//     nothing - `action` is unchanged, and cad-land keeps branching on it alone.
+//     The gate reads STDIN AND NOTHING ELSE: it opens no ADJUDICATION file of
+//     its own, and --dir still resolves config alone.
 'use strict';
 
 import { readFileSync } from 'node:fs';
