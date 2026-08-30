@@ -761,6 +761,54 @@ test('appendEvent: one line that reaches the bound by itself is refused, and not
   assert.deepEqual(siblings(dir), ['trace.jsonl'], 'nothing was rotated');
 });
 
+/** Append one phase-7 event whose rendered line is exactly `bytes` long. */
+function sized(dir, bytes) {
+  const skeleton = `${JSON.stringify({
+    corr: '7', phase: 7, ts: new Date().toISOString(),
+    family: 'routing', event: 'resolve', detail: '',
+  })}\n`;
+  const n = bytes - Buffer.byteLength(skeleton);
+  assert.ok(n >= 0, 'fixture: the skeleton is already longer than the requested line');
+  return appendEvent(dir, { phase: 7, family: 'routing', event: 'resolve', detail: 'y'.repeat(n) });
+}
+
+test('appendEvent: an event with no room BESIDE the marker is refused, not rotated for', () => {
+  // The rotation always writes its marker into the fresh record too, so an
+  // event that fits under the bound alone but not beside the marker used to
+  // rotate and then land a record over its bound on the first write (measured
+  // 2026-08-30: 105 B over). It is refused now - the deliberate band D-09 names.
+  const dir = root();
+  padToBound(dir);
+  const before = readFileSync(tracePath(dir), 'utf8');
+
+  const res = sized(dir, MAX_TRACE_BYTES - 8);
+  assert.deepEqual(res, { written: false, reason: 'oversized-event' });
+  assert.equal(readFileSync(tracePath(dir), 'utf8'), before,
+    'the record it would have rotated is not byte-identical');
+  assert.deepEqual(siblings(dir), ['trace.jsonl'], 'nothing was rotated');
+});
+
+test('appendEvent: an event that DOES fit beside the marker rotates under the bound (AC2)', () => {
+  // The reserve has to be the line the rotation actually writes, so the size
+  // this row admits is MEASURED off a real rotation rather than assumed: same
+  // record size, same absent anchor, so the same marker.
+  const probe = root();
+  padToBound(probe);
+  assert.equal(appendEvent(probe, { phase: 7, family: 'routing', event: 'resolve' }).written, true);
+  const line = readFileSync(tracePath(probe), 'utf8').split('\n').find((l) => l.includes(ROTATION));
+  assert.ok(line, 'fixture: the probe rotation wrote no marker');
+  const owed = Buffer.byteLength(`${line}\n`);
+
+  // One byte inside the new threshold, which is the tightest admission there is.
+  const dir = root();
+  padToBound(dir);
+  assert.equal(sized(dir, MAX_TRACE_BYTES - owed - 1).written, true,
+    'the reserve is wider than the marker the rotation writes');
+  assert.ok(existsSync(rotatedTracePath(dir)), 'it still rotated');
+  assert.ok(statSync(tracePath(dir)).size <= MAX_TRACE_BYTES,
+    `the rotation's FIRST write left the record ${statSync(tracePath(dir)).size - MAX_TRACE_BYTES} B over its bound`);
+});
+
 test('renderTrace: an oversized file is read bounded, not whole', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });

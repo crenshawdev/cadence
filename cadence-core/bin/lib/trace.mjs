@@ -420,6 +420,79 @@ function renderEvent(planningRoot, event) {
 }
 
 /**
+ * The rotation marker a cut of THIS record would write, and where the tail that
+ * cut would carry begins.
+ *
+ * ONE SPELLING, TWO CALLERS. `freshRecord` writes this line into the fresh
+ * record; `appendEvent`'s size arm measures it to decide whether the pending
+ * event has room to sit beside it. Building it in one place is what stops the
+ * reserve from drifting away from the line the rotation actually writes - a
+ * reserve short by one byte is exactly the defect the reserve exists to close.
+ *
+ * It is written as part of the rotation's own fresh-file write rather than
+ * through `appendEvent`, which would re-enter the size arm that called it.
+ *
+ * The marker takes the `corr` and `phase` of the newest ANCHOR in the record -
+ * the run in flight - so it files under the run whose record was cut. That is
+ * also why its size cannot be a constant: `phase` reaches the record
+ * caller-supplied and unvalidated, so only measuring answers.
+ *
+ * `carried_bytes` SEALS THE GENERATION, and it is not telemetry. It is the byte
+ * length of `text` at the instant the claim read it - how much of the file this
+ * cut carried away and therefore accounted for. Its ONE consumer is the
+ * leftover-generation eviction in `rotateTrace`: a writer that appended into the
+ * old inode after this cut's carry-back loop ended left its bytes only in the
+ * generation, and the next rotation is about to destroy that generation. The
+ * sealed number is what tells that writer where this cut stopped accounting, so
+ * it can finish the carry-back over the bytes past it rather than guess an
+ * offset or re-append a whole generation. It must therefore be the SEALED size
+ * and never an estimate.
+ * @param {string} text the whole record a cut would carry away
+ * @returns {{lines: string[], at: number, corr: string, marker: string}} `at` is
+ *   the index of the anchor line in `lines`, or `-1` where the record holds no
+ *   anchor at all - in which case there is no tail and the marker is the whole
+ *   fresh record.
+ */
+function rotationMarker(text) {
+  const lines = text.split('\n');
+  let at = -1;
+  let anchorCorr = '';
+  /** @type {any} */
+  let anchorPhase;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
+    at = i;
+    // The id the run in flight is ALREADY writing, read off the anchor rather
+    // than re-derived: `renderEvent` stored it there at write time, and a
+    // re-derivation here would answer about the file after the cut.
+    anchorCorr = typeof e.corr === 'string' && e.corr ? e.corr : key(e.phase);
+    anchorPhase = e.phase;
+    break;
+  }
+  // The same fixed key order `renderEvent` writes, so the marker is an ordinary
+  // line of the record rather than a differently shaped one. `phase` is
+  // `undefined` where no anchor was carried and drops out of the JSON entirely.
+  // `carried_bytes` rides after `file`, as an ordinary trailing field of that
+  // fixed order - `renderTrace`'s `rotated` derivation takes `file` and `ts`
+  // only, so it reaches no envelope.
+  const marker = `${JSON.stringify({
+    corr: anchorCorr,
+    phase: anchorPhase,
+    ts: new Date().toISOString(),
+    family: 'lifecycle',
+    event: ROTATION,
+    file: ROTATED_TRACE_FILE,
+    carried_bytes: Buffer.byteLength(text),
+  })}\n`;
+  return { lines, at, corr: anchorCorr, marker };
+}
+
+/**
  * The whole body of the record a rotation writes: the NEWEST
  * `lifecycle/phase_start` line and every line after it, then the rotation
  * marker. Where the record holds no anchor at all, the marker alone.
@@ -456,61 +529,15 @@ function renderEvent(planningRoot, event) {
  * can write a bound's worth of events under a single anchor.
  * THE MARKER is the last line of what this returns, after the carried tail, so
  * the tail's own order is untouched and the marker sits under the anchor whose
- * `corr` it takes. It is written as part of this one fresh-file write rather
- * than through `appendEvent`, which would re-enter the size arm that called us.
- * Its own bytes are counted against the bound here, so the reserve a caller
- * passes is the pending line alone.
- *
- * `carried_bytes` SEALS THE GENERATION, and it is not telemetry. It is the byte
- * length of `text` at the instant the claim read it - how much of the file this
- * cut carried away and therefore accounted for. Its ONE consumer is the
- * leftover-generation eviction in `rotateTrace`: a writer that appended into the
- * old inode after this cut's carry-back loop ended left its bytes only in the
- * generation, and the next rotation is about to destroy that generation. The
- * sealed number is what tells that writer where this cut stopped accounting, so
- * it can finish the carry-back over the bytes past it rather than guess an
- * offset or re-append a whole generation. It must therefore be the SEALED size
- * and never an estimate.
+ * `corr` it takes. `rotationMarker` below builds it; its own bytes are counted
+ * against the bound here, so the reserve a caller passes is the pending line
+ * alone.
  * @param {string} text the whole record being carried away
  * @param {number} reserve bytes the fresh file owes beyond this content
  * @returns {string}
  */
 function freshRecord(text, reserve) {
-  const lines = text.split('\n');
-  let at = -1;
-  let anchorCorr = '';
-  /** @type {any} */
-  let anchorPhase;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
-    at = i;
-    // The id the run in flight is ALREADY writing, read off the anchor rather
-    // than re-derived: `renderEvent` stored it there at write time, and a
-    // re-derivation here would answer about the file after the cut.
-    anchorCorr = typeof e.corr === 'string' && e.corr ? e.corr : key(e.phase);
-    anchorPhase = e.phase;
-    break;
-  }
-  // The same fixed key order `renderEvent` writes, so the marker is an ordinary
-  // line of the record rather than a differently shaped one. `phase` is
-  // `undefined` where no anchor was carried and drops out of the JSON entirely.
-  // `carried_bytes` rides after `file`, as an ordinary trailing field of that
-  // fixed order - `renderTrace`'s `rotated` derivation takes `file` and `ts`
-  // only, so it reaches no envelope.
-  const marker = `${JSON.stringify({
-    corr: anchorCorr,
-    phase: anchorPhase,
-    ts: new Date().toISOString(),
-    family: 'lifecycle',
-    event: ROTATION,
-    file: ROTATED_TRACE_FILE,
-    carried_bytes: Buffer.byteLength(text),
-  })}\n`;
+  const { lines, at, corr: anchorCorr, marker } = rotationMarker(text);
   if (at < 0) return marker;
   const owed = reserve + Buffer.byteLength(marker);
 
@@ -1126,11 +1153,37 @@ export function appendEvent(planningRoot, event) {
     if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
   }
   if (size !== null && size + pending >= MAX_TRACE_BYTES) {
+    // THE MARKER IS RESERVED, not just the pending line. A rotation always
+    // writes its marker into the fresh record, so an event that fits under the
+    // bound by itself but not BESIDE the marker used to rotate and then land a
+    // record over its bound on the very first write (measured 2026-08-30: 105 B
+    // over). The reserve is what the rotation will actually write, so it is
+    // MEASURED and never a constant: the marker embeds the carried anchor's
+    // `corr` and `phase`, and `renderEvent` passes `phase` through unvalidated,
+    // so no fixed number bounds it.
+    //
+    // On the SIZE ARM ONLY. This is the rotation path, which already reads the
+    // record twice; the ordinary append path must not gain a read, because
+    // every writer in the tree reaches the record through this function.
+    //
+    // The marker measured here can differ by a few bytes from the one written a
+    // moment later - another writer may land an anchor in between, or the
+    // record's own size may change the digits of `carried_bytes`. That is
+    // acceptable for an admission check and is not a reason to move the check
+    // into `rotateTrace` (D-06), which decides about the OLD record.
+    //
     // A single line that reaches the bound on its own is REFUSED rather than
     // rotated. Rotating there throws the record away to make room for an event
     // that still would not fit, and the next append does it again - so the
     // reason is its own, distinguishable from the `size-cap` this arm replaces.
-    if (pending >= MAX_TRACE_BYTES) return { written: false, reason: 'oversized-event' };
+    // Reserving the marker DELIBERATELY moves a narrow band of event sizes -
+    // between `MAX_TRACE_BYTES - marker` and `MAX_TRACE_BYTES` - from "rotate
+    // and land" into that same refusal (D-09). It is the intended change, not a
+    // regression: those events cannot be written under the bound either way.
+    let owed = 0;
+    try { owed = Buffer.byteLength(rotationMarker(readFileSync(file, 'utf8')).marker); }
+    catch { /* unreadable here means the rotation below will fail on its own */ }
+    if (pending + owed >= MAX_TRACE_BYTES) return { written: false, reason: 'oversized-event' };
     const rot = rotateTrace(planningRoot, pending);
     // Losing the claim is not a failure: somebody else already made the room,
     // and this writer appends into the record they left. Only a rotation that
