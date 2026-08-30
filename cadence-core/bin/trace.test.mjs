@@ -779,6 +779,44 @@ test('seam: trace render and trace suggest each name their record and report the
   assert.equal(run(dir, ['trace', 'render', '--phase', '9']).rotated.file, rotatedTracePath(dir));
 });
 
+test('seam: after a SECOND cut both envelopes still report the rotation, and the marker pairs with nothing', () => {
+  // This phase changed what the marker carries and what a second rotation does
+  // with the generation it destroys, so the guard is over the seam: a rotation
+  // that happened is still visible on both readers, and nothing new leaks into
+  // either envelope.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: DISPATCH, plan: 1, role: 'cad-executor' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 1, role: 'cad-executor', tokens: 10 });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
+
+  const render = run(dir, ['trace', 'render', '--phase', '1']);
+  const suggest = run(dir, ['trace', 'suggest']);
+  assert.equal(render.rotated.file, rotatedTracePath(dir));
+  assert.equal(suggest.rotated.file, rotatedTracePath(dir));
+  assert.equal(suggest.rotated.ts, render.rotated.ts,
+    'the two readers disagree about which cut the record last took');
+  assert.deepEqual(Object.keys(render.rotated).sort(), ['file', 'ts']);
+  assert.equal(render.capped, false, 'a rotated record is whole, not truncated at the ceiling');
+
+  // `carried_bytes` seals the generation for ONE in-process consumer and is not
+  // telemetry: it reaches neither envelope.
+  assert.equal(JSON.stringify(render).includes('carried_bytes'), false);
+  assert.equal(JSON.stringify(suggest).includes('carried_bytes'), false);
+
+  // INERT (D-12): two markers are in the record now, and neither opened a
+  // bracket nor closed one - the executor pair is still the only bracket, and
+  // nothing is left half-open.
+  assert.equal(lines(dir).filter((e) => e.event === ROTATION).length, 2);
+  assert.equal(render.brackets.length, 1);
+  assert.equal(render.brackets[0].role, 'cad-executor');
+  assert.deepEqual(render.unpaired, []);
+});
+
 test('appendEvent: one line that reaches the bound by itself is refused, and nothing moves', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
