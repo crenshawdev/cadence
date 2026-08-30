@@ -21,7 +21,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync, symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -174,41 +176,58 @@ const FIVE = [
   finding('src/e.mjs', 50, 'low', 'the timeout has no stated basis'),
 ];
 
-const listOf = (findings) => JSON.stringify(
-  findings.map((f, i) => ({ number: i + 1, title: issueTitle(f) })));
+/** Plant `.planning/DECLINED.md` holding one row per finding - the shape the
+ * seam's own `file` face writes, so a case that plants it is asserting against
+ * the same grammar a previous fire would have left behind. */
+const declinedWith = (findings) => (dir) => {
+  mkdirSync(join(dir, '.planning'), { recursive: true });
+  const rows = findings.map((f) => `- 2026-08-25 github acme/widget ${fingerprint(f)}: ${issueTitle(f)}`);
+  writeFileSync(join(dir, '.planning', 'DECLINED.md'),
+    `# Declined: findings this repository said no to\n\n${rows.join('\n')}\n`);
+};
+
+const declinedText = (dir) => {
+  const p = join(dir, '.planning', 'DECLINED.md');
+  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+};
 
 const listCalls = (calls) => calls.filter((c) => / list /.test(` ${c} `));
 const createCalls = (calls) => calls.filter((c) => / create /.test(` ${c} `));
 
 // --- unfixed: ONE lookup per fire, whatever the finding count ----------------
 
-test('a five-finding fire makes exactly ONE list call and no create call', () => {
-  // Criterion 11's falsifiable form, counted off the stub's own log.
+test('a five-finding fire spawns NO forge child at all', () => {
+  // Criterion 11's falsifiable form, counted off the stub's own log. The ask
+  // used to cost one `issue list`; the decline set is a local file now, so the
+  // honest count is zero rather than one.
   const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
   const { status, envelope, calls } = run(['unfixed', '--payload', payload]);
   assert.equal(status, 0);
   assert.equal(envelope.ok, true);
   assert.equal(envelope.raised, 5);
   assert.equal(envelope.findings.length, 5);
-  assert.equal(listCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(listCalls(calls).length, 0, calls.join('\n'));
   assert.equal(createCalls(calls).length, 0, calls.join('\n'));
 });
 
-test('the one list call is label-filtered and carries the page size', () => {
+test('the decline set is read even where no forge CLI resolves', () => {
+  // The strongest form of "local": the ask still answers on a PATH holding no
+  // forge binary at all, because nothing it needs lives on a tracker. The
+  // envelope still refuses - `unfixed` names the provider and repo - but it
+  // refuses for the FORGE being unreachable, never for the declines being
+  // unknown, and the reason names which.
   const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
-  const { calls } = run(['unfixed', '--payload', payload]);
-  const list = listCalls(calls)[0];
-  assert.match(list, new RegExp(`--label ${DECLINE_LABEL}`));
-  assert.match(list, /--state all/);
-  assert.match(list, /--limit 200/);
-  assert.match(list, /--repo acme\/widget/);
+  const { envelope, calls } = run(['unfixed', '--payload', payload], { bins: [] });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.reason, 'no-cli');
+  assert.equal(calls.length, 0, calls.join('\n'));
 });
 
-test('a finding the lookup already carries is absent from the answer', () => {
+test('a finding DECLINED.md already carries is absent from the answer', () => {
   // The decline that must not be asked about twice (criterion 11).
   const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
   const { envelope } = run(['unfixed', '--payload', payload],
-    { stub: { listBody: listOf([FIVE[1], FIVE[3]]) } });
+    { prepare: declinedWith([FIVE[1], FIVE[3]]) });
   assert.equal(envelope.ok, true);
   assert.equal(envelope.raised, 5);
   assert.equal(envelope.already_declined, 2);
@@ -221,7 +240,7 @@ test('a decline recognized by (file, claim) survives the file shifting by a line
   const moved = { ...FIVE[1], line: 999 };
   const payload = payloadFile(payloadFor([[moved, 'survived']]));
   const { envelope } = run(['unfixed', '--payload', payload],
-    { stub: { listBody: listOf([FIVE[1]]) } });
+    { prepare: declinedWith([FIVE[1]]) });
   assert.deepEqual(envelope.findings, []);
   assert.equal(envelope.already_declined, 1);
 });
@@ -274,32 +293,48 @@ test('each returned finding carries its fingerprint BESIDE it, never inside it',
 
 // --- criterion 12: an incomplete lookup refuses the fire ---------------------
 
-test('a lookup that filled its page refuses, and no create call is made', () => {
-  const full = Array.from({ length: 200 }, (_, i) => ({
-    number: i + 1, title: issueTitle(finding(`src/x${i}.mjs`, 1, 'low', `c${i}`)),
-  }));
-  const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
-  const { status, envelope, calls } = run(['unfixed', '--payload', payload],
-    { stub: { listBody: JSON.stringify(full) } });
-  assert.equal(status, 1);
-  assert.equal(envelope.ok, false);
-  assert.equal(envelope.reason, 'incomplete-lookup');
-  assert.match(envelope.detail, /filled the 200-row page/);
-  assert.ok(envelope.hint);
-  assert.equal(createCalls(calls).length, 0, calls.join('\n'));
-  // The refusal says the page was filled and NOT that nothing was declined.
-  assert.equal(envelope.findings, undefined);
+test('a decline set far past any old page size is read whole', () => {
+  // The case that used to REFUSE. A forge lookup could only see one page, so a
+  // decline set bigger than it made the fire un-answerable; a file has no page.
+  // 500 rows is well past the 200 the forgejo arm could ever return.
+  const many = Array.from({ length: 500 },
+    (_, i) => finding(`src/x${i}.mjs`, 1, 'low', `c${i}`));
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived'], [many[499], 'survived']]));
+  const { status, envelope } = run(['unfixed', '--payload', payload],
+    { prepare: declinedWith(many) });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.already_declined, 1);
+  // The 500th row was seen, so the finding matching it never reaches the ask.
+  assert.deepEqual(envelope.findings.map((e) => e.finding.file), ['src/a.mjs']);
 });
 
-test('a list call that exits nonzero refuses rather than reading no declines', () => {
-  // A stub whose `list` arm answers with a non-array is the same class: the
-  // read is not trustworthy, so the fire stops.
+test('a missing DECLINED.md is an empty decline set, not a refusal', () => {
+  // The state every repository starts in. Asking about every finding is the
+  // correct answer here, and refusing would make the first fire un-answerable.
+  const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
+  const { status, envelope } = run(['unfixed', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.already_declined, 0);
+  assert.equal(envelope.findings.length, 5);
+});
+
+test('an unreadable DECLINED.md refuses rather than re-asking what was declined', () => {
+  // The posture the old incomplete-lookup arm held: a fire that cannot tell
+  // what was already declined does not guess. A directory where the file is
+  // expected reads as EISDIR, which is not ENOENT and so is not "none yet".
   const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
-  const { status, envelope } = run(['unfixed', '--payload', payload],
-    { stub: { listBody: 'not json at all' } });
+  const { status, envelope, calls } = run(['unfixed', '--payload', payload], {
+    prepare: (dir) => mkdirSync(join(dir, '.planning', 'DECLINED.md'), { recursive: true }),
+  });
   assert.equal(status, 1);
-  assert.equal(envelope.reason, 'incomplete-lookup');
-  assert.match(envelope.detail, /response was not JSON/);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.reason, 'declines-unreadable');
+  assert.match(envelope.detail, /DECLINED\.md/);
+  assert.ok(envelope.hint);
+  assert.equal(envelope.findings, undefined);
+  assert.equal(createCalls(calls).length, 0, calls.join('\n'));
 });
 
 // --- file: one create per entry, the declined ones labelled ------------------
@@ -308,7 +343,7 @@ const dispositions = (pairs) => payloadFile({
   entries: pairs.map(([f, disposition]) => ({ finding: f, disposition })),
 });
 
-test('three accepts and two declines make five creates, and exactly two carry the label', () => {
+test('three accepts and two declines make exactly THREE creates, none labelled', () => {
   const payload = dispositions([
     [FIVE[0], 'accept'], [FIVE[1], 'decline'], [FIVE[2], 'accept'],
     [FIVE[3], 'decline'], [FIVE[4], 'accept'],
@@ -319,16 +354,43 @@ test('three accepts and two declines make five creates, and exactly two carry th
   assert.equal(envelope.accepted, 3);
   assert.equal(envelope.declined, 2);
   const creates = createCalls(calls);
-  assert.equal(creates.length, 5, calls.join('\n'));
-  const labelled = creates.filter((c) => c.includes(`--label ${DECLINE_LABEL}`));
-  assert.equal(labelled.length, 2, creates.join('\n'));
-  // And they are the two the user declined, not any two.
-  for (const f of [FIVE[1], FIVE[3]]) {
-    assert.ok(labelled.some((c) => c.includes(fingerprint(f))), fingerprint(f));
-  }
+  assert.equal(creates.length, 3, calls.join('\n'));
+  // NO create carries the decline label, because no decline reaches the forge.
+  assert.equal(creates.filter((c) => c.includes(DECLINE_LABEL)).length, 0, creates.join('\n'));
+  // The three that were created are the three accepted, and the two declined
+  // fingerprints appear in no create argv at all.
   for (const f of [FIVE[0], FIVE[2], FIVE[4]]) {
-    assert.ok(!labelled.some((c) => c.includes(fingerprint(f))), fingerprint(f));
+    assert.ok(creates.some((c) => c.includes(fingerprint(f))), `accepted ${fingerprint(f)}`);
   }
+  for (const f of [FIVE[1], FIVE[3]]) {
+    assert.ok(!creates.some((c) => c.includes(fingerprint(f))), `declined ${fingerprint(f)} reached the forge`);
+  }
+});
+
+test('a declined finding lands in DECLINED.md and never in FILED.md', () => {
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[1], 'decline']]);
+  const { status, dir } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  const declined = declinedText(dir);
+  const filed = filedText(dir);
+  assert.ok(declined.includes(fingerprint(FIVE[1])), 'the decline row is missing');
+  assert.ok(!declined.includes(fingerprint(FIVE[0])), 'an accept leaked into DECLINED.md');
+  assert.ok(filed.includes(fingerprint(FIVE[0])), 'the accepted row is missing');
+  assert.ok(!filed.includes(fingerprint(FIVE[1])), 'a decline leaked into FILED.md');
+});
+
+test('a decline written by `file` is what the next `unfixed` reads back', () => {
+  // The round trip that is the whole point: the two faces share one record, so
+  // a question answered once is never asked again. Same repository directory
+  // for both runs, which is what `run`'s deterministic tmp naming gives.
+  const f = FIVE[1];
+  const { dir } = run(['file', '--payload', dispositions([[f, 'decline']])]);
+  const payload = payloadFile(payloadFor([[f, 'survived']]));
+  const { envelope } = run(['unfixed', '--payload', payload],
+    { prepare: (d) => writeFileSync(join(d, '.planning', 'DECLINED.md'), declinedText(dir)) });
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.already_declined, 1);
+  assert.deepEqual(envelope.findings, []);
 });
 
 test('every create supplies a body, on every entry', () => {
@@ -349,11 +411,13 @@ test('a create exiting nonzero refuses and NAMES the findings that were not file
   assert.equal(status, 1);
   assert.equal(envelope.ok, false);
   assert.equal(envelope.reason, 'create-failed');
+  // Only ACCEPTS reach the forge, so the stub's third create is FIVE[4] - by
+  // then FIVE[0] and FIVE[2] have landed and both declines have gone straight
+  // to DECLINED.md without a call.
   assert.deepEqual(envelope.filed.map((f) => f.fingerprint),
-    [fingerprint(FIVE[0]), fingerprint(FIVE[1])]);
-  assert.deepEqual(envelope.unfiled.map((f) => f.fingerprint),
-    [fingerprint(FIVE[2]), fingerprint(FIVE[3]), fingerprint(FIVE[4])]);
-  assert.match(envelope.detail, /2 of 5 were filed and 3 were not/);
+    [fingerprint(FIVE[0]), fingerprint(FIVE[1]), fingerprint(FIVE[2]), fingerprint(FIVE[3])]);
+  assert.deepEqual(envelope.unfiled.map((f) => f.fingerprint), [fingerprint(FIVE[4])]);
+  assert.match(envelope.detail, /4 of 5 were filed and 1 were not/);
   assert.ok(envelope.hint);
   // Stop at the FIRST failure: nothing after it is attempted.
   assert.equal(createCalls(calls).length, 3, calls.join('\n'));
@@ -554,12 +618,16 @@ test('three accepts and two declines leave exactly THREE bullets in FILED.md', (
   }
 });
 
-test('a fire of declines ALONE writes no FILED.md at all', () => {
+test('a fire of declines ALONE writes no FILED.md, and two DECLINED.md rows', () => {
   const payload = dispositions([[FIVE[0], 'decline'], [FIVE[1], 'decline']]);
-  const { status, envelope, dir } = run(['file', '--payload', payload]);
+  const { status, envelope, dir, calls } = run(['file', '--payload', payload]);
   assert.equal(status, 0);
   assert.equal(envelope.declined, 2);
   assert.equal(filedText(dir), '');
+  const bullets = declinedText(dir).split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(bullets.length, 2, declinedText(dir));
+  // And it cost nothing remote: a fire of declines alone touches no forge.
+  assert.equal(createCalls(calls).length, 0, calls.join('\n'));
 });
 
 test('the bullet is a POINTER: the title and no finding body', () => {
@@ -644,9 +712,9 @@ test('the create-failed hint is honest that the failed create may have LANDED', 
   // `run` collapses a refusal, a SIGKILL on the timeout and a transport failure
   // into one `{ok:false}`, and a forge can accept and create an issue before
   // the client stops listening. The old hint said "re-run the unfiled entries"
-  // unconditionally, and since the only lookup this seam makes is filtered to
-  // DECLINE_LABEL it can never see an accepted issue - so the retry filed a
-  // duplicate. The fix is an honest instruction, and the token that makes it
+  // unconditionally, and since this seam's only decline lookup reads a local
+  // file that no create ever writes, it can never see an accepted issue - so
+  // the retry filed a duplicate. The fix is an honest instruction, and the token that makes it
   // followable is the fingerprint the issue TITLE already carries.
   const payload = dispositions([
     [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
@@ -673,4 +741,82 @@ test('`unfixed` writes nothing at all - the ask is not a filing', () => {
   const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
   const { dir } = run(['unfixed', '--payload', payload]);
   assert.equal(filedText(dir), '');
+});
+
+// --- the decline record is the ONLY record, so losing a row is losing an answer
+// Every case here is a way a decline could go missing while the run still
+// reported success. They are grouped because they share one consequence: a
+// question the user already settled is asked again, forever.
+
+test('an unreadable EXISTING DECLINED.md is never replaced by this batch alone', () => {
+  // The catch used to fold every read error into an empty file and then WRITE,
+  // so one mode-000 record under a writable `.planning` erased every row in it.
+  const { status, envelope, dir } = run(['file', '--payload', dispositions([[FIVE[0], 'decline']])], {
+    prepare: (d) => {
+      declinedWith([FIVE[2], FIVE[3]])(d);
+      chmodSync(join(d, '.planning', 'DECLINED.md'), 0o000);
+    },
+  });
+  // Whatever the run reports, the rows that were there must still be there.
+  chmodSync(join(dir, '.planning', 'DECLINED.md'), 0o644);
+  const text = readFileSync(join(dir, '.planning', 'DECLINED.md'), 'utf8');
+  assert.ok(text.includes(fingerprint(FIVE[2])), 'an existing decline was erased');
+  assert.ok(text.includes(fingerprint(FIVE[3])), 'an existing decline was erased');
+  assert.equal(status, 1, JSON.stringify(envelope));
+  assert.equal(envelope.ok, false);
+});
+
+test('a row the grammar rejects refuses rather than reporting the batch recorded', () => {
+  // `appendDeclinedRow` refuses by returning the text unchanged, which is right
+  // for a pure function and silent for its caller. A slug with a space is the
+  // cheapest way to reach that arm through real configuration.
+  const { status, envelope, dir } = run(['file', '--payload', dispositions([[FIVE[0], 'decline']])],
+    { git: { forge_provider: 'github', forge_repo: 'acme/the widget' } });
+  assert.equal(status, 1, JSON.stringify(envelope));
+  assert.equal(envelope.ok, false);
+  assert.match(JSON.stringify(envelope), new RegExp(fingerprint(FIVE[0])));
+  assert.equal(declinedText(dir), '', 'a refused row must not half-land');
+});
+
+test('a DANGLING SYMLINK at DECLINED.md refuses; it is an entry, not an absence', () => {
+  // readFileSync answers ENOENT for both, and only one of them means "nothing
+  // has been declined yet". The other is a record this process cannot reach.
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const { status, envelope } = run(['unfixed', '--payload', payload], {
+    prepare: (d) => {
+      mkdirSync(join(d, '.planning'), { recursive: true });
+      symlinkSync(join(d, '.planning', 'nowhere.md'), join(d, '.planning', 'DECLINED.md'));
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'declines-unreadable');
+  assert.equal(envelope.findings, undefined);
+});
+
+test('a conflicted DECLINED.md refuses rather than reading past the damage', () => {
+  // The grammar skips any line that is not a row, which is right for a human
+  // note and wrong for a row a merge mangled: the fingerprint leaves the set
+  // silently and the gate re-asks a settled question.
+  const payload = payloadFile(payloadFor([[FIVE[0], 'survived']]));
+  const { status, envelope } = run(['unfixed', '--payload', payload], {
+    prepare: (d) => {
+      declinedWith([FIVE[0]])(d);
+      const f = join(d, '.planning', 'DECLINED.md');
+      writeFileSync(f, `${readFileSync(f, 'utf8')}<<<<<<< HEAD\n- a row\n=======\n- another\n>>>>>>> other\n`);
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'declines-conflicted');
+  assert.match(envelope.hint, /BOTH sides/);
+});
+
+test('a create failure AFTER a decline still lands that decline row', () => {
+  // The refuted half of the same review: the mirror runs BEFORE the refusal is
+  // emitted, so a decline accumulated ahead of a failed create is written.
+  const payload = dispositions([[FIVE[1], 'decline'], [FIVE[0], 'accept']]);
+  const { status, envelope, dir } = run(['file', '--payload', payload], { stub: { failAt: 1 } });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'create-failed');
+  assert.ok(declinedText(dir).includes(fingerprint(FIVE[1])),
+    'the decline was reported filed and never written');
 });

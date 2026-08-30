@@ -2,14 +2,16 @@
 // @ts-check
 // issue-filing.mjs - the workflow-facing seam over lib/filing-decision.mjs
 // (CAP-01, CAP-02): the two calls a gate makes when it will not fix a finding
-// now. `unfixed` says what to ASK about; `file` writes what the user answered
-// to this repository's own tracker.
+// now. `unfixed` says what to ASK about; `file` writes what the user answered -
+// an ACCEPTED finding to this repository's own tracker, a DECLINED one to
+// `.planning/DECLINED.md` and nowhere else.
 //
 // Modelled on bin/forge.mjs: exactly one JSON line on stdout through
 // lib/seam-io.mjs's `emit`, every child spawned with its stderr DISCARDED at
 // the spawn and bounded by an explicit timeout, and NO BYTE OF ANY CHILD'S
-// OUTPUT ON ANY ENVELOPE (CONTEXT D-16). A forge CLI's stdout is read only by
-// `normalizeDeclines`, which returns fixed phrases; nothing here slices it.
+// OUTPUT ON ANY ENVELOPE (CONTEXT D-16). No forge CLI's stdout is read here at
+// all any more: the only child this seam spawns is a create, and its output is
+// discarded with its stderr.
 //
 // THE PAYLOAD RIDES A FILE ON BOTH FACES, never an inline flag and never
 // stdin. It is caller-derived free text - a reviewer's claim carries quotes,
@@ -19,17 +21,19 @@
 // `unfixed`'s payload is meant to be literally the same FILE the adjudication
 // record was written from.
 //
-// WHY THE LOOKUP IS ONE CALL PER FIRE. The decline set is read with a single
-// label-filtered `issue list`, whatever the finding count, and the fingerprints
-// are matched in this process. A call per finding is the shape criterion 11
-// forbids: it puts N round trips inside a gate step, and on the forgejo arm it
-// would multiply a 50-row server clamp by N rather than seeing it once.
+// A DECLINE IS LOCAL, ON BOTH FACES. `unfixed` reads the decline set from
+// `.planning/DECLINED.md` and `file` writes it there, and neither crosses the
+// network for it. The record used to be a labelled issue on the forge, which
+// meant every refusal a gate ever took was published on a tracker whose whole
+// job is to state real work - and it meant the dedup key was only as complete
+// as one paginated `issue list`, so a decline set bigger than a page put
+// findings the user had already declined back in front of them forever. Both
+// problems were the same problem: the answer was being kept somewhere it did
+// not belong. A local file has no page and no audience.
 //
-// AN INCOMPLETE LOOKUP REFUSES THE FIRE (criterion 12). A response that filled
-// its page is NOT "nothing was declined": the decline set is bigger than the
-// page and this seam cannot tell which of the fire's findings are in the part
-// it did not see. Answering anyway puts findings the user already declined back
-// in front of them, forever, which is the loop the decline label exists to end.
+// SO THE ONLY REMOTE WRITE LEFT IS AN ACCEPTED FINDING'S CREATE. That is the
+// whole of this seam's traffic with a forge, and criterion 11's "no round trip
+// per finding" now holds trivially on the read side rather than by care.
 //
 // AND A CREATE THAT DOES NOT LAND REFUSES, NAMING WHAT WAS NOT FILED
 // (criterion 9). The batch stops at the first failure on the `runTransition`
@@ -39,11 +43,13 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { withPlanningFileLock } from './lib/capture-file.mjs';
-import { appendFiledRow, atomicWrite } from './lib/planning-files.mjs';
+import {
+  appendDeclinedRow, appendFiledRow, atomicWrite, parseDeclinedRows,
+} from './lib/planning-files.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
@@ -51,15 +57,11 @@ import { onPath } from './lib/on-path.mjs';
 import { teaLoginNameForHost } from './lib/issue-decision.mjs';
 import { PROVIDER_TABLE, missingForgeKeys } from './lib/forge-decision.mjs';
 import {
-  DECLINE_LABEL, FILING_TABLE, fingerprint, issueBody, issueTitle,
-  normalizeDeclines, unfixedFindings,
+  FILING_TABLE, fingerprint, issueBody, issueTitle, unfixedFindings,
 } from './lib/filing-decision.mjs';
 
 /** The bound on the login probe. Local config read on every arm that needs it. */
 const LOGIN_TIMEOUT_MS = 10000;
-
-/** The bound on the one decline lookup. A list call crosses the network once. */
-const LOOKUP_TIMEOUT_MS = 30000;
 
 /** The bound on one create. Longer than the lookup because a create WRITES, and
  * a forge that is slow to accept one is not the same failure as a forge that is
@@ -207,29 +209,70 @@ function readPayload(file) {
   }
 }
 
-/** The one label-filtered lookup, as either the fingerprint set or a refusal.
- * @param {string} dir @param {any} forge
+/** The decline set, read off `.planning/DECLINED.md`, as fingerprints or a
+ * refusal.
+ *
+ * A MISSING FILE IS AN EMPTY SET, NOT A REFUSAL. "Nothing has been declined
+ * yet" is a real state and the state every repository starts in, so a fire on a
+ * tree with no DECLINED.md asks about every finding, which is correct. Any
+ * OTHER read error still refuses: the posture that a fire which cannot tell
+ * what was already declined does not guess is the whole point of this lookup,
+ * and an unreadable file is exactly that case.
+ *
+ * NO PAGE LIMIT AND THEREFORE NO TRUNCATION ARM. This used to be a
+ * label-filtered `issue list` against the forge, where a response that filled
+ * its page was indistinguishable from a complete one, and answering anyway
+ * would put findings the user already declined back in front of them forever.
+ * That loop is still the loop this seam exists to end; a local file simply
+ * cannot express it, so the refusal that guarded it has nothing left to guard.
+ * @param {string} dir
  * @returns {{ok: true, fingerprints: Set<string>}
  *   | {ok: false, reason: string, detail: string, hint: string}} */
-function readDeclines(dir, forge) {
-  const call = run(forge.bin, forge.row.lookup(forge.repo, forge.row.limit, forge.login),
-    { cwd: dir, timeout: LOOKUP_TIMEOUT_MS });
-  if (!call.ok) {
-    return { ok: false, reason: 'lookup-failed',
-      detail: `${forge.bin} could not list the ${DECLINE_LABEL} issues on ${forge.repo}`,
-      hint: `run \`${forge.bin}\` yourself in this directory to see why - an expired login and `
-        + 'an unreachable host are the two common answers - then re-run this step; nothing '
-        + 'has been filed and no finding is lost' };
-  }
-  const read = normalizeDeclines(call.stdout, forge.row.limit);
-  if (!read.complete) {
-    return { ok: false, reason: 'incomplete-lookup',
-      detail: `the ${DECLINE_LABEL} lookup on ${forge.repo} came back incomplete: ${read.detail}`,
+function readDeclines(dir) {
+  const file = join(dir, '.planning', 'DECLINED.md');
+  let text;
+  try { text = readFileSync(file, 'utf8'); } catch (e) {
+    // ENOENT ALONE IS NOT ABSENCE. A DANGLING SYMLINK READS ENOENT TOO, and
+    // that is an entry that EXISTS pointing at a record this process cannot
+    // reach - every decline in it would resurface. `lstatSync` answers about
+    // the LINK rather than its target, so it succeeds exactly where the path is
+    // there and the read was not, which is the case that must refuse.
+    const absent = /** @type {any} */ (e)?.code === 'ENOENT' && !entryExists(file);
+    if (absent) return { ok: true, fingerprints: new Set() };
+    return { ok: false, reason: 'declines-unreadable',
+      detail: `${file}: ${redactUrl(e && e.message ? e.message : String(e))}`,
       hint: 'this fire cannot tell which findings were already declined, so it refuses rather '
-        + 'than re-asking about them: close or re-label some ' + DECLINE_LABEL + ' issues on '
-        + 'the tracker so the set fits one page, then re-run this step' };
+        + 'than re-asking about them: make that file readable - a wrong mode and a dangling '
+        + 'symlink are the two common answers - then re-run this step; nothing has been filed '
+        + 'and no finding is lost' };
   }
-  return { ok: true, fingerprints: new Set(read.fingerprints) };
+  // A CONFLICTED RECORD IS NOT A PARTIAL ONE, IT IS AN UNTRUSTWORTHY ONE. The
+  // grammar skips any line that is not a row, which is right for a human note
+  // and wrong for a row a merge damaged: the fingerprint silently leaves the
+  // set and the gate re-asks a settled question. Conflict markers are the one
+  // damage shape that is unambiguous on sight, so they refuse here rather than
+  // being read past. A row corrupted some other way is still skipped silently,
+  // and that residual is stated rather than papered over - the grammar cannot
+  // tell a mangled row from a sentence somebody wrote.
+  if (/^(<{7}|={7}|>{7})(\s|$)/m.test(text)) {
+    return { ok: false, reason: 'declines-conflicted',
+      detail: `${file} holds git conflict markers, so its rows cannot be trusted`,
+      hint: 'resolve the conflict in that file - every `- ` row from BOTH sides is wanted, '
+        + 'the record is append-only and a row on either side is a question somebody already '
+        + 'answered - then re-run this step; nothing has been filed and no finding is lost' };
+  }
+  return { ok: true, fingerprints: new Set(parseDeclinedRows(text).map((r) => r.fingerprint)) };
+}
+
+/** Does the path exist as an ENTRY, whatever it points at? `lstatSync` never
+ * follows, so a dangling symlink answers true here and a genuinely absent path
+ * answers false. Any other stat error is treated as existing: the caller is on
+ * its refusal arm already and the safe reading of "cannot tell" is "do not
+ * claim nothing was declined". @param {string} file */
+function entryExists(file) {
+  try { lstatSync(file); return true; } catch (e) {
+    return /** @type {any} */ (e)?.code !== 'ENOENT';
+  }
 }
 
 /**
@@ -275,17 +318,21 @@ function cmdUnfixed(dir, payloadFile) {
   // answers before `resolveForge` runs and a fire whose whole remainder is
   // already fixed should not spend a network call to discover it.
 
+  // THE DECLINE SET IS READ BEFORE THE FORGE IS RESOLVED, because it no longer
+  // comes from one. It is a local file, so a fire whose whole remainder was
+  // already declined costs nothing to discover - the same reasoning the payload
+  // check above states for itself, now true one step further down.
+  const declines = readDeclines(dir);
+  if (declines.ok === false) {
+    emit({ ok: false, reason: declines.reason, detail: declines.detail,
+      hint: declines.hint, warnings: [] });
+    return;
+  }
+
   const forge = resolveForge(dir);
   if (forge.ok === false) {
     emit({ ok: false, reason: forge.reason, detail: forge.detail,
       hint: forge.hint, warnings: forge.warnings });
-    return;
-  }
-
-  const declines = readDeclines(dir, forge);
-  if (declines.ok === false) {
-    emit({ ok: false, reason: declines.reason, detail: declines.detail,
-      hint: declines.hint, warnings: forge.warnings });
     return;
   }
 
@@ -301,8 +348,8 @@ function cmdUnfixed(dir, payloadFile) {
   // FACE'S OWN REMOVALS. `raised` stays the size of the set `unfixedFindings`
   // answered with and `already_declined` stays a count of DECLINES alone -
   // folding one into the other would make an existing figure mean something
-  // new, and `already_declined` is tracker-derived in particular, so a number
-  // the tracker never said must not land in it. `already_fixed` counts what
+  // new, and `already_declined` is DECLINED.md-derived in particular, so a
+  // number that file never said must not land in it. `already_fixed` counts what
   // was dropped HERE for naming a commit, which is now none of them: the
   // module removes them before the set is handed over, so `raised` no longer
   // counts them either and the identity a reader checks - raised minus
@@ -319,48 +366,81 @@ function cmdUnfixed(dir, payloadFile) {
 }
 
 /**
- * Mirror the ACCEPTED filings into `.planning/FILED.md`, or say why not.
+ * Mirror the batch into its two records, or say why not: the ACCEPTED filings
+ * into `.planning/FILED.md`, the DECLINED ones into `.planning/DECLINED.md`.
  *
- * ACCEPTED ONLY, and that is criterion 1 rather than a filter for tidiness. A
- * declined finding's title written here would put it back inside the recall
- * corpus - the accumulation this phase removes, one indirection later. The
- * decline label on the forge is the only place a decline persists.
+ * TWO FILES BECAUSE THEY MEAN OPPOSITE THINGS, and only one of them belongs in
+ * the recall corpus. A declined finding's title written into FILED.md would put
+ * a closed question back in front of `/cad-plan`'s recall - the accumulation
+ * that separation exists to prevent - which is why the split is by file and not
+ * by a flag on a row. DECLINED.md is outside the corpus by construction:
+ * `cmdRecall` names its sources by path and does not name that one.
  *
- * ONE LOCKED READ-MODIFY-WRITE for the whole batch, through the guard
+ * The decline row is not bookkeeping. It IS the dedup key `readDeclines` reads,
+ * so a decline that fails to land here is a question the user will be asked
+ * again - which is why a failed write refuses rather than passing quietly.
+ *
+ * ONE LOCKED READ-MODIFY-WRITE PER FILE, through the guard
  * lib/capture-file.mjs exports for exactly this shape and the `atomicWrite` it
  * uses underneath. Reading outside the lock is the lost update it exists to
  * stop: two writers each read the same bytes, each append their own rows, and
- * the second rename erases the first one's.
+ * the second rename erases the first one's. The two files take their own locks
+ * rather than one shared lock: they are independent targets, and a batch that
+ * is all accepts or all declines then takes exactly one.
  *
  * @param {string} dir @param {string} provider @param {string} repo
  * @param {Array<{fingerprint: string, disposition: string, title: string}>} filed
  * @returns {{ok: true} | {ok: false, reason: string, detail: string}}
  */
 function mirrorFiled(dir, provider, repo, filed) {
-  const rows = filed.filter((f) => f.disposition === 'accept');
-  if (!rows.length) return { ok: true };
-  const file = join(dir, '.planning', 'FILED.md');
   const date = new Date().toISOString().slice(0, 10);
-  try {
-    // Before the lock, because the LOCK is a sibling of the target and both its
-    // exclusive create and `atomicWrite`'s sibling-temp rename need the parent
-    // directory to be there.
-    mkdirSync(join(dir, '.planning'), { recursive: true });
-    const guarded = withPlanningFileLock(file, () => {
-      let text = '';
-      try { text = readFileSync(file, 'utf8'); } catch { text = ''; }
-      for (const row of rows) {
-        text = appendFiledRow(text, { date, provider, slug: repo,
-          fingerprint: row.fingerprint, title: row.title });
+  for (const arm of [
+    { name: 'FILED.md', want: 'accept', append: appendFiledRow, lock: 'filed-locked' },
+    { name: 'DECLINED.md', want: 'decline', append: appendDeclinedRow, lock: 'declined-locked' },
+  ]) {
+    const rows = filed.filter((f) => f.disposition === arm.want);
+    if (!rows.length) continue;
+    const file = join(dir, '.planning', arm.name);
+    try {
+      // Before the lock, because the LOCK is a sibling of the target and both
+      // its exclusive create and `atomicWrite`'s sibling-temp rename need the
+      // parent directory to be there.
+      mkdirSync(join(dir, '.planning'), { recursive: true });
+      const guarded = withPlanningFileLock(file, () => {
+        // AN UNREADABLE EXISTING FILE IS NOT AN EMPTY ONE. This used to catch
+        // every read error into `text = ''`, and the write that followed
+        // REPLACED the file: a mode-000 record under a writable `.planning`
+        // meant one successful-looking run erased every row already in it.
+        // ENOENT is the only absence, and on this file that loss is total -
+        // DECLINED.md is the sole record of every question already answered.
+        let text = '';
+        try { text = readFileSync(file, 'utf8'); } catch (e) {
+          if (/** @type {any} */ (e)?.code !== 'ENOENT') throw e;
+        }
+        for (const row of rows) {
+          const before = text;
+          text = arm.append(text, { date, provider, slug: repo,
+            fingerprint: row.fingerprint, title: row.title });
+          // THE APPENDER REFUSES BY RETURNING THE TEXT UNCHANGED, which is the
+          // right shape for a pure function and the wrong thing to ignore here:
+          // a slug or a fingerprint the grammar rejects would leave the row
+          // absent while this call still reported the batch recorded. On the
+          // decline arm that is a settled question asked again; on the accept
+          // arm it is an issue nothing points at.
+          if (text === before) {
+            throw new Error(`the row for ${row.fingerprint} does not fit ${arm.name}'s grammar `
+              + `and was not written (slug ${JSON.stringify(repo)})`);
+          }
+        }
+        atomicWrite(file, text);
+      }, arm.lock);
+      if (guarded.ok === false) {
+        return { ok: false, reason: guarded.reason, detail: guarded.detail };
       }
-      atomicWrite(file, text);
-    }, 'filed-locked');
-    if (guarded.ok === false) {
-      return { ok: false, reason: guarded.reason, detail: guarded.detail };
+    } catch (e) {
+      return { ok: false, reason: 'write-failed',
+        detail: `${file}: ${e && e.message ? e.message : String(e)}` };
     }
-  } catch (e) {
-    return { ok: false, reason: 'write-failed',
-      detail: `${file}: ${e && e.message ? e.message : String(e)}` };
   }
   return { ok: true };
 }
@@ -449,8 +529,17 @@ function cmdFile(dir, payloadFile) {
   for (let i = 0; i < read.entries.length; i += 1) {
     const { finding, disposition } = read.entries[i];
     const title = issueTitle(finding);
+    // A DECLINE NEVER TOUCHES THE FORGE. It used to be created as a labelled
+    // issue, because that label was the only place a decline persisted; the row
+    // in DECLINED.md is that place now. Filing it on the tracker as well would
+    // publish every refusal on a board that is supposed to state real work, and
+    // would leave the dedup key in two places that can disagree.
+    if (disposition === 'decline') {
+      filed.push({ fingerprint: fingerprint(finding), disposition, title });
+      continue;
+    }
     const argv = forge.row.create(forge.repo, {
-      title, body: issueBody(finding), declined: disposition === 'decline',
+      title, body: issueBody(finding), declined: false,
     }, forge.login);
     if (!run(forge.bin, argv, { cwd: dir, timeout: CREATE_TIMEOUT_MS }).ok) {
       const unfiled = read.entries.slice(i).map((e) => ({
@@ -479,8 +568,8 @@ function cmdFile(dir, payloadFile) {
       // and created the issue before the client stopped listening.
       //
       // Nothing in this seam can tell them apart, and nothing cheap could:
-      // `readDeclines` is a DECLINE_LABEL-filtered list, so it structurally
-      // cannot see an accepted issue, and no row reads an issue number back off
+      // `readDeclines` reads a local file that no create ever writes, so it
+      // structurally cannot see an accepted issue, and no row reads a number off
       // a create (there is no `--json` on any create face - task 2's measured
       // fact). A second lookup would be a second network call inside a gate
       // step and a second page-clamp to reason about, for an answer the

@@ -22,6 +22,7 @@ import {
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
   atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
   parseArchiveRows, appendArchiveRows, parseFiledRows, appendFiledRow,
+  parseDeclinedRows, appendDeclinedRow,
   parsePlanFiles, parseTaskRecordSnippets,
 } from './lib/planning-files.mjs';
 
@@ -2394,4 +2395,59 @@ test('filed: a CRLF checkout indexes as its plain-LF twin', () => {
 
 test('filed: the parser is total over junk', () => {
   for (const junk of ['', '\n\n', '# Filed\n']) assert.deepEqual(parseFiledRows(junk), []);
+});
+
+// --- the DECLINED.md pointer grammar (parseDeclinedRows / appendDeclinedRow) -
+// The same five-field row as FILED.md, written to a different file because it
+// means the opposite thing: FILED.md points at work that was accepted and
+// opened on the tracker, DECLINED.md records the answers a gate must never ask
+// about again. The forge is not involved in a decline at all, which is why the
+// fingerprint has to survive here.
+
+test('declined: a row written by the appender reads back through the parser', () => {
+  const text = appendDeclinedRow('', FILED);
+  assert.deepEqual(parseDeclinedRows(text), [{
+    text: FILED.title, source: 'DECLINED.md', date: FILED.date,
+    provider: FILED.provider, slug: FILED.slug, fingerprint: FILED.fingerprint,
+  }]);
+});
+
+test('declined: an empty file is created with the DECLINED preamble, not the FILED one', () => {
+  const text = appendDeclinedRow('', FILED);
+  assert.ok(text.startsWith('# Declined: findings this repository said no to'));
+  assert.ok(!text.includes('# Filed:'));
+  // The preamble states the one thing a reader must not get wrong about this
+  // file: it is outside the recall corpus.
+  assert.ok(text.includes('NOT part of the recall corpus'));
+});
+
+test('declined: a row whose fields break the grammar returns the text unchanged', () => {
+  const before = appendDeclinedRow('', FILED);
+  for (const bad of [{ ...FILED, fingerprint: 'NOT HEX' }, { ...FILED, slug: 'has a space' },
+    { ...FILED, date: 'yesterday' }, { ...FILED, provider: 'GitHub' }]) {
+    assert.equal(appendDeclinedRow(before, bad), before);
+  }
+});
+
+test('declined: an existing file is byte-preserved and the row lands at the end', () => {
+  const one = appendDeclinedRow('', FILED);
+  const two = appendDeclinedRow(one, { ...FILED, fingerprint: 'fedcba9876543210' });
+  assert.ok(two.startsWith(one));
+  assert.deepEqual(parseDeclinedRows(two).map((r) => r.fingerprint),
+    [FILED.fingerprint, 'fedcba9876543210']);
+});
+
+test('declined: a line that is not a row is skipped, so a human note mints nothing', () => {
+  const text = `${appendDeclinedRow('', FILED)}\nsome note somebody left\n- not a row either\n`;
+  assert.deepEqual(parseDeclinedRows(text).map((r) => r.fingerprint), [FILED.fingerprint]);
+});
+
+test('declined: the parser is total over junk', () => {
+  for (const junk of ['', '\n\n', '# Declined\n']) assert.deepEqual(parseDeclinedRows(junk), []);
+});
+
+test('filed: the preamble no longer sends a reader to the forge for a decline', () => {
+  const text = appendFiledRow('', FILED);
+  assert.ok(!text.includes('decline label'));
+  assert.ok(text.includes('DECLINED.md'));
 });
