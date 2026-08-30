@@ -167,12 +167,20 @@ each drop and why, so a mis-filter is visible rather than silent.
 gate and who consumes it. This is WHERE. Write the settled survivor list as the
 same JSON object every reviewer returns, to
 `.planning/phases/<N>/REVIEW-risk_surface-<discriminator>.md`.
-`/cad-land`'s unattended close unions those files and pipes them to
-`land-cleanup.mjs gate`, and it fires no review of its own, so this write is the
-ONLY producer that halt has: skip it and an autonomous close merges over a
-blocker nobody halted on.
 
-Two properties keep the union honest, and both are failure modes that report
+**What the unattended close consumes is the RULING, not this file.** `/cad-land`
+reads the `ADJUDICATION-risk_surface-<discriminator>[-rN].json` written BESIDE
+it - the record of what each finding was settled AS - and pipes those entries to
+`land-cleanup.mjs gate`, so a finding that was fixed, refuted, downgraded or
+overridden stops no close and only a genuinely-unfixed one does. This file is
+still load-bearing twice over: it is what that record is written against, and a
+REVIEW file carrying no sibling record of the same basename HALTS the close BY
+NAME (`unruled-review`) rather than passing, because a fire nothing ruled says
+nothing about what survived. `/cad-land` fires no review of its own, so skipping
+either write is what makes an autonomous close merge over a blocker nobody
+halted on.
+
+Two properties keep that pairing honest, and both are failure modes that report
 CLEAN rather than erroring:
 
 - **Every write is discriminated - there is no unsuffixed path.** The
@@ -180,9 +188,11 @@ CLEAN rather than erroring:
   once, and nothing here restates it. What it buys: two fires sharing a
   filename do not merge, they overwrite - a later empty settle erases an
   earlier survivor the user had overridden.
-- **The producer set outlives the phase dirs.** `/cad-milestone` step 3 prunes
-  `.planning/phases/<N>/` and only then chains `/cad-land`, so it carries the
-  survivors to `.planning/REVIEW-risk_surface-<label>.md` first. The consumer
-  glob is BOTH that path and `.planning/phases/*/REVIEW-risk_surface*.md`. That
-  carried file is TRANSIENT and never staged (milestone.md step 7 deletes it):
+- **The rulings outlive the phase dirs.** `/cad-milestone` step 3 prunes
+  `.planning/phases/<N>/` and only then chains `/cad-land`, so it runs
+  `planning.mjs risk-carry --phase <N>` FIRST: this file and every record beside
+  it, every round, basenames preserved - the pairing above is BY NAME, so a
+  renamed carry would read as unruled and halt every close - copied to
+  `.planning/risk-carry/<N>/`. The consumer globs are BOTH roots. That carried
+  copy is TRANSIENT and never staged (milestone.md step 7 deletes it):
   committed, it would hard-halt every later land on an answered finding.

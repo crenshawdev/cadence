@@ -339,16 +339,22 @@ Only that question re-asks - the rest of the batch stands.
 
 **The `git.auto_close` carve-out is a READ inside `/cad-land`, not a suppressed
 ask.** `/cad-land` fires no review of its own - v3.2.0 removed the one it had -
-so there is no triage prompt there to switch off. What the key still
-governs is the unattended close's halt: with it true, `/cad-land` unions the
-`risk_surface` survivors this branch's own fires already persisted to
-`.planning/phases/*/REVIEW-risk_surface*.md` AND
-`.planning/REVIEW-risk_surface-*.md` and pipes them to
-`land-cleanup.mjs gate`, whose blocker/high halt is the only consequence. The
-scope is load-bearing rather than stylistic - no other command reads that key
-and `land-cleanup.mjs gate` does not run outside `/cad-land`, so a `plan`,
-`diff` or `phase_diff` fire keeps both its ask and its survivors whatever
-`auto_close` says.
+so there is no triage prompt there to switch off. What the key still governs is
+the unattended close's halt: with it true, `/cad-land` reads what this branch's
+own `risk_surface` fires ADJUDICATED - the `ADJUDICATION-risk_surface*.json`
+records under `.planning/phases/*/` and under `.planning/risk-carry/*/`, where
+`/cad-milestone` copies them before pruning - unions every round's `entries[]`,
+and pipes that to `land-cleanup.mjs gate`. Three consequences follow, and only
+these three: an entry the record leaves genuinely unfixed halts the merge, a
+`REVIEW-risk_surface*.md` with no sibling record halts it by name because
+nothing ruled that fire at all, and an entry a person cleared with
+`overridden: true` is surfaced beside the halt without causing one. What it
+never halts on is the reviewer's raw claim - a finding that was fixed, refuted
+or downgraded during adjudication is answered work, and halting on it is what
+this arm stopped doing. The scope is load-bearing rather than stylistic - no
+other command reads that key and `land-cleanup.mjs gate` does not run outside
+`/cad-land`, so a `plan`, `diff` or `phase_diff` fire keeps both its ask and its
+survivors whatever `auto_close` says.
 
 Adjudicated does not auto-halt like `blocking`, and it is not the auto-replan
 convergence loop (cut in DESIGN §6) - it grounds once and asks. Use it for the
