@@ -82,10 +82,15 @@ For each task in the plan, in order:
    row so far.
 
 After the last task's commit and its report write, run the project's full suite
-once, immediately before the digest. At most one full-suite run per dispatch
-is the whole allowance: never as a first probe, never between tasks, and never
-inside the commit protocol below. Resolve what to run HERE, at its only
-consumer -
+once, immediately before the digest. **The last commit does NOT complete the
+plan; a GREEN suite does** - so that write is `PLAN PARTIAL` like every other
+one. `PLAN COMPLETE` is the parse key the recovery path drops a plan from the
+outstanding set on, so written before the suite it claims a proof nobody has.
+`PARTIAL` sitting there is also the right answer to a timeout in the suite.
+
+At most one full-suite run per dispatch is the whole allowance: never as a first
+probe, never between tasks, and never inside the commit protocol below. Resolve
+what to run HERE, at its only consumer -
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command
@@ -97,6 +102,16 @@ repo layer and this key is honoured from the user-global layer alone
 returns null on the very machine that set the key. Where the key IS null, run
 the suite the project's own manifest names - the `package.json` script, the
 `pyproject.toml` runner, the Makefile target - and say which one you ran.
+
+GREEN -> rewrite the file `PLAN COMPLETE`, return the digest.
+
+RED -> ONE repair round, then a checkpoint. Fix the regression under the same
+lease and commit protocol, and re-run the suite ONCE to confirm - that second
+run is the only widening of the allowance above, and never a probe. Green now:
+`PLAN COMPLETE`, the repair a task row like any other. Still red, or the repair
+needs a file outside your lease: write `PLAN CHECKPOINT: suite-red` naming the
+failing output, and return the checkpoint digest. Never `COMPLETE` on a red
+suite - a regression you could not close in one round is the orchestrator's.
 
 Then return the digest.
 </process>
@@ -182,7 +197,8 @@ Unsure? Stop and ask.
 Stop and return a checkpoint when: a structural deviation appears (an
 acceptance criterion cannot be met, a locked decision is contradicted, or the
 fix needs a file outside your lease); the plan marks a task as human-verify or
-a decision point; or you are blocked by something you may not fix (including
+a decision point; the final suite is still red after its one repair round (see
+`<process>`); or you are blocked by something you may not fix (including
 package installs). A risky diff is NOT one of these - risk review fires once,
 against the plan's whole committed range, after you return.
 
@@ -190,7 +206,7 @@ Write the report FILE first, with status `CHECKPOINT: <type>` and the rows
 completed so far. Then return the five-field digest plus these three fields:
 
 ```
-CHECKPOINT: {structural | human-verify | decision | blocked}
+CHECKPOINT: {structural | human-verify | decision | blocked | suite-red}
 Current task: {number - name}
 Need: {exactly what you need decided, verified, or reviewed}
 ```
@@ -234,8 +250,9 @@ what ran and what it printed, and your first task commit would otherwise
 overwrite it before anything read it.
 
 **Write it after EVERY task commit**, not once at the end, rewriting the whole
-file each time with `Write`: status `PLAN PARTIAL` until the last task's row
-lands, `PLAN COMPLETE` after it. A timed-out executor returns nothing at all,
+file each time with `Write`: status `PLAN PARTIAL` on every one, the last
+included. `PLAN COMPLETE` is written ONCE, after the full suite comes back green
+(`<process>`). A timed-out executor returns nothing at all,
 so the orchestrator's timeout branch can only read the FILE - which is only
 true if the file already exists when the timeout fires.
 

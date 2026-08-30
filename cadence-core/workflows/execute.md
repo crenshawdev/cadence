@@ -422,6 +422,14 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
   situation.
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
+- **suite-red** (the project's full suite is still red after the executor's one
+  repair round) -> the report file names the failing output; the continuation
+  dispatch carries that path and the regression is its first task. Do NOT treat
+  it as complete and do NOT run the suite yourself to see: the plan's report
+  says `PLAN CHECKPOINT: suite-red`, so `replay-check` already reports the plan
+  outstanding, and a green run in your own turn would not change what is on
+  disk. This is the one checkpoint type whose cause is a cross-task regression
+  rather than a decision, so it needs no ask - dispatch the continuation.
 
 A `blocked` halt naming a MISSING PLAN file is the one arm that also has a named
 orchestrator-side remedy, because its cause is known: the worktree forked from a
