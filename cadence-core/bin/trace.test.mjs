@@ -11,7 +11,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
   copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
-  statSync, linkSync, utimesSync,
+  statSync, linkSync, utimesSync, rmSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
@@ -204,6 +204,31 @@ test('appendEvent: a record at the bound rotates, and the append lands', () => {
   assert.equal(renderTrace(dir, 1).capped, false);
 });
 
+test('appendEvent: the rotation marker SEALS the generation it carried away', () => {
+  // `carried_bytes` is what tells the writer that destroys this generation
+  // where this cut stopped accounting. A sealed size that did not match the
+  // file would send that writer's rescue at the wrong offset, so it is
+  // asserted against `statSync` of the sibling rather than against a constant.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+
+  const markers = lines(dir).filter((e) => e.event === ROTATION);
+  assert.equal(markers.length, 1);
+  assert.equal(typeof markers[0].carried_bytes, 'number');
+  assert.equal(markers[0].carried_bytes, statSync(rotatedTracePath(dir)).size,
+    'the sealed size is not the generation the claim carried away');
+
+  // The new field rides the RECORD and reaches no envelope: `rotated` is still
+  // exactly `{file, ts}` (D-11 leaves that derivation alone)...
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(Object.keys(r.rotated).sort(), ['file', 'ts']);
+  // ...and the marker is still one ordinary lifecycle line of the record.
+  assert.equal(r.events.filter((e) => e.event === ROTATION).length, 1);
+  assert.equal(r.counts.lifecycle, lines(dir).filter((e) => e.family === 'lifecycle').length);
+});
+
 test('appendEvent: a completed rotation RELEASES the claim and leaves the sidecar inert', () => {
   // The positive `rotateTrace`'s `finally` owes (TRC-09). The rotation the row
   // above exercises, read for the one thing that row cannot see: whether the
@@ -355,6 +380,37 @@ test('rotateTrace: a claim with NO sidecar at all is left standing (TRC-09)', as
   const held = statSync(tracePath(dir));
   assert.equal(held.ino, statSync(rotatedTracePath(dir)).ino);
   assert.equal(held.nlink, 2, 'the claim was evicted on missing evidence');
+});
+
+test('appendEvent: a LEFTOVER eviction that cannot confirm its claim puts the generation back (D-02)', () => {
+  // The leftover arm's own discriminator - `rotationInFlight` - is read BEFORE
+  // the eviction rename, so a writer that links in between has a LIVE claim
+  // renamed away with nothing to put it back. That costs the whole record, not
+  // one rotation. The confirm has to run on this arm too.
+  //
+  // Driven by a sidecar path `publish` cannot write, which is the same answer a
+  // stolen claim gives: this call cannot prove the claim it is about to break
+  // is its own.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+  const generation = readFileSync(rotatedTracePath(dir), 'utf8');
+
+  // A DIRECTORY where the sidecar goes: the publish rename cannot land, so
+  // `mine` stays null and no re-stat can ever answer with it.
+  rmSync(rotationClaimPath(dir), { force: true });
+  mkdirSync(rotationClaimPath(dir));
+
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true,
+    "the writer lost its own event to a rotation that refused itself");
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
+    'the generation was destroyed by an eviction that could not confirm its claim');
+  assert.equal(siblings(dir).filter((e) => e.includes('.evict.')).length, 0,
+    'an evicted generation was left at its private path');
+  assert.equal(carrying(tracePath(dir), 'b'), 1,
+    "the writer's own event is not in the live record");
 });
 
 test('appendEvent: a record already PAST the bound rotates, and its sibling keeps the excess', () => {
@@ -559,6 +615,131 @@ test('appendEvent: a SECOND rotation replaces the generation, so the pair stays 
   assert.deepEqual(lines(dir).filter((e) => e.writer).map((e) => e.writer), ['a', 'b']);
 });
 
+/** One well-formed event line of the run in flight, as a racing writer wrote it. */
+const planted = (writer) => `${JSON.stringify({
+  corr: '1-abc1234', phase: 1, ts: '2026-08-30T00:00:00.000Z',
+  family: 'routing', event: 'resolve', writer,
+})}\n`;
+
+/** A root that has rotated ONCE, with the run in flight anchored under it. */
+function rotatedOnce(dir) {
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+}
+
+/** How many lines of a file carry this writer's name. */
+const carrying = (f, writer) => (existsSync(f)
+  ? readFileSync(f, 'utf8').split('\n').filter((l) => l.includes(`"${writer}"`)).length
+  : 0);
+
+test('appendEvent: a second rotation carries back the event that only reached the generation', () => {
+  // The two-step loss (D-05). Rotation 1's carry-back stops the instant the
+  // sibling stops growing, so a writer that appended into the old inode a
+  // moment later left its bytes ONLY in the generation. Rotation 2 destroys
+  // that generation - and before this phase the event was then in NEITHER file.
+  const dir = root();
+  rotatedOnce(dir);
+  appendFileSync(rotatedTracePath(dir), planted('racer'));
+
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
+
+  const live = carrying(tracePath(dir), 'racer');
+  const generation = carrying(rotatedTracePath(dir), 'racer');
+  assert.equal(live + generation, 1,
+    `the racing writer's event is in ${live + generation === 0 ? 'NEITHER file' : 'both files'}`);
+  assert.equal(live, 1, 'the rescue put it somewhere other than the record readers read');
+  // The rescued line parses as an ordinary event of the run in flight.
+  assert.equal(lines(dir).filter((e) => e.writer === 'racer').length, 1);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
+});
+
+test('appendEvent: the rescue never puts back a line the live record already carries', () => {
+  // Rotation 1's own carry-back leaves a duplicate copy in the generation on
+  // purpose - "a duplicate copy in a file nothing reads costs nothing". The
+  // rescue reads that same delta, and a second copy in the LIVE record is not
+  // free: a bracket half counted twice changes what `renderTrace` reports.
+  const dir = root();
+  rotatedOnce(dir);
+  const dup = readFileSync(tracePath(dir), 'utf8').split('\n')
+    .filter(Boolean).find((l) => l.includes('"writer":"a"'));
+  assert.ok(dup, 'fixture: the live record must already carry the line being planted');
+  appendFileSync(rotatedTracePath(dir), `${dup}\n`);
+
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true);
+
+  assert.equal(lines(dir).filter((e) => e.writer === 'a').length, 1,
+    'the rescue re-appended a line the record already held');
+});
+
+test('rotateTrace: a rescue that cannot READ the generation STATES the tail it cut', async () => {
+  // A rescue that fails must not be SILENT. It never changes whether the
+  // rotation rotated - `reason` is for a rotation that failed outright - but
+  // the bytes it could not carry are stated, and they come off the stat rather
+  // than off a read that never established a count.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  rotatedOnce(dir);
+  appendFileSync(rotatedTracePath(dir), planted('racer'));
+
+  const marker = lines(dir).find((e) => e.event === ROTATION);
+  const beyond = statSync(rotatedTracePath(dir)).size - marker.carried_bytes;
+  assert.ok(beyond > 0, 'fixture: the generation must have grown past its seal');
+
+  chmodSync(rotatedTracePath(dir), 0o000);
+  // Running as root defeats the mode bits; the row would then assert nothing.
+  try {
+    accessSync(rotatedTracePath(dir), constants.R_OK);
+    chmodSync(rotatedTracePath(dir), 0o600);
+    return;
+  } catch { /* not root, carry on */ }
+
+  padToBound(dir);
+  const res = rotateTrace(dir, 120);
+  assert.equal(res.rotated, true, 'a failed rescue changed whether the rotation rotated');
+  assert.equal('reason' in res, false, 'a failed rescue was reported as a failed rotation');
+  assert.equal(res.shortfall, beyond,
+    'the cut tail was destroyed silently, or counted from a read that never happened');
+  assert.equal(carrying(tracePath(dir), 'racer') + carrying(rotatedTracePath(dir), 'racer'), 0,
+    'fixture: the shortfall must be stating a tail that really was cut');
+});
+
+test('rotateTrace: a generation whose marker carries NO seal states an UNKNOWN shortfall', async () => {
+  // The pre-upgrade shape, and the one that fires on the FIRST rotation after
+  // an upgrade rather than only in theory: a generation sealed by the code that
+  // shipped before `carried_bytes`. No offset can be guessed, so nothing is
+  // rescued - but the generation is destroyed either way, and destroying it
+  // with no field at all is the one silence the `shortfall` contract forbids.
+  const { rotateTrace } = await import('./lib/trace.mjs');
+  const dir = root();
+  rotatedOnce(dir);
+  appendFileSync(rotatedTracePath(dir), planted('racer'));
+
+  // Strip the field this phase added off the marker the FIRST cut wrote, which
+  // is the line the rescue reads its offset from. A corrupt marker line reaches
+  // the same arm by the same route - neither yields a number.
+  const live = readFileSync(tracePath(dir), 'utf8').split('\n');
+  const at = live.findIndex((l) => l && JSON.parse(l).event === ROTATION);
+  assert.ok(at >= 0, 'fixture: the first cut must have written a marker to strip');
+  const marker = JSON.parse(live[at]);
+  assert.equal(typeof marker.carried_bytes, 'number',
+    'fixture: the marker must be carrying a seal, or this row proves nothing');
+  delete marker.carried_bytes;
+  live[at] = JSON.stringify(marker);
+  writeFileSync(tracePath(dir), live.join('\n'));
+
+  padToBound(dir);
+  const res = rotateTrace(dir, 120);
+  assert.equal(res.rotated, true, 'a rescue that could not START changed whether the rotation rotated');
+  assert.equal('reason' in res, false, 'a rescue that could not start was reported as a failed rotation');
+  assert.equal('shortfall' in res, true, 'the generation was destroyed with nothing stated at all');
+  assert.equal(res.shortfall, null, 'an unguessable seal states the unknown, never a byte count');
+  assert.equal(carrying(tracePath(dir), 'racer') + carrying(rotatedTracePath(dir), 'racer'), 0,
+    'fixture: the shortfall must be stating a tail that really was cut');
+});
+
 // --- the rotation, on both reader envelopes (D-06) ---------------------------
 
 /** A planning root whose record has just rotated, with `plan` paired under it. */
@@ -632,6 +813,44 @@ test('seam: trace render and trace suggest each name their record and report the
   assert.equal(run(dir, ['trace', 'render', '--phase', '9']).rotated.file, rotatedTracePath(dir));
 });
 
+test('seam: after a SECOND cut both envelopes still report the rotation, and the marker pairs with nothing', () => {
+  // This phase changed what the marker carries and what a second rotation does
+  // with the generation it destroys, so the guard is over the seam: a rotation
+  // that happened is still visible on both readers, and nothing new leaks into
+  // either envelope.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: DISPATCH, plan: 1, role: 'cad-executor' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 1, role: 'cad-executor', tokens: 10 });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+  assert.deepEqual(siblings(dir), ROTATED_SET);
+
+  const render = run(dir, ['trace', 'render', '--phase', '1']);
+  const suggest = run(dir, ['trace', 'suggest']);
+  assert.equal(render.rotated.file, rotatedTracePath(dir));
+  assert.equal(suggest.rotated.file, rotatedTracePath(dir));
+  assert.equal(suggest.rotated.ts, render.rotated.ts,
+    'the two readers disagree about which cut the record last took');
+  assert.deepEqual(Object.keys(render.rotated).sort(), ['file', 'ts']);
+  assert.equal(render.capped, false, 'a rotated record is whole, not truncated at the ceiling');
+
+  // `carried_bytes` seals the generation for ONE in-process consumer and is not
+  // telemetry: it reaches neither envelope.
+  assert.equal(JSON.stringify(render).includes('carried_bytes'), false);
+  assert.equal(JSON.stringify(suggest).includes('carried_bytes'), false);
+
+  // INERT (D-12): two markers are in the record now, and neither opened a
+  // bracket nor closed one - the executor pair is still the only bracket, and
+  // nothing is left half-open.
+  assert.equal(lines(dir).filter((e) => e.event === ROTATION).length, 2);
+  assert.equal(render.brackets.length, 1);
+  assert.equal(render.brackets[0].role, 'cad-executor');
+  assert.deepEqual(render.unpaired, []);
+});
+
 test('appendEvent: one line that reaches the bound by itself is refused, and nothing moves', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
@@ -643,6 +862,54 @@ test('appendEvent: one line that reaches the bound by itself is refused, and not
   assert.deepEqual(res, { written: false, reason: 'oversized-event' });
   assert.equal(readFileSync(tracePath(dir), 'utf8'), before);
   assert.deepEqual(siblings(dir), ['trace.jsonl'], 'nothing was rotated');
+});
+
+/** Append one phase-7 event whose rendered line is exactly `bytes` long. */
+function sized(dir, bytes) {
+  const skeleton = `${JSON.stringify({
+    corr: '7', phase: 7, ts: new Date().toISOString(),
+    family: 'routing', event: 'resolve', detail: '',
+  })}\n`;
+  const n = bytes - Buffer.byteLength(skeleton);
+  assert.ok(n >= 0, 'fixture: the skeleton is already longer than the requested line');
+  return appendEvent(dir, { phase: 7, family: 'routing', event: 'resolve', detail: 'y'.repeat(n) });
+}
+
+test('appendEvent: an event with no room BESIDE the marker is refused, not rotated for', () => {
+  // The rotation always writes its marker into the fresh record too, so an
+  // event that fits under the bound alone but not beside the marker used to
+  // rotate and then land a record over its bound on the first write (measured
+  // 2026-08-30: 105 B over). It is refused now - the deliberate band D-09 names.
+  const dir = root();
+  padToBound(dir);
+  const before = readFileSync(tracePath(dir), 'utf8');
+
+  const res = sized(dir, MAX_TRACE_BYTES - 8);
+  assert.deepEqual(res, { written: false, reason: 'oversized-event' });
+  assert.equal(readFileSync(tracePath(dir), 'utf8'), before,
+    'the record it would have rotated is not byte-identical');
+  assert.deepEqual(siblings(dir), ['trace.jsonl'], 'nothing was rotated');
+});
+
+test('appendEvent: an event that DOES fit beside the marker rotates under the bound (AC2)', () => {
+  // The reserve has to be the line the rotation actually writes, so the size
+  // this row admits is MEASURED off a real rotation rather than assumed: same
+  // record size, same absent anchor, so the same marker.
+  const probe = root();
+  padToBound(probe);
+  assert.equal(appendEvent(probe, { phase: 7, family: 'routing', event: 'resolve' }).written, true);
+  const line = readFileSync(tracePath(probe), 'utf8').split('\n').find((l) => l.includes(ROTATION));
+  assert.ok(line, 'fixture: the probe rotation wrote no marker');
+  const owed = Buffer.byteLength(`${line}\n`);
+
+  // One byte inside the new threshold, which is the tightest admission there is.
+  const dir = root();
+  padToBound(dir);
+  assert.equal(sized(dir, MAX_TRACE_BYTES - owed - 1).written, true,
+    'the reserve is wider than the marker the rotation writes');
+  assert.ok(existsSync(rotatedTracePath(dir)), 'it still rotated');
+  assert.ok(statSync(tracePath(dir)).size <= MAX_TRACE_BYTES,
+    `the rotation's FIRST write left the record ${statSync(tracePath(dir)).size - MAX_TRACE_BYTES} B over its bound`);
 });
 
 test('renderTrace: an oversized file is read bounded, not whole', () => {
@@ -1097,7 +1364,8 @@ test('seam: --tokens 0 is a recorded figure, not an omission', () => {
 test('seam: --raised rides an adjudication event as a NUMBER', () => {
   const dir = root();
   const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--detail', 'plan: 0 survivors; voices openai', '--raised', '9']);
+    '--event', 'adjudication', '--detail', 'plan: 0 survivors; voices openai',
+    '--survivors', '0', '--downgraded', '0', '--refuted', '0', '--raised', '9']);
   assert.equal(r.ok, true);
   assert.equal(r.written, true);
   const [e] = lines(dir);
@@ -1111,7 +1379,8 @@ test('seam: --raised rides an adjudication event as a NUMBER', () => {
 test('seam: --raised 0 is a recorded figure, not an omission', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--detail', 'plan: 0 survivors', '--raised', '0']);
+    '--event', 'adjudication', '--detail', 'plan: 0 survivors',
+    '--survivors', '0', '--downgraded', '0', '--refuted', '0', '--raised', '0']);
   const [e] = lines(dir);
   assert.equal(e.raised, 0);
   // `0 of 0` and "nobody recorded it" are different fires, and this key is what
@@ -1122,7 +1391,8 @@ test('seam: --raised 0 is a recorded figure, not an omission', () => {
 test('seam: an append with no --raised is byte-identical to today\'s', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--detail', 'plan: 2 survivors']);
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors',
+    '--survivors', '2', '--downgraded', '0', '--refuted', '0']);
   const [e] = lines(dir);
   assert.equal('raised' in e, false, JSON.stringify(e));
 });
@@ -1134,7 +1404,8 @@ test('seam: a malformed --raised appends NOTHING at all', () => {
   for (const bad of ['abc', '-1', '1.5', '', '1,234']) {
     const before = traceBytes(dir);
     const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-      '--event', 'adjudication', '--detail', 'plan: 0 survivors', '--raised', bad]);
+      '--event', 'adjudication', '--detail', 'plan: 0 survivors',
+      '--survivors', '0', '--downgraded', '0', '--refuted', '0', '--raised', bad]);
     assert.equal(r.ok, false, bad);
     assert.equal(r.reason, 'bad-args', bad);
     assert.equal(traceBytes(dir), before, bad);
@@ -1142,7 +1413,8 @@ test('seam: a malformed --raised appends NOTHING at all', () => {
   assert.equal(traceBytes(dir), null);
   // A bare `--raised` (parsed as boolean true) is refused the same way.
   const bare = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--raised']);
+    '--event', 'adjudication',
+    '--survivors', '0', '--downgraded', '0', '--refuted', '0', '--raised']);
   assert.equal(bare.ok, false);
   assert.equal(bare.reason, 'bad-args');
   assert.equal(traceBytes(dir), null);
@@ -1227,9 +1499,11 @@ function fireRecord(repo, dir, { phase = 2, trigger = 'plan', discriminator = 'p
   return r;
 }
 
-/** The receipt a settle point copies, minus the counts. */
-const receipt = (extra) => ['trace', 'append', '--phase', '2', '--family', 'outcome',
-  '--event', 'adjudication', '--trigger', 'plan', '--plan', '1',
+/** The receipt a settle point copies, minus the counts. The EVENT is a
+ *  parameter because one arm below spawns a receipt carrying no settled figure
+ *  at all, and that shape belongs on an event which settles nothing. */
+const receipt = (extra, event = 'adjudication') => ['trace', 'append', '--phase', '2',
+  '--family', 'outcome', '--event', event, '--trigger', 'plan', '--plan', '1',
   '--base', 'HEAD~1', '--sha', 'deadbee', ...extra];
 
 test('seam: the three settled counts ride an outcome event as NUMBERS', () => {
@@ -1255,7 +1529,10 @@ test('seam: a settled count of 0 is a recorded figure, an absent one omits the k
   assert.ok('survivors' in e);
 
   const other = root();
-  run(other, receipt([]));
+  // On `rearm` rather than `adjudication`: what this half proves is that an
+  // append carrying no settled figure writes none of the keys, and a re-arm is
+  // the shipped receipt that carries none by contract.
+  run(other, receipt([], 'rearm'));
   const [bare] = lines(other);
   for (const key of ['survivors', 'downgraded', 'refuted', 'round']) {
     assert.equal(key in bare, false, `${key}: ${JSON.stringify(bare)}`);
@@ -1265,21 +1542,25 @@ test('seam: a settled count of 0 is a recorded figure, an absent one omits the k
 test('seam: a malformed settled count appends NOTHING at all', () => {
   for (const flag of ['--survivors', '--downgraded', '--refuted', '--round']) {
     const dir = root();
+    // `--round` is not itself one of the three settled figures, so its receipts
+    // carry one: the subject of every row here is the malformed VALUE, and a
+    // settle receipt naming no figure at all is a different call entirely.
+    const settle = flag === '--round' ? ['--survivors', '0'] : [];
     // No comma-grouping exception, unlike `--tokens`: a finding count is never
     // PRINTED grouped, so `1,234` is a typo rather than a transcription.
     for (const bad of ['abc', '-1', '1.5', '', '1,234']) {
-      const r = run(dir, receipt([flag, bad]));
+      const r = run(dir, receipt([...settle, flag, bad]));
       assert.equal(r.ok, false, `${flag} ${bad}`);
       assert.equal(r.reason, 'bad-args', `${flag} ${bad}`);
       assert.equal(traceBytes(dir), null, `${flag} ${bad}`);
     }
     // `--round 0` is malformed for a flag whose rounds start at 1.
     if (flag === '--round') {
-      assert.equal(run(dir, receipt([flag, '0'])).ok, false);
+      assert.equal(run(dir, receipt([...settle, flag, '0'])).ok, false);
       assert.equal(traceBytes(dir), null);
     }
     // A bare flag (parsed as boolean true) is refused the same way.
-    const r = run(dir, receipt([flag]));
+    const r = run(dir, receipt([...settle, flag]));
     assert.equal(r.ok, false, flag);
     assert.equal(r.reason, 'bad-args', flag);
     assert.equal(traceBytes(dir), null, flag);
@@ -1544,6 +1825,7 @@ test('seam: --trigger stores the review trigger an event belongs to, as a string
   const dir = root();
   const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
     '--event', 'adjudication', '--plan', '2', '--trigger', 'risk_surface',
+    '--survivors', '1', '--downgraded', '0', '--refuted', '0',
     '--detail', 'risk_surface plan-2: 1 survivor']);
   assert.equal(r.ok, true, JSON.stringify(r));
   const [e] = lines(dir);
@@ -1556,12 +1838,21 @@ test('seam: --trigger stores the review trigger an event belongs to, as a string
 });
 
 test('seam: --trigger is stored VERBATIM, trimmed, with no vocabulary of its own', () => {
-  // Event-agnostic like every other flag on this seam: no coupling to an event
-  // NAME and no refusal keyed to one. A trigger the seam does not recognise is
-  // the caller's business, exactly as `--reviewer` treats a backend name.
+  // Event-agnostic like every other flag IN THIS SEAM: planning/trace.mjs
+  // couples no flag to an event NAME and mints no refusal keyed to one. A
+  // trigger the seam does not recognise is the caller's business, exactly as
+  // `--reviewer` treats a backend name.
+  //
+  // The sentence is about the SEAM and not about the CLI in front of it. The
+  // argument door in planning.mjs does know three event names - it refuses a
+  // settle receipt carrying none of the figures it settles on, off
+  // lib/arg-contract.mjs's `PRESENCE_RULES` - which is why the call below
+  // carries all three. The two layers are the point: the seam stays
+  // event-agnostic, the declaration at the door holds the event knowledge.
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'gate_pass', '--trigger', '  risk_surface  ']);
+    '--event', 'gate_pass', '--survivors', '0', '--downgraded', '0', '--refuted', '0',
+    '--trigger', '  risk_surface  ']);
   assert.equal(lines(dir)[0].trigger, 'risk_surface');
 });
 
@@ -1573,7 +1864,8 @@ test('seam: a bare or blank --trigger appends NOTHING at all', () => {
   const dir = root();
   for (const args of [['--trigger'], ['--trigger', ''], ['--trigger', '  ']]) {
     const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-      '--event', 'adjudication', '--plan', '2', ...args]);
+      '--event', 'adjudication', '--plan', '2',
+      '--survivors', '0', '--downgraded', '0', '--refuted', '0', ...args]);
     assert.equal(r.ok, false, JSON.stringify(args));
     assert.equal(r.reason, 'bad-args', JSON.stringify(args));
   }
@@ -1583,7 +1875,8 @@ test('seam: a bare or blank --trigger appends NOTHING at all', () => {
 test('seam: an append with no --trigger is byte-identical to today\'s', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
-    '--event', 'adjudication', '--detail', 'plan: 2 survivors']);
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors',
+    '--survivors', '2', '--downgraded', '0', '--refuted', '0']);
   const [e] = lines(dir);
   assert.equal('trigger' in e, false, JSON.stringify(e));
 });
@@ -1889,7 +2182,8 @@ test('seam: --detail-file carries a detail no shell could expand', () => {
   const dir = root();
   const payload = 'reviewer said $(touch /tmp/cad-trace-should-not-exist) and `id`';
   const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'outcome',
-    '--event', 'adjudication', '--detail-file', valueFile(dir, `${payload}\n`)]);
+    '--event', 'adjudication', '--survivors', '0', '--downgraded', '0', '--refuted', '0',
+    '--detail-file', valueFile(dir, `${payload}\n`)]);
   assert.equal(r.ok, true);
   // Byte-equal to the file's trimmed contents: nothing between the file and the
   // record may touch the value.

@@ -864,7 +864,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-19 | cadence-core/workflows/execute.md | 209-214 | `--role` is a separate key from `--plan`; `--plan` pairs the bracket, `--role` groups the per-role totals. | accurate | accurate | 1 |
 | EXECUTE-20 | cadence-core/workflows/execute.md | 216-219 | `--tokens 0` would claim a dispatch that cost nothing, so the flag is omitted when no figure is returned. | accurate | accurate | 1 |
 | EXECUTE-21 | cadence-core/workflows/execute.md | 221-224 | The `phase_start` line takes no `--role`, `--tokens` or `--read`. | accurate | accurate | 2 |
-| EXECUTE-22 | cadence-core/bin/planning/trace.mjs | 244-246 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate | 2 |
+| EXECUTE-22 | cadence-core/bin/planning/trace.mjs | 245-247 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate | 2 |
 | EXECUTE-23 | cadence-core/workflows/execute.md | 267-270 | The `diff` trigger's artifact is shape (a) refs `{base_ref, head_ref}` and its default at `shipped` is advisory. | accurate | accurate | 1 |
 | EXECUTE-24 | cadence-core/workflows/execute.md | 255-258 | `references/triage-gate.md` makes NONE the default and caps the blocking re-arm at ONE round. | accurate | accurate | 2 |
 | EXECUTE-25 | cadence-core/workflows/execute.md | 252-254 | The `risk_surface` checkpoint artifact is shape (c), a flagged-diff FILE path. | accurate | accurate | 1 |

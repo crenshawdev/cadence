@@ -96,6 +96,77 @@ test('cad-plan-checker-contract states one dimension count in all three places',
     `<success_criteria> says ${claimedCount} but <dimensions> enumerates ${enumerated}`);
 });
 
+// --- RNG-04: the README's adaptive-routing claim, held against a real resolve -
+//
+// "leaving `stakes` unset is what lets a phase touching none of them route
+// below the old default" was FALSE of every project Cadence initialised until
+// the template stopped writing the key: the resolver's discount shipped in
+// v3.5.7, but no new project could ever reach it. So the sentence is held
+// against a resolve over a repo built from the SHIPPED TEMPLATE, not against a
+// hand-written config - a check that only grepped the README for the sentence
+// would pass on exactly the broken tree this closes.
+
+/** The README sentence the arm below measures, located by a stable substring. */
+const UNSET_CLAIM = 'leaving `stakes` unset is what lets a phase touching none '
+  + 'of them route below the old default';
+
+/**
+ * `route.mjs resolve` over a repo INITIALISED FROM THE SHIPPED TEMPLATE: the
+ * template copied to `.planning/config.json` exactly as both init workflows
+ * copy it, one phase holding one plan, and the one repo file that plan declares
+ * touching no risk surface. Beside `resolvedReview` rather than folded into it
+ * - that helper writes a bare config carrying one `stakes` value and asserts
+ * the resolve came back AT it, which is the opposite of the case here, and it
+ * builds no repo tree, no phase directory and no declared file.
+ *
+ * The global layer is pointed at a path that does not exist, so a dev machine
+ * whose user-global config pins `stakes` cannot answer for the template.
+ */
+function resolvedFromTemplate(phase = 3) {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-prose-template-'));
+  const planning = join(repo, '.planning');
+  mkdirSync(join(planning, 'phases', String(phase)), { recursive: true });
+  writeFileSync(join(planning, 'config.json'),
+    doc('cadence-core', 'templates', 'config.json'));
+  writeFileSync(join(planning, 'phases', String(phase), 'PLAN-1.md'),
+    `---\nphase: ${phase}\nplan: 1\nfiles:\n  - docs/README.md\n---\n\n# Plan\n`);
+  mkdirSync(join(repo, 'docs'), { recursive: true });
+  writeFileSync(join(repo, 'docs', 'README.md'), '# Readme\n');
+  const line = execFileSync('node',
+    [ROUTE, 'resolve', '--role', 'cad-executor', '--phase', String(phase),
+      '--file', join(planning, 'config.json')],
+    { encoding: 'utf8', env: { ...process.env,
+      CADENCE_GLOBAL_CONFIG: join(repo, 'no-global.json') } });
+  const r = JSON.parse(line);
+  assert.equal(r.ok, true, line);
+  return r;
+}
+
+test('README: a template-initialised phase touching no surface really does route BELOW the default', () => {
+  const readme = doc('README.md');
+  assert.ok(readme.includes(UNSET_CLAIM),
+    `README no longer makes the claim this arm measures: ${UNSET_CLAIM}`);
+
+  // "below" and "the old default" both come off the artifacts, never off this
+  // file: the order is route-table.json's own `stakes_order` and the default is
+  // config.schema.json's `keys.stakes.default`, so a change to either is read
+  // here rather than silently disagreed with.
+  const order = JSON.parse(doc('cadence-core', 'route-table.json')).stakes_order;
+  const dflt = JSON.parse(doc('cadence-core', 'config.schema.json')).keys.stakes.default;
+  const r = resolvedFromTemplate();
+  assert.ok(order.indexOf(r.stakes) > -1 && order.indexOf(dflt) > -1,
+    `stakes_order ${JSON.stringify(order)} does not place ${r.stakes} and ${dflt}`);
+  // FIRST, and deliberately: on a tree whose template pins a level again this
+  // is the assertion that must speak, because its message carries the two
+  // figures a reader needs - what the resolve returned and what it is measured
+  // against. The `stakes_set` pin below is the same fact said upstream, and
+  // asserting it first would answer a level question with a set-ness message.
+  assert.ok(order.indexOf(r.stakes) < order.indexOf(dflt),
+    `the README says a surfaceless phase routes below the default, but a `
+    + `template-initialised repo resolved ${r.stakes} against the default ${dflt}`);
+  assert.equal(r.stakes_set, false, 'the shipped template pins a stakes level');
+});
+
 // --- DFC-02: both statements of phase_diff's gates match the RESOLVER --------
 
 const LEVELS = ['solo', 'shipped', 'critical'];
@@ -746,7 +817,12 @@ test('#195: execute.md locates unconditionally and refuses an already-executed p
   // 2. The refusal arm, found by the recovery path it names - a refusal that
   //    named no way forward would fail this at the anchor itself.
   const arms = locate.split(/\n- /).slice(1);
-  const refusal = arms.find((a) => a.includes('/cad-undo'));
+  // NOT the first arm naming /cad-undo. Since GH-179 the replay arm names it too
+  // and sits ABOVE this one, because the refusal now reads that arm's
+  // `dispatch_set`. A bare `find` here would grab the replay arm, whose trigger
+  // clause carries neither derived status, and this test would fail describing
+  // the wrong arm.
+  const refusal = arms.find((a) => a.includes('/cad-undo') && !a.includes('replay-check'));
   assert.ok(refusal,
     "execute.md's locate step names no /cad-undo route, so it either refuses nothing or "
     + 'refuses without naming the supported path');
@@ -767,6 +843,16 @@ test('#195: execute.md locates unconditionally and refuses an already-executed p
   assert.match(refusal, /--rerun/,
     'the refusal names no deliberate way through, so an intentional re-run has no route but '
     + 'editing the workflow');
+  // GH-179. The status alone is not the trigger: a phase carrying a `/cad-plan
+  // --gaps` plan derives `executed` with real outstanding work, and refusing on
+  // the status made every gap plan unrunnable while `--rerun`, the only
+  // documented way past, widened the set back over the committed plans.
+  assert.match(trigger, /dispatch_set/,
+    'that refusal triggers on the derived status alone, with no empty-`dispatch_set` term, so '
+    + 'it refuses a phase whose gap plans have never run');
+  assert.match(trigger, /empty/i,
+    'the refusal names `dispatch_set` without requiring it to be EMPTY, so the term does not '
+    + 'actually narrow the refusal');
 
   // 3. It stops BEFORE the guard and the trace anchor, which is what makes it a
   //    refusal rather than a late apology: `locate` is the first step, and the
@@ -832,10 +918,14 @@ test('EXP-03: execute.md asks the replay seam and obeys its answer', () => {
 
   // 5. Ordering, both halves - each regresses silently on its own.
   const refusal = arms.find((a) => a.includes('/cad-undo') && !a.includes('replay-check'));
-  assert.ok(arms.indexOf(replay) > arms.indexOf(refusal),
-    'the replay arm sits ABOVE the `executed`/`complete` refusal, so `arms.find(includes '
-    + "'/cad-undo')` in the #195 test reads the replay arm as the one that must trigger on "
-    + 'those two derived statuses');
+  // INVERTED at GH-179, and the direction is the fix. The refusal reads this
+  // arm's `dispatch_set`, so it has to come after it; before it, the refusal
+  // fires on the derived status with no knowledge of what is left to run, which
+  // is what made `/cad-plan --gaps` unreachable. The #195 test no longer depends
+  // on this ordering - it excludes the replay arm by name.
+  assert.ok(arms.indexOf(replay) < arms.indexOf(refusal),
+    'the replay arm sits BELOW the `executed`/`complete` refusal, so that refusal cannot read '
+    + 'the `dispatch_set` it must be gated on and refuses a phase whose gap plans never ran');
   assert.match(replay, /before any\s+executor dispatch/,
     'the replay arm does not say it stops before any executor dispatch, which is the whole '
     + `point of stopping: ${replay}`);
@@ -1215,6 +1305,187 @@ test('cad-land step 3: the deferred queue refuses ahead of BOTH publish arms', (
   assert.ok(guardrails, 'cad-land lost its guardrails block');
   assert.match(guardrails[1], /deferred finding is the one thing that stops it/,
     'the guardrails no longer name the one thing that stops a land');
+});
+
+// --- LND-02: the carry runs BEFORE the prune that deletes what it carries ----
+//
+// FILE POSITION, because nothing else can see it. self-verify's check 2
+// resolves `risk-carry --phase` against its CONTRACTS row and a grep proves no
+// raw-findings union survives, but both are blind to WHERE in step 3 the call
+// sits - and a carry written below `milestone-prune` reads a directory that
+// `--mode delete` already `rmSync`ed, so it copies nothing, exits `ok:true`,
+// and the /cad-land chained after it reads an empty set as "nothing survived".
+// That is LND-02's own defect rebuilt one paragraph out of order.
+
+test('LND-02: milestone.md carries the rulings BEFORE the prune, and stops on ok:false', () => {
+  const text = doc('cadence-core', 'workflows', 'milestone.md');
+  const lines = text.split('\n');
+  const at = (needle) => lines.findIndex((l) => l.includes(needle));
+
+  const stepStart = at('## 3. Prune completed phases + cleanup');
+  const stepEnd = lines.findIndex((l, i) => i > stepStart && l.startsWith('## 4.'));
+  assert.ok(stepStart > -1 && stepEnd > stepStart, 'milestone.md no longer spells step 3');
+
+  const carry = at('planning.mjs" risk-carry --phase');
+  const prune = at('planning.mjs" milestone-prune');
+  assert.ok(carry > -1, 'milestone.md step 3 no longer runs the risk_surface carry at all, so '
+    + 'the prune below it deletes the only rulings the unattended close can halt on');
+  assert.ok(prune > -1, 'milestone.md no longer runs milestone-prune');
+  assert.ok(carry > stepStart && carry < stepEnd,
+    'the risk_surface carry left step 3, the step that runs before the prune');
+  assert.ok(carry < prune,
+    'milestone.md runs the risk_surface carry AFTER milestone-prune, which removes the '
+    + 'phases/<N>/ directory the carry reads its rulings out of');
+
+  // The relay is a STOP, not a note, and it is read out of the carry's OWN
+  // paragraph - the deferred carry below it states the same rule about a
+  // different artifact, so an unscoped match would pass on that one alone.
+  const deferred = at('planning.mjs" deferred carry');
+  assert.ok(deferred > carry,
+    'the deferred carry no longer follows the risk_surface carry, so the region below is unbounded');
+  const region = lines.slice(carry, deferred).join(' ').replace(/\s+/g, ' ');
+  assert.match(region, /ok:false[^.]{0,80}stop/i,
+    'milestone.md no longer says an `ok:false` from the risk_surface carry STOPS the close. '
+    + 'Continuing past one prunes exactly the rulings the carry could not copy');
+  assert.match(region, /\.planning\/risk-carry\//,
+    'the carry paragraph no longer names `.planning/risk-carry/`, which is the root '
+    + '/cad-land globs for the records the phase dirs no longer hold');
+
+  // And step 7 does NOT delete it, on either arm. Step 3 already pruned the
+  // phase dirs, so this carry is the LAST copy of the rulings the halt rests
+  // on: cleared at the close, the retried /cad-land globs two empty roots, is
+  // handed {"findings":[]} and merges over the blocker the halt just refused.
+  // The clear belongs to the one actor that can prove the halt was answered.
+  const seven = lines.findIndex((l) => l.startsWith('## 7.'));
+  const eight = lines.findIndex((l, i) => i > seven && l.startsWith('## 8.'));
+  assert.ok(seven > -1 && eight > seven, 'milestone.md no longer spells step 7');
+  const step7 = lines.slice(seven, eight).join(' ').replace(/\s+/g, ' ');
+  assert.match(step7, /Do NOT delete `\.planning\/risk-carry\/` here, on either arm/,
+    'step 7 deletes `.planning/risk-carry/` again. Step 3 pruned the phase dirs, so that is '
+    + 'the last copy of the rulings the halt rests on, and the next /cad-land merges over it');
+  assert.match(step7, /`\/cad-land` step 4/,
+    'step 7 no longer names WHICH actor clears the carry, so it is either cleared before the '
+    + 'halt is answered or never cleared at all');
+  assert.match(step7, /CONFIRMED landed/,
+    'step 7 no longer ties the clear to a merge that confirmed - the only event proving the '
+    + 'halt was answered rather than abandoned');
+
+  // ...and that actor has to EXIST. Deferring the delete to a step /cad-land
+  // does not have leaves the carry on disk forever, which halts every later
+  // close on rulings a milestone already answered - the failure the deleted
+  // "BOTH arms" sentence was guarding against.
+  const land = doc('skills', 'cad-land', 'SKILL.md');
+  const step4 = (land.split('4. **Terminal cleanup')[1] || '').split('</process>')[0]
+    .replace(/\s+/g, ' ');
+  assert.match(step4, /Delete `\.planning\/risk-carry\/`/,
+    "cad-land's terminal cleanup no longer deletes `.planning/risk-carry/`, so nothing clears "
+    + 'the carry milestone.md step 7 now deliberately leaves behind');
+  assert.match(step4, /ONLY actor that clears them/,
+    'cad-land step 4 no longer claims sole ownership of the clear, which is what stops a '
+    + 'second site deleting the records before any merge landed');
+});
+
+// --- LND-02: the gate's caller pipes rulings, and names what nothing ruled ---
+//
+// The seam cannot check its own input. `land-cleanup.mjs gate` reads stdin and
+// nothing else (D-07), so WHAT the coordinator unions is decided entirely by
+// this bullet: a sentence that sent it back to the REVIEW files' `findings`
+// arrays would halt every close on the reviewer's raw claims - the pre-fix,
+// pre-refutation, pre-downgrade text - and the seam would report that halt as
+// correct. `unruled` and `overridden` are the two payload/envelope keys only
+// this prose can populate or surface, so an unnamed one is a dead key.
+
+test('LND-02: cad-land 3(b) unions the RULINGS from both roots, not the review findings', () => {
+  const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const lines = skill.split('\n');
+  const start = lines.findIndex((l) => l.includes('land-cleanup.mjs\" gate'));
+  assert.ok(start > -1, 'cad-land no longer pipes anything to land-cleanup.mjs gate');
+  // The bullet is the block the gate call sits in: back to its `- **` opener,
+  // forward to the next one, so a neighbouring bullet cannot satisfy a row here.
+  const open = lines.slice(0, start + 1).map((l, i) => [l, i])
+    .filter(([l]) => /^\s*- \*\*/.test(String(l))).pop();
+  assert.ok(open, 'the gate call no longer sits inside a bullet of step 3');
+  const end = lines.findIndex((l, i) => i > Number(open[1]) && /^\s*- \*\*/.test(l));
+  const bullet = lines.slice(Number(open[1]), end > -1 ? end : lines.length)
+    .join(' ').replace(/\s+/g, ' ');
+
+  for (const [needle, why] of [
+    ['ADJUDICATION-risk_surface*.json', 'the record it reads'],
+    ['.planning/phases/*/', 'the live record root'],
+    ['.planning/risk-carry/*/', 'the carried record root, the only one left after a prune'],
+    ['entries[]', 'the array the union is taken from'],
+    ['unruled', 'the payload key that halts on a fire nothing ruled'],
+    ['overridden', 'the envelope key carrying a halt a person already cleared'],
+    ['{\"findings\":[]}', 'the only spelling of "nothing survived"'],
+  ]) {
+    assert.ok(bullet.includes(needle),
+      `cad-land's gate bullet no longer names \`${needle}\` (${why})`);
+  }
+  assert.match(bullet, /every round/i,
+    "the bullet no longer says EVERY round is unioned - round 2's record is not round 1's, "
+    + 'and taking the highest alone drops what only an earlier round stated');
+  assert.match(bullet, /never parsed/,
+    'the bullet dropped the sentence that the gate never reports "no surviving finding" '
+    + 'about input it never parsed');
+
+  // The negative half, and it is the requirement itself: nothing here may send
+  // the coordinator back to the raw review text.
+  assert.doesNotMatch(bullet, /union (?:their|the) `?findings`? arrays/i,
+    "cad-land unions the REVIEW files' raw `findings` arrays again, which halts the close on "
+    + 'findings already fixed, refuted, downgraded or overridden - LND-02 exactly');
+
+  // The PAIRING, which is the whole of `unruled`. REVIEW-<t>-<d>.md and
+  // ADJUDICATION-<t>-<d>.json cannot share a basename by construction, so a
+  // "same basename" test matches nothing, every review lands in `unruled`, and
+  // every close hard-halts on a fire that was in fact ruled.
+  assert.doesNotMatch(bullet, /same basename/i,
+    'cad-land pairs a review to its ruling by basename again. REVIEW-<trigger>-<discriminator>'
+    + '.md and ADJUDICATION-<trigger>-<discriminator>.json never share one, so every review '
+    + 'reads as unruled and every close hard-halts');
+  assert.match(bullet, /same trigger, same discriminator, same round/,
+    'the bullet no longer states what actually pairs a review with its ruling, which leaves '
+    + 'the coordinator to invent a test');
+  assert.match(bullet, /round-1\s+record never rules a round-2 review/,
+    'the bullet no longer forbids a round-1 record from ruling a re-arm, so an unadjudicated '
+    + 'round 2 reads as settled and its survivors are never checked');
+  // ...and the asymmetry the corpus forces, or a strict same-round test halts
+  // the very close D-14's fixture is taken from.
+  assert.match(bullet, /LATER round's record does rule an earlier review/,
+    "the bullet dropped the asymmetry v3.7.7's phase 2 forces - a round-1 REVIEW whose only "
+    + 'record is `-r2.json` - so a strict same-round test halts a close that was fully ruled');
+
+  // The legacy root aggregate is a halt WITH A REMEDY, never a permanent one.
+  // `.planning/REVIEW-risk_surface-<label>.md` is what a pre-`risk-carry`
+  // /cad-milestone wrote - ONE union of RAW findings under no discriminator -
+  // so no ADJUDICATION-*.json can ever sit beside it and it lands in `unruled`
+  // at every close. Both ways of leaving it there are bugs: scanned with no
+  // remedy stated it halts every unattended close forever, and dropped from the
+  // scan a real leftover blocker goes invisible. The bullet has to do both.
+  assert.ok(bullet.includes('.planning/REVIEW-risk_surface-*.md'),
+    'cad-land stopped scanning the legacy `.planning/` root aggregate, so an interrupted '
+    + 'pre-`risk-carry` close leaves a file that may carry an unfixed blocker and no close '
+    + 'ever looks at it again');
+  assert.match(bullet, /can ever sit beside it/,
+    'the bullet no longer says the legacy aggregate can NEVER be ruled, so a coordinator '
+    + 'retries the close waiting for an adjudication that cannot exist');
+  assert.match(bullet, /ONCE and BY HAND/,
+    'the bullet no longer states who answers the legacy halt, which is the whole difference '
+    + 'between a one-time gate and a permanent one');
+  assert.match(bullet, /then delete the file/,
+    'the bullet no longer names the act that clears the legacy halt, so one stale '
+    + 'pre-upgrade file halts every unattended close forever with no remedy');
+
+  // The same rule, in the reference a reader consults instead of this bullet.
+  const ref = doc('cadence-core', 'references', 'risk-surface.md');
+  assert.doesNotMatch(ref, /no sibling record of the same basename/,
+    'risk-surface.md still states the basename pairing no filename pair can satisfy, so the '
+    + 'bug returns through the reference door');
+  assert.match(ref, /REVIEW-risk_surface-<label>\.md/,
+    'risk-surface.md says nothing about the legacy root aggregate, so the reference that '
+    + 'documents this pairing disagrees with the gate bullet that halts on it');
+  assert.doesNotMatch(ref, /step 7 deletes (?:it|this|the)/,
+    'risk-surface.md claims milestone.md step 7 deletes a carried file again. Step 7 deletes '
+    + 'nothing now, and a stale cleanup claim is how a permanent halt gets designed in');
 });
 
 test('progress.md: the deferred count is read off the envelope at both its sites', () => {
@@ -3072,4 +3343,101 @@ test('EXP-05: the executor and the verifier state one rule in one vocabulary', (
       `${where} contract: "At most one full-suite run per ${once}" is gone - the two `
       + 'contracts state the same rule and this is the phrase they share');
   }
+});
+
+// --- PHS-02: the too-big arm opens a door instead of naming a locked one -----
+//
+// The defect: `/cad-task`'s "Too big" arm told the user to "Route it through
+// /cad-context -> /cad-plan", and `/cad-context` on a phase the roadmap does
+// not carry STOPS. So the one arm that fires when Cadence has correctly
+// recognised phase-sized work handed the user a command guaranteed to refuse.
+// `/cad-phase add` is the only command in the plugin that appends a phase to an
+// existing roadmap, so it is the first stop and everything else follows it.
+//
+// Asserted on ORDER and on the NAMED site, never on a tree-wide `/cad-context`
+// count: the corrected arm legitimately names `/cad-context` as its SECOND
+// stop, so a check forbidding the string outright would go red on exactly the
+// prose this phase shipped. No line numbers either - both files are edited
+// often enough that a pinned number would rot before it caught anything.
+
+const TASK_WF = ['cadence-core', 'workflows', 'task.md'];
+
+/** The `- **Too big**` bullet of task.md's `scope` step, by its own anchors. */
+const tooBigArm = (text) => {
+  const step = stepBody(text, 'scope', 'task.md');
+  const at = step.indexOf('- **Too big**');
+  assert.ok(at > -1, "task.md's scope step carries no `- **Too big**` bullet");
+  const end = step.indexOf('\n\n', at);
+  return step.slice(at, end === -1 ? step.length : end);
+};
+
+test('PHS-02 (1): the too-big arm names /cad-phase add before the commands that need a phase', () => {
+  const arm = tooBigArm(doc(...TASK_WF));
+  const regressed = "PHS-02: task.md's too-big arm no longer routes a phase-sized task to "
+    + '/cad-phase add FIRST - the user is sent at /cad-context or /cad-plan for a phase the '
+    + 'roadmap does not carry yet, which is the refusal this arm exists to avoid';
+  const add = arm.indexOf('/cad-phase add');
+  const context = arm.indexOf('/cad-context');
+  const plan = arm.indexOf('/cad-plan');
+  assert.ok(add > -1, regressed);
+  assert.ok(context > -1, regressed);
+  assert.ok(plan > -1, regressed);
+  assert.ok(add < context && context < plan, regressed);
+});
+
+test('PHS-02 (2): the arm resolves the phase number rather than printing a placeholder', () => {
+  const arm = tooBigArm(doc(...TASK_WF));
+  const regressed = "PHS-02: task.md's too-big arm no longer resolves the phase number from "
+    + '`planning.mjs status` and `total + 1` - it hands the user a number to substitute, '
+    + 'which is the defect this cycle exists to close';
+  assert.match(arm, /planning\.mjs"?\s+status/, regressed);
+  assert.match(arm, /total \+ 1/, regressed);
+  // The other half: the rule the prose states is one the resolver can actually
+  // answer. A prose rule reading a field the envelope does not carry would
+  // print nothing at all, and no amount of grepping the prose would show it.
+  const out = JSON.parse(execFileSync('node', [join(HERE, 'planning.mjs'), 'status'],
+    { cwd: REPO, encoding: 'utf8' }));
+  assert.equal(out.ok, true, 'planning.mjs status does not answer ok:true on this repo');
+  assert.ok(Number.isInteger(out.total),
+    'planning.mjs status returns no integer `total`, so the arm\'s `total + 1` rule '
+    + 'resolves to nothing and the printed sequence carries no phase number');
+});
+
+test('PHS-02 (3): the first stop carries the task\'s own description, and /cad-phase advertises it', () => {
+  const regressed = 'PHS-02: the printed sequence no longer hands the task description to '
+    + '/cad-phase add, or /cad-phase stopped advertising that `add` takes one - either way '
+    + 'the user retypes what Cadence already holds';
+  assert.match(tooBigArm(doc(...TASK_WF)), /\/cad-phase add \$TASK/, regressed);
+  const hint = doc('skills', 'cad-phase', 'SKILL.md').match(/^argument-hint: "(.*)"$/m);
+  assert.ok(hint, 'skills/cad-phase/SKILL.md carries no argument-hint field');
+  const addAlternative = hint[1].split('|')[0];
+  assert.match(addAlternative, /description/i, regressed);
+});
+
+test('PHS-02 (4): no /cad-task surface sends phase-sized work to /cad-context first', () => {
+  const regressed = 'PHS-02: a /cad-task surface routes phase-sized work at /cad-context '
+    + 'again - the mid-task guardrail or the SKILL objective that rides every session prompt, '
+    + 'either of which advertises the locked door while the arm names the open one';
+  assert.doesNotMatch(doc('skills', 'cad-task', 'SKILL.md'), /\/cad-context/, regressed);
+  const task = doc(...TASK_WF);
+  const open = task.lastIndexOf('<guardrails>');
+  const close = task.lastIndexOf('</guardrails>');
+  assert.ok(open > -1 && close > open, 'task.md has no <guardrails> block');
+  const guardrails = task.slice(open, close);
+  assert.match(guardrails, /\/cad-phase add/, regressed);
+  // Absence as well as presence: a guardrail reading "re-route to /cad-context,
+  // then /cad-phase add" would satisfy the match above while the mid-task path
+  // still walks into the refusal.
+  assert.doesNotMatch(guardrails, /\/cad-context/, regressed);
+});
+
+test('PHS-02 (5): the /cad-context off-roadmap stop names the command that creates the phase', () => {
+  const context = doc('cadence-core', 'workflows', 'context.md');
+  const at = context.indexOf('not in the roadmap');
+  assert.ok(at > -1, "context.md's resolve_phase step no longer stops on an off-roadmap phase");
+  const end = context.indexOf('\n\n', at);
+  const stop = context.slice(at, end === -1 ? context.length : end);
+  assert.match(stop, /\/cad-phase add/,
+    "PHS-02: /cad-context's off-roadmap stop names no next action again, so a user arriving "
+    + 'by a stale cursor or a typed number meets a refusal with no exit');
 });

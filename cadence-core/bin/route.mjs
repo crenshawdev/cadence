@@ -1372,7 +1372,18 @@ function resolve(opts) {
   // `surfaces_answered` are the risk_surface fire's scope and whether anyone
   // chose it, and `verify` is the level's two-state deep-verify switch. All
   // three halves of a fire ride on ONE resolve.
-  out({ ok: true, role: opts.role, agent, model, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  //
+  // `stakes` + `stakes_set` is the same pairing as `surfaces` +
+  // `surfaces_answered`, for the same reason: `stakes` is always a level, so on
+  // its own it cannot tell a caller whether a config layer chose that level or
+  // whether it is DEFAULTS standing in the layers' silence - and a default
+  // reported as a configured value is the defect `readConfig`'s comment and the
+  // first `reason` entry above already exist to prevent. The flag is
+  // `readConfig`'s own `stakesSet` carried outward, never re-derived here: the
+  // floor's discount predicate reads that same field, and a second derivation
+  // is how the reported set-ness and the routing it qualifies would come to
+  // disagree. Free text in `reason` says it too, and is not machine-checkable.
+  out({ ok: true, role: opts.role, agent, model, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, stakes_set: cfg.stakesSet, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 /**
@@ -1457,7 +1468,13 @@ function replay(opts) {
   }
   // A planning root holding no phase directory answers with an empty row list,
   // never a refusal: "this project has no phases yet" is an answer.
-  out({ ok: true, stakes: today, surfaces, surfaces_answered: decided.answered,
+  // `stakes_set` qualifies the `today` column exactly as it qualifies `stakes`
+  // on the resolve envelope: `today` is `cfg.stakes`, which is the schema
+  // default when no layer set the key, so without the flag a replay reports a
+  // default as a configured level. Same field, same source, one implementation
+  // - `levelFor`'s docblock states why resolve and replay may not drift.
+  out({ ok: true, stakes: today, stakes_set: cfg.stakesSet, surfaces,
+    surfaces_answered: decided.answered,
     rows, regressions, ...(warnings.length ? { warnings } : {}) });
 }
 

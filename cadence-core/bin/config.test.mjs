@@ -333,9 +333,13 @@ test('get: a repo config still holding a retired key warns instead of resolving 
   const r = run(['get', '--file', repo, 'stakes'], gpath);
   assert.equal(r.ok, true);                  // never blocks a workflow's read
   assert.equal(r.values['stakes'], 'shipped'); // the schema default
-  assert.equal(r.warnings.length, 1);
-  assert.match(r.warnings[0], /model\.profile/);
-  assert.match(r.warnings[0], /stakes/);
+  // Counted by FAMILY, not in total: this read asks for `stakes` on purpose -
+  // it is `model.profile`'s replacement, and the point is that `balanced` does
+  // not leak into it - and an explicit `stakes` read no layer set also carries
+  // the RNG-04 unset warning. One retired-key entry is what this test pins.
+  const retired = r.warnings.filter((w) => /model\.profile/.test(w));
+  assert.equal(retired.length, 1, JSON.stringify(r.warnings));
+  assert.match(retired[0], /stakes/);
 });
 
 test('keys: dumps the live schema - pruned keys are really gone', () => {
@@ -415,8 +419,12 @@ test('get: a corrupt repo layer is skipped (values/source match no-repo-layer) A
   const gpath = join(dir, 'no-global-for-corrupt-repo.json');
   const repo = join(dir, 'corrupt-repo.json');
   writeFileSync(repo, '{ torn mid-write');
-  const r = run(['get', '--file', repo, 'stakes'], gpath);
-  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo.json'), 'stakes'], gpath);
+  // Probed at `granularity` rather than `stakes`: these layer tests count EVERY
+  // warning, which is how they pin "one broken file, one diagnostic", and an
+  // explicit `stakes` read no layer set carries its own RNG-04 unset warning.
+  // The probe key was always arbitrary here; this one stays arbitrary.
+  const r = run(['get', '--file', repo, 'granularity'], gpath);
+  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo.json'), 'granularity'], gpath);
   assert.equal(r.ok, true);
   assert.deepEqual(r.values, absentRepo.values); // byte-identical to the no-repo-layer result
   assert.equal(r.source, absentRepo.source);     // 'defaults' - the broken layer contributed nothing
@@ -442,8 +450,8 @@ test('get: a scalar repo config falls back to defaults, never source:repo (#45.3
   const gpath = join(dir, 'no-global-for-scalar-repo.json');
   const repo = join(dir, 'scalar-repo.json');
   writeFileSync(repo, '42');
-  const r = run(['get', '--file', repo, 'stakes'], gpath);
-  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo2.json'), 'stakes'], gpath);
+  const r = run(['get', '--file', repo, 'granularity'], gpath);
+  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo2.json'), 'granularity'], gpath);
   assert.equal(r.ok, true);
   assert.notEqual(r.source, 'repo');
   assert.deepEqual(r.values, absentRepo.values); // schema default, same as no-repo-layer
@@ -457,8 +465,8 @@ test('get: a falsy non-object repo layer warns like a truthy one', () => {
   for (const content of ['null', '0', 'false', '""']) {
     const repo = join(dir, `falsy-repo-${content.replace(/[^a-z0-9]/gi, '_')}.json`);
     writeFileSync(repo, content);
-    const r = run(['get', '--file', repo, 'stakes'], gpath);
-    const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo3.json'), 'stakes'], gpath);
+    const r = run(['get', '--file', repo, 'granularity'], gpath);
+    const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo3.json'), 'granularity'], gpath);
     assert.equal(r.ok, true, `content ${content}`);
     assert.equal(r.warnings.length, 1, `content ${content}`);
     assert.match(r.warnings[0], new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -483,19 +491,19 @@ test('get: a falsy non-object global layer warns too', () => {
 
 test('get: an absent layer stays silent and an unparseable layer warns exactly once', () => {
   const gpath = join(dir, 'no-global-for-absent-vs-corrupt.json');
-  const absent = run(['get', '--file', join(dir, 'truly-absent-repo4.json'), 'stakes'], gpath);
+  const absent = run(['get', '--file', join(dir, 'truly-absent-repo4.json'), 'granularity'], gpath);
   assert.equal(absent.warnings, undefined);
 
   const torn = join(dir, 'torn-mid-write.json');
   writeFileSync(torn, '{ torn mid-write');
-  const rTorn = run(['get', '--file', torn, 'stakes'], gpath);
+  const rTorn = run(['get', '--file', torn, 'granularity'], gpath);
   assert.equal(rTorn.warnings.length, 1);
   assert.match(rTorn.warnings[0], /failed to parse/);
   assert.doesNotMatch(rTorn.warnings[0], /not an object/);
 
   const zeroByte = join(dir, 'zero-byte.json');
   writeFileSync(zeroByte, '');
-  const rZero = run(['get', '--file', zeroByte, 'stakes'], gpath);
+  const rZero = run(['get', '--file', zeroByte, 'granularity'], gpath);
   assert.equal(rZero.warnings.length, 1);
   assert.match(rZero.warnings[0], /failed to parse/);
   assert.doesNotMatch(rZero.warnings[0], /not an object/);
@@ -544,7 +552,7 @@ test('get: one file resolving as both layers warns once, not twice', () => {
   ]) {
     const shared = join(dir, `shared-both-layers-${label}.json`);
     writeFileSync(shared, bytes);
-    const r = run(['get', '--file', shared, 'stakes'], shared);
+    const r = run(['get', '--file', shared, 'granularity'], shared);
     assert.equal(r.ok, true, label);
     assert.equal(r.warnings.length, 1, `${label}: ${JSON.stringify(r.warnings)}`);
     assert.match(r.warnings[0], pattern, label);
@@ -555,7 +563,7 @@ test('get: one file resolving as both layers warns once, not twice', () => {
   const repo = join(dir, 'two-broken-repo.json');
   writeFileSync(g, '0');
   writeFileSync(repo, '[1,2]');
-  const r2 = run(['get', '--file', repo, 'stakes'], g);
+  const r2 = run(['get', '--file', repo, 'granularity'], g);
   assert.equal(r2.warnings.length, 2);
 });
 
@@ -602,7 +610,7 @@ test('get: a BROKEN file reached under two spellings warns exactly once', () => 
     writeFileSync(shared, bytes);
     const link = join(dir, `alias-broken-${label}-link.json`);
     symlinkSync(shared, link);
-    const r = run(['get', '--file', shared, 'stakes'], link);
+    const r = run(['get', '--file', shared, 'granularity'], link);
     assert.equal(r.ok, true, label);
     assert.equal(r.warnings.length, 1, `${label}: ${JSON.stringify(r.warnings)}`);
     assert.match(r.warnings[0], pattern, label);
@@ -1540,6 +1548,53 @@ test('check: null is still refused at the write face - the sentinel is not a val
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail[0].key, 'review.triggers.diff.gate');
   assert.match(r.detail[0].error, /must be one of: off, advisory, deferred, blocking, adjudicated/);
+});
+
+// --- get: an unset stakes reads as unset, not as a configured level (RNG-04) --
+//
+// The same defect one key over, and the one the init workflows now depend on:
+// the template stopped writing `stakes`, so `get stakes` answered `shipped` out
+// of the schema default on a project that chose nothing - identically to a
+// project that chose `shipped`. A workflow saying "stakes is unset" and the very
+// next read saying it is `shipped` from the repo layer cannot both be relayed to
+// the same user. The VALUE line is unchanged (the schema default still reports);
+// these arms pin the REPORTING half.
+
+/** A repo layer that exists and sets other keys, but never `stakes`. */
+const stakesAbsent = join(dir, 'stakes-absent.json');
+writeFileSync(stakesAbsent, JSON.stringify({ granularity: 'standard' }));
+
+test('get: an unset stakes answers the default AND one warning naming route.mjs resolve', () => {
+  const r = run(['get', '--file', stakesAbsent, 'stakes'], join(dir, 'stakes-no-global.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.values.stakes, 'shipped', 'the schema default still reports (D-06)');
+  const named = gateWarnings(r);
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /stakes/);
+  // The same rail the gate and panel arms hold: this seam does not know what
+  // the level fires, so a warning naming a gate or a model would be the defect
+  // pointed the other way.
+  assert.ok(!/\b(off|advisory|deferred|blocking|adjudicated|opus|sonnet|haiku)\b/.test(named[0]),
+    named[0]);
+});
+
+test('get: a stakes a layer SET reads back with no warnings key at all', () => {
+  const repo = join(dir, 'stakes-pinned.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'critical' }));
+  const r = run(['get', '--file', repo, 'stakes'], join(dir, 'stakes-no-global.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.values.stakes, 'critical');
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+});
+
+test('get: the KEYLESS full read carries no stakes warning either', () => {
+  // D-02, the same gate as the two families above: a full read walks every
+  // schema key, and workflows relay its warnings straight to the user.
+  const r = run(['get', '--file', stakesAbsent], join(dir, 'stakes-no-global.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.values.stakes, 'shipped');
+  assert.deepEqual((r.warnings || []).filter((w) => /stakes/.test(w)), [],
+    JSON.stringify(r.warnings));
 });
 
 // --- ARG-05: a prototype member is an unknown key at the READ face ------------

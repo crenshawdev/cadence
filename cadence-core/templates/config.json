@@ -1,6 +1,5 @@
 {
   "granularity": "standard",
-  "stakes": "shipped",
   "model": { "escalate_on_failure": false },
   "workflow": {
     "research": false, "plan_check": false, "verifier": true, "skip_discuss": false,

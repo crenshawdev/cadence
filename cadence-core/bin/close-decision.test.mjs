@@ -102,10 +102,21 @@ test('gate: auto_close on + a high -> halt', () => {
   assert.equal(r.action, 'halt');
 });
 
-test('gate: auto_close on + only medium/low -> proceed', () => {
-  const r = decideGateHalt({ autoClose: true, findings: [{ severity: 'medium' }, { severity: 'low' }] });
-  assert.equal(r.action, 'proceed');
-  assert.deepEqual(r.findings, []);
+test('gate: the halting list is DECIDED before it gets here - this reads no severity', () => {
+  // Was `auto_close on + only medium/low -> proceed`, which asserted a filter
+  // this function no longer performs. The classification moved to the
+  // land-cleanup.mjs seam (LND-02, D-06): it runs lib/filing-decision.mjs's
+  // `unfixedFromEntries` over the adjudication entries it was piped and hands
+  // in the genuinely-unfixed halting set. So what is asserted here is the rule
+  // that is actually left - a non-empty list halts, whatever it holds - and
+  // that no severity is read on the way to that answer.
+  assert.equal(decideGateHalt({ autoClose: true, findings: [{ severity: 'medium' }] }).action, 'halt');
+  assert.equal(decideGateHalt({ autoClose: true, findings: [{ severity: 'low' }] }).action, 'halt');
+  assert.equal(decideGateHalt({ autoClose: true, findings: [{ file: 'a.mjs' }] }).action, 'halt',
+    'a member carrying no severity at all still halts: the seam already decided');
+  const empty = decideGateHalt({ autoClose: true, findings: [] });
+  assert.equal(empty.action, 'proceed');
+  assert.deepEqual(empty.findings, []);
 });
 
 test('gate: auto_close off + a blocker -> proceed (chain not running unattended)', () => {
@@ -167,4 +178,85 @@ test('gate: the halt names its PRODUCER, so a fed-by-nothing gate is visible', (
 test('gate: stays total - an unknown `unreadable` value cannot halt a close', () => {
   assert.equal(decideGateHalt({ autoClose: true, findings: [], unreadable: /** @type {any} */ ({}) }).action, 'proceed');
   assert.equal(decideGateHalt({ autoClose: true, findings: [], unreadable: '' }).action, 'proceed');
+});
+
+// --- decideGateHalt: the FIFTH state, a review nothing ruled (D-03) ----------
+
+test('gate: auto_close on + a non-empty `unruled` -> halt naming unruled-review', () => {
+  // A REVIEW-risk_surface*.md with no sibling ADJUDICATION-*.json: the fire
+  // happened and nothing ruled it, so its findings are neither fixed nor
+  // refuted nor declined. Reading past that is the fail-open LND-02 closes.
+  const r = decideGateHalt({ autoClose: true, findings: [],
+    unruled: ['.planning/phases/2/REVIEW-risk_surface-plan-1.md'] });
+  assert.equal(r.action, 'halt');
+  assert.deepEqual(r.findings, [], 'nothing is claimed about findings that were never ruled');
+  assert.ok(r.reason.includes('unruled-review'), `reason must name the fifth state: ${r.reason}`);
+  assert.ok(r.reason.includes('.planning/phases/2/REVIEW-risk_surface-plan-1.md'),
+    `reason must name what it holds: ${r.reason}`);
+  assert.match(r.reason, /risk_surface/);
+});
+
+test('gate: the fifth state is its OWN arm, never folded into `unreadable` (D-13)', () => {
+  // The payload WAS read and parsed here, so the unreadable sentence would be a
+  // false statement about input this gate did see. Neither name leaks into the
+  // other's reason.
+  const unruled = decideGateHalt({ autoClose: true, findings: [], unruled: ['R.md'] });
+  for (const name of UNREADABLE) {
+    assert.ok(!unruled.reason.includes(name), `${name} must not appear in the unruled halt`);
+  }
+  const unreadable = decideGateHalt({ autoClose: true, findings: [], unreadable: 'stdin-empty', unruled: ['R.md'] });
+  assert.ok(unreadable.reason.includes('stdin-empty'),
+    'unreadable is decided FIRST: a payload nobody parsed says nothing about anything else');
+  assert.ok(!unreadable.reason.includes('unruled-review'), unreadable.reason);
+});
+
+test('gate: auto_close off + a non-empty `unruled` -> proceed (no unattended chain)', () => {
+  const r = decideGateHalt({ autoClose: false, findings: [], unruled: ['R.md'] });
+  assert.equal(r.action, 'proceed');
+  assert.match(r.reason, /auto_close off/);
+});
+
+test('gate: an unruled halt is bounded and never renders a caller\'s object', () => {
+  // `unruled` rides in off stdin, so it is untrusted input: the count comes off
+  // the real length and only non-blank strings are ever named, at most five.
+  const r = decideGateHalt({ autoClose: true, findings: [],
+    unruled: ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md'] });
+  assert.ok(r.reason.includes('7 risk_surface review(s)'), r.reason);
+  assert.ok(r.reason.includes('+2 more'), r.reason);
+  assert.ok(!r.reason.includes('g.md'), r.reason);
+  const odd = decideGateHalt({ autoClose: true, findings: [], unruled: [{ file: 'x' }, null, ''] });
+  assert.equal(odd.action, 'halt', 'a member too odd to name still halts - fail closed');
+  assert.ok(!odd.reason.includes('[object Object]'), odd.reason);
+  assert.ok(odd.reason.includes('3 risk_surface review(s)'), odd.reason);
+});
+
+// --- decideGateHalt: the cleared halt rides out, and moves nothing (D-09) ----
+
+test('gate: `overridden` rides every arm unchanged and never moves `action`', () => {
+  // A halting survivor a person already cleared. Folding it into `findings`
+  // would re-add the false halt this requirement removes, for the one case
+  // somebody already decided - so it is carried, never decided on.
+  const cleared = [{ ruling: 'survived', severity: 'blocker', overridden: true }];
+  const proceed = decideGateHalt({ autoClose: true, findings: [], overridden: cleared });
+  assert.equal(proceed.action, 'proceed');
+  assert.deepEqual(proceed.overridden, cleared);
+  assert.deepEqual(proceed.findings, [], 'the cleared halt is not folded into findings');
+
+  const halt = decideGateHalt({ autoClose: true, findings: [{ ruling: 'survived' }], overridden: cleared });
+  assert.equal(halt.action, 'halt');
+  assert.deepEqual(halt.overridden, cleared, 'it rides the halt arm too');
+
+  const unreadable = decideGateHalt({ autoClose: true, unreadable: 'stdin-empty', overridden: cleared });
+  assert.deepEqual(unreadable.overridden, cleared);
+  const off = decideGateHalt({ autoClose: false, findings: [{ ruling: 'survived' }], overridden: cleared });
+  assert.equal(off.action, 'proceed');
+  assert.deepEqual(off.overridden, cleared);
+});
+
+test('gate: stays total on a non-array `unruled` or `overridden`', () => {
+  const r = decideGateHalt({ autoClose: true, findings: [],
+    unruled: /** @type {any} */ ('R.md'), overridden: /** @type {any} */ (null) });
+  assert.equal(r.action, 'proceed');
+  assert.deepEqual(r.overridden, []);
+  assert.deepEqual(decideGateHalt({}).overridden, []);
 });

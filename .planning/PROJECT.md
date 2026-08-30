@@ -204,7 +204,40 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open.
+No cycle open. `/cad-phase add` opens the next one.
+
+**`v3.7.8 - what Cadence already knows`, opened 2026-08-29, closed 2026-08-30.**
+Five phases, 86 commits off `main` (10 feat and 22 fix against 36 docs, 14 test,
+2 refactor and 2 chore). Five requirement ids - `RSK-08`, `RNG-04`, `PHS-02`,
+`LND-02`, `TRC-11` - each traced to a verified phase; `/cad-audit` passed 5/5
+with 33/33 acceptance criteria covered and nothing deferred. Manifest bumped to
+3.7.8. The ids came off the scan taken immediately after the v3.7.7 tag plus
+three findings standing against the v3.7.7 adjudication work itself.
+
+The thread was one shape: Cadence already held the answer on disk and the code
+standing next to it declined to read it. The record validated a `fix_commit`
+only inside the `survived` branch while `downgraded` and `refuted` walked
+through; the scaffolded template wrote `stakes` before the resolver that exists
+to tell unset from configured was ever asked; `/cad-task` recognised a
+phase-sized task and handed the user to `/cad-context`, which refuses without a
+phase; the autonomous close read raw review findings with the rulings sitting
+unread beside them; and both append-only records lost events on a contended
+second rotation. None of the five was a missing capability.
+
+`GH-167`, the outbound review payload's missing secret fence, was carried as a
+spike rather than a phase and is not closed by this cycle.
+
+Its Traceability rows are under `## Shipped` in REQUIREMENTS.md, its narrative
+is the 3.7.8 section of CHANGELOG.md, and its per-phase residue (101 rows) is in
+`.planning/ARCHIVE.md`. Still outstanding: the merge to `main` and the release
+tag, both `/cad-land`'s. Four `medium` findings from phase 4's own
+`risk_surface` rounds are confirmed and deliberately unfixed, below the halt
+line; every blocker and high across the cycle carries a fix commit. Twelve
+issues were filed on the public tracker over 2026-08-29 and 2026-08-30, and the
+CAPTURE queue stands at 16 walked items including the forge cluster seed
+(GH-102 through 107).
+
+**Previously:**
 
 **`v3.7.7 - the record says what happened`, opened 2026-08-28, closed
 2026-08-29.** Two phases, 36 commits off `main` (11 feat and 4 fix against 15

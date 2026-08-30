@@ -103,6 +103,14 @@ second copy on the entry is a second statement that can drift. Only the boolean
 `true` is accepted, and `false` is refused because absence already says the
 finding was not overridden.
 
+`fix_commit` IS CHECKED WHEREVER THE KEY IS SET, on ANY ruling. A `downgraded`
+or a `refuted` ruling MAY carry one - a fix that landed while the finding was
+being argued down is a real thing to record - and the value is held to the same
+bar there as anywhere else: an auditor runs `git show` on it, so a blank, a
+`null` or a junk string is REFUSED rather than quietly dropped from the stored
+entry. The key is VALIDATED on those rulings, never forbidden on them, and the
+refusal names both the field and the ruling it was set on.
+
 Neither case is a fourth `ruling` value. The vocabulary is still `survived`,
 `downgraded`, `refuted`, and what varies is what a `survived` entry carries
 beside the ruling.

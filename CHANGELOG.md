@@ -6,6 +6,72 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.8] - 2026-08-30
+
+Five bugs, one shape. In every one of these Cadence already held the answer on
+disk and the code standing next to it declined to read it. None of them is a
+missing capability, which is what made them worth a cycle: the fact was there,
+the next step just never asked.
+
+The adjudication record validated a `fix_commit` value only inside the
+`survived` branch, so a blank or junk commit on a `downgraded` or `refuted`
+ruling walked straight through the guard the field exists for. That check is
+hoisted out now and fires wherever the key is set, and the refusal names both
+the field and the ruling it was on. The other half of the same phase: an
+`overridden: true` marker used to discharge `trace append`'s strongest refusal,
+so a settle receipt carrying no reason at all could close a record still holding
+a cleared halt. It cannot. An unreadable record refuses as `bad-record` rather
+than passing, while an absent one still passes, which is the distinction that
+was missing.
+
+`route.mjs` keeps `stakesSet` for the sole purpose of telling an unset `stakes`
+from a configured one, and the project template wrote `stakes` into every new
+config before the resolver was ever asked, so the adaptive floor the schema
+documents was unreachable on any project Cadence initialised. That is my own
+scaffolding defeating my own resolver. The template stops writing the key, and
+both faces that report the level now say which of the two states they are in
+instead of reporting a schema default as a user's answer. `stakes_set` rides the
+`resolve` and `replay` envelopes off `readConfig`'s own flag, with no second
+derivation to drift.
+
+`/cad-task` recognises when a task has grown phase-sized and then handed you to
+`/cad-context`, which refuses without a phase. It names `/cad-phase add` first
+now, and it prints the number the phase will land on, resolved from
+`planning.mjs status` rather than guessed. The three other places that stated
+the old route, the mid-task guardrail, the skill objective that rides every
+session's prompt, and `/cad-context`'s own off-roadmap stop, all name the same
+door.
+
+The autonomous close read raw review findings while the rulings sat beside them
+unread, so a finding I had already adjudicated and fixed still halted the merge,
+and the filing path and the close path each carried their own idea of what
+"unfixed" meant. There is one predicate now, `unfixedFromEntries` in
+`lib/filing-decision.mjs`, and both read it. `close-decision.mjs` states no
+severity of its own and carries a fifth `unruled-review` state for a fire
+nothing ruled at all. The wrinkle that made this more than a rewire: the close
+prunes the phase directories those rulings live in, so `planning.mjs risk-carry`
+copies every `REVIEW-risk_surface*.md` and its `ADJUDICATION-risk_surface*.json`
+sibling to `.planning/risk-carry/<N>/` before the prune, and the land that
+actually merges is the only thing that clears it. Carry it after the prune and
+the gate globs an empty directory, reads that as nothing survived, and merges
+over the blocker.
+
+Both append-only records, `.planning/trace.jsonl` and `.planning/reads.jsonl`,
+lost events on a contended second rotation. The rotation marker seals its
+generation with `carried_bytes` now. A writer that finds a leftover generation
+finishes the previous cut's carry-back before destroying it, whole lines only,
+skipping what already reached the live record, and a rescue that cannot finish
+says `shortfall` beside `rotated: true` instead of returning clean. The
+admission check reserves the marker the rotation is about to write, so a line
+that fits alone but not beside the marker is refused as `oversized-event` or
+`oversized-record` rather than rotating into a record still over its bound. Both
+eviction arms confirm the claim they published before they destroy anything, and
+restore the sibling when the mtime is not the one they wrote.
+
+`/cad-audit` passed 5 of 5 with 33 of 33 acceptance criteria covered and nothing
+deferred. 86 commits off `main`: 36 docs, 22 fix, 14 test, 10 feat, 2 refactor,
+2 chore.
+
 ## [3.7.7] - 2026-08-29
 
 Two bugs, same shape. Both turned up on real runs rather than on a read, and in
@@ -4388,6 +4454,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.8]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.8
 [3.7.7]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.7
 [3.7.6]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.6
 [3.7.5]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.5

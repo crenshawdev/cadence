@@ -725,6 +725,29 @@ test('missing config file uses schema defaults, does not crash', () => {
   assert.match(r.reason[0], /stakes default "shipped" \(unset in layers: defaults\)/);
 });
 
+// --- set-ness of stakes on the envelope (RNG-04) ------------------------------
+//
+// `stakes` is ALWAYS a level, so on its own it cannot tell the two states the
+// floor routes differently on apart - a level a layer chose, and DEFAULTS
+// standing in the layers' silence. `stakes_set` is the pairing `surfaces` +
+// `surfaces_answered` already ships. Both arms below resolve to the SAME level
+// on purpose: the flag is the only thing that separates them, which is exactly
+// what a caller reading `stakes` alone cannot recover.
+
+test('a config carrying no stakes reports stakes_set:false beside the default level', () => {
+  const r = resolve('cad-planner', cfg({}, 'stakes-unset.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the schema default, not a configured value');
+  assert.equal(r.stakes_set, false);
+});
+
+test('a config setting stakes reports stakes_set:true at that same level', () => {
+  const r = resolve('cad-planner', cfg({ stakes: 'shipped' }, 'stakes-set-shipped.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped', 'the level the arm above reports from silence');
+  assert.equal(r.stakes_set, true, 'a chosen level read as the default');
+});
+
 // --- global config layer -----------------------------------------------------
 
 test('global layer applies when no repo config is present', () => {
@@ -1030,7 +1053,7 @@ test('the SCAFFOLDED template carries no triggers block, so nothing overrides th
 
   const asShipped = rawCfg(template, 'pd-template-shipped.json');
   const rs = resolve('cad-executor', asShipped);
-  assert.equal(rs.stakes, 'shipped', 'the template ships at shipped');
+  assert.equal(rs.stakes, 'shipped', 'the template writes no stakes, so the schema default stands');
   assert.equal(rs.review.phase_diff, 'off');
   assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
 
@@ -1834,6 +1857,42 @@ test('fail-closed: the paired POSITIVE - both plans clean and surfaceless resolv
   assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
 });
 
+// --- what a TEMPLATE-INITIALISED project actually resolves to (RNG-04) -------
+//
+// Every fixture above hands `floorRoot` a hand-written config, which proves the
+// resolver's arithmetic and says nothing about the file `/cad-new-project` and
+// `/cad-adopt` copy onto disk. This row closes that gap by making the shipped
+// template ITSELF the fixture config, so it reddens if the template ever pins
+// `stakes` again rather than leaving the level to the resolver.
+
+test('template-initialised: a repo scaffolded from the SHIPPED template reaches both arms', () => {
+  const template = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'config.json'), 'utf8'));
+  // No ANSWERED overlay: the template writes no `review.triggers` block, so a
+  // template-initialised project carries all eight categories at
+  // `surfaces_answered: false`. Overlaying an answered set would test a project
+  // this template does not produce.
+
+  // Arm one - every plan in the phase read clean and declared a file touching
+  // no surface, so the unset default is discounted to the floor.
+  const clean = floorRoot(template, { '3/PLAN-1.md': CLEAN_PLAN }, CLEAN_FILES);
+  const rc = resolve('cad-executor', clean.file, ['--phase', '3']);
+  assert.equal(rc.ok, true);
+  assert.equal(rc.stakes, 'solo', JSON.stringify(rc.reason));
+  assert.equal(rc.model, 'sonnet');
+
+  // Arm two - the same phase with one plan nobody can read, as a DIRECTORY at
+  // the plan's own name for the reason the file-mode row above states. The
+  // withheld-discount warning naming that plan is expected here and is part of
+  // what fail-closed means, so this arm asserts the level and never an empty
+  // `warnings`.
+  const broken = floorRoot(template, { '3/PLAN-1.md': CLEAN_PLAN }, CLEAN_FILES);
+  mkdirSync(join(broken.planning, 'phases', '3', 'PLAN-2.md'), { recursive: true });
+  const rb = resolve('cad-executor', broken.file, ['--phase', '3']);
+  assert.equal(rb.ok, true, JSON.stringify(rb));
+  assert.equal(rb.stakes, 'shipped', JSON.stringify(rb.reason));
+});
+
 // --- a scope that declared NOTHING proves nothing (UAT item 11) --------------
 //
 // The same argument as the rows above, one step further in: `found` and `clean`
@@ -2144,6 +2203,34 @@ test('replay: a bare --file is REFUSED, exactly as resolve\'s is', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
   assert.match(r.detail, /--file/);
+});
+
+test('replay: stakes_set qualifies the today column, and agrees with what resolve reports', () => {
+  // `today` IS `cfg.stakes`, which is the schema default when no layer set the
+  // key, so the column has exactly the two states the resolve envelope does and
+  // a replay without the flag reports a default as a configured level. Both
+  // fixtures answer `shipped` for `today`; only the flag tells them apart. The
+  // cross-check against `resolve` over the SAME file is `levelFor`'s rule held
+  // one field over - a replay may not come to report what no resolve would.
+  const plans = { '3/PLAN-1.md': ['docs/README.md'] };
+  const files = { 'docs/README.md': '# Readme\n' };
+  const unset = floorRoot({ ...ANSWERED }, plans, files);
+  const set = floorRoot({ stakes: 'shipped', ...ANSWERED }, plans, files);
+
+  const ru = replay(unset.file);
+  assert.equal(ru.ok, true);
+  assert.equal(ru.rows.length, 1, 'the fixture produced no row to qualify');
+  assert.equal(ru.stakes, 'shipped');
+  assert.equal(ru.stakes_set, false);
+  assert.equal(resolve('cad-executor', unset.file).stakes_set, false,
+    'resolve and replay report different set-ness off one config');
+
+  const rs = replay(set.file);
+  assert.equal(rs.ok, true);
+  assert.equal(rs.stakes, 'shipped', 'the level the unset fixture reports from silence');
+  assert.equal(rs.stakes_set, true);
+  assert.equal(resolve('cad-executor', set.file).stakes_set, true,
+    'resolve and replay report different set-ness off one config');
 });
 
 // --- lowering below the computed floor takes a named waiver (AC4) ------------

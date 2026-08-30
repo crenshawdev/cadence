@@ -20,6 +20,7 @@ import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
   rotatedReadsPath, readsClaimPath, isReadsRotationMarker, rotateReads,
+  READS_MARKER_BYTES,
 } from './lib/read-trace.mjs';
 
 const TS = '2026-08-14T00:00:00.000Z';
@@ -192,6 +193,25 @@ test('a record at the bound ROTATES and the append lands, rather than reporting 
 /** Every file in the planning root named after the reads record. @param {string} d */
 const readsSiblings = (d) => readdirSync(d).filter((f) => f.startsWith('reads')).sort();
 
+test('the marker SEALS the generation it carried away, in bytes', () => {
+  // `carried_bytes` is how much of the generation this cut accounted for. The
+  // eviction of a leftover generation is its only consumer: everything past
+  // that offset arrived after the cut stopped accounting and is the tail no
+  // rotation ever carried.
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-cut' });
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/after-the-cut' }).written, true);
+
+  const marker = JSON.parse(liveLines(d)[0]);
+  assert.ok(isReadsRotationMarker(marker), 'the new field stopped the marker reading as one');
+  assert.equal(typeof marker.carried_bytes, 'number');
+  assert.equal(marker.carried_bytes, statSync(rotatedReadsPath(d)).size,
+    'the seal is not the size of the generation this cut carried away');
+  // The marker is still the whole fresh record: nothing crosses the cut.
+  assert.deepEqual(Object.keys(marker), ['ts', 'event', 'file', 'carried_bytes']);
+});
+
 test('the SECOND rotation evicts the generation the first one left', () => {
   const d = tmp();
   appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
@@ -211,6 +231,83 @@ test('the SECOND rotation evicts the generation the first one left', () => {
   assert.ok(sibling.includes('/gen-two'), 'the sibling is not the generation between the cuts');
   assert.equal(live.includes('/gen-one'), false, 'the first generation survived in the live record');
   assert.equal(sibling.includes('/gen-one'), false, 'the first generation survived in the sibling');
+});
+
+test('a record that only reached the generation SURVIVES the second rotation (AC1)', () => {
+  // The two-step loss D-05 names. This record has no carry-back, so a writer
+  // that appended during a claim window is only in the sibling - the bar the
+  // race row accepts. The SECOND rotation evicts that sibling and unlinks it,
+  // and the record is in neither file with nothing said. The writer about to
+  // destroy the generation finishes the carry the first cut never made.
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-two' }).written, true);
+
+  // A racing writer's record, landing in the OLD inode after the cut sealed it.
+  // Hand-planted rather than raced: forcing the interleaving deterministically
+  // is what makes this a reproduction rather than a 1-in-60 flake (D-10).
+  const racer = `${JSON.stringify({ ts: TS, tool: 'Read', agent: 'coordinator', target: '/raced-the-cut' })}\n`;
+  appendFileSync(rotatedReadsPath(d), racer);
+
+  padToReadsBound(d);
+  assert.equal(appendRead(d, { ts: TS, tool: 'Read', target: '/gen-three' }).written, true);
+
+  const live = readFileSync(readsPath(d), 'utf8');
+  const sibling = readFileSync(rotatedReadsPath(d), 'utf8');
+  const hits = (t) => t.split('\n').filter((l) => l.includes('/raced-the-cut')).length;
+  assert.equal(hits(live) + hits(sibling), 1,
+    hits(live) + hits(sibling) === 0
+      ? "the racing writer's record is in NEITHER file"
+      : "the racing writer's record was carried twice");
+  // It is in the LIVE record, because that is the only file that outlives the
+  // eviction - and it parses, so a reader gets the record and not a torn line.
+  assert.equal(hits(live), 1);
+  assert.ok(live.split('\n').some((l) => l && JSON.parse(l).target === '/raced-the-cut'));
+});
+
+test('a rescue that cannot READ states the bytes it did not carry, rather than nothing', () => {
+  // The goal is a tail that is complete OR a shortfall that is stated. A rescue
+  // that fails before it reads a byte still knows the size past the seal, so
+  // that is what it reports - and the rotation still rotated.
+  const d = tmp();
+  const marker = { ts: TS, event: 'record_rotated', file: 'reads.1.jsonl', carried_bytes: 0 };
+  writeFileSync(readsPath(d), `${JSON.stringify(marker)}\n`);
+  padToReadsBound(d);
+  // A generation nothing can read past its own offset: `statSync` answers with
+  // a size, `readSync` refuses. The seal is 0, so every one of those bytes is
+  // beyond it.
+  mkdirSync(rotatedReadsPath(d));
+  const unreadable = statSync(rotatedReadsPath(d)).size;
+  assert.ok(unreadable > 0, 'fixture: the unreadable generation has no bytes past the seal');
+
+  const res = rotateReads(d, 200);
+  assert.equal(res.rotated, true, `the rotation itself failed: ${res.reason}`);
+  assert.equal(res.reason, undefined, 'a failed rescue was reported as a failed rotation');
+  assert.equal(res.shortfall, unreadable, 'the cut tail was not stated in bytes');
+});
+
+test('a generation whose marker carries NO seal states an UNKNOWN shortfall, not silence', () => {
+  // The pre-upgrade shape, and the one that fires on the FIRST rotation after an
+  // upgrade rather than only in theory: a generation sealed by the code that
+  // shipped before `carried_bytes`. No offset can be guessed, so nothing is
+  // rescued - but the generation is destroyed either way, and destroying it with
+  // no field at all is the one silence the `shortfall` contract forbids.
+  const d = tmp();
+  // A v3.7.7-shaped marker: the rotation marker, with the field this phase added
+  // absent. A corrupt marker line reaches the same arm by the same route -
+  // neither yields a number.
+  const marker = { ts: TS, event: 'record_rotated', file: 'reads.1.jsonl' };
+  writeFileSync(readsPath(d), `${JSON.stringify(marker)}\n`);
+  padToReadsBound(d);
+  writeFileSync(rotatedReadsPath(d),
+    `${JSON.stringify({ ts: TS, tool: 'Read', target: '/raced-the-cut' })}\n`);
+
+  const res = rotateReads(d, 200);
+  assert.equal(res.rotated, true, `the rotation itself failed: ${res.reason}`);
+  assert.equal(res.reason, undefined, 'a rescue that could not start was reported as a failed rotation');
+  assert.equal('shortfall' in res, true, 'the generation was destroyed with nothing stated at all');
+  assert.equal(res.shortfall, null, 'an unguessable seal states the unknown, never a byte count');
 });
 
 test('a leftover sibling beside a record UNDER the bound is left exactly where it is', () => {
@@ -354,6 +451,32 @@ test('a claim carrying NO sidecar at all reads as live, the same way', () => {
   assert.equal(existsSync(readsClaimPath(d)), false, 'a loser published a stamp it does not own');
 });
 
+test('an eviction that cannot CONFIRM its claim puts the generation back (AC3)', () => {
+  // The leftover-generation arm used to skip the confirm on the grounds that
+  // its own discriminator answered - but that discriminator is read BEFORE the
+  // eviction rename, so a writer that linked in between has a live claim
+  // renamed away with nothing to put it back, and the cost is the whole record
+  // rather than one deferred rotation (D-02).
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-eviction' });
+  padToReadsBound(d);
+  // A leftover generation an earlier rotation left...
+  writeFileSync(rotatedReadsPath(d), 'a generation an earlier rotation left\n');
+  const generation = readFileSync(rotatedReadsPath(d), 'utf8');
+  // ...and a sidecar path `publish` cannot date, so the claim is unconfirmable
+  // and `mine` is still null when the confirm asks.
+  mkdirSync(readsClaimPath(d));
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/after-the-eviction' });
+  assert.equal(res.written, true, `an unconfirmable eviction cost the append: ${res.reason}`);
+  assert.equal(readFileSync(rotatedReadsPath(d), 'utf8'), generation,
+    'the generation was destroyed by an eviction that could not confirm its claim');
+  assert.deepEqual(readsSiblings(d).filter((f) => f.includes('.evict')), [],
+    'the evicted generation was left at its private path');
+  assert.ok(readFileSync(readsPath(d), 'utf8').includes('/after-the-eviction'),
+    "the writer's own record is not in the live record");
+});
+
 test('a COMPLETED rotation leaves its sidecar behind, inert, and does not rotate again', () => {
   const d = tmp();
   appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });
@@ -379,6 +502,53 @@ test('a single record that reaches the bound by itself is refused, never rotated
   assert.equal(statSync(readsPath(d)).size, before, 'the oversized record was appended anyway');
   assert.equal(existsSync(rotatedReadsPath(d)), false,
     'the record was thrown away to make room for a line that still would not fit');
+});
+
+/**
+ * Append one record whose serialized line is exactly `bytes` long.
+ * @param {string} d @param {number} bytes
+ */
+function sizedRead(d, bytes) {
+  const skeleton = `${JSON.stringify({ ts: TS, tool: 'Read', agent: 'coordinator', target: '' })}\n`;
+  const n = bytes - Buffer.byteLength(skeleton);
+  assert.ok(n >= 0, 'fixture: the skeleton is already longer than the requested line');
+  return appendRead(d, { ts: TS, tool: 'Read', agent: 'coordinator', target: 'y'.repeat(n) });
+}
+
+test('a record with no room BESIDE the marker is refused, not rotated for (AC2)', () => {
+  // The rotation always writes its marker into the fresh record too, so a
+  // record that fits under the bound alone but not beside the marker used to
+  // rotate and then land a file over its bound on the first write (measured
+  // 2026-08-30: 74 B over). It is refused now - the deliberate band D-09 names.
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before' });
+  padToReadsBound(d);
+  const before = readFileSync(readsPath(d), 'utf8');
+
+  const res = sizedRead(d, MAX_READS_BYTES - 8);
+  assert.deepEqual(res, { written: false, reason: 'oversized-record' });
+  assert.equal(readFileSync(readsPath(d), 'utf8'), before,
+    'the record it would have rotated is not byte-identical');
+  assert.deepEqual(readsSiblings(d), ['reads.jsonl'], 'nothing was rotated');
+});
+
+test('a record that DOES fit beside the marker rotates under the bound (AC2)', () => {
+  // ONE BYTE inside the reserve, which is the tightest admission there is. The
+  // reserve is an upper BOUND rather than a measurement, so a real marker is
+  // narrower than it by the digits `carried_bytes` does not use - which is why
+  // the row binds to the constant and not to a marker it measured.
+  assert.ok(READS_MARKER_BYTES > Buffer.byteLength(
+    `${JSON.stringify({ ts: TS, event: 'record_rotated', file: 'reads.1.jsonl', carried_bytes: MAX_READS_BYTES })}\n`,
+  ), 'the reserve is narrower than a real marker at the bound');
+
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before' });
+  padToReadsBound(d);
+  assert.equal(sizedRead(d, MAX_READS_BYTES - READS_MARKER_BYTES - 1).written, true,
+    'the reserve is wider than the marker the rotation writes');
+  assert.ok(existsSync(rotatedReadsPath(d)), 'it still rotated');
+  assert.ok(statSync(readsPath(d)).size <= MAX_READS_BYTES,
+    `the rotation's FIRST write left the record ${statSync(readsPath(d)).size - MAX_READS_BYTES} B over its bound`);
 });
 
 test('a bad record is refused by reason, never thrown', () => {
@@ -1043,4 +1213,57 @@ test('seam: `reads` WITHOUT the flag still carries no in-dispatch key at all', (
   const none = seam(empty, ['reads', '--join']);
   assert.equal(none.note, 'no reads recorded yet');
   assert.equal('inDispatch' in none, false);
+});
+
+// --- the rotation still reaches the seam, the marker still reaches no fold ----
+
+test('seam: two rotations later, `reads` still reports the cut and bills no marker (AC4)', () => {
+  // This phase changed what the marker carries and what a second rotation does
+  // with the generation it destroys, so both halves of the marker's contract
+  // are re-proved: it is REPORTED as a rotation, and it is COUNTED as nothing.
+  const dir = join(tmp(), '.planning');
+  mkdirSync(dir, { recursive: true });
+  appendRead(dir, { ts: TS, tool: 'Read', agent: 'coordinator', target: '/gen-one' });
+  padToReadsBound(dir);
+  assert.equal(appendRead(dir, { ts: TS, tool: 'Read', agent: 'coordinator', target: '/gen-two' }).written, true);
+  padToReadsBound(dir);
+  assert.equal(appendRead(dir, { ts: TS, tool: 'Read', agent: 'coordinator', target: '/gen-three' }).written, true);
+
+  const r = seam(dir, ['reads']);
+  assert.equal(r.ok, true);
+  // (a) the cut is reported, on the key `reads` has always spelled it on.
+  assert.equal(r.reads.rotated.file, 'reads.1.jsonl');
+  assert.equal(r.reads.rotated.ts, JSON.parse(liveLines(dir)[0]).ts);
+  // (b) the seal is INTERNAL to the record and reaches no envelope key.
+  assert.ok(!JSON.stringify(r).includes('carried_bytes'),
+    `the seal rode the envelope: ${JSON.stringify(r.reads)}`);
+  // (c) the marker is billed as nothing: one call, one agent row, one target.
+  assert.equal(r.calls, 1, 'the marker was counted as a read');
+  assert.deepEqual(r.byAgent, [['coordinator', 1]]);
+  assert.deepEqual(r.topTargets, [['/gen-three', 1]]);
+  assert.deepEqual(r.byTool, [['Read', 1]]);
+});
+
+test('the marker carrying the new field is still filtered out of both folds', () => {
+  // The predicate is what keeps it out, not the folds: `summarizeReads` bills
+  // every object it is handed and `joinReads` pushes an `unresolved` row for
+  // any record with no `agent`, which is the phantom-read failure
+  // `isReadsRotationMarker`'s own docblock describes. So the guard is that the
+  // predicate still ANSWERS for a marker carrying `carried_bytes` - the filter
+  // in `planning/core.mjs` reads it, and everything downstream follows.
+  const marker = { ts: TS, event: 'record_rotated', file: 'reads.1.jsonl', carried_bytes: 4096 };
+  assert.equal(isReadsRotationMarker(marker), true, 'the new field broke the predicate');
+  // Unfiltered it WOULD be billed - which is why the filter is load-bearing.
+  assert.equal(summarizeReads([marker]).calls, 1);
+  assert.equal(joinReads([marker], []).unresolved, 1);
+
+  // Filtered the way `readReadsRecords` filters, it reaches neither fold.
+  const records = [marker, rec('coordinator', 'Read', '/a')].filter((x) => !isReadsRotationMarker(x));
+  const sum = summarizeReads(records);
+  assert.equal(sum.calls, 1);
+  assert.deepEqual(sum.byAgent, [['coordinator', 1]]);
+  assert.deepEqual(sum.topTargets, [['/a', 1]]);
+  const j = joinReads(records, []);
+  assert.equal(j.unresolved, 0, 'the marker became an unresolved read');
+  assert.equal(j.coordinator, 1);
 });

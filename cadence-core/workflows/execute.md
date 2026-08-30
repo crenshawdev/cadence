@@ -28,15 +28,6 @@ Resolve the phase:
   (`PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... executed in numeric order).
 - Status `unplanned` / no plan files -> stop: "No plans for phase <N>.
   Run /cad-plan first."
-- DERIVED status `executed` or `complete`, and no `--rerun` -> stop: "Phase <N>
-  is already <status> - its plans are committed, and re-running would overwrite
-  the executor reports of the run that committed them. Run /cad-undo <N> first,
-  then /cad-execute <N>. To re-run over that record anyway: /cad-execute <N>
-  --rerun." Read the status from the `phases[]` DERIVATION and never from
-  `cursor.status` - the cursor is a hint the derivation beats. `complete` is
-  refused beside `executed`. Stop HERE, before `git_guard`: before the
-  protected-branch guard, before the `phase_start` trace anchor, and before any
-  executor dispatch.
 - Ask the seam whether this phase's work is already committed, before anything
   is spent. Pass `--rerun` exactly when the command line carried it:
 
@@ -61,6 +52,24 @@ Resolve the phase:
   fixture directory. Restating the rule here is how the two come to disagree, and
   only one of them is tested.
   `ok:false` -> relay its `reason` and `hint` and stop.
+- DERIVED status `executed` or `complete`, no `--rerun`, AND an EMPTY
+  `dispatch_set` on the envelope above -> stop: "Phase <N> is already <status>
+  and every plan it lists already has a completed executor report. Re-running
+  would overwrite the executor reports of the run that committed them. Run
+  /cad-undo <N> first, then /cad-execute <N>. To run over that record anyway:
+  /cad-execute <N> --rerun." Read the status from the `phases[]` DERIVATION and
+  never from `cursor.status` - the cursor is a hint the derivation beats.
+  `complete` is refused beside `executed`. Stop HERE, before `git_guard`:
+  before the protected-branch guard, before the `phase_start` trace anchor, and
+  before any executor dispatch.
+  THE EMPTY-SET TERM IS LOAD-BEARING and this arm sits BELOW the replay call
+  for it: a non-empty `dispatch_set` is the phase's OUTSTANDING work and
+  dispatches whatever the derived status says. Keyed to the STATUS alone, this
+  refusal made `/cad-plan --gaps` unreachable end to end (GH-179) - a gap plan
+  closes unresolved UAT items, UAT exists only after a phase has run, so every
+  gap plan lands on a phase deriving at least `executed` - and the one
+  documented way past it made the damage worse, since `--rerun` widens the set
+  back over the committed plans this arm exists to protect.
 
 **The dispatch set.** The `dispatch_set` on that same envelope - the phase's
 plan files minus every plan already reporting complete, and every plan the phase

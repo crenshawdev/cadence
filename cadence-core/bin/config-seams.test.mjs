@@ -540,8 +540,16 @@ test('git-guard: the two inert hostile spellings, as regression pins only', () =
 // a narrowing at all - it is land-cleanup's `base_branch` fallback default, and
 // it is recorded with that seam's own arm above.)
 
-/** A `{findings}` stdin payload carrying one surviving blocker. */
-const BLOCKER = JSON.stringify({ findings: [{ severity: 'blocker' }] });
+/**
+ * A `{findings}` stdin payload carrying one GENUINELY-UNFIXED blocker: an
+ * ADJUDICATION record entry ruled `survived` at `blocker`, naming no fix commit
+ * and no override, which is what land-cleanup's gate halts on since LND-02.
+ * The `ruling` is load-bearing and must stay: a RAW review finding - a severity
+ * with nothing ruled over it - is deliberately no longer a live blocker to that
+ * gate, so without it these arms would stop being about the config LAYER and
+ * start failing over the payload SHAPE instead.
+ */
+const BLOCKER = JSON.stringify({ findings: [{ ruling: 'survived', severity: 'blocker' }] });
 
 test('git-publish + land-cleanup: one git.auto_close, two questions, two layer reads', () => {
   // The EXPECTED divergence, and why it is not an inconsistency to eliminate.

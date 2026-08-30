@@ -167,12 +167,23 @@ each drop and why, so a mis-filter is visible rather than silent.
 gate and who consumes it. This is WHERE. Write the settled survivor list as the
 same JSON object every reviewer returns, to
 `.planning/phases/<N>/REVIEW-risk_surface-<discriminator>.md`.
-`/cad-land`'s unattended close unions those files and pipes them to
-`land-cleanup.mjs gate`, and it fires no review of its own, so this write is the
-ONLY producer that halt has: skip it and an autonomous close merges over a
-blocker nobody halted on.
 
-Two properties keep the union honest, and both are failure modes that report
+**What the unattended close consumes is the RULING, not this file.** `/cad-land`
+reads the `ADJUDICATION-risk_surface-<discriminator>[-rN].json` written BESIDE
+it - the record of what each finding was settled AS - and pipes those entries to
+`land-cleanup.mjs gate`, so a finding that was fixed, refuted, downgraded or
+overridden stops no close and only a genuinely-unfixed one does. This file is
+still load-bearing twice over: it is what that record is written against, and a
+REVIEW file nothing ruled HALTS the close BY NAME (`unruled-review`) rather than
+passing, because a fire nothing ruled says nothing about what survived. The two
+never share a basename: `REVIEW-<trigger>-<discriminator>[-rN].md` is ruled by
+the `ADJUDICATION-<trigger>-<discriminator>[-rN].json` beside it - same trigger,
+same discriminator, same round - and a LATER round's record rules an earlier
+review too, because a re-arm's adjudication settles the round it re-armed. `/cad-land` fires no review of its own, so skipping
+either write is what makes an autonomous close merge over a blocker nobody
+halted on.
+
+Two properties keep that pairing honest, and both are failure modes that report
 CLEAN rather than erroring:
 
 - **Every write is discriminated - there is no unsuffixed path.** The
@@ -180,9 +191,24 @@ CLEAN rather than erroring:
   once, and nothing here restates it. What it buys: two fires sharing a
   filename do not merge, they overwrite - a later empty settle erases an
   earlier survivor the user had overridden.
-- **The producer set outlives the phase dirs.** `/cad-milestone` step 3 prunes
-  `.planning/phases/<N>/` and only then chains `/cad-land`, so it carries the
-  survivors to `.planning/REVIEW-risk_surface-<label>.md` first. The consumer
-  glob is BOTH that path and `.planning/phases/*/REVIEW-risk_surface*.md`. That
-  carried file is TRANSIENT and never staged (milestone.md step 7 deletes it):
-  committed, it would hard-halt every later land on an answered finding.
+- **The rulings outlive the phase dirs.** `/cad-milestone` step 3 prunes
+  `.planning/phases/<N>/` and only then chains `/cad-land`, so it runs
+  `planning.mjs risk-carry --phase <N>` FIRST: this file and every record beside
+  it, every round, filenames preserved - the pairing above is BY NAME, so a
+  renamed carry would read as unruled and halt every close - copied to
+  `.planning/risk-carry/<N>/`. The consumer globs are BOTH roots. That carried
+  copy is TRANSIENT and never staged (the `/cad-land` that merges deletes it at
+  its step 4, never the close that halted): committed, it would hard-halt every
+  later land on an answered finding.
+
+**One pre-`risk-carry` leftover clears BY HAND.** Before that carry existed,
+`/cad-milestone` unioned every phase's survivors into one aggregate
+`.planning/REVIEW-risk_surface-<label>.md` and deleted it at its step 7; step 7
+deletes nothing now, so a close interrupted before this version can leave that
+aggregate at the `.planning/` root. It is a union of RAW findings under no
+discriminator, so no record can ever sit beside it: it reads `unruled` and halts
+every unattended close, which is the SAFE answer, because it may still carry a
+blocker nobody settled. Nothing deletes it for the user, for that same reason -
+an aggregate cleared unread is the merge-over-a-blocker the gate exists to stop.
+The remedy is one act per repository, stated at `/cad-land`'s own gate bullet:
+read it, settle whatever is still genuinely unfixed, delete the file.

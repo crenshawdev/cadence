@@ -451,6 +451,24 @@ function get(file, keys, asGlobal) {
         + `${LEVEL_KEY_NOUN[levelKey[1]]}, so the `
         + 'stakes level decides it - `route.mjs resolve` answers it for a level');
     }
+
+    // `stakes` is the same two-state read one key over, and it gets its OWN arm
+    // rather than a widened LEVEL_KEY: that regex matches
+    // `review.triggers.<t>.{gate,tier,effort}`, whose sentence ends "so the
+    // stakes level decides it" - which is the one thing that cannot be said of
+    // `stakes` itself - and LEVEL_KEY_NOUN maps a last segment this key does
+    // not have. Same two gates for the same two reasons (explicit read, no
+    // layer supplied a value), and the same refusal to say what the level
+    // fires. Without it this face answers `{"stakes":"shipped"}` identically
+    // for a config that chose that level and one that set nothing, so the init
+    // workflows' "stakes is unset" and the very next `/cad-config` read
+    // contradict each other - "a default reported as a configured value", one
+    // seam over from where route.mjs prevents it.
+    if (keys.length && layered[k] === undefined && k === 'stakes') {
+      allWarnings.push('stakes is unset: no config layer sets it, so the level '
+        + 'is decided per phase from the plans in scope - `route.mjs resolve` '
+        + 'answers it for a dispatch');
+    }
   }
   out({ ok: true, values, source, ...(allWarnings.length ? { warnings: allWarnings } : {}) });
 }

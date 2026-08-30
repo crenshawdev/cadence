@@ -1283,7 +1283,9 @@ test('risk-check status: an explicit user OVERRIDE written through the seam clea
   writeFileSync(reasonFile, 'the secrets hit is a fixture key in a test file; accepted\n');
   const appended = parseJson(execFileSync('node', [PLANNING, '--dir', dir,
     'trace', 'append', '--phase', '1', '--family', 'outcome', '--event', 'override',
-    '--plan', '1', '--trigger', 'risk_surface', '--detail-file', reasonFile],
+    '--plan', '1', '--trigger', 'risk_surface',
+    '--survivors', '1', '--downgraded', '0', '--refuted', '0',
+    '--detail-file', reasonFile],
   { encoding: 'utf8' }));
   assert.equal(appended.ok, true, JSON.stringify(appended));
   assert.equal(appended.written, true, JSON.stringify(appended));

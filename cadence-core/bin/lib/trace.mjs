@@ -420,6 +420,79 @@ function renderEvent(planningRoot, event) {
 }
 
 /**
+ * The rotation marker a cut of THIS record would write, and where the tail that
+ * cut would carry begins.
+ *
+ * ONE SPELLING, TWO CALLERS. `freshRecord` writes this line into the fresh
+ * record; `appendEvent`'s size arm measures it to decide whether the pending
+ * event has room to sit beside it. Building it in one place is what stops the
+ * reserve from drifting away from the line the rotation actually writes - a
+ * reserve short by one byte is exactly the defect the reserve exists to close.
+ *
+ * It is written as part of the rotation's own fresh-file write rather than
+ * through `appendEvent`, which would re-enter the size arm that called it.
+ *
+ * The marker takes the `corr` and `phase` of the newest ANCHOR in the record -
+ * the run in flight - so it files under the run whose record was cut. That is
+ * also why its size cannot be a constant: `phase` reaches the record
+ * caller-supplied and unvalidated, so only measuring answers.
+ *
+ * `carried_bytes` SEALS THE GENERATION, and it is not telemetry. It is the byte
+ * length of `text` at the instant the claim read it - how much of the file this
+ * cut carried away and therefore accounted for. Its ONE consumer is the
+ * leftover-generation eviction in `rotateTrace`: a writer that appended into the
+ * old inode after this cut's carry-back loop ended left its bytes only in the
+ * generation, and the next rotation is about to destroy that generation. The
+ * sealed number is what tells that writer where this cut stopped accounting, so
+ * it can finish the carry-back over the bytes past it rather than guess an
+ * offset or re-append a whole generation. It must therefore be the SEALED size
+ * and never an estimate.
+ * @param {string} text the whole record a cut would carry away
+ * @returns {{lines: string[], at: number, corr: string, marker: string}} `at` is
+ *   the index of the anchor line in `lines`, or `-1` where the record holds no
+ *   anchor at all - in which case there is no tail and the marker is the whole
+ *   fresh record.
+ */
+function rotationMarker(text) {
+  const lines = text.split('\n');
+  let at = -1;
+  let anchorCorr = '';
+  /** @type {any} */
+  let anchorPhase;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
+    at = i;
+    // The id the run in flight is ALREADY writing, read off the anchor rather
+    // than re-derived: `renderEvent` stored it there at write time, and a
+    // re-derivation here would answer about the file after the cut.
+    anchorCorr = typeof e.corr === 'string' && e.corr ? e.corr : key(e.phase);
+    anchorPhase = e.phase;
+    break;
+  }
+  // The same fixed key order `renderEvent` writes, so the marker is an ordinary
+  // line of the record rather than a differently shaped one. `phase` is
+  // `undefined` where no anchor was carried and drops out of the JSON entirely.
+  // `carried_bytes` rides after `file`, as an ordinary trailing field of that
+  // fixed order - `renderTrace`'s `rotated` derivation takes `file` and `ts`
+  // only, so it reaches no envelope.
+  const marker = `${JSON.stringify({
+    corr: anchorCorr,
+    phase: anchorPhase,
+    ts: new Date().toISOString(),
+    family: 'lifecycle',
+    event: ROTATION,
+    file: ROTATED_TRACE_FILE,
+    carried_bytes: Buffer.byteLength(text),
+  })}\n`;
+  return { lines, at, corr: anchorCorr, marker };
+}
+
+/**
  * The whole body of the record a rotation writes: the NEWEST
  * `lifecycle/phase_start` line and every line after it, then the rotation
  * marker. Where the record holds no anchor at all, the marker alone.
@@ -456,46 +529,15 @@ function renderEvent(planningRoot, event) {
  * can write a bound's worth of events under a single anchor.
  * THE MARKER is the last line of what this returns, after the carried tail, so
  * the tail's own order is untouched and the marker sits under the anchor whose
- * `corr` it takes. It is written as part of this one fresh-file write rather
- * than through `appendEvent`, which would re-enter the size arm that called us.
- * Its own bytes are counted against the bound here, so the reserve a caller
- * passes is the pending line alone.
+ * `corr` it takes. `rotationMarker` below builds it; its own bytes are counted
+ * against the bound here, so the reserve a caller passes is the pending line
+ * alone.
  * @param {string} text the whole record being carried away
  * @param {number} reserve bytes the fresh file owes beyond this content
  * @returns {string}
  */
 function freshRecord(text, reserve) {
-  const lines = text.split('\n');
-  let at = -1;
-  let anchorCorr = '';
-  /** @type {any} */
-  let anchorPhase;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    let e;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
-    at = i;
-    // The id the run in flight is ALREADY writing, read off the anchor rather
-    // than re-derived: `renderEvent` stored it there at write time, and a
-    // re-derivation here would answer about the file after the cut.
-    anchorCorr = typeof e.corr === 'string' && e.corr ? e.corr : key(e.phase);
-    anchorPhase = e.phase;
-    break;
-  }
-  // The same fixed key order `renderEvent` writes, so the marker is an ordinary
-  // line of the record rather than a differently shaped one. `phase` is
-  // `undefined` where no anchor was carried and drops out of the JSON entirely.
-  const marker = `${JSON.stringify({
-    corr: anchorCorr,
-    phase: anchorPhase,
-    ts: new Date().toISOString(),
-    family: 'lifecycle',
-    event: ROTATION,
-    file: ROTATED_TRACE_FILE,
-  })}\n`;
+  const { lines, at, corr: anchorCorr, marker } = rotationMarker(text);
   if (at < 0) return marker;
   const owed = reserve + Buffer.byteLength(marker);
 
@@ -653,9 +695,13 @@ function claimAbandoned(claim) {
  * here holding a stale one. Calling it directly IS a writer that decided to
  * rotate before another writer's rotation landed, which is the interleaving the
  * claim has to refuse. Nothing in the tree calls it but `appendEvent`.
- * @returns {{rotated: boolean, reason?: string}} `reason` ONLY where the
- *   rotation failed outright; losing the claim is `{rotated:false}` and the
- *   caller appends, because somebody else already made room.
+ * @returns {{rotated: boolean, reason?: string, shortfall?: number|null}}
+ *   `reason` ONLY where the rotation failed outright; losing the claim is
+ *   `{rotated:false}` and the caller appends, because somebody else already
+ *   made room. `shortfall` rides a rotation that DID rotate and states the
+ *   bytes of the destroyed generation its rescue could not carry - a number, or
+ *   `null` where even their count could not be established. Absent means the
+ *   tail is complete.
  */
 export function rotateTrace(planningRoot, reserve) {
   const file = tracePath(planningRoot);
@@ -665,6 +711,13 @@ export function rotateTrace(planningRoot, reserve) {
   let temp = null;
   /** @type {string|null} */
   let evicted = null;
+  // The evicted path, but ONLY where what was evicted is a leftover GENERATION.
+  // That is the one eviction with bytes worth rescuing, and it has to be told
+  // apart from the abandoned-claim eviction: there the evicted path is a second
+  // name for the LIVE inode, so a rescue reading it would re-append the live
+  // record to itself at an offset that seals some other generation entirely.
+  /** @type {string|null} */
+  let leftover = null;
   const claim = rotationClaimPath(planningRoot);
   /** @type {string|null} */
   let dated = null;
@@ -834,36 +887,42 @@ export function rotateTrace(planningRoot, reserve) {
         const path = `${sibling}.evict.${priv}`;
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
-        // CONFIRM AFTER CLAIMING, on the abandoned arm only, and before
-        // anything is read or written - the same shape `lib/capture-file.mjs`
-        // uses to break a stale lock. The rename above may have taken the
-        // sibling from a claimant that arrived between the age read and here:
-        // a second reclaimer wins the eviction race, re-links, and stamps its
-        // own fresh sidecar, and the mtime is no longer the one this process
-        // wrote. Breaking THAT claim is not a deferred rotation, it is the
-        // whole record - the holder's `readFileSync(sibling)` returns ENOENT,
-        // `carried` falls back to '', and it swaps a record holding only the
-        // rotation marker over the live path while this call's `finally`
-        // unlinks the last remaining name of the old inode.
+        if (!abandoned) leftover = path;
+        // CONFIRM AFTER CLAIMING, on BOTH eviction arms, and before anything is
+        // read or written - the same shape `lib/capture-file.mjs` uses to break
+        // a stale lock. The rename above may have taken the sibling from a
+        // claimant that arrived between the discriminator and here: a second
+        // writer links, wins the claim, and stamps its own fresh sidecar, and
+        // the mtime is no longer the one this process wrote. Breaking THAT claim
+        // is not a deferred rotation, it is the whole record - the holder's
+        // `readFileSync(sibling)` returns ENOENT, `carried` falls back to '',
+        // and it swaps a record holding only the rotation marker over the live
+        // path while this call's `finally` unlinks the last remaining name of
+        // the old inode.
+        //
+        // THE LEFTOVER ARM NEEDS IT TOO (D-02), which reverses what shipped.
+        // The exclusion argued that this arm's own discriminator already
+        // answers, and it does not: `rotationInFlight(file, sibling)` was read
+        // BEFORE the `renameSync(sibling, path)` above, so a writer that linked
+        // in between has its live claim renamed away with nothing to put it
+        // back. The discriminator answers about the instant it ran, and the
+        // destructive act happens later - which is the whole reason a confirm
+        // exists rather than a check.
         //
         // Put the sibling back only where nothing has taken the path meanwhile;
         // a plain rename back would clobber a claim a fourth writer legitimately
         // holds. Either way CLEAR `evicted`, so the release cannot delete a
-        // claim that was just restored. The leftover-generation eviction below
-        // ships without this confirm and stays that way: its own discriminator
-        // already answers, and a rule locked for the new case must not be
-        // widened over code that already shipped.
-        if (abandoned) {
-          let refreshed = false;
-          try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
-          if (refreshed) {
-            try {
-              if (!existsSync(sibling)) renameSync(path, sibling);
-              else unlinkSync(path);
-            } catch { /* it vanished under us - there is nothing left to restore */ }
-            evicted = null;
-            return { rotated: false };
-          }
+        // claim that was just restored.
+        let refreshed = false;
+        try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
+        if (refreshed) {
+          try {
+            if (!existsSync(sibling)) renameSync(path, sibling);
+            else unlinkSync(path);
+          } catch { /* it vanished under us - there is nothing left to restore */ }
+          evicted = null;
+          leftover = null;
+          return { rotated: false };
         }
       }
     }
@@ -907,7 +966,98 @@ export function rotateTrace(planningRoot, reserve) {
       try { appendFileSync(file, whole); } catch { break; }
       seen += whole.length;
     }
-    return { rotated: true };
+
+    // THE SECOND WINDOW, closed - the one the loop above cannot reach (D-05).
+    // The loss is a TWO-STEP. Rotation 1 breaks off its carry-back the instant
+    // the sibling stops growing, so a writer whose append landed in the old
+    // inode a moment later has its bytes ONLY in the generation. Rotation 2 then
+    // evicts that generation and the `finally` below unlinks it: the event is in
+    // neither file, and nothing ever said so. So the writer that is about to
+    // DESTROY a leftover generation finishes the carry-back the earlier rotation
+    // started, here, at the last moment it can - after the swap, into the live
+    // path, whole lines only, exactly as the loop above does.
+    //
+    // WHERE IT STARTS FROM. `carried` is the record this cut carried away, which
+    // is the record rotation 1 wrote, so its newest rotation marker is rotation
+    // 1's own and `carried_bytes` is the size that cut sealed the generation at.
+    // Everything past that offset arrived after rotation 1 stopped accounting.
+    //
+    // NO SEAL, NO RESCUE - BUT NOT NO ANSWER. A generation left by the code that
+    // shipped before this field carries no `carried_bytes`, and no offset can be
+    // guessed for it: the choices are failing closed at the cost of one old
+    // event, or re-appending a whole generation into a file readers actually
+    // read. It fails closed, and states `shortfall: null` on the way out - the
+    // same "cut by an unknown amount" the failed-stat arm reports, because a
+    // generation destroyed with no field at all is exactly the silence the
+    // `shortfall` paragraph below refuses.
+    //
+    // SKIP WHAT IS ALREADY HERE, which is the one difference from the loop
+    // above. There a duplicate lands in the generation, a file nothing reads;
+    // here it lands in the live record, where a second copy of a bracket half
+    // would change what `renderTrace` counts. Rotation 1's own carry-back
+    // already put part of this delta into the record being carried, so the
+    // overlap is expected rather than exceptional.
+    //
+    // AND IT NEVER DECIDES WHETHER THE ROTATION ROTATED. This function's
+    // contract is that `reason` appears only where the rotation failed outright,
+    // and a failed rescue is not that. But it must not be SILENT either - a tail
+    // that cannot be completed has to be STATED, or the record is short by an
+    // amount no reader can learn. Every failure arm - the stat, the read, the
+    // line split, the append - reports `shortfall`: the bytes past the sealed
+    // offset this call did not carry, taken from the stat rather than from what
+    // was successfully read, because a read that threw established no count at
+    // all. Where even the stat fails, `shortfall` is `null`: the tail was cut by
+    // an unknown amount, which is still an answer. A caller that ignores the
+    // field behaves exactly as it did before.
+    /** @type {number|null|undefined} */
+    let shortfall;
+    if (leftover) {
+      /** @type {number|null} the offset rotation 1 sealed its generation at */
+      let sealed = null;
+      const prior = carried.split('\n');
+      for (let i = prior.length - 1; i >= 0; i--) {
+        const line = prior[i].trim();
+        if (!line) continue;
+        let e;
+        try { e = JSON.parse(line); } catch { continue; }
+        if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+        if (e.family !== 'lifecycle' || e.event !== ROTATION) continue;
+        // The NEWEST marker decides, and a non-numeric or negative seal is no
+        // seal - a hand-edited or foreign-producer line must not aim a read.
+        if (typeof e.carried_bytes === 'number' && Number.isFinite(e.carried_bytes)
+          && e.carried_bytes >= 0) sealed = e.carried_bytes;
+        break;
+      }
+      if (sealed !== null) {
+        /** @type {number|null} */
+        let beyond = null;
+        try { beyond = Math.max(0, statSync(leftover).size - sealed); } catch { beyond = null; }
+        if (beyond === null) shortfall = null;
+        else if (beyond > 0) {
+          let done = false;
+          try {
+            const buf = Buffer.alloc(beyond);
+            const fd = openSync(leftover, 'r');
+            let read = 0;
+            try { read = readSync(fd, buf, 0, buf.length, sealed); } finally { closeSync(fd); }
+            const delta = buf.subarray(0, read);
+            const cut = delta.lastIndexOf(0x0a);
+            if (cut >= 0) {
+              const already = new Set(prior);
+              const rescue = delta.subarray(0, cut + 1).toString('utf8')
+                .split('\n').filter((l) => l && !already.has(l));
+              if (rescue.length) appendFileSync(file, `${rescue.join('\n')}\n`);
+              done = true;
+            }
+          } catch { /* stated on `shortfall`, never thrown and never a `reason` */ }
+          if (!done) shortfall = beyond;
+        }
+      } else shortfall = null;
+    }
+    // Where the rescued lines leave the live record over the bound they are
+    // carried anyway: that is the arm `freshRecord` already states, `renderTrace`
+    // reports it as `capped`, and the next append rotates again.
+    return shortfall === undefined ? { rotated: true } : { rotated: true, shortfall };
   } catch (e) {
     return { rotated: false, reason: (e && /** @type {any} */ (e).code) || 'rotate-failed' };
   } finally {
@@ -1012,11 +1162,37 @@ export function appendEvent(planningRoot, event) {
     if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
   }
   if (size !== null && size + pending >= MAX_TRACE_BYTES) {
+    // THE MARKER IS RESERVED, not just the pending line. A rotation always
+    // writes its marker into the fresh record, so an event that fits under the
+    // bound by itself but not BESIDE the marker used to rotate and then land a
+    // record over its bound on the very first write (measured 2026-08-30: 105 B
+    // over). The reserve is what the rotation will actually write, so it is
+    // MEASURED and never a constant: the marker embeds the carried anchor's
+    // `corr` and `phase`, and `renderEvent` passes `phase` through unvalidated,
+    // so no fixed number bounds it.
+    //
+    // On the SIZE ARM ONLY. This is the rotation path, which already reads the
+    // record twice; the ordinary append path must not gain a read, because
+    // every writer in the tree reaches the record through this function.
+    //
+    // The marker measured here can differ by a few bytes from the one written a
+    // moment later - another writer may land an anchor in between, or the
+    // record's own size may change the digits of `carried_bytes`. That is
+    // acceptable for an admission check and is not a reason to move the check
+    // into `rotateTrace` (D-06), which decides about the OLD record.
+    //
     // A single line that reaches the bound on its own is REFUSED rather than
     // rotated. Rotating there throws the record away to make room for an event
     // that still would not fit, and the next append does it again - so the
     // reason is its own, distinguishable from the `size-cap` this arm replaces.
-    if (pending >= MAX_TRACE_BYTES) return { written: false, reason: 'oversized-event' };
+    // Reserving the marker DELIBERATELY moves a narrow band of event sizes -
+    // between `MAX_TRACE_BYTES - marker` and `MAX_TRACE_BYTES` - from "rotate
+    // and land" into that same refusal (D-09). It is the intended change, not a
+    // regression: those events cannot be written under the bound either way.
+    let owed = 0;
+    try { owed = Buffer.byteLength(rotationMarker(readFileSync(file, 'utf8')).marker); }
+    catch { /* unreadable here means the rotation below will fail on its own */ }
+    if (pending + owed >= MAX_TRACE_BYTES) return { written: false, reason: 'oversized-event' };
     const rot = rotateTrace(planningRoot, pending);
     // Losing the claim is not a failure: somebody else already made the room,
     // and this writer appends into the record they left. Only a rotation that

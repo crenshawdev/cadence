@@ -203,6 +203,7 @@ test('risk-check status: a 1-fix bracket is satisfiable - record, then fire rece
 
   planning(repo, dir, ['trace', 'append', '--phase', '3', '--family', 'outcome',
     '--event', 'gate_pass', '--trigger', 'risk_surface', '--plan', '1-fix',
+    '--survivors', '0', '--downgraded', '0', '--refuted', '0',
     '--base', base, '--sha', head]);
   const settled = planning(repo, dir, ['risk-check', 'status', '--phase', '3']);
   assert.equal(settled.ok, true, JSON.stringify(settled));

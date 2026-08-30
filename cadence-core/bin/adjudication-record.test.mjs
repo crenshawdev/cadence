@@ -29,7 +29,10 @@ import { fileURLToPath } from 'node:url';
 import {
   buildEntries, deriveCounts, RAISED_SEVERITIES, RULINGS, HALTING_SEVERITIES,
 } from './lib/adjudication-record.mjs';
-import { HALTING_SEVERITIES as FILING_HALTING_SEVERITIES } from './lib/filing-decision.mjs';
+import {
+  HALTING_SEVERITIES as FILING_HALTING_SEVERITIES, unfixedFindings, unfixedFromEntries,
+  usableFixCommit,
+} from './lib/filing-decision.mjs';
 import { FINDING_SCHEMA } from './review-provider.mjs';
 
 const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
@@ -382,6 +385,165 @@ test('AC3: an abbreviated or full fix commit is accepted', () => {
   }
 });
 
+// --- RSK-08: the VALUE check runs wherever the key is SET --------------------
+//
+// Issue #165. The check sat inside the `ruling.ruling === 'survived'` arm while
+// the module's own `FIX_COMMIT` comment said it ran "wherever the key is SET",
+// so a `downgraded` or `refuted` entry stored any string at all. Measured on
+// the pre-hoist tree: `{ruling:'downgraded', fix_commit:'not-a-sha'}` returned
+// `ok:true` and STORED the garbage, and `''` and `null` returned `ok:true` with
+// the key silently absent from the entry.
+
+test('RSK-08: an unusable fix commit on a DOWNGRADED or REFUTED ruling is REFUSED', () => {
+  // '' and null are the two the pre-hoist tree dropped rather than refused, and
+  // they are exactly the members a truthiness read lets through.
+  for (const ruled of ['downgraded', 'refuted']) {
+    for (const bad of ['not-a-sha', '', null]) {
+      const findings = [finding()];
+      const res = buildEntries(payload(voice('openai', 'gpt-5', findings, [{
+        ruling: ruled,
+        fix_commit: bad,
+        // Supplied so a refuted row is refused for its fix_commit rather than
+        // for the counter-evidence it would otherwise be missing.
+        ...(ruled === 'refuted'
+          ? { counter_evidence: { file: 'cadence-core/bin/planning.mjs', line: 7 } }
+          : {}),
+      }])));
+      assert.equal(res.ok, false,
+        `fix_commit ${JSON.stringify(bad)} was accepted on a ${ruled} ruling`);
+      assert.match(res.detail, /no usable fix_commit/);
+      assert.match(res.detail, new RegExp(ruled),
+        'the refusal names the RULING as well as the field, so a coordinator reading it knows '
+        + 'which entry of the payload to fix');
+      assert.deepEqual(res.entries, [], 'a refusal stores nothing');
+    }
+  }
+});
+
+test('RSK-08: a WELL-FORMED fix commit on a downgraded or refuted ruling is still accepted', () => {
+  // D-01's rejected stronger arm, pinned as rejected: the hoist VALIDATES the
+  // key on a non-survived ruling, it does not forbid it. `RULING_KEYS` stays
+  // one flat allow-list.
+  for (const ruled of ['downgraded', 'refuted']) {
+    const findings = [finding()];
+    const res = buildEntries(payload(voice('openai', 'gpt-5', findings, [{
+      ruling: ruled,
+      fix_commit: '1b34563',
+      ...(ruled === 'refuted'
+        ? { counter_evidence: { file: 'cadence-core/bin/planning.mjs', line: 7 } }
+        : {}),
+    }])));
+    assert.equal(res.ok, true, res.detail);
+    assert.equal(res.entries[0].fix_commit, '1b34563');
+    assert.equal(res.entries[0].ruling, ruled);
+  }
+});
+
+test('RSK-08: the SURVIVED arm is refused by that one same check, naming its ruling', () => {
+  const findings = [finding()];
+  const res = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'survived', fix_commit: 'not-a-sha' }])));
+  assert.equal(res.ok, false);
+  assert.match(res.detail, /no usable fix_commit/);
+  assert.match(res.detail, /survived/,
+    'one check covers all three rulings, so the survived case names its ruling too');
+});
+
+// --- RSK-08: ONE statement of the unfixed halting survivor, two faces --------
+//
+// The three-field test used to exist only inside `unfixedFindings`, a
+// payload-level function, so a caller holding a written record's `entries[]`
+// and no payload had to restate it. `unfixedFromEntries` is the primitive now
+// and `unfixedFindings` is the wrapper; this arm is what fails if the two ever
+// stop being one statement.
+//
+// LND-02 ADDED THE FOURTH FIELD. `fix_commit` used to be read one layer up, at
+// bin/issue-filing.mjs's own face, which was a second spelling of one meaning -
+// so the module answers it too now, and an entry naming a usable commit is in
+// none of the three sets it returns.
+
+test('RSK-08: the entries face and the payload face answer identically over one fixture', () => {
+  const findings = [
+    // The unfixed halting survivor: a blocker that STOOD, cleared by a person
+    // rather than by a commit.
+    finding({ severity: 'blocker', line: 1 }),
+    // A blocker that stood and IS being fixed - the one entry not in the set.
+    finding({ severity: 'blocker', line: 2 }),
+    finding({ severity: 'medium', line: 3 }),
+    finding({ severity: 'high', line: 4 }),
+    finding({ severity: 'low', line: 5 }),
+    // BOTH markers on one entry, which the record grammar permits on purpose:
+    // a fix landed and the halt was ALSO cleared by a person. The commit wins,
+    // so this one is neither filed nor named as an unfixed override - leaving
+    // that precedence to the order two filters happen to run in is how exactly
+    // this entry becomes a permanent unfixed override at every close.
+    finding({ severity: 'high', line: 6 }),
+  ];
+  const pl = payload(voice('openai', 'gpt-5', findings, [
+    { ruling: 'survived', overridden: true },
+    { ruling: 'survived', fix_commit: '1b34563' },
+    { ruling: 'survived' },
+    { ruling: 'downgraded' },
+    { ruling: 'refuted', counter_evidence: { file: 'cadence-core/bin/planning.mjs', line: 9 } },
+    { ruling: 'survived', overridden: true, fix_commit: '23121a3' },
+  ]));
+
+  const built = buildEntries(pl);
+  assert.equal(built.ok, true, built.detail);
+
+  const fromEntries = unfixedFromEntries(built.entries);
+  const fromPayload = unfixedFindings(pl);
+  assert.equal(fromPayload.ok, true, fromPayload.detail);
+  assert.deepEqual(fromEntries.filing, fromPayload.findings,
+    'the entries face and the payload face read one statement of the four-field test, so the '
+    + 'sets they return over the same data are the same set');
+
+  assert.deepEqual(fromEntries.filing.map((e) => e.line), [1, 3, 4, 5],
+    'the two survived entries citing a real commit are the ones being FIXED rather than filed, '
+    + 'and the second of them carries the override marker as well - the commit still wins');
+  assert.equal(fromEntries.haltingSurvivors.length, 1);
+  assert.equal(fromEntries.haltingSurvivors[0].line, 1);
+  assert.equal(fromEntries.haltingSurvivors[0].severity, 'blocker');
+  assert.equal(fromEntries.haltingSurvivors[0].overridden, true,
+    'the overridden blocker is the unfixed halting survivor, and it is named on its own rather '
+    + 'than only folded into the filing set');
+
+  assert.deepEqual(fromEntries.halting, [],
+    'buildEntries refuses a survived blocker or high carrying NEITHER marker, so a record it '
+    + 'accepted holds nothing for a close to stop over - `halting` is the fail-closed rail over '
+    + 'records this tree did not write, and it must stay empty here');
+});
+
+test('RSK-08: a record with no override names no unfixed halting survivor', () => {
+  const findings = [finding({ severity: 'blocker' }), finding({ severity: 'medium', line: 9 })];
+  const built = buildEntries(payload(voice('openai', 'gpt-5', findings, [
+    { ruling: 'survived', fix_commit: '1b34563' },
+    { ruling: 'survived' },
+  ])));
+  assert.equal(built.ok, true, built.detail);
+  const out = unfixedFromEntries(built.entries);
+  assert.deepEqual(out.haltingSurvivors, []);
+  assert.deepEqual(out.filing.map((e) => e.severity), ['medium'],
+    'the confirmed-and-not-fixed medium is still filed; the fixed blocker is not');
+});
+
+test('RSK-08: the entries face reads a RECORD off disk, not only a freshly built payload', () => {
+  // The array a written ADJUDICATION-*.json stores is byte-for-byte the array
+  // `buildEntries` returns, and a non-entry in it is skipped rather than thrown
+  // on - the module's stated discipline for unknown input.
+  const findings = [finding({ severity: 'high' })];
+  const built = buildEntries(payload(voice('openai', 'gpt-5', findings,
+    [{ ruling: 'survived', overridden: true }])));
+  assert.equal(built.ok, true, built.detail);
+  const roundTripped = JSON.parse(JSON.stringify({ entries: built.entries })).entries;
+  const out = unfixedFromEntries([...roundTripped, null, 'not an entry', 7]);
+  assert.equal(out.haltingSurvivors.length, 1);
+  assert.equal(out.filing.length, 1);
+  assert.equal(out.halting.length, 0);
+  assert.deepEqual(unfixedFromEntries(undefined),
+    { filing: [], haltingSurvivors: [], halting: [] });
+});
+
 // --- the derived counts ------------------------------------------------------
 
 test('the counts are DERIVED by counting rulings over a mixed-ruling fixture', () => {
@@ -449,6 +611,33 @@ test('the halting severities match lib/filing-decision.mjs\'s own list', () => {
     + 'disagree about which survivors the gate is halting to fix');
   assert.equal(HALTING_SEVERITIES.every((s) => RAISED_SEVERITIES.includes(s)), true,
     'every halting severity has to be one a finding can be RAISED at');
+});
+
+test('the fix-commit grammar matches lib/filing-decision.mjs\'s own copy', () => {
+  // The third hand-maintained-then-compared pair in this file, and the one with
+  // teeth: lib/filing-decision.mjs asks the SAME question of an entry it reads
+  // off a record THIS module never validated - a hand-edited one, a foreign
+  // writer's, one older than the requirement - so a value the composer refuses
+  // and the reader accepts is a survived blocker that walks past a close.
+  //
+  // Compared BEHAVIOURALLY rather than by comparing two literals: `FIX_COMMIT`
+  // is private to the module under test, and driving the values through
+  // `buildEntries` pins the reader against what the composer actually does.
+  //
+  // Every member is asserted with its own message, so the row that disagreed is
+  // named rather than left to the loop's count.
+  for (const v of ['1b34563', 'ABCDEF1', '23121a3f9c0e1d2a3b4c5d6e7f8091a2b3c4d5e6',
+    '', '   ', 'not-a-commit', 'the fix commit', 'zzzzzzz', 'abc', 'a1b2c3', 'a1b2c3d ',
+    '0123456789abcdef0123456789abcdef012345678', 'g1b2c3d', null, 0, false, true]) {
+    const res = buildEntries(payload(voice('openai', 'gpt-5', [finding({ severity: 'high' })],
+      [{ ruling: 'survived', fix_commit: v }])));
+    assert.equal(res.ok, usableFixCommit(v),
+      `lib/adjudication-record.mjs and lib/filing-decision.mjs disagree about fix_commit `
+      + `${JSON.stringify(v)}: the composer ${res.ok ? 'stores' : 'refuses'} it and the reader `
+      + `reads it as ${usableFixCommit(v) ? 'a landed fix' : 'no fix at all'}. Edit the two back `
+      + 'into agreement rather than editing this row - the gap between them is a survived '
+      + 'blocker that no longer stops a close');
+  }
 });
 
 test('a severity outside the four is REFUSED', () => {

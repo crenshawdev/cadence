@@ -58,8 +58,10 @@ Two stops first, before anything is written.
    repository and not about Cadence. So it is asked, once, and a repository that
    has answered is never asked again. Every other key keeps the template's
    value. When the config was written, say so in one line: "Config written with
-   defaults (standard granularity, shipped stakes, research and plan check off,
-   verifier on). /cad-config changes any of it."
+   defaults (standard granularity, research and plan check off, verifier on).
+   Stakes is left unset: it floors at solo when every plan in the phase reads
+   clean, and at the shipped default when any of them cannot be read.
+   /cad-config changes any of it."
 
 4. **Pick a forge**, from the `forge.mjs detect` line in that same script - it
    rides the existing script rather than taking a turn of its own, because it

@@ -62,8 +62,10 @@ line):
    hosts a repository is a fact about that repository and not about Cadence.
    So it is asked, once, and a repository that has answered is never asked
    again. Every other key keeps the template's value. Tell the user in one line:
-   "Config written with defaults (standard granularity, shipped stakes,
-   research and plan check off, verifier on). /cad-config changes any of it."
+   "Config written with defaults (standard granularity, research and plan check
+   off, verifier on). Stakes is left unset: it floors at solo when every plan in
+   the phase reads clean, and at the shipped default when any of them cannot be
+   read. /cad-config changes any of it."
 5. Read the keys this workflow needs through the seam (effective values,
    global layer included):
 

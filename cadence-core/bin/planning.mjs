@@ -185,7 +185,9 @@
 //                                   .gitignore lives)
 'use strict';
 
-import { evaluateRow, subcommandKey, CONTRACTS } from './lib/arg-contract.mjs';
+import {
+  evaluateRow, evaluatePresence, subcommandKey, CONTRACTS, PRESENCE_RULES,
+} from './lib/arg-contract.mjs';
 // The shared core every command module under planning/ imports too (D-03). `ok`,
 // `fail`, `read` and `HERE` are declared THERE and nowhere else, and a command
 // module could not reach them here in any case: importing this file RUNS the
@@ -226,6 +228,7 @@ import { cmdAdjudication } from './planning/adjudication.mjs';
 import { cmdDeferredRecord } from './planning/deferred-record.mjs';
 import { cmdDeferredList } from './planning/deferred-list.mjs';
 import { cmdDeferredCarry } from './planning/deferred-carry.mjs';
+import { cmdRiskCarry } from './planning/risk-carry.mjs';
 import { cmdRenumber } from './planning/renumber.mjs';
 
 function parseArgs(argv) {
@@ -300,6 +303,13 @@ const COMMANDS = {
   // word, never a two-word spelling: `subcommandKey` consumes a second word only
   // for the `TWO_WORD` families, and one operation does not earn widening it.
   adjudication: (dir, _sub, opts) => cmdAdjudication(dir, opts),
+  // The risk_surface rulings OUT of the phase directory a milestone close is
+  // about to delete (LND-02). ONE word, never a two-word spelling, for the
+  // reason the `adjudication` arm above states: `subcommandKey` consumes a
+  // second word only for the `TWO_WORD` families, one operation does not earn
+  // widening it, and widening it would change how every existing spelling
+  // resolves.
+  'risk-carry': (dir, _sub, opts) => cmdRiskCarry(dir, opts),
   // The DEFERRED gate's queue member, beside that same REVIEW file. TWO words,
   // unlike `adjudication` above: this is one of three operations on the queue,
   // which is the `risk-check run|status` precedent for widening `TWO_WORD`
@@ -361,14 +371,44 @@ try {
   // throw the seam-input readers raise (D-07): this file has ONE refusal
   // vocabulary and no `e.seam` catch arm to render that throw as anything but
   // `internal`.
-  const args = evaluateRow(ARGV, CONTRACTS['planning.mjs'], subcommandKey(words));
+  //
+  // And the ONE presence question a row cannot state, declared in
+  // lib/arg-contract.mjs beside `CONTRACTS` rather than written out here so the
+  // flags it names are the flags that same row declares: a `trace append` whose
+  // `--event` SETTLES a review fire owes at least one of the settled figures.
+  // Without it a `gate_pass` carrying none of them cleared a blocking range
+  // while asserting nothing about it (RSK-08, UAT item 3).
+  //
+  // The refusal is the SECOND arm of the chain below and never the first, so a
+  // malformed value keeps naming its own flag: `--survivors abc` stays a
+  // `--survivors` refusal rather than becoming a "you owe me a figure" one, and
+  // arg-contract-adoption.test.mjs's spawned walk keeps refusing exactly where
+  // it already does. It is inside the chain for the reason the whole chain
+  // exists: `fail` emits and RETURNS, so a second refusal outside it prints a
+  // second JSON line beside the handler's own.
+  //
+  // The event NAME is knowledge this door is allowed to hold. It is the SEAM -
+  // planning/trace.mjs - that states it carries no runtime refusal keyed to an
+  // event name, and planning/risk-check.mjs's `if (e.event === 'override')` arm
+  // is the shipped precedent for the same knowledge living outside it.
+  const key = subcommandKey(words);
+  const args = evaluateRow(ARGV, CONTRACTS['planning.mjs'], key);
+  const owed = evaluatePresence(ARGV, PRESENCE_RULES['planning.mjs'], key);
   const handler = COMMANDS[cmd];
   if (!args.ok) {
-    fail('bad-args', argRefusal(subcommandKey(words), args.detail),
+    fail('bad-args', argRefusal(key, args.detail),
       'correct the flag the detail names and re-run - nothing was written. A value that itself'
       + ' starts with `--` cannot be protected by a bare `--` separator here: every `--`-prefixed'
       + ' word is read as a flag that consumes the next one, so send such a value through the'
       + ' matching `--<name>-file` flag where one exists');
+  }
+  else if (!owed.ok) {
+    fail('bad-args', `${key} ${owed.flag} ${owed.value} needs at least one of `
+      + `${owed.requires.join(', ')} - the settled figures this receipt reports`,
+      'a receipt that settles a review fire carries the counts the `adjudication` envelope'
+      + ' returned, zeroes included, so the seam can recount them against the committed record'
+      + ' - add them and re-run. A receipt that settles nothing takes no figures: send `--event'
+      + ' rearm` or `--event deferral` instead. Nothing was written');
   }
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
   else handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));

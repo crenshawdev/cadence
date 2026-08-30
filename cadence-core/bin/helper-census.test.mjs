@@ -209,6 +209,33 @@ const HELPERS = [
       + 'so the phases that cleared still get pruned, and a copy that picked '
       + 'one arm for both callers would change what completed and failed mean.',
   },
+  {
+    name: 'the genuinely-unfixed test (unfixedFromEntries)',
+    home: 'lib/filing-decision.mjs',
+    // The conjunction that decides a HALT, matched from the ruling-and-severity
+    // pair through to the override marker. What distinguishes this test from
+    // every other severity check in the tree is that it reaches `overridden` at
+    // all: lib/adjudication-record.mjs's composition-time presence rule reads
+    // the same constant and is deliberately NOT this one - it asks whether a
+    // ruling may be STORED, over a ruling and a finding, where this asks what an
+    // already-stored entry means to a fire that is closing, over an entry. The
+    // fix_commit half is left out of the pattern on purpose: a non-blank-string
+    // check is an idiom any file may legitimately write, and anchoring on it
+    // would redden on a near-miss instead of on a copy.
+    re: new RegExp("ruling === 'survived' && HALTING_SEVERITIES\\.includes\\("
+      + '[\\s\\S]{0,200}?overridden !== true', 'g'),
+    note: 'Import { unfixedFromEntries } from ./lib/filing-decision.mjs and '
+      + 'read `filing`, `haltingSurvivors` or `halting` off its one answer. A '
+      + 'second copy of this test IS the LND-02 defect rather than a symptom '
+      + 'of it: the close gate decided what stops an autonomous close by '
+      + 'unioning raw REVIEW findings while issue filing decided the same '
+      + 'question off the adjudicated entries, so a finding that had been '
+      + 'fixed, refuted, downgraded or overridden halted the close anyway. '
+      + 'The two HALTING_SEVERITIES constants are allowed to be two - '
+      + 'lib/adjudication-record.mjs declares its own because importing this '
+      + 'module back would be a cycle, and adjudication-record.test.mjs '
+      + 'asserts the pair agrees - but the TEST that reads them is one.',
+  },
 ];
 
 const MODULES = everyModule(BIN);

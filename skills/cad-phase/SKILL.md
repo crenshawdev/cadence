@@ -1,7 +1,7 @@
 ---
 name: cad-phase
 description: "CRUD phases in ROADMAP - add, insert, remove, edit, with remove/insert renumbering the following phases, their .planning dirs and every phase reference"
-argument-hint: "add | insert <N> | remove <N> | edit <N>"
+argument-hint: "add [description] | insert <N> | remove <N> | edit <N>"
 allowed-tools:
   - Read
   - Write

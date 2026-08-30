@@ -1,54 +1,94 @@
-# Roadmap: v3.7.7 - the record says what happened
+# Roadmap: v3.7.8 - what Cadence already knows
 
 ## Overview
 
-**`v3.7.7`, opened 2026-08-28.** Two phases, both filed as S2 off real runs
-rather than off a read: `GH-145` and `GH-159`. The thread between them is that a
-record Cadence keeps cannot represent a state that actually occurs, and in both
-cases it fails silently rather than refusing.
+**`v3.7.8`, opened 2026-08-29, closed 2026-08-30.** Five phases, all five
+shipped and pruned from the list below; their rows are under `## Shipped` in
+REQUIREMENTS.md and their residue in `.planning/ARCHIVE.md`. `/cad-phase add`
+opens the next cycle. The source was the scan taken
+immediately after the v3.7.7 tag, which produced five `S2-real` issues, plus
+three findings filed against the v3.7.7 adjudication work itself and never
+triaged.
 
-**What is broken.** `.planning/reads.jsonl` has a write-time bound at
-`lib/read-trace.mjs:52` (`MAX_READS_BYTES`, 8 MiB) and no rotation: at the bound
-`:282` returns `size-cap` and every later append is dropped, permanently. This
-repository's own file measured 7.5 MiB on 2026-08-28, 93% full, against 0.37 MiB
-for a project two cycles old, so the fill tracks age and not size and the oldest
-project fails first. That file is the evidence base `trace suggest` joins and the
-one the v3.7.6 AC6 result was measured from, so losing it also loses the ability
-to re-check what shipped. `lib/trace.mjs` already solves exactly this problem for
-the trace record - `rotateTrace` at `:660`, a claim sidecar with staleness
-eviction, and a `record_rotated` marker - and none of it is reachable from the
-reads writer.
+**The thread.** In every one of these, Cadence already holds the answer and the
+code next to it does not consult it. `route.mjs` maintains `stakesSet` for the
+sole purpose of telling unset from configured, and the project template writes
+`stakes` before the resolver is ever asked. The adjudication record now
+distinguishes a fixed survivor from one left standing, and `land-cleanup.mjs`
+reads the pre-adjudication artifact. `/cad-task` recognises that a task has
+grown phase-sized and hands the user to a command that refuses without a phase.
+The rotation writes a mandatory marker line and the admission check reserves
+only the pending record. None of these is a missing capability. Each is a fact
+on disk that the next step declines to read.
 
-Second, a blocking gate is documented to report its below-blocker/high findings
-and move past them, and the adjudication record refuses to store that. `RULINGS`
-at `lib/adjudication-record.mjs:79` is `survived | downgraded | refuted`, and
-`:366` requires a `fix_commit` on every `survived` entry, while
-`lib/filing-decision.mjs:76-79` and `references/triage-gate.md:41-43,277-278`
-both define a survived finding below blocker/high as one that was NOT fixed. So
-the remainder state has no representation: the fire cannot be settled without
-either fixing a finding the gate never asked to have fixed, or recording a ruling
-the adjudicator does not hold. Measured cost on one foreign-project run: three
-halts and three subagent dispatches the gate had not earned.
+**What is broken.**
 
-**The standard.** Would a user on their own project feel it. Both do, and both
-were found that way rather than Cadence-on-Cadence: the reads cap kills the
-record on whichever project has been running Cadence longest, and the ruling gap
-halts any run whose blocking gate returns a medium with nothing above it.
+`cadence-core/templates/config.json:3` writes `"stakes": "shipped"`, and
+`workflows/new-project.md:56` copies that template verbatim before `:65` tells
+the user shipped stakes were written. `route.mjs:252` maintains `stakesSet`
+solely to distinguish an unset `stakes` from a configured one, and
+`config.schema.json:8` documents at length what unset does: it floors at `solo`
+when every plan in scope was read clean and holds the `shipped` default when any
+of them could not be. `config.mjs` has no unset operation. So the adaptive
+routing the README describes cannot occur on any project Cadence itself
+initialises, and the recent work letting low-risk phases earn a cheaper route is
+unreachable by construction.
+
+`land-cleanup.mjs:36-40` states the gate's input: `cad-land` unions the
+`.planning/phases/*/REVIEW-risk_surface*.md` files this branch's fires persisted
+plus the `.planning/REVIEW-risk_surface-*.md` files `/cad-milestone` carries
+before it prunes the phase dirs. Those are raw review artifacts. They record
+what was raised and nothing about what was ruled, so a finding that was fixed,
+refuted, downgraded or overridden still reads as a live blocker/high and halts
+the unattended close. Measured on the v3.7.7 close itself.
+
+`/cad-task`'s too-big arm routes to `/cad-context`, which refuses an
+off-roadmap phase. The command routes the user into a locked door.
+
+The v3.7.7 adjudication rework has three findings standing against it. The
+`fix_commit` VALUE check is still scoped inside the `ruling === 'survived'`
+branch, so a `downgraded` or `refuted` ruling stores an arbitrary unspendable
+string. `overridden: true` is an unverifiable self-assertion that discharges the
+module's strongest refusal, and nothing requires the corresponding `override`
+trace receipt. The rotation admission check reserves only the pending record,
+not the mandatory rotation-marker line written into the fresh generation.
+
+And a contended second trace rotation can lose a racing writer's event from both
+the live record and `trace.1.jsonl`. A trace event can be a gate receipt, so a
+loss can make completed work look unrecorded and force fail-closed recovery.
+
+**The standard.** Would a user on their own project feel it. Phase 2 changes the
+routing every new project gets. Phase 3 is a command that tells the user where to
+go and sends them somewhere that refuses. Phase 4 halts an unattended close on
+work already done. Phase 1 and phase 5 are the guards under those, and phase 4
+cannot be built on phase 1's seam while its guards are wrong.
+
+**Out of scope, deliberately.** `GH-167` - review payloads carry no secret
+fence, and the provider cutover sends them off the machine - is not a phase this
+cycle. It is opt-in only, it cites no defect, and what a remote reviewer may
+receive is a design decision rather than a repair. It goes to `/cad-spike`.
+`GH-148`, the executor digest's replay accounting, stays deferred: its
+consequence lands in a record users do not read.
 
 ## Open Questions
 
-- **OQ-1 - shared rotation or a second one.** `rotateTrace` is written against
-  the trace filenames and carries a "run in flight" tail that `reads.jsonl` has
-  no analogue for. Whether phase 1 generalizes that function or writes a second
-  rotation beside it, reusing the link-claim technique but not the code, is
-  phase 1 planning's call. The rail is that the trace record's own rotation
-  behaviour does not change: it was fixed in v3.7.5 and is not being reopened.
-- **OQ-2 - a fourth ruling, or a conditional requirement.** `GH-159` can be
-  closed either by adding a ruling value meaning "confirmed, not fixed" or by
-  gating the `fix_commit` requirement on the raised severity being blocker or
-  high, which is the predicate `filing-decision.mjs` already uses. The typo
-  guard at `:132-137` that the requirement actually exists to serve must survive
-  either way.
+- **OQ-1 - where the `fix_commit` check belongs.** Phase 1 can hoist the VALUE
+  check out of the `survived` branch so every ruling's `fix_commit` is validated
+  when present, or make the field unrepresentable outside the rulings that may
+  carry one. The typo guard the requirement exists to serve must survive either
+  way. Whether `overridden: true` becomes conditional on a matching `override`
+  trace receipt, or merely records one, is the same phase's call: a receipt that
+  is written but never required re-states the problem rather than closing it.
+- **OQ-2 - what phase 4 joins against, given pruning.** `/cad-milestone` prunes
+  the phase directories before an autonomous close, which is WHY `cad-land`
+  reads carried `REVIEW-risk_surface-*.md` copies rather than the phase dirs. A
+  join to the adjudication record therefore needs those records carried through
+  the same prune, or the derivation resolved before it. Whether the carry grows
+  to include the adjudication records, or `/cad-milestone` resolves
+  genuinely-unfixed at carry time and carries the verdict, is phase 4 planning's
+  call. The rail is one meaning and one seam: `lib/filing-decision.mjs` already
+  defines genuinely-unfixed for issue filing, and phase 4 does not write a
+  second survivor classifier.
 
 ## Phases
 

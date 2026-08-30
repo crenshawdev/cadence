@@ -3,13 +3,13 @@
 // land-cleanup.mjs - the workflow-facing seam over lib/close-decision.mjs. It
 // ADVISES cad-land whether a land should clean up (return to base + pull + reap
 // the merged integration branch) and whether an autonomous close halts before
-// merge on a blocking risk_surface finding. Like git-branch.mjs / git-guard.mjs it
-// only advises: it NEVER runs `checkout`, `pull`, or `branch -D` - that is
-// cad-land prose's job, gated by this advice. One JSON line on stdout (seam
-// convention, lib/seam-io.mjs): every piece of ADVICE is ok:true and exits 0,
-// and the only ok:false/exit-1 shapes are a malformed CALL - a bad subcommand,
-// or an empty or valueless --dir. The tested logic lives in
-// lib/close-decision.mjs; this wraps it with config + git-read I/O.
+// merge on a genuinely-unfixed risk_surface finding. Like git-branch.mjs /
+// git-guard.mjs it only advises: it NEVER runs `checkout`, `pull`, or
+// `branch -D` - that is cad-land prose's job, gated by this advice. One JSON
+// line on stdout (seam convention, lib/seam-io.mjs): every piece of ADVICE is
+// ok:true and exits 0, and the only ok:false/exit-1 shapes are a malformed
+// CALL - a bad subcommand, or an empty or valueless --dir. The tested logic
+// lives in lib/close-decision.mjs; this wraps it with config + git-read I/O.
 //
 // Subcommands (each prints one JSON line):
 //   cleanup [--dir <path>] [--branch <name>] [--base <name>] [--merged <true|false>]
@@ -31,13 +31,29 @@
 //     EMPTY stdin, malformed JSON and a valid non-findings envelope are each
 //     reported by NAME rather than collapsed to [], and under auto_close each
 //     halts (D-09). Then, under the MERGED git.auto_close (the value the prose
-//     branched on - see gate() below), decide whether a surviving blocker/high
-//     risk_surface finding - or a payload that could not be read - halts the
-//     chain before merge. cad-land supplies those findings by unioning the
-//     .planning/phases/*/REVIEW-risk_surface*.md files this branch's fires
-//     persisted PLUS .planning/REVIEW-risk_surface-*.md, which is where
-//     /cad-milestone carries them before it prunes the phase dirs out from
-//     under an autonomous close; it fires no review of its own.
+//     branched on - see gate() below), decide whether that payload halts the
+//     chain before merge.
+//     WHAT RIDES `findings` IS RULINGS, NOT RAW REVIEW TEXT (LND-02, and this
+//     is the only statement in code of where the gate's input comes from).
+//     cad-land unions the `entries[]` of every ADJUDICATION-risk_surface*.json
+//     this branch's fires wrote - EVERY round of a fire, because a re-arm is a
+//     second fire on the same discriminator and round 2 is not the record of
+//     round 1 - taken from .planning/phases/*/ and, after /cad-milestone prunes
+//     those dirs out from under an autonomous close, from the copies
+//     `planning.mjs risk-carry` leaves at .planning/risk-carry/<N>/. This seam
+//     classifies them through lib/filing-decision.mjs, so a finding that was
+//     fixed, refuted, downgraded or overridden stops no close and only a
+//     genuinely-unfixed survivor does. /cad-land fires no review of its own.
+//     The caller ALSO names on `unruled` every REVIEW-risk_surface*.md it found
+//     carrying no such sibling record - a legacy artifact, another tool's, or a
+//     deferred fire, which writes none by design. That is the FIFTH state,
+//     `unruled-review`, and it halts under auto_close beside the four above: a
+//     fire nothing ruled says nothing about what survived. A PRESENT `unruled`
+//     that is not a list halts on that state too rather than reading as none.
+//     A halt a person already CLEARED rides back out on `overridden` and moves
+//     nothing - `action` is unchanged, and cad-land keeps branching on it alone.
+//     The gate reads STDIN AND NOTHING ELSE: it opens no ADJUDICATION file of
+//     its own, and --dir still resolves config alone.
 'use strict';
 
 import { readFileSync } from 'node:fs';
@@ -47,6 +63,13 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { integrationBranchName } from './lib/branch-decision.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
+// The ONE statement of what a record's entries mean to a fire that is
+// settling (LND-02, D-04/D-06). It lives HERE at the seam and not in
+// lib/close-decision.mjs, which promises zero deps and no I/O in its own
+// header: this module pulls node:crypto and a 543-line validator behind it,
+// and restating the four-field test in the pure core to avoid that would be
+// the second definition criterion 1 forbids.
+import { unfixedFromEntries } from './lib/filing-decision.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // The file reader this file used to define for itself; its ''-on-failure
 // contract lives in lib/seam-input.mjs. `readFileSync` stays imported above for
@@ -79,33 +102,76 @@ function readMergedBranches(dir, base) {
 }
 
 /**
- * The adjudicated findings from stdin, plus WHICH of the four unreadable states
- * was seen when there are none. All four used to collapse to `[]`, which
- * `decideGateHalt` then reported as "no surviving blocker/high finding" - an
- * affirmative answer about a payload nobody parsed. The names are fixed by
- * lib/close-decision.mjs's JSDoc; a payload that DID parse returns
- * `unreadable: null` and the list it carried.
+ * What the caller named on `unruled`, and the ONE place a malformed one is
+ * decided. ABSENT reads as `[]` - an old caller that names nothing is not an
+ * error, and `null` is how JSON spells absent, so it reads the same way.
+ * PRESENT BUT NOT A LIST DOES NOT. It used to coerce to `[]` as well, which
+ * meant a payload that explicitly carried evidence of an unadjudicated review
+ * - `"unruled": ".planning/phases/9/REVIEW-risk_surface-plan-1.md"`, one
+ * producer serialization bug or one hostile line away - threw the fifth-state
+ * halt away without a word and let the autonomous merge run. It fails CLOSED
+ * now: one member standing for the malformation, so the list is non-empty and
+ * `unruled-review` halts exactly as a named review would.
+ *
+ * That member names the value's TYPE and never the value. This payload is
+ * untrusted and unreadable at once, so copying its bytes into a reason string
+ * on stdout is the one thing not to do; `typeof` is one of eight fixed words,
+ * which is bounded by construction.
+ *
+ * @param {unknown} value
+ * @returns {unknown[]}
+ */
+function readUnruled(value) {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value;
+  return [`(unruled: ${typeof value}, not a list of review paths)`];
+}
+
+/**
+ * The ADJUDICATION RECORD ENTRIES from stdin, the reviews the caller found that
+ * nothing ruled, and WHICH of the four unreadable states was seen when there
+ * are no entries. All four used to collapse to `[]`, which `decideGateHalt`
+ * then reported as "no surviving blocker/high finding" - an affirmative answer
+ * about a payload nobody parsed. The names are fixed by lib/close-decision.mjs's
+ * JSDoc; a payload that DID parse returns `unreadable: null` and the list it
+ * carried.
+ *
+ * `findings` KEEPS ITS KEY AND CHANGES ITS MEANING (LND-02). What rides it is
+ * now the union of every `ADJUDICATION-risk_surface*.json` `entries[]` for this
+ * branch's fires rather than the raw `findings[]` of the REVIEW files - see this
+ * file's header for who unions them. The four names, the order they are decided
+ * in, the empty-stdin rule and the bare-array form are ALL unchanged, because
+ * they are what the four-name contract is (D-13).
+ *
+ * `unruled` IS ADDITIVE: an ABSENT one reads as `[]`, so an old caller that
+ * names nothing is not an error here. A PRESENT one that is not a list does
+ * NOT read as none - `readUnruled` below fails it closed. It is the FIFTH
+ * state (`unruled-review`) that halts on it, and only when it is non-empty.
  *
  * EMPTY stdin is one of the four (D-09): the gate requires an explicit
  * `{"findings":[]}` to proceed, because a forgotten pipe is the likeliest
  * operator error and is otherwise indistinguishable from "adjudication killed
  * everything" - the one case today's gate waved through under git.auto_close.
- * A bare JSON array still reads as the findings list, as it always has.
+ * A bare JSON array still reads as the entries list, as it always has - and it
+ * names no unruled review, which is the same answer an absent key gives.
  *
- * @returns {{findings: Array<{severity?:string}>, unreadable: string|null}}
+ * @returns {{findings: Array<Record<string, any>>, unreadable: string|null, unruled: unknown[]}}
  */
 function readFindings() {
   let raw = '';
   try { raw = readFileSync(0, 'utf8'); }
-  catch { return { findings: [], unreadable: 'stdin-unreadable' }; }
+  catch { return { findings: [], unreadable: 'stdin-unreadable', unruled: [] }; }
   raw = raw.trim();
-  if (!raw) return { findings: [], unreadable: 'stdin-empty' };
+  if (!raw) return { findings: [], unreadable: 'stdin-empty', unruled: [] };
   let parsed;
   try { parsed = JSON.parse(raw); }
-  catch { return { findings: [], unreadable: 'malformed-json' }; }
-  if (Array.isArray(parsed)) return { findings: parsed, unreadable: null };
-  if (parsed && Array.isArray(parsed.findings)) return { findings: parsed.findings, unreadable: null };
-  return { findings: [], unreadable: 'not-a-findings-payload' };
+  catch { return { findings: [], unreadable: 'malformed-json', unruled: [] }; }
+  if (Array.isArray(parsed)) return { findings: parsed, unreadable: null, unruled: [] };
+  if (parsed && Array.isArray(parsed.findings)) {
+    return { findings: parsed.findings, unreadable: null,
+      unruled: readUnruled(parsed.unruled) };
+  }
+  return { findings: [], unreadable: 'not-a-findings-payload', unruled: [] };
 }
 
 function cleanup(dir, branchArg, baseArg, mergedArg) {
@@ -169,8 +235,17 @@ function gate(dir) {
   const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const autoClose = git.auto_close === true;
-  const { findings, unreadable } = readFindings();
-  const decision = decideGateHalt({ autoClose, findings, unreadable });
+  const { findings, unreadable, unruled } = readFindings();
+  // The classification, at the seam and nowhere else (D-06). One pass over the
+  // entries answers both halves: `halting` is what is GENUINELY unfixed - ruled
+  // `survived` at a halting severity, no usable fix commit, nobody overrode it -
+  // and `haltingSurvivors` is the same shape a person already cleared. A fixed,
+  // refuted, downgraded or overridden finding is in neither, which is the whole
+  // requirement: it no longer stops a close. No disk is read for this - the
+  // entries came in on stdin and `--dir` still resolves config alone (D-07).
+  const { halting, haltingSurvivors } = unfixedFromEntries(findings);
+  const decision = decideGateHalt({ autoClose, findings: halting, unreadable,
+    unruled, overridden: haltingSurvivors });
   emit({ ok: true, ...decision, warnings });
 }
 

@@ -15,7 +15,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { evaluateFlag, evaluateRow, subcommandKey, DISPOSITIONS, TYPES, CONTRACTS, flagNames } from './lib/arg-contract.mjs';
+import {
+  evaluateFlag, evaluateRow, evaluatePresence, subcommandKey,
+  DISPOSITIONS, TYPES, CONTRACTS, PRESENCE_RULES, flagNames,
+} from './lib/arg-contract.mjs';
 
 const MODULE_URL = new URL('./lib/arg-contract.mjs', import.meta.url).href;
 
@@ -206,6 +209,123 @@ test('evaluateRow: the first refusal, over the flags actually present', () => {
   assert.equal(row(['bogus', '--dir'], 'bogus').detail, '--dir');
 });
 
+// --- the conditional PRESENCE rule: a value that obliges another flag --------
+//
+// `evaluateRow` above answers nothing about an absent flag and that carve-out
+// stands. This is the one presence question a row CANNOT state - does a flag's
+// value oblige one of these other flags - declared in `PRESENCE_RULES` rather
+// than written out at a dispatch. The rule today is the settle receipt: a
+// `trace append` whose `--event` settles a review fire owes at least one of the
+// figures it settles on. Without it, the exact call the first row below spells
+// was appended over a record holding a survived blocker marked
+// `overridden: true`, and `risk-check status` then reported the range
+// `recorded` - a blocking range cleared by a receipt asserting nothing
+// (RSK-08, UAT item 3).
+//
+// Same idiom as `ROWS` above: argv in, the whole answer out, one row per
+// spelling, each carrying the reason it exists.
+
+/** The shipped rules for the one script that declares any. */
+const PRESENCE_TABLE = PRESENCE_RULES['planning.mjs'];
+
+/** A `trace append` receipt with its fixed words and join keys already spelled. */
+const receipt = (...tail) => ['trace', 'append', '--phase', '1', '--family', 'outcome',
+  '--trigger', 'risk_surface', '--plan', '1', '--base', 'aaaaaaa', '--sha', 'bbbbbbb', ...tail];
+
+/** The accepted answer: three empty fields, so no caller tests for undefined. */
+const CLEAR = { ok: true, flag: '', value: '', requires: [] };
+
+/** The refusal, naming the event that armed the rule and the flags owed. */
+const owed = (value) => ({
+  ok: false, flag: '--event', value, requires: ['--survivors', '--downgraded', '--refuted'],
+});
+
+// [name, argv, subcommand key, expected {ok, flag, value, requires}, why]
+const PRESENCE_ROWS = [
+  // --- each of the three settle events, carrying nothing --------------------
+  ['gate_pass with no figure', receipt('--event', 'gate_pass'), 'trace append', owed('gate_pass'),
+    'the measured hole: this exact call was appended and risk-check status then read the range `recorded`'],
+  ['adjudication with no figure', receipt('--event', 'adjudication'), 'trace append', owed('adjudication'),
+    'the record-writing receipt settles on the same three figures'],
+  ['override with no figure', receipt('--event', 'override'), 'trace append', owed('override'),
+    'the receipt that clears a halt is the one this rule most needs to bind'],
+
+  // --- ANY ONE of the three satisfies it, never all three -------------------
+  ['adjudication + --survivors', receipt('--event', 'adjudication', '--survivors', '0'), 'trace append', CLEAR,
+    'this door recounts nothing - recountReceipt is what needs a complete triple, and it states its own refusal'],
+  ['gate_pass + --downgraded', receipt('--event', 'gate_pass', '--downgraded', '0'), 'trace append', CLEAR,
+    'the same answer off the second flag: demanding the full set here would refuse a shape the seam accepts'],
+  ['override + --refuted', receipt('--event', 'override', '--refuted', '0'), 'trace append', CLEAR,
+    'and off the third, so no one flag is secretly the only one that counts'],
+
+  // --- the two receipt names that settle nothing ----------------------------
+  ['rearm is unbound', receipt('--event', 'rearm'), 'trace append', CLEAR,
+    "references/triage-gate.md's fenced re-arm receipt carries no figures by contract; binding it would refuse a documented line"],
+  ['deferral is unbound', receipt('--event', 'deferral'), 'trace append', CLEAR,
+    'the same, on the fifth receipt name: a deferral queues its findings and settles none of them'],
+
+  // --- EVERY occurrence of the conditioning flag is judged ------------------
+  ['a settle event in the LAST --event', receipt('--event', 'rearm', '--event', 'gate_pass'), 'trace append',
+    owed('gate_pass'),
+    "planning.mjs's parseArgs keeps the LAST occurrence, so a door reading only the first would store a figureless gate_pass"],
+  ['a settle event in the FIRST --event', receipt('--event', 'gate_pass', '--event', 'rearm'), 'trace append',
+    owed('gate_pass'),
+    'the other order is judged too: the first CONDITIONED occurrence wins wherever it sits'],
+
+  // --- the value is compared AS GIVEN, and only against the stated set ------
+  ['a padded spelling is not this rule\'s business', receipt('--event', ' gate_pass '), 'trace append', CLEAR,
+    'trace append stores --event verbatim and risk-check.mjs joins FIRE_RECEIPTS by exact string, so this settles nothing downstream'],
+  ['an event outside the set', receipt('--event', 'phase_start'), 'trace append', CLEAR,
+    'a lifecycle event settles no fire and owes no figure'],
+  ['a bare --event at the end of argv', ['trace', 'append', '--event'], 'trace append', CLEAR,
+    'the value door already refused this one; reading past the end of argv must not throw here'],
+
+  // --- a subcommand no rule names ------------------------------------------
+  ['a subcommand with no rule', ['trace', 'close', '--phase', '1', '--event', 'gate_pass'], 'trace close', CLEAR,
+    'trace close fixes its own family and event and declares none of the three figures'],
+];
+
+test('evaluatePresence: the stated table', () => {
+  for (const [name, argv, key, expected, why] of PRESENCE_ROWS) {
+    assert.deepEqual(evaluatePresence(argv, PRESENCE_TABLE, key), expected, `${name} - ${why}`);
+  }
+  // A script the structure names no rules for at all, which is every script but
+  // one: the answer is the same clear one, and reading it must not throw.
+  assert.deepEqual(evaluatePresence(receipt('--event', 'gate_pass'), PRESENCE_RULES['route.mjs'], 'trace append'),
+    CLEAR, 'an absent script table is no rules, not a crash');
+});
+
+test('the settle-receipt presence rule is declared, and every flag it names is on the same row', () => {
+  // The `PINNED` idiom below, for the second structure: the reasons bind THESE
+  // values, so a rule that quietly stopped arming on one of the three events
+  // would be a guard nobody removed and nothing enforces.
+  const rule = PRESENCE_TABLE['trace append'];
+  assert.equal(rule.when, '--event');
+  assert.deepEqual(rule.is, ['adjudication', 'gate_pass', 'override'],
+    'the three receipts that SETTLE a fire - their figures are what trace.mjs recounts against the record');
+  assert.deepEqual(rule.requires, ['--survivors', '--downgraded', '--refuted'],
+    'the settled figures of that fire, any ONE of which arms the recount this door leaves to the seam');
+  for (const settlesNothing of ['rearm', 'deferral']) {
+    assert.equal(rule.is.includes(settlesNothing), false,
+      `${settlesNothing} settles nothing and its fenced command in references/triage-gate.md carries no `
+      + 'figures by contract, so arming on it would refuse a documented line');
+  }
+
+  // Every flag every rule names is declared on that same subcommand's own
+  // CONTRACTS row. A misspelled one is a rule that silently never fires, and a
+  // flag no row declares is a requirement self-verify check 2 reports the prose
+  // for spelling.
+  for (const [script, rules] of Object.entries(PRESENCE_RULES)) {
+    for (const [sub, r] of Object.entries(rules)) {
+      const row = (CONTRACTS[script] || {})[sub];
+      assert.ok(row, `${script} ${sub}: a presence rule on a subcommand the table declares no row for`);
+      for (const flag of [r.when, ...r.requires]) {
+        assert.ok(row[flag], `${script} ${sub} ${flag}: named by a presence rule and declared by no row`);
+      }
+    }
+  }
+});
+
 test('every disposition and every type in the table is one of the stated words', () => {
   for (const [name, , , s] of ROWS) {
     assert.ok(DISPOSITIONS.includes(s.value), `${name}: value disposition`);
@@ -300,8 +420,8 @@ test('every flag in every row declares a complete grammar', () => {
     }
   }
   // The walk reached the whole table, so no arm above is vacuous.
-  // CADENCE-CENSUS: arg-contract-flag-entries | asserts: the CONTRACTS table declares 194 flag entries across 20 top-level rows
-  assert.equal(entries, 194, `the table declares ${entries} flag entries`);
+  // CADENCE-CENSUS: arg-contract-flag-entries | asserts: the CONTRACTS table declares 195 flag entries across 20 top-level rows
+  assert.equal(entries, 195, `the table declares ${entries} flag entries`);
   assert.equal(Object.keys(CONTRACTS).length, 20, 'one row per top-level bin script');
 });
 

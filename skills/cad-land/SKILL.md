@@ -119,23 +119,57 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
    the 3a ask). The integration branch is local-only
    (references/git-publish.md rail 3 never
    auto-pushes).
-   - **Gate the unattended merge on surviving findings.** Nobody is watching
-     this arm, so a surviving blocker/high finding is a HARD halt before any
-     merge rather than an ask. This skill fires no review of its own: the
-     findings are the ones this branch's `risk_surface` fires already settled
-     and persisted, in TWO places: `.planning/phases/*/REVIEW-risk_surface*.md`,
-     and `.planning/REVIEW-risk_surface-*.md`. Read every such file in the tree,
-     union their `findings` arrays, and pipe
-     `{"findings": [...]}` on stdin to
+   - **Gate the unattended merge on the RULINGS, not the raw findings.** Nobody
+     is watching this arm, so a blocker/high finding still genuinely unfixed is
+     a HARD halt before any merge rather than an ask. This skill fires no review
+     of its own: what it reads is what this branch's `risk_surface` fires
+     already ADJUDICATED. Read every `ADJUDICATION-risk_surface*.json` under
+     BOTH record roots - `.planning/phases/*/` and `.planning/risk-carry/*/`,
+     the copies `/cad-milestone` leaves when it prunes the phase dirs before
+     chaining this command - and union every round's `entries[]`. Every round,
+     never the highest alone: a re-arm is a second fire on the same
+     discriminator and round 2 is not the record of round 1. Do NOT read the
+     `findings` arrays out of the `REVIEW-risk_surface*.md` files - those are
+     the reviewer's raw claims, before anything was fixed, refuted, downgraded
+     or overridden, and halting on them halts on work already done.
+     Then name on `unruled` every `REVIEW-risk_surface*.md` nothing ruled - from
+     those two roots plus a legacy `.planning/REVIEW-risk_surface-*.md` an
+     interrupted pre-`risk-carry` close may have left at the `.planning/` root.
+     A review and its record never share a basename, so do not look for one:
+     `REVIEW-<trigger>-<discriminator>[-rN].md` is ruled by
+     `ADJUDICATION-<trigger>-<discriminator>[-rN].json` in the same directory -
+     same trigger, same discriminator, same round, with `REVIEW-` swapped for
+     `ADJUDICATION-` and `.md` for `.json`. `-r2` pairs with `-r2`, and a round-1
+     record never rules a round-2 review. One asymmetry, and the corpus forces
+     it: a LATER round's record does rule an earlier review, because a re-arm's
+     adjudication settles the round it re-armed - v3.7.7's phase 2 shipped
+     `REVIEW-risk_surface-plan-1.md` with only
+     `ADJUDICATION-risk_surface-plan-1-r2.json` beside it. So a review is
+     `unruled` only when its `<trigger>-<discriminator>` has no record at its own
+     round and none at any later one. A fire nothing ruled says nothing about
+     what survived, so it halts by name rather than being read past.
+     That legacy root file is the one `unruled` entry no adjudication can ever
+     answer, so state its remedy in the halt instead of only its path: it is the
+     pre-`risk-carry` AGGREGATE carry - one union of RAW findings under no
+     discriminator - so no `ADJUDICATION-*.json` can ever sit beside it, and
+     every retry re-halts on it identically. It is answered ONCE and BY HAND:
+     read its findings, settle any still genuinely unfixed against this branch,
+     then delete the file. That delete is the answer, and nothing in this skill
+     does it for the user - step 4 clears the carry alone - because nothing here
+     can tell an aggregate somebody read from one nobody has, and clearing it
+     unread is the merge-over-a-blocker this gate exists to stop.
+     Pipe `{"findings": [...], "unruled": [...]}` on stdin to
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate`; on
-     `action:"halt"` stop the chain and surface the findings instead of merging
-     over them. BOTH globs, always: `/cad-milestone` prunes the phase dirs
-     before it chains this command, so there the second is the only producer
-     left. When no such file exists, pipe an explicit `{"findings":[]}` -
-     that is the only spelling of "nothing survived", and `action:"halt"` also
-     fires when the payload could not be read at all (empty stdin, malformed
-     JSON, or a valid envelope carrying no findings list), since the gate never
-     reports "no surviving finding" about input it never parsed.
+     `action:"halt"` stop the chain and surface the `findings` instead of
+     merging over them, and surface a non-empty `overridden` with them - those
+     are halting survivors a person already cleared, so they never move
+     `action`, but a close that showed neither is a close nobody can answer.
+     When neither root holds a record or a review, pipe an explicit
+     `{"findings":[]}` - that is the only spelling of "nothing survived", and
+     `action:"halt"` also fires when the payload could not be read at all
+     (empty stdin, malformed JSON, or a valid envelope carrying no findings
+     list), since the gate never reports "no surviving finding" about input it
+     never parsed.
    - **Read the publish rails first.** Read
      `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
      consult site - step 3a or 3b, never both) before the
@@ -236,6 +270,15 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
    was already removed, or `git.on_land_cleanup` is off - leave HEAD and the
    branch in place. Report the final state: HEAD on `<base>`, pulled, branch
    reaped (or left).
+
+   **Then clear the carried rulings.** Delete `.planning/risk-carry/` - the
+   transient copies `/cad-milestone` made of this cycle's `risk_surface` reviews
+   and records before it pruned the phase dirs. This step is the ONLY actor that
+   clears them, and a confirmed merge is the only event proving the 3(b) halt
+   they exist for was answered: a close that HALTED leaves them in place on
+   purpose, so a retry still reads the blocker it stopped on. Do it whatever the
+   reap seam answered - an `action:"skip"` is about the branch, not about the
+   records. Untracked by construction, so this stages nothing.
 </process>
 
 <guardrails>
