@@ -257,6 +257,66 @@ test('risk-carry: a phase with no risk_surface fire is an answer, not a refusal'
     'an empty carry minted a destination directory nothing accounts for');
 });
 
+// --- the source rails --------------------------------------------------------
+
+test('risk-carry: a symlinked source artifact is refused, and its target never lands', () => {
+  // `copyFileSync` FOLLOWS - the destination rail above says so about itself,
+  // and it is exactly as true on the source side. A link planted in
+  // `phases/<N>/` under a carried name copies whatever it points at, a
+  // credential file included, out of the tree it names and into a carry the
+  // close reads and `--mode archive` keeps.
+  const dir = carryTree(3, { [record('plan-1')]: recordBody('plan-1', 1, [entry()]) });
+  const outside = join(dir, '..', 'outside');
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, 'id_rsa'), 'SECRET-BYTES\n');
+  symlinkSync(join(outside, 'id_rsa'), join(dir, 'phases', '3', review('plan-1')));
+
+  const r = riskCarry(dir, ['--phase', '3']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'carry-src-unusable');
+  assert.match(r.detail, /is not a regular file/);
+  assert.deepEqual(carried(dir, 3), [],
+    'the refusal carried the honest record anyway, and a link may have followed it');
+  assert.equal(existsSync(join(dir, 'risk-carry')), false,
+    'a refused carry minted its destination anyway');
+});
+
+test('risk-carry: a symlinked phases/<N> is refused before it is listed', () => {
+  // The directory half of the same rail: `readdirSync` follows too, so a linked
+  // phase directory reads some other tree's files and carries them in under
+  // this phase's name.
+  const dir = carryTree(4, { [review('plan-1')]: '{"findings":[]}\n' });
+  const outside = join(dir, '..', 'outside');
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, record('plan-9')), recordBody('plan-9', 1, [entry()]));
+  symlinkSync(outside, join(dir, 'phases', '3'));
+
+  const r = riskCarry(dir, ['--phase', '3']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'carry-src-unusable');
+  assert.match(r.detail, /would follow out of the planning root/);
+  assert.deepEqual(carried(dir, 3), []);
+});
+
+test('risk-carry: a symlinked phases/ is refused too', () => {
+  // `lstatSync` does not follow the FINAL component and follows every one
+  // before it, so a check aimed at `phases/<N>` alone reports a real directory
+  // while `phases/` is already a link out of the tree. Two levels down takes
+  // two checks on this side as well.
+  const dir = join(mkdtempSync(join(tmpdir(), 'cad-risk-carry-')), '.planning');
+  const outside = join(dir, '..', 'outside');
+  mkdirSync(join(outside, '3'), { recursive: true });
+  writeFileSync(join(outside, '3', review('plan-1')), '{"findings":[]}\n');
+  mkdirSync(dir, { recursive: true });
+  symlinkSync(outside, join(dir, 'phases'));
+
+  const r = riskCarry(dir, ['--phase', '3']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'carry-src-unusable');
+  assert.match(r.detail, /would follow out of the planning root/);
+  assert.deepEqual(carried(dir, 3), []);
+});
+
 // --- the whole point: the ruling survives the prune (AC6) -------------------
 
 /** Run `land-cleanup.mjs gate` over `root` with `payload` on stdin. */

@@ -46,6 +46,15 @@ import { requirePhaseArg } from '../lib/require-int.mjs';
 // pairing is by NAME - a renamed carry would make every carried review read as
 // unruled and halt every close (D-03).
 //
+// EVERY PATH IS `lstat`ed AND MUST BE WHAT IT LOOKS LIKE, on BOTH sides. The
+// two calls this seam makes over a caller-supplied path - `readdirSync` on the
+// source and `copyFileSync` between them - FOLLOW a symlink, so a link on the
+// source side reads and copies whatever it points at (a credential file
+// outside the planning root included) and a link on the destination side is
+// left dangling by the prune however its target compares today. The rails
+// below are the same rail asked four times: two source components, two
+// destination components, then each entry on each side.
+//
 // THE PHASE STAYS A DIRECTORY LEVEL, for the reason the deferred carry keeps
 // one: two phases routinely fire the same trigger on the same `plan-<k>`
 // discriminator, so a flat carry would collide and the collision would be one
@@ -101,11 +110,31 @@ function cmdRiskCarry(dir, opts) {
     }
   }
 
+  // THE SOURCE SIDE, both components of it, for the reason the destination side
+  // gives: `readdirSync` follows every component it is handed, so a linked
+  // `phases/` or `phases/<N>` lists some other tree and this carry copies what
+  // it finds there in under THIS phase's name - and `existsSync` cannot tell
+  // the difference because it follows too.
   const src = join(dir, 'phases', n);
+  for (const [path, label] of [[join(dir, 'phases'), 'phases/'], [src, `phases/${n}`]]) {
+    const stat = lstatSync(path, { throwIfNoEntry: false });
+    if (stat && !stat.isDirectory()) {
+      return fail('carry-src-unusable',
+        `${label} exists and is not a real directory`
+        + `${stat.isSymbolicLink() ? ' (it is a symlink, which readdirSync would follow out of the planning root)' : ''}`
+        + ' - move or remove it, then re-run',
+        'clear that path and re-run BEFORE milestone-prune - nothing was copied, and this carry'
+        + ' reads rulings from the phase directory itself or from nowhere');
+    }
+  }
   // An absent phase directory is an ANSWER, not a refusal - `milestone-prune`
   // already tolerates one as `dirs.missing`, and a close that ran this carry
   // twice would otherwise fail the second time on a phase it already handled.
-  if (!existsSync(src)) return ok({ phase: n, carried: [], copied: 0, skipped: 0 });
+  // `lstatSync` and not `existsSync`, so a DANGLING link at `phases/<N>` is the
+  // refusal above rather than a quiet "nothing to carry".
+  if (!lstatSync(src, { throwIfNoEntry: false })) {
+    return ok({ phase: n, carried: [], copied: 0, skipped: 0 });
+  }
   let names;
   try { names = readdirSync(src).sort(); }
   catch {
@@ -134,6 +163,24 @@ function cmdRiskCarry(dir, opts) {
   const copying = [];
   const skipped = [];
   for (const name of moving) {
+    // THE SOURCE ENTRY FIRST, before this name is read or compared or copied.
+    // `copyFileSync` FOLLOWS, which is the thing the destination rail above
+    // already says about itself: a link planted in `phases/<N>/` under a
+    // carried name copies whatever it points at into a directory the close
+    // reads and `--mode archive` keeps. Refused for the WHOLE carry rather
+    // than skipped, for the reason `unlistable-phase` gives - this runs last
+    // before the prune deletes the directory, so passing over what could not
+    // be proved a ruling destroys exactly the rulings it passed over.
+    const from = join(src, name);
+    const srcStat = lstatSync(from, { throwIfNoEntry: false });
+    if (!srcStat || !srcStat.isFile()) {
+      return fail('carry-src-unusable',
+        `phases/${n}/${name} is not a regular file`
+        + `${srcStat && srcStat.isSymbolicLink() ? ' (it is a symlink, which copyFileSync would follow, carrying whatever it points at instead of a ruling this phase wrote)' : ''}`
+        + ' - replace it with the file itself, then re-run',
+        're-run BEFORE milestone-prune, which deletes that directory - nothing was copied, and a'
+        + ' carried ruling is only ever a file the phase it names wrote');
+    }
     const to = join(dest, name);
     const destStat = lstatSync(to, { throwIfNoEntry: false });
     if (!destStat) { copying.push(name); continue; }
@@ -154,7 +201,7 @@ function cmdRiskCarry(dir, opts) {
         + ' rulings are still in the phase directory the prune deletes');
     }
     let same = false;
-    try { same = readFileSync(to).equals(readFileSync(join(src, name))); }
+    try { same = readFileSync(to).equals(readFileSync(from)); }
     catch { same = false; }
     if (same) { skipped.push(name); continue; }
     return fail('carry-exists',
