@@ -38,7 +38,7 @@ import { emit } from '../lib/seam-io.mjs';
 function cmdDeferredRecord(dir, opts) {
   const id = fireIdentity('deferred record', dir, opts);
   if (!id) return;
-  const { n, trigger, discriminator, round, base, head } = id;
+  const { n, trigger, discriminator, round, base, head, task } = id;
 
   // The payload is a FILE for the reason the adjudication record's is: it is
   // verbatim reviewer text with arbitrary quoting, and one unescaped quote in a
@@ -77,7 +77,7 @@ function cmdDeferredRecord(dir, opts) {
     });
   }
 
-  const pdir = fireHome(dir, n, 'queue member');
+  const pdir = fireHome(dir, n, 'queue member', task);
   if (!pdir) return;
 
   const name = queueName(trigger, discriminator, round);

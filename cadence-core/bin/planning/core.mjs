@@ -598,7 +598,25 @@ function fireIdentity(face, dir, opts) {
     return null;
   }
 
-  return { n, trigger, discriminator, round, base, head };
+  // THE TASK'S OWN HOME, optional and held to the same rail as `--trigger` and
+  // `--discriminator` above, because it reaches a PATH: `.planning/tasks/<slug>/`.
+  // Absent is the ordinary phase fire; present is `/cad-task`, whose records
+  // never join a phase's.
+  let task;
+  if ('task' in opts) {
+    if (typeof opts.task !== 'string' || !RECORD_TOKEN.test(opts.task)) {
+      fail('bad-args',
+        `${face} --task reaches a DIRECTORY name, so it takes letters, digits, _ and - `
+        + 'only, opening with a letter or a digit and at most 64 characters - got '
+        + `${typeof opts.task === 'string' ? JSON.stringify(opts.task) : 'nothing'}`,
+        're-send --task with the task slug spelled with those characters only - it addresses'
+        + ' .planning/tasks/<slug>/ verbatim; nothing was written');
+      return null;
+    }
+    task = opts.task;
+  }
+
+  return { n, trigger, discriminator, round, base, head, task };
 }
 
 /**
@@ -614,7 +632,21 @@ function fireIdentity(face, dir, opts) {
  * sitting where it should be is refused rather than followed out of the tree,
  * the disposition the read side of this file already takes.
  *
- * TWO HOMES, IN ORDER: `phases/<N>/` while the phase is live, else
+ * A TASK NAMES ITS OWN HOME (#167 GH-227). `/cad-task` deliberately fires with
+ * `--phase 0`, because 0 is the one number no roadmap phase carries and a task's
+ * records must never join a phase's - and it just as deliberately writes its
+ * artifacts to `.planning/tasks/<slug>/`, so there is no `phases/0/` and there
+ * never will be. The two halves disagreed by construction: the REVIEW file
+ * landed under `tasks/<slug>/` with no complaint and the record beside it was
+ * refused `no-phase-dir`, which left the hand-append as the only way to settle a
+ * blocking gate on a task - a receipt no guard can see, which is worse than a
+ * refusal. `task` is that home, named by the caller rather than derived, because
+ * the slug is not recoverable from the phase number or the discriminator. When
+ * it is given it is the ONLY home tried: a task run is not a phase run that
+ * happens to have no directory yet, and falling back to `phases/0/` would put a
+ * task's rulings wherever a phase 0 happened to exist.
+ *
+ * TWO HOMES OTHERWISE, IN ORDER: `phases/<N>/` while the phase is live, else
  * `.planning/deferred/<N>/` once `deferred carry` has moved that phase's queue
  * out ahead of `milestone-prune`. Without the second, a carried queue member is
  * PERMANENTLY unclearable - `adjudication` refuses on the deleted phase
@@ -632,9 +664,24 @@ function fireIdentity(face, dir, opts) {
  *
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
+ * @param {string} [task] the task slug, when this fire is a task's
  * @returns {string|null}
  */
-function fireHome(dir, n, what) {
+function fireHome(dir, n, what, task) {
+  if (task) {
+    const tdir = join(dir, 'tasks', task);
+    let tstat = null;
+    try { tstat = lstatSync(tdir); } catch { /* absent is the answer, never a throw */ }
+    if (tstat && tstat.isDirectory()) return tdir;
+    fail('no-task-dir',
+      `tasks/${task}/ is not a directory under ${dir} - the ${what} is written BESIDE the `
+      + 'sibling REVIEW file, and a task keeps both under its own slug, so that directory has '
+      + 'to exist already',
+      `check the --task spelling first - it addresses tasks/${task}/ verbatim. A task that `
+      + 'never wrote a PLAN.md has no directory: the inline path writes no plan, so a blocking '
+      + 'gate there is settled by the user rather than recorded here');
+    return null;
+  }
   for (const home of QUEUE_HOMES) {
     const hdir = join(dir, home, String(n));
     let hstat = null;

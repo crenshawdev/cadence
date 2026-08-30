@@ -111,7 +111,7 @@ function groundCitations(top, headId, entries) {
 function cmdAdjudication(dir, opts) {
   const id = fireIdentity('adjudication', dir, opts);
   if (!id) return;
-  const { n, trigger, discriminator, round, base, head } = id;
+  const { n, trigger, discriminator, round, base, head, task } = id;
 
   // Absent `--payload` is refused rather than fed to stdin: the declared row
   // says required, `evaluateRow` is a VALUE door and not a presence one, and
@@ -146,7 +146,7 @@ function cmdAdjudication(dir, opts) {
     });
   }
 
-  const pdir = fireHome(dir, n, 'record');
+  const pdir = fireHome(dir, n, 'record', task);
   if (!pdir) return;
 
   // The ONE filename rule, shared with the receipt recount in `cmdTrace`: two
