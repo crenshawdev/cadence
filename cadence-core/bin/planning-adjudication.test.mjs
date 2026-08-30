@@ -11,7 +11,7 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync, existsSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -349,6 +349,60 @@ test('adjudication: a --task that could reach outside its own home is refused', 
     assert.equal(r.ok, false, `${JSON.stringify(slug)} was accepted: ${JSON.stringify(r)}`);
     assert.equal(r.reason, 'bad-args', `${JSON.stringify(slug)}: ${JSON.stringify(r)}`);
   }
+});
+
+test('adjudication: --phase 0 without --task is refused, even where phases/0 exists', () => {
+  // Phase 0 is the TASK's number - /cad-task fires with it precisely because no
+  // roadmap phase carries it. Unenforced, a task fire that forgot --task fell
+  // through to the ordinary phase branch, and a repo holding a phases/0/ took
+  // the record into it and answered ok:true while the sibling REVIEW file under
+  // the slug stayed unsettled: a fire reported as recorded, filed where nothing
+  // reads it.
+  const { repo, dir, base } = adjRepo({ phase: 0 });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '0', '--trigger', 'risk_surface',
+    '--discriminator', 'cad-task-abc1234', '--base', base, '--head', 'HEAD',
+    '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.hint, /--task/);
+  assert.deepEqual(readdirSync(join(dir, 'phases', '0')), [],
+    'the record landed in a phase directory a task fire must never reach');
+});
+
+test('adjudication: a SYMLINKED tasks/ is refused, not followed out of the tree', () => {
+  // lstatSync declines to follow only its OWN last component, so a leaf-only
+  // test resolved a symlinked parent on the way past and reported the TARGET's
+  // directory. The write then landed outside the planning tree it names.
+  const { repo, dir, base } = adjRepo();
+  const outside = join(repo, 'elsewhere');
+  mkdirSync(join(outside, 'a-task-slug'), { recursive: true });
+  symlinkSync(outside, join(dir, 'tasks'));
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '0', '--task', 'a-task-slug',
+    '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-task-dir');
+  assert.deepEqual(readdirSync(join(outside, 'a-task-slug')), [],
+    'the record was written through the symlink');
+});
+
+test('adjudication: a SYMLINKED phases/ is refused the same way', () => {
+  // The same hole on the home this function always had - it was never only the
+  // task branch, so the guard is not only on the task branch.
+  const { repo, dir, base } = adjRepo();
+  const outside = join(repo, 'elsewhere');
+  mkdirSync(join(outside, '2'), { recursive: true });
+  rmSync(join(dir, 'phases'), { recursive: true });
+  symlinkSync(outside, join(dir, 'phases'));
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.deepEqual(readdirSync(join(outside, '2')), [],
+    'the record was written through the symlink');
 });
 
 test('adjudication: without --task the two phase homes resolve exactly as before', () => {

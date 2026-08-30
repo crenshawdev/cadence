@@ -616,6 +616,23 @@ function fireIdentity(face, dir, opts) {
     task = opts.task;
   }
 
+  // PHASE 0 IS THE TASK NUMBER, so it does not resolve a phase home. `/cad-task`
+  // fires with it precisely because no roadmap phase carries it, and its
+  // artifacts live under `.planning/tasks/<slug>/`. Left unenforced, a task fire
+  // that FORGOT `--task` fell through to the ordinary phase branch, and a repo
+  // that happens to hold a `phases/0/` took the record into it and answered
+  // ok:true while the sibling REVIEW file under the slug stayed unsettled - a
+  // fire reported as recorded, filed where nothing reads it.
+  if (n === '0' && task === undefined) {
+    fail('bad-args',
+      `${face} --phase 0 is a TASK's number and resolves no phase home - a task keeps its `
+      + 'record beside the sibling REVIEW file under .planning/tasks/<slug>/',
+      'pass --task <slug> naming the task directory. `deferred record` does not take it: the '
+      + 'queue enumeration reads the two phase homes only, so a member written under a slug '
+      + 'would never be found, and a blocking gate is the one that has to be');
+    return null;
+  }
+
   return { n, trigger, discriminator, round, base, head, task };
 }
 
@@ -628,9 +645,13 @@ function fireIdentity(face, dir, opts) {
  * equality, so anything else staged from there answers `undeclared-files`. The
  * directory has to already exist - these seams record a fire that HAPPENED, and
  * minting one for a mistyped flag would leave a directory nothing else in the
- * tree accounts for. `lstatSync` on whichever home is chosen, so a SYMLINK
- * sitting where it should be is refused rather than followed out of the tree,
- * the disposition the read side of this file already takes.
+ * tree accounts for. `lstatSync` on whichever home is chosen AND on the parent
+ * it sits under, so a SYMLINK sitting where either belongs is refused rather
+ * than followed out of the tree, the disposition the read side of this file
+ * already takes. The parent half is not belt-and-braces: `lstatSync` declines to
+ * follow only its OWN last component, so a symlinked `tasks` (or `phases`, or
+ * `deferred`) was resolved on the way past and the leaf test then reported the
+ * TARGET's directory.
  *
  * A TASK NAMES ITS OWN HOME (#167 GH-227). `/cad-task` deliberately fires with
  * `--phase 0`, because 0 is the one number no roadmap phase carries and a task's
@@ -667,11 +688,31 @@ function fireIdentity(face, dir, opts) {
  * @param {string} [task] the task slug, when this fire is a task's
  * @returns {string|null}
  */
+/**
+ * Is `<dir>/<name>` a REAL directory - present, and not a symlink?
+ *
+ * The check `fireHome` used to make was on the LEAF alone, and `lstatSync`
+ * refuses to follow only its own final component: with `.planning/tasks` (or
+ * `phases`, or `deferred`) a symlink out of the tree, an `lstat` of
+ * `tasks/<slug>` resolves that symlink on the way past and reports the TARGET's
+ * directory, so the leaf test passed and the write landed outside the planning
+ * tree it names. So the parent is tested too, on the same disposition the leaf
+ * takes - a symlink where a directory belongs is refused rather than followed.
+ * @param {string} dir @param {string} name @returns {boolean}
+ */
+function realDir(dir, name) {
+  let stat = null;
+  try { stat = lstatSync(join(dir, name)); } catch { return false; }
+  return stat.isDirectory();
+}
+
 function fireHome(dir, n, what, task) {
   if (task) {
     const tdir = join(dir, 'tasks', task);
     let tstat = null;
-    try { tstat = lstatSync(tdir); } catch { /* absent is the answer, never a throw */ }
+    if (realDir(dir, 'tasks')) {
+      try { tstat = lstatSync(tdir); } catch { /* absent is the answer, never a throw */ }
+    }
     if (tstat && tstat.isDirectory()) return tdir;
     fail('no-task-dir',
       `tasks/${task}/ is not a directory under ${dir} - the ${what} is written BESIDE the `
@@ -683,6 +724,7 @@ function fireHome(dir, n, what, task) {
     return null;
   }
   for (const home of QUEUE_HOMES) {
+    if (!realDir(dir, home)) continue;
     const hdir = join(dir, home, String(n));
     let hstat = null;
     try { hstat = lstatSync(hdir); } catch { /* absent is the answer, never a throw */ }

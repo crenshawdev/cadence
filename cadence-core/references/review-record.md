@@ -123,8 +123,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase 
 fires with `--phase 0` deliberately - 0 is the one number no roadmap phase
 carries - and keeps its artifacts under `.planning/tasks/<slug>/`, so the record
 goes beside the sibling REVIEW file there rather than in a `phases/0/` that does
-not exist. Without it the seam refuses `no-task-dir`, and the hand-append that
+not exist. Without it `--phase 0` is refused outright, and the hand-append that
 refusal used to force is a receipt no guard can see. A phase fire passes nothing.
+`deferred record` does NOT take it: the queue enumeration reads the two phase
+homes only, so a member under a slug would be created and never found - and a
+task's only gate is `risk_surface`, which blocks at every level and never
+resolves `deferred`.
 
 It lands at `.planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json`,
 beside the sibling `REVIEW-<trigger>-<discriminator>.md` and on the same

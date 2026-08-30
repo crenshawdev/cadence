@@ -857,10 +857,14 @@ export const CONTRACTS = {
       '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
-      // Same flag and the same reason as `adjudication` above: both name the
-      // same fire, and a task's deferred member has the same one home its
-      // ruling does.
-      '--task': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      // NO `--task` here, unlike `adjudication` above, and the asymmetry is the
+      // point. The queue-wide enumeration `/cad-land` reads walks the two phase
+      // homes only, so a member written under a task slug would be created
+      // successfully and then never found - a deferred fire that reports queued
+      // and is permanently unadjudicated. A task's only gate is `risk_surface`,
+      // which is `blocking` at every stakes level and never resolves
+      // `deferred`, so nothing is lost by refusing the shape outright rather
+      // than widening a reader this change does not touch.
     },
     // THE QUEUE AS A WHOLE: every member with no `ADJUDICATION` sibling, across
     // both homes. `--phase` is OPTIONAL here and required on every sibling row
