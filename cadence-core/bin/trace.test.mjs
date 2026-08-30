@@ -11,7 +11,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
   copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
-  statSync, linkSync, utimesSync,
+  statSync, linkSync, utimesSync, rmSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
@@ -380,6 +380,37 @@ test('rotateTrace: a claim with NO sidecar at all is left standing (TRC-09)', as
   const held = statSync(tracePath(dir));
   assert.equal(held.ino, statSync(rotatedTracePath(dir)).ino);
   assert.equal(held.nlink, 2, 'the claim was evicted on missing evidence');
+});
+
+test('appendEvent: a LEFTOVER eviction that cannot confirm its claim puts the generation back (D-02)', () => {
+  // The leftover arm's own discriminator - `rotationInFlight` - is read BEFORE
+  // the eviction rename, so a writer that links in between has a LIVE claim
+  // renamed away with nothing to put it back. That costs the whole record, not
+  // one rotation. The confirm has to run on this arm too.
+  //
+  // Driven by a sidecar path `publish` cannot write, which is the same answer a
+  // stolen claim gives: this call cannot prove the claim it is about to break
+  // is its own.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'a' }).written, true);
+  const generation = readFileSync(rotatedTracePath(dir), 'utf8');
+
+  // A DIRECTORY where the sidecar goes: the publish rename cannot land, so
+  // `mine` stays null and no re-stat can ever answer with it.
+  rmSync(rotationClaimPath(dir), { force: true });
+  mkdirSync(rotationClaimPath(dir));
+
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', writer: 'b' }).written, true,
+    "the writer lost its own event to a rotation that refused itself");
+  assert.equal(readFileSync(rotatedTracePath(dir), 'utf8'), generation,
+    'the generation was destroyed by an eviction that could not confirm its claim');
+  assert.equal(siblings(dir).filter((e) => e.includes('.evict.')).length, 0,
+    'an evicted generation was left at its private path');
+  assert.equal(carrying(tracePath(dir), 'b'), 1,
+    "the writer's own event is not in the live record");
 });
 
 test('appendEvent: a record already PAST the bound rotates, and its sibling keeps the excess', () => {

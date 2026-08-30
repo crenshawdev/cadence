@@ -888,36 +888,41 @@ export function rotateTrace(planningRoot, reserve) {
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
         if (!abandoned) leftover = path;
-        // CONFIRM AFTER CLAIMING, on the abandoned arm only, and before
-        // anything is read or written - the same shape `lib/capture-file.mjs`
-        // uses to break a stale lock. The rename above may have taken the
-        // sibling from a claimant that arrived between the age read and here:
-        // a second reclaimer wins the eviction race, re-links, and stamps its
-        // own fresh sidecar, and the mtime is no longer the one this process
-        // wrote. Breaking THAT claim is not a deferred rotation, it is the
-        // whole record - the holder's `readFileSync(sibling)` returns ENOENT,
-        // `carried` falls back to '', and it swaps a record holding only the
-        // rotation marker over the live path while this call's `finally`
-        // unlinks the last remaining name of the old inode.
+        // CONFIRM AFTER CLAIMING, on BOTH eviction arms, and before anything is
+        // read or written - the same shape `lib/capture-file.mjs` uses to break
+        // a stale lock. The rename above may have taken the sibling from a
+        // claimant that arrived between the discriminator and here: a second
+        // writer links, wins the claim, and stamps its own fresh sidecar, and
+        // the mtime is no longer the one this process wrote. Breaking THAT claim
+        // is not a deferred rotation, it is the whole record - the holder's
+        // `readFileSync(sibling)` returns ENOENT, `carried` falls back to '',
+        // and it swaps a record holding only the rotation marker over the live
+        // path while this call's `finally` unlinks the last remaining name of
+        // the old inode.
+        //
+        // THE LEFTOVER ARM NEEDS IT TOO (D-02), which reverses what shipped.
+        // The exclusion argued that this arm's own discriminator already
+        // answers, and it does not: `rotationInFlight(file, sibling)` was read
+        // BEFORE the `renameSync(sibling, path)` above, so a writer that linked
+        // in between has its live claim renamed away with nothing to put it
+        // back. The discriminator answers about the instant it ran, and the
+        // destructive act happens later - which is the whole reason a confirm
+        // exists rather than a check.
         //
         // Put the sibling back only where nothing has taken the path meanwhile;
         // a plain rename back would clobber a claim a fourth writer legitimately
         // holds. Either way CLEAR `evicted`, so the release cannot delete a
-        // claim that was just restored. The leftover-generation eviction below
-        // ships without this confirm and stays that way: its own discriminator
-        // already answers, and a rule locked for the new case must not be
-        // widened over code that already shipped.
-        if (abandoned) {
-          let refreshed = false;
-          try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
-          if (refreshed) {
-            try {
-              if (!existsSync(sibling)) renameSync(path, sibling);
-              else unlinkSync(path);
-            } catch { /* it vanished under us - there is nothing left to restore */ }
-            evicted = null;
-            return { rotated: false };
-          }
+        // claim that was just restored.
+        let refreshed = false;
+        try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
+        if (refreshed) {
+          try {
+            if (!existsSync(sibling)) renameSync(path, sibling);
+            else unlinkSync(path);
+          } catch { /* it vanished under us - there is nothing left to restore */ }
+          evicted = null;
+          leftover = null;
+          return { rotated: false };
         }
       }
     }
