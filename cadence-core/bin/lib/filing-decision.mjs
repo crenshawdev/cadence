@@ -55,6 +55,45 @@ export const HALTING_SEVERITIES = Object.freeze(['blocker', 'high']);
 export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
 
 /**
+ * What a `fix_commit` has to LOOK like before this module reads it as work
+ * that is already committed: an abbreviated id through a full one, the range
+ * an auditor can hand to `git show`.
+ *
+ * Carried as this module's own copy of lib/adjudication-record.mjs's
+ * `FIX_COMMIT`, which that file does not export, and PINNED against it by
+ * adjudication-record.test.mjs - one value table driven through `buildEntries`
+ * and through `usableFixCommit`, asserting the two accept and refuse the same
+ * members. Same hand-maintained-then-compared shape `HALTING_SEVERITIES` above
+ * already carries against the same file, for the same reason: the test is what
+ * stops the two drifting.
+ */
+const FIX_COMMIT = /^[0-9a-fA-F]{7,40}$/;
+
+/**
+ * Whether `value` is a fix commit this module will read as a landed fix.
+ *
+ * WHY THE SHAPE IS CHECKED HERE AT ALL, when lib/adjudication-record.mjs
+ * already refuses a malformed value at composition time: the set that rests on
+ * this answer is `halting`, and `halting` is the rail over records that module
+ * NEVER validated - one another tool wrote, one a person hand-edited, one older
+ * than the requirement. A composition-time check cannot reach input that never
+ * went through composition, so treating any non-blank string as proof of a fix
+ * hands the fail-closed rail its own defeat: `fix_commit: 'not-a-commit'` on an
+ * unoverridden blocker that stood would read as fixed, all three sets would
+ * come back empty, and the close a person should have been stopped at would
+ * proceed. A blank string is the same defeat spelled shorter.
+ *
+ * IT IS A SHAPE CHECK AND DELIBERATELY NOTHING MORE. Nothing here asks git
+ * whether the object exists - this module never does I/O - so a well-formed id
+ * naming no commit still reads as usable. What the check buys is the
+ * separation a rail actually needs: a commit id from a sentence.
+ *
+ * @param {unknown} value an entry's `fix_commit`, or whatever stood in for one
+ * @returns {boolean}
+ */
+export const usableFixCommit = (value) => typeof value === 'string' && FIX_COMMIT.test(value);
+
+/**
  * The ONE statement of what a record's entries mean to a fire that is settling:
  * which of them reach the user's ask, which cleared halt a caller has to see,
  * and which of them STOP a close.
@@ -83,10 +122,12 @@ export const NON_SURVIVOR_RULINGS = Object.freeze(['downgraded', 'refuted']);
  * so the gate deciding a close and the face filing issues held two spellings of
  * one meaning; this is where that split ends.
  *
- * USABLE MEANS A NON-BLANK STRING, deliberately and nothing more.
- * lib/adjudication-record.mjs already refuses a malformed value at composition
- * time, this module's stated discipline is that unknown input never throws, and
- * a second validator here would be a second grammar for one field.
+ * USABLE MEANS THE VALUE COULD BE A COMMIT ID, which `usableFixCommit` above
+ * decides and states its reason for. A non-blank string is not enough here,
+ * and that is not a second validator: the set this answer gates is `halting`,
+ * which exists only over records lib/adjudication-record.mjs never saw.
+ * This module's stated discipline is unchanged - an unusable value is not an
+ * error and nothing throws over it, it is simply not a fix.
  *
  * `filing` IS WHAT THIS FIRE WILL NOT FIX NOW, which is what reaches the user's
  * ask: every entry except a fixed one and except the unfixed survivor a
@@ -144,7 +185,7 @@ export function unfixedFromEntries(entries) {
   const halting = [];
   for (const e of Array.isArray(entries) ? entries : []) {
     if (e === null || typeof e !== 'object' || Array.isArray(e)) continue;
-    if (typeof e.fix_commit === 'string' && e.fix_commit.trim() !== '') continue;
+    if (usableFixCommit(e.fix_commit)) continue;
     const stoodAtAHalt = e.ruling === 'survived' && HALTING_SEVERITIES.includes(e.severity);
     if (stoodAtAHalt && e.overridden !== true) { halting.push(e); continue; }
     filing.push(e);

@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import {
   DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, fingerprint, fingerprintInTitle,
   HALTING_SEVERITIES, issueBody, issueTitle, normalizeDeclines, unfixedFindings,
-  unfixedFromEntries,
+  unfixedFromEntries, usableFixCommit,
 } from './lib/filing-decision.mjs';
 import { PROVIDER_TABLE } from './lib/forge-decision.mjs';
 
@@ -233,13 +233,51 @@ test('a survived medium with no commit is `filing` alone - confirmed and not fix
 });
 
 test('a BLANK fix_commit is not a usable one, so that entry still halts', () => {
-  // Usable means a non-blank string and nothing more: the VALUE check belongs
-  // to lib/adjudication-record.mjs at composition time, and a second validator
-  // here would be a second grammar for one field. But a blank string off a
-  // hand-edited record must not read as a fix, or the rail opens on the exact
-  // input it exists for.
   assert.deepEqual(sets(entry('blocker', { fix_commit: '   ' })),
     { filing: 0, haltingSurvivors: 0, halting: 1 });
+});
+
+// --- RSK-08 fix pass: the rail is not defeated by a string that is not an id -
+//
+// The `halting` rail exists over records lib/adjudication-record.mjs NEVER
+// validated - one another tool wrote, one a person hand-edited, one older than
+// the requirement - so its composition-time VALUE check cannot cover them.
+// While `usable` meant "non-blank string", `fix_commit: 'not-a-commit'` on an
+// unoverridden blocker that stood came back in NONE of the three sets and a
+// close-time caller read that as nothing to stop for.
+
+test('an unoverridden survived blocker citing a NON-COMMIT string still halts', () => {
+  assert.deepEqual(sets(entry('blocker', { fix_commit: 'not-a-commit' })),
+    { filing: 0, haltingSurvivors: 0, halting: 1 });
+});
+
+test('every unusable fix_commit shape leaves the fail-closed rail closed', () => {
+  // The falsifying table. Each member is a value an auditor cannot run
+  // `git show` on, so none of them may empty all three sets on the one entry
+  // shape the rail exists for.
+  for (const bad of ['', '   ', 'not-a-commit', 'the fix commit', 'zzzzzzz', 'abc',
+    'a1b2c3', 'a1b2c3d ', '0123456789abcdef0123456789abcdef012345678', 'g1b2c3d',
+    null, 0, false, true, {}, ['a1b2c3d']]) {
+    assert.deepEqual(sets(entry('blocker', { fix_commit: bad })),
+      { filing: 0, haltingSurvivors: 0, halting: 1 },
+      `fix_commit ${JSON.stringify(bad)} read as a landed fix and opened the rail`);
+  }
+});
+
+test('an abbreviated id through a full one reads as a landed fix', () => {
+  for (const good of ['a1b2c3d', '4a1af326', 'ABCDEF1',
+    '23121a3f9c0e1d2a3b4c5d6e7f8091a2b3c4d5e6']) {
+    assert.equal(usableFixCommit(good), true, `${good} is a commit id an auditor can spend`);
+    assert.deepEqual(sets(entry('blocker', { fix_commit: good })),
+      { filing: 0, haltingSurvivors: 0, halting: 0 });
+  }
+});
+
+test('usableFixCommit asks the SHAPE and never whether the object exists', () => {
+  // The bound stated deliberately: the module does no I/O, so a well-formed id
+  // naming no commit in this repository is still usable here. Widening this
+  // into a git call is what would make lib/filing-decision.mjs impure.
+  assert.equal(usableFixCommit('ffffff0'), true);
 });
 
 // --- criterion 2: the ask follows the PAYLOAD, never the prose ---------------

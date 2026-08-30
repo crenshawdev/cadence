@@ -31,6 +31,7 @@ import {
 } from './lib/adjudication-record.mjs';
 import {
   HALTING_SEVERITIES as FILING_HALTING_SEVERITIES, unfixedFindings, unfixedFromEntries,
+  usableFixCommit,
 } from './lib/filing-decision.mjs';
 import { FINDING_SCHEMA } from './review-provider.mjs';
 
@@ -610,6 +611,33 @@ test('the halting severities match lib/filing-decision.mjs\'s own list', () => {
     + 'disagree about which survivors the gate is halting to fix');
   assert.equal(HALTING_SEVERITIES.every((s) => RAISED_SEVERITIES.includes(s)), true,
     'every halting severity has to be one a finding can be RAISED at');
+});
+
+test('the fix-commit grammar matches lib/filing-decision.mjs\'s own copy', () => {
+  // The third hand-maintained-then-compared pair in this file, and the one with
+  // teeth: lib/filing-decision.mjs asks the SAME question of an entry it reads
+  // off a record THIS module never validated - a hand-edited one, a foreign
+  // writer's, one older than the requirement - so a value the composer refuses
+  // and the reader accepts is a survived blocker that walks past a close.
+  //
+  // Compared BEHAVIOURALLY rather than by comparing two literals: `FIX_COMMIT`
+  // is private to the module under test, and driving the values through
+  // `buildEntries` pins the reader against what the composer actually does.
+  //
+  // Every member is asserted with its own message, so the row that disagreed is
+  // named rather than left to the loop's count.
+  for (const v of ['1b34563', 'ABCDEF1', '23121a3f9c0e1d2a3b4c5d6e7f8091a2b3c4d5e6',
+    '', '   ', 'not-a-commit', 'the fix commit', 'zzzzzzz', 'abc', 'a1b2c3', 'a1b2c3d ',
+    '0123456789abcdef0123456789abcdef012345678', 'g1b2c3d', null, 0, false, true]) {
+    const res = buildEntries(payload(voice('openai', 'gpt-5', [finding({ severity: 'high' })],
+      [{ ruling: 'survived', fix_commit: v }])));
+    assert.equal(res.ok, usableFixCommit(v),
+      `lib/adjudication-record.mjs and lib/filing-decision.mjs disagree about fix_commit `
+      + `${JSON.stringify(v)}: the composer ${res.ok ? 'stores' : 'refuses'} it and the reader `
+      + `reads it as ${usableFixCommit(v) ? 'a landed fix' : 'no fix at all'}. Edit the two back `
+      + 'into agreement rather than editing this row - the gap between them is a survived '
+      + 'blocker that no longer stops a close');
+  }
 });
 
 test('a severity outside the four is REFUSED', () => {
