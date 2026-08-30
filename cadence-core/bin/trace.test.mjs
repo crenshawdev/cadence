@@ -204,6 +204,31 @@ test('appendEvent: a record at the bound rotates, and the append lands', () => {
   assert.equal(renderTrace(dir, 1).capped, false);
 });
 
+test('appendEvent: the rotation marker SEALS the generation it carried away', () => {
+  // `carried_bytes` is what tells the writer that destroys this generation
+  // where this cut stopped accounting. A sealed size that did not match the
+  // file would send that writer's rescue at the wrong offset, so it is
+  // asserted against `statSync` of the sibling rather than against a constant.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  padToBound(dir);
+  assert.equal(appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' }).written, true);
+
+  const markers = lines(dir).filter((e) => e.event === ROTATION);
+  assert.equal(markers.length, 1);
+  assert.equal(typeof markers[0].carried_bytes, 'number');
+  assert.equal(markers[0].carried_bytes, statSync(rotatedTracePath(dir)).size,
+    'the sealed size is not the generation the claim carried away');
+
+  // The new field rides the RECORD and reaches no envelope: `rotated` is still
+  // exactly `{file, ts}` (D-11 leaves that derivation alone)...
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(Object.keys(r.rotated).sort(), ['file', 'ts']);
+  // ...and the marker is still one ordinary lifecycle line of the record.
+  assert.equal(r.events.filter((e) => e.event === ROTATION).length, 1);
+  assert.equal(r.counts.lifecycle, lines(dir).filter((e) => e.family === 'lifecycle').length);
+});
+
 test('appendEvent: a completed rotation RELEASES the claim and leaves the sidecar inert', () => {
   // The positive `rotateTrace`'s `finally` owes (TRC-09). The rotation the row
   // above exercises, read for the one thing that row cannot see: whether the

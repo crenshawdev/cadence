@@ -460,6 +460,17 @@ function renderEvent(planningRoot, event) {
  * than through `appendEvent`, which would re-enter the size arm that called us.
  * Its own bytes are counted against the bound here, so the reserve a caller
  * passes is the pending line alone.
+ *
+ * `carried_bytes` SEALS THE GENERATION, and it is not telemetry. It is the byte
+ * length of `text` at the instant the claim read it - how much of the file this
+ * cut carried away and therefore accounted for. Its ONE consumer is the
+ * leftover-generation eviction in `rotateTrace`: a writer that appended into the
+ * old inode after this cut's carry-back loop ended left its bytes only in the
+ * generation, and the next rotation is about to destroy that generation. The
+ * sealed number is what tells that writer where this cut stopped accounting, so
+ * it can finish the carry-back over the bytes past it rather than guess an
+ * offset or re-append a whole generation. It must therefore be the SEALED size
+ * and never an estimate.
  * @param {string} text the whole record being carried away
  * @param {number} reserve bytes the fresh file owes beyond this content
  * @returns {string}
@@ -488,6 +499,9 @@ function freshRecord(text, reserve) {
   // The same fixed key order `renderEvent` writes, so the marker is an ordinary
   // line of the record rather than a differently shaped one. `phase` is
   // `undefined` where no anchor was carried and drops out of the JSON entirely.
+  // `carried_bytes` rides after `file`, as an ordinary trailing field of that
+  // fixed order - `renderTrace`'s `rotated` derivation takes `file` and `ts`
+  // only, so it reaches no envelope.
   const marker = `${JSON.stringify({
     corr: anchorCorr,
     phase: anchorPhase,
@@ -495,6 +509,7 @@ function freshRecord(text, reserve) {
     family: 'lifecycle',
     event: ROTATION,
     file: ROTATED_TRACE_FILE,
+    carried_bytes: Buffer.byteLength(text),
   })}\n`;
   if (at < 0) return marker;
   const owed = reserve + Buffer.byteLength(marker);
