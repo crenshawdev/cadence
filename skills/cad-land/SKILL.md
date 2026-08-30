@@ -132,11 +132,22 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
      `findings` arrays out of the `REVIEW-risk_surface*.md` files - those are
      the reviewer's raw claims, before anything was fixed, refuted, downgraded
      or overridden, and halting on them halts on work already done.
-     Then name on `unruled` every `REVIEW-risk_surface*.md` carrying no sibling
-     record of the same basename - from those two roots plus a legacy
-     `.planning/REVIEW-risk_surface-*.md` an interrupted older close may have
-     left behind. A fire nothing ruled says nothing about what survived, so it
-     halts by name rather than being read past. Pipe
+     Then name on `unruled` every `REVIEW-risk_surface*.md` nothing ruled - from
+     those two roots plus a legacy `.planning/REVIEW-risk_surface-*.md` an
+     interrupted older close may have left behind. A review and its record never
+     share a basename, so do not look for one:
+     `REVIEW-<trigger>-<discriminator>[-rN].md` is ruled by
+     `ADJUDICATION-<trigger>-<discriminator>[-rN].json` in the same directory -
+     same trigger, same discriminator, same round, with `REVIEW-` swapped for
+     `ADJUDICATION-` and `.md` for `.json`. `-r2` pairs with `-r2`, and a round-1
+     record never rules a round-2 review. One asymmetry, and the corpus forces
+     it: a LATER round's record does rule an earlier review, because a re-arm's
+     adjudication settles the round it re-armed - v3.7.7's phase 2 shipped
+     `REVIEW-risk_surface-plan-1.md` with only
+     `ADJUDICATION-risk_surface-plan-1-r2.json` beside it. So a review is
+     `unruled` only when its `<trigger>-<discriminator>` has no record at its own
+     round and none at any later one. A fire nothing ruled says nothing about
+     what survived, so it halts by name rather than being read past. Pipe
      `{"findings": [...], "unruled": [...]}` on stdin to
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate`; on
      `action:"halt"` stop the chain and surface the `findings` instead of

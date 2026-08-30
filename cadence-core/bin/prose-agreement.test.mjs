@@ -1433,6 +1433,32 @@ test('LND-02: cad-land 3(b) unions the RULINGS from both roots, not the review f
   assert.doesNotMatch(bullet, /union (?:their|the) `?findings`? arrays/i,
     "cad-land unions the REVIEW files' raw `findings` arrays again, which halts the close on "
     + 'findings already fixed, refuted, downgraded or overridden - LND-02 exactly');
+
+  // The PAIRING, which is the whole of `unruled`. REVIEW-<t>-<d>.md and
+  // ADJUDICATION-<t>-<d>.json cannot share a basename by construction, so a
+  // "same basename" test matches nothing, every review lands in `unruled`, and
+  // every close hard-halts on a fire that was in fact ruled.
+  assert.doesNotMatch(bullet, /same basename/i,
+    'cad-land pairs a review to its ruling by basename again. REVIEW-<trigger>-<discriminator>'
+    + '.md and ADJUDICATION-<trigger>-<discriminator>.json never share one, so every review '
+    + 'reads as unruled and every close hard-halts');
+  assert.match(bullet, /same trigger, same discriminator, same round/,
+    'the bullet no longer states what actually pairs a review with its ruling, which leaves '
+    + 'the coordinator to invent a test');
+  assert.match(bullet, /round-1\s+record never rules a round-2 review/,
+    'the bullet no longer forbids a round-1 record from ruling a re-arm, so an unadjudicated '
+    + 'round 2 reads as settled and its survivors are never checked');
+  // ...and the asymmetry the corpus forces, or a strict same-round test halts
+  // the very close D-14's fixture is taken from.
+  assert.match(bullet, /LATER round's record does rule an earlier review/,
+    "the bullet dropped the asymmetry v3.7.7's phase 2 forces - a round-1 REVIEW whose only "
+    + 'record is `-r2.json` - so a strict same-round test halts a close that was fully ruled');
+
+  // The same rule, in the reference a reader consults instead of this bullet.
+  const ref = doc('cadence-core', 'references', 'risk-surface.md');
+  assert.doesNotMatch(ref, /no sibling record of the same basename/,
+    'risk-surface.md still states the basename pairing no filename pair can satisfy, so the '
+    + 'bug returns through the reference door');
 });
 
 test('progress.md: the deferred count is read off the envelope at both its sites', () => {

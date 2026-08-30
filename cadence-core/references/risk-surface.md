@@ -174,9 +174,12 @@ it - the record of what each finding was settled AS - and pipes those entries to
 `land-cleanup.mjs gate`, so a finding that was fixed, refuted, downgraded or
 overridden stops no close and only a genuinely-unfixed one does. This file is
 still load-bearing twice over: it is what that record is written against, and a
-REVIEW file carrying no sibling record of the same basename HALTS the close BY
-NAME (`unruled-review`) rather than passing, because a fire nothing ruled says
-nothing about what survived. `/cad-land` fires no review of its own, so skipping
+REVIEW file nothing ruled HALTS the close BY NAME (`unruled-review`) rather than
+passing, because a fire nothing ruled says nothing about what survived. The two
+never share a basename: `REVIEW-<trigger>-<discriminator>[-rN].md` is ruled by
+the `ADJUDICATION-<trigger>-<discriminator>[-rN].json` beside it - same trigger,
+same discriminator, same round - and a LATER round's record rules an earlier
+review too, because a re-arm's adjudication settles the round it re-armed. `/cad-land` fires no review of its own, so skipping
 either write is what makes an autonomous close merge over a blocker nobody
 halted on.
 
@@ -191,7 +194,7 @@ CLEAN rather than erroring:
 - **The rulings outlive the phase dirs.** `/cad-milestone` step 3 prunes
   `.planning/phases/<N>/` and only then chains `/cad-land`, so it runs
   `planning.mjs risk-carry --phase <N>` FIRST: this file and every record beside
-  it, every round, basenames preserved - the pairing above is BY NAME, so a
+  it, every round, filenames preserved - the pairing above is BY NAME, so a
   renamed carry would read as unruled and halt every close - copied to
   `.planning/risk-carry/<N>/`. The consumer globs are BOTH roots. That carried
   copy is TRANSIENT and never staged (the `/cad-land` that merges deletes it at

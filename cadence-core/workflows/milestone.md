@@ -112,7 +112,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-carry --phase <N
 
 Run it for every phase this close prunes, BEFORE the prune seam call below. It
 COPIES that phase's `REVIEW-risk_surface*.md` files and every
-`ADJUDICATION-risk_surface*.json` sitting beside them - every round, basenames
+`ADJUDICATION-risk_surface*.json` sitting beside them - every round, filenames
 preserved, because the land gate pairs a review with its ruling BY NAME - into
 `.planning/risk-carry/<N>/`. A COPY and not the move `deferred carry` makes:
 under `--mode archive` the records have to stay in `_archive-<label>/<N>/` too,
