@@ -8,6 +8,7 @@ files:
   - cadence-core/bin/land-cleanup.mjs
   - cadence-core/bin/land-cleanup.test.mjs
   - cadence-core/bin/self-verify.test.mjs
+  - cadence-core/bin/config-seams.test.mjs
 ---
 
 # Phase 4: Land reads rulings, not raw findings - Plan 2 of 4

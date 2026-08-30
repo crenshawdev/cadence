@@ -23,3 +23,5 @@ recall entry.
 - 2026-08-29 github crenshawdev/cadence 35057ee7993d82dc: [cadence 35057ee7993d82dc] The instruction to change no assertion text conflicts with migrating the named byte-exact receipt tests.
 - 2026-08-29 github crenshawdev/cadence b9d6e61dcffadc72: [cadence b9d6e61dcffadc72] The presence check inspects every raw `--event` occurrence rather than the effective event that `planning.mjs` dispatches with.
 - 2026-08-29 github crenshawdev/cadence ca31319a4c232c0c: [cadence ca31319a4c232c0c] The new agreement tests do not exercise the claimed prerequisite that a Too big task has no matching roadmap phase, nor the fact that the displayed number must remain correc
+- 2026-08-30 github crenshawdev/cadence 36eb95f4b5063d1d: [cadence 36eb95f4b5063d1d] The new untrusted-input rendering is not actually bounded: limiting the list to five members leaves each rendered string unlimited in length.
+- 2026-08-30 github crenshawdev/cadence 5d4fc16e6f0f6125: [cadence 5d4fc16e6f0f6125] The newly added source-directory `lstatSync` probes are outside error handling and turn some untrusted filesystem states into uncaught exceptions instead of structured refus
