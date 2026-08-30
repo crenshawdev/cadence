@@ -16,29 +16,6 @@ work and never triaged. The standard is the one v3.7.5 set: would a user on
 their own project feel it. In each of these Cadence already holds the answer and
 the code beside it does not read it.
 
-- **RSK-08**: `lib/adjudication-record.mjs` validates a `fix_commit` value on
-  every ruling that can carry one rather than only inside the
-  `ruling === 'survived'` branch, and `overridden: true` no longer discharges
-  the module's strongest refusal on an unverifiable self-assertion. Filed as
-  issues #165 and #164 against the v3.7.7 work itself; phase 4 reuses this seam
-  and cannot be built on guards that are wrong
-- **RNG-04**: a project Cadence initialises can reach the unset-`stakes`
-  resolution `config.schema.json:8` documents. `templates/config.json:3` writes
-  `"stakes": "shipped"` and `workflows/new-project.md:56` copies it verbatim, so
-  the adaptive routing the README describes is unreachable on every new or
-  adopted project while `route.mjs:252` maintains `stakesSet` for exactly that
-  distinction. `GH-170`
-- **PHS-02**: `/cad-task`'s too-big arm names an action that creates the phase
-  the next command requires. Today it routes to `/cad-context`, which refuses an
-  off-roadmap phase. `GH-171`
-- **LND-02**: `land-cleanup.mjs gate` halts an autonomous close on genuinely
-  unfixed findings, using the derivation `lib/filing-decision.mjs` already
-  applies to issue filing. Today it unions raw `REVIEW-risk_surface*.md`
-  artifacts with no join to their rulings, and an already-fixed high stopped the
-  v3.7.7 close. `GH-168`
-- **TRC-11**: a contended second rotation loses no racing writer's event, and
-  the admission check reserves the mandatory marker line along with the pending
-  record. `GH-169` and issue #160
 
 **Out of scope, deliberately.** `GH-167` - review payloads carry no secret
 fence, and the provider cutover sends them off the machine - is a `/cad-spike`
@@ -370,6 +347,11 @@ parses only the Traceability table).
 | EXP-05 (the executor contract verifies a task with the task's own test and runs the full suite at one stated site per dispatch, never as a first probe and never inside the targeted fix loop. smithers baseline: 6 to 29 bare suite runs per dispatch against a 0.6 s suite) | 2 | Complete | v3.7.6 |
 | TRC-10 (`.planning/reads.jsonl` rotates at its write-time bound instead of dropping every later append permanently, keeping one prior generation and leaving the trace record's own rotation untouched.) | 1 | Complete | v3.7.7 |
 | RSK-07 (a blocking gate's below-blocker/high remainder can be recorded as confirmed and unfixed, without inventing a fix commit or a ruling the adjudicator does not hold, and without losing the `fix_commit` typo guard.) | 2 | Complete | v3.7.7 |
+| RSK-08 (`lib/adjudication-record.mjs` validates a `fix_commit` value on every ruling that can carry one rather than only inside the `ruling === 'survived'` branch, and `overridden: true` no longer discharges the module's strongest refusal on an unverifiable self-assertion. Filed as issues #165 and #164 against the v3.7.7 work itself; phase 4 reuses this seam and cannot be built on guards that are wrong) | 1 | Complete | v3.7.8 |
+| RNG-04 (a project Cadence initialises can reach the unset-`stakes` resolution `config.schema.json:8` documents. `templates/config.json:3` writes `"stakes": "shipped"` and `workflows/new-project.md:56` copies it verbatim, so the adaptive routing the README describes is unreachable on every new or adopted project while `route.mjs:252` maintains `stakesSet` for exactly that distinction. `GH-170`) | 2 | Complete | v3.7.8 |
+| PHS-02 (`/cad-task`'s too-big arm names an action that creates the phase the next command requires. Today it routes to `/cad-context`, which refuses an off-roadmap phase. `GH-171`) | 3 | Complete | v3.7.8 |
+| LND-02 (`land-cleanup.mjs gate` halts an autonomous close on genuinely unfixed findings, using the derivation `lib/filing-decision.mjs` already applies to issue filing. Today it unions raw `REVIEW-risk_surface*.md` artifacts with no join to their rulings, and an already-fixed high stopped the v3.7.7 close. `GH-168`) | 4 | Complete | v3.7.8 |
+| TRC-11 (a contended second rotation loses no racing writer's event, and the admission check reserves the mandatory marker line along with the pending record. `GH-169` and issue #160) | 5 | Complete | v3.7.8 |
 
 ## Deferred
 
@@ -476,11 +458,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RSK-08 | Phase 1 | Complete |
-| RNG-04 | Phase 2 | Complete |
-| PHS-02 | Phase 3 | Complete |
-| LND-02 | Phase 4 | Complete |
-| TRC-11 | Phase 5 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its

@@ -1202,3 +1202,107 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/2/CONTEXT.md`: D-01 (The ruling vocabulary - ROADMAP OQ-2): close GH-159 by gating the
 - `phases/2/CONTEXT.md`: D-02 (The override case): an OVERRIDDEN blocker/high is in scope this phase
 - `phases/2/CONTEXT.md`: D-08 (No rule on the read path): nothing this phase adds is applied when a
+
+## v3.7.8
+
+- `phases/1/SUMMARY.md`: Task 3's `Action:` asserted that an absent OR unreadable record omits the check,
+- `phases/1/SUMMARY.md`: Task 5's `Verify:` asserts the full suite is green. At 96d32686 it was not:
+- `phases/1/SUMMARY.md`: D-04's claim that an overridden entry is "by construction a survived blocker/high
+- `phases/1/SUMMARY.md`: A pinned `DOCS-CLAIMS.md` row that names a file by LINE NUMBER rots whenever any earlier line
+- `phases/1/SUMMARY.md`: `filing-decision.mjs:117` marks a survived blocker/high as a halting survivor whenever
+- `phases/1/SUMMARY.md`: The adjudication record is unsigned plaintext with no hash or chain, so a record rewritten to
+- `phases/1/SUMMARY.md`: `evaluatePresence` reads every raw `--event` occurrence while `parseArgs` keeps the last, so a
+- `phases/1/SUMMARY.md`: `PRESENCE_RULES` holds ONE rule per subcommand key rather than a list, and `evaluatePresence`
+- `phases/1/SUMMARY.md`: The claim carried into PLAN-2 by the plan review - that `seam: a malformed --raised appends
+- `phases/1/UAT.md`: A malformed fix_commit is refused on downgraded and refuted Writing a record whose `downgraded` or `refuted` entry carries `fix_commit: "not-a-sha"` returns a refusal whose detail names BOTH the field and the ruling. The same value on a `survived` entry is refused by that one same check, and the three existing assertions matching /no usable fix_commit/ are still green.
+- `phases/1/UAT.md`: An empty or null fix_commit is refused, not silently dropped A `downgraded` entry carrying `fix_commit: ""` or `fix_commit: null` is REFUSED. Before this phase both returned ok:true with the key silently absent from the stored entry.
+- `phases/1/UAT.md`: A reasonless receipt over a cleared halt is refused `trace append` refuses a receipt settling a record that holds a survived blocker or high marked `overridden: true` when that receipt asserts no override; the refusal names the record/receipt CONTRADICTION rather than an event name, and nothing is appended. An `override --detail-file` receipt over the same record is accepted, and that accepted shape is stated in references/triage-gate.md.
+- `phases/1/UAT.md`: The ruling vocabulary and the overridden grammar are unchanged RULINGS is still exactly `survived | downgraded | refuted`, and `overridden: true` on a `downgraded` or `refuted` entry, or on a survived medium or low, is still accepted with no receipt demanded - proved by adjudication-record.test.mjs:292-300 and :309-317 green unchanged.
+- `phases/1/UAT.md`: One predicate answers the unfixed-halting-survivor question on both faces lib/filing-decision.mjs answers the unfixed-halting-survivor question over a written record's entries[], and its payload face returns the IDENTICAL answer for the same data, proved by one test driving both faces over one fixture.
+- `phases/1/UAT.md`: Both refusals reproduce end to end over a mixed-ruling fixture Over a fixture carrying one entry of each ruling with at least one bad `fix_commit`: `risk-check run` -> adjudication -> receipt -> `risk-check status` runs through, with the AC1 and AC3 refusals landing exactly where those criteria say.
+- `phases/1/UAT.md`: The full suite and self-verify are green `node cadence-core/bin/test.mjs` exits 0 with 0 failures and `node cadence-core/bin/self-verify.mjs` reports ok:true with problems: [].
+- `phases/1/CONTEXT.md`: D-01 (OQ-1, first half): the `fix_commit` VALUE check is HOISTED out of the
+- `phases/1/CONTEXT.md`: D-02 (OQ-1, second half): `overridden: true` SURVIVES as a marker. AC3's
+- `phases/1/CONTEXT.md`: D-03 (join site): the `overridden` -> `override`-receipt join lives at
+- `phases/1/CONTEXT.md`: D-04 (refusal shape): the refusal is phrased as a record/receipt
+- `phases/1/CONTEXT.md`: D-05 (predicate home): the "unfixed halting survivor" test gets an
+- `phases/1/CONTEXT.md`: D-06 (constraint scope): the new receipt requirement is scoped to
+- `phases/2/SUMMARY.md`: AC7 (`node cadence-core/bin/test.mjs` green) failed on one test
+- `phases/2/SUMMARY.md`: Task 4's new warning arm was collateral to seven shipped
+- `phases/2/SUMMARY.md`: The `self-verify-merge-layers` census is stale on `main` in two directions at
+- `phases/2/SUMMARY.md`: That declaration raised this phase's executor rung from `high` to `xhigh`:
+- `phases/2/UAT.md`: Template ships no stakes key cadence-core/templates/config.json contains no "stakes" key, and config.mjs validate on a config merged from that template returns ok:true.
+- `phases/2/UAT.md`: resolve and replay report stakes_set route.mjs resolve returns stakes_set:false when no config layer sets stakes and stakes_set:true when one does; route.mjs replay reports the same field over the same data.
+- `phases/2/UAT.md`: Both floor arms from a template-built fixture On a fixture repo built from the shipped template, a phase whose plans all read clean resolves stakes:"solo", and the same phase with one unreadable plan resolves stakes:"shipped" at ok:true - both shown from route.mjs resolve output, not prose.
+- `phases/2/UAT.md`: config.mjs get stakes answers unset config.mjs get stakes with no layer setting it returns the unset warning naming route.mjs resolve as the seam that answers it; with stakes set it returns the value and no warning.
+- `phases/2/UAT.md`: Both init workflows state stakes is unset new-project.md and adopt.md no longer say shipped stakes were written; each states stakes is unset and names both arms of what unset resolves to. Neither file exceeds its weight-budgets.json row.
+- `phases/2/UAT.md`: README claim held by a test; floor tests green unchanged A test holds the README's adaptive-routing claim against real route.mjs resolve output over a template-initialised fixture. The four existing floor tests are green unchanged, and route.test.mjs:1027-1041's "the template ships at shipped" comment no longer contradicts the file.
+- `phases/2/UAT.md`: Full suite and self-verify green node cadence-core/bin/test.mjs is green and self-verify reports ok:true.
+- `phases/2/CONTEXT.md`: D-01 (template shape): `stakes` is DELETED from
+- `phases/2/CONTEXT.md`: D-02 (the consequence is accepted whole): on a fresh project a phase whose
+- `phases/2/CONTEXT.md`: D-03 (no second init question): neither init workflow starts ASKING for a
+- `phases/2/CONTEXT.md`: D-04 (proof of unset): `stakes_set` joins the `route.mjs resolve` envelope,
+- `phases/2/CONTEXT.md`: D-05 (the read agrees with the write): `config.mjs`'s unset-warning arm widens
+- `phases/2/CONTEXT.md`: D-06 (migration scope): projects initialised before this phase keep
+- `phases/3/SUMMARY.md`: Test (4) also asserts the ABSENCE of `/cad-context` in task.md's `<guardrails>` block, where the plan required only the presence of `/cad-phase add`. One extra line, and it closes the surviving `low` finding in `ADJUDICATION-plan-plan-1.json`: a guardrail rewritten as "re-route to /cad-context, then /cad-phase add" would have passed a presence-only check with the mid-task path regressed.
+- `phases/3/SUMMARY.md`: Task 5's mutation check reddened assertions (1), (2) and (3) rather than (1) alone, because all three pin facts of the arm the mutation deleted (312 prose tests, 309 pass, 3 fail; (1) failed on its own named message). That is the surviving `medium` adjudication finding at `PLAN.md:201`. A single-assertion mutation would have to delete only the route sentence and leave the resolve rule and the `$TASK` carry standing.
+- `phases/3/SUMMARY.md`: No helper was extracted for the `<guardrails>` slice or the off-roadmap-stop slice in task 5. Each is a two-line `indexOf`/`slice` at one caller; only `tooBigArm` is reused across tests.
+- `phases/3/SUMMARY.md`: AC6 - following the printed sequence live, from a repo whose roadmap carries no matching phase - is human-verify by design and belongs to `/cad-verify`'s UAT walk. Its mechanical half is test (2).
+- `phases/3/SUMMARY.md`: The `diff` fire's one survivor, filed as an issue on `crenshawdev/cadence` (fingerprint `ca31319a4c232c0c`, low): the PHS-02 tests certify prose strings and that `status` returns an integer `total`, not that the printed sequence reaches the phase `/cad-phase add` creates. Same gap AC6 covers by hand.
+- `phases/3/UAT.md`: The too-big arm names /cad-phase add first cadence-core/workflows/task.md's phase-sized arm prints the sequence /cad-phase add -> /cad-context {N} -> /cad-plan {N}, and no route in that arm starts at /cad-context.
+- `phases/3/UAT.md`: The phase number is resolved, not a placeholder The arm calls planning.mjs status and prints total + 1. Running that command on this repo returns a total, and the arm's stated rule yields the next real number.
+- `phases/3/UAT.md`: The task description carries into /cad-phase add The printed sequence passes the task's own description as the /cad-phase add argument, and skills/cad-phase/SKILL.md's argument-hint advertises that add accepts one.
+- `phases/3/UAT.md`: No old-route site survives grep -n 'cad-context' cadence-core/workflows/task.md skills/cad-task/SKILL.md returns no line routing a phase-sized task to /cad-context as its first stop.
+- `phases/3/UAT.md`: /cad-context's off-roadmap stop names the open door cadence-core/workflows/context.md's off-roadmap stop names /cad-phase add as the next action.
+- `phases/3/UAT.md`: The printed sequence works end to end in a live session From a repo whose roadmap has no matching phase, following /cad-phase add -> /cad-context {N} -> /cad-plan {N} reaches a planned phase with no command refusing. (human-verify: needs a live Claude Code session)
+- `phases/3/UAT.md`: Tests and self-verify are green with budgets re-pinned node cadence-core/bin/test.mjs is green and node cadence-core/bin/self-verify.mjs reports ok:true, with weight-budgets.json re-pinned for every prose file whose byte count changed.
+- `phases/3/UAT.md`: In a live Claude Code session on a repo whose roadmap has no matching phase, give /cad-task a feature-sized request, then follow the message it prints: /cad-phase add <description>, then /cad-context <N>, then /cad-plan <N>. The stop message shows a real phase number (planning.mjs status total + 1 for that repo) and the task's own words, not the literal tokens {N} or $TASK. /cad-phase add appends that phase at that number, and /cad-context and /cad-plan on it both proceed - no command refuses with 'Phase N is not in the roadmap'.
+- `phases/3/CONTEXT.md`: D-01 (the open door): the corrected sequence opens with `/cad-phase add`.
+- `phases/3/CONTEXT.md`: D-02 (sequence length): the arm prints THREE stops -
+- `phases/3/CONTEXT.md`: D-03 (the number): the arm RESOLVES the phase number with
+- `phases/3/CONTEXT.md`: D-04 (carry-forward): the arm passes the task's own description as the
+- `phases/3/CONTEXT.md`: D-05 (far side): `cadence-core/workflows/context.md:32`'s stop gains a
+- `phases/4/SUMMARY.md`: Plan 1, task 1: the Action forbade validating the `fix_commit`
+- `phases/4/SUMMARY.md`: Plan 2, task 2: the Action stated `unruled` "absent, or present
+- `phases/4/SUMMARY.md`: Plan 2, structural checkpoint: `config-seams.test.mjs` needed a
+- `phases/4/SUMMARY.md`: Plan 3, task 1: the Verify asked for a `missing-flag-value`
+- `phases/4/SUMMARY.md`: All four plans reported the suite red against a green `Verify:`.
+- `phases/4/SUMMARY.md`: `gitDirAbove` (`cadence-core/bin/planning/renumber.mjs:65-76`) asks only
+- `phases/4/SUMMARY.md`: Something in the suite creates `/tmp/.git` and does not clean it up - it was
+- `phases/4/SUMMARY.md`: The carry copies with a plain loop rather than staging and renaming, so an
+- `phases/4/SUMMARY.md`: Accepted residue: a hand-rolled caller that pipes raw review findings and
+- `phases/4/SUMMARY.md`: `already_fixed` on the issue-filing envelope now reports 0 rather than a live
+- `phases/4/SUMMARY.md`: Two findings were filed as issues and remain open on the tracker:
+- `phases/4/UAT.md`: The v3.7.7 close no longer halts on an already-fixed high Fed the phase-2 review plus its -r2 adjudication record, `land-cleanup.mjs gate` under auto_close returns action "proceed"; remove the fix_commit from that entry and the same call returns action "halt".
+- `phases/4/UAT.md`: Exactly one definition of the genuinely-unfixed test A helper-census.test.mjs row matches exactly one definition across every .mjs under cadence-core/bin/, pasting a second copy of that body anywhere reddens it, and close-decision.mjs no longer contains the inline 'blocker' || 'high' literal.
+- `phases/4/UAT.md`: A review nothing ruled is a fifth named state that halts A REVIEW-risk_surface-*.md with no sibling ADJUDICATION-*.json is reported by its own name in the gate's output and returns action "halt" under auto_close.
+- `phases/4/UAT.md`: The four unreadable-input states are unchanged stdin-unreadable, stdin-empty, malformed-json and not-a-findings-payload keep their names and each still halts under auto_close; close-decision.test.mjs's UNREADABLE loop passes with no edit to it.
+- `phases/4/UAT.md`: An unfixed override is surfaced without moving the verdict An entry with overridden:true and no fix_commit appears by name on the gate envelope while action is unchanged; an entry carrying both overridden:true and a fix_commit appears nowhere in that surfacing and does not halt.
+- `phases/4/UAT.md`: The rulings survive the prune that deletes the phase After milestone-prune.mjs --mode delete over a fixture, the carried ADJUDICATION-*.json is still readable at the carry destination and gate returns the identical halt decision before and after the prune; land-cleanup.mjs's header comment states what the gate reads and where it comes from.
+- `phases/4/UAT.md`: The full suite and self-verify are green `node cadence-core/bin/test.mjs` passes with zero failures and `node cadence-core/bin/self-verify.mjs` reports ok:true, with weight-budgets.json re-pinned for every prose file whose byte count changed.
+- `phases/4/CONTEXT.md`: D-01 (OQ-2, the arm): `/cad-milestone`'s carry GROWS to move the
+- `phases/4/CONTEXT.md`: D-02 (the join): what the carry and the gate union is the adjudication
+- `phases/4/CONTEXT.md`: D-03 (unruled findings): a `REVIEW-risk_surface-*.md` with NO sibling
+- `phases/4/CONTEXT.md`: D-04 (the one definition): the `fix_commit` exclusion MOVES INTO
+- `phases/4/CONTEXT.md`: D-05 (overridden vs fix_commit): an entry carrying BOTH `overridden: true`
+- `phases/4/CONTEXT.md`: D-06 (where the derivation runs): the classification runs at the
+- `phases/4/CONTEXT.md`: D-07 (the gate's input path): the gate keeps taking its payload from stdin
+- `phases/4/CONTEXT.md`: D-08 (rounds): when a fire has records, EVERY round is unioned - the
+- `phases/4/CONTEXT.md`: D-09 (criterion 5's shape): an overridden halting survivor is surfaced by
+- `phases/4/CONTEXT.md`: D-10 (the no-second-classifier proof): criterion 1's test is a
+- `phases/5/SUMMARY.md`: plan 2, task 5 (`d9eda28e`): the plan's Action asserted that
+- `phases/5/SUMMARY.md`: `publish()` nulls `pending` even when its `renameSync` throws, so on a root
+- `phases/5/SUMMARY.md`: The NO-SEAL arm is the one place the phase goal's "or the shortfall is
+- `phases/5/UAT.md`: A racing writer's event survives a second rotation The new contended-second-rotation row in cadence-core/bin/trace.test.mjs and its twin in cadence-core/bin/read-trace.test.mjs both pass: the racing writer's event is in exactly one of the live record or the rotated sibling, never in neither.
+- `phases/5/UAT.md`: A near-bound event never leaves the fresh record over its bound With a pending event of MAX_TRACE_BYTES - 8 bytes (and MAX_READS_BYTES - 8 for reads), the live record's size after the rotation's first write is at or below its bound. Pre-fix it was 105 B and 74 B over.
+- `phases/5/UAT.md`: A writer that claims during a leftover eviction keeps its event A writer that claims the live file after a leftover-generation eviction has already started still finds its event in the live record afterward. One test row per record covers this arm.
+- `phases/5/UAT.md`: Both seams still report the rotation and never bill the reads marker After a second rotation, `node cadence-core/bin/planning.mjs reads` and `node cadence-core/bin/planning.mjs trace suggest` each still report the rotation on their own key, and the reads marker appears in none of calls, byAgent, or the unresolved/coordinator split.
+- `phases/5/UAT.md`: The whole suite and self-verify are green `node cadence-core/bin/test.mjs` is green and `node cadence-core/bin/self-verify.mjs` reports ok:true.
+- `phases/5/UAT.md`: A generation whose marker carries no seal is destroyed with nothing stated behavior wrong - the goal's second clause ('or the shortfall is stated') does not hold on the no-seal arm. Where the leftover generation was sealed by pre-phase code (a v3.7.7 marker has no carried_bytes) or by a corrupt marker line, no rescue runs, the generation is unlinked, and the rotation returns a clean {rotated: true}. Measured: a racing record in that generation ends up in NEITHER file with no shortfall reported.
+- `phases/5/CONTEXT.md`: D-01 (scope): the phase fixes BOTH records. `read-trace.mjs` carries the
+- `phases/5/CONTEXT.md`: D-02 (eviction arm): the leftover-generation eviction arm's missing
+- `phases/5/CONTEXT.md`: D-03 (no generalization): the two rotations stay two separate
+- `phases/5/CONTEXT.md`: D-04 (retention): exactly one prior generation - no `trace.2.jsonl`, no
+- `phases/5/CONTEXT.md`: D-05 (where the loss is): the loss is a TWO-STEP - rotation 1 leaves a
+- `phases/5/CONTEXT.md`: D-06 (which admission check): the check to change is `appendEvent`'s
+- `phases/5/CONTEXT.md`: D-07 (two reserves, not one): the reserve cannot be a single constant. The
