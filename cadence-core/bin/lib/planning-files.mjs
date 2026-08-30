@@ -1249,9 +1249,37 @@ on the tracker, read by \`planning.mjs recall\` beside CAPTURE.md. One \`- \` ro
 per filed issue: the date, the provider, the repository slug, the finding's
 (file, claim) fingerprint and the issue's title. No finding body - a row is a
 pointer to an issue, not a copy of it, and NOTHING here is a queue. A declined
-finding is never written here; its only record is the decline label on the
-forge. A line that is not a row is skipped, so a note added here mints no
-recall entry.
+finding is never written here; its record is a row in DECLINED.md beside this
+file, which is deliberately outside the recall corpus. A line that is not a row
+is skipped, so a note added here mints no recall entry.
+`;
+
+/**
+ * The preamble an empty DECLINED.md is created with. Same job as
+ * `FILED_PREAMBLE` for the other half of the answer, and the same shape rules:
+ * a `# ` title, no column-0 `## ` heading.
+ *
+ * WHY THIS FILE EXISTS AT ALL. A decline has to persist or the gate asks the
+ * same question on every later fire, forever. It used to persist as a labelled
+ * issue on the forge, which put every refusal on a public board and made the
+ * tracker unreadable as a statement of real work. The fingerprint is the whole
+ * of what the dedup needs, so it lives here and the forge never hears about it.
+ */
+const DECLINED_PREAMBLE = `# Declined: findings this repository said no to
+
+Written by \`issue-filing.mjs file\` when a gate's finding is DECLINED, read by
+\`issue-filing.mjs unfixed\` as the set it must never ask about again. Same row
+grammar as FILED.md: the date, the provider, the repository slug, the finding's
+(file, claim) fingerprint and its title.
+
+NOT part of the recall corpus and not a queue. \`planning.mjs recall\` reads
+CAPTURE.md, ARCHIVE.md, the task records and FILED.md by explicit path, and
+this file is deliberately absent from that list - a decline is a closed
+question, and putting closed questions in front of a planner is the
+accumulation the corpus rules exist to prevent. Query it, do not load it.
+
+A line that is not a row is skipped, so a human note added here changes nothing
+the seam reads.
 `;
 
 /**
@@ -1277,13 +1305,34 @@ recall entry.
  *   fingerprint: string, date: string}>}
  */
 export function parseFiledRows(text) {
+  return parseRows(text, 'FILED.md');
+}
+
+/**
+ * DECLINED.md rows in document order, the same shape `parseFiledRows` answers
+ * with and for the same grammar - a decline row IS a filed row, written to a
+ * different file because it means the opposite thing.
+ *
+ * The consumer is `issue-filing.mjs unfixed`, which wants `fingerprint` alone.
+ * `text` and `source` ride along because the shape is shared, NOT because this
+ * file is a recall source: it is not one, and `DECLINED_PREAMBLE` says so.
+ * @param {string} text
+ * @returns {Array<{text: string, source: string, provider: string, slug: string,
+ *   fingerprint: string, date: string}>}
+ */
+export function parseDeclinedRows(text) {
+  return parseRows(text, 'DECLINED.md');
+}
+
+/** The shared body of both parsers. @param {string} text @param {string} source */
+function parseRows(text, source) {
   const out = [];
   for (const line of normalize(text).split('\n')) {
     const m = line.match(FILED_ROW);
     if (!m) continue;
     const title = m[5].trim();
     if (!title) continue;
-    out.push({ text: title, source: 'FILED.md', date: m[1], provider: m[2],
+    out.push({ text: title, source, date: m[1], provider: m[2],
       slug: m[3], fingerprint: m[4] });
   }
   return out;
@@ -1308,13 +1357,33 @@ export function parseFiledRows(text) {
  * @returns {string}
  */
 export function appendFiledRow(text, row) {
+  return appendRow(text, row, FILED_PREAMBLE);
+}
+
+/**
+ * Land one declined row at the end of DECLINED.md `text` and return the new
+ * text. Identical discipline to `appendFiledRow` - flatten on write, refuse a
+ * row this file's own parser could not read back - because it is the same
+ * grammar; only the preamble an empty file is created with differs.
+ *
+ * @param {string} text
+ * @param {{date: string, provider: string, slug: string, fingerprint: string, title: string}} row
+ * @returns {string}
+ */
+export function appendDeclinedRow(text, row) {
+  return appendRow(text, row, DECLINED_PREAMBLE);
+}
+
+/** The shared body of both appenders.
+ * @param {string} text @param {any} row @param {string} preamble */
+function appendRow(text, row, preamble) {
   const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
   const r = row && typeof row === 'object' ? row : /** @type {any} */ ({});
   const line = `- ${flat(r.date)} ${flat(r.provider)} ${flat(r.slug)} `
     + `${flat(r.fingerprint)}: ${flat(r.title)}`;
   if (!FILED_ROW.test(line)) return typeof text === 'string' ? text : '';
   const base = typeof text === 'string' ? text : '';
-  if (!base.trim()) return `${FILED_PREAMBLE}\n${line}\n`;
+  if (!base.trim()) return `${preamble}\n${line}\n`;
   return `${base}${base.endsWith('\n') ? '' : '\n'}${line}\n`;
 }
 
