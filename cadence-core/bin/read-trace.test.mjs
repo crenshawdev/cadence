@@ -1191,3 +1191,56 @@ test('seam: `reads` WITHOUT the flag still carries no in-dispatch key at all', (
   assert.equal(none.note, 'no reads recorded yet');
   assert.equal('inDispatch' in none, false);
 });
+
+// --- the rotation still reaches the seam, the marker still reaches no fold ----
+
+test('seam: two rotations later, `reads` still reports the cut and bills no marker (AC4)', () => {
+  // This phase changed what the marker carries and what a second rotation does
+  // with the generation it destroys, so both halves of the marker's contract
+  // are re-proved: it is REPORTED as a rotation, and it is COUNTED as nothing.
+  const dir = join(tmp(), '.planning');
+  mkdirSync(dir, { recursive: true });
+  appendRead(dir, { ts: TS, tool: 'Read', agent: 'coordinator', target: '/gen-one' });
+  padToReadsBound(dir);
+  assert.equal(appendRead(dir, { ts: TS, tool: 'Read', agent: 'coordinator', target: '/gen-two' }).written, true);
+  padToReadsBound(dir);
+  assert.equal(appendRead(dir, { ts: TS, tool: 'Read', agent: 'coordinator', target: '/gen-three' }).written, true);
+
+  const r = seam(dir, ['reads']);
+  assert.equal(r.ok, true);
+  // (a) the cut is reported, on the key `reads` has always spelled it on.
+  assert.equal(r.reads.rotated.file, 'reads.1.jsonl');
+  assert.equal(r.reads.rotated.ts, JSON.parse(liveLines(dir)[0]).ts);
+  // (b) the seal is INTERNAL to the record and reaches no envelope key.
+  assert.ok(!JSON.stringify(r).includes('carried_bytes'),
+    `the seal rode the envelope: ${JSON.stringify(r.reads)}`);
+  // (c) the marker is billed as nothing: one call, one agent row, one target.
+  assert.equal(r.calls, 1, 'the marker was counted as a read');
+  assert.deepEqual(r.byAgent, [['coordinator', 1]]);
+  assert.deepEqual(r.topTargets, [['/gen-three', 1]]);
+  assert.deepEqual(r.byTool, [['Read', 1]]);
+});
+
+test('the marker carrying the new field is still filtered out of both folds', () => {
+  // The predicate is what keeps it out, not the folds: `summarizeReads` bills
+  // every object it is handed and `joinReads` pushes an `unresolved` row for
+  // any record with no `agent`, which is the phantom-read failure
+  // `isReadsRotationMarker`'s own docblock describes. So the guard is that the
+  // predicate still ANSWERS for a marker carrying `carried_bytes` - the filter
+  // in `planning/core.mjs` reads it, and everything downstream follows.
+  const marker = { ts: TS, event: 'record_rotated', file: 'reads.1.jsonl', carried_bytes: 4096 };
+  assert.equal(isReadsRotationMarker(marker), true, 'the new field broke the predicate');
+  // Unfiltered it WOULD be billed - which is why the filter is load-bearing.
+  assert.equal(summarizeReads([marker]).calls, 1);
+  assert.equal(joinReads([marker], []).unresolved, 1);
+
+  // Filtered the way `readReadsRecords` filters, it reaches neither fold.
+  const records = [marker, rec('coordinator', 'Read', '/a')].filter((x) => !isReadsRotationMarker(x));
+  const sum = summarizeReads(records);
+  assert.equal(sum.calls, 1);
+  assert.deepEqual(sum.byAgent, [['coordinator', 1]]);
+  assert.deepEqual(sum.topTargets, [['/a', 1]]);
+  const j = joinReads(records, []);
+  assert.equal(j.unresolved, 0, 'the marker became an unresolved read');
+  assert.equal(j.coordinator, 1);
+});
