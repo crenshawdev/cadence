@@ -1351,15 +1351,38 @@ test('LND-02: milestone.md carries the rulings BEFORE the prune, and stops on ok
     'the carry paragraph no longer names `.planning/risk-carry/`, which is the root '
     + '/cad-land globs for the records the phase dirs no longer hold');
 
-  // And step 7 deletes it on BOTH arms: committed, a carried ruling rides onto
-  // base and halts every later autonomous land on a finding answered here.
+  // And step 7 does NOT delete it, on either arm. Step 3 already pruned the
+  // phase dirs, so this carry is the LAST copy of the rulings the halt rests
+  // on: cleared at the close, the retried /cad-land globs two empty roots, is
+  // handed {"findings":[]} and merges over the blocker the halt just refused.
+  // The clear belongs to the one actor that can prove the halt was answered.
   const seven = lines.findIndex((l) => l.startsWith('## 7.'));
   const eight = lines.findIndex((l, i) => i > seven && l.startsWith('## 8.'));
   assert.ok(seven > -1 && eight > seven, 'milestone.md no longer spells step 7');
   const step7 = lines.slice(seven, eight).join(' ').replace(/\s+/g, ' ');
-  assert.match(step7, /Delete `\.planning\/risk-carry\/`[^.]*BOTH arms/,
-    'step 7 no longer deletes `.planning/risk-carry/` on both arms - a halt the user answers '
-    + 'by landing manually otherwise leaves the records behind to halt the next milestone too');
+  assert.match(step7, /Do NOT delete `\.planning\/risk-carry\/` here, on either arm/,
+    'step 7 deletes `.planning/risk-carry/` again. Step 3 pruned the phase dirs, so that is '
+    + 'the last copy of the rulings the halt rests on, and the next /cad-land merges over it');
+  assert.match(step7, /`\/cad-land` step 4/,
+    'step 7 no longer names WHICH actor clears the carry, so it is either cleared before the '
+    + 'halt is answered or never cleared at all');
+  assert.match(step7, /CONFIRMED landed/,
+    'step 7 no longer ties the clear to a merge that confirmed - the only event proving the '
+    + 'halt was answered rather than abandoned');
+
+  // ...and that actor has to EXIST. Deferring the delete to a step /cad-land
+  // does not have leaves the carry on disk forever, which halts every later
+  // close on rulings a milestone already answered - the failure the deleted
+  // "BOTH arms" sentence was guarding against.
+  const land = doc('skills', 'cad-land', 'SKILL.md');
+  const step4 = (land.split('4. **Terminal cleanup')[1] || '').split('</process>')[0]
+    .replace(/\s+/g, ' ');
+  assert.match(step4, /Delete `\.planning\/risk-carry\/`/,
+    "cad-land's terminal cleanup no longer deletes `.planning/risk-carry/`, so nothing clears "
+    + 'the carry milestone.md step 7 now deliberately leaves behind');
+  assert.match(step4, /ONLY actor that clears them/,
+    'cad-land step 4 no longer claims sole ownership of the clear, which is what stops a '
+    + 'second site deleting the records before any merge landed');
 });
 
 // --- LND-02: the gate's caller pipes rulings, and names what nothing ruled ---

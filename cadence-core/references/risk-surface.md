@@ -194,5 +194,6 @@ CLEAN rather than erroring:
   it, every round, basenames preserved - the pairing above is BY NAME, so a
   renamed carry would read as unruled and halt every close - copied to
   `.planning/risk-carry/<N>/`. The consumer globs are BOTH roots. That carried
-  copy is TRANSIENT and never staged (milestone.md step 7 deletes it):
-  committed, it would hard-halt every later land on an answered finding.
+  copy is TRANSIENT and never staged (the `/cad-land` that merges deletes it at
+  its step 4, never the close that halted): committed, it would hard-halt every
+  later land on an answered finding.

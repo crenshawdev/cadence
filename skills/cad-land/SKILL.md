@@ -249,6 +249,15 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
    was already removed, or `git.on_land_cleanup` is off - leave HEAD and the
    branch in place. Report the final state: HEAD on `<base>`, pulled, branch
    reaped (or left).
+
+   **Then clear the carried rulings.** Delete `.planning/risk-carry/` - the
+   transient copies `/cad-milestone` made of this cycle's `risk_surface` reviews
+   and records before it pruned the phase dirs. This step is the ONLY actor that
+   clears them, and a confirmed merge is the only event proving the 3(b) halt
+   they exist for was answered: a close that HALTED leaves them in place on
+   purpose, so a retry still reads the blocker it stopped on. Do it whatever the
+   reap seam answered - an `action:"skip"` is about the branch, not about the
+   records. Untracked by construction, so this stages nothing.
 </process>
 
 <guardrails>

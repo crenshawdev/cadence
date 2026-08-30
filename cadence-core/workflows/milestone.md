@@ -120,9 +120,10 @@ which is the tier `/cad-why` reads. It refuses rather than overwriting a carried
 ruling that differs, so relay any `ok:false` and STOP - the prune below deletes
 what this could not carry.
 
-**TRANSIENT, never staged**, deleted by step 7 when the close resolves. Commit
-`.planning/risk-carry/` and a ruling rides onto base, where every later
-autonomous land reads it again and halts on a finding answered a milestone ago.
+**TRANSIENT, never staged**, deleted by the `/cad-land` that actually MERGES
+(its step 4) and by nothing else. Commit `.planning/risk-carry/` and a ruling
+rides onto base, where every later autonomous land reads it again and halts on
+a finding answered a milestone ago.
 
 **Then carry the DEFERRED queue out of each pruned phase, per phase, before the
 seam call below.** Same reason one paragraph up and a different artifact: a
@@ -139,9 +140,9 @@ pruned with the phase, and refuses rather than overwriting - relay any
 `ok:false` and stop, because the next step deletes what it could not carry.
 
 The difference from the `risk_surface` carry above, stated once: that carry is
-TRANSIENT and step 7 deletes it, while the carried queue is COMMITTED and stays
-until it is adjudicated. Deleting it at step 7 would delete the only thing
-stopping the chained land.
+TRANSIENT and the land that merges deletes it, while the carried queue is
+COMMITTED and stays until it is adjudicated. Deleting either one at step 7 would
+delete the only thing stopping the chained land.
 
 One seam call does the mechanical half of the close - checked phases leave
 ROADMAP.md (their `- [x]` line AND their `### Phase N:` detail section, since
@@ -183,9 +184,9 @@ Commit this as `chore: prune <label> completed phases` (label = the version on
 a release, else the milestone name), staging ROADMAP.md, REQUIREMENTS.md,
 `.planning/ARCHIVE.md` and any `_archive-<label>/` move. NOT
 `.planning/risk-carry/` - it is transient, and ARCHIVE.md is its opposite: that
-directory exists to be read and deleted by step 7, while the residue IS the
-recall corpus for every milestone this project has closed and dies with the
-working tree untracked.
+directory exists to be read by the chained land and deleted by the one that
+merges, while the residue IS the recall corpus for every milestone this project
+has closed and dies with the working tree untracked.
 
 ## 4. Evolve PROJECT.md - or close only
 First the arm, asked through the ask-user seam with no preselected default: does
@@ -253,9 +254,15 @@ all - stops the chain before merge (nothing is force-merged), and only because
 step 3 carried those rulings out of the phase dirs it pruned. Skip that and this
 sentence is false: the gate reads an empty set and merges.
 
-Delete `.planning/risk-carry/` once the close resolves, on BOTH arms - the halt
-included, or a halt the user answers by landing manually leaves the records
-behind to halt the next milestone too.
+Do NOT delete `.planning/risk-carry/` here, on either arm. Step 3 already pruned
+the phase dirs, so the carry is the last surviving copy of the rulings that halt
+rests on: delete it and the very next `/cad-land` globs two empty roots, is
+handed `{"findings":[]}`, and merges over the blocker this one just refused. The
+actor that clears it is `/cad-land` step 4, on a merge it CONFIRMED landed - the
+retry once the halt is answered, or the manual land the user comes back to
+finish. So a carry still on disk means a close nobody finished, and the next
+milestone halting on it is the answer rather than the bug; clear it by hand only
+when the branch it belongs to merged outside Cadence.
 
 Ordering note (intentional, not a latent bug): this chain runs AFTER step 4
 evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer
