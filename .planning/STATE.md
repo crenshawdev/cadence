@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 5 (Land reads rulings, not raw findings)
-Status: phase complete
-Next: /cad-context 5 (last phase; then /cad-audit before any ship)
+Phase: 5 of 5 (A contended rotation loses no event)
+Status: context gathered
+Next: /cad-plan 5
 Updated: 2026-08-30
