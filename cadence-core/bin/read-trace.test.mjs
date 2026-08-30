@@ -428,6 +428,32 @@ test('a claim carrying NO sidecar at all reads as live, the same way', () => {
   assert.equal(existsSync(readsClaimPath(d)), false, 'a loser published a stamp it does not own');
 });
 
+test('an eviction that cannot CONFIRM its claim puts the generation back (AC3)', () => {
+  // The leftover-generation arm used to skip the confirm on the grounds that
+  // its own discriminator answered - but that discriminator is read BEFORE the
+  // eviction rename, so a writer that linked in between has a live claim
+  // renamed away with nothing to put it back, and the cost is the whole record
+  // rather than one deferred rotation (D-02).
+  const d = tmp();
+  appendRead(d, { ts: TS, tool: 'Read', target: '/before-the-eviction' });
+  padToReadsBound(d);
+  // A leftover generation an earlier rotation left...
+  writeFileSync(rotatedReadsPath(d), 'a generation an earlier rotation left\n');
+  const generation = readFileSync(rotatedReadsPath(d), 'utf8');
+  // ...and a sidecar path `publish` cannot date, so the claim is unconfirmable
+  // and `mine` is still null when the confirm asks.
+  mkdirSync(readsClaimPath(d));
+
+  const res = appendRead(d, { ts: TS, tool: 'Read', target: '/after-the-eviction' });
+  assert.equal(res.written, true, `an unconfirmable eviction cost the append: ${res.reason}`);
+  assert.equal(readFileSync(rotatedReadsPath(d), 'utf8'), generation,
+    'the generation was destroyed by an eviction that could not confirm its claim');
+  assert.deepEqual(readsSiblings(d).filter((f) => f.includes('.evict')), [],
+    'the evicted generation was left at its private path');
+  assert.ok(readFileSync(readsPath(d), 'utf8').includes('/after-the-eviction'),
+    "the writer's own record is not in the live record");
+});
+
 test('a COMPLETED rotation leaves its sidecar behind, inert, and does not rotate again', () => {
   const d = tmp();
   appendRead(d, { ts: TS, tool: 'Read', target: '/gen-one' });

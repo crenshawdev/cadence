@@ -729,8 +729,9 @@ export function rotateReads(planningRoot, reserve) {
           // remedy: the trigger is re-read from the record's size on every
           // call, so only a COMPLETED rotation ends the state. The sidecar's
           // age is consulted ONLY here, where the sibling is the same inode;
-          // where it is a different one it is a leftover generation and that
-          // arm's own discriminator answers on its own.
+          // where it is a different one it is a leftover generation, and that
+          // reading is CONFIRMED after the eviction rather than trusted, because
+          // this line is read before the rename and a writer can link in between.
           abandoned = attempt === 0 && wasStale;
           if (!abandoned) {
           // A rotation is genuinely IN FLIGHT and this process lost the claim.
@@ -784,29 +785,38 @@ export function rotateReads(planningRoot, reserve) {
         try { renameSync(sibling, path); } catch { return { rotated: false }; }
         evicted = path;
         if (!abandoned) leftover = path;
-        // CONFIRM AFTER CLAIMING, on the ABANDONED arm only, and before
-        // anything is read or written. The rename above may have taken the
-        // sibling from a claimant that arrived between the age read and here: a
-        // second reclaimer wins the eviction race, re-links and stamps its own
-        // fresh sidecar, and the mtime is no longer the one this process wrote.
-        // Breaking THAT claim is not a deferred rotation, it is the whole
-        // record. Put the sibling back only where nothing has taken the path
-        // meanwhile - a plain rename back would clobber a claim a fourth writer
-        // legitimately holds - and either way CLEAR `evicted` so the release
-        // cannot delete a claim that was just restored. The leftover-generation
-        // arm has its own discriminator and does not gain a confirm
-        // (`lib/trace.mjs:837-867`).
-        if (abandoned) {
-          let refreshed = false;
-          try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
-          if (refreshed) {
-            try {
-              if (!existsSync(sibling)) renameSync(path, sibling);
-              else unlinkSync(path);
-            } catch { /* it vanished under us - there is nothing left to restore */ }
-            evicted = null;
-            return { rotated: false };
-          }
+        // CONFIRM AFTER CLAIMING, on BOTH eviction arms, before anything is read
+        // or written. The rename above may have taken the sibling from a
+        // claimant that arrived between the discriminator and here: a second
+        // writer links, stamps its own fresh sidecar, and the mtime is no longer
+        // the one this process wrote. Breaking THAT claim is not a deferred
+        // rotation, it is the whole record.
+        //
+        // THE LEFTOVER ARM GETS IT TOO (D-02), where it used to be excluded on
+        // the grounds that its own discriminator already answered. It does not:
+        // `readsRotationInFlight(file, sibling)` is read at the top of this
+        // catch, BEFORE the eviction rename below, so a writer that linked in
+        // between has a live claim that reads as a leftover generation here and
+        // is renamed away with no confirm to put it back. The window is small
+        // and the cost is the whole record, which is the trade the abandoned arm
+        // already refused to take.
+        //
+        // `mine === null` counts as unconfirmed: a `publish` that could not date
+        // the sidecar cannot prove the claim is this process's, and the fail-live
+        // reading everywhere else is what this branch is being consistent with.
+        // Put the sibling back only where nothing has taken the path meanwhile -
+        // a plain rename back would clobber a claim a fourth writer legitimately
+        // holds - and either way CLEAR `evicted` so the release cannot delete a
+        // claim that was just restored.
+        let refreshed = false;
+        try { refreshed = mine === null || statSync(claim).mtimeMs !== mine; } catch { refreshed = true; }
+        if (refreshed) {
+          try {
+            if (!existsSync(sibling)) renameSync(path, sibling);
+            else unlinkSync(path);
+          } catch { /* it vanished under us - there is nothing left to restore */ }
+          evicted = null;
+          return { rotated: false };
         }
       }
     }
