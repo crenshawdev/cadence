@@ -927,6 +927,14 @@ function cmdTrace(dir, sub, opts) {
       ...(read === undefined ? {} : { read }),
       ...(step === undefined ? {} : { step }),
       ...(reviewer === undefined ? {} : { reviewer }),
+      // A dispatch that committed NOTHING because its tasks were already
+      // satisfied in HEAD. The bracket is otherwise byte-identical in shape to
+      // a real one, so two measured replays charged 30,588 and 24,570 tokens
+      // that a cost read over this file counted as execution. Present only when
+      // true, the shape every optional field here takes: `false` and absent say
+      // the same thing, and writing a `replay: false` onto every close would
+      // put a replay field on thousands of dispatches that were not one.
+      ...(opts.replay === true ? { replay: true } : {}),
       ...(trigger === undefined ? {} : { trigger }),
       // The worker's host id, carried so the `SubagentStop` hook can tell a
       // worker that has ALREADY been closed from one still running. It is the

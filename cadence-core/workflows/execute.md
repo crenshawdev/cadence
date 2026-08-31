@@ -258,8 +258,16 @@ declared files (references/seam-spawn-agent.md's Routing block states the rule).
 Once that executor comes back, append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --agent-id <the id on the subagent return> --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --duration-ms <the wall clock on that same return> --detail-file <path> [--replay]
 ```
+
+`--replay` ONLY when the digest's `Commits:` read `none (already applied)`: the
+dispatch cost real tokens and performed no work, and without the flag its
+bracket is byte-identical in shape to a real one. Two measured replays charged
+30,588 and 24,570 tokens that a cost read over `trace.jsonl` counted as
+execution. It is a structured flag and never a `--detail` note, because the
+close arm infers `checkpoint` from a non-blank detail - a replay written there
+would bill a finished dispatch as an unusable one.
 
 ONE line per executor, and the detail is the executor's own return line - write
 it to a scratch file and pass the PATH (caller-derived text -
@@ -293,7 +301,10 @@ file's job.
 Handle the executor's return:
 - **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
   path `<plandir>/reports/plan-<k>.md`. Do not open the file here; `summary`
-  reads it.
+  reads it. A digest whose `Commits:` reads `none (already applied)` is STILL
+  complete - the work is in HEAD - but this dispatch performed none of it, so
+  its close carries `--replay` and its tokens are subtractable from any cost
+  read rather than counted as execution.
 - **checkpoint** -> handle_checkpoint, then dispatch a fresh continuation.
 - **partial** (`PLAN PARTIAL`, a digest but no checkpoint) -> the report FILE
   is authoritative: open `<plandir>/reports/plan-<k>.md` for the task numbers
@@ -422,6 +433,14 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
   situation.
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
+- **suite-red** (the project's full suite is still red after the executor's one
+  repair round) -> the report file names the failing output; the continuation
+  dispatch carries that path and the regression is its first task. Do NOT treat
+  it as complete and do NOT run the suite yourself to see: the plan's report
+  says `PLAN CHECKPOINT: suite-red`, so `replay-check` already reports the plan
+  outstanding, and a green run in your own turn would not change what is on
+  disk. This is the one checkpoint type whose cause is a cross-task regression
+  rather than a decision, so it needs no ask - dispatch the continuation.
 
 A `blocked` halt naming a MISSING PLAN file is the one arm that also has a named
 orchestrator-side remedy, because its cause is known: the worktree forked from a
