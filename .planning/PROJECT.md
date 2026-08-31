@@ -204,7 +204,10 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `/cad-phase add` opens the next one.
+**`v3.7.9 - progress not perfection`, opened 2026-08-31.** One phase so far:
+the three sites where Cadence names a next step that is unreachable, stale, or
+not the outstanding work - `GH-233`, `GH-232` and `GH-218`. The source is the
+open tracker after the v3.7.8 close.
 
 **`v3.7.8 - what Cadence already knows`, opened 2026-08-29, closed 2026-08-30.**
 Five phases, 86 commits off `main` (10 feat and 22 fix against 36 docs, 14 test,
