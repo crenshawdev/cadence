@@ -15,7 +15,7 @@ with progress and task alongside.
 | `/cad-plan [N]` | Create an executable PLAN.md (planner subagent, optional check gate, fires the plan review). |
 | `/cad-execute [N]` | Execute a phase's plans - one executor per plan, atomic commit per task, slim SUMMARY. |
 | `/cad-verify [N]` | Conversational UAT for a completed phase (persistent checklist; `--sweep` cross-phase, `--deep` goal-backward). |
-| `/cad-progress` | Where the project stands and what is next - derived from files and git, auto-resumes paused work (`--stats`). |
+| `/cad-progress` | Where the project stands and what is next - derived from files and git; finds incomplete or paused work and offers to resume it (`--stats`). |
 | `/cad-report [N]` | A phase's run record as receipts - every dispatch priced, every gate's outcome, every refuted assumption (`--all` for the milestone view). |
 | `/cad-task <desc>` | A small off-roadmap task with atomic commits (`--plan` for multi-step). |
 

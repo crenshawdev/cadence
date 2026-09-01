@@ -3,8 +3,8 @@ Answer "where am I and what's next" from the filesystem and git, then hand
 off to the spine skill that does the next piece of work. The derivation is
 the planning seam's `status` subcommand - count-based truth from ROADMAP and
 phase artifacts; the STATE.md cursor is only a hint. This workflow reports,
-reconciles the cursor, and routes. Includes auto-resume of incomplete or
-paused phases and stats (`--stats`).
+reconciles the cursor, and routes. It finds incomplete or paused phases and
+offers to resume them, and prints stats (`--stats`).
 </purpose>
 
 <process>

@@ -548,7 +548,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-29 | README.md | 83 | Deep verification off at `solo`, on at `shipped` and `critical`. | accurate | accurate | 2 |
 | README-30 | README.md | 22 | Commands are namespaced `/cadence:cad-*`. | accurate | accurate | 2 |
 | README-31 | README.md | 24 | The five loop commands exist as named. | accurate | accurate | 2 |
-| README-32 | README.md | 34 | `/cad-progress` auto-resumes incomplete work. | accurate | accurate | 2 |
+| README-32 | README.md | 49 | `/cad-progress` finds incomplete or paused work and offers to resume it. | stale | corrected - v3.7.9 phase 1 (DOC-05): the workflow makes one routing suggestion through the ask-user seam and its handoff step invokes nothing unless the user accepts, so the sentence describes that offer rather than a resume the command never performs on its own. Claim text rewritten to the live sentence so the row still joins (the README-44 shape) | 2 |
 | README-33 | README.md | 36 | `docs/figures/phase-loop.svg` exists. | accurate | accurate | 2 |
 | README-34 | README.md | — | WORKFLOW.md holds fifteen decision points, the eighteen-cell grid, and the trigger-by-level table. | accurate | RETIRED - the docs/WORKFLOW.md inventory paragraph was cut in the controls rewrite | 2 |
 | README-35 | docs/EXAMPLE.md | 5-9 | `/cad-new-project` writes PROJECT.md, REQUIREMENTS.md and a phased ROADMAP.md into `.planning/` and sets a cursor. | accurate | accurate | 1 |
