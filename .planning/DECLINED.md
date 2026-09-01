@@ -233,3 +233,7 @@ Low. Cadence's own reference files are hand-written and do not currently nest fe
 
 Raised in review of the v3.7.2 release, adjudicated against the code 2026-08-26.
 
+- 2026-09-01 github crenshawdev/cadence 3ff2ae889690dc37: [cadence 3ff2ae889690dc37] `status` can advertise an outstanding dispatchable plan for a phase that `replay-check` refuses to dispatch, because it reads only `p.plans` and never applies replay-check's
+- 2026-09-01 github crenshawdev/cadence 3482711731b8cf77: [cadence 3482711731b8cf77] The documented handling of an absent `outstanding` field is not implemented by the routing rules, so an older status seam is effectively treated as an empty outstanding set
+- 2026-09-01 github crenshawdev/cadence dfc9960e87849ea7: [cadence dfc9960e87849ea7] Selecting the next free plan filename via `ls` before the planner writes it is a check-then-act race and does not ensure the promised no-overwrite behavior.
+- 2026-09-01 github crenshawdev/cadence e491480d4992c7c0: [cadence e491480d4992c7c0] The workflow now offers to resume incomplete or paused work rather than automatically resuming it.

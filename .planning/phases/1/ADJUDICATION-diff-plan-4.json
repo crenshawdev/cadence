@@ -1,0 +1,39 @@
+{
+  "phase": "1",
+  "trigger": "diff",
+  "discriminator": "plan-4",
+  "round": 1,
+  "base": "c682da4e",
+  "head": "7e3e23a1",
+  "base_id": "c682da4e140cf9dabd14842e796a8e8c87e62df2",
+  "head_id": "7e3e23a14989c10064a9ec605cd8a52a9dbf8c9e",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/workflows/progress.md",
+      "line": 6,
+      "severity": "high",
+      "claim": "The workflow now offers to resume incomplete or paused work rather than automatically resuming it.",
+      "failure_scenario": "Running `/cad-progress` with an incomplete or paused phase still follows the pre-existing automatic routing/handoff: this diff changes only the purpose text (the 19-byte workflow budget increase is fully accounted for by that wording) and does not add an ask-user gate or alter any dispatch step. The command can therefore begin/resume work without consent while README, COMMANDS, and the skill description promise only an offer.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/workflows/progress.md",
+        "line": 233,
+        "note": "The ask-user gate the finding says is absent is already there and predates this diff. progress.md:233-235 ends the route step with Offer the suggestion through the ask-user seam (references/seam-ask-user.md), 1. Continue now - invoke the suggested skill, 2. Stop here - report only; the handoff step at line 239 begins If the user chose to continue; and the guardrails close with Never invoke a spine skill without the user accepting the offer. That is why plan 4 changed only the wording - the behaviour already matched offers to resume, and the defect was three documents promising an automatic one."
+      },
+      "base_id": "c682da4e140cf9dabd14842e796a8e8c87e62df2",
+      "head_id": "7e3e23a14989c10064a9ec605cd8a52a9dbf8c9e"
+    }
+  ]
+}

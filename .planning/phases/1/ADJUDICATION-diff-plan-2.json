@@ -1,0 +1,39 @@
+{
+  "phase": "1",
+  "trigger": "diff",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "bf02a407",
+  "head": "071dde61",
+  "base_id": "bf02a407cd16836f054194bf151849086b74e67a",
+  "head_id": "071dde612c3c861eaddbbde3061617d77e6b9020",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning/status.mjs",
+      "line": 307,
+      "severity": "medium",
+      "claim": "`status` can advertise an outstanding dispatchable plan for a phase that `replay-check` refuses to dispatch, because it reads only `p.plans` and never applies replay-check's nonconforming-plan gate.",
+      "failure_scenario": "Create a phase containing a valid unfinished `PLAN.md` and an invalid plan-shaped file such as `PLAN-x.md`. `derivePhases` supplies the valid plan in `p.plans`, so `status` returns `outstanding: [{ phase: 1, plans: ['PLAN.md'] }]`. But `replay-check --phase 1` calls `listPlanFiles` and fails when `nonconforming` is nonempty, producing no `dispatch_set`. A router using the new outstanding field will send work to replay-check that cannot run, contradicting the claimed shared dispatch set and leaving the phase unroutable.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/planning/replay-check.mjs",
+        "line": 43,
+        "note": "cmdReplayCheck returns ok({...}) with dispatch_set unconditionally and spreads nonconforming_plans onto that same envelope as an ADDITIVE key (line 54); it never refuses on it. Its only two refusals are fail(bad-args) on a phase-spelling collision (lines 22-25) and fail(no-phase-dir) when listPlanFiles reports missing (lines 28-31), neither of which reads nonconforming. core.mjs:317-322 returns nonconforming beside a populated plans array rather than throwing, so a PLAN-x.md sibling leaves PLAN.md in plans and dispatch_set is derived from it via the same readPlanReports call status uses for outstanding."
+      },
+      "base_id": "bf02a407cd16836f054194bf151849086b74e67a",
+      "head_id": "071dde612c3c861eaddbbde3061617d77e6b9020"
+    }
+  ]
+}
