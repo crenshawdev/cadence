@@ -3362,13 +3362,21 @@ test('EXP-05: the executor and the verifier state one rule in one vocabulary', (
 
 const TASK_WF = ['cadence-core', 'workflows', 'task.md'];
 
-/** The `- **Too big**` bullet of task.md's `scope` step, by its own anchors. */
+/**
+ * The `- **Too big**` arm of task.md's `scope` step, WHOLE: from its own marker
+ * to the END of the step body.
+ *
+ * It used to stop at the first blank line, which was the same slice while the
+ * arm was one paragraph - and became a silent vacuity the moment PHS-03 gave
+ * the arm a branch per `status` answer, because every assertion below would
+ * then have read the first paragraph only and passed on prose it never opened.
+ * The step body is the right bound: the arm is the last bullet in it.
+ */
 const tooBigArm = (text) => {
   const step = stepBody(text, 'scope', 'task.md');
   const at = step.indexOf('- **Too big**');
   assert.ok(at > -1, "task.md's scope step carries no `- **Too big**` bullet");
-  const end = step.indexOf('\n\n', at);
-  return step.slice(at, end === -1 ? step.length : end);
+  return step.slice(at);
 };
 
 test('PHS-02 (1): the too-big arm names /cad-phase add before the commands that need a phase', () => {
@@ -3481,4 +3489,32 @@ test('PHS-03: task.md classifies before it guards, with one guard step', () => {
   assert.match(stepBody(task, 'git_guard', 'task.md'), /[Ii]nline and planned/,
     'PHS-03: task.md\'s git_guard step no longer names the inline and planned arms as its '
     + 'scope, so it reads as applying to every invocation again');
+});
+
+test('PHS-03: the phase-sized arm names both doors where there is no planning tree', () => {
+  const arm = tooBigArm(doc(...TASK_WF));
+  const regressed = "PHS-03: task.md's phase-sized arm assumes a planning tree again - in a "
+    + 'repository with no .planning/ it routes the user at the one command that appends to a '
+    + 'roadmap, which is the command guaranteed to refuse where no roadmap exists';
+  // These two are also the widened slice's own non-vacuity proof: neither
+  // string is reachable from the arm's FIRST PARAGRAPH, so a `tooBigArm` that
+  // regressed to the first-blank-line bound fails HERE instead of passing
+  // silently on every assertion in this file.
+  assert.match(arm, /\/cad-adopt/, regressed);
+  assert.match(arm, /\/cad-new-project/, regressed);
+  // The treeless branch ALONE, by its own anchors. A whole-arm absence check
+  // cannot serve: the initialised branch above it names /cad-phase add and is
+  // right to.
+  const at = arm.indexOf('`no-planning-dir`');
+  assert.ok(at > -1,
+    "task.md's phase-sized arm no longer branches on the seam's `no-planning-dir` reason, so "
+    + 'it computes `total + 1` over an envelope that carries no total');
+  const end = arm.indexOf('On any other `ok:false`', at);
+  assert.ok(end > at,
+    "task.md's phase-sized arm no longer relays the remaining `ok:false` envelopes, so a "
+    + 'refusal it did not anticipate is reported as a phase-sized verdict');
+  const treeless = arm.slice(at, end);
+  assert.match(treeless, /\/cad-adopt/, regressed);
+  assert.match(treeless, /\/cad-new-project/, regressed);
+  assert.doesNotMatch(treeless, /\/cad-phase add/, regressed);
 });
