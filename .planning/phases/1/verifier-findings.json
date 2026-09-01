@@ -1,0 +1,95 @@
+{
+  "status": "needs_human",
+  "score": "6/7",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "/cad-task classifies before it guards, so a phase-sized description reaches its stop with no protected-branch or integration-branch question.",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/workflows/task.md - step order is scope :21, git_guard :60, bracket :71 (grep -n '<step name='), and the guard body :61-62 scopes itself: '(Inline and planned scope only. The \"too big\" arm has already said so and stopped, so it reaches no commit and is charged no branch question.)'. Exactly one <step name=\"git_guard\"> in the file, so no copied second statement of the rail. node --test --test-name-pattern='PHS-03' cadence-core/bin/prose-agreement.test.mjs -> 2 pass, 0 fail; :3519 asserts scope < guard < bracket, the single-guard count, and the arm-scoping sentence."
+    },
+    {
+      "n": 2,
+      "truth": "The phase-sized arm branches on what is on disk and, in a repository with no .planning/, names /cad-adopt and /cad-new-project and never /cad-phase add.",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/workflows/task.md:29-56 - the arm runs `planning.mjs status` first, then branches: ok:true -> /cad-phase add with `total + 1` (:33-39); ok:false with reason `no-planning-dir` -> :41-53, which forbids computing total+1 and names both doors ('/cad-adopt starts one from a repo that already has code and history; /cad-new-project starts one from a blank page'); any other ok:false relayed at :54. Value traced across the seam: `node cadence-core/bin/planning.mjs status --dir <missing>/.planning` returns {\"ok\":false,\"reason\":\"no-planning-dir\",...} from cadence-core/bin/planning/status.mjs:131 - the exact string the arm branches on. prose-agreement.test.mjs:3545 slices the no-planning-dir branch ALONE (from '`no-planning-dir`' to 'On any other `ok:false`') and asserts /cad-adopt, /cad-new-project present and /cad-phase add absent - passes by name."
+    },
+    {
+      "n": 3,
+      "truth": "/cad-plan --gaps on a phase that already has PLAN.md writes PLAN-2.md and leaves PLAN.md and its report byte-identical.",
+      "status": "UNCERTAIN",
+      "uat_item": 3,
+      "evidence": "Present and wired: cadence-core/workflows/plan-gaps.md:17-28 resolves the write target with `ls .planning/phases/<N>/PLAN*.md` and takes the next free number (bare PLAN.md counts as plan 1), :36-40 hands that exact filename to plan.md's spawn_planner as 'Write target: the filename step 3 resolved, never PLAN.md'; cadence-core/workflows/plan.md:185 carries the matching gaps-mode override ('never PLAN.md and never any file already on disk'); skills/cad-planner-contract/SKILL.md:192 agrees. Downstream plan.md steps read PLAN*.md globs (:316, :387, :407), so a PLAN-2.md flows through review and census unchanged. The seam CONSEQUENCE is proven separately - cadence-core/bin/planning-status.test.mjs:496 puts PLAN-2.md beside a complete PLAN.md and gets replay-check dispatch_set ['PLAN-2.md'] (passes by name). What nothing settles: the write itself is performed by a spawned planner following prose, and no test pins the rule - `grep -rn 'plan-gaps|next free plan' cadence-core/bin/*.test.mjs cadence-core/bin/self-verify.mjs` returns nothing - so neither a named test nor a non-mutating spot-check observes PLAN-2.md appearing or PLAN.md staying byte-identical."
+    },
+    {
+      "n": 4,
+      "truth": "An executed phase whose outstanding set names plans routes to /cad-execute {N}, and a fixture test pins the case.",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "cadence-core/workflows/progress.md:196 is the route row '| Lowest **executed** phase `outstanding` names | /cad-execute {N} |', and :47-54 is the derive step that reads the key off the one status envelope it already fetched. Fixture test cadence-core/bin/planning-status.test.mjs:472 builds phases/1 with SUMMARY.md, PLAN.md, PLAN-2.md and reports/plan-1.md reading 'PLAN COMPLETE', then asserts the derived status is still 'executed' AND outstanding deep-equals [{phase:1,plans:['PLAN-2.md']}] - passes by name. prose-agreement.test.mjs:1540 pins the row's condition, its /cad-execute target and its position - passes by name. Both ran green in this pass."
+    },
+    {
+      "n": 5,
+      "truth": "A phase whose outstanding set is empty still routes to /cad-verify {N} - the new row narrows the executed case rather than inverting it.",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/workflows/progress.md:196 is conditional on `outstanding` naming plans and the unchanged '| Lowest **executed** phase | /cad-verify {N} |' row sits directly below it at :197; :209-214 states the narrowing rule explicitly. prose-agreement.test.mjs:1562-1576 asserts the outstanding row sits BELOW 'Lowest **planned** phase' and ABOVE the plain executed row and did not replace it - passes. planning-status.test.mjs:481 (every report complete) returns outstanding [] with status still 'executed'. Live: `node cadence-core/bin/planning.mjs status` on this repo returns phase 1 at status 'executed' with outstanding [], so first-match-wins lands on the /cad-verify row."
+    },
+    {
+      "n": 6,
+      "truth": "planning.mjs status carries the outstanding key on every ok answer, [] rather than absent when nothing is outstanding, off one shared definition, and CURSOR_STATUSES gained no value.",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "cadence-core/bin/planning/status.mjs:308-318 - `outstanding` is built for every derived phase and spread unconditionally into the file's ONLY ok() emission (grep -n 'ok({' status.mjs -> :315), so no branch can drop it. Live call prints \"outstanding\":[]; planning-status.test.mjs:490-493 asserts hasOwnProperty in the empty state. One definition: core.mjs:357 readPlanReports is the shared reader that replay-check.mjs:40 also uses, and planning-status.test.mjs:496 asserts status.outstanding[0].plans deep-equals replay-check's dispatch_set on the same fixture. CURSOR_STATUSES untouched - `git diff 34d34372 HEAD -- cadence-core/bin/lib/planning-files.mjs` is empty, and the new pin at cadence-core/bin/planning-files.test.mjs:2456 asserts the list holds exactly its six values. Full suite `node cadence-core/bin/test.mjs`: 3684 tests, 3683 pass, 0 fail, 1 skip, exit 0; `npx tsc -p tsconfig.ci.json` exit 0."
+    },
+    {
+      "n": 7,
+      "truth": "The five shipped auto-resume claims describe an offer, the DOCS-CLAIMS README-32 row is corrected, and self-verify reports no budget-overrun.",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "All five read as an offer: README.md:49, skills/cad-progress/SKILL.md:3, skills/cad-pause/SKILL.md:3 and :16, cadence-core/references/COMMANDS.md:18, cadence-core/workflows/progress.md:6-7. `grep -rn -iE 'auto[- ]?resum|automatic(ally)? resum|resumes automatically' README.md skills cadence-core .planning/DOCS-CLAIMS.md` exits 1 with no output. The restated claim matches the code: progress.md:233-236 offers through the ask-user seam and the handoff step :241-244 invokes only if the user chose to continue. .planning/DOCS-CLAIMS.md:551 README-32 now carries line 49, the live sentence as claim text, verdict `stale`, resolution `corrected - v3.7.9 phase 1 (DOC-05)` - the shape the ledger's own :296-309 paragraph documents for a rewritten claim (stale is the finding, the resolution is the fix). `node cadence-core/bin/self-verify.mjs` -> {\"ok\":true,...,\"problems\":[]} with `budgets` among the 30 checks, and every re-pinned row equals `wc -c` exactly (progress.md 14974, task.md 16483, cad-progress 1154, cad-pause 2181, COMMANDS.md 5424). The only repo-wide leftovers are DESIGN.md:67 (the pre-v1 design plan) and CHANGELOG.md:4376 (under `## [1.0.0] - 2026-07-16`) - historical records, outside docs-verify's default set (docs-verify.md:9) and outside the guarded surfaces (citation-census.test.mjs:64), loaded into no prompt."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Phase-sized /cad-task stops without a branch question",
+      "evidence": "task.md orders scope :21 < git_guard :60 < bracket :71, one git_guard step only, and its body scopes itself to 'Inline and planned scope only', naming the too-big arm as reaching no commit. PHS-03 prose tests (prose-agreement.test.mjs:3519) pass by name."
+    },
+    {
+      "k": 2,
+      "name": "Treeless phase-sized arm names the two starting doors",
+      "evidence": "task.md:41-53 is the `no-planning-dir` branch: it forbids `total + 1`, names /cad-adopt and /cad-new-project, and never /cad-phase add. The seam really answers that reason - status --dir on a missing .planning returns {\"ok\":false,\"reason\":\"no-planning-dir\"} (status.mjs:131). prose-agreement.test.mjs:3545 slices that branch alone and passes."
+    },
+    {
+      "k": 4,
+      "name": "An unexecuted gap plan beside a SUMMARY routes to /cad-execute",
+      "evidence": "progress.md:196 routes an executed phase whose `outstanding` names plans to /cad-execute {N}; planning-status.test.mjs:472 pins the SUMMARY + PLAN.md + PLAN-2.md fixture at status 'executed' with outstanding [{phase:1,plans:['PLAN-2.md']}], and prose-agreement.test.mjs:1540 pins the row. Both pass by name."
+    },
+    {
+      "k": 5,
+      "name": "An empty outstanding set still routes to /cad-verify",
+      "evidence": "The outstanding row at progress.md:196 is conditional and the unchanged /cad-verify row sits directly below at :197; prose-agreement.test.mjs:1562-1576 asserts it narrows rather than replaces. Live status on this repo: phase 1 'executed' with outstanding [], which reaches the /cad-verify row."
+    },
+    {
+      "k": 6,
+      "name": "status carries outstanding on every call",
+      "evidence": "status.mjs:308-318 spreads `outstanding` into the file's only ok() emission; live call prints []; planning-status.test.mjs:490-493 pins presence in the empty state and :496 pins deep-equality with replay-check's dispatch_set off the shared core.mjs:357 reader. CURSOR_STATUSES unchanged (empty git diff on planning-files.mjs) and newly pinned at planning-files.test.mjs:2456."
+    },
+    {
+      "k": 7,
+      "name": "Auto-resume claims restated and budgets clean",
+      "evidence": "All five sites read as an offer and the auto-resume grep over README.md, skills, cadence-core and DOCS-CLAIMS.md exits 1 with no output; DOCS-CLAIMS.md:551 carries line 49, the rewritten claim, verdict stale and the corrected- resolution; self-verify returns problems:[] and each re-pinned budget equals wc -c exactly."
+    }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "/cad-plan --gaps writes the next free plan number",
+      "expected": "On a phase directory already holding PLAN.md and reports/plan-1.md, /cad-plan --gaps creates PLAN-2.md and leaves PLAN.md and reports/plan-1.md byte-identical (sha256 before and after).",
+      "why_human": "No probe exercised it and none can without mutating the repo: the plan file is written by a spawned planner agent following workflow prose, so settling it needs a real /cad-plan --gaps run that dispatches a planner and writes into .planning/phases/<N>/. Nothing in the tree pins the rule either - grep for 'plan-gaps' and 'next free plan' across cadence-core/bin/*.test.mjs and self-verify.mjs returns nothing - so code inspection can confirm only that the instruction exists at plan-gaps.md:17-40, plan.md:185 and cad-planner-contract/SKILL.md:192 and is carried to the planner, not that the write lands where it says."
+    }
+  ]
+}

@@ -491,9 +491,9 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PHS-03 | Phase 1 | Pending |
-| RTE-01 | Phase 1 | Pending |
-| DOC-05 | Phase 1 | Pending |
+| PHS-03 | Phase 1 | Complete |
+| RTE-01 | Phase 1 | Complete |
+| DOC-05 | Phase 1 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its

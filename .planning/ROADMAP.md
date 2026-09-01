@@ -65,7 +65,7 @@ rather than a theme.
 
 ## Phases
 
-- [ ] **Phase 1: The next step it names is one you can take** - the three sites where Cadence prints a next action that is unreachable, stale, or not the outstanding work
+- [x] **Phase 1: The next step it names is one you can take** - the three sites where Cadence prints a next action that is unreachable, stale, or not the outstanding work
   - Requirements: `PHS-03`, `RTE-01`, `DOC-05`
 
 ## Phase Details
