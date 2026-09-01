@@ -1856,6 +1856,52 @@ test('CST-04: a response carrying no usage writes NEITHER key - absent, never ze
   }
 });
 
+test('CST-04: a credential-shaped span in the provider usage object never reaches the trace', async () => {
+  // The usage object is bytes a PROVIDER chose, and the event carrying it
+  // persists in `.planning/trace.jsonl` - so a hostile or compromised
+  // OpenAI-compatible gateway can answer 200 with a well-formed usage object
+  // carrying one extra field and, unfenced, that field is copied verbatim into
+  // the run record for good. The outbound fence cannot catch it: it runs on the
+  // instruction and the artifact, which are what leaves the machine.
+  //
+  // One case per rule the shared fence owns, because a fix that reached only
+  // the `name: value` spelling would leave the other three: a snake_case pair,
+  // an `authorization` echo, a URL carrying userinfo, and a camelCase name
+  // (which rule 4 structurally cannot see - it crosses `_`, `-` and `.` only).
+  const hostile = [
+    ['a credential-shaped name/value pair', { api_key: 'sk-live-AAAA1111BBBB2222' }],
+    ['an authorization echo', { authorization: 'Bearer sk-live-CCCC3333DDDD4444' }],
+    ['a URL carrying userinfo', { gateway: 'https://cad:s3cr3t-tok@gw.example.invalid/v1' }],
+    ['a camelCase credential name', { apiSecret: 'hunter2-not-a-real-secret' }],
+  ];
+  for (const [name, extra] of hostile) {
+    const before = providerEvents().length;
+    const r = await runFaked(REVIEW_ARGS,
+      { status: 200, body: openaiBody({ ...OPENAI_USAGE, ...extra }) });
+    assert.equal(r.envelope.ok, true, `${name}: ${r.line}`);
+    const ev = providerEvents().slice(before);
+    assert.equal(ev.length, 1, `${name} writes ONE event: ${JSON.stringify(ev)}`);
+    // The raw object is dropped WHOLE - asserted as absence, the same shape
+    // D-11 is asserted in, since a fenced-but-present object would still be a
+    // provider-shaped blob nobody vetted.
+    assert.equal('usage_raw' in ev[0], false, `${name}: ${JSON.stringify(ev[0])}`);
+    // And the PAIR still rides: a hostile extra field must not cost the event
+    // the figure it exists to carry, or the fence would be a denial-of-pricing.
+    assert.deepEqual(ev[0].usage, { input: 1837, output: 402 }, name);
+  }
+  // Not merely off that one key: none of the four planted values is anywhere in
+  // the record, which is the property the trace file actually has to have.
+  const written = readFileSync(FAULT_TRACE, 'utf8');
+  for (const needle of ['sk-live-', 's3cr3t-tok', 'hunter2']) {
+    assert.equal(written.includes(needle), false, `${needle} reached the trace`);
+  }
+  // The negative control, so none of the above can pass by dropping `usage_raw`
+  // always: a clean usage object from the same adapter still writes it.
+  const before = providerEvents().length;
+  await runFaked(REVIEW_ARGS, { status: 200, body: openaiBody(OPENAI_USAGE) });
+  assert.deepEqual(providerEvents().slice(before)[0].usage_raw, OPENAI_USAGE);
+});
+
 test('CST-04: a call that burned its budget and came back unusable still records what it burned', async () => {
   // D-04, one case per degraded terminal outcome. Three cases and not one,
   // because the usage read happens on the way to `extractText` and each of

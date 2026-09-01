@@ -1010,7 +1010,32 @@ function usageOf(usage, input, output) {
   let raw;
   try {
     const rendered = JSON.stringify(usage);
-    if (typeof rendered === 'string' && rendered.length <= MAX_USAGE_RAW_CHARS) raw = usage;
+    // TWO gates, and the raw object rides only past both. The size bound above
+    // is the first, and it is checked FIRST so the fence below never runs on
+    // more than `MAX_USAGE_RAW_CHARS` characters.
+    //
+    // The second is the SAME fence the outbound payload crosses - `fence()`,
+    // `redactUrl` composed with `redactCredentials`, never a second copy of
+    // either rule (D-14) - read here for its VERDICT rather than its text. A
+    // usage object is bytes a PROVIDER chose and this one is copied verbatim
+    // into an event that persists, so a hostile or compromised gateway
+    // answering 200 with `{"input_tokens":10,"api_key":"sk-live-..."}` would
+    // otherwise land a credential in `.planning/trace.jsonl` for good - and the
+    // outbound fence cannot see it, because it runs on the instruction and the
+    // artifact, which are what LEAVES the machine, not on what comes back.
+    //
+    // Dropped WHOLE rather than kept as the fenced text, for two reasons. The
+    // credential rule removes the NAME with its value, so a fenced usage object
+    // is no longer JSON (`{"a":1,<redacted>}`) and would have to be re-parsed to
+    // ride as an object at all. And a usage object is a small fixed set of
+    // counts - every shipped provider's is numbers and nested numbers - so a
+    // credential-shaped span inside one is not usage, and what an auditor would
+    // be joining back to the wire is a response no auditor should trust. Same
+    // arm the size bound already takes: the normalized pair still rides, and
+    // that pair is numbers alone (`tokenCount` refuses every non-number), so
+    // nothing it carries can be a credential.
+    if (typeof rendered === 'string' && rendered.length <= MAX_USAGE_RAW_CHARS
+      && fence(rendered).redactions === 0) raw = usage;
   } catch { /* unserializable (a cycle, a BigInt): the normalized pair still rides */ }
   return {
     normalized: {
