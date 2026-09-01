@@ -5,8 +5,38 @@
 
 ## Active
 
-No cycle open. `/cad-phase add` opens the next one, and `/cad-plan` seeds each
-Traceability row as its phase is planned.
+`v3.7.9 - progress not perfection` opened 2026-08-31. Three ids, all in Phase 1,
+all from the open tracker after the v3.7.8 close. The theme is one claim: the
+command that tells you where to go next must name something you can actually do.
+
+- **PHS-03**: `/cad-task` classifies before it guards, and its phase-sized arm
+  stops assuming a planning tree. Today `workflows/task.md:21` runs the
+  protected-branch guard "before any work" while the `scope` step that decides
+  inline / planned / too-big does not run until `:26`, so an engineer answers
+  branch questions for work that stops one step later; and `:37` takes
+  `total + 1` off `planning.mjs status` unconditionally, in a workflow that says
+  four separate times it supports a repository with no `.planning/` tree. The
+  arm's route branches on what is on disk: an initialised project to
+  `/cad-phase add`, existing code with no `.planning/` to `/cad-adopt`, a blank
+  repository to `/cad-new-project`. Successor to `PHS-02`, which fixed the same
+  arm's destination and not its reachability. `GH-233`
+- **RTE-01**: `/cad-progress` stops reading a SUMMARY as the end of the work. It
+  gets the outstanding executable plan set from the seam rather than inferring
+  absence, and an executed phase with outstanding dispatches routes to
+  `/cad-execute`, not `/cad-verify`. Today `workflows/progress.md:23-24` derives
+  **executed** from the presence of a SUMMARY and `:188` routes every executed
+  phase to `/cad-verify`, while `workflows/execute.md:56,66,74` reads
+  `dispatch_set` off the replay seam to decide what is still outstanding - the
+  string `replay-check` appears nowhere in `progress.md`. Carries the `--gaps`
+  naming fix `CONTEXT.md` D-01 measured, without which the seam cannot see a gap
+  plan at all. `GH-232`
+- **DOC-05**: the shipped auto-resume claims describe what the command does.
+  `README.md:49`, `skills/cad-progress/SKILL.md:3` and
+  `workflows/progress.md:6` promise an auto-resume that `progress.md:236` exists
+  to refuse; all three become the offer the command actually makes, and the
+  `SKILL.md` byte pin in `weight-budgets.json` is re-pinned in the same commit.
+  No behaviour changes. A real `--resume` flag is a separate decision. `GH-218`
+
 
 `v3.7.8 - what Cadence already knows` opened 2026-08-29 and closed 2026-08-30.
 Five phases, five ids - `RSK-08`, `RNG-04`, `PHS-02`, `LND-02`, `TRC-11` - are
@@ -461,6 +491,9 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| PHS-03 | Phase 1 | Pending |
+| RTE-01 | Phase 1 | Pending |
+| DOC-05 | Phase 1 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
