@@ -305,6 +305,39 @@ test('adjudication: --task lands the record in the task\'s own home (GH-227)', (
   assert.deepEqual(readdirSync(join(dir, 'phases')), ['2']);
 });
 
+test('adjudication: a task fire\'s record NAMES its slug in the body (D-07)', () => {
+  // The directory path is not something a reader holding the parsed record
+  // still has. Before this the body said `"phase": "0"` and nothing more, so
+  // the only statement of what the fire settled was where the file happened to
+  // sit - which is why the hand-written record this replaces decorated `phase`
+  // as `"0 (task: <slug>)"`, a string a reader has to take back apart.
+  const { repo, dir, base } = adjRepo();
+  mkdirSync(join(dir, 'tasks', 'a-task-slug'), { recursive: true });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '0', '--task', 'a-task-slug',
+    '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const rec = JSON.parse(readFileSync(join(dir, r.record), 'utf8'));
+  assert.equal(rec.task, 'a-task-slug');
+  // `phase` stays the caller's OWN spelling - the slug rides its own key, so
+  // nothing has to be parsed back out of a decorated phase string.
+  assert.equal(rec.phase, '0');
+});
+
+test('adjudication: a phase fire\'s record carries NO task key - absent, never empty (D-07)', () => {
+  // Present-only-when-real: an empty string here would read as "a task fire
+  // that lost its slug", and every reader would then owe a truthiness test
+  // where an `in` check is the honest question.
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const rec = JSON.parse(readFileSync(join(dir, r.record), 'utf8'));
+  assert.equal('task' in rec, false, 'a phase record grew a task key');
+});
+
 test('adjudication: --task naming no directory is refused by that name, not as a phase', () => {
   // The directory has to already exist, the same rule the phase homes take: a
   // seam that recorded a fire would otherwise mint a directory for a mistyped
