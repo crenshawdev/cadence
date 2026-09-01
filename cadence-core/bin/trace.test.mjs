@@ -1277,11 +1277,17 @@ test('seam: --events hands back the raw array the two in-process readers use', (
 // `roles` total (D-01), and a call whose event carried no usage raises
 // `unrecorded` rather than folding in as a zero (D-11).
 
-/** One `provider/request` event `m` minutes in, with or without a usage pair. */
-function provider(dir, m, usage) {
+/**
+ * One `provider/request` event `m` minutes in, with or without a usage pair.
+ * `extra` overrides the two fields the fold SELECTS on - the seam writes this
+ * same event shape for its other two commands and for a call it refused before
+ * sending anything, and those are what must not be priced as reviews.
+ */
+function provider(dir, m, usage, extra) {
   appendEvent(dir, {
     phase: 9, family: 'provider', event: 'request', command: 'review',
     provider: 'openai', outcome: 'ok', ts: at(m), ...(usage ? { usage } : {}),
+    ...extra,
   });
 }
 
@@ -1323,6 +1329,55 @@ test('seam: a scope whose every provider call reported nothing shows no total', 
   assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
     { calls: 1, unrecorded: 1 },
     'no `tokens: 0` - every event written before the seam read usage would price at nothing');
+});
+
+test('seam: a model listing and a debug consult are provider calls, not reviews', () => {
+  const dir = root();
+  provider(dir, 0, { input: 900, output: 100 });
+  // Both cost money and neither is a review: `detect-models` lists a provider's
+  // model ids and `consult` is `/cad-debug`'s dead-end second opinion. Folded
+  // in, they price a listing call under a line that says `Cross-model reviews`.
+  provider(dir, 1, { input: 4000, output: 40 }, { command: 'detect-models' });
+  provider(dir, 2, { input: 7000, output: 70 }, { command: 'consult' });
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  assert.deepEqual(r.provider_spend, { calls: 1, tokens: 1000 });
+  // Nothing is HIDDEN by the filter: the count of provider events is untouched,
+  // so the two calls this figure leaves out are still visible in the envelope.
+  assert.equal(r.counts.provider, 3);
+});
+
+test('seam: a scope holding no review call carries no provider_spend key', () => {
+  const dir = root();
+  provider(dir, 0, { input: 4000, output: 40 }, { command: 'detect-models' });
+  // No `command` at all: this figure prices only a call it can NAME, and no
+  // event carrying `usage` predates that field.
+  provider(dir, 1, { input: 900, output: 100 }, { command: undefined });
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  assert.equal('provider_spend' in r, false,
+    'a scope whose provider calls are none of them reviews renders the envelope every reader already parses');
+  assert.equal(r.counts.provider, 2);
+});
+
+test('seam: a review refused before the request was sent is not a call', () => {
+  const dir = root();
+  provider(dir, 0, { input: 900, output: 100 });
+  for (const [i, outcome] of ['no-key', 'bad-provider', 'bad-args', 'bad-payload', 'over-cap'].entries()) {
+    provider(dir, i + 1, null, { outcome });
+  }
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
+    { calls: 1, tokens: 1000 },
+    'no `unrecorded: 5` - nothing left the machine on those, so their cost is not unknown, it is nothing');
+});
+
+test('seam: a review that reached the wire and failed still cost something', () => {
+  const dir = root();
+  // D-04: usage is recorded on the degraded outcomes that still burned the
+  // call, and an `http` refusal has nothing to read but did reach a provider.
+  provider(dir, 0, { input: 900, output: 100 }, { outcome: 'bad-json' });
+  provider(dir, 1, null, { outcome: 'http' });
+  provider(dir, 2, null, { outcome: 'transport' });
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
+    { calls: 3, tokens: 1000, unrecorded: 2 });
 });
 
 test('render: provider usage reaches no roles total, with or without it (D-01)', () => {

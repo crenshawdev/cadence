@@ -530,10 +530,51 @@ function parseDurationMs(raw) {
 // zero to the total: every `provider/request` event written before the seam
 // read usage at all carries neither key, and folding those in as zeros would
 // price a whole cycle's reviews at nothing (D-11). The block itself is absent
-// where the scope holds no provider call, the omit-when-empty discipline
+// where the scope holds no provider REVIEW call, the omit-when-empty discipline
 // `roles`, `coordinator`, `mismatched` and `rotated` already follow, so a
 // record without one renders byte-identically for every reader already parsing
 // this envelope.
+//
+// WHICH CALLS IT PRICES, and the answer is one field: `command`. The seam
+// writes its one event for three different commands, and only one of them is a
+// review - this repository's own record holds `review` (298), `detect-models`
+// (16), which lists a provider's model ids, and `consult` (3), `/cad-debug`'s
+// dead-end second opinion. All three cost money and only the first is a review,
+// so folding all three into a figure `/cad-report` prints as `Cross-model
+// reviews` prices a model listing as review spend. `command === 'review'` and
+// nothing else, which also means an event carrying no `command` is not priced:
+// this figure may only price a call it can NAME, and no event carrying `usage`
+// predates that field. The consult arm is deliberately not re-reported here
+// under a second name - what a debug consult cost is a different question from
+// what a phase's review panel cost, and `counts.provider` still carries every
+// provider event in scope, so leaving it out of this one hides nothing.
+//
+// AND ONLY THE CALLS THAT REACHED THE WIRE. The seam writes its event for a
+// call it refused before sending anything, too - no key, no model id, an
+// unknown provider, an unparseable payload, an artifact over the cap - and D-04
+// says those "have nothing to read" for the same reason they are dropped here:
+// no request left the machine, so there was no spend and no reviewer. Counted,
+// each would raise `unrecorded`, claiming an unknown cost for a call that
+// provably cost nothing. Everything PAST the send stays counted, degraded
+// outcomes included: a call that burned its budget and came back unusable is
+// exactly the one whose cost must still reach this figure (D-04).
+// `UNSENT_OUTCOMES` is `review-provider.mjs`'s vocabulary read back out of a
+// FILE rather than imported, so a refusal reason added there and not here lands
+// as one more unrecorded call - the safe direction, because this figure may
+// overstate what is unknown and may never hide what was spent.
+//
+// Not filtered on `event`: the seam writes exactly ONE event per call and every
+// provider event on this record reads `request`, so a second filter would
+// defend against a shape the seam does not produce (D-06).
+
+/**
+ * The `outcome` values `review-provider.mjs` writes for a call it refused
+ * BEFORE the request was sent, each one a `fail()` reached above the transport.
+ * No bytes on the wire, so no spend to price and no call to count (D-04).
+ */
+const UNSENT_OUTCOMES = new Set([
+  'bad-provider', 'bad-args', 'no-key', 'bad-payload', 'over-cap',
+]);
 
 /**
  * One token count off a provider event, or `undefined` where the line carries
@@ -548,6 +589,10 @@ function usageCount(v) {
 
 /**
  * The provider-spend fold for a set of scoped events, spread into the response.
+ * `calls` counts `provider/request` events whose `command` is `review` and whose
+ * `outcome` is not one the seam wrote without sending anything; every other
+ * provider event in scope is outside this figure and stays visible in
+ * `counts.provider`.
  * @param {Record<string, any>[]} events the events already scoped to `--phase`
  * @returns {{provider_spend?: {calls: number, tokens?: number, unrecorded?: number}}}
  */
@@ -557,6 +602,10 @@ function providerSpend(events) {
   let tokens = 0;
   for (const e of events) {
     if (e.family !== 'provider') continue;
+    // A REVIEW, and one that was actually sent. The other two commands on this
+    // family are real provider calls with real costs; neither is what the line
+    // reading this figure tells a human it is counting.
+    if (e.command !== 'review' || UNSENT_OUTCOMES.has(e.outcome)) continue;
     calls++;
     const u = e.usage;
     if (!u || typeof u !== 'object' || Array.isArray(u)) continue;
