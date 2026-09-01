@@ -1,0 +1,77 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "cad-plan-e9d648b1",
+  "round": 1,
+  "base": "e9d648b1",
+  "head": "4e42f8d604da6e4891fabc37c5dd9885ff525b23",
+  "base_id": "e9d648b1fd72a72f89fba8e3d75b11ee5e3966d9",
+  "head_id": "4e42f8d604da6e4891fabc37c5dd9885ff525b23",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-1.md",
+      "line": 100,
+      "severity": "high",
+      "claim": "The verification requires only “a fixture response carrying usage,” so it does not require an independent usage-extraction test for each of the three provider adapters.",
+      "failure_scenario": "An executor tests OpenAI only while Gemini reads the wrong nested usage field or DeepSeek uses a misspelled field. The documentation can repeat the same mistake and still agree textually with the adapter, all specified checks pass, and reviews through the affected provider continue emitting no usage, violating CST-04.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "4e42f8d604da6e4891fabc37c5dd9885ff525b23",
+      "base_id": "e9d648b1fd72a72f89fba8e3d75b11ee5e3966d9",
+      "head_id": "4e42f8d604da6e4891fabc37c5dd9885ff525b23"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-1.md",
+      "line": 106,
+      "severity": "high",
+      "claim": "The degraded-outcome verification covers only `bad-shape`, leaving the required `no-output` and `bad-json` usage paths untested.",
+      "failure_scenario": "A response contains valid provider usage but either no output text or output that is not JSON. If those early-return branches discard the extracted usage, the specified `bad-shape` test still passes while calls that burned budget are recorded without their cost, contradicting D-04 and the plan's done conditions.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "4e42f8d604da6e4891fabc37c5dd9885ff525b23",
+      "base_id": "e9d648b1fd72a72f89fba8e3d75b11ee5e3966d9",
+      "head_id": "4e42f8d604da6e4891fabc37c5dd9885ff525b23"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-1.md",
+      "line": 107,
+      "severity": "medium",
+      "claim": "The roles verification only asserts that no token figure appears; it does not prove AC4's required `cad-reviewer: unrecorded` entry and can pass vacuously when the role is absent.",
+      "failure_scenario": "`renderTrace` accidentally omits `cad-reviewer` entirely for a provider-only phase. The test sees no provider token under any role and PLAN-2's stripped-usage deep-equality also passes, but AC4's required reviewer-role accounting is not delivered.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "4e42f8d604da6e4891fabc37c5dd9885ff525b23",
+      "base_id": "e9d648b1fd72a72f89fba8e3d75b11ee5e3966d9",
+      "head_id": "4e42f8d604da6e4891fabc37c5dd9885ff525b23"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-2.md",
+      "line": 153,
+      "severity": "medium",
+      "claim": "The only execution-level verification of the model-authored `/cad-report` change covers provider calls with recorded usage; it does not exercise missing usage or a scope with no provider calls.",
+      "failure_scenario": "The workflow defaults a missing spend value to zero, or always prints an empty reviewer line when the projection key is absent. The stated human check with a usage-bearing phase still passes, while D-11's `unrecorded` behavior and the required silence for a no-provider scope both fail; the listed automated commands do not execute this prose workflow.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "4e42f8d604da6e4891fabc37c5dd9885ff525b23",
+      "base_id": "e9d648b1fd72a72f89fba8e3d75b11ee5e3966d9",
+      "head_id": "4e42f8d604da6e4891fabc37c5dd9885ff525b23"
+    }
+  ]
+}
