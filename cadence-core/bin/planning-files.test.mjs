@@ -23,7 +23,7 @@ import {
   atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
   parseArchiveRows, appendArchiveRows, parseFiledRows, appendFiledRow,
   parseDeclinedRows, appendDeclinedRow,
-  parsePlanFiles, parseTaskRecordSnippets,
+  parsePlanFiles, parseTaskRecordSnippets, CURSOR_STATUSES,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -2450,4 +2450,21 @@ test('filed: the preamble no longer sends a reader to the forge for a decline', 
   const text = appendFiledRow('', FILED);
   assert.ok(!text.includes('decline label'));
   assert.ok(text.includes('DECLINED.md'));
+});
+
+// --- the cursor lifecycle is a CLOSED list ----------------------------------
+
+test('planning-files: CURSOR_STATUSES holds exactly its six values', () => {
+  // A PIN, not a description. Minting a seventh status is not a local edit:
+  // `cursor set` validates against this list, `status` reconciles the derived
+  // phase state against it through `AGREE`, `audit` and `phase-done` write it,
+  // and every cursor a prior Cadence version wrote would start reading as
+  // drift. So a fact a router needs about a phase belongs on the seam envelope
+  // beside it - `deferred`, `outstanding` - and never in here (D-02). This row
+  // is what makes that decision cost a deliberate edit.
+  assert.deepEqual(new Set(CURSOR_STATUSES), new Set([
+    'ready to plan', 'context gathered', 'planned', 'executed',
+    'phase complete', 'paused',
+  ]));
+  assert.equal(CURSOR_STATUSES.length, 6);
 });
