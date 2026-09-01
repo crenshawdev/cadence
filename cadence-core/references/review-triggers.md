@@ -23,6 +23,15 @@ Resolve the bundle ONCE through the routing seam:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer
 ```
 
+**ONE resolve per FIRE, owed before any backend is chosen.** This call is what
+appends the `routing/resolve` for the reviewer role, so a fire that skips it
+leaves the routing ledger with no record that a review happened at all. The unit
+is the FIRE, never the dispatch: a panel naming two providers writes exactly ONE
+resolve and two `provider/request` events against it, and a fire served by a
+cross-model provider ALONE - no claude-subagent dispatched, so no lifecycle
+bracket anywhere - still owes that one resolve. Step 4's "no lifecycle bracket"
+is a statement about the BRACKET and never about this line.
+
 Take the gate from the resolved bundle's review map, keyed by this trigger's
 name; take the reviewer SET from its `reviewers` map, keyed the same way (step
 3); take the reviewer's `agent` and `model` from the same line, and the
@@ -191,7 +200,10 @@ reviewer set never does. Per backend:
   "fix" it by editing the config or by pretending the effort applied.
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): an API
   call runs nothing, so this is the one backend that cannot resolve a reference
-  itself. Four rules bind whether or not you read the procedure below.
+  itself. Five rules bind whether or not you read the procedure below.
+  Step 1's `routing/resolve` is already on the record for this fire and was owed
+  before this branch was chosen - it is owed on a cross-model-ONLY fire too,
+  where no claude-subagent ever dispatches.
   **This arm gets NO lifecycle bracket and no token field, deliberately** - no
   adapter extracts the API's own usage figure today - and the cost is that under
   a panel, `cad-reviewer`'s per-role total in `trace render` covers the

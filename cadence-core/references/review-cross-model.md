@@ -3,9 +3,11 @@
 `references/review-triggers.md` step 4 decides WHETHER this arm runs: step 3's
 resolved set has to hold a provider other than `claude-subagent`, which a
 project that never set `review.reviewers` never does. That step also holds the
-rules a caller owes whether or not it reaches here - no lifecycle bracket, where
-the tier and the effort come from, naming an `ok:false` reviewer before dropping
-it, and the empty-set fallback. This file is the PROCEDURE once the branch is
+rules a caller owes whether or not it reaches here - the step-1
+`routing/resolve`, owed once per FIRE before any backend is chosen and owed on
+this path too, where no claude-subagent dispatches; no lifecycle bracket; where
+the tier and the effort come from; naming an `ok:false` reviewer before dropping
+it; and the empty-set fallback. This file is the PROCEDURE once the branch is
 taken, and nothing else in the review subsystem reads it.
 
 ## The cross-model arm
