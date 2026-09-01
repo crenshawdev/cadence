@@ -5,9 +5,16 @@
 
 ## Active
 
-`v3.7.9 - progress not perfection` opened 2026-08-31. Three ids, all in Phase 1,
-all from the open tracker after the v3.7.8 close. The theme is one claim: the
-command that tells you where to go next must name something you can actually do.
+No cycle open. `/cad-phase add` opens the next one.
+
+`v3.7.9 - progress not perfection` opened 2026-08-31 and closed 2026-09-01.
+One phase, three ids - `PHS-03`, `RTE-01`, `DOC-05` - are rows under the
+`Shipped` heading below, all three Complete. They came from the open tracker
+after the v3.7.8 close. The theme was one claim: the command that tells you
+where to go next must name something you can actually do. The audit passed 3/3
+traced with 7/7 acceptance criteria covered and nothing deferred. The ids under
+`## Deferred` keep their own reasons and none is promoted here to fill this
+section.
 
 
 

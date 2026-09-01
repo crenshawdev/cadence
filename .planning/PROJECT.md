@@ -204,10 +204,20 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v3.7.9 - progress not perfection`, opened 2026-08-31.** One phase so far:
-the three sites where Cadence names a next step that is unreachable, stale, or
-not the outstanding work - `GH-233`, `GH-232` and `GH-218`. The source is the
-open tracker after the v3.7.8 close.
+No cycle open.
+
+**`v3.7.9 - progress not perfection`, opened 2026-08-31, closed 2026-09-01.**
+One phase, 15 commits off `main` (2 feat and 3 fix against 6 docs, 1 refactor
+and 3 chore). Three requirement ids - `PHS-03`, `RTE-01`, `DOC-05` - each
+traced to the verified phase; `/cad-audit` passed 3/3 with 7/7 acceptance
+criteria covered and nothing deferred. Manifest bumped to 3.7.9. The ids came
+off the open tracker after the v3.7.8 close - `GH-233`, `GH-232` and `GH-218`,
+the three sites where Cadence named a next step that was unreachable, stale, or
+not the outstanding work. Their rows are now under `## Shipped` in
+REQUIREMENTS.md, the narrative is the `[3.7.9]` section of CHANGELOG.md, and
+the phase residue - deviations, UAT items, CONTEXT decisions - is in
+`.planning/ARCHIVE.md`. Outstanding: the merge to `main` and the `v3.7.9` tag,
+both `/cad-land`'s. `/cad-phase add` opens the next cycle.
 
 **`v3.7.8 - what Cadence already knows`, opened 2026-08-29, closed 2026-08-30.**
 Five phases, 86 commits off `main` (10 feat and 22 fix against 36 docs, 14 test,
