@@ -240,3 +240,6 @@ Raised in review of the v3.7.2 release, adjudicated against the code 2026-08-26.
 - 2026-09-01 github crenshawdev/cadence ff1ed54d21a7bdf0: [cadence ff1ed54d21a7bdf0] The accumulator accepts finite but unsafe token values and can overflow to `Infinity`.
 - 2026-09-01 github crenshawdev/cadence 0022eba277dc9572: [cadence 0022eba277dc9572] A call with only one valid usage side is treated as fully priced, with no indication that the provider-reported input-plus-output total is incomplete.
 - 2026-09-01 github crenshawdev/cadence 05c980787b4c6b88: [cadence 05c980787b4c6b88] Removing `cross-model provider calls` from `SPEND_EXCLUDES` makes the `/cad-suggest` spend receipt omit a source that is still outside its recorded-token numerator and denom
+- 2026-09-01 github crenshawdev/cadence 2a392538c19c1099: [cadence 2a392538c19c1099] Task 1 does not cover AC4's required `outcome/adjudication` path.
+- 2026-09-01 github crenshawdev/cadence eff9c7d883b229c6: [cadence eff9c7d883b229c6] The close-out task cannot perform the source repairs its action requires because it declares only `weight-budgets.json`.
+- 2026-09-01 github crenshawdev/cadence 058802bb9f12a4dc: [cadence 058802bb9f12a4dc] Allowing Plan 3 to re-pin a budget left over from earlier plans contradicts D-13's same-commit rule and places the dependency too late.

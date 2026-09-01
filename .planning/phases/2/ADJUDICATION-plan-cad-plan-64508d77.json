@@ -1,0 +1,66 @@
+{
+  "phase": "2",
+  "trigger": "plan",
+  "discriminator": "cad-plan-64508d77",
+  "round": 1,
+  "base": "64508d77",
+  "head": "64508d777f37c45b656e4628dd7b1e5e5a2b4061",
+  "base_id": "64508d777f37c45b656e4628dd7b1e5e5a2b4061",
+  "head_id": "64508d777f37c45b656e4628dd7b1e5e5a2b4061",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/2/PLAN-2.md",
+      "line": 122,
+      "severity": "medium",
+      "claim": "Task 1 does not cover AC4's required `outcome/adjudication` path.",
+      "failure_scenario": "AC4 specifically requires an `outcome/adjudication` carrying the earlier anchor to render and join in `risk-check status`. The task updates only the fenced `gate_pass` and `override` commands and its end-to-end verification calls the event merely a “settle receipt.” An implementation and test using `gate_pass` can satisfy every stated task check while the required adjudication event still derives the newest correlation id or fails to join.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "PLAN-2.md task 1 action: the flag puts `corr` on the event object handed to `appendEvent` for ANY `trace append` and is explicitly not coupled to an event name, so an `outcome/adjudication` carrying `--anchor` takes the same path as `gate_pass`; the gap is that the Verify names no event for its end-to-end settle receipt, a verification-precision wart and not an uncovered path.",
+      "citation_missing": true,
+      "base_id": "64508d777f37c45b656e4628dd7b1e5e5a2b4061",
+      "head_id": "64508d777f37c45b656e4628dd7b1e5e5a2b4061"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/2/PLAN-3.md",
+      "line": 97,
+      "severity": "medium",
+      "claim": "The close-out task cannot perform the source repairs its action requires because it declares only `weight-budgets.json`.",
+      "failure_scenario": "The action says any non-budget gate failure must be fixed at its source, but the task and plan lease no source or test file other than `weight-budgets.json`. If the whole-phase test, typecheck, or self-verification exposes a defect introduced by an earlier task, repairing it violates the declared file set and lease-check; without that repair, the task cannot produce its stated all-green verification.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "PLAN-1 and PLAN-2 tasks each verify `node cadence-core/bin/test.mjs` and `npx tsc -p tsconfig.ci.json` at their own task, and PLAN-2 tasks 1-2 also run `self-verify.mjs`, so the tree PLAN-3 task 2 closes on is already green by construction of the earlier verifies; the out-of-lease repair the scenario needs is the executor deviation path, not a plan hole.",
+      "citation_missing": true,
+      "base_id": "64508d777f37c45b656e4628dd7b1e5e5a2b4061",
+      "head_id": "64508d777f37c45b656e4628dd7b1e5e5a2b4061"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/2/PLAN-3.md",
+      "line": 106,
+      "severity": "high",
+      "claim": "Allowing Plan 3 to re-pin a budget left over from earlier plans contradicts D-13's same-commit rule and places the dependency too late.",
+      "failure_scenario": "D-13 and AC7 require a prose file's budget row to be re-pinned in the same commit that grows the file. This task instead permits any still-over row to be repaired in the final plan. If either PLAN-2 prose commit omits or miscalculates its re-pin, PLAN-3 can make the final tree green while the growth commit itself violated the locked decision; ordering the cleanup last cannot satisfy the required commit-local invariant.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "PLAN-2.md:118 and :182 each re-pin the `weight-budgets.json` row in the same commit as the prose growth, and each task verifies `self-verify.mjs` reports no `budget-overrun`, so a PLAN-2 commit that omits its re-pin fails its own task verification and never reaches PLAN-3; the PLAN-3 clause is a redundant safety net, not a licence D-13 forbids.",
+      "citation_missing": true,
+      "base_id": "64508d777f37c45b656e4628dd7b1e5e5a2b4061",
+      "head_id": "64508d777f37c45b656e4628dd7b1e5e5a2b4061"
+    }
+  ]
+}
