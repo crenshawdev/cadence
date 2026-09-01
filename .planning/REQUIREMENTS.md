@@ -9,33 +9,6 @@
 all from the open tracker after the v3.7.8 close. The theme is one claim: the
 command that tells you where to go next must name something you can actually do.
 
-- **PHS-03**: `/cad-task` classifies before it guards, and its phase-sized arm
-  stops assuming a planning tree. Today `workflows/task.md:21` runs the
-  protected-branch guard "before any work" while the `scope` step that decides
-  inline / planned / too-big does not run until `:26`, so an engineer answers
-  branch questions for work that stops one step later; and `:37` takes
-  `total + 1` off `planning.mjs status` unconditionally, in a workflow that says
-  four separate times it supports a repository with no `.planning/` tree. The
-  arm's route branches on what is on disk: an initialised project to
-  `/cad-phase add`, existing code with no `.planning/` to `/cad-adopt`, a blank
-  repository to `/cad-new-project`. Successor to `PHS-02`, which fixed the same
-  arm's destination and not its reachability. `GH-233`
-- **RTE-01**: `/cad-progress` stops reading a SUMMARY as the end of the work. It
-  gets the outstanding executable plan set from the seam rather than inferring
-  absence, and an executed phase with outstanding dispatches routes to
-  `/cad-execute`, not `/cad-verify`. Today `workflows/progress.md:23-24` derives
-  **executed** from the presence of a SUMMARY and `:188` routes every executed
-  phase to `/cad-verify`, while `workflows/execute.md:56,66,74` reads
-  `dispatch_set` off the replay seam to decide what is still outstanding - the
-  string `replay-check` appears nowhere in `progress.md`. Carries the `--gaps`
-  naming fix `CONTEXT.md` D-01 measured, without which the seam cannot see a gap
-  plan at all. `GH-232`
-- **DOC-05**: the shipped auto-resume claims describe what the command does.
-  `README.md:49`, `skills/cad-progress/SKILL.md:3` and
-  `workflows/progress.md:6` promise an auto-resume that `progress.md:236` exists
-  to refuse; all three become the offer the command actually makes, and the
-  `SKILL.md` byte pin in `weight-budgets.json` is re-pinned in the same commit.
-  No behaviour changes. A real `--resume` flag is a separate decision. `GH-218`
 
 
 `v3.7.8 - what Cadence already knows` opened 2026-08-29 and closed 2026-08-30.
@@ -385,6 +358,9 @@ parses only the Traceability table).
 | PHS-02 (`/cad-task`'s too-big arm names an action that creates the phase the next command requires. Today it routes to `/cad-context`, which refuses an off-roadmap phase. `GH-171`) | 3 | Complete | v3.7.8 |
 | LND-02 (`land-cleanup.mjs gate` halts an autonomous close on genuinely unfixed findings, using the derivation `lib/filing-decision.mjs` already applies to issue filing. Today it unions raw `REVIEW-risk_surface*.md` artifacts with no join to their rulings, and an already-fixed high stopped the v3.7.7 close. `GH-168`) | 4 | Complete | v3.7.8 |
 | TRC-11 (a contended second rotation loses no racing writer's event, and the admission check reserves the mandatory marker line along with the pending record. `GH-169` and issue #160) | 5 | Complete | v3.7.8 |
+| PHS-03 (`/cad-task` classifies before it guards, and its phase-sized arm stops assuming a planning tree. Today `workflows/task.md:21` runs the protected-branch guard "before any work" while the `scope` step that decides inline / planned / too-big does not run until `:26`, so an engineer answers branch questions for work that stops one step later; and `:37` takes `total + 1` off `planning.mjs status` unconditionally, in a workflow that says four separate times it supports a repository with no `.planning/` tree. The arm's route branches on what is on disk: an initialised project to `/cad-phase add`, existing code with no `.planning/` to `/cad-adopt`, a blank repository to `/cad-new-project`. Successor to `PHS-02`, which fixed the same arm's destination and not its reachability. `GH-233`) | 1 | Complete | v3.7.9 |
+| RTE-01 (`/cad-progress` stops reading a SUMMARY as the end of the work. It gets the outstanding executable plan set from the seam rather than inferring absence, and an executed phase with outstanding dispatches routes to `/cad-execute`, not `/cad-verify`. Today `workflows/progress.md:23-24` derives **executed** from the presence of a SUMMARY and `:188` routes every executed phase to `/cad-verify`, while `workflows/execute.md:56,66,74` reads `dispatch_set` off the replay seam to decide what is still outstanding - the string `replay-check` appears nowhere in `progress.md`. Carries the `--gaps` naming fix `CONTEXT.md` D-01 measured, without which the seam cannot see a gap plan at all. `GH-232`) | 1 | Complete | v3.7.9 |
+| DOC-05 (the shipped auto-resume claims describe what the command does. `README.md:49`, `skills/cad-progress/SKILL.md:3` and `workflows/progress.md:6` promise an auto-resume that `progress.md:236` exists to refuse; all three become the offer the command actually makes, and the `SKILL.md` byte pin in `weight-budgets.json` is re-pinned in the same commit. No behaviour changes. A real `--resume` flag is a separate decision. `GH-218`) | 1 | Complete | v3.7.9 |
 
 ## Deferred
 
@@ -491,9 +467,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PHS-03 | Phase 1 | Complete |
-| RTE-01 | Phase 1 | Complete |
-| DOC-05 | Phase 1 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its

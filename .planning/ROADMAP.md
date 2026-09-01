@@ -65,51 +65,6 @@ rather than a theme.
 
 ## Phases
 
-- [x] **Phase 1: The next step it names is one you can take** - the three sites where Cadence prints a next action that is unreachable, stale, or not the outstanding work
   - Requirements: `PHS-03`, `RTE-01`, `DOC-05`
 
 ## Phase Details
-
-### Phase 1: The next step it names is one you can take
-
-Close the three routing defects together, because they are one claim: the
-command that tells you where to go next must name something you can actually
-do.
-
-`/cad-task` classifies before it guards, and its phase-sized arm stops assuming
-a planning tree. Classification costs a read of the task description, so it
-runs first and the protected-branch and integration-branch guards move onto the
-inline and planned arms only - which is where `task.md:48` already puts the
-trace bracket, for the same reason. The arm's route then branches on what is
-actually on disk: an initialised project goes to `/cad-phase add`, existing code
-with no `.planning/` goes to `/cad-adopt`, and a blank repository goes to
-`/cad-new-project`.
-
-`/cad-progress` stops reading a SUMMARY as the end of the work. It gets the
-outstanding executable plan set from the seam rather than inferring absence, and
-an executed phase with outstanding dispatches routes to `/cad-execute`, not
-`/cad-verify`. OQ-1 decides whether that fact arrives through `status` or
-through a direct `replay-check` call; the routing change is the same either way.
-
-The three auto-resume claims get restated as what the command does: finds
-incomplete work and offers to resume it. No behaviour changes. A real
-`--resume` flag is a separate decision and is not this phase.
-
-**Success criteria**
-
-- A `/cad-task` invocation that classifies as phase-sized asks no
-  protected-branch or integration-branch question before it stops.
-- `/cad-task`'s phase-sized arm, run in a repository with no `.planning/`
-  directory, routes to `/cad-adopt` or `/cad-new-project` and never to
-  `/cad-phase add`.
-- With a `/cad-plan --gaps` plan unexecuted beside an existing SUMMARY,
-  `/cad-progress` routes to `/cad-execute N`. A test pins this against a
-  fixture, so the case survives a future re-derivation.
-- A phase whose outstanding dispatch set is empty still routes to
-  `/cad-verify N` - the fix narrows the executed row, it does not invert it.
-- `README.md:49`, `skills/cad-progress/SKILL.md:3` and
-  `cadence-core/workflows/progress.md:6` describe an offer, not an auto-resume,
-  and the SKILL.md byte pin in `weight-budgets.json` is re-pinned in the same
-  commit.
-- `GH-233`, `GH-232` and `GH-218` each trace to a REQUIREMENTS row pointing at
-  Phase 1.
