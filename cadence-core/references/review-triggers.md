@@ -199,8 +199,15 @@ reviewer set never does. Per backend:
   it. This trigger's tier and effort come off the STEP-1 LINE, and the tier
   indexes the provider's own `tiers` map, never a config read here. An `ok:false`
   reviewer is NAMED in one visible line, with its `reason`, before it is dropped.
-  And if dropping it EMPTIES the set, fall back to `claude-subagent` (step 3
-  rule) rather than return nothing.
+  And if dropping it EMPTIES the set, fall back to `claude-subagent` rather
+  than return nothing - by RUNNING this step's `claude-subagent` arm above,
+  not merely by naming it. That arm's bracket procedure is what the fallback
+  inherits whole: append its `lifecycle/dispatch`, dispatch the resolved agent,
+  and CLOSE the bracket the moment the returned object is parsed, taking the
+  `--detail-file` checkpoint arm when the dispatch failed, returned nothing or
+  returned something unparseable. Step 3's rule only says the set is never
+  empty; the close is owed HERE, and a fallback that dispatches without one
+  leaves the fire `unpaired` in the record for good.
   The procedure is reached only on this branch: Read
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-cross-model.md`.
 

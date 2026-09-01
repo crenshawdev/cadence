@@ -127,7 +127,13 @@ taken, and nothing else in the review subsystem reads it.
     `reason` (`no-key` names where to set the key), e.g. "cross-model reviewer
     `openai` unavailable: no-key (set $OPENAI_API_KEY) - dropping it from the
     reviewer set". Do not swallow the reason silently. Drop the reviewer from
-    the set. If dropping it
-    empties the set, fall back to `claude-subagent` (step 3 rule) rather than
-    return nothing. A payload over `review.max_prompt_tokens` arrives here as
+    the set. If dropping it empties the set, fall back to `claude-subagent`
+    rather than return nothing - and RUN `review-triggers.md` step 4's
+    `claude-subagent` arm to do it, which brackets the dispatch AND closes it:
+    append that arm's `lifecycle/dispatch`, dispatch, then `trace close` the
+    moment the returned object is parsed, taking its `--detail-file` checkpoint
+    arm when the dispatch failed, returned nothing or returned something
+    unparseable. Leaving this branch does not leave the bracket behind - a
+    fallback that dispatches without a close leaves the fire `unpaired` for
+    good. A payload over `review.max_prompt_tokens` arrives here as
     `reason: over-cap`, refused before any request was issued.
