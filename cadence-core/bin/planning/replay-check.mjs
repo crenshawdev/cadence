@@ -9,17 +9,8 @@
 'use strict';
 
 import { join } from 'node:path';
-import { fail, phaseSpellingCollision, listPlanFiles, ok, read } from './core.mjs';
+import { fail, phaseSpellingCollision, listPlanFiles, ok, readPlanReports } from './core.mjs';
 import { requirePhaseArg } from '../lib/require-int.mjs';
-
-/** `PLAN-<k>.md` -> k, bare `PLAN.md` -> 1 - the derivation the executor
- * contract's `<report_file>` states, so this reads the path that gets written. */
-const planNumber = (f) => Number(/^PLAN-(\d+)\.md$/.exec(f)?.[1] ?? 1);
-
-/** The FIRST line, trimmed - not the file. A `PLAN COMPLETE` quoted in a Note
- * is prose about a status, not a claim of one, and only line 1 pins the word. */
-const firstLine = (body) => (body == null ? null
-  : body.slice(0, body.indexOf('\n') === -1 ? undefined : body.indexOf('\n')).trim());
 
 function cmdReplayCheck(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -40,15 +31,14 @@ function cmdReplayCheck(dir, opts) {
   }
 
   const rerun = opts.rerun === true;
-  const reports = plans.map((plan) => {
-    const k = planNumber(plan);
-    // The exact filename, never a `plan-*.md` glob: report-rotation.mjs mints
-    // `plan-<k>.<n>.md` siblings, and a glob would let an old one decide.
-    const rel = join('reports', `plan-${k}.md`);
-    const status = firstLine(read(join(pdir, rel)));
-    return { plan, k, report: join('phases', parsedPhase.raw, rel),
-      exists: status !== null, status, complete: status === 'PLAN COMPLETE' };
-  });
+  // The per-plan report read is core.mjs's `readPlanReports` - the ONE
+  // definition `status` reads too, so the dispatch set and the outstanding set
+  // cannot disagree about the same phase (D-04). The `phases/<raw>/` prefix
+  // stays HERE: it is built from the caller's raw spelling, which is not the
+  // `String(n)` spelling `status` resolves, so it can never move into the
+  // shared reader without making one of the two envelopes wrong.
+  const reports = readPlanReports(pdir, plans)
+    .map((r) => ({ ...r, report: join('phases', parsedPhase.raw, r.report) }));
 
   ok({
     phase: parsedPhase.value,
