@@ -3441,3 +3441,44 @@ test('PHS-02 (5): the /cad-context off-roadmap stop names the command that creat
     "PHS-02: /cad-context's off-roadmap stop names no next action again, so a user arriving "
     + 'by a stale cursor or a typed number meets a refusal with no exit');
 });
+
+// --- PHS-03: /cad-task classifies before it guards ---------------------------
+//
+// The defect: `task.md`'s `git_guard` step opened directly after `parse`, so
+// EVERY invocation paid the rail-1 guard - the protected-branch question, the
+// base-integrity check and the integration-branch decision - including the one
+// arm that then says "this is phase-sized" and stops without touching a file.
+// The user answered branch questions for work Cadence had already decided it
+// was not going to do.
+//
+// Asserted on ORDER, the same index-comparison shape `#195` uses on
+// `execute.md`'s `locate` before its `git_guard`, plus a COUNT: the obvious
+// wrong fix is to leave the step where it is and copy a guard sentence into
+// the inline and planned arms, which ships two statements of one rail in one
+// file and lets them drift.
+
+test('PHS-03: task.md classifies before it guards, with one guard step', () => {
+  const task = doc(...TASK_WF);
+  const regressed = 'PHS-03: task.md no longer classifies before it guards - the rail-1 '
+    + 'branch question is charged to the phase-sized arm, which says so and stops without '
+    + 'ever reaching a commit';
+  const scope = task.indexOf('<step name="scope">');
+  const guard = task.indexOf('<step name="git_guard">');
+  const bracket = task.indexOf('<step name="bracket">');
+  assert.ok(scope > -1 && guard > -1 && bracket > -1, 'task.md is missing one of the three steps');
+  assert.ok(scope < guard, regressed);
+  // Before `bracket`, not after: the guard's `ask` arm has an Abort option, and
+  // an abort taken past an open bracket strands a dispatch event with nothing
+  // to close it - which is the same reason `bracket` excludes the too-big arm.
+  assert.ok(guard < bracket,
+    'PHS-03: task.md opens its trace bracket BEFORE the guard, so a guard abort leaves a '
+    + 'dispatch event unpaired');
+  assert.equal(task.indexOf('<step name="git_guard">', guard + 1), -1,
+    'PHS-03: task.md carries a second git_guard step - one rail stated twice in one file '
+    + 'is two statements that drift');
+  // The step says WHICH arms pay it, so a later reader cannot restore the
+  // every-invocation reading while the step is still in the right place.
+  assert.match(stepBody(task, 'git_guard', 'task.md'), /[Ii]nline and planned/,
+    'PHS-03: task.md\'s git_guard step no longer names the inline and planned arms as its '
+    + 'scope, so it reads as applying to every invocation again');
+});

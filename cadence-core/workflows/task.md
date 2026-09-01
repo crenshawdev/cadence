@@ -18,11 +18,6 @@ If the description is empty, ask: "What's the task? (one sentence)"
 Store as $TASK.
 </step>
 
-<step name="git_guard">
-Apply the protected-branch guard from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` before any work.
-</step>
-
 <step name="scope">
 Classify $TASK before touching anything:
 
@@ -42,6 +37,17 @@ Classify $TASK before touching anything:
   later."
 
 When unsure between inline and planned, pick planned.
+</step>
+
+<step name="git_guard">
+(Inline and planned scope only. The "too big" arm has already said so and
+stopped, so it reaches no commit and is charged no branch question. Before
+`bracket` rather than after, because the guard's `ask` arm carries an Abort
+option and an abort taken past an open bracket would leave a dispatch event
+with nothing to close it.)
+
+Apply the protected-branch guard from
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` before any work.
 </step>
 
 <step name="bracket">
