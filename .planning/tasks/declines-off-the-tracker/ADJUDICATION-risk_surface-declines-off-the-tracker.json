@@ -1,17 +1,22 @@
 {
-  "phase": "0 (task: declines-off-the-tracker)",
+  "phase": "0",
+  "task": "declines-off-the-tracker",
   "trigger": "risk_surface",
   "discriminator": "declines-off-the-tracker",
   "round": 1,
   "base": "ecaf2fd0",
   "head": "1cce9cec",
+  "base_id": "ecaf2fd048f8fdfa5a64dac15b9b1fb713f5bfd7",
+  "head_id": "1cce9cec283e793fa542795a43d9cf9a0239efba",
   "voices": [
     {
       "voice": "openai",
       "model": "gpt-5.6-sol"
     }
   ],
-  "note": "Written BY HAND beside the REVIEW file. `planning.mjs adjudication` refuses --phase 0 with no-phase-dir: it writes beside a sibling REVIEW under phases/<N>/ or deferred/<N>/, and a task deliberately has neither - workflows/task.md uses phase 0 precisely so a task record never joins a phase.",
+  "citations": {
+    "checked": true
+  },
   "entries": [
     {
       "voice": "openai",
@@ -23,7 +28,9 @@
       "failure_scenario": "A mode-000 DECLINED.md under a writable .planning reads EACCES, the catch sets text empty, atomicWrite replaces the file, and every older fingerprint is dropped.",
       "ruling": "survived",
       "convergent": false,
-      "fix_commit": "1cce9cec"
+      "fix_commit": "1cce9cec",
+      "base_id": "ecaf2fd048f8fdfa5a64dac15b9b1fb713f5bfd7",
+      "head_id": "1cce9cec283e793fa542795a43d9cf9a0239efba"
     },
     {
       "voice": "openai",
@@ -35,7 +42,9 @@
       "failure_scenario": "A forge slug containing whitespace makes appendDeclinedRow return the text unchanged; atomicWrite succeeds and the batch reports ok while the fingerprint is absent.",
       "ruling": "survived",
       "convergent": false,
-      "fix_commit": "1cce9cec"
+      "fix_commit": "1cce9cec",
+      "base_id": "ecaf2fd048f8fdfa5a64dac15b9b1fb713f5bfd7",
+      "head_id": "1cce9cec283e793fa542795a43d9cf9a0239efba"
     },
     {
       "voice": "openai",
@@ -47,7 +56,9 @@
       "failure_scenario": "A symlink whose target is missing reads ENOENT and returns an empty set, so every decline in the unreachable target resurfaces.",
       "ruling": "survived",
       "convergent": false,
-      "fix_commit": "1cce9cec"
+      "fix_commit": "1cce9cec",
+      "base_id": "ecaf2fd048f8fdfa5a64dac15b9b1fb713f5bfd7",
+      "head_id": "1cce9cec283e793fa542795a43d9cf9a0239efba"
     },
     {
       "voice": "openai",
@@ -59,7 +70,9 @@
       "failure_scenario": "A merge conflict damages a row, parseDeclinedRows skips it, readDeclines still returns ok:true, and the gate re-asks the omitted settled finding.",
       "ruling": "survived",
       "convergent": false,
-      "fix_commit": "1cce9cec"
+      "fix_commit": "1cce9cec",
+      "base_id": "ecaf2fd048f8fdfa5a64dac15b9b1fb713f5bfd7",
+      "head_id": "1cce9cec283e793fa542795a43d9cf9a0239efba"
     },
     {
       "voice": "openai",
@@ -75,7 +88,9 @@
         "file": "cadence-core/bin/issue-filing.mjs",
         "line": 498,
         "note": "The create-failure branch calls mirrorFiled(dir, forge.provider, forge.repo, filed) BEFORE emitting the refusal, and `filed` holds every decline pushed ahead of the failure. The comment above that call states the reason it runs there. A regression test now fires a create failure after a decline and asserts the row is on disk."
-      }
+      },
+      "base_id": "ecaf2fd048f8fdfa5a64dac15b9b1fb713f5bfd7",
+      "head_id": "1cce9cec283e793fa542795a43d9cf9a0239efba"
     }
   ]
 }
