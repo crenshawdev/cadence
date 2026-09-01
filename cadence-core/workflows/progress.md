@@ -44,6 +44,14 @@ Its one JSON line carries everything this workflow reads:
   the cursor's `Next:` text - the cursor is a hint the derivation overrides,
   and parsing a count back out of free text is the substitution this repository
   already condemned for trigger names.
+- `outstanding` - the plans a phase still has to DISPATCH: one `{phase, plans}`
+  entry per phase with work left, derived off the same plan-report reading
+  `/cad-execute` gets as `replay-check`'s `dispatch_set`, so the command that
+  routes and the command that dispatches cannot disagree about what a phase
+  still owes. A SUMMARY is the end of a RUN, not the end of the work - a
+  `/cad-plan --gaps` plan written after one sits here undispatched. ALWAYS
+  present, the same rule `deferred` carries: an absent key means a seam that
+  predates the field, never "nothing is outstanding".
 
 On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
 project here. /cad-new-project starts one from a blank page; /cad-adopt starts
@@ -185,6 +193,7 @@ only:
 |---|---|
 | Paused cursor pointing at the current phase | resume at the cursor's next action |
 | Lowest **planned** phase | /cad-execute {N} |
+| Lowest **executed** phase `outstanding` names | /cad-execute {N} |
 | Lowest **executed** phase | /cad-verify {N} |
 | `current` is **unplanned** | /cad-context {N}, or /cad-plan {N} when `workflow.skip_discuss` is true |
 | `deferred.findings` non-zero, or `deferred.unreadable` non-empty | triage the queue (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, the `deferred` arm) - never /cad-land |
@@ -196,6 +205,18 @@ The planned/executed rows scan ALL phases lowest-first, not just the
 cursor's phase - this recovers a mid-execution session death even when the
 cursor was advanced past the unfinished work. A pause note pointing at a
 different phase than the derivation is shown as context but does not route.
+
+The `outstanding` row NARROWS the executed case, it does not invert it. A
+SUMMARY on disk says a run ended, not that the work is done: a `/cad-plan
+--gaps` plan can sit beside it never dispatched, and before this row that phase
+routed to /cad-verify {N} over plans nothing had run. The
+`Lowest **executed** phase` row stays exactly where it is and still routes to
+/cad-verify {N}, which is what an empty outstanding set gets. Read the fact off
+the one `status` line the derive step already fetched - do NOT spawn a
+`replay-check` per phase for it, because these rows scan ALL phases and that
+costs one process per executed phase on every run. The derived status is still
+`executed` either way, so the reconcile step's status mapping and the cursor
+this workflow writes are untouched.
 
 The `phase-dir` row sits ABOVE `cycle is none` deliberately: an interrupted
 close returns both at once, and finishing the prune precedes opening a new

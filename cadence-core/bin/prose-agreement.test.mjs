@@ -1537,6 +1537,57 @@ test('progress.md: the deferred count is read off the envelope at both its sites
     'the reconcile step gained a deferred status mapping; the cursor carries a POINTER, not a state');
 });
 
+test('progress.md: an executed phase with outstanding dispatches routes to /cad-execute', () => {
+  // RTE-01. A SUMMARY on disk is the end of a RUN, not the end of the work: a
+  // `/cad-plan --gaps` plan written after one is undispatched, and the executed
+  // row sent that phase to /cad-verify {N} over plans nothing had ever run. The
+  // fix NARROWS the executed case rather than inverting it, which is why this
+  // test pins the row's POSITION and not just its presence - a row placed below
+  // the plain executed row is dead prose, and one placed above the planned row
+  // steals a planned phase's route.
+  const wf = doc('cadence-core', 'workflows', 'progress.md');
+  const labelOf = regionLabels(wf);
+  const lines = wf.split('\n');
+  const region = (name) => lines.filter((l, i) => labelOf(i) === name).join('\n');
+
+  const derive = region('derive');
+  assert.match(derive, /`outstanding`/,
+    'the derive step no longer names the `outstanding` key the one status line carries');
+  assert.match(derive, /ALWAYS\s+present/,
+    'the derive step no longer says `outstanding` is always present, so an absent key - a '
+    + 'seam that predates the field - reads as "nothing is outstanding" and routes past the work');
+
+  const routeLines = region('route').split('\n');
+  const at = (needle) => routeLines.findIndex((l) => l.includes(needle));
+  const row = at('`outstanding` names');
+  assert.ok(row > -1, 'the route table no longer has a row for an executed phase with outstanding plans');
+  assert.match(routeLines[row], /\/cad-execute \{N\}/,
+    'the outstanding row no longer routes to /cad-execute, so the undispatched plans stay undispatched');
+
+  const planned = at('| Lowest **planned** phase |');
+  const executed = at('| Lowest **executed** phase | /cad-verify {N} |');
+  assert.ok(planned > -1, 'the route table lost its planned row');
+  assert.ok(executed > -1,
+    'the plain executed row no longer routes to /cad-verify {N} - the new row inverted the '
+    + 'executed case instead of narrowing it, so an empty outstanding set never reaches verify');
+  assert.ok(planned < row,
+    'the outstanding row displaced "Lowest **planned** phase", which is a phase with NO run yet');
+  assert.ok(row < executed,
+    'the outstanding row sits below the plain executed row, where first-match-wins makes it dead prose');
+
+  // No second seam call: the route table scans ALL phases lowest-first, so a
+  // per-phase spawn costs one process per executed phase on every run (D-03).
+  assert.doesNotMatch(region('route'), /planning\.mjs" replay-check/,
+    'the route step spawns replay-check per phase; the fact rides the one status line derive fetched');
+
+  // And no new cursor status (D-02/D-10): a status outside planning.mjs's AGREE
+  // map is reported as `cursor` drift and rewritten by the very next
+  // /cad-progress, so the cursor would stop naming it one command after it was
+  // written. The derived status stays `executed`.
+  assert.doesNotMatch(region('reconcile'), /outstanding/,
+    'the reconcile step gained an outstanding status mapping; the derived status stays `executed`');
+});
+
 test('execute.md state: a deferring run points the cursor at its queue and commits it', () => {
   // Both halves of what makes a deferred finding survive the session that
   // deferred it: a resume pointer that says the queue is there, and the member
