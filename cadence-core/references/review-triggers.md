@@ -204,11 +204,12 @@ reviewer set never does. Per backend:
   Step 1's `routing/resolve` is already on the record for this fire and was owed
   before this branch was chosen - it is owed on a cross-model-ONLY fire too,
   where no claude-subagent ever dispatches.
-  **This arm gets NO lifecycle bracket and no token field, deliberately** - no
-  adapter extracts the API's own usage figure today - and the cost is that under
-  a panel, `cad-reviewer`'s per-role total in `trace render` covers the
-  claude-subagent voice ONLY and is short by the unmeasured provider call beside
-  it. This trigger's tier and effort come off the STEP-1 LINE, and the tier
+  **This arm still gets NO lifecycle bracket, deliberately** - but it is no
+  longer unpriced: the seam reads the provider's OWN reported usage and the
+  `provider/request` event carries it. That figure is a different DENOMINATION
+  and never sums into `roles`, so under a panel `cad-reviewer`'s per-role total
+  in `trace render` still covers the claude-subagent voice ONLY - the provider
+  call beside it is priced on its own event rather than folded into that number. This trigger's tier and effort come off the STEP-1 LINE, and the tier
   indexes the provider's own `tiers` map, never a config read here. An `ok:false`
   reviewer is NAMED in one visible line, with its `reason`, before it is dropped.
   And if dropping it EMPTIES the set, fall back to `claude-subagent` rather

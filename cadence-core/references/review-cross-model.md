@@ -5,7 +5,8 @@ resolved set has to hold a provider other than `claude-subagent`, which a
 project that never set `review.reviewers` never does. That step also holds the
 rules a caller owes whether or not it reaches here - the step-1
 `routing/resolve`, owed once per FIRE before any backend is chosen and owed on
-this path too, where no claude-subagent dispatches; no lifecycle bracket; where
+this path too, where no claude-subagent dispatches; no lifecycle bracket,
+though the provider's own reported usage IS recorded on its event; where
 the tier and the effort come from; naming an `ok:false` reviewer before dropping
 it; and the empty-set fallback. This file is the PROCEDURE once the branch is
 taken, and nothing else in the review subsystem reads it.
@@ -14,13 +15,16 @@ taken, and nothing else in the review subsystem reads it.
 
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): an API
   call runs nothing, so this is the one backend that cannot resolve a reference
-  itself. **This arm gets NO lifecycle bracket and no token field, deliberately.**
-  It is the one place a real API-reported usage figure could exist rather than a
-  host-reported one, and no adapter extracts one today. State the consequence
-  rather than let a reader infer completeness: under a panel, `cad-reviewer`'s
-  per-role total in `trace render` covers the claude-subagent voice ONLY, and the
-  provider call that ran beside it is unmeasured, so that number is short by an
-  unstated amount. Compose the payload FILE inside THIS RUN's own scratch
+  itself. **This arm still gets NO lifecycle bracket, deliberately.** It is the
+  one place a real API-reported usage figure exists rather than a host-reported
+  one, and the seam now reads it: every adapter extracts the provider's usage
+  and the `provider/request` event carries it, absent only where the response
+  reported nothing real (references/seam-review-provider.md). State the
+  consequence rather than let a reader infer one total: that figure is a
+  different DENOMINATION and never sums into `roles`, so under a panel
+  `cad-reviewer`'s per-role total in `trace render` still covers the
+  claude-subagent voice ONLY - the provider call that ran beside it is priced on
+  its own event, not folded into that number. Compose the payload FILE inside THIS RUN's own scratch
   directory and pass it with the EXISTING `--payload <file>` flag - no new
   subcommand or flag:
   ```
