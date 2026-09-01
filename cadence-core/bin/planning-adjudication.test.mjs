@@ -1180,3 +1180,83 @@ test('an OVERRIDDEN blocking fire settles end to end, with the record present ra
     'the override settle point produces a reason on the receipt and no commit, so a SHA here '
     + 'could only have been fabricated');
 });
+
+// --- D-04: the receipt recount reaches a task's home --------------------------
+//
+// A /cad-task fire keeps its record under `.planning/tasks/<slug>/`, and
+// `recordForFire` used to resolve `phases/<N>/` alone - so every task
+// settlement's counts were self-asserted: the recount found no record, omitted
+// itself, and any figure at all was appended. The receipt carries no slug to
+// look the record up by, so the phase is the only signal: `--phase 0` is a
+// task's number by the rule `fireIdentity` enforces, and there is no `phases/0/`.
+
+/** A repo holding one task's seam-written record, and the figures its envelope
+ *  returned. The discriminator is `cad-task-<short head sha>`, the spelling
+ *  workflows/task.md states, because the glob arm matches on that tail. */
+function taskFireRepo(slug = 'a-task-slug') {
+  const { repo, dir, base, headFull } = adjRepo();
+  mkdirSync(join(dir, 'tasks', slug), { recursive: true });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '0', '--task', slug,
+    '--trigger', 'risk_surface', '--discriminator', `cad-task-${headFull.slice(0, 7)}`,
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+  return { repo, dir, base, head: headFull, rec };
+}
+
+test('D-04: a WRONG count on a task settlement is refused, exactly as under a phase', () => {
+  // The defect measured 2026-09-01: an identical record under phases/9/ refused
+  // a fabricated --survivors 999 with count-disagreement, and under
+  // tasks/<slug>/ the same receipt was accepted ok:true.
+  const { repo, dir, base, head } = taskFireRepo();
+  const before = traceLines(dir).length;
+  const r = plRun(repo, dir, ['trace', 'append', '--phase', '0',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--base', base, '--sha', head, '--survivors', '999', '--downgraded', '0', '--refuted', '0']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'count-disagreement');
+  assert.match(r.detail, /tasks\/a-task-slug\//,
+    'the refusal names the record it counted, which is the file the caller has to open');
+  assert.equal(traceLines(dir).length, before, 'a refused receipt was appended anyway');
+});
+
+test('D-04: the figures the seam returned settle the same task fire', () => {
+  // The other half of the pair: widening the recount must not refuse a receipt
+  // that agrees with its record, or a task could never be settled at all.
+  const { repo, dir, base, head, rec } = taskFireRepo();
+  const before = traceLines(dir).length;
+  const r = plRun(repo, dir, ['trace', 'append', '--phase', '0',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--base', base, '--sha', head,
+    '--survivors', String(rec.counts.survived),
+    '--downgraded', String(rec.counts.downgraded),
+    '--refuted', String(rec.counts.refuted)]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(traceLines(dir).length, before + 1, 'the accepted receipt was not appended');
+});
+
+test('D-04: the recount does NOT widen to deferred/<N>/, which keeps its stated posture', () => {
+  // The same record, the same receipt, the only difference being the home. A
+  // carried fire degrades to NO cross-check rather than to a wrong one: the
+  // writer widened to deferred/ so a carried finding could still be ruled on,
+  // and matching a receipt against a record there would compare it with one it
+  // may not be for. Asserted rather than assumed, so the half-reversal is a
+  // choice on the record instead of an oversight nobody re-reads.
+  const { repo, dir, base, headFull } = adjRepo();
+  mkdirSync(join(dir, 'deferred', '3'), { recursive: true });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const rec = plRun(repo, dir, ['adjudication', '--phase', '3',
+    '--trigger', 'risk_surface', '--discriminator', `cad-task-${headFull.slice(0, 7)}`,
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+  assert.equal(rec.record, `deferred/3/ADJUDICATION-risk_surface-cad-task-${headFull.slice(0, 7)}.json`);
+
+  const before = traceLines(dir).length;
+  const r = plRun(repo, dir, ['trace', 'append', '--phase', '3',
+    '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+    '--base', base, '--sha', headFull,
+    '--survivors', '999', '--downgraded', '0', '--refuted', '0']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(traceLines(dir).length, before + 1,
+    'the receipt the omitted check lets through was not appended');
+});

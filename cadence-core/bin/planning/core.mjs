@@ -743,11 +743,14 @@ function fireIdentity(face, dir, opts) {
  * `high` survived has to re-arm, and a re-arm with nowhere to write its round-2
  * member leaves the cap reading unspent off a queue that could never gain one.
  *
- * `recordForFire` deliberately does NOT widen with them. It resolves the
- * receipt RECOUNT, whose own contract already states that an unresolvable
- * record OMITS the check rather than failing the append - so a carried fire
- * degrades to no cross-check instead of to a wrong one, and that is the safe
- * direction there while it is the unsafe one here.
+ * `recordForFire` deliberately does NOT widen with the SECOND of them. It
+ * resolves the receipt RECOUNT, whose own contract already states that an
+ * unresolvable record OMITS the check rather than failing the append - so a
+ * carried fire degrades to no cross-check instead of to a wrong one, and that is
+ * the safe direction there while it is the unsafe one here. The task home is
+ * different and the recount DOES share it (D-04): a task's record is written
+ * under a slug the receipt cannot name, so leaving it unresolved meant every
+ * task settlement asserted its own counts with nothing able to disagree.
  *
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording

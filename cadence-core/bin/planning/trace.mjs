@@ -1274,6 +1274,26 @@ function cmdTrace(dir, sub, opts) {
  * EVERY ARM ANSWERS '' RATHER THAN THROWING. This resolves a cross-check, and
  * an unresolvable one omits the check - it never fails the append.
  *
+ * TWO HOMES, CHOSEN BY THE PHASE (D-04). `phases/<N>/` for every phase but one,
+ * and `.planning/tasks/<slug>/` for phase 0. A `/cad-task` fire deliberately
+ * spells its phase `0` - the one number no roadmap phase carries, so there is no
+ * `phases/0/` and there never will be - and keeps its record beside the sibling
+ * REVIEW file under its slug. Resolving only the phase join meant every task
+ * settlement's counts were self-asserted: the recount below found no record and
+ * omitted itself, so a receipt naming any figure at all was appended. The
+ * receipt carries NO slug to look it up by (`references/triage-gate.md` states
+ * `--plan <k>` is omitted on a task fire, and the live receipts confirm it), so
+ * the phase is the only signal there is and every task directory is searched.
+ * `deferred/<N>/` is deliberately NOT here - see the block comment on `fireHome`
+ * in planning/core.mjs, which states why the safe direction differs between the
+ * writer and this recount.
+ *
+ * A SEARCH ACROSS HOMES DOES NOT WEAKEN THE ONE-CANDIDATE RULE. Candidates are
+ * counted across every home together, so two task directories holding a record
+ * that matches this trigger, round and head answer '' exactly as two records in
+ * one directory already do: a check that might be reading another fire's
+ * rulings is worse than no check.
+ *
  * `trigger` is validated against `RECORD_TOKEN` before it reaches `join`, the
  * same rail the writer applies for the same reason (VAL-01): it reaches a
  * FILENAME, and a `--trigger ../../etc` that resolved anything at all would be
@@ -1286,11 +1306,32 @@ function cmdTrace(dir, sub, opts) {
  */
 function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
   if (typeof trigger !== 'string' || !RECORD_TOKEN.test(trigger)) return '';
-  const pdir = join(dir, 'phases', String(phaseRaw));
-  /** A regular FILE at `name` under the phase directory, or ''. A symlink is
-   * not a record: it is followed out of the tree by every reader after it. */
-  const regular = (name) => {
-    const file = join(pdir, name);
+  /** @type {string[]} */
+  let homes = [];
+  if (String(phaseRaw) !== '0') {
+    homes = [join(dir, 'phases', String(phaseRaw))];
+  } else {
+    // `lstatSync` on `tasks/` itself before the walk, the discipline `fireHome`
+    // takes at the write face: `readdirSync` follows a symlinked directory, so
+    // without this a symlinked `tasks` would be enumerated outside the planning
+    // tree and this recount would compare a receipt against a record from
+    // somewhere else. Each entry is then held to the same bar by `isDirectory()`
+    // off the dirent, which reads as `lstat` does and so answers false for a
+    // symlink pointing at a directory.
+    const troot = join(dir, 'tasks');
+    let root = null;
+    try { root = lstatSync(troot); } catch { /* no tasks/ is no candidate */ }
+    if (root && root.isDirectory()) {
+      try {
+        homes = readdirSync(troot, { withFileTypes: true })
+          .filter((d) => d.isDirectory()).map((d) => join(troot, d.name));
+      } catch { homes = []; }
+    }
+  }
+  /** A regular FILE at `name` under `home`, or ''. A symlink is not a record:
+   * it is followed out of the tree by every reader after it. */
+  const regular = (home, name) => {
+    const file = join(home, name);
     try { return lstatSync(file).isFile() ? file : ''; } catch { return ''; }
   };
 
@@ -1300,33 +1341,45 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
     // Refused here for the reason the writer refuses it: a discriminator
     // outside this grammar names no record the writer could ever have written.
     if (!RECORD_TOKEN.test(discriminator)) return '';
-    return regular(recordName(trigger, discriminator, round));
+    const name = recordName(trigger, discriminator, round);
+    const found = homes.map((home) => regular(home, name)).filter(Boolean);
+    return found.length === 1 ? found[0] : '';
   }
 
   const head = typeof sha === 'string' ? sha.trim().toLowerCase() : '';
   if (!/^[0-9a-f]{7,40}$/.test(head)) return '';
   const prefix = `ADJUDICATION-${trigger}-`;
   const suffix = round > 1 ? `-r${round}.json` : '.json';
-  /** @type {string[]} */
-  let names = [];
-  try { names = readdirSync(pdir); } catch { return ''; }
-  const hits = names.filter((name) => {
-    if (!name.startsWith(prefix) || !name.endsWith(suffix)) return false;
-    const discriminator = name.slice(prefix.length, name.length - suffix.length);
-    // At round 1 the suffix is bare `.json`, which every higher round's file
-    // also ends with - so a `-r<n>` tail is another round's record, not this
-    // fire's discriminator.
-    if (round === 1 && /-r\d+$/.test(discriminator)) return false;
-    // The discriminator's last segment is the short head sha. Compared as a
-    // PREFIX in whichever direction is shorter, because the receipt may spell
-    // the head 7-char or full while the filename is abbreviated.
-    const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
-    return tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head));
-  });
-  // Through `regular` like the per-plan arm above: the glob found a NAME, and a
+  /** @type {{home: string, name: string}[]} */
+  const hits = [];
+  for (const home of homes) {
+    /** @type {string[]} */
+    let names = [];
+    // `continue`, never `return`: an unreadable home is one candidate source
+    // that answered nothing, and on the task arm the others are still to come.
+    try { names = readdirSync(home); } catch { continue; }
+    for (const name of names) {
+      if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
+      const discriminator = name.slice(prefix.length, name.length - suffix.length);
+      // At round 1 the suffix is bare `.json`, which every higher round's file
+      // also ends with - so a `-r<n>` tail is another round's record, not this
+      // fire's discriminator.
+      if (round === 1 && /-r\d+$/.test(discriminator)) continue;
+      // The discriminator's last segment is the short head sha. Compared as a
+      // PREFIX in whichever direction is shorter, because the receipt may spell
+      // the head 7-char or full while the filename is abbreviated.
+      const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
+      if (tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head))) {
+        hits.push({ home, name });
+      }
+    }
+  }
+  // Counted as NAMES and filtered through `regular` only once one stands alone,
+  // the order the single-home walk already took: the glob found a name, and a
   // symlink wearing that name is followed out of the tree by every reader after
-  // it, which is the disposition this function already declares.
-  return hits.length === 1 ? regular(hits[0]) : '';
+  // it. Dropping symlinks first would turn an ambiguous pair into a confident
+  // single, which is the guess this function exists not to make.
+  return hits.length === 1 ? regular(hits[0].home, hits[0].name) : '';
 }
 
 /**
@@ -1347,6 +1400,15 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
  * advisory arm that wrote none. The trace is gitignored, so it is the local
  * cross-check and the committed record is the custody artifact; a receipt that
  * could not be cross-checked is not thereby wrong.
+ *
+ * ABSENT MEANS ABSENT FROM THE TWO HOMES `recordForFire` READS, which is two of
+ * the three a record may live in: `phases/<N>/` and, on phase 0, the task's own
+ * `tasks/<slug>/`. A fire `deferred carry` moved into `deferred/<N>/` resolves
+ * nothing here and takes this omission by design (D-04) - the writer widened to
+ * that home so a carried finding could still be ruled on, and widening the
+ * recount with it would compare a receipt against a record it may not be for.
+ * So a carried fire's counts stay self-asserted, and that is stated rather than
+ * accidental.
  *
  * @param {string} dir @param {string|number} phaseRaw
  * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
@@ -1422,6 +1484,10 @@ function recountReceipt(dir, phaseRaw, fire) {
  * AN ABSENT RECORD OMITS THE CHECK, as `recordForFire` and the recount both
  * already declare - a fire predating the format, or an advisory arm that wrote
  * none. A cross-check whose record does not exist must never fail an append.
+ * ABSENT is again absent from the two homes `recordForFire` reads of the three a
+ * record may live in - `phases/<N>/`, and `tasks/<slug>/` on phase 0 - so a fire
+ * carried into `deferred/<N>/` clears this guard by resolving nothing, on the
+ * same stated posture the recount above names (D-04).
  *
  * AN UNREADABLE ONE IS REFUSED, exactly as the recount refuses it, and the two
  * cases are not one case: an absent record is a record nobody wrote, an
