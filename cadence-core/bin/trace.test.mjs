@@ -1267,6 +1267,81 @@ test('seam: --events hands back the raw array the two in-process readers use', (
   assert.ok(!('outcomes' in full));
 });
 
+// --- the provider-spend fold (CST-04) ----------------------------------------
+//
+// The cross-model panel's cost reaches the CLI response FOLDED, for the same
+// reason the raw array is withheld: 293 `provider/request` events sit on this
+// repository's own record and the response is read into a model's context. It
+// is a different denomination from `roles.tokens` - an input+output count off
+// the wire against a host-reported final-window proxy - so it never reaches a
+// `roles` total (D-01), and a call whose event carried no usage raises
+// `unrecorded` rather than folding in as a zero (D-11).
+
+/** One `provider/request` event `m` minutes in, with or without a usage pair. */
+function provider(dir, m, usage) {
+  appendEvent(dir, {
+    phase: 9, family: 'provider', event: 'request', command: 'review',
+    provider: 'openai', outcome: 'ok', ts: at(m), ...(usage ? { usage } : {}),
+  });
+}
+
+test('seam: the default render folds what the providers said the reviews cost', () => {
+  const dir = root();
+  provider(dir, 0, { input: 900, output: 100 });
+  provider(dir, 1, { input: 400, output: 60 });
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  // input+output, summed across the panel, with the count of calls it prices.
+  assert.deepEqual(r.provider_spend, { calls: 2, tokens: 1460 });
+  assert.equal(r.counts.provider, 2, 'the fold prices every call the counts count');
+  // FOLDED, never passed through: the raw events stay withheld.
+  assert.ok(!('events' in r), JSON.stringify(Object.keys(r)));
+});
+
+test('seam: a scope holding no provider call carries no provider_spend key', () => {
+  const dir = root();
+  billed(dir, '1', 'cad-executor', 0, 4, 100);
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  assert.equal('provider_spend' in r, false,
+    'a record without a provider call renders the envelope every reader already parses');
+  assert.deepEqual(r.counts, { routing: 0, provider: 0, lifecycle: 2, outcome: 0 });
+});
+
+test('seam: a provider call whose event carried no usage is unrecorded, never zero', () => {
+  const dir = root();
+  provider(dir, 0, { input: 900, output: 100 });
+  provider(dir, 1);
+  // A foreign producer's non-number is refused the way a string `tokens` on a
+  // return is: it must never be string-concatenated onto a numeric total.
+  provider(dir, 2, { input: 'lots' });
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
+    { calls: 3, tokens: 1000, unrecorded: 2 });
+});
+
+test('seam: a scope whose every provider call reported nothing shows no total', () => {
+  const dir = root();
+  provider(dir, 0);
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
+    { calls: 1, unrecorded: 1 },
+    'no `tokens: 0` - every event written before the seam read usage would price at nothing');
+});
+
+test('render: provider usage reaches no roles total, with or without it (D-01)', () => {
+  const dir = root();
+  billed(dir, '1', 'cad-reviewer', 0, 4, 100);
+  appendEvent(dir, {
+    phase: 9, family: 'provider', event: 'request', command: 'review', role: 'cad-reviewer',
+    provider: 'openai', outcome: 'ok', ts: at(5),
+    usage: { input: 9000, output: 900 }, usage_raw: { input_tokens: 9000, output_tokens: 900 },
+  });
+  const withUsage = renderTrace(dir, 9).roles;
+  assert.deepEqual(withUsage, { 'cad-reviewer': { dispatches: 1, tokens: 100 } });
+  // The SAME record with every usage key stripped: a byte off the host's bill
+  // either way, which is what makes the two denominations separable.
+  const stripped = lines(dir).map((e) => { delete e.usage; delete e.usage_raw; return e; });
+  writeFileSync(tracePath(dir), `${stripped.map((e) => JSON.stringify(e)).join('\n')}\n`);
+  assert.deepEqual(renderTrace(dir, 9).roles, withUsage);
+});
+
 // --- what a dispatch COST: --tokens, --role, --read --------------------------
 
 /** The trace file's exact bytes, or null when it does not exist yet. */

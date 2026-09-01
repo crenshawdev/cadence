@@ -509,6 +509,76 @@ function parseDurationMs(raw) {
   return Number.isSafeInteger(total) ? total : null;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT THE PROVIDERS SAID THIS SCOPE'S REVIEW CALLS COST.
+//
+// Folded rather than passed through, for the same reason the raw event array is
+// withheld below: this response is read into a model's context, and this
+// repository's own record holds 293 `provider/request` events. A summed figure
+// with its call count answers "what did the cross-model panel cost" in three
+// numbers instead of three hundred objects.
+//
+// ITS OWN DENOMINATION, and it never touches `roles`. `roles.tokens` is a
+// final-window figure the execution HOST reported for one dispatch; this is an
+// input+output count off the WIRE, reported by the provider. Summing the two
+// would denominate `roles.cad-reviewer.tokens` in nothing, which is the rule
+// lib/trace.mjs's `TraceRender` typedef already states for the two cache keys
+// ("They stop HERE either way") - so nothing here reads or writes `r.roles`
+// (D-01).
+//
+// A call whose event carried NO usage raises `unrecorded` and contributes no
+// zero to the total: every `provider/request` event written before the seam
+// read usage at all carries neither key, and folding those in as zeros would
+// price a whole cycle's reviews at nothing (D-11). The block itself is absent
+// where the scope holds no provider call, the omit-when-empty discipline
+// `roles`, `coordinator`, `mismatched` and `rotated` already follow, so a
+// record without one renders byte-identically for every reader already parsing
+// this envelope.
+
+/**
+ * One token count off a provider event, or `undefined` where the line carries
+ * something that is not one. The trace is a file, and a hand-edited or
+ * foreign-producer line must never be string-concatenated onto a numeric total
+ * - the same refusal `renderTrace` makes for a string `tokens` on a return.
+ * @param {any} v @returns {number|undefined}
+ */
+function usageCount(v) {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
+/**
+ * The provider-spend fold for a set of scoped events, spread into the response.
+ * @param {Record<string, any>[]} events the events already scoped to `--phase`
+ * @returns {{provider_spend?: {calls: number, tokens?: number, unrecorded?: number}}}
+ */
+function providerSpend(events) {
+  let calls = 0;
+  let priced = 0;
+  let tokens = 0;
+  for (const e of events) {
+    if (e.family !== 'provider') continue;
+    calls++;
+    const u = e.usage;
+    if (!u || typeof u !== 'object' || Array.isArray(u)) continue;
+    const input = usageCount(u.input);
+    const output = usageCount(u.output);
+    if (input === undefined && output === undefined) continue;
+    priced++;
+    tokens += (input ?? 0) + (output ?? 0);
+  }
+  if (!calls) return {};
+  const unrecorded = calls - priced;
+  return {
+    provider_spend: {
+      calls,
+      // Gated on a figure having LANDED, exactly as `roles.tokens` is: a scope
+      // whose every call reported nothing says `unrecorded`, never `0`.
+      ...(priced ? { tokens } : {}),
+      ...(unrecorded ? { unrecorded } : {}),
+    },
+  };
+}
+
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
@@ -1071,7 +1141,14 @@ function cmdTrace(dir, sub, opts) {
       ...(r.malformed ? { malformed: r.malformed } : {}),
       ...(full
         ? { events: r.events }
-        : { brackets: r.brackets, outcomes: r.events.filter((e) => e.family === 'outcome') }),
+        : {
+          brackets: r.brackets,
+          outcomes: r.events.filter((e) => e.family === 'outcome'),
+          // The third bounded projection, and it rides the SAME arm as the
+          // other two: `--events` is an either/or, so a caller asking for the
+          // raw array gets today's envelope and folds the spend itself.
+          ...providerSpend(r.events),
+        }),
       unpaired: r.unpaired,
       // Emitted the way `roles` and `coordinator` are - only when there is
       // something to say, so a clean trace's envelope is byte-identical to the
