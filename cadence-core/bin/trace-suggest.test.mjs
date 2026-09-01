@@ -701,6 +701,15 @@ test('seam: a real trace written through appendEvent reads back through `trace s
 // `lib/trace-suggest.mjs`, so this literal moves again only when that array
 // does. D-12: a necessary re-pin carries its arithmetic rather than being
 // quietly edited until it agrees.
+//
+// RE-PINNED A SECOND TIME in v3.7.10 (TRC-12/CST-04), and the array is exactly
+// what moved: `'cross-model provider calls'` left `SPEND_EXCLUDES` once the
+// seam started recording provider-reported usage, so the `join(', ')` is now
+// two names instead of three. The arithmetic did not move again either - still
+// `423,846 of 968,705 recorded tokens (44%)`, the same three figures, because
+// that spend was never in this total and still is not; it is reported in its
+// own denomination on `report.md`'s `Cross-model reviews` line. One clause
+// shortened, nothing recomputed.
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'verbatim.trace.jsonl');
 
@@ -716,7 +725,7 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
         kind: 'info',
         subject: 'cad-executor',
         evidence: 'largest recorded spend: 423,846 of 968,705 recorded tokens (44%)'
-          + '; excludes the orchestrator\'s own turns, cross-model provider calls, figureless returns',
+          + '; excludes the orchestrator\'s own turns, figureless returns',
         action: null,
       },
       {
@@ -738,6 +747,9 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
 //
 //   $ node --test cadence-core/bin/trace-suggest.test.mjs
 //   x MSR-02: the spend receipt names all three excluded sources, from the one exported list
+//     ^ the case was RENAMED in v3.7.10 when the list went three to two; the
+//       recipe and the assertion that fails are unchanged, so a re-watch prints
+//       the same failure under the current name.
 //     AssertionError [ERR_ASSERTION]: the spend receipt does not name `the
 //     orchestrator's own turns` - a /cad-suggest reader is told a worker-return
 //     token sum is the run's cost. Got: largest recorded spend: 300,000 of
@@ -750,7 +762,7 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
 // into the old checkout would carry the fixed evidence string in with it and
 // the check would go GREEN there, proving nothing. So only this file is copied,
 // the old seam emits the old string, and the fallback list below supplies the
-// three names the absent export would have.
+// names the absent export would have.
 //
 // The second failure in that run is the committed-fixture deepEqual, which is
 // the same fact read from the other end - the old seam's literal string against
@@ -762,7 +774,7 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
 //
 // The subject is the RULE, not the committed fixture: the assertion runs over a
 // render built by this file's own `render()` helper, so a fixture re-pin can
-// never carry this check green. And the three names are READ from the frozen
+// never carry this check green. And the names are READ from the frozen
 // export rather than copied here - a test holding its own copy of the list goes
 // green on the day the seam and `workflows/report.md` stop agreeing about what
 // the figure excludes, which is the one failure this check exists to catch.
@@ -777,7 +789,7 @@ import * as traceSuggestModule from './lib/trace-suggest.mjs';
 
 const SPEND_EXCLUDES_READ = Array.isArray(traceSuggestModule.SPEND_EXCLUDES)
   ? traceSuggestModule.SPEND_EXCLUDES
-  : ["the orchestrator's own turns", 'cross-model provider calls', 'figureless returns'];
+  : ["the orchestrator's own turns", 'figureless returns'];
 
 // --- SGT-01: the whole path returns a retune, not a description -------------
 //
@@ -874,7 +886,7 @@ test('SGT-01: `trace suggest` returns a direction, a current, and a proposed whe
   }
 });
 
-test('MSR-02: the spend receipt names all three excluded sources, from the one exported list', () => {
+test('MSR-02: the spend receipt names every excluded source, from the one exported list', () => {
   const out = suggestFromRender(render([], {
     'cad-executor': { dispatches: 2, tokens: 300000 },
     'cad-planner': { dispatches: 1, tokens: 100000 },
@@ -882,8 +894,8 @@ test('MSR-02: the spend receipt names all three excluded sources, from the one e
   const s = out.find((x) => x.evidence.includes('largest recorded spend'));
   assert.ok(s, 'the spend receipt no longer fires on a render carrying token figures');
 
-  assert.equal(SPEND_EXCLUDES_READ.length, 3,
-    'the exclusion list is no longer the three sources the caveat is written about');
+  assert.equal(SPEND_EXCLUDES_READ.length, 2,
+    'the exclusion list is no longer the two sources the caveat is written about');
   for (const name of SPEND_EXCLUDES_READ) {
     assert.ok(s.evidence.includes(name),
       `the spend receipt does not name \`${name}\` - a /cad-suggest reader is told a`

@@ -96,7 +96,7 @@ export const IN_DISPATCH_FLOORS = Object.freeze({
 });
 
 /**
- * The three sources the recorded token total DOES NOT include, in the words
+ * The two sources the recorded token total DOES NOT include, in the words
  * every reader of that total states.
  *
  * Exported and frozen for the reason `lib/trace.mjs` exports
@@ -107,22 +107,30 @@ export const IN_DISPATCH_FLOORS = Object.freeze({
  * on the day the two stop claiming the same thing. `prose-agreement.test.mjs`
  * reads THIS array to check the prose, so there is one list and one claim.
  *
- * Why these three, and why they are not a hedge:
+ * Why these two, and why they are not a hedge:
  *   1. the orchestrator's own turns - a figure is read off a subagent RETURN
  *      and the coordinator has no return, so it contributes nothing to a total
  *      that most of the run's spend belongs to;
- *   2. cross-model provider calls - no lifecycle bracket and no token field on
- *      that arm at all, by design;
- *   3. figureless returns - a close that carried no `--tokens`, the advisory
+ *   2. figureless returns - a close that carried no `--tokens`, the advisory
  *      fire among them, counted under `unrecorded` rather than as a zero.
  *
- * No fourth entry is a ratio or a correction factor, and none is coming: the
+ * THREE until v3.7.10, when `'cross-model provider calls'` was DROPPED from
+ * this list - and it must not come back. The entry's stated reason was that the
+ * arm had no lifecycle bracket and no token field at all; the seam now records
+ * the provider's own reported usage on the `provider/request` event,
+ * `planning/trace.mjs` folds it into `provider_spend`, and
+ * `workflows/report.md` prints it on its own `Cross-model reviews` line. That
+ * spend is a DIFFERENT denomination and still never sums into this total, so
+ * the arithmetic did not move - but "excluded" became the wrong word for it,
+ * because it is reported rather than missing, and naming it here would send a
+ * reader hunting for a figure already on the page.
+ *
+ * No third entry is a ratio or a correction factor, and none is coming: the
  * terms are what MSR-03 and PLN-01 need, and a stored product is the
  * maintenance loop `v2.7.0` deleted.
  */
 export const SPEND_EXCLUDES = Object.freeze([
   "the orchestrator's own turns",
-  'cross-model provider calls',
   'figureless returns',
 ]);
 
@@ -527,7 +535,7 @@ export function suggestFromRender(render, resolution, reads) {
   }
 
   // R5: the spend receipt. Names where the recorded tokens went and what that
-  // total is NOT - the three `SPEND_EXCLUDES` names ride the evidence string
+  // total is NOT - the two `SPEND_EXCLUDES` names ride the evidence string
   // rather than the envelope, because `workflows/suggest.md` relays evidence
   // unchanged and adds no flag, so this is the only way the caveat reaches a
   // `/cad-suggest` reader at all. Asks for nothing: still `kind: 'info'`,

@@ -114,7 +114,7 @@ Phase <N>: <name> - run record
 Dispatches: <table: role | rung | tokens | turns | step minutes | worker minutes, one row per `brackets` entry (step minutes from its `ms`, worker minutes from its `duration_ms`, turns from its `turns` key - absent on a row whose close carried none), rung from routing resolves>
 Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from `outcomes` and REVIEW files. Where the fire left an ADJUDICATION record, the survivor figure is that record's rulings COUNTED and checked against the `survivors`/`downgraded`/`refuted` on the event; a fire with no record reads `unrecorded`>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
-Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns, cross-model provider calls, and figureless returns): <total recorded; top role and its share; unrecorded dispatch count>
+Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns and figureless returns; cross-model provider spend is not excluded but separately denominated, and is on the `Cross-model reviews` line below): <total recorded; top role and its share; unrecorded dispatch count>
 Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
 Cross-model reviews (what the PROVIDERS reported off the wire, a different denomination from the token line above and never added to it): <only when `provider_spend` is present: its `tokens` as a provider-reported input+output count, over its `calls` calls, with `unrecorded` beside it when present; no line at all where the scope holds no provider review call>
 Window budget (from `trace window`): <only when `problems` is non-empty: one line per crossing - the role, the dispatch it belongs to, its figure and the ceiling it crossed, both as given; then `unbudgeted` roles and `unrecorded` when either is non-zero>
@@ -137,21 +137,26 @@ Rules, all load-bearing:
   that took no time are different claims, and only one of them is a
   measurement.
 - What that token line EXCLUDES, stated where the figure is printed, in the
-  same three names `cadence-core/bin/lib/trace-suggest.mjs` exports as
+  same two names `cadence-core/bin/lib/trace-suggest.mjs` exports as
   `SPEND_EXCLUDES` and `/cad-suggest` relays - one list, so the two surfaces
   cannot end up claiming different things:
   - the orchestrator's own turns. A figure is read off a subagent RETURN and
     the coordinator has no return of its own, so every turn it takes
     contributes nothing to this total. It is the majority of what is missing
     and the one arm this report never stated.
-  - cross-model provider calls. None by design - no lifecycle bracket and no
-    token field on that arm at all.
   - figureless returns. A close that carried no `--tokens`, an advisory fire
     among them because its reviewer closes its own bracket without one
     (`references/review-triggers.md`, the advisory persistence tail); they
     count under `unrecorded`, never as a zero.
   So the total prices recorded claude-subagent returns only, short by an
   unstated amount, and it is not what the run cost.
+  Cross-model provider spend is NOT on that list and has not been since
+  v3.7.10, when the seam started recording the provider's own reported usage on
+  the `provider/request` event. It IS reported - on the `Cross-model reviews`
+  line above, in the provider's own denomination - so it is separate from this
+  total rather than missing from it, and the two are never added. Do not read
+  this figure as covering it, and do not put it back on the exclusion list,
+  where a reader would go hunting for a number already on the page.
 - The gap is printed as its TERMS and never as one number: the dispatch count,
   the turn count with `turns_unrecorded` beside it, the per-dispatch window
   figure, and the count of dispatches that came back with no figure. The

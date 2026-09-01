@@ -1982,6 +1982,9 @@ test('MSR-01: the spawn seam\'s close-half rule states the turn count, its omiss
 //
 //   $ node --test cadence-core/bin/prose-agreement.test.mjs
 //   x MSR-02: report.md names the seam's three excluded sources where it prints the spend figure
+//     ^ the case was RENAMED in v3.7.10 when the list went three to two; the
+//       recipe and the assertion that fails are unchanged, so a re-watch prints
+//       the same failure under the current name.
 //     AssertionError [ERR_ASSERTION]: report.md's spend line does not name `the
 //     orchestrator's own turns`, so it presents a worker-return token sum as the
 //     run's cost. Got: Tokens on subagent returns (the host's own per-dispatch
@@ -2005,7 +2008,7 @@ test('MSR-01: the spawn seam\'s close-half rule states the turn count, its omiss
 // `workflows/report.md` has no executor at all - moving the caveat into the
 // seam envelope was rejected for exactly that reason, because the file would
 // still be relaying a sentence no check reads. So the sentence is read here,
-// and the three names are IMPORTED from `lib/trace-suggest.mjs` rather than
+// and the names are IMPORTED from `lib/trace-suggest.mjs` rather than
 // restated: the subject of this check is that the seam and the prose claim the
 // same thing, and a literal copy in this file would assert nothing about
 // agreement - it would go green on the day the two lists diverged.
@@ -2022,12 +2025,12 @@ import * as traceSuggestModule from './lib/trace-suggest.mjs';
 
 const REPORT_EXCLUDES = Array.isArray(traceSuggestModule.SPEND_EXCLUDES)
   ? traceSuggestModule.SPEND_EXCLUDES
-  : ["the orchestrator's own turns", 'cross-model provider calls', 'figureless returns'];
+  : ["the orchestrator's own turns", 'figureless returns'];
 
-test('MSR-02: report.md names the seam\'s three excluded sources where it prints the spend figure', () => {
+test('MSR-02: report.md names every excluded source the seam exports, where it prints the spend figure', () => {
   const text = doc('cadence-core', 'workflows', 'report.md');
-  assert.equal(REPORT_EXCLUDES.length, 3,
-    'the exported exclusion list is no longer the three sources the caveat is written about');
+  assert.equal(REPORT_EXCLUDES.length, 2,
+    'the exported exclusion list is no longer the two sources the caveat is written about');
 
   // 1. The shape block's own spend line - the point at which the figure is
   //    PRINTED. A caveat further down the file is a caveat a reader can compose
