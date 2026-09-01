@@ -204,7 +204,15 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open.
+**`v3.7.10 - review receipts`, opened 2026-09-01** against the `Review
+receipts` milestone. Three phases, five ids - `TRC-12`, `CST-04`, `RSK-09`,
+`AUT-03`, `TRC-13` - drawn from the receipts cluster v3.7.9 named and
+deliberately left open. One claim: a review ran, and the run record must not
+say something untrue about it. A fallback reviewer that is never closed, a
+provider review whose cost is dropped on the floor, a settlement with no home
+the seam accepts, one authorization writing two receipts, and a declared effort
+nothing verifies. Phase 3 is gated on OQ-2 confirming the host actually
+downgrades; if it does not, the cycle closes at two phases.
 
 **`v3.7.9 - progress not perfection`, opened 2026-08-31, closed 2026-09-01.**
 One phase, 15 commits off `main` (2 feat and 3 fix against 6 docs, 1 refactor

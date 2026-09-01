@@ -1,11 +1,26 @@
-# Requirements: Cadence (v3.7.8)
+# Requirements: Cadence (v3.7.10)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-No cycle open. `/cad-phase add` opens the next one.
+`v3.7.10 - review receipts` opened 2026-09-01 against the `Review receipts`
+milestone. Three phases and five ids - `TRC-12` and `CST-04` in phase 1,
+`RSK-09` and `AUT-03` in phase 2, `TRC-13` in phase 3, the last one gated on
+OQ-2 confirming the host actually downgrades. The source is the receipts
+cluster the v3.7.9 overview named and left open: `GH-228`, `GH-221`, `GH-227`,
+`GH-220`, `GH-226`. The theme is one claim - a review ran, and the run record
+must not say something untrue about it. `## Traceability` is empty until
+`/cad-plan` seeds each row as its phase is planned.
+
+| Id | Requirement | Phase |
+|----|-------------|-------|
+| TRC-12 | A review dispatch that falls back to `claude-subagent` after a provider failure closes the bracket it opened. `references/review-triggers.md:202-203` routes the empty-set fallback to the `claude-subagent` arm's bracket procedure at `:110-148` rather than to step 3's reviewer-selection rule, so the fallback reaches the close at `:143` including its failure case. Observed unpaired on smithers phase 3, `corr` `3-5812523`. `GH-228` | 1 |
+| CST-04 | A provider-voiced review records what it spent and appears in the routing ledger. `review-provider.mjs` reads the usage the provider returns and puts it on the `provider/request` event, and a review fire emits a `routing/resolve` whichever backend serves it. Today the only token arithmetic is the outbound cap at `:29,402,437`, and two of five fires on verbatim phase 2 had no resolve at all. An absent usage is recorded as unrecorded, never as zero. `GH-221` | 1 |
+| RSK-09 | A settlement receipt can name a home the seam accepts. `adjudication` learns `tasks/<slug>/` as a third home beside `phases/<N>/` and `deferred/<N>/`, sharing the REVIEW writer's path resolution; and per OQ-1, a receipt for an earlier phase window is writable through the seam rather than hand-appended. `GH-227` | 2 |
+| AUT-03 | An `override` receipt names the authorization it descends from, not only the range it settles. An id minted when the engineer answers is carried by every receipt written on that answer, so a reader can tell a duplicate write from the same decision applied to a second range, and `/cad-suggest` counts decisions rather than writes. `GH-220` | 2 |
+| TRC-13 | The run record states the effort a rung actually ran at beside the effort it was routed at. `subagent-trace.mjs` reads `effort` off the `SubagentStop` payload it already parses and puts it on the `return` event; a dispatch whose input carried none is unrecorded, never a match. Gated on OQ-2: if the installed host still hard-errors on `xhigh`/`max`, this id is withdrawn. `GH-226` | 3 |
 
 `v3.7.9 - progress not perfection` opened 2026-08-31 and closed 2026-09-01.
 One phase, three ids - `PHS-03`, `RTE-01`, `DOC-05` - are rows under the
@@ -482,4 +497,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-26 v3.7.4 opened against the `Dispatch cost` milestone with three phases and four ids - BUD-03, RSK-05 and RNG-03 promoted out of deferral, plus TRC-08 new for the trace rotation. Grew to four phases and five ids the same day at phase 2 planning: TRC-07 promoted as phase 3, because RNG-03's measurement clause is unbuildable without it. `## Traceability` is empty until `/cad-plan` seeds each row as its phase is planned*
+*Last updated: 2026-09-01 v3.7.10 opened against the `Review receipts` milestone with three phases and five ids - TRC-12, CST-04, RSK-09, AUT-03 and TRC-13. Three v3.7.9 tracker rows (GH-233, GH-232, GH-218) were closed the same day as already shipped. `## Traceability` is empty until `/cad-plan` seeds each row as its phase is planned*
