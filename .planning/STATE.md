@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 3 (Every review fire is bracketed and priced)
-Status: phase complete
-Next: /cad-context 2
+Phase: 2 of 3 (A receipt can name its home and its authorization)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-09-01
