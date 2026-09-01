@@ -6,6 +6,50 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.9] - 2026-09-01
+
+Three places where Cadence printed a next step you could not take. The command
+was reachable, the sentence naming it was not wrong about the work, and the
+action itself went nowhere: a question asked before the answer that made it
+moot, a door into a project that does not exist yet, and a route computed off
+the end of a run rather than the end of the work.
+
+`/cad-task` asked the protected-branch and integration-branch questions before
+it classified the description, so a task that turned out to be phase-sized paid
+for two prompts and then stopped without ever reaching a commit. The guard runs
+after `scope` now and is scoped to the arms that actually commit. The same arm
+used to hand a phase-sized task to `/cad-phase add` in a repository with no
+`.planning/` directory at all, where there is no roadmap for a phase to be
+added to; it branches on what `planning.mjs status` answers and names
+`/cad-adopt` and `/cad-new-project` on a treeless tree, which are the two
+doors that exist there.
+
+`/cad-progress` read a SUMMARY as the end of the work. It is the end of a RUN.
+A `/cad-plan --gaps` plan written after one sat beside it undispatched, and the
+route table sent you to `/cad-verify` over plans nothing had executed.
+`planning.mjs status` now carries an `outstanding` field, deep-equal to
+`replay-check`'s `dispatch_set` off one shared reader, and the route row
+consumes it: an executed phase that still owes dispatches goes to
+`/cad-execute`. It narrows the executed row rather than inverting it, so a
+phase with nothing outstanding still routes to `/cad-verify` exactly as before.
+The reason the field lives on `status` and not in a second `replay-check` call
+is call count, not bytes: the route table scans every phase lowest-first, and
+the alternative was one process spawn per executed phase on every run.
+
+The gap plan the routing fix depends on was writing over `PLAN.md`. Measured on
+a fixture: with the gap plan written there, the prior run's
+`reports/plan-1.md` still read `PLAN COMPLETE` and `replay-check` answered
+`dispatch_set: []`, so nothing routing off the seam could see the new plan at
+all. `--gaps` takes the next free plan number now, counting a bare `PLAN.md`
+as plan 1.
+
+And the five shipped places that claimed `/cad-progress` resumes paused work
+automatically. It offers, and it has always offered; the ask-user gate predates
+every one of those sentences. `README.md`, both skill descriptions, the
+workflow purpose and what `/cad-help` prints all say offer now, and the
+`DOCS-CLAIMS.md` row that had blessed the old wording as accurate carries the
+correction, so the next docs sweep does not re-bless it.
+
 ## [3.7.8] - 2026-08-30
 
 Five bugs, one shape. In every one of these Cadence already held the answer on
@@ -4454,6 +4498,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.9]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.9
 [3.7.8]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.8
 [3.7.7]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.7
 [3.7.6]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.6
