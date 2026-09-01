@@ -444,3 +444,82 @@ test('status: distinct sub-phase numbers report no collision', () => {
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.deepEqual((r.drift || []).filter((d) => d.kind === 'phase-dir-collision'), []);
 });
+
+// --- the outstanding set: a SUMMARY is the end of a run, not of the work -----
+//
+// The defect these pin: /cad-progress read "this phase has a SUMMARY" as "this
+// phase is executed, go verify it", so a gap plan written after that SUMMARY
+// was named by nothing. `status` now carries the same fact `replay-check`
+// dispatches on, off ONE definition (`readPlanReports`), and the third row
+// below is that one-definition claim made observable rather than asserted.
+
+/** Executor reports under `phases/<n>/reports/`, keyed by plan number. */
+function writeReports(dir, n, byPlan) {
+  const rdir = join(dir, 'phases', String(n), 'reports');
+  mkdirSync(rdir, { recursive: true });
+  for (const [k, body] of Object.entries(byPlan)) {
+    writeFileSync(join(rdir, `plan-${k}.md`), body);
+  }
+  return dir;
+}
+
+/** A phase 1 holding a SUMMARY, `PLAN.md` and `PLAN-2.md`. */
+const gapPlanTree = () => makeTree({
+  roadmap: [{ n: 1, name: 'One' }],
+  phases: { 1: { plan: ['PLAN.md', 'PLAN-2.md'], summary: true } },
+});
+
+test('status: an unexecuted gap plan beside a SUMMARY is executed AND outstanding', () => {
+  const dir = writeReports(gapPlanTree(), 1, { 1: 'PLAN COMPLETE\nTasks: 2 of 2\n' });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  // The derived status is untouched - this narrows what `executed` MEANS to a
+  // router, it does not mint a status or invert the row.
+  assert.equal(r.phases[0].status, 'executed', JSON.stringify(r.phases));
+  assert.deepEqual(r.outstanding, [{ phase: 1, plans: ['PLAN-2.md'] }], JSON.stringify(r.outstanding));
+});
+
+test('status: every plan reporting complete lists the phase nowhere, and the key is still there', () => {
+  const dir = writeReports(gapPlanTree(), 1, {
+    1: 'PLAN COMPLETE\nTasks: 2 of 2\n', 2: 'PLAN COMPLETE\nTasks: 1 of 1\n',
+  });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.phases[0].status, 'executed', JSON.stringify(r.phases));
+  // PRESENT and empty, never absent: a caller has to be able to tell "nothing
+  // is outstanding" from "this seam predates the field", and only a key that
+  // survives the empty state separates them.
+  assert.ok(Object.prototype.hasOwnProperty.call(r, 'outstanding'), JSON.stringify(r));
+  assert.deepEqual(r.outstanding, []);
+});
+
+test('status: the outstanding plan list IS replay-check\'s dispatch_set, from one definition', () => {
+  const dir = writeReports(gapPlanTree(), 1, {
+    1: 'PLAN COMPLETE\nTasks: 2 of 2\n', 2: 'PLAN PARTIAL\nTasks: 1 of 3\n',
+  });
+  const status = run(['status'], dir);
+  const replay = run(['replay-check', '--phase', '1'], dir);
+  assert.equal(status.ok, true, JSON.stringify(status));
+  assert.equal(replay.ok, true, JSON.stringify(replay));
+  const listed = (status.outstanding.find((e) => e.phase === 1) || {}).plans;
+  assert.deepEqual(listed, replay.dispatch_set, JSON.stringify({ listed, dispatch_set: replay.dispatch_set }));
+  assert.deepEqual(listed, ['PLAN-2.md']);
+});
+
+test('status: a planned phase that has run nothing is outstanding in full', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }], phases: { 1: { plan: ['PLAN.md', 'PLAN-2.md'] } },
+  });
+  const r = run(['status'], dir);
+  assert.equal(r.phases[0].status, 'planned', JSON.stringify(r.phases));
+  // Byte order, so `PLAN-2.md` precedes `PLAN.md` (`-` sorts under `.`): the
+  // one `.sort()` both `derivePhases` and `listPlanFiles` apply, which is why
+  // this list and `replay-check`'s dispatch set stay deep-equal above.
+  assert.deepEqual(r.outstanding, [{ phase: 1, plans: ['PLAN-2.md', 'PLAN.md'] }]);
+});
+
+test('status: an unplanned phase has no plans and so takes no entry', () => {
+  const r = run(['status'], makeTree({ roadmap: [{ n: 1, name: 'One' }] }));
+  assert.equal(r.phases[0].status, 'unplanned');
+  assert.deepEqual(r.outstanding, []);
+});

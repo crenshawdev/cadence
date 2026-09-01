@@ -11,7 +11,9 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, read, readQueue } from './core.mjs';
+import {
+  PHASE_DIR_NAME, derivePhases, fail, listPlanFiles, ok, read, readPlanReports, readQueue,
+} from './core.mjs';
 import { classifyPhaseList, parseCursor, parseRequirements } from '../lib/planning-files.mjs';
 import { emit } from '../lib/seam-io.mjs';
 
@@ -276,9 +278,44 @@ function cmdStatus(dir) {
   // command after it was written.
   const queue = readQueue(dir, null);
 
+  // THE OUTSTANDING SET - the plans this phase still has work for, off the SAME
+  // `readPlanReports` definition `replay-check` builds its `dispatch_set` from
+  // (D-04), so the command that ROUTES and the command that DISPATCHES cannot
+  // disagree about what a phase still owes. A SUMMARY is the end of a run, not
+  // the end of the work: a phase that gained a gap plan after its SUMMARY is
+  // derived `executed` and appears here, which is the whole point of the key.
+  //
+  // ALWAYS PRESENT on an ok:true answer and `[]` rather than absent when
+  // nothing is outstanding, the same rule `deferred` above carries and for the
+  // same reason: a caller has to be able to tell "nothing is outstanding" from
+  // "this seam predates the field", and a key that vanishes in the empty state
+  // collapses those into the fail-open answer on a surface that decides
+  // routing.
+  //
+  // Read HERE rather than by spawning `replay-check` per phase (D-03):
+  // /cad-progress's route table scans ALL phases lowest-first, so a per-phase
+  // spawn would cost one process per executed phase on every run.
+  //
+  // NOT a new cursor status and NOT a new derived phase status (D-02): minting
+  // one moves `status`, `audit`, `phase-done` and the cursor at once, and makes
+  // every cursor a prior Cadence version wrote read as drift.
+  //
+  // The phase directory resolves through the SAME `String(p.n)` expression
+  // `derivePhases` builds, so a `phases/1.10` tree resolves to `phases/1.1`
+  // exactly as `status` already reports it under `phase-dir-collision` drift.
+  // Widening that to resolve by spelling would change `status` and `audit`
+  // behaviour on collision trees at once and is not this phase's call (D-06).
+  const outstanding = [];
+  for (const p of derived) {
+    const plans = readPlanReports(join(dir, 'phases', String(p.n)), p.plans)
+      .filter((r) => !r.complete).map((r) => r.plan);
+    if (plans.length) outstanding.push({ phase: p.n, plans });
+  }
+
   ok({
     current, total: derived.length,
     deferred: queue,
+    outstanding,
     // Additive, and present ONLY in the closed state: a caller branching on
     // `current === null` alone would otherwise read a closed milestone as
     // "all phases complete" and route back to /cad-milestone.

@@ -46,7 +46,7 @@ Step 1 has a second door. **`/cad-adopt`** is the entrance for a project that al
 
 Step 1 also takes a shortcut when the questioning already happened somewhere else: **`/cad-new-project --brief <file>`** reads the design brief that conversation produced, treats what it settles as answered, and asks only about what it leaves open. [`docs/DISCOVERY.md`](./docs/DISCOVERY.md) is how you get there from a freeform conversation.
 
-`/cad-progress` tells you where you stand and what's next at any point, and auto-resumes incomplete work.
+`/cad-progress` tells you where you stand and what's next at any point: it finds incomplete or paused work and offers to resume it.
 
 [![The Cadence phase loop: new-project feeds context, plan, execute and verify in sequence; a decision gate sits under each command, and verify loops back to context for the next phase or exits to milestone.](./docs/figures/phase-loop.svg)](./docs/WORKFLOW.md)
 

@@ -18,11 +18,6 @@ If the description is empty, ask: "What's the task? (one sentence)"
 Store as $TASK.
 </step>
 
-<step name="git_guard">
-Apply the protected-branch guard from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` before any work.
-</step>
-
 <step name="scope">
 Classify $TASK before touching anything:
 
@@ -31,17 +26,46 @@ Classify $TASK before touching anything:
 - **Planned**: `--plan` was passed, OR the task is multi-step enough that you
   would want a written breakdown (4+ edits, ordering matters, partial
   completion would leave the repo broken).
-- **Too big**: feature-sized, belongs on the roadmap, and no phase carries it
-  yet - so the first stop is the one command that creates one. Resolve the
-  number it will land on: run
-  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and take
-  `total + 1` as `{N}`. Then say so and stop, substituting `$TASK` and the
-  resolved `{N}` rather than printing either literally:
+- **Too big**: feature-sized, belongs on the roadmap. Ask what is on disk
+  before naming a destination - run
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and let
+  its own answer pick the branch. Then say so and stop; no work path runs.
+
+  On `ok:true` there is a roadmap to append to, so the first stop is the one
+  command that appends. Take `total + 1` as `{N}` and print, substituting
+  `$TASK` and the resolved `{N}` rather than printing either literally:
   "This is phase-sized. Run /cad-phase add $TASK to put it on the roadmap as
   phase {N}, then /cad-context {N} and /cad-plan {N}. Or /cad-capture it for
   later."
 
+  On `ok:false` with reason `no-planning-dir` there is no roadmap, so do NOT
+  compute `total + 1` and do NOT name the command that appends to one - it is
+  the command that refuses here. NAME BOTH doors and let the user pick: "This
+  is phase-sized, and there is no Cadence project here yet. /cad-adopt starts
+  one from a repo that already has code and history; /cad-new-project starts
+  one from a blank page. Either gets you a roadmap this can go on." The arm
+  NAMES the two rather than measuring which applies: Cadence has no seam for
+  "existing code" versus "blank page" - `status` collapses every treeless
+  repository into that one reason - and probing the git root here would make
+  /cad-task answer differently than /cad-progress on the same tree. Add no
+  `[ -d .planning ]` check beside it either; the seam's answer is the gate,
+  and two ways of asking "is there a project here" in one workflow drift.
+
+  On any other `ok:false`, relay the envelope's `reason` and `hint` and stop,
+  the way `workflows/execute.md`'s `locate` step relays a seam refusal.
+
 When unsure between inline and planned, pick planned.
+</step>
+
+<step name="git_guard">
+(Inline and planned scope only. The "too big" arm has already said so and
+stopped, so it reaches no commit and is charged no branch question. Before
+`bracket` rather than after, because the guard's `ask` arm carries an Abort
+option and an abort taken past an open bracket would leave a dispatch event
+with nothing to close it.)
+
+Apply the protected-branch guard from
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` before any work.
 </step>
 
 <step name="bracket">

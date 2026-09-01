@@ -322,6 +322,50 @@ function listPlanFiles(pdir) {
   return { plans: plans.sort(), nonconforming: nonconforming.sort() };
 }
 
+// ---------------------------------------------------------------------------
+// readPlanReports - one phase directory's executor reports, one row per plan.
+//
+// ONE definition of "this plan's report says it is complete", because TWO
+// commands now decide from it: `replay-check`, which turns it into a dispatch
+// set, and `status`, which turns it into the outstanding set /cad-progress
+// routes on. A second copy is a second place for the two rules below to drift,
+// and the failure would be silent - the two answers disagreeing about the same
+// phase (D-04).
+//
+// The `report` path it returns is RELATIVE to `pdir`, and the
+// `phases/<spelling>/` prefix stays the CALLER's on purpose: `replay-check`
+// resolves the phase directory from the caller's RAW spelling while `status`
+// resolves it numerically as `String(n)`, so a shared reader that also owned
+// the prefix would emit a different string for a sub-phase in one of the two
+// envelopes.
+// ---------------------------------------------------------------------------
+/** `PLAN-<k>.md` -> k, bare `PLAN.md` -> 1 - the derivation the executor
+ * contract's `<report_file>` states, so this reads the path that gets written. */
+const planNumber = (f) => Number(/^PLAN-(\d+)\.md$/.exec(f)?.[1] ?? 1);
+
+/** The FIRST line, trimmed - not the file. A `PLAN COMPLETE` quoted in a Note
+ * is prose about a status, not a claim of one, and only line 1 pins the word. */
+const firstLine = (body) => (body == null ? null
+  : body.slice(0, body.indexOf('\n') === -1 ? undefined : body.indexOf('\n')).trim());
+
+/**
+ * @param {string} pdir the phase directory
+ * @param {string[]} plans that directory's conforming plan filenames
+ * @returns {{plan: string, k: number, report: string, exists: boolean,
+ *   status: string|null, complete: boolean}[]}
+ */
+function readPlanReports(pdir, plans) {
+  return plans.map((plan) => {
+    const k = planNumber(plan);
+    // The exact filename, never a `plan-*.md` glob: report-rotation.mjs mints
+    // `plan-<k>.<n>.md` siblings, and a glob would let an old one decide.
+    const report = join('reports', `plan-${k}.md`);
+    const status = firstLine(read(join(pdir, report)));
+    return { plan, k, report, exists: status !== null, status,
+      complete: status === 'PLAN COMPLETE' };
+  });
+}
+
 /**
  * The ONE `.planning/reads.jsonl` line parse in this file. Two arms read that
  * record now - `cmdReads` and the `trace suggest` arm below - and a second copy
@@ -990,6 +1034,7 @@ export {
   pluginVersion,
   read,
   readJsonPayload,
+  readPlanReports,
   readQueue,
   readReadsRecords,
   resolveRange,

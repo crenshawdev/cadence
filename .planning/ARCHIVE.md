@@ -1306,3 +1306,21 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/5/CONTEXT.md`: D-05 (where the loss is): the loss is a TWO-STEP - rotation 1 leaves a
 - `phases/5/CONTEXT.md`: D-06 (which admission check): the check to change is `appendEvent`'s
 - `phases/5/CONTEXT.md`: D-07 (two reserves, not one): the reserve cannot be a single constant. The
+
+## v3.7.9
+
+- `phases/1/SUMMARY.md`: The `DOCS-CLAIMS.md` ledger gained the rewritten README-32 row but no prose callout under `## Reading this ledger`. Plan 4 declined it because the row's own resolution cell names the README-44 shape it follows, so the paragraph would restate the row. Add one if a future sweep finds the resolution cell too small to carry it.
+- `phases/1/SUMMARY.md`: Both of plan 3's `diff` review findings were confirmed as accurate observations and downgraded rather than fixed: `progress.md`'s always-present rule for `outstanding` has no routing row acting on an absent key (unreachable - the workflow and the seam ship as one plugin artifact, and `deferred` already carries the same wording), and `plan-gaps.md`'s `ls`-then-write filename pick is check-then-act under two concurrent `/cad-plan --gaps` on one phase (no plan-file write path in the tree takes a lock). Both were declined to `.planning/DECLINED.md`.
+- `phases/1/UAT.md`: Phase-sized /cad-task stops without a branch question In cadence-core/workflows/task.md the scope step opens before git_guard, and the guard is scoped to the inline and planned arms - so a description that classifies as phase-sized reaches its stop with no protected-branch or integration-branch prompt.
+- `phases/1/UAT.md`: Treeless phase-sized arm names the two starting doors task.md's '- **Too big**' arm branches on planning.mjs status: on no-planning-dir it names /cad-adopt and /cad-new-project, and does not offer /cad-phase add.
+- `phases/1/UAT.md`: /cad-plan --gaps writes the next free plan number plan-gaps.md writes PLAN-2.md on a phase that already has PLAN.md, leaving PLAN.md and its report byte-identical.
+- `phases/1/UAT.md`: An unexecuted gap plan beside a SUMMARY routes to /cad-execute progress.md's route table sends an executed phase whose outstanding set names plans to /cad-execute {N}, and a fixture test pins that case.
+- `phases/1/UAT.md`: An empty outstanding set still routes to /cad-verify An executed phase with outstanding [] routes to /cad-verify {N} - the new row narrows the executed row rather than inverting it.
+- `phases/1/UAT.md`: status carries outstanding on every call planning.mjs status always emits the outstanding key, [] rather than absent when nothing is outstanding, and CURSOR_STATUSES gained no new value.
+- `phases/1/UAT.md`: Auto-resume claims restated and budgets clean The five auto-resume sites describe an offer rather than an automatic resume, DOCS-CLAIMS.md's README-32 row carries the corrected line and verdict, and node cadence-core/bin/self-verify.mjs reports no budget-overrun.
+- `phases/1/CONTEXT.md`: D-01 (gap plan naming): `/cad-plan --gaps` writes the next free
+- `phases/1/CONTEXT.md`: D-02 (OQ-1, shape): the outstanding-plan fact is an additive field on the
+- `phases/1/CONTEXT.md`: D-03 (OQ-1, site): the read lands in `status`, not a second `replay-check`
+- `phases/1/CONTEXT.md`: D-04 (one definition): the report-completeness derivation hoists into
+- `phases/1/CONTEXT.md`: D-05 (`/cad-task` arm): the phase-sized arm NAMES both doors and lets the
+- `phases/1/CONTEXT.md`: D-06 (phase directory resolution): the outstanding set inherits

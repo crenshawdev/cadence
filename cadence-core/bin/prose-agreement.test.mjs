@@ -1537,6 +1537,57 @@ test('progress.md: the deferred count is read off the envelope at both its sites
     'the reconcile step gained a deferred status mapping; the cursor carries a POINTER, not a state');
 });
 
+test('progress.md: an executed phase with outstanding dispatches routes to /cad-execute', () => {
+  // RTE-01. A SUMMARY on disk is the end of a RUN, not the end of the work: a
+  // `/cad-plan --gaps` plan written after one is undispatched, and the executed
+  // row sent that phase to /cad-verify {N} over plans nothing had ever run. The
+  // fix NARROWS the executed case rather than inverting it, which is why this
+  // test pins the row's POSITION and not just its presence - a row placed below
+  // the plain executed row is dead prose, and one placed above the planned row
+  // steals a planned phase's route.
+  const wf = doc('cadence-core', 'workflows', 'progress.md');
+  const labelOf = regionLabels(wf);
+  const lines = wf.split('\n');
+  const region = (name) => lines.filter((l, i) => labelOf(i) === name).join('\n');
+
+  const derive = region('derive');
+  assert.match(derive, /`outstanding`/,
+    'the derive step no longer names the `outstanding` key the one status line carries');
+  assert.match(derive, /ALWAYS\s+present/,
+    'the derive step no longer says `outstanding` is always present, so an absent key - a '
+    + 'seam that predates the field - reads as "nothing is outstanding" and routes past the work');
+
+  const routeLines = region('route').split('\n');
+  const at = (needle) => routeLines.findIndex((l) => l.includes(needle));
+  const row = at('`outstanding` names');
+  assert.ok(row > -1, 'the route table no longer has a row for an executed phase with outstanding plans');
+  assert.match(routeLines[row], /\/cad-execute \{N\}/,
+    'the outstanding row no longer routes to /cad-execute, so the undispatched plans stay undispatched');
+
+  const planned = at('| Lowest **planned** phase |');
+  const executed = at('| Lowest **executed** phase | /cad-verify {N} |');
+  assert.ok(planned > -1, 'the route table lost its planned row');
+  assert.ok(executed > -1,
+    'the plain executed row no longer routes to /cad-verify {N} - the new row inverted the '
+    + 'executed case instead of narrowing it, so an empty outstanding set never reaches verify');
+  assert.ok(planned < row,
+    'the outstanding row displaced "Lowest **planned** phase", which is a phase with NO run yet');
+  assert.ok(row < executed,
+    'the outstanding row sits below the plain executed row, where first-match-wins makes it dead prose');
+
+  // No second seam call: the route table scans ALL phases lowest-first, so a
+  // per-phase spawn costs one process per executed phase on every run (D-03).
+  assert.doesNotMatch(region('route'), /planning\.mjs" replay-check/,
+    'the route step spawns replay-check per phase; the fact rides the one status line derive fetched');
+
+  // And no new cursor status (D-02/D-10): a status outside planning.mjs's AGREE
+  // map is reported as `cursor` drift and rewritten by the very next
+  // /cad-progress, so the cursor would stop naming it one command after it was
+  // written. The derived status stays `executed`.
+  assert.doesNotMatch(region('reconcile'), /outstanding/,
+    'the reconcile step gained an outstanding status mapping; the derived status stays `executed`');
+});
+
 test('execute.md state: a deferring run points the cursor at its queue and commits it', () => {
   // Both halves of what makes a deferred finding survive the session that
   // deferred it: a resume pointer that says the queue is there, and the member
@@ -3362,13 +3413,21 @@ test('EXP-05: the executor and the verifier state one rule in one vocabulary', (
 
 const TASK_WF = ['cadence-core', 'workflows', 'task.md'];
 
-/** The `- **Too big**` bullet of task.md's `scope` step, by its own anchors. */
+/**
+ * The `- **Too big**` arm of task.md's `scope` step, WHOLE: from its own marker
+ * to the END of the step body.
+ *
+ * It used to stop at the first blank line, which was the same slice while the
+ * arm was one paragraph - and became a silent vacuity the moment PHS-03 gave
+ * the arm a branch per `status` answer, because every assertion below would
+ * then have read the first paragraph only and passed on prose it never opened.
+ * The step body is the right bound: the arm is the last bullet in it.
+ */
 const tooBigArm = (text) => {
   const step = stepBody(text, 'scope', 'task.md');
   const at = step.indexOf('- **Too big**');
   assert.ok(at > -1, "task.md's scope step carries no `- **Too big**` bullet");
-  const end = step.indexOf('\n\n', at);
-  return step.slice(at, end === -1 ? step.length : end);
+  return step.slice(at);
 };
 
 test('PHS-02 (1): the too-big arm names /cad-phase add before the commands that need a phase', () => {
@@ -3440,4 +3499,73 @@ test('PHS-02 (5): the /cad-context off-roadmap stop names the command that creat
   assert.match(stop, /\/cad-phase add/,
     "PHS-02: /cad-context's off-roadmap stop names no next action again, so a user arriving "
     + 'by a stale cursor or a typed number meets a refusal with no exit');
+});
+
+// --- PHS-03: /cad-task classifies before it guards ---------------------------
+//
+// The defect: `task.md`'s `git_guard` step opened directly after `parse`, so
+// EVERY invocation paid the rail-1 guard - the protected-branch question, the
+// base-integrity check and the integration-branch decision - including the one
+// arm that then says "this is phase-sized" and stops without touching a file.
+// The user answered branch questions for work Cadence had already decided it
+// was not going to do.
+//
+// Asserted on ORDER, the same index-comparison shape `#195` uses on
+// `execute.md`'s `locate` before its `git_guard`, plus a COUNT: the obvious
+// wrong fix is to leave the step where it is and copy a guard sentence into
+// the inline and planned arms, which ships two statements of one rail in one
+// file and lets them drift.
+
+test('PHS-03: task.md classifies before it guards, with one guard step', () => {
+  const task = doc(...TASK_WF);
+  const regressed = 'PHS-03: task.md no longer classifies before it guards - the rail-1 '
+    + 'branch question is charged to the phase-sized arm, which says so and stops without '
+    + 'ever reaching a commit';
+  const scope = task.indexOf('<step name="scope">');
+  const guard = task.indexOf('<step name="git_guard">');
+  const bracket = task.indexOf('<step name="bracket">');
+  assert.ok(scope > -1 && guard > -1 && bracket > -1, 'task.md is missing one of the three steps');
+  assert.ok(scope < guard, regressed);
+  // Before `bracket`, not after: the guard's `ask` arm has an Abort option, and
+  // an abort taken past an open bracket strands a dispatch event with nothing
+  // to close it - which is the same reason `bracket` excludes the too-big arm.
+  assert.ok(guard < bracket,
+    'PHS-03: task.md opens its trace bracket BEFORE the guard, so a guard abort leaves a '
+    + 'dispatch event unpaired');
+  assert.equal(task.indexOf('<step name="git_guard">', guard + 1), -1,
+    'PHS-03: task.md carries a second git_guard step - one rail stated twice in one file '
+    + 'is two statements that drift');
+  // The step says WHICH arms pay it, so a later reader cannot restore the
+  // every-invocation reading while the step is still in the right place.
+  assert.match(stepBody(task, 'git_guard', 'task.md'), /[Ii]nline and planned/,
+    'PHS-03: task.md\'s git_guard step no longer names the inline and planned arms as its '
+    + 'scope, so it reads as applying to every invocation again');
+});
+
+test('PHS-03: the phase-sized arm names both doors where there is no planning tree', () => {
+  const arm = tooBigArm(doc(...TASK_WF));
+  const regressed = "PHS-03: task.md's phase-sized arm assumes a planning tree again - in a "
+    + 'repository with no .planning/ it routes the user at the one command that appends to a '
+    + 'roadmap, which is the command guaranteed to refuse where no roadmap exists';
+  // These two are also the widened slice's own non-vacuity proof: neither
+  // string is reachable from the arm's FIRST PARAGRAPH, so a `tooBigArm` that
+  // regressed to the first-blank-line bound fails HERE instead of passing
+  // silently on every assertion in this file.
+  assert.match(arm, /\/cad-adopt/, regressed);
+  assert.match(arm, /\/cad-new-project/, regressed);
+  // The treeless branch ALONE, by its own anchors. A whole-arm absence check
+  // cannot serve: the initialised branch above it names /cad-phase add and is
+  // right to.
+  const at = arm.indexOf('`no-planning-dir`');
+  assert.ok(at > -1,
+    "task.md's phase-sized arm no longer branches on the seam's `no-planning-dir` reason, so "
+    + 'it computes `total + 1` over an envelope that carries no total');
+  const end = arm.indexOf('On any other `ok:false`', at);
+  assert.ok(end > at,
+    "task.md's phase-sized arm no longer relays the remaining `ok:false` envelopes, so a "
+    + 'refusal it did not anticipate is reported as a phase-sized verdict');
+  const treeless = arm.slice(at, end);
+  assert.match(treeless, /\/cad-adopt/, regressed);
+  assert.match(treeless, /\/cad-new-project/, regressed);
+  assert.doesNotMatch(treeless, /\/cad-phase add/, regressed);
 });

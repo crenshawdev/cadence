@@ -1,6 +1,6 @@
 ---
 name: cad-pause
-description: "Pause work cleanly - a WIP commit of in-flight changes plus a STATE cursor set to paused with a one-line resume pointer (/cad-progress resumes it)"
+description: "Pause work cleanly - a WIP commit of in-flight changes plus a STATE cursor set to paused with a one-line resume pointer (/cad-progress offers to resume it)"
 argument-hint: "[one-line note about where you are]"
 allowed-tools:
   - Read
@@ -13,7 +13,8 @@ allowed-tools:
 <objective>
 Stop mid-work without losing the thread. Two small acts: commit the in-flight
 changes as WIP so nothing is lost, and write the STATE cursor so the next
-session (via /cad-progress, which auto-resumes) knows exactly where to pick up.
+session (via /cad-progress, which finds it and offers to resume) knows exactly
+where to pick up.
 Tiny by design - no Stop hook, no handoff document, no activity log.
 </objective>
 

@@ -80,7 +80,9 @@ that consumes a prior call's output is serialized.
    the roadmap goal alone.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam) - replan from scratch (overwrite) or abort. Never
-   overwrite silently.
+   overwrite silently. The `--gaps` exemption is not a licence to overwrite: a
+   gaps plan writes the next free numbered file (plan-gaps.md step 3) and
+   overwrites nothing, so there is nothing to ask about.
 </step>
 
 <step name="route">
@@ -179,6 +181,8 @@ honor it; if your file-independence analysis contradicts it (e.g. it asks
 for multiple plans but the slices share files), follow your analysis and
 record the deviation and its reason in your return marker and the PLAN
 Notes - never diverge silently.
+
+{gaps mode: write .planning/phases/{N}/{the plan filename plan-gaps.md step 3 resolved} instead - the next FREE plan number, never PLAN.md and never any file already on disk. Overwriting the phase's existing plan leaves its completed report beside it, and replay-check then answers dispatch_set: [], so nothing ever dispatches the gap work.}
 
 <recalled_memory>{one line per recalled result: snippet - source file, phase (when present); this block is present only under memory.backend builtin with non-empty results}</recalled_memory>
 </planning_context>
