@@ -679,6 +679,26 @@ function fireIdentity(face, dir, opts) {
     return null;
   }
 
+  // AND THE CONVERSE, which was accepted and is just as wrong (D-08). `--task`
+  // beside any phase but 0 routed the record to `tasks/<slug>/` and answered
+  // ok:true, leaving the phase's OWN sibling REVIEW file unsettled - the same
+  // failure the guard above describes, arriving from the other side: a fire
+  // reported as recorded and filed where nothing reads it. `fireHome` cannot
+  // catch it, because it takes `task` as the home the caller chose and finds
+  // that directory really there. The phase is compared as the CALLER SPELLED
+  // IT, exactly as the guard above compares it, so `--phase 0.1` is a phase and
+  // not the task number.
+  if (n !== '0' && task !== undefined) {
+    fail('bad-args',
+      `${face} --task is a TASK's home and --phase ${n} is a roadmap phase's - one fire cannot `
+      + 'be both, and the record would land under the slug while the sibling REVIEW file under '
+      + `phases/${n}/ stayed unsettled`,
+      'a task fire passes --phase 0 with --task <slug>, because 0 is the one number no roadmap '
+      + `phase carries; a phase fire passes --phase ${n} and no --task at all. Drop whichever of `
+      + 'the two names the fire this is not');
+    return null;
+  }
+
   return { n, trigger, discriminator, round, base, head, task };
 }
 

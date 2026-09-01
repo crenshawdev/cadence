@@ -403,6 +403,48 @@ test('adjudication: --phase 0 without --task is refused, even where phases/0 exi
     'the record landed in a phase directory a task fire must never reach');
 });
 
+test('adjudication: --task beside a REAL phase is refused, the converse of the guard above (D-08)', () => {
+  // The other direction of the same failure. --task named a home that really
+  // existed, so fireHome found it and wrote there under ok:true - and phase 2's
+  // OWN sibling REVIEW file was left unsettled, a fire reported as recorded and
+  // filed where nothing reads it. fireHome cannot catch this one: it takes the
+  // task as the home the caller CHOSE, and that directory is right there.
+  const { repo, dir, base } = adjRepo();
+  mkdirSync(join(dir, 'tasks', 'some-slug'), { recursive: true });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--task', 'some-slug',
+    '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  // NEITHER home was written: the refusal is ahead of the write, so there is no
+  // half-recorded fire to find later under whichever one won.
+  assert.deepEqual(readdirSync(join(dir, 'tasks', 'some-slug')), [],
+    'the record landed under the slug while the phase kept its unsettled REVIEW');
+  assert.deepEqual(readdirSync(join(dir, 'phases', '2')), [],
+    'the record landed in the phase home');
+});
+
+test('adjudication: both legitimate directions still pass on that same tree (D-08)', () => {
+  // The guard refuses the CONTRADICTION and nothing else, so the two shapes
+  // that were always right are unchanged: phase 0 with a slug is a task fire,
+  // and any other phase with no slug is a phase fire.
+  const { repo, dir, base } = adjRepo();
+  mkdirSync(join(dir, 'tasks', 'some-slug'), { recursive: true });
+  const payload = adjPayloadFile(repo, adjPayload());
+  const task = adjRun(repo, dir, ['--phase', '0', '--task', 'some-slug',
+    '--trigger', 'risk_surface', '--discriminator', 'cad-task-abc1234',
+    '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(task.ok, true, JSON.stringify(task));
+  assert.equal(task.record,
+    'tasks/some-slug/ADJUDICATION-risk_surface-cad-task-abc1234.json');
+
+  const phase = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(phase.ok, true, JSON.stringify(phase));
+  assert.equal(phase.record, 'phases/2/ADJUDICATION-plan-plan-1.json');
+});
+
 test('adjudication: a SYMLINKED tasks/ is refused, not followed out of the tree', () => {
   // lstatSync declines to follow only its OWN last component, so a leaf-only
   // test resolved a symlinked parent on the way past and reported the TARGET's
