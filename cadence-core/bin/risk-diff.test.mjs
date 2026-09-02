@@ -908,10 +908,14 @@ test('risk-check status: appending the plan-1 record makes the identical call pa
   assert.equal(r.plans.length, 1);
   assert.equal(r.plans[0].state, 'recorded');
   // The record's own refs ride the row, so a stale one is visible rather than
-  // silently counted on the phase-wide arm.
+  // silently counted on the phase-wide arm. `staged: false` is the reader's
+  // NORMALIZED reading of a row that carries no such field - the same
+  // absence-is-not-a-verdict rule `empty: false` above it already states - and
+  // it rides the reported shape because the scope a row was written over is
+  // what decides whether a staged ask may match it.
   assert.deepEqual(r.plans[0].records,
     [{
-      base: 'ae5ca09', head: 'HEAD', base_id: null, head_id: null,
+      base: 'ae5ca09', head: 'HEAD', base_id: null, head_id: null, staged: false,
       checked: true, inconclusive: false, matches: [], empty: false,
     }]);
 });
@@ -1026,6 +1030,58 @@ test('risk-check status: a ref that cannot be resolved is a refusal, never a mat
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'unresolved-range', JSON.stringify(r));
   assert.equal(r._exit, 1);
+});
+
+test('risk-check status: a STAGED run is the record a staged ask finds', () => {
+  // The other half of the locked OQ-1 answer. `run` can record a staged scope,
+  // so the gate that reports on records has to be able to ask about one - a
+  // staged run nothing could find would be written and then demanded again.
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const run = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(run.ok, true, JSON.stringify(run));
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged'], repo);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'recorded', JSON.stringify(r.plans[0]));
+  assert.equal(r.plans[0].wanted.staged, true, JSON.stringify(r.plans[0].wanted));
+  assert.equal(r.plans[0].wanted.head_id, null);
+});
+
+test('risk-check status: a REF-RANGE record does not satisfy a STAGED ask', () => {
+  // Two different scopes over the same base are two different diffs. Letting
+  // the committed one answer for the index would clear a staged change nothing
+  // ever read - the widened-range bypass in another spelling.
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'docs/one.md', 'one\n');
+  riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', 'HEAD']);
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged'], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-record-missing', JSON.stringify(r));
+});
+
+test('risk-check status: both scopes together, and a staged ask with no --plan, are refused', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const both = riskStatus(dir,
+    ['--phase', '1', '--plan', '1', '--base', 'HEAD', '--head', 'HEAD', '--staged'], repo);
+  assert.equal(both.ok, false, JSON.stringify(both));
+  assert.equal(both.reason, 'bad-args', JSON.stringify(both));
+  // A half-named scope reads as the phase-wide arm if it is let through, and
+  // then passes on a record some other range left.
+  const planless = riskStatus(dir, ['--phase', '1', '--base', 'HEAD', '--staged'], repo);
+  assert.equal(planless.ok, false, JSON.stringify(planless));
+  assert.equal(planless.reason, 'bad-args', JSON.stringify(planless));
+});
+
+test('risk-check status: a staged ask whose base does not resolve refuses, naming `base`', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'no-such-ref', '--staged'], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unresolved-range', JSON.stringify(r));
+  assert.equal(r.staged, true, JSON.stringify(r));
+  assert.match(r.detail, /^base\b/, r.detail);
 });
 
 test('risk-check run: the record carries the resolved commit ids beside the spellings', () => {

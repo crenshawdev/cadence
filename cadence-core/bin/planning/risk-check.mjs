@@ -161,7 +161,7 @@ function cmdRiskCheckRun(dir, opts) {
   // declares it boolean with `fallback` on both axes for that reason.
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
-  const staged = Boolean(opts.staged);
+  const staged = 'staged' in opts;
   // TWO SPELLINGS OF ONE SCOPE is a malformed call, never a precedence
   // question. Picking one would hand the caller a verdict over a scope it did
   // not ask about, on the one gate that is blocking at every stakes level. The
@@ -473,19 +473,29 @@ function cmdRiskCheckStatus(dir, opts) {
   }
   const n = parsedPhase.value;
 
-  // The triple is all three or none. A plan number alone is NOT a range
-  // identity, and two of the three would let a caller ask about a range it only
-  // half named - which reads as the phase-wide arm and passes on a record left
-  // by some other range.
-  const given = ['plan', 'base', 'head'].filter((f) => f in opts);
-  /** @type {{plan: string, base: string, head: string, base_id: string, head_id: string} | null} */
+  // A NAMED RANGE IS ALL OF IT OR NONE OF IT. A plan number alone is not a
+  // range identity, and a partly named one would read as the phase-wide arm and
+  // pass on a record some other range left.
+  //
+  // What "all of it" is: `--plan <k> --base <ref>` plus EXACTLY ONE scope -
+  // `--head <ref>` for a committed range, `--staged` for the index against the
+  // base. The second is the OTHER half of the locked OQ-1 answer: `run` records
+  // a staged scope, so the gate that reports on records has to be able to ask
+  // about one, or a staged run would be written and never found.
+  const given = ['plan', 'base', 'head', 'staged'].filter((f) => f in opts);
+  const staged = 'staged' in opts;
+  /** @type {{plan: string, base: string, head: string|null, base_id: string,
+   *   head_id: string|null, staged?: boolean} | null} */
   let wanted = null;
   if (given.length) {
-    if (given.length !== 3) {
+    const scopes = ['head', 'staged'].filter((f) => f in opts);
+    if (!('plan' in opts) || !('base' in opts) || scopes.length !== 1) {
       return fail('bad-args',
-        'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three',
-        'send all three to ask about ONE range, or none of them for the phase-wide answer - two of'
-        + ' the three would report on a record some other range left');
+        'risk-check status takes --plan <k> --base <ref> and exactly one of --head <ref> or'
+        + ' --staged, or none of the four',
+        'send --plan and --base with ONE scope - --head <ref> for a committed range, --staged for'
+        + ' the index against --base - or none of them for the phase-wide answer; a half-named'
+        + ' range would report on a record some other range left');
     }
     // The SAME predicate `risk-check run` reads (D-02). One consultation each,
     // so the face that enforces the question and the face that reports it
@@ -498,11 +508,13 @@ function cmdRiskCheckStatus(dir, opts) {
       + ' non-numeric key a fix pass used - then re-run');
     }
     const base = riskRef(opts.base);
-    const head = riskRef(opts.head);
-    if (!base || !head) {
-      return fail('bad-args', 'risk-check status needs --base <ref> and --head <ref>, neither opening with `-`',
-        'name both ends of the range you are asking about, as refs this repository can resolve,'
-        + ' then re-run this check');
+    const head = staged ? null : riskRef(opts.head);
+    if (!base || (!staged && !head)) {
+      return fail('bad-args',
+        'risk-check status needs --base <ref>, and --head <ref> unless --staged names the scope,'
+        + ' with neither ref opening with `-`',
+        'name the scope you are asking about, as refs this repository can resolve - --base <ref>'
+        + ' --head <ref>, or --base <ref> --staged - then re-run this check');
     }
     // The COMMIT PAIR is the identity, not the spelling (see resolveRange), so
     // the asked range is resolved here and compared as ids below. A ref that
@@ -510,20 +522,50 @@ function cmdRiskCheckStatus(dir, opts) {
     // at an unresolvable range would answer about a range nobody can point at,
     // and the only safe answer to "which commits are these" is the one git
     // gives.
-    const resolved = resolveRange(base, head);
-    if (!resolved.ok) {
-      return emit({
-        ok: false,
-        reason: 'unresolved-range',
-        phase: n,
-        plan: parsedPlan.key,
-        base,
-        head,
-        detail: resolved.error,
-        hint: 'name a --base and --head this repository can resolve, then re-run this check',
-      });
+    //
+    // The STAGED ask resolves its base ALONE, through the single-ref half
+    // `resolveRange` is built on, and never reaches `resolveRange` at all: the
+    // index is not a commit, so there is no second ref to hand it and a stand-in
+    // head would be a range nobody asked about. Its `head_id` stays null, which
+    // is also what makes a staged record and a ref-range record unable to match
+    // each other below.
+    let baseId;
+    let headId = null;
+    if (staged) {
+      const b = resolveRef('base', base);
+      if (!b.ok) {
+        return emit({
+          ok: false,
+          reason: 'unresolved-range',
+          phase: n,
+          plan: parsedPlan.key,
+          base,
+          head: null,
+          staged: true,
+          detail: b.error,
+          hint: 'name a --base this repository can resolve, then re-run this check',
+        });
+      }
+      baseId = b.id;
+    } else {
+      const resolved = resolveRange(base, head);
+      if (!resolved.ok) {
+        return emit({
+          ok: false,
+          reason: 'unresolved-range',
+          phase: n,
+          plan: parsedPlan.key,
+          base,
+          head,
+          detail: resolved.error,
+          hint: 'name a --base and --head this repository can resolve, then re-run this check',
+        });
+      }
+      baseId = resolved.base;
+      headId = resolved.head;
     }
-    wanted = { plan: parsedPlan.key, base, head, base_id: resolved.base, head_id: resolved.head };
+    wanted = { plan: parsedPlan.key, base, head, base_id: baseId, head_id: headId,
+      ...(staged ? { staged: true } : {}) };
   }
 
   // ONE reader of the record, through renderTrace and nothing else: a second
@@ -697,7 +739,7 @@ function cmdRiskCheckStatus(dir, opts) {
    * submodule bump permanently unclearable - the caller cannot make git render
    * it - and an unclearable gate is one that gets bypassed.
    * @type {Map<string, {base: any, head: any, base_id: string|null, head_id: string|null,
-   *   checked: boolean, inconclusive: boolean}[]>}
+   *   checked: boolean, inconclusive: boolean, staged: boolean}[]>}
    */
   const records = new Map();
   /** The same records keyed by PLAN alone, for the named-range arm. That arm
@@ -724,6 +766,11 @@ function cmdRiskCheckStatus(dir, opts) {
       // commits it meant.
       base_id: typeof e.base_id === 'string' && e.base_id ? e.base_id : null,
       head_id: typeof e.head_id === 'string' && e.head_id ? e.head_id : null,
+      // THE SCOPE THE RECORD WAS WRITTEN OVER. `=== true` for the reason every
+      // verdict field below is: a ref-range row carries no such field at all,
+      // and an absent one is not a staged scope. It is what keeps the two
+      // scopes from satisfying each other in `sameRange`.
+      staged: e.staged === true,
       // `=== true`, never truthiness: a record written by an older seam carries
       // neither field, and an absent verdict is not a passing one.
       checked: e.checked === true,
@@ -874,14 +921,24 @@ function cmdRiskCheckStatus(dir, opts) {
     // reported so the reader sees an attempt rather than an absence.
     const usable = found.filter((f) => f.checked);
     const asked = asked0
-      ? { base: wanted.base, head: wanted.head, base_id: wanted.base_id, head_id: wanted.head_id }
+      ? { base: wanted.base, head: wanted.head, base_id: wanted.base_id, head_id: wanted.head_id,
+        ...(wanted.staged ? { staged: true } : {}) }
       : null;
     // COMMIT IDS on both sides. Comparing the spellings is what let a record
     // left under `--head HEAD` satisfy a later, wider `--head HEAD` - the very
     // spelling workflows/execute.md documents for both calls.
-    const sameRange = (/** @type {{base_id: string|null, head_id: string|null}} */ f) =>
-      f.base_id !== null && f.head_id !== null
-      && f.base_id === asked.base_id && f.head_id === asked.head_id;
+    //
+    // A STAGED ASK MATCHES A STAGED ROW AND NOTHING ELSE. The index has no
+    // commit id, so its identity is the base it was read against plus the fact
+    // that it WAS the index: a ref-range row over the same base is a different
+    // scope entirely and must not answer for it. The reverse needs no clause -
+    // a staged row's `head_id` is null, so the ref arm's own two-id test already
+    // refuses it.
+    const sameRange = (/** @type {{base_id: string|null, head_id: string|null, staged: boolean}} */ f) =>
+      (asked.staged
+        ? f.staged && f.base_id !== null && f.base_id === asked.base_id
+        : f.base_id !== null && f.head_id !== null
+          && f.base_id === asked.base_id && f.head_id === asked.head_id);
     // STALE, not satisfied: a plan re-dispatched over a widened range
     // (execute.md's "re-dispatch the remainder" arm) is exactly the case that
     // would otherwise pass on the record its earlier, narrower range left. Both

@@ -799,14 +799,19 @@ export const CONTRACTS = {
       '--surfaces': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // The completion gate. `--phase` alone keeps plan-level matching; the
-    // optional `--plan --base --head` triple requires a record for THAT range,
-    // so a record left by an earlier, narrower range of the same plan does not
-    // satisfy a later one.
+    // optional named range - `--plan --base` plus exactly one of `--head` and
+    // `--staged` - requires a record for THAT scope, so a record left by an
+    // earlier, narrower range of the same plan does not satisfy a later one, and
+    // a ref-range record does not satisfy a staged ask. `--staged` mirrors the
+    // `risk-check run` row above: boolean, presence is its whole grammar, and
+    // the exactly-one rule is the seam's own check rather than a bound these
+    // four fields can state.
     'risk-check status': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
       '--base': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--head': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--staged': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
     // THE ADJUDICATION RECORD a blocking or adjudicated gate fire leaves beside
     // its sibling `REVIEW-<trigger>-<discriminator>.md`. ONE WORD, never `record
