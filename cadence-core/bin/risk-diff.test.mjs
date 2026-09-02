@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scanDiff, scanDeclared } from './lib/risk-diff.mjs';
 import { CATEGORIES } from './lib/surface-scan.mjs';
 import { REVIEWER_TEXT_PATHSPECS } from './planning/risk-check.mjs';
@@ -269,6 +269,52 @@ function traceLines(dir) {
 /** The `outcome`/`risk_check` lines alone. */
 const riskRecords = (dir) => traceLines(dir)
   .filter((e) => e.family === 'outcome' && e.event === 'risk_check');
+
+/**
+ * `resolveRange` run in a CHILD process whose cwd is the fixture repo.
+ *
+ * NEVER in-process: `resolveRange` asks git about the CWD, and the test
+ * runner's cwd is this repository - so an in-process call would answer about a
+ * tree the fixture never built, and `no-such-ref` would still fail for the
+ * right reason in the wrong place. The child imports `planning/core.mjs` by
+ * absolute file URL for the same reason the specifier cannot be relative: the
+ * child has no script file to be relative TO.
+ */
+function resolveRangeIn(repo, base, head) {
+  const core = pathToFileURL(join(HERE, 'planning', 'core.mjs')).href;
+  const src = `import { resolveRange } from ${JSON.stringify(core)};\n`
+    + 'process.stdout.write(JSON.stringify(resolveRange('
+    + `${JSON.stringify(base)}, ${JSON.stringify(head)})));`;
+  return parseJson(execFileSync(process.execPath, ['--input-type=module', '-e', src],
+    { encoding: 'utf8', cwd: repo }));
+}
+
+test('resolveRange: an unresolvable HEAD keeps the base git DID resolve, and names `head`', () => {
+  // The all-or-nothing catch this splits. One `try` around the toplevel probe
+  // and both `rev-parse --verify` calls meant any single failure returned
+  // `base: '', head: ''`, so a caller was told nothing about WHICH end failed
+  // and an id git had already handed over was discarded (verbatim
+  // 2026-08-30T18:28:50 wrote both ids null on exactly this shape).
+  const { repo } = riskRepo({ answered: false });
+  const sha = commitFile(repo, 'README.md', 'start\n');
+  const r = resolveRangeIn(repo, sha, 'no-such-ref');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.base, sha, 'the end git resolved was thrown away with the one it could not');
+  assert.equal(r.head, '');
+  assert.match(r.error, /^head\b/, r.error);
+  assert.ok(r.error.includes('no-such-ref'), r.error);
+});
+
+test('resolveRange: an unresolvable BASE keeps the head, and names `base`', () => {
+  // The mirror, so the end-naming is a rule and not one branch's wording.
+  const { repo } = riskRepo({ answered: false });
+  const sha = commitFile(repo, 'README.md', 'start\n');
+  const r = resolveRangeIn(repo, 'no-such-ref', 'HEAD');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.base, '');
+  assert.equal(r.head, sha, 'HEAD resolved and was discarded with its unresolvable sibling');
+  assert.match(r.error, /^base\b/, r.error);
+});
 
 test('risk-check run: a risky range answers ok:true with matches AND leaves one record', () => {
   const { repo, dir } = riskRepo();

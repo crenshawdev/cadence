@@ -483,6 +483,76 @@ function riskRef(raw) {
 }
 
 /**
+ * ONE git read, and the ONLY catch this region has.
+ *
+ * `resolveRange` used to run the toplevel probe and BOTH `rev-parse --verify`
+ * calls inside a single `try`, so any one failure returned `base: '', head: ''`
+ * and a resolvable `HEAD` was discarded beside an unresolvable sibling - the
+ * caller could not even say which end it was (verbatim 2026-08-30T18:28:50 wrote
+ * both ids null). Splitting the calls means three failure sites, so the failure
+ * SHAPE is built once here and every caller below reads the same three fields.
+ *
+ * redactUrl on the message, the EXP-01 rail cmdLeaseCheck's `no-staged-set`
+ * applies: a git failure detail can carry a remote URL with credentials in it.
+ * Keeping the wrap at this one catch is also what holds the
+ * `planning-detail-sites` census where it stands - one idiom site for the whole
+ * range-resolution region, wrapped, however many git reads it grows.
+ * @param {string[]} args
+ * @returns {{ok: boolean, out: string, error: string}}
+ */
+function gitLine(args) {
+  try {
+    return {
+      ok: true,
+      out: execFileSync('git', args,
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(),
+      error: '',
+    };
+  } catch (e) {
+    return { ok: false, out: '', error: redactUrl(e && e.message ? e.message : String(e)) };
+  }
+}
+
+/**
+ * ONE END of a range: the repository, and the COMMIT ID one caller ref names.
+ *
+ * THE SHARED SINGLE-REF RESOLUTION. `resolveRange` is built on it twice, and
+ * `risk-check`'s staged arms call it once for a lone `--base` - which is why it
+ * exists as its own function rather than as two lines inside `resolveRange`: a
+ * caller with only one end must not have to invent a second ref, and
+ * `resolveRange` must never learn a spelling that is not a rev.
+ *
+ * THE FAILURE NAMES THE END. `error` opens with `base` or `head`, then that
+ * end's own spelling, then the git message, so a refusal quoted straight at a
+ * caller says which half it has to fix. The name is the CALLER's word for the
+ * end, not something git knows, so it is a parameter.
+ *
+ * `--verify` with a `^{commit}` suffix, so a tag resolves to the commit it
+ * names and a ref naming no commit at all is an ERROR rather than some other
+ * object's id. `riskRef` has already refused a `-`-leading spelling, so nothing
+ * reaching git here can be read as an option.
+ *
+ * `top` is passed in by a caller that already resolved it - `resolveRange`
+ * resolves the toplevel ONCE and hands it to both ends - and probed here when
+ * it is not. A toplevel that cannot be read fails the end with git's own
+ * message and no end name: it is not this end that failed, it is the repository.
+ * @param {string} end @param {string} ref @param {string} [top]
+ * @returns {{ok: boolean, top: string, id: string, error: string}}
+ */
+function resolveRef(end, ref, top) {
+  let where = top;
+  if (where === undefined) {
+    const probe = gitLine(['rev-parse', '--show-toplevel']);
+    if (!probe.ok) return { ok: false, top: '', id: '', error: probe.error };
+    where = probe.out;
+  }
+  const r = gitLine(['-C', where, 'rev-parse', '--verify', `${ref}^{commit}`]);
+  return r.ok
+    ? { ok: true, top: where, id: r.out, error: '' }
+    : { ok: false, top: where, id: '', error: `${end} ${ref}: ${r.error}` };
+}
+
+/**
  * The repository, and the COMMIT IDS a caller's two refs name.
  *
  * RANGE IDENTITY IS THE COMMIT PAIR, never the ref SPELLING.
@@ -494,37 +564,40 @@ function riskRef(raw) {
  * stays on the record for the READER; the id is what is compared. A ref that
  * cannot be resolved is a refusal at both call sites, never a match.
  *
- * `--verify` with a `^{commit}` suffix, so a tag resolves to the commit it
- * names and a ref naming no commit at all is an ERROR rather than some other
- * object's id. `riskRef` has already refused a `-`-leading spelling, so nothing
- * reaching git here can be read as an option.
+ * EACH END RESOLVES ON ITS OWN, and the toplevel exactly once. The all-or-
+ * nothing shape this used to return threw away an end git had already named:
+ * the two ends are independent questions and are now answered independently, so
+ * `base` and `head` each hold the full commit id of the end that RESOLVED and
+ * `''` for the end that did not. `error` opens with the name of the failing end
+ * (`resolveRef` writes it), and names both ends base-first when both failed, so
+ * a caller quoting it says which half is wrong. A toplevel that cannot be read
+ * still fails both ends, with git's message and no end name.
+ *
  * ONE shape on both paths rather than an `ok`-discriminated union: this repo's
  * CI typecheck runs `strict: false`, where narrowing a JSDoc union by its
  * boolean literal does not happen, so the union costs every caller a cast. A
- * failed resolve reads `{ok: false, base: '', head: '', error: <the redacted
- * git message>}`.
+ * fully failed resolve reads `{ok: false, base: '', head: '', error: <the
+ * end-named, redacted git message(s)>}`; a partial one is the same shape with
+ * the resolved end's id in place, and `top` holds the toplevel whenever the
+ * toplevel itself resolved.
  * @param {string} base @param {string} head
  * @returns {{ok: boolean, top: string, base: string, head: string, error: string}}
  */
 function resolveRange(base, head) {
-  try {
-    const top = execFileSync('git', ['rev-parse', '--show-toplevel'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    const id = (/** @type {string} */ ref) => execFileSync('git',
-      ['-C', top, 'rev-parse', '--verify', `${ref}^{commit}`],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    return { ok: true, top, base: id(base), head: id(head), error: '' };
-  } catch (e) {
-    // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set` applies:
-    // a git failure detail can carry a remote URL with credentials in it.
-    return {
-      ok: false,
-      top: '',
-      base: '',
-      head: '',
-      error: redactUrl(e && e.message ? e.message : String(e)),
-    };
-  }
+  const probe = gitLine(['rev-parse', '--show-toplevel']);
+  if (!probe.ok) return { ok: false, top: '', base: '', head: '', error: probe.error };
+  const b = resolveRef('base', base, probe.out);
+  const h = resolveRef('head', head, probe.out);
+  return {
+    ok: b.ok && h.ok,
+    top: probe.out,
+    base: b.id,
+    head: h.id,
+    // BASE FIRST when both failed, and joined rather than one-of: a caller told
+    // about one unresolvable end would fix it and meet the second refusal on
+    // the next run.
+    error: [b, h].filter((e) => !e.ok).map((e) => e.error).join('; '),
+  };
 }
 
 /**
@@ -1061,6 +1134,7 @@ export {
   readQueue,
   readReadsRecords,
   resolveRange,
+  resolveRef,
   riskRef,
   routeLadder,
 };
