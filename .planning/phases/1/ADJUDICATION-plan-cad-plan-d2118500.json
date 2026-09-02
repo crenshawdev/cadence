@@ -1,0 +1,89 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "cad-plan-d2118500",
+  "round": 1,
+  "base": "bc48eae0",
+  "head": "d2118500",
+  "base_id": "bc48eae095307767039909f628d5bc4a80dab4f8",
+  "head_id": "d2118500681a5765eb40c4e661b8a719671e7d02",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-2.md",
+      "line": 109,
+      "severity": "medium",
+      "claim": "Task 2's all-surface verification is not failure-capable for multiline invocations: it considers only a physical line containing both `planning.mjs` and `risk-check run`, then expects the range flags on that same line.",
+      "failure_scenario": "A workflow can split `planning.mjs`, `risk-check run`, and its flags across continuation lines—or leave an invalid invocation in that form. The candidate set omits it, so the JavaScript assertion passes vacuously; the grep pipeline also exits successfully when an unfiltered violation is printed. RNG-05's tree-wide no-invalid-revision invariant can therefore remain false under the prescribed verification.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/references/risk-surface.md",
+        "line": 14,
+        "note": "every risk-check run invocation line in the tree is one physical line today (risk-surface.md:14, execute.md:339, task.md:155, execute-parallel.md:34), so the multiline arm has no site to pass vacuously on; a hardening, not a false verification"
+      },
+      "base_id": "bc48eae095307767039909f628d5bc4a80dab4f8",
+      "head_id": "d2118500681a5765eb40c4e661b8a719671e7d02"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-2.md",
+      "line": 173,
+      "severity": "high",
+      "claim": "RSK-10 is not fully delivered because the plan knowingly leaves `references/execute-parallel.md` emitting the same self-comparing range that Task 3 removes from sequential execution.",
+      "failure_scenario": "A parallel plan lands no commits, merges back without moving HEAD, and then runs the documented check with equal base and head. The seam writes `checked:true, empty:true` rather than `risk_check_skipped`, directly violating the requirement that a plan landing no commits produce no such clean row and the phase goal that no caller hand the blocking check an inapplicable range.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "d2118500681a5765eb40c4e661b8a719671e7d02",
+      "base_id": "bc48eae095307767039909f628d5bc4a80dab4f8",
+      "head_id": "d2118500681a5765eb40c4e661b8a719671e7d02"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-2.md",
+      "line": 155,
+      "severity": "high",
+      "claim": "Task 3 adds two prose `trace append` producer sites but neither the task nor PLAN-2's frontmatter declares `cadence-core/bin/trace.test.mjs`, the stated holder of the affected trace-producer census.",
+      "failure_scenario": "Adding the `risk_check_skipped` invocations changes the census parsed and pinned by `trace.test.mjs`. Merely running that test cannot re-pin it; the test fails or the plan-time/commit lease rejects the undeclared edit. PLAN-1's separate declaration does not authorize PLAN-2, which is explicitly sequential and has a disjoint lease.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/trace.test.mjs",
+        "line": 3283,
+        "note": "the producer census at :3283-3330 asserts --family is in FAMILIES and checks lifecycle event names only; the BRACKETING map at :3201 counts trace close sites, not append lines; the census registered with holder trace.test.mjs (census-registry.mjs:141-149, trace-refusal-sentences) has subjects bin/planning.mjs and bin/planning/, not workflow prose; lease-check --phase 1 --plan 2 --plan-time answers ok:true without it. Task 3 edits nothing in that file."
+      },
+      "base_id": "bc48eae095307767039909f628d5bc4a80dab4f8",
+      "head_id": "d2118500681a5765eb40c4e661b8a719671e7d02"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/1/PLAN-1.md",
+      "line": 218,
+      "severity": "high",
+      "claim": "Task 4 departs from the locked OQ-1 decision to support staged `risk-check status`: it leaves receipts ref-only and knowingly makes every matched staged record remain `unfired`, while verifying only the clean-record case.",
+      "failure_scenario": "A staged authentication fix produces non-empty matches and receives the required blocking review. Because the staged range has no head commit and no receipt spelling can name it, `risk-check status --base HEAD --staged` can never recognize that fire and continues to refuse as `unfired`. Thus the newly accepted staged status form is unusable on the risky cases it exists to gate, despite OQ-1 requiring the status arm to support that scope.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/planning/risk-check.mjs",
+        "line": 785,
+        "note": "nothing in the tree calls risk-check status with --staged (execute.md:381 and execute-parallel.md:48 pass --base/--head per plan); a plan-less staged record keys to plan \"\" and is not joined by a per-plan status (:785-787); the OQ-1 answer in ROADMAP names no receipt spelling, so task 4 departs from nothing locked. The missing settle spelling is real and is the human call the plan Notes already raise."
+      },
+      "base_id": "bc48eae095307767039909f628d5bc4a80dab4f8",
+      "head_id": "d2118500681a5765eb40c4e661b8a719671e7d02"
+    }
+  ]
+}

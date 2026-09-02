@@ -33,3 +33,4 @@ recall entry.
 - 2026-09-01 github crenshawdev/cadence 2b77b26e6776abd5: [cadence 2b77b26e6776abd5] Usage extraction occurs only after the non-2xx exit, so HTTP error responses that include provider-reported usage lose their cost data.
 - 2026-09-01 github crenshawdev/cadence 622312b1f66a11d3: [cadence 622312b1f66a11d3] `tokenCount` accepts finite non-negative JavaScript numbers without requiring a safe integer, so malformed oversized provider token counts are silently rounded and persisted
 - 2026-09-02 github crenshawdev/cadence 084c9ce03c072e0b: [cadence 084c9ce03c072e0b] The new string guard accepts whitespace-only effort and rung values despite documenting that blank values must contribute nothing.
+- 2026-09-02 github crenshawdev/cadence 09e6a40edd174f78: [cadence 09e6a40edd174f78] Task 4 departs from the locked OQ-1 decision to support staged `risk-check status`: it leaves receipts ref-only and knowingly makes every matched staged record remain `unfir
