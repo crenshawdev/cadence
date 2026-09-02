@@ -663,3 +663,139 @@ test('stop: the UNAMBIGUOUS terminal path still answers one return and no fact',
   assert.equal(events[0].cache_read_input_tokens, 3000);
   assert.equal(events[0].plan, 'cad-verifier', 'the close still quotes the adopted row');
 });
+// --- what the worker RAN at, beside what it was DISPATCHED under (TRC-13) ----
+//
+// The routed rung and the observed effort are two different numbers, and on
+// Claude Code 2.1.258 they differ SILENTLY: a `max` dispatch with extended
+// thinking off runs at `high` and only the worker's own transcript says so
+// (`.planning/spikes/host-effort-downgrade/SPIKE.md`). The payload's own
+// `effort` reports the CONFIGURED level and is never read here. Both keys ride
+// BOTH writes, because 114 `worker_cache` facts stand against 2 hook-written
+// returns on this repository's record.
+
+/**
+ * A stopped worker's transcript whose assistant lines report a TOP-LEVEL
+ * `effort`, the host's own placement - 5,701 of 5,701 measured lines carry it
+ * there and 0 carry it under `message`.
+ */
+const atEffort = (effort, { stop = 'end_turn', usage = { cache_creation_input_tokens: 150, cache_read_input_tokens: 3000 }, lines = 2 } = {}) =>
+  Array.from({ length: lines }, (_, i) => JSON.stringify({
+    type: 'assistant',
+    agentId: 'a1',
+    timestamp: T(9),
+    ...(effort === undefined ? {} : { effort }),
+    message: {
+      id: `msg_0${i}`, role: 'assistant', content: [], stop_reason: stop,
+      ...(usage ? { usage } : {}),
+    },
+  })).join('\n');
+
+test('stop: the RETURN carries the observed effort and the DISPATCHED rung', () => {
+  // The rung comes off `payload.agent_type`'s stem through the one `RUNG_FILES`
+  // table, so the same worker running at the same effort is recorded against
+  // whichever rung file the host actually dispatched.
+  const r = () => render([open('cad-executor', '1', T(0))]);
+  const [high] = closeForStop({ agent_type: 'cadence:cad-executor', agent_id: AGENT },
+    r(), { transcript: atEffort('high') });
+  assert.equal(high.event, 'return');
+  assert.equal(high.effort, 'high');
+  assert.equal(high.rung, 'high');
+  const [xhigh] = closeForStop({ agent_type: 'cadence:cad-executor-xhigh', agent_id: AGENT },
+    r(), { transcript: atEffort('high') });
+  assert.equal(xhigh.rung, 'xhigh', 'the dispatched rung came off the agent type');
+  // ...and THIS is the disagreement the whole phase exists to make visible: the
+  // record now holds `rung: "xhigh"` beside `effort: "high"` rather than one
+  // number that looks like agreement.
+  assert.notEqual(xhigh.rung, xhigh.effort);
+  // The payload's own `effort` is not a source and not a fallback - it reports
+  // the CONFIGURED level, which is identical on a downgraded run and an honest
+  // one, so reading it would record a match on exactly the runs that were cut.
+  const [ignored] = closeForStop(
+    { agent_type: 'cadence:cad-executor', agent_id: AGENT, effort: { level: 'max' } },
+    r(), { transcript: atEffort('high') },
+  );
+  assert.equal(ignored.effort, 'high', 'the payload level reached the record');
+});
+
+test('stop: the host spelling is recorded VERBATIM, against no Cadence enum', () => {
+  // The enum is a CONFIG rule about what a user may ASK for. Validating an
+  // observation against the request would erase a renamed or newly added host
+  // rung at exactly the moment its appearance is the signal.
+  for (const spelling of ['xhigh', 'max', 'medium', 'P4-turbo']) {
+    const [ev] = closeForStop({ agent_type: 'cadence:cad-executor', agent_id: AGENT },
+      render([open('cad-executor', '1', T(0))]), { transcript: atEffort(spelling) });
+    assert.equal(ev.effort, spelling);
+  }
+});
+
+test('stop: every withholding gate states the same pair the return would', () => {
+  // 114 facts against 2 hook-written returns on this record: a pair that rode
+  // the `return` alone would be recorded on effectively no live dispatch.
+  for (const [why, g] of Object.entries(gates)) {
+    const { transcript: _drop, ...payload } = g.payload;
+    const stop = why === 'gate 0, not terminal' ? 'tool_use' : 'end_turn';
+    const events = closeForStop(payload, g.render(), { transcript: atEffort('high', { stop }) });
+    assert.equal(events.length, 1, why);
+    const [ev] = events;
+    assert.equal(ev.event, 'worker_cache', why);
+    assert.equal(ev.effort, 'high', why);
+    assert.equal(ev.rung, 'high', `${why}: cadence:cad-verifier is that role's high rung`);
+  }
+});
+
+test('stop: a transcript naming no effort leaves BOTH keys off, on both writes', () => {
+  // Omitted together, never null and never a literal `unrecorded`: a rung with
+  // nothing to compare it against is not a half-answer worth storing, and the
+  // existing exact key-set assertions in this file are what hold the line.
+  const [ret] = closeForStop({ agent_type: 'cadence:cad-executor', agent_id: AGENT },
+    render([open('cad-executor', '1', T(0))]), { transcript: atEffort(undefined) });
+  assert.equal('effort' in ret, false, JSON.stringify(ret));
+  assert.equal('rung' in ret, false, JSON.stringify(ret));
+  const [fact] = closeForStop(VSTOP, render([open('cad-verifier', 'cad-verifier', T(3))]),
+    { transcript: atEffort(undefined, { stop: 'tool_use' }) });
+  assert.equal(fact.event, 'worker_cache');
+  assert.equal('effort' in fact, false, JSON.stringify(fact));
+  assert.equal('rung' in fact, false, JSON.stringify(fact));
+  // Two assistant lines DISAGREEING is the same absent - the transcript rule
+  // answers nothing rather than picking one, so neither key rides.
+  const mixed = [atEffort('high', { lines: 1 }), atEffort('max', { lines: 1 })].join('\n');
+  const [split] = closeForStop({ agent_type: 'cadence:cad-executor', agent_id: AGENT },
+    render([open('cad-executor', '1', T(0))]), { transcript: mixed });
+  assert.equal('effort' in split, false, JSON.stringify(split));
+  assert.equal('rung' in split, false, JSON.stringify(split));
+});
+
+test('stop: an effort with NO cache figure at all still writes the fact', () => {
+  // The withholding gate's "nothing to give" test counts an effort as something
+  // to give (D-08). Before this it asked for a cache figure alone, which would
+  // have thrown away the one observation of the downgrade on any transcript the
+  // host billed no `usage` for.
+  const events = closeForStop(VSTOP, render([open('cad-verifier', 'cad-verifier', T(3))]),
+    { transcript: atEffort('high', { stop: 'tool_use', usage: null }) });
+  assert.equal(events.length, 1, JSON.stringify(events));
+  const [ev] = events;
+  assert.equal(ev.event, 'worker_cache');
+  assert.equal(ev.effort, 'high');
+  assert.equal(ev.rung, 'high');
+  assert.equal('cache_read_input_tokens' in ev, false, 'a figure was invented');
+  assert.equal('cache_creation_input_tokens' in ev, false, 'a figure was invented');
+  // A transcript with NOTHING to say still writes nothing: the widened guard is
+  // an extra way to have something, never a way to have nothing and write anyway.
+  assert.deepEqual(
+    closeForStop(VSTOP, render([open('cad-verifier', 'cad-verifier', T(3))]),
+      { transcript: atEffort(undefined, { stop: 'tool_use', usage: null }) }),
+    [],
+  );
+});
+
+test('stop: an effort does not buy a fact for a payload with no agent_id', () => {
+  // `corr` plus `agent_id` is the fold's only join key (D-10), so an id-less
+  // fact can never reach a bracket however much it has to say. The widened
+  // guard moved the figure test and left the id guard exactly where it was.
+  const { agent_id: _drop, ...idless } = VSTOP;
+  assert.deepEqual(
+    closeForStop(idless, render([open('cad-verifier', 'cad-verifier', T(3))]),
+      { transcript: atEffort('high', { stop: 'tool_use' }) }),
+    [],
+  );
+});
