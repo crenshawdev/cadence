@@ -1334,3 +1334,95 @@ test('D-01: the IDENTICAL receipt without --anchor leaves that range unfired', (
   assert.equal(after.reason, 'risk-fire-missing');
   assert.equal(after.plans[0].state, 'unfired');
 });
+
+// --- D-03: the authorization id LABELS a pair, it never widens a settle -------
+//
+// `GH-220`'s body reads as declare-and-accept - "one answer cleared two ranges"
+// becomes something the record states - while the roadmap's own criterion reads
+// as tighten, and the roadmap criterion wins. So the id is a LABEL: `settles`
+// still requires every fired record to carry its OWN receipt and `settledBy`
+// still requires BOTH ends of the range, and a comment on `settledBy` records
+// that "matched if supplied" on the head alone already reopened the
+// widened-range bypass once under a different name.
+//
+// Nothing in planning/risk-check.mjs changes in this phase. This section exists
+// to make that a PINNED property rather than an unstated one: if a case here
+// passes only after a change to that file, the phase introduced a defect.
+
+/** A repo with TWO disjoint fired ranges on one plan - no commit id is shared
+ *  between them - plus the executor bracket whose row `status` answers for. */
+function twoFiredRanges() {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-two-ranges-'));
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args],
+    { encoding: 'utf8', stdio: 'pipe' }).trim();
+  git('init', '-q');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 'T');
+  git('config', 'commit.gpgsign', 'false');
+  const dir = join(repo, '.planning');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'config.json'),
+    JSON.stringify({ review: { triggers: { risk_surface: { surfaces: ['secrets'] } } } }));
+  const commit = (msg, write) => { write(); git('add', '-A'); git('commit', '-q', '-m', msg); return git('rev-parse', 'HEAD'); };
+  const b0 = commit('base', () => writeFileSync(join(repo, 'README.md'), 'start\n'));
+  const c1 = commit('first risky', () => {
+    mkdirSync(join(repo, 'src', 'secrets'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'secrets', 'vault.ts'), 'export const K = 1;\n');
+  });
+  // The gap commit, so the two ranges share NO end at all: `B0..c1` and
+  // `c2..c3` have four distinct ids between them.
+  const c2 = commit('unrelated', () => writeFileSync(join(repo, 'README.md'), 'start\nmore\n'));
+  const c3 = commit('second risky', () => writeFileSync(join(repo, 'src', 'secrets', 'other.ts'), 'export const J = 2;\n'));
+
+  plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'lifecycle', '--event', 'phase_start', '--sha', c3.slice(0, 7)]);
+  const bracket = ['--phase', '1', '--family', 'lifecycle', '--plan', '1',
+    '--role', 'cad-executor'];
+  plRun(repo, dir, ['trace', 'append', ...bracket, '--event', 'dispatch']);
+  plRun(repo, dir, ['trace', 'append', ...bracket, '--event', 'return']);
+  for (const [base, head] of [[b0, c1], [c2, c3]]) {
+    const rec = plRun(repo, dir, ['risk-check', 'run', '--phase', '1', '--plan', '1',
+      '--base', base, '--head', head]);
+    assert.equal(rec.ok, true, JSON.stringify(rec));
+    assert.ok(rec.matches.some((m) => m.category === 'secrets'),
+      `range ${base}..${head} matched no secrets surface: ${JSON.stringify(rec.matches)}`);
+  }
+  return { repo, dir, first: [b0, c1], second: [c2, c3] };
+}
+
+/** An override receipt over one range, on one authorization. A reason is
+ *  mandatory: `risk-check status` discards a reasonless override outright. */
+const authorizedOverride = (base, head, id) => ['trace', 'append', '--phase', '1',
+  '--family', 'outcome', '--event', 'override', '--trigger', 'risk_surface', '--plan', '1',
+  '--base', base, '--sha', head, '--survivors', '1', '--downgraded', '0', '--refuted', '0',
+  '--authorization-id', id, '--detail', 'the engineer accepted this risk once, standing'];
+
+test('D-03: one authorization id does NOT let a receipt settle a second range', () => {
+  const { repo, dir, first, second } = twoFiredRanges();
+  const AUTH = 'auth-9';
+
+  const a = plRun(repo, dir, authorizedOverride(first[0], first[1], AUTH));
+  assert.equal(a.ok, true, JSON.stringify(a));
+  // The SECOND receipt written on the same standing answer. It carries the
+  // same id and names neither end of the second range - which is the shape
+  // GH-220 reports and the shape that must still settle nothing new.
+  const b = plRun(repo, dir, authorizedOverride(first[0], first[1], AUTH));
+  assert.equal(b.ok, true, JSON.stringify(b));
+  const labelled = traceLines(dir).filter((e) => e.authorization_id === AUTH);
+  assert.equal(labelled.length, 2, 'both receipts carry the shared authorization id');
+
+  const still = plRun(repo, dir, ['risk-check', 'status', '--phase', '1']);
+  assert.equal(still.ok, false, JSON.stringify(still));
+  assert.equal(still.reason, 'risk-fire-missing');
+  assert.equal(still.plans[0].state, 'unfired');
+
+  // The only thing that clears it is a receipt naming the second range's OWN
+  // base and head. The id is carried there too - it is the same authorization -
+  // and it is the range binding, not the label, that does the settling.
+  const c = plRun(repo, dir, authorizedOverride(second[0], second[1], AUTH));
+  assert.equal(c.ok, true, JSON.stringify(c));
+  const after = plRun(repo, dir, ['risk-check', 'status', '--phase', '1']);
+  assert.equal(after.ok, true, JSON.stringify(after));
+  assert.equal(after._exit, 0);
+  assert.equal(after.plans[0].state, 'recorded');
+});
