@@ -204,7 +204,13 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open.
+**`v3.7.11 - unresolved inputs`, opened 2026-09-02.** Three phases on
+`cadence/v3.7.11`. The source is the sentence v3.7.10's overview used to defer
+`GH-229` - that it and `GH-178` are about resolving an INPUT before a gate runs
+- plus two members of the same class filed since, `GH-246` and `GH-244`. One
+claim holds all three phases: a gate ran, and the input it ran on could not be
+resolved, and the code treated "could not resolve" as an ordinary value.
+`GH-178` is the held-out fourth member; `GH-247` rides as a task.
 
 **`v3.7.10 - review receipts`, opened 2026-09-01, closed 2026-09-02.** Three
 phases, 50 commits off `main` (11 feat and 8 fix against 27 docs, 3 chore and
