@@ -84,7 +84,7 @@ runs; this cycle is about what the record says AFTER one did. `GH-230` and
 ## Phases
 
 - [x] **Phase 1: Every review fire is bracketed and priced** - a fallback dispatch closes what it opened, and a provider review records what it spent
-- [ ] **Phase 2: A receipt can name its home and its authorization** - a settlement written through the seam instead of by hand, and one human answer distinguishable from two
+- [x] **Phase 2: A receipt can name its home and its authorization** - a settlement written through the seam instead of by hand, and one human answer distinguishable from two
 - [ ] **Phase 3: The record states the effort that actually ran** - the observed effort carried onto the return event beside the routed one
 
 ## Phase Details
