@@ -4462,3 +4462,105 @@ test('render: rendering one fixture TWICE gives byte-identical brackets', () => 
   assert.equal(JSON.parse(first)[0].cache_creation_input_tokens, 150);
   assert.equal(JSON.parse(first)[0].cache_read_input_tokens, 3000);
 });
+
+// --- the fact carries what the worker RAN at, too (TRC-13) ------------------
+//
+// The same three withholding gates hold the effort the worker's own transcript
+// reported and the rung it was dispatched under, and on this repository's own
+// record they are the writer that holds them on almost every live dispatch:
+// 114 facts against 2 hook-written returns. A pair that reached the row only
+// off a `return` would be recorded on effectively nothing.
+
+/** A fact in the shape a gate writes for a worker whose transcript named an effort. */
+const vRan = (extra) => ({
+  phase: 7, family: 'lifecycle', event: WORKER_CACHE, role: 'cad-verifier',
+  ts: '2026-08-26T10:05:00.000Z', agent_id: 'W1', effort: 'high', rung: 'max', ...extra,
+});
+
+test('render: a fact carries the effort and the rung onto its bracket, in EITHER order', () => {
+  // Before the `--agent-id` close is the ORDINARY order and the reason the fold
+  // is a post-pass at all: the host fires `SubagentStop` the moment the worker
+  // stops, while the orchestrator writes its own close only once it has
+  // processed the return.
+  for (const [why, rows] of Object.entries({
+    'the fact arrived BEFORE the id': [vDispatch(), vRan(), vClose({ agent_id: 'W1' })],
+    'the fact arrived AFTER the id': [vDispatch(), vClose({ agent_id: 'W1' }), vRan()],
+  })) {
+    const r = folded(rows);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal(r.brackets[0].effort, 'high', why);
+    assert.equal(r.brackets[0].rung, 'max', why);
+  }
+});
+
+test('render: a fact reporting an effort and NO cache figure still reaches the row', () => {
+  // The case the collection gate used to drop. It demanded a cache figure, so
+  // a transcript that named an effort and billed no cache traffic - the one
+  // observation of a silent downgrade - was refused here while the hook's own
+  // test said the fact was written. An effort counts as something to give.
+  const r = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1' }),
+    vRan(),
+  ]);
+  assert.equal(r.brackets.length, 1);
+  assert.equal(r.brackets[0].effort, 'high');
+  assert.equal(r.brackets[0].rung, 'max');
+  // ...and it added no cache figure it never had. Absent is not zero.
+  assert.equal('cache_read_input_tokens' in r.brackets[0], false,
+    JSON.stringify(r.brackets[0]));
+  assert.equal('cache_creation_input_tokens' in r.brackets[0], false,
+    JSON.stringify(r.brackets[0]));
+});
+
+test('render: a fact never overwrites an effort or rung the close already carried', () => {
+  // FILL-ONLY-EMPTY, and NOT the larger-wins clause the two cache figures take
+  // one line above it in the same fold: `moreComplete` compares with `>`, which
+  // for a rung name is a lexicographic accident, and there is no fuller read of
+  // a value that does not grow. It holds in EITHER arrival order, because the
+  // rule is about which value the ROW already holds and never about which line
+  // landed first.
+  for (const [why, rows] of Object.entries({
+    'the fact arrived second': [
+      vDispatch(), vClose({ agent_id: 'W1', effort: 'xhigh', rung: 'xhigh' }), vRan(),
+    ],
+    'the fact arrived first': [
+      vDispatch(), vRan({ effort: 'xhigh', rung: 'xhigh' }), vClose({ agent_id: 'W1' }),
+    ],
+  })) {
+    const r = folded(rows);
+    assert.equal(r.brackets[0].effort, 'xhigh', why);
+    assert.equal(r.brackets[0].rung, 'xhigh', why);
+  }
+
+  // TWO FACTS for one worker resolve on the same rule: the first value stands,
+  // per field, so a second read of the same transcript cannot rewrite an
+  // observation - while the cache figures beside them still take the larger.
+  const two = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1' }),
+    vRan({ cache_read_input_tokens: 7 }),
+    vRan({ effort: 'xhigh', rung: 'xhigh', cache_read_input_tokens: 900 }),
+  ]);
+  assert.equal(two.brackets[0].effort, 'high', 'the second fact rewrote the first one\'s effort');
+  assert.equal(two.brackets[0].rung, 'max');
+  assert.equal(two.brackets[0].cache_read_input_tokens, 900,
+    'the figures beside them stopped taking the larger read');
+});
+
+test('render: a fact with no bracket to name adds no effort, no rung and no row', () => {
+  // The join is `corr` AND `agent_id`, never the id alone, and an id-less fact
+  // has no bracket it could ever reach. None of the three is an error and none
+  // of them adds a row - the same answer the cache half already gives.
+  for (const [why, extra] of Object.entries({
+    'a fact from another run': { corr: 'ANOTHER-RUN' },
+    'a fact carrying no id at all': { agent_id: undefined },
+    'a fact naming an id no bracket carries': { agent_id: 'NOBODY' },
+  })) {
+    const r = folded([vDispatch(), vClose({ agent_id: 'W1' }), vRan(extra)]);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal('effort' in r.brackets[0], false, why);
+    assert.equal('rung' in r.brackets[0], false, why);
+    assert.deepEqual(r.unpaired, [], why);
+  }
+});

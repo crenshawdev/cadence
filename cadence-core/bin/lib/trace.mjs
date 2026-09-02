@@ -1668,7 +1668,21 @@ export function renderTrace(planningRoot, phase) {
   // double-bill every turn both reads covered. If the host ever produces
   // genuinely disjoint partial sums this understates rather than double-bills,
   // which is the direction this record already prefers.
-  /** @type {Map<string, Record<string, number>>} */
+  //
+  // AND THE TWO STRINGS RIDE THE SAME MAP (TRC-13). A fact carries the effort
+  // the worker's own transcript reported and the rung it was dispatched under
+  // exactly as the close does, because a hook gate that could not close
+  // anything is the writer that holds them on almost every live dispatch. They
+  // are entries in this same map rather than a second one: a second map is a
+  // second key to keep in agreement with this one, and they join a bracket on
+  // the identical `corr` + `agent_id` pair.
+  //
+  // TWO FACTS FOR ONE WORKER RESOLVE PER FIELD, and the two fields do not share
+  // a rule. The cache figures keep larger-wins for the reason stated directly
+  // above; the two strings take FILL-ONLY-EMPTY, because `moreComplete`
+  // compares with `>` and a rung name does not grow between two reads of one
+  // transcript.
+  /** @type {Map<string, Record<string, any>>} */
   const cacheFacts = new Map();
   for (const e of out.events) {
     // Every family feeds the RUN's end-of-record mark, not the lifecycle one
@@ -1749,14 +1763,36 @@ export function renderTrace(planningRoot, phase) {
     // return, so the fact ordinarily arrives BEFORE the id it joins on - and the
     // whole existing fold runs inside the `TERMINAL` branch, which this name
     // deliberately never enters. A fact carrying no id can never reach a
-    // bracket, and one whose transcript reported neither figure has nothing to
-    // give, so neither is collected; neither is an error.
+    // bracket, and one whose event reported NOTHING AT ALL - neither cache
+    // figure and neither string - has nothing to give, so neither is
+    // collected; neither is an error.
+    //
+    // AN EFFORT COUNTS AS SOMETHING TO GIVE (D-08). The gate used to demand a
+    // cache figure, which would drop on the floor exactly the fact the hook
+    // writes for a transcript that reported an effort and no `usage` - the one
+    // observation of a silent downgrade, refused here while the hook's own
+    // test says it was written. The `agent_id` half of the gate is unchanged
+    // and is a different question: `corr` plus `agent_id` is the fold's only
+    // key, so a fact missing the id can never reach a bracket however much it
+    // has to say.
     if (e.event === WORKER_CACHE) {
-      if (typeof e.agent_id === 'string' && e.agent_id && CACHE_KEYS.some((k) => k in cache)) {
+      if (typeof e.agent_id === 'string' && e.agent_id
+        && (CACHE_KEYS.some((k) => k in cache) || effort !== null || rung !== null)) {
         const pair = `${key(e.corr)}\0${e.agent_id}`;
         const prior = cacheFacts.get(pair);
-        if (!prior) cacheFacts.set(pair, cache);
-        else for (const k of CACHE_KEYS) if (moreComplete(prior, cache, k)) prior[k] = cache[k];
+        if (!prior) {
+          cacheFacts.set(pair, {
+            ...cache,
+            ...(effort !== null ? { effort } : {}),
+            ...(rung !== null ? { rung } : {}),
+          });
+        } else {
+          for (const k of CACHE_KEYS) if (moreComplete(prior, cache, k)) prior[k] = cache[k];
+          // FILL-ONLY-EMPTY for the two strings, per field, and NOT the
+          // larger-wins clause the line above applies to the figures.
+          if (!('effort' in prior) && effort !== null) prior.effort = effort;
+          if (!('rung' in prior) && rung !== null) prior.rung = rung;
+        }
       }
       continue;
     }
@@ -2034,20 +2070,34 @@ export function renderTrace(planningRoot, phase) {
   // It touches the bracket ROW and nothing else - not `roleTotals`, not
   // `out.roles`, not `seenTerminals`, not `pairedRows` - because a cache read
   // summed over a worker's turns is a different denomination from a return's
-  // final-window `tokens` (D-03), and `roles` is byte-identical with and without
-  // every fact in the file. It reuses the SAME clause the repeat-close arm
-  // applies to these two keys - the larger read wins, per key and independently
-  // (see `moreComplete`) - so there is no second rule to keep in agreement with
-  // the first, and a close that carried a SHORTER read of the worker's own
-  // transcript is corrected by the fact rather than freezing it. A bracket
-  // whose close carried the larger figure keeps it. A fact naming no bracket changes
-  // nothing and is not an error. Where two brackets under one `corr` somehow
-  // carry one `agent_id`, the fold stops at the first: one worker's traffic
-  // copied onto two rows would bill it twice.
-  for (const [pair, cache] of cacheFacts) {
+  // final-window `tokens` (D-03), and an effort is an enum with nothing to sum
+  // at all, so `roles` is byte-identical with and without every fact in the
+  // file. A fact naming no bracket changes nothing and is not an error. Where
+  // two brackets under one `corr` somehow carry one `agent_id`, the fold stops
+  // at the first: one worker's traffic copied onto two rows would bill it
+  // twice.
+  //
+  // EACH FIELD FOLDS BY THE SAME RULE IT FOLDS BY ON A REPEAT CLOSE, which is
+  // the point of reusing the clauses rather than restating them - a second rule
+  // is one that disagrees with the first the day either changes. So the two
+  // read differently here, on purpose:
+  //
+  //   - the CACHE FIGURES take the larger read, per key and independently (see
+  //     `moreComplete`). One writer, and two values for one worker are two
+  //     reads of a transcript that only GROWS - so a close carrying a SHORTER
+  //     read is corrected by the fact rather than freezing the row, and a
+  //     close carrying the larger figure keeps it.
+  //   - the TWO STRINGS take FILL-ONLY-EMPTY (D-10). `moreComplete` compares
+  //     with `>`, which for an enum-shaped rung name is a lexicographic
+  //     accident rather than a fuller read, and there is no more complete read
+  //     of a value that does not grow. A value the close already supplied
+  //     stands.
+  for (const [pair, fact] of cacheFacts) {
     for (const b of out.brackets) {
       if (!b.agent_id || `${key(b.corr)}\0${b.agent_id}` !== pair) continue;
-      for (const k of CACHE_KEYS) if (moreComplete(b, cache, k)) b[k] = cache[k];
+      for (const k of CACHE_KEYS) if (moreComplete(b, fact, k)) b[k] = fact[k];
+      if (!('effort' in b) && 'effort' in fact) b.effort = fact.effort;
+      if (!('rung' in b) && 'rung' in fact) b.rung = fact.rung;
       break;
     }
   }
