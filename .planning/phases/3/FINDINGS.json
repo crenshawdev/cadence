@@ -1,0 +1,21 @@
+{
+  "auto_passed": 5,
+  "gaps": 1,
+  "added": 1,
+  "skipped": 0,
+  "rejected": 0,
+  "rejected_entries": [],
+  "skipped_entries": [
+    {
+      "list": "human_checks",
+      "reason": "already-recorded",
+      "item": 4,
+      "status": "pending",
+      "entry": {
+        "name": "/cad-report names a routed/ran disagreement on the row",
+        "expected": "Run `/cad-report 3`. Every bracket row with no `effort` key (103 of the 107 on this record) reads `unrecorded` under `ran` and is never described as matching or agreeing; the four rows that have one print `xhigh|xhigh` and `high|high` under `rung|ran`. Then mint a disagreement and re-run against it, because this record holds none: in a scratch project with `.planning/trace.jsonl` holding TWO open `cad-verifier` dispatches, pipe `{\"cwd\":<proj>,\"agent_transcript_path\":<a one-line assistant transcript with \"effort\":\"high\" and \"stop_reason\":\"end_turn\">,\"agent_type\":\"cadence:cad-verifier-max\",\"agent_id\":\"W9\"}` into `node cadence-core/bin/subagent-trace.mjs`, append a hand-written close carrying `agent_id: W9`, and the bracket renders `rung: max, effort: high`. The composed Dispatches row must state that disagreement ON the row itself - no summary line, no count line.",
+        "why_human": "Out of reach, not unexercised. There is no code path that composes the Dispatches table: `/cad-report` is a coordinator slash command whose whole content is prose in cadence-core/workflows/report.md, and a subagent cannot invoke it. I verified everything the report reads (the render envelope carries `brackets` with `rung` and `effort` and no routing event) and everything it is told to print (the shape line at report.md:111 and the TWO EFFORTS rule at :139-155, pinned by a passing prose-agreement test), and I proved the record can hold a disagreement by minting one through the real hook. What remains is a model reading that prose and producing the table, which only a live run shows."
+      }
+    }
+  ]
+}

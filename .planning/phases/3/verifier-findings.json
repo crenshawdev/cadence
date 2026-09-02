@@ -1,0 +1,112 @@
+{
+  "status": "gaps",
+  "score": "7/9",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "OQ-2 is answered in writing, against the installed host, before any code of the phase lands",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": ".planning/spikes/host-effort-downgrade/SPIKE.md carries the four-run table (Claude Code 2.1.258, Opus 5): headless `--effort max` and a `max`-declared subagent, each with MAX_THINKING_TOKENS=0 and with thinking on, transcript `high`/`max`/`high`/`max`, payload `{\"level\":\"max\"}` in all four, VERDICT: validated. `git log --name-only 00d4cf02..dd6f79e1` shows 3927ef1d is the FIRST of the 11 commits and touches exactly one file, that SPIKE.md - 0 files under cadence-core/."
+    },
+    {
+      "n": 2,
+      "truth": "The hook reads the effort off the WORKER's own transcript and never off the hook payload, not even as a fallback",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/lib/subagent-transcript.mjs:275 `effortOf(text)` walks `assistantEntries` and takes the TOP-LEVEL `effort` only; cadence-core/bin/subagent-trace.mjs:134 reads `input?.agent_transcript_path` with the file's stated `NO FALLBACK to transcript_path` (:100). Live end-to-end: piping `{\"agent_transcript_path\":<worker>,\"agent_type\":\"cadence:cad-executor\",\"agent_id\":\"W1\",\"effort\":{\"level\":\"max\"}}` into `node cadence-core/bin/subagent-trace.mjs` against a scratch project wrote `\"effort\":\"high\",\"rung\":\"high\"` - the transcript's value, not the payload's `max`. Named tests pass: `node --test --test-name-pattern=\"effort\"` over subagent-transcript.test.mjs / subagent-trace.test.mjs / trace.test.mjs = 19 pass, 0 fail, including `stop: the RETURN carries the observed effort and the DISPATCHED rung` which asserts the payload level never reaches the record."
+    },
+    {
+      "n": 3,
+      "truth": "BOTH hook writes - the `return` it can close and the `worker_cache` fact it cannot - carry the observed effort beside the dispatched rung",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/lib/subagent-trace.mjs:523-524 builds the pair once (`const ran = effort ? { effort, rung: rungOfAgent(payload.agent_type) } : {}`); it is spread into the fact at :371 (`...ran` inside `cacheFact`) and into the return at :613. Live, both arms: (a) one open dispatch + a terminal transcript wrote `{\"event\":\"return\",...,\"effort\":\"high\",\"rung\":\"high\"}`; (b) TWO open dispatches of the role (gate 2b withholds the close) + `agent_type: cadence:cad-verifier-max` wrote `{\"event\":\"worker_cache\",...,\"effort\":\"high\",\"rung\":\"max\"}` - a real routed/ran DISAGREEMENT on the record. `rungOfAgent` is off the one table: read-trace.mjs:1120 builds RUNG_OF_STEM from the same RUNG_FILES import as ROLE_OF_STEM; `the rung mapping and RUNG_FILES cannot drift apart` passes."
+    },
+    {
+      "n": 4,
+      "truth": "The bracket row carries both strings by BOTH routes - the close and the post-pass `worker_cache` fold - and `trace render --phase 3` shows them",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "`node cadence-core/bin/planning.mjs trace render --phase 3` returns 107 brackets; the four rows of the current run carry the pair verbatim, e.g. `{corr:3-00d4cf02, plan:1, role:cad-executor, rung:xhigh, effort:xhigh, agent_id:a20bc969c7f20fa43}` and `{plan:3, rung:high, effort:high, agent_id:aef780bdf0fc92b3b}`. Those two landed by the FACT route: .planning/trace.jsonl:3262 and :3285 are `worker_cache` events carrying effort+rung, while the `return` beside each (:3263, :3286) is the orchestrator's hand-written close with neither key - so the post-pass fold at lib/trace.mjs:2095-2100 is what put them on the row. The close route is proved live too: in the scratch project the hook's own `return` produced a bracket carrying `effort`/`rung`. Fold rules match D-10: fill-only-empty for the two strings at :1793-1794, :1988-1989 and :2098-2099, larger-wins kept for the cache figures alone."
+    },
+    {
+      "n": 5,
+      "truth": "No effort on the transcript means no `effort` key on the event and no key on the bracket row, and a record written before the phase renders byte-identically",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Live: a worker transcript with no `effort` on its assistant line, `agent_type: cadence:cad-executor-xhigh`, payload `effort:{level:\"max\"}` produced `{\"event\":\"return\",...,\"cache_creation_input_tokens\":150,\"cache_read_input_tokens\":3000}` - no `effort`, no `rung` - and the rendered bracket keys were `corr,phase,plan,role,event,ts,end,ms,tokens,cache_creation_input_tokens,cache_read_input_tokens,agent_id` with `'effort' in row === false`. Byte-identity proved directly rather than by proxy: `git archive 00d4cf02` into a scratch tree, then `renderTrace(<fixture root>, '1')` under PRE-PHASE lib/trace.mjs and under HEAD both give sha256 e9588bcb6a9ab0b7c1d7ce0cd864446ea75506d51c0294acc2162483cbcf3a40 over JSON.stringify of the whole envelope; the fixture's 8 brackets carry the key union `corr,phase,plan,role,event,ts,end,ms,tokens` and 0 rows with effort or rung. (Note: the named pin `fixture: the committed verbatim trace renders exactly as it did before this phase` at trace.test.mjs:3519 asserts corr/capped/malformed/events/counts/roles/unpaired and does NOT assert `brackets`; the sha comparison above is what actually settles the bracket half.)"
+    },
+    {
+      "n": 6,
+      "truth": "/cad-report prints ran beside routed, prints `unrecorded` where the row carries no effort, and names a disagreement ON the row",
+      "status": "UNCERTAIN",
+      "uat_item": 4,
+      "evidence": "Everything short of the composed report is in place. cadence-core/workflows/report.md:111 shape line reads `<table: role | rung | ran | tokens | turns | step minutes | worker minutes ...>` sourcing ran from `the row's own `effort` key` with the `unrecorded` disposition; the `TWO EFFORTS` rule at :139-155 states both sources, `NEVER shown as agreeing`, and `state it ON that row and nowhere else - no summary line and no count line`. `node --test --test-name-pattern=\"TRC-13: report.md prints ran beside rung\" cadence-core/bin/prose-agreement.test.mjs` = 1 pass, 0 fail. skills/cad-report/SKILL.md includes workflows/report.md, so the surface is reachable. The render envelope confirms report.md's own claim - keys are `ok,file,corr,capped,counts,roles,coordinator,brackets,outcomes,provider_spend,unpaired`, no routing event. What is NOT observed: an actual composed table. No code renders it, and this record carries 0 disagreements (107 phase-3 brackets, 4 with an effort, all agreeing), so the disagreement arm cannot be exercised against the repo as it stands."
+    },
+    {
+      "n": 7,
+      "truth": "Suite, typecheck and self-verify all pass at HEAD, including the three re-pinned budget rows and the four moved claim anchors",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`node cadence-core/bin/test.mjs` exit 0, `tests 3747 / pass 3747 / fail 0`. `npx tsc -p tsconfig.ci.json` exit 0, no diagnostics. `node cadence-core/bin/self-verify.mjs` exit 0, `{\"ok\":true, ... \"problems\":[]}` over 29 checks including `budgets`. The three budget rows match the files exactly: weight-budgets.json seam-spawn-agent.md 26346 / execute.md 35735 / report.md 25361 against `wc -c` 26346 / 35735 / 25361. The four re-pinned DOCS-CLAIMS rows name their claims: REPORT-12 at report.md:170-176 (the cross-model exclusion paragraph), REPORT-13 at :233-244, REPORT-14 at :234-235 (`the renderer computes it once so this line and trace suggest cannot disagree`), REPORT-15 at :245-247 (`That residue is TIME ... never tokens`). The SUMMARY's claim that the other ~66 REPORT-*/EXECUTE-* anchors were already stale is honest: REPORT-10's anchor lines 61-63 hold the same non-matching text at 00d4cf02 as at HEAD."
+    },
+    {
+      "n": 8,
+      "truth": "TRC-13 names the worker transcript as the source, no longer names the payload as one, and the Traceability table carries a TRC-13 | Phase 3 row",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": ".planning/REQUIREMENTS.md:21 now reads `reads `effort` off the stopped worker's OWN transcript, the file the stop names on `agent_transcript_path`, and never off the hook input`; `git show dd6f79e1` shows the removed line was `reads `effort` off the `SubagentStop` payload it already parses`. The payload is named only to exclude it. Traceability row at .planning/REQUIREMENTS.md:494 is `| TRC-13 | Phase 3 | Pending |`, and it is the only row pointing at Phase 3, so no requirement mapped to this phase is orphaned."
+    },
+    {
+      "n": 9,
+      "truth": "The phase's own contract documents agree with what shipped - the ROADMAP Phase 3 entry no longer names the hook payload as the source",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "dd6f79e1 rewrote the narrative at .planning/ROADMAP.md:169-180 to name the worker transcript, but left the Success criteria bullets below it untouched: :189-190 still reads `A lifecycle/return event carries the effort the host reported for that dispatch, beside the routed effort already on routing/resolve`, and :191-192 still reads `A dispatch whose hook input carried no effort is recorded as unrecorded, never as a match`. The shipped rule keys off the TRANSCRIPT, not the hook input (subagent-trace.mjs:523, and the payload's own effort is provably never read), and D-03 explicitly REJECTS joining to routing/resolve. So the entry contradicts itself 10 lines apart, and SUMMARY.md:84 asserts `Every success criterion in ROADMAP.md's Phase 3 entry is met and evidenced` over bullets that the phase's own spike superseded rather than met."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Spike record answers OQ-2 before any code",
+      "evidence": "SPIKE.md carries the four-run 2.1.258 table (transcript high/max/high/max, payload {\"level\":\"max\"} in all four) plus the corpus figures behind the absent arm; `git log --name-only 00d4cf02..dd6f79e1` puts its commit 3927ef1d first of 11, touching that file alone."
+    },
+    {
+      "k": 2,
+      "name": "A bracket row carries the effort the worker ran at",
+      "evidence": "`trace render --phase 3` shows rung+effort verbatim on the four current-run rows (xhigh/xhigh, high/high), landed by the worker_cache FACT route (.planning/trace.jsonl:3262, :3285 carry the pair; the returns beside them do not). The RETURN route proved live in a scratch project: the hook wrote {\"event\":\"return\",...,\"effort\":\"high\",\"rung\":\"high\"} while the payload said {\"level\":\"max\"}. 19 effort-named tests pass across the three test files."
+    },
+    {
+      "k": 3,
+      "name": "No effort means no key, and the pinned record is byte-identical",
+      "evidence": "A no-effort transcript through the real hook wrote an event with neither `effort` nor `rung`, and the rendered bracket had `'effort' in row === false`. renderTrace over fixtures/verbatim.trace.jsonl gives sha256 e9588bcb6a9ab0b7c1d7ce0cd864446ea75506d51c0294acc2162483cbcf3a40 under both 00d4cf02 (git archive) and HEAD - identical, 8 brackets, 0 with effort or rung."
+    },
+    {
+      "k": 5,
+      "name": "Suite, typecheck and self-verify all pass",
+      "evidence": "test.mjs 3747 pass / 0 fail exit 0; `npx tsc -p tsconfig.ci.json` exit 0; self-verify {\"ok\":true,...,\"problems\":[]}. Budget rows 26346/35735/25361 equal `wc -c` on the three files. The four re-pinned REPORT-* anchors read true at report.md:170-176, :233-244, :234-235, :245-247."
+    },
+    {
+      "k": 6,
+      "name": "TRC-13 names the worker transcript and traces to phase 3",
+      "evidence": "REQUIREMENTS.md:21 names `agent_transcript_path` and says `never off the hook input`; the removed text (git show dd6f79e1) was the payload wording. Traceability row `| TRC-13 | Phase 3 | Pending |` at :494, the only Phase 3 row."
+    }
+  ],
+  "gaps": [
+    {
+      "name": "ROADMAP Phase 3 success criteria still name the hook payload the spike corrected",
+      "reason": "behavior wrong (documentation) - the phase's contract text contradicts what shipped. dd6f79e1 corrected the ROADMAP narrative and TRC-13 but not the Success criteria bullets, so two of the five still describe the payload-sourced design that .planning/spikes/host-effort-downgrade/SPIKE.md explicitly ruled out.",
+      "evidence": ".planning/ROADMAP.md:189-190 `A lifecycle/return event carries the effort the host reported for that dispatch, beside the routed effort already on routing/resolve` - but D-03 rejects the routing/resolve join by name and nothing joins the two; .planning/ROADMAP.md:191-192 `A dispatch whose hook input carried no effort is recorded as unrecorded, never as a match` - but the rule reads the TRANSCRIPT (cadence-core/bin/lib/subagent-trace.mjs:523) and the hook input's effort is provably never read (live run: payload {\"level\":\"max\"}, record wrote \"high\"). Ten lines above, :174-180 already says the opposite. SUMMARY.md:84 claims every ROADMAP success criterion is met, which is true only of the corrected reading, not the written one.",
+      "severity": "minor",
+      "missing": "Rewrite .planning/ROADMAP.md:189-192 to match :174-180 and TRC-13: the effort rides BOTH hook writes (the return and the worker_cache fact) beside the rung the worker was dispatched under, and a dispatch whose TRANSCRIPT reported no effort is recorded as unrecorded - the key omitted, never a match. Same commit-sized edit the spike's RECOMMENDATION already authorized for the other two sites."
+    }
+  ],
+  "human_checks": [
+    {
+      "name": "/cad-report names a routed/ran disagreement on the row",
+      "expected": "Run `/cad-report 3`. Every bracket row with no `effort` key (103 of the 107 on this record) reads `unrecorded` under `ran` and is never described as matching or agreeing; the four rows that have one print `xhigh|xhigh` and `high|high` under `rung|ran`. Then mint a disagreement and re-run against it, because this record holds none: in a scratch project with `.planning/trace.jsonl` holding TWO open `cad-verifier` dispatches, pipe `{\"cwd\":<proj>,\"agent_transcript_path\":<a one-line assistant transcript with \"effort\":\"high\" and \"stop_reason\":\"end_turn\">,\"agent_type\":\"cadence:cad-verifier-max\",\"agent_id\":\"W9\"}` into `node cadence-core/bin/subagent-trace.mjs`, append a hand-written close carrying `agent_id: W9`, and the bracket renders `rung: max, effort: high`. The composed Dispatches row must state that disagreement ON the row itself - no summary line, no count line.",
+      "why_human": "Out of reach, not unexercised. There is no code path that composes the Dispatches table: `/cad-report` is a coordinator slash command whose whole content is prose in cadence-core/workflows/report.md, and a subagent cannot invoke it. I verified everything the report reads (the render envelope carries `brackets` with `rung` and `effort` and no routing event) and everything it is told to print (the shape line at report.md:111 and the TWO EFFORTS rule at :139-155, pinned by a passing prose-agreement test), and I proved the record can hold a disagreement by minting one through the real hook. What remains is a model reading that prose and producing the table, which only a live run shows."
+    }
+  ]
+}
