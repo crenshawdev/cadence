@@ -75,15 +75,27 @@ decisions, not defects.
 
 ## Open Questions
 
-- **OQ-1 - what the staged scope is spelled as.** Two shapes, and the choice
-  decides whether `GH-229`'s Case A is a seam change or a prose change. Either
-  `resolveRange` learns a staged sentinel and resolves it as `git diff --cached`
-  against `HEAD`, which puts a non-rev value into a function whose whole
-  contract is "the commit ids a caller's two refs name"; or `verify.md` stops
-  asking for a rev pair and passes the staged diff as a file the way shape (c)
-  already does, which leaves `resolveRange` alone and moves the work to the
-  caller. The partial-resolve fix is owed either way and does not depend on
-  this.
+- **OQ-1 - what the staged scope is spelled as. ANSWERED 2026-09-02: neither
+  of the two shapes below - an explicit `--staged` arm on the seam.**
+  `risk-check run` and `risk-check status` accept `--base <ref> --staged` in
+  place of `--head`, diff `git diff --cached` against the resolved base, and
+  record `staged: true` with `base_id` set and `head_id` honestly null. The
+  branch lives at the two call sites in `risk-check.mjs` (`:241`, `:428`)
+  BEFORE `resolveRange` is reached, so `resolveRange` keeps its contract and no
+  non-ref spelling ever passes `riskRef`. `verify.md:273` and `debug.md:111`
+  then carry that one machine spelling. The deciding evidence: detection is
+  mandated through the seam (`risk-surface.md:11-14`, "a SEAM's answer, never a
+  model's reading"), the seam is ref-only (`core.mjs:641`), and `git-guard.md:123`
+  fires the gate BEFORE the commit lands - so the staged scope cannot be turned
+  into a committed range, and a diff FILE (shape (c)) reaches only the reviewer,
+  never detection. Two projects improvised `HEAD..STAGED` to satisfy exactly this
+  gap: verbatim 2026-08-30T18:28:50 and weathervane 2026-08-31T11:21:11. The two
+  shapes as originally posed: either `resolveRange` learns a staged sentinel,
+  which puts a non-rev value into a function whose whole contract is "the
+  commit ids a caller's two refs name"; or `verify.md` passes the staged diff
+  as a file the way shape (c) already does, which leaves detection with no
+  spelling at all. The partial-resolve fix is owed either way and does not
+  depend on this.
 - **OQ-2 - whether a treeless task may report done at all.** `GH-246` can be
   closed in two directions and they are not equivalent. Preserve the advertised
   lightweight path - the task finishes, states plainly that no durable Cadence
@@ -103,6 +115,8 @@ decisions, not defects.
 
 ### Phase 1: A gate refuses the range it could not resolve
 
+**Requirements:** `RNG-05`, `RSK-10`
+
 `GH-229`, which is three separable defects sharing one symptom: a blocking gate
 that reports a verdict it had no diff to compute.
 
@@ -112,9 +126,12 @@ catch returns both ends empty, so a caller learns nothing about which end
 failed and a resolvable `HEAD` is discarded alongside an unresolvable sibling.
 Resolve the ends independently and let the refusal name the end that failed.
 
-The staged scope is OQ-1. Whichever shape wins, the invariant is that no
-workflow asks the seam for a rev spelling git cannot name, and that a scope the
-workflow describes in prose has exactly one machine spelling.
+The staged scope was OQ-1 and is answered above: a `--staged` arm on
+`risk-check run` and `status`, branched before `resolveRange` at
+`risk-check.mjs:241` and `:428`, and `verify.md:273` plus `debug.md:111`
+rewritten to spell it. The invariant the answer serves is that no workflow asks
+the seam for a rev spelling git cannot name, and that a scope the workflow
+describes in prose has exactly one machine spelling.
 
 The self-comparing range is a caller fix. `execute.md:339` should not emit a
 range whose two ends are the same commit; a plan that landed nothing has
