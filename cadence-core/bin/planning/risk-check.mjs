@@ -234,16 +234,20 @@ function cmdRiskCheckRun(dir, opts) {
   let diffError = null;
   // The IDS the caller's refs name, resolved before anything is read: they are
   // this record's range identity, and `risk-check status` compares them rather
-  // than the spellings (see resolveRange). Null when the refs did not resolve,
-  // in which case nothing was read either and the record says so.
-  let baseId = null;
-  let headId = null;
+  // than the spellings (see resolveRange).
+  //
+  // THE END THAT RESOLVED IS KEPT whichever way the other one went. Both ids
+  // used to be dropped the moment either ref failed, so a record left by a
+  // caller who mistyped one end could not say which commit the OTHER end named,
+  // and its reader could not tell a bad ref from a bad repository.
+  // `resolveRange` returns `''` for the end git could not name and the full id
+  // for the end it could, so only the FAILING end goes null here.
   const range = resolveRange(base, head);
+  const baseId = range.base || null;
+  const headId = range.head || null;
   if (!range.ok) {
     diffError = range.error;
   } else {
-    baseId = range.base;
-    headId = range.head;
     try {
       // `-C top`, the way cmdLeaseCheck reads its staged set, so the range is
       // the repository's and not the cwd's, and the resolved IDS rather than
@@ -318,6 +322,17 @@ function cmdRiskCheckRun(dir, opts) {
     // the envelope both, so the record a later `status` joins and the envelope
     // the coordinator reads cannot disagree about it.
     empty: scan.empty,
+    // THE CAUSE, ON THE ROW and not on the envelope alone. Both failure arms -
+    // an unresolved range and the `git diff` catch - appended a bare
+    // `checked: false, inconclusive: true` with the redacted message reaching
+    // only the envelope's `detail`, so a trace reader saw an inconclusive it
+    // could proceed past and nothing on the record said why the range was never
+    // read (smithers 2026-08-27T23:55:38 and 2026-08-28T14:28:12). `detail` is
+    // the field trace rows already carry a free-text cause on - `override`'s
+    // reason, `uat_verdict`'s result word - and this is the SAME redacted string
+    // the envelope emits, so the record and the envelope cannot disagree about
+    // the cause. A run that READ its range adds nothing.
+    ...(diffError === null ? {} : { detail: diffError }),
   });
 
   const envelope = {

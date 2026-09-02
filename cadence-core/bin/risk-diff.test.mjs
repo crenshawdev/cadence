@@ -639,6 +639,50 @@ test('risk-check run: an unreadable range is ok:false, and STILL leaves its reco
   assert.equal(records[0].empty, false);
 });
 
+test('risk-check run: an unresolvable HEAD keeps the base id and states the cause on the row', () => {
+  // The half the record used to drop. Both ids went null the moment either ref
+  // failed, and the redacted git message reached the ENVELOPE only - so the row
+  // on disk was a bare `checked:false, inconclusive:true` that a trace reader
+  // could walk straight past (smithers 2026-08-27T23:55:38, 2026-08-28T14:28:12).
+  const { repo, dir } = riskRepo();
+  const sha = commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--plan', '1', '--base', sha, '--head', 'no-such-ref']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-diff', JSON.stringify(r));
+  assert.equal(r.base_id, sha, 'the end git DID resolve was dropped with the one it could not');
+  assert.equal(r.head_id, null);
+  assert.equal(r.checked, false);
+
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.equal(records[0].base_id, sha);
+  assert.equal(records[0].head_id, null);
+  assert.equal(records[0].checked, false);
+  assert.equal(records[0].inconclusive, true);
+  assert.equal(records[0].empty, false);
+  assert.equal(typeof records[0].detail, 'string');
+  assert.ok(records[0].detail, 'the row carries no cause at all');
+  assert.match(records[0].detail, /^head\b/, records[0].detail);
+});
+
+test('risk-check run: the mirror - an unresolvable BASE keeps the head id and names `base`', () => {
+  const { repo, dir } = riskRepo();
+  const head = commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--plan', '1', '--base', 'no-such-ref', '--head', 'HEAD']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-diff', JSON.stringify(r));
+  assert.equal(r.base_id, null);
+  assert.equal(r.head_id, head, JSON.stringify(r));
+
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.equal(records[0].base_id, null);
+  assert.equal(records[0].head_id, head);
+  assert.match(records[0].detail, /^base\b/, records[0].detail);
+});
+
 test('risk-check run: --base and --head are required, and a flag-shaped ref is refused', () => {
   const { repo, dir } = riskRepo();
   const base = commitFile(repo, 'README.md', 'start\n');
