@@ -186,10 +186,13 @@ decision. Recording it honestly is the whole of this phase.
 
 - OQ-2 is answered against the installed Claude Code version, with the evidence
   written down, before any code lands.
-- A `lifecycle/return` event carries the effort the host reported for that
-  dispatch, beside the routed effort already on `routing/resolve`.
-- A dispatch whose hook input carried no effort is recorded as unrecorded,
-  never as a match - the same rule the token and turn totals already follow.
+- A lifecycle event carries the effort the worker's OWN transcript says it ran
+  at - on BOTH hook writes, the `return` it can close and the `worker_cache`
+  fact it writes when it cannot - beside the rung that worker was dispatched
+  under, the two on the same event.
+- A dispatch whose worker transcript reported no effort is recorded as
+  unrecorded - the key omitted, never a match - the same rule the token and
+  turn totals already follow.
 - `/cad-report` states a routed/ran disagreement rather than smoothing it over.
 - `GH-226` traces to a REQUIREMENTS row pointing at Phase 3, or is closed with
   its reason recorded if OQ-2 comes back negative.
