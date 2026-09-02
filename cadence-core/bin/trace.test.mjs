@@ -2011,6 +2011,84 @@ test('seam: an append with no --trigger is byte-identical to today\'s', () => {
   assert.equal('trigger' in e, false, JSON.stringify(e));
 });
 
+// --- --anchor: the window a receipt settles, when the run has moved past it ---
+//
+// `correlationId` derives a run's id off the phase's NEWEST
+// `lifecycle/phase_start`, so a settlement written after a phase re-anchored is
+// stamped with the new window and can never settle the fire that ran under the
+// old one - GH-227 Case A, repaired today by hand-appending the line.
+// `renderEvent` already prefers an explicit non-empty `corr`, so the whole of
+// the fix is a flag that supplies one.
+
+/** A settle receipt for phase 1, plus whatever extra args a case needs. */
+const settle = (...extra) => ['trace', 'append', '--phase', '1', '--family', 'outcome',
+  '--event', 'gate_pass', '--trigger', 'risk_surface', '--plan', '1',
+  '--base', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  '--sha', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  '--survivors', '0', '--downgraded', '0', '--refuted', '0', ...extra];
+
+/** A phase whose window has already re-anchored: two `phase_start` lines. */
+function reAnchored() {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'aaa1111' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'bbb2222' });
+  return dir;
+}
+
+test('seam: --anchor stamps the receipt with the window it names, not the newest one', () => {
+  const dir = reAnchored();
+  const r = run(dir, settle('--anchor', 'aaa1111'));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const e = lines(dir).at(-1);
+  // The VALUE is a sha and the id is DERIVED from it, through the one
+  // derivation in the tree - so a receipt can only ever name a window of the
+  // phase it already declares.
+  assert.equal(e.corr, '1-aaa1111');
+  assert.equal(correlationId(dir, 1), '1-bbb2222', 'the newest anchor is still the run\'s own');
+});
+
+test('seam: the same receipt WITHOUT --anchor takes the newest anchor, as it always did', () => {
+  const dir = reAnchored();
+  assert.equal(run(dir, settle()).ok, true);
+  const e = lines(dir).at(-1);
+  assert.equal(e.corr, '1-bbb2222');
+});
+
+test('seam: a bare or blank --anchor appends NOTHING at all', () => {
+  // The `--trigger` disposition and for its reason: a blank anchor would read
+  // as "no anchor" while the caller believes the receipt was bound to a window.
+  const dir = root();
+  for (const extra of [['--anchor'], ['--anchor', ''], ['--anchor', '  ']]) {
+    const r = run(dir, settle(...extra));
+    assert.equal(r.ok, false, JSON.stringify(extra));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(extra));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: render still lists the flagged event - the pre-anchor repair leaves it alone', () => {
+  // D-11: the repair at lib/trace.mjs fires only where `e.corr === <phase>`,
+  // the BARE form, so an event carrying an explicit earlier id is not rewritten
+  // forward onto the newest anchor - which is the one way shape (a) could have
+  // been silently undone by a reader.
+  const dir = reAnchored();
+  assert.equal(run(dir, settle('--anchor', 'aaa1111')).ok, true);
+  const rendered = run(dir, ['trace', 'render', '--phase', '1', '--events']);
+  assert.equal(rendered.ok, true, JSON.stringify(rendered));
+  const receipt = rendered.events.find((e) => e.event === 'gate_pass');
+  assert.ok(receipt, 'the flagged receipt vanished from the phase render');
+  assert.equal(receipt.corr, '1-aaa1111');
+});
+
+test('seam: --anchor rides no other event - an append without it is byte-identical', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors',
+    '--survivors', '2', '--downgraded', '0', '--refuted', '0']);
+  const [e] = lines(dir);
+  assert.equal(e.corr, '1', 'no anchor at all still derives the phase-only form');
+});
+
 test('seam: --read stores a comma-separated set as an array, verbatim', () => {
   const dir = root();
   const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',

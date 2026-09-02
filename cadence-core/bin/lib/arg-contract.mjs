@@ -936,6 +936,20 @@ export const CONTRACTS = {
     // by one rule.
     // All four are OFF the `close` row below, for the reason `--raised` is off
     // it: a flag row never widens what a subcommand accepts.
+    // `--anchor` names the WINDOW a receipt settles, as the sha that window's
+    // own `lifecycle/phase_start` carried. lib/trace.mjs's `correlationId`
+    // derives a run's id off the phase's NEWEST anchor, so a settlement written
+    // after the phase re-anchored is stamped with the new window and can never
+    // settle the fire that ran under the old one - the state GH-227 reports,
+    // repaired today by hand-appending the line. The value is that anchor's SHA
+    // and never a whole correlation id: the id is then derived through the one
+    // derivation in the tree, so a receipt can only name a window of the phase
+    // it already declares and the two spellings cannot drift. REFUSES on both
+    // axes, the `--trigger` disposition and for its reason - a blank anchor
+    // reads as "no anchor" while the caller believes the receipt was bound.
+    // Nothing checks that the named window EXISTS, and that is the accepted
+    // cost stated rather than hidden (D-01): a receipt can name a window it
+    // does not belong to, and `risk-check status`'s range check is what objects.
     'trace append': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--family': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -957,6 +971,7 @@ export const CONTRACTS = {
       '--step': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--reviewer': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--trigger': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--anchor': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
     // family is fixed to `lifecycle` in the seam and the arm is inferred from

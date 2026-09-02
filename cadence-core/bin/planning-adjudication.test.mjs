@@ -1260,3 +1260,77 @@ test('D-04: the recount does NOT widen to deferred/<N>/, which keeps its stated 
   assert.equal(traceLines(dir).length, before + 1,
     'the receipt the omitted check lets through was not appended');
 });
+
+// --- D-01: a receipt for a window the run has already moved past --------------
+//
+// `correlationId` derives a run's id off the phase's NEWEST
+// `lifecycle/phase_start`, so a settlement written after a phase re-anchored is
+// stamped with the new window's id and joins nothing the old one fired -
+// GH-227 Case A, repaired today by hand-appending the line into the record.
+// `--anchor <sha>` names the earlier window instead, and the id is derived from
+// that sha through the one derivation in the tree.
+//
+// Both arms run the REAL seams end to end, the way the `deferral` arms above
+// do: the correlation ids, the resolved range ids and the row key are the
+// seams' own, which is the half a hand-written trace line asserts nothing
+// about.
+
+/** A repo whose phase 1 fired under anchor A, then re-anchored at B. Returns
+ *  the range and the earlier window's own sha. */
+function reAnchoredFire() {
+  const { repo, dir, base, head } = deferralRepo();
+  const anchor = head.slice(0, 7);
+  // The executor bracket is what registers the row `status --phase <N>` answers
+  // for, and it rides the window that was current when the plan ran.
+  const bracket = ['--phase', '1', '--family', 'lifecycle', '--plan', '1',
+    '--role', 'cad-executor'];
+  plRun(repo, dir, ['trace', 'append', ...bracket, '--event', 'dispatch']);
+  plRun(repo, dir, ['trace', 'append', ...bracket, '--event', 'return']);
+  const recorded = plRun(repo, dir, ['risk-check', 'run', '--phase', '1', '--plan', '1',
+    '--base', base, '--head', head]);
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  assert.ok(recorded.matches.some((m) => m.category === 'secrets'),
+    `the fixture range matched no secrets surface: ${JSON.stringify(recorded.matches)}`);
+  // The phase re-anchors: everything appended from here derives the NEW id.
+  const second = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'lifecycle', '--event', 'phase_start', '--sha', 'deadbee']);
+  assert.equal(second.ok, true, JSON.stringify(second));
+  return { repo, dir, base, head, anchor };
+}
+
+/** The settle receipt for that fire, plus whatever extra args a case needs. */
+const anchoredReceipt = (base, head, ...extra) => ['trace', 'append', '--phase', '1',
+  '--family', 'outcome', '--event', 'gate_pass', '--trigger', 'risk_surface',
+  '--plan', '1', '--base', base, '--sha', head,
+  '--survivors', '0', '--downgraded', '0', '--refuted', '0', ...extra];
+
+test('D-01: a receipt naming the earlier window settles the fire that ran in it', () => {
+  const { repo, dir, base, head, anchor } = reAnchoredFire();
+  const before = plRun(repo, dir, ['risk-check', 'status', '--phase', '1']);
+  assert.equal(before.ok, false, JSON.stringify(before));
+  assert.equal(before.reason, 'risk-fire-missing');
+  assert.equal(before.plans[0].state, 'unfired');
+
+  const receipt = plRun(repo, dir, anchoredReceipt(base, head, '--anchor', anchor));
+  assert.equal(receipt.ok, true, JSON.stringify(receipt));
+
+  const after = plRun(repo, dir, ['risk-check', 'status', '--phase', '1']);
+  assert.equal(after.ok, true, JSON.stringify(after));
+  assert.equal(after._exit, 0);
+  assert.equal(after.plans[0].state, 'recorded');
+});
+
+test('D-01: the IDENTICAL receipt without --anchor leaves that range unfired', () => {
+  // The falsifier for the row above. The only difference is the flag: the
+  // receipt names the same trigger, the same plan and both the same range ends,
+  // and it settles nothing because it is stamped with the window the run moved
+  // ON to. Drop `--anchor` from the seam and the row above answers like this.
+  const { repo, dir, base, head } = reAnchoredFire();
+  const receipt = plRun(repo, dir, anchoredReceipt(base, head));
+  assert.equal(receipt.ok, true, JSON.stringify(receipt));
+
+  const after = plRun(repo, dir, ['risk-check', 'status', '--phase', '1']);
+  assert.equal(after.ok, false, JSON.stringify(after));
+  assert.equal(after.reason, 'risk-fire-missing');
+  assert.equal(after.plans[0].state, 'unfired');
+});

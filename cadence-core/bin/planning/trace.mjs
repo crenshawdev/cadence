@@ -38,7 +38,9 @@ import {
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
-import { FAMILIES, ROTATED_TRACE_FILE, appendEvent, renderTrace } from '../lib/trace.mjs';
+import {
+  FAMILIES, ROTATED_TRACE_FILE, appendEvent, correlationId, renderTrace,
+} from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
 // ---------------------------------------------------------------------------
@@ -466,10 +468,11 @@ const TRACE_GRAMMAR = {
 };
 
 // The flags whose whole rule is the value grammar, in the order they are read.
-// The first four declare `fallback` on both axes and the last four `refuse` -
-// the two dispositions this one body has always run side by side (D-05), now
-// stated once in the table instead of seven times here.
-const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer', '--trigger', '--agent-id'];
+// The first three declare `fallback` on both axes and every one after them
+// `refuse` - the two dispositions this one body has always run side by side
+// (D-05), now stated once in the table instead of once per flag here.
+const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer',
+  '--trigger', '--agent-id', '--anchor'];
 
 // The `--duration-ms` grammar, CLOSED to digits and unit letters.
 //
@@ -908,7 +911,7 @@ function cmdTrace(dir, sub, opts) {
       read = list;
     }
 
-    // The seven string flags, each read through its DECLARED row. One loop
+    // The nine string flags, each read through its DECLARED row. One loop
     // where seven hand-written guards used to state the same two rules, and
     // the ONE place this body's two bare-flag dispositions are decided (D-05):
     // `--plan`, `--sha` and `--base` declare `fallback` and read as absent, so
@@ -970,6 +973,32 @@ function cmdTrace(dir, sub, opts) {
     const trigger = trimmed('--trigger');
     const agentId = trimmed('--agent-id');
 
+    // THE WINDOW THIS RECEIPT SETTLES, when it is not the window the run is in
+    // (D-01). `correlationId` derives a run's id off the phase's NEWEST
+    // `lifecycle/phase_start`, so a settlement written after the phase
+    // re-anchored is stamped with the new window's id and can never settle the
+    // fire that ran under the old one - the state GH-227 Case A reports,
+    // repaired today by hand-appending the line. `renderEvent` already prefers
+    // an explicit non-empty `corr` on the event and falls back to the
+    // derivation only when there is none, so the whole of the fix is a flag
+    // that supplies one.
+    //
+    // The flag carries the earlier window's own anchor SHA, never a whole
+    // correlation id, and the id is derived from it through `correlationId` -
+    // the one derivation in the tree, which short-circuits on a supplied sha
+    // and returns `<phase>-<sha>` with no file read. So a receipt can only name
+    // a window of the phase it already declares, and the two spellings cannot
+    // drift apart.
+    //
+    // NO KEY when the flag is absent, so every existing call derives exactly as
+    // it does today. Not coupled to an event NAME either: this seam carries no
+    // runtime refusal keyed to an event, and the first one would be read as
+    // drift and deleted.
+    const anchor = trimmed('--anchor');
+    const corr = anchor === undefined
+      ? undefined
+      : correlationId(dir, parsedPhase.raw, anchor);
+
     // THE CROSS-ARTIFACT CHECK (AC4). The three settled figures are DERIVED by
     // the `adjudication` seam from the record's own rulings and copied onto
     // this line by hand, so this is where a mistyped one is still cheap: the
@@ -1014,6 +1043,9 @@ function cmdTrace(dir, sub, opts) {
       phase: parsedPhase.raw,
       family,
       event,
+      // Present ONLY when `--anchor` named an earlier window; absent, the
+      // derivation in `renderEvent` answers exactly as it always has.
+      ...(corr === undefined ? {} : { corr }),
       // The four below carry no guard of their own any more: the loop above
       // already applied each flag's declared disposition, so an absent flag and
       // a `fallback` one both arrive here as `undefined` and omit their key.

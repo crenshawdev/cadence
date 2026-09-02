@@ -62,7 +62,11 @@ matched range for that plan in the same cycle, so a coordinator could fire once,
 re-run the detector on a widened range after a fix, skip the second fire, and
 still be told the gate was satisfied. `risk-check status` therefore joins a
 receipt to a record by head commit, and a receipt carrying no `--sha` settles
-nothing. Pass the same head the fire's own artifact was built from.
+nothing. Pass the same head the fire's own artifact was built from. A settle for
+a window the run has already moved PAST names that window too, on `--anchor
+<sha>` carrying the sha that window's own `phase_start` recorded: without it the
+receipt is stamped with the phase's NEWEST anchor and joins nothing the earlier
+window fired. An ordinary same-window receipt omits the flag.
 
 **Every blocking settle also leaves the ADJUDICATION RECORD.** The receipt says
 a fire HAPPENED; the record says what was raised and how each finding was ruled,
@@ -95,7 +99,7 @@ Nothing `blocker`/`high` survives - PASS, and record it, or every matched range
 whose fire found no blocker becomes permanently unclearable:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] [--anchor <sha>]
 ```
 
 The user explicitly overrides a FAIL - record that instead. The reason is the
@@ -106,7 +110,7 @@ review's settled outcome, so it is REFUSED as a receipt when that reason is
 empty - a blank override is indistinguishable from a manufactured clear:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] [--anchor <sha>] --detail-file <path>
 ```
 
 The settle receipt is where that reason becomes CHECKABLE. When the record this
