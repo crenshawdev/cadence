@@ -2089,6 +2089,73 @@ test('seam: --anchor rides no other event - an append without it is byte-identic
   assert.equal(e.corr, '1', 'no anchor at all still derives the phase-only form');
 });
 
+// --- --authorization-id: which human answer a receipt descends from -----------
+//
+// One authorization applied to two ranges is two receipts by construction, and
+// nothing on either said they came from one decision (GH-220). The id is MINTED
+// by the coordinator when the engineer answers, never derived from the reason
+// text: measured over nine shipped `outcome/override` events, grouping by exact
+// `--detail` text collapses the two duplicate pairs and misses the trio of
+// three distinct texts written on one standing authorization (D-02).
+
+/** An override receipt over one range, plus whatever extra args a case needs. */
+const override = (sha, ...extra) => ['trace', 'append', '--phase', '1', '--family', 'outcome',
+  '--event', 'override', '--trigger', 'risk_surface', '--plan', '1',
+  '--base', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '--sha', sha,
+  '--survivors', '1', '--downgraded', '0', '--refuted', '0',
+  '--detail', 'the engineer accepted the risk', ...extra];
+
+const HEAD_A = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const HEAD_B = 'cccccccccccccccccccccccccccccccccccccccc';
+
+test('seam: two receipts on ONE authorization carry the same id', () => {
+  const dir = root();
+  assert.equal(run(dir, override(HEAD_A, '--authorization-id', 'auth-7')).ok, true);
+  assert.equal(run(dir, override(HEAD_B, '--authorization-id', 'auth-7')).ok, true);
+  const [first, second] = lines(dir);
+  assert.equal(first.authorization_id, 'auth-7');
+  assert.equal(second.authorization_id, 'auth-7');
+  // The two are still DIFFERENT receipts over different ranges: the id labels
+  // the pair, it does not merge them.
+  assert.notEqual(first.sha, second.sha);
+});
+
+test('seam: two receipts on TWO authorizations carry different ids', () => {
+  const dir = root();
+  assert.equal(run(dir, override(HEAD_A, '--authorization-id', 'auth-7')).ok, true);
+  assert.equal(run(dir, override(HEAD_B, '--authorization-id', 'auth-8')).ok, true);
+  const [first, second] = lines(dir);
+  assert.notEqual(first.authorization_id, second.authorization_id);
+});
+
+test('seam: an append with no --authorization-id carries NO such key at all', () => {
+  // Absence, never an empty string: every event written before this flag
+  // existed carries no key, and a stored `''` would read as a labelled one.
+  const dir = root();
+  assert.equal(run(dir, override(HEAD_A)).ok, true);
+  const [e] = lines(dir);
+  assert.equal('authorization_id' in e, false, JSON.stringify(e));
+});
+
+test('seam: a bare or blank --authorization-id appends NOTHING at all', () => {
+  // The `--agent-id` disposition and for its reason: a blank id would read as
+  // "no id" while the caller believes the receipt was labelled.
+  const dir = root();
+  for (const extra of [['--authorization-id'], ['--authorization-id', ''],
+    ['--authorization-id', '  ']]) {
+    const r = run(dir, override(HEAD_A, ...extra));
+    assert.equal(r.ok, false, JSON.stringify(extra));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(extra));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: the authorization id is stored TRIMMED - a padded copy is one decision', () => {
+  const dir = root();
+  assert.equal(run(dir, override(HEAD_A, '--authorization-id', '  auth-7  ')).ok, true);
+  assert.equal(lines(dir)[0].authorization_id, 'auth-7');
+});
+
 test('seam: --read stores a comma-separated set as an array, verbatim', () => {
   const dir = root();
   const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',

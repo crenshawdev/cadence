@@ -472,7 +472,7 @@ const TRACE_GRAMMAR = {
 // `refuse` - the two dispositions this one body has always run side by side
 // (D-05), now stated once in the table instead of once per flag here.
 const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer',
-  '--trigger', '--agent-id', '--anchor'];
+  '--trigger', '--agent-id', '--anchor', '--authorization-id'];
 
 // The `--duration-ms` grammar, CLOSED to digits and unit letters.
 //
@@ -911,7 +911,7 @@ function cmdTrace(dir, sub, opts) {
       read = list;
     }
 
-    // The nine string flags, each read through its DECLARED row. One loop
+    // The ten string flags, each read through its DECLARED row. One loop
     // where seven hand-written guards used to state the same two rules, and
     // the ONE place this body's two bare-flag dispositions are decided (D-05):
     // `--plan`, `--sha` and `--base` declare `fallback` and read as absent, so
@@ -998,6 +998,28 @@ function cmdTrace(dir, sub, opts) {
     const corr = anchor === undefined
       ? undefined
       : correlationId(dir, parsedPhase.raw, anchor);
+
+    // THE HUMAN ANSWER THIS RECEIPT DESCENDS FROM (D-02, GH-220). One
+    // authorization applied to two ranges is two receipts by construction, and
+    // nothing on either said they came from one decision. The id is MINTED by
+    // the coordinator when the engineer answers - never hashed, never
+    // normalized out of the reason text: measured over nine shipped
+    // `outcome/override` events, grouping by exact `--detail` text collapses
+    // the two duplicate pairs and misses the trio of three distinct texts
+    // written on one standing authorization, so a derived key answers two cases
+    // of three and misses the one that motivated the issue.
+    //
+    // TRIMMED, like the other refusing flags: a stored id is a JOIN KEY and a
+    // padded copy must not read as a second decision. ABSENT AND EMPTY STAY
+    // DISTINGUISHABLE - the key rides the event only when the flag was given,
+    // or every event written before this flag existed would read as a labelled
+    // one.
+    //
+    // Not keyed to the `override` event name. This seam is event-agnostic by
+    // contract, and the rule that only an override carries an id is held by the
+    // prose that writes it, exactly as the rule that a coordinator marker
+    // carries no `--role` is.
+    const authorizationId = trimmed('--authorization-id');
 
     // THE CROSS-ARTIFACT CHECK (AC4). The three settled figures are DERIVED by
     // the `adjudication` seam from the record's own rulings and copied onto
@@ -1093,6 +1115,13 @@ function cmdTrace(dir, sub, opts) {
       // half cannot carry it (that event is written before the subagent
       // exists), and the orchestrator learns it the moment the host returns.
       ...(agentId === undefined ? {} : { agent_id: agentId }),
+      // The authorization a settle descends from, so a reader can tell a second
+      // range settled by ONE human answer from a duplicate write of one range.
+      // It LABELS that pair and nothing more (D-03): `risk-check status` still
+      // requires every fired record to carry its own receipt naming both ends
+      // of its own range, so a shared id never lets one receipt settle a second
+      // range.
+      ...(authorizationId === undefined ? {} : { authorization_id: authorizationId }),
     });
     return ok({
       written: res.written,

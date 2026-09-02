@@ -107,10 +107,17 @@ user's own words, so it rides `--detail-file <path>` and never an inline
 `--detail` (references/conventions.md states the transport). An `override` is
 the one receipt written on the coordinator's own say-so rather than as a
 review's settled outcome, so it is REFUSED as a receipt when that reason is
-empty - a blank override is indistinguishable from a manufactured clear:
+empty - a blank override is indistinguishable from a manufactured clear. One
+human answer covering two ranges is two receipts, so MINT one
+`--authorization-id <id>` when the engineer answers and carry it on every
+receipt written on that answer: a reader can then tell a second range settled by
+one decision from a duplicate write of one range. A receipt written on its own
+answer carries a fresh id, one written with no authorization behind it omits the
+flag, and a shared id LABELS the pair rather than widening what either receipt
+settles - each range still needs a receipt naming its own two ends:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] [--anchor <sha>] --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] [--anchor <sha>] [--authorization-id <id>] --detail-file <path>
 ```
 
 The settle receipt is where that reason becomes CHECKABLE. When the record this
