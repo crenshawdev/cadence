@@ -111,7 +111,7 @@ Compose the report, tersest form that keeps the receipts. Shape:
 
 ```
 Phase <N>: <name> - run record
-Dispatches: <table: role | rung | tokens | turns | step minutes | worker minutes, one row per `brackets` entry (step minutes from its `ms`, worker minutes from its `duration_ms`, turns from its `turns` key - absent on a row whose close carried none), rung from routing resolves>
+Dispatches: <table: role | rung | ran | tokens | turns | step minutes | worker minutes, one row per `brackets` entry (step minutes from its `ms`, worker minutes from its `duration_ms`, turns from its `turns` key - absent on a row whose close carried none), rung from the row's own `rung` key - the rung the worker was DISPATCHED under - and ran from the row's own `effort` key, what its transcript says it RAN at; a row carrying no `effort` reads `unrecorded` under ran and is never shown as agreeing, and a row whose two values differ names the disagreement ON that row>
 Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from `outcomes` and REVIEW files. Where the fire left an ADJUDICATION record, the survivor figure is that record's rulings COUNTED and checked against the `survivors`/`downgraded`/`refuted` on the event; a fire with no record reads `unrecorded`>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns and figureless returns; cross-model provider spend is not excluded but separately denominated, and is on the `Cross-model reviews` line below): <total recorded; top role and its share; unrecorded dispatch count>
@@ -136,6 +136,23 @@ Rules, all load-bearing:
   `unrecorded` in that column and never `0`: an absent wall clock and a worker
   that took no time are different claims, and only one of them is a
   measurement.
+- TWO EFFORTS, and those columns are labelled apart on the same grounds. `rung`
+  is what the worker was DISPATCHED under - the row's own `rung` key, the
+  `agent_type` the host was asked to run, mapped back through the same rung
+  table Cadence routed with. `ran` is what the worker's OWN transcript says the
+  host actually served it - the row's own `effort` key, written by the
+  `SubagentStop` hook and held nowhere else. BOTH come off the `brackets` row
+  and neither comes off a routing resolve: the default `trace render` envelope
+  carries `brackets`, `outcomes`, `provider_spend`, `unpaired`, `roles`,
+  `coordinator` and `counts`, and no routing event at all. A bracket with no
+  `effort` key prints `unrecorded` under ran and is NEVER shown as agreeing: an
+  absent observation and a match are different claims, and only one of them is a
+  measurement. Where the two DISAGREE, state it ON that row and nowhere else -
+  no summary line and no count line, because the row is the only place a reader
+  can see WHICH dispatch it was. It is worth stating because it is silent
+  everywhere else: on Claude Code 2.1.258 a `max` dispatch with extended
+  thinking off runs at `high` and nothing announces it, so a report reading the
+  routed rung alone reports a match on exactly the runs that were downgraded.
 - What that token line EXCLUDES, stated where the figure is printed, in the
   same two names `cadence-core/bin/lib/trace-suggest.mjs` exports as
   `SPEND_EXCLUDES` and `/cad-suggest` relays - one list, so the two surfaces
