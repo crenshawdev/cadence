@@ -167,13 +167,17 @@ writing anything; if it does not, close `GH-226` and end the cycle at two
 phases.
 
 If it does, the fix path is already established and the measurement is already
-paid for: every hook input carries `effort`, so what a rung actually ran at is
-observable at runtime rather than only at `route.mjs resolve` time.
+paid for: what a rung actually ran at is observable at runtime rather than only
+at `route.mjs resolve` time.
 `cadence-core/bin/subagent-trace.mjs` is the `SubagentStop` hook, already parses
 the common hook input, already carries `agent_id` and `agent_type`, and already
-writes the `worker_cache` and `return` events. It reads `effort` off the payload
-it already has and puts it on the `return` event, so the record holds both
-numbers - what was routed and what ran.
+writes the `worker_cache` and `return` events. It reads `effort` off the stopped
+worker's OWN transcript - the file the stop names on `agent_transcript_path`,
+never the hook input, which carries the CONFIGURED level and cannot see the
+downgrade - and puts that string, beside the rung the worker was dispatched
+under, on BOTH of those writes, so the record holds both numbers - what was
+routed and what ran - on every dispatch the hook sees rather than on the two a
+hook-written `return` has closed in this record's whole history.
 
 What to DO about a mismatch - warn, refuse, re-dispatch - is a separate
 decision. Recording it honestly is the whole of this phase.
