@@ -1,8 +1,8 @@
 // @ts-check
 // subagent-transcript.mjs - the pure rule that reads a worker's OWN transcript
 // and answers what only that file can say: did the worker reach a terminal
-// entry, what instant does that entry carry, and how much cache traffic did the
-// worker bill along the way.
+// entry, what instant does that entry carry, how much cache traffic did the
+// worker bill along the way, and what effort did it actually run at.
 //
 // WHY IT EXISTS. `SubagentStop` fires when the host says a subagent stopped,
 // and the payload carries no field that distinguishes "finished" from "handed
@@ -69,6 +69,41 @@
 // against a six-figure bracket `tokens`; a reader that took the two for the same
 // kind of number would misprice every role it touched. That is why they ride the
 // bracket row and never reach the `roles` block's token bill (D-03).
+//
+// THE EFFORT THE WORKER ACTUALLY RAN AT, and why the hook payload cannot say.
+// Every assistant line carries a TOP-LEVEL `effort` string - measured
+// 2026-09-02, 5,701 of 5,701 recent assistant lines carry it there and 0 carry
+// it under `message`, so this rule reads the top level and never reaches inside
+// the message. It is the effort the host actually served, which is NOT the
+// effort the dispatch asked for: on Claude Code 2.1.258 a `max` dispatch with
+// extended thinking off runs at `high` and says so here, while its
+// `SubagentStop` payload reports the CONFIGURED `{"level":"max"}` on the
+// downgraded run and the honest one alike. That is the whole reason this
+// question is answered off the transcript and never off the payload, not even
+// as a fallback (`.planning/spikes/host-effort-downgrade/SPIKE.md`).
+//
+// RECORDED VERBATIM, in the host's own spelling, with NO validation against
+// Cadence's rung enum. The enum is a CONFIG rule (`config.schema.json`) about
+// what a user may ASK for; this is an observation of what a host DID. Checking
+// the observation against the request would erase a renamed or newly added host
+// rung at exactly the moment its appearance is the signal.
+//
+// UNAMBIGUOUS OR NOTHING, TRC-06's rule: the answer is the one value when every
+// line that reported an effort reported the SAME one, and absent when two of
+// them differ - never last-line-wins and never first-line-wins, because a
+// transcript that reports two efforts has not told us what the worker ran at.
+// 0 of 368 measured transcripts mix values, so the disagreement arm is a
+// refusal rather than a merge rule.
+//
+// A LINE REPORTING NO EFFORT IS SKIPPED, not counted as disagreement - the same
+// posture `cacheOf` takes for an entry with no usable `usage`. A missing value
+// is not an ambiguity. The mixed-PRESENCE case is unmeasured in both directions
+// (6 of 368 transcripts report no effort on ANY line, none report it on only
+// some), so the direction chosen is the one that keeps a real observation:
+// under a host format transition where some lines lose the field, this rule
+// reports the effort the lines that HAVE it agree on. If that is ever shown
+// wrong, the flip is toward absent - losing an observation rather than
+// inventing one.
 //
 // A TRUNCATED LINE IS SKIPPED, never fatal: the host appends to this file while
 // the hook may already be reading it, so a partial tail must not cost the
@@ -218,4 +253,38 @@ export function terminalOf(text) {
 
   const ts = typeof last.timestamp === 'string' && last.timestamp ? last.timestamp : null;
   return { state: STOP_STATE.TERMINAL, ts };
+}
+/**
+ * The effort the worker actually RAN at, off its own transcript.
+ *
+ * Read by `lib/subagent-trace.mjs`'s `closeForStop`, which puts it on both
+ * writes the `SubagentStop` hook makes - the `return` when it can close, and
+ * the `worker_cache` fact when it cannot.
+ *
+ * @param {any} text the transcript's own bytes, INJECTED - the whole file as a
+ *   string, the same argument `cacheOf` and `terminalOf` take. Anything that is
+ *   not a non-empty string answers null, which is what an absent, empty or
+ *   over-cap file arrives as.
+ * @returns {string|null} the host's own spelling, byte for byte and never
+ *   normalized, when every assistant line that reported an effort reported the
+ *   same one. Null when two of them differ, when none of them reported one, and
+ *   for anything unreadable - the caller OMITS the key on null rather than
+ *   writing a placeholder, so `unrecorded` is something a reader prints and
+ *   never something the record stores.
+ */
+export function effortOf(text) {
+  /** @type {string|null} */
+  let agreed = null;
+  for (const entry of assistantEntries(text)) {
+    const v = entry.effort;
+    // Not a non-empty string: the line reported nothing readable, which is a
+    // missing value and not an ambiguity. Skipped, exactly as `cacheOf` skips an
+    // entry with no usable `usage`.
+    if (typeof v !== 'string' || !v) continue;
+    if (agreed === null) { agreed = v; continue; }
+    // Two lines, two answers: the transcript has not said what the worker ran
+    // at, so neither does this rule.
+    if (v !== agreed) return null;
+  }
+  return agreed;
 }
