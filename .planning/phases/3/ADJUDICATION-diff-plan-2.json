@@ -1,0 +1,39 @@
+{
+  "phase": "3",
+  "trigger": "diff",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "0d461af6",
+  "head": "7901d543",
+  "base_id": "0d461af69db6b9915e12620070490973f03cd649",
+  "head_id": "7901d543972f21f4ae8d72c17a1c3d06a2621e7b",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/trace.mjs",
+      "line": 1755,
+      "severity": "medium",
+      "claim": "The new string guard accepts whitespace-only effort and rung values despite documenting that blank values must contribute nothing.",
+      "failure_scenario": "A malformed or foreign WORKER_CACHE/terminal event with `effort: \"   \"` (or `rung: \"   \"`) passes `typeof e.effort === 'string' && e.effort`, so the bracket receives a visually blank value. The report then treats `effort` as recorded rather than rendering `unrecorded`; a whitespace `rung` can likewise make an invalid dispatch rung look like an empty table cell. Trim before testing emptiness (while preserving the original nonblank spelling if verbatim storage is required).",
+      "ruling": "survived",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/trace.mjs",
+        "line": 1756,
+        "note": "Confirmed at the cited line: `const effort = typeof e.effort === 'string' && e.effort ? e.effort : null;` is truthiness alone, so a whitespace-only string passes. The comment three lines above (1747-1750) names exactly the hazard class this misses - `a hand-edited or foreign-producer line carrying \"effort\": 3 or \"rung\": \"\"` - so a foreign producer writing \"   \" is in the guard's own declared scope and is not caught. Not fixed in this range: it is medium, below the blocking severities, and reported rather than repaired."
+      },
+      "base_id": "0d461af69db6b9915e12620070490973f03cd649",
+      "head_id": "7901d543972f21f4ae8d72c17a1c3d06a2621e7b"
+    }
+  ]
+}

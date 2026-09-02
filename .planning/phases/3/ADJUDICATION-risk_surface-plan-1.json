@@ -1,0 +1,39 @@
+{
+  "phase": "3",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "00d4cf02",
+  "head": "0d461af6",
+  "base_id": "00d4cf023a707c7c43cd0a639026fb17fa882718",
+  "head_id": "0d461af69db6b9915e12620070490973f03cd649",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/subagent-transcript.test.mjs",
+      "line": 294,
+      "severity": "high",
+      "claim": "The new test fixture is syntactically invalid: the first property in `cases` has neither a valid closing key nor a colon/value expression.",
+      "failure_scenario": "Running the Node test suite fails while parsing this file, before any transcript tests execute, with a JavaScript syntax error at the embedded `asst('end_turn'...)` text.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/subagent-transcript.test.mjs",
+        "line": 295,
+        "note": "node --check on this file exits 0 - it parses. Line 294 is `const cases = {` and line 295 is the well-formed property `'assistant lines with no effort key': [...].join('\\n'),`. The provider envelope reported redactions: 1, so the span the reviewer judged unparseable is the outbound credential fence's replacement inside the transmitted artifact, not the committed source."
+      },
+      "base_id": "00d4cf023a707c7c43cd0a639026fb17fa882718",
+      "head_id": "0d461af69db6b9915e12620070490973f03cd649"
+    }
+  ]
+}

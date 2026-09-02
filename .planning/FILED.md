@@ -32,3 +32,4 @@ recall entry.
 - 2026-09-01 github crenshawdev/cadence ad7a68b976d96c3b: [cadence ad7a68b976d96c3b] Token counts are accepted as any finite non-negative number rather than safe integers, allowing malformed or rounded usage to be recorded as exact.
 - 2026-09-01 github crenshawdev/cadence 2b77b26e6776abd5: [cadence 2b77b26e6776abd5] Usage extraction occurs only after the non-2xx exit, so HTTP error responses that include provider-reported usage lose their cost data.
 - 2026-09-01 github crenshawdev/cadence 622312b1f66a11d3: [cadence 622312b1f66a11d3] `tokenCount` accepts finite non-negative JavaScript numbers without requiring a safe integer, so malformed oversized provider token counts are silently rounded and persisted
+- 2026-09-02 github crenshawdev/cadence 084c9ce03c072e0b: [cadence 084c9ce03c072e0b] The new string guard accepts whitespace-only effort and rung values despite documenting that blank values must contribute nothing.
