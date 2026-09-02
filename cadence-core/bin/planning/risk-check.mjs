@@ -19,7 +19,7 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
-  RISK_DIFF_MAX_BUFFER, fail, ok, planKey, resolveRange, riskRef, routeLadder,
+  RISK_DIFF_MAX_BUFFER, fail, ok, planKey, resolveRange, resolveRef, riskRef, routeLadder,
 } from './core.mjs';
 import { isPlainObject, mergeLayers } from '../lib/config-merge.mjs';
 import { requirePlanKey } from '../lib/plan-key.mjs';
@@ -146,14 +146,40 @@ function cmdRiskCheckRun(dir, opts) {
     plan = parsedPlan.key;
   }
 
-  // BOTH required, and neither defaulted: a defaulted head is a range the
-  // caller never stated, and this record is the evidence of what was checked.
+  // THE SCOPE, IN EXACTLY ONE MACHINE SPELLING PER SHAPE (OQ-1).
+  //
+  // A COMMITTED range is `--base <ref> --head <ref>`. The STAGED scope - the
+  // index against a base, which is what `workflows/verify.md` and
+  // `workflows/debug.md` describe in prose and what two projects improvised
+  // `HEAD..STAGED` for (verbatim 2026-08-30T18:28:50, weathervane
+  // 2026-08-31T11:21:11) - is `--base <ref> --staged`. Neither end is ever
+  // defaulted on either shape: a defaulted head is a range the caller never
+  // stated, and this record is the evidence of what was checked.
+  //
+  // `--staged` is read by PRESENCE, the way `cmdLeaseCheck` reads
+  // `opts['plan-time']`: it carries no value at all, and the arg contract
+  // declares it boolean with `fallback` on both axes for that reason.
   const base = riskRef(opts.base);
   const head = riskRef(opts.head);
-  if (!base || !head) {
-    return fail('bad-args', 'risk-check run needs --base <ref> and --head <ref>, neither opening with `-`',
-      'name both ends of the range this check covers, as refs this repository can resolve, then'
-      + ' re-run this check');
+  const staged = Boolean(opts.staged);
+  // TWO SPELLINGS OF ONE SCOPE is a malformed call, never a precedence
+  // question. Picking one would hand the caller a verdict over a scope it did
+  // not ask about, on the one gate that is blocking at every stakes level. The
+  // test is `'head' in opts` and not the VALIDATED head, so a flag-shaped
+  // `--head` beside `--staged` is refused here rather than silently dropped.
+  if ('head' in opts && staged) {
+    return fail('bad-args',
+      'risk-check run takes --head <ref> or --staged, never both - they are two spellings of one'
+      + ' scope',
+      'drop whichever one this check does not cover - --head <ref> for a committed range, --staged'
+      + ' for the index against --base - then re-run this check');
+  }
+  if (!base || (!head && !staged)) {
+    return fail('bad-args',
+      'risk-check run needs --base <ref> and then one of --head <ref> or --staged, with neither'
+      + ' ref opening with `-`',
+      'name the scope this check covers - --head <ref> for a committed range, or --staged for the'
+      + ' index against --base - then re-run this check');
   }
 
   // The scope of the check, narrowed only by what the caller named. A token
@@ -242,39 +268,71 @@ function cmdRiskCheckRun(dir, opts) {
   // and its reader could not tell a bad ref from a bad repository.
   // `resolveRange` returns `''` for the end git could not name and the full id
   // for the end it could, so only the FAILING end goes null here.
-  const range = resolveRange(base, head);
-  const baseId = range.base || null;
-  const headId = range.head || null;
-  if (!range.ok) {
-    diffError = range.error;
+  let baseId = null;
+  let headId = null;
+  /**
+   * The `git diff` argv this run's scope names, or null when the scope did not
+   * resolve and there is nothing to read. Built per arm and READ once below, so
+   * the two scopes share one catch rather than one each - which is also what
+   * holds the `planning-detail-sites` census where it stands.
+   *
+   * Common to both: `-C top`, the way cmdLeaseCheck reads its staged set, so the
+   * read is the repository's and not the cwd's, and the resolved IDS rather than
+   * the spellings, so the body read is exactly the scope recorded. The trailing
+   * `--` ends the revision list: a ref that also names a path cannot turn into a
+   * pathspec here. REVIEWER_TEXT_PATHSPECS goes AFTER that separator, so that
+   * rule holds for those arguments too, and the four record artifacts that store
+   * reviewer text verbatim never reach `scanDiff` at all. See the constant for
+   * why the fix is here and not in that face.
+   *
+   * `--no-ext-diff --no-textconv` are what make the EMPTY answer mean what
+   * scanDiff reports it to mean. A `diff=<driver>` attribute in a checked-in
+   * `.gitattributes` binds to a `diff.<driver>.command` or `.textconv` in the
+   * reader's OWN git config, so a repository the user merely cloned can route
+   * this read through a helper that prints nothing and exits 0 - and no attacker
+   * is needed for it, since a `textconv` for pdf/docx in `~/.gitconfig` does it
+   * by accident. `git diff <base> <head> --` then emits zero bytes for a file
+   * whose changed line is a recursive delete, and scanDiff answers
+   * `checked: true, empty: true, matches: []`: a COMPLETED clear on the one gate
+   * that is blocking at every stakes level. Both flags are diff-generation
+   * switches only - they change no id, no range and no exit status, so the
+   * empty/unreadable split is untouched.
+   * @type {string[] | null}
+   */
+  let diffArgs = null;
+  if (staged) {
+    // THE STAGED SCOPE, RESOLVED AS ONE END (the locked OQ-1 answer). This arm
+    // sits BEFORE `resolveRange` is ever reached, so that function learns no
+    // staged spelling and nothing that is not a rev passes `riskRef`: the index
+    // is not a commit, so there is no ref a caller could have named for it and
+    // a stand-in head would be a range nobody asked about. `resolveRef` is the
+    // single-ref half `resolveRange` is itself built on, so both arms resolve a
+    // ref through one function and one refusal vocabulary.
+    //
+    // `--cached` is what makes the scope the INDEX against the base: a file
+    // written into the worktree and never added is outside this diff, which is
+    // the point - the gate fires before the commit lands (git-guard.md:123) and
+    // what it must judge is what is about to be committed.
+    const b = resolveRef('base', base);
+    baseId = b.id || null;
+    if (!b.ok) diffError = b.error;
+    else {
+      diffArgs = ['-C', b.top, 'diff', '--cached', '--no-ext-diff', '--no-textconv', b.id, '--',
+        ...REVIEWER_TEXT_PATHSPECS];
+    }
   } else {
+    const range = resolveRange(base, head);
+    baseId = range.base || null;
+    headId = range.head || null;
+    if (!range.ok) diffError = range.error;
+    else {
+      diffArgs = ['-C', range.top, 'diff', '--no-ext-diff', '--no-textconv', baseId, headId, '--',
+        ...REVIEWER_TEXT_PATHSPECS];
+    }
+  }
+  if (diffArgs) {
     try {
-      // `-C top`, the way cmdLeaseCheck reads its staged set, so the range is
-      // the repository's and not the cwd's, and the resolved IDS rather than
-      // the spellings, so the body read is exactly the range recorded. The
-      // trailing `--` ends the revision list: a ref that also names a path
-      // cannot turn into a pathspec here.
-      //
-      // REVIEWER_TEXT_PATHSPECS goes AFTER that separator, so the rule the line
-      // above states holds for the new arguments too, and the four record
-      // artifacts that store reviewer text verbatim never reach `scanDiff` at
-      // all. See the constant for why the fix is here and not in that face.
-      //
-      // `--no-ext-diff --no-textconv` are what make the EMPTY answer mean what
-      // scanDiff reports it to mean. A `diff=<driver>` attribute in a checked-in
-      // `.gitattributes` binds to a `diff.<driver>.command` or `.textconv` in
-      // the reader's OWN git config, so a repository the user merely cloned can
-      // route this read through a helper that prints nothing and exits 0 - and
-      // no attacker is needed for it, since a `textconv` for pdf/docx in
-      // `~/.gitconfig` does it by accident. `git diff <base> <head> --` then
-      // emits zero bytes for a file whose changed line is a recursive delete, and
-      // scanDiff answers `checked: true, empty: true, matches: []`: a COMPLETED
-      // clear on the one gate that is blocking at every stakes level. Both flags
-      // are diff-generation switches only - they change no id, no range and no
-      // exit status, so the empty/unreadable split above is untouched.
-      body = execFileSync('git',
-        ['-C', range.top, 'diff', '--no-ext-diff', '--no-textconv', baseId, headId, '--',
-          ...REVIEWER_TEXT_PATHSPECS],
+      body = execFileSync('git', diffArgs,
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
     } catch (e) {
       // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set`
@@ -307,9 +365,17 @@ function cmdRiskCheckRun(dir, opts) {
     // record from a run that resolved nothing is visibly unidentifiable rather
     // than silently absent a field.
     base,
-    head,
+    // HONESTLY NULL on the staged arm, both spelling and id: the index is not a
+    // commit, so there is no head this run had and writing the caller's absent
+    // flag as `undefined` would drop the field a reader checks.
+    head: staged ? null : head,
     base_id: baseId,
     head_id: headId,
+    // ONLY THE STAGED ARM CARRIES IT. A ref-range row written before this arm
+    // existed is honestly not staged, so its absence and a `false` would say the
+    // same thing - which is not the case `empty` was in (D-03), where an absent
+    // field marked a record the seam could not speak for.
+    ...(staged ? { staged: true } : {}),
     checked: scan.checked,
     categories: scan.categories,
     // TOKENS on the record, the `{category, signal}` pairs on the envelope: the
@@ -339,9 +405,10 @@ function cmdRiskCheckRun(dir, opts) {
     phase: n,
     ...(plan === undefined ? {} : { plan }),
     base,
-    head,
+    head: staged ? null : head,
     base_id: baseId,
     head_id: headId,
+    ...(staged ? { staged: true } : {}),
     checked: scan.checked,
     categories: scan.categories,
     matches: scan.matches,
@@ -354,8 +421,11 @@ function cmdRiskCheckRun(dir, opts) {
   // take "git refused" for "clean".
   if (diffError !== null) {
     return emit({ ok: false, reason: 'no-diff', detail: diffError, ...envelope,
-      hint: 'name a --base and --head this repository can resolve, then re-run this check - git'
-        + ' could not read the range, so nothing here says the diff is clean' });
+      hint: staged
+        ? 'name a --base this repository can resolve, then re-run this check - git could not read'
+          + ' the index against it, so nothing here says the staged change is clean'
+        : 'name a --base and --head this repository can resolve, then re-run this check - git'
+          + ' could not read the range, so nothing here says the diff is clean' });
   }
   return ok(envelope);
 }

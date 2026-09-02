@@ -102,12 +102,16 @@
 //                                   manifests, file types, never source text
 //                                   (NOT --dir: --root is the PROJECT root,
 //                                   two levels deep)
-//   risk-check run --phase N --base <ref> --head <ref> [--plan k]
-//                  [--surfaces <a,b,c>]
+//   risk-check run --phase N --base <ref> (--head <ref> | --staged)
+//                  [--plan k] [--surfaces <a,b,c>]
 //                                   whether a COMMITTED range touched a risk
 //                                   surface, recorded on the trace whatever the
 //                                   answer - so "the check was skipped" stops
 //                                   reading like "it ran and matched nothing".
+//                                   --staged is the other scope and the ONE
+//                                   spelling of it: the INDEX against --base,
+//                                   recorded `staged: true` with a null head.
+//                                   Exactly one of the two, never both.
 //                                   --plan is the WORKER key, not a plan
 //                                   number: `1-fix` is a key a dispatch is
 //                                   bracketed under and is recorded verbatim

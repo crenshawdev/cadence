@@ -697,6 +697,98 @@ test('risk-check run: --base and --head are required, and a flag-shaped ref is r
   assert.deepEqual(traceLines(dir), [], 'a malformed call appended a record anyway');
 });
 
+/** Write and `git add` one file WITHOUT committing it - the staged scope's
+ * whole subject. */
+function stageFile(repo, rel, body) {
+  const file = join(repo, rel);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, body);
+  execFileSync('git', ['add', '--', rel], { cwd: repo });
+}
+
+test('risk-check run: --base <ref> --staged scans the INDEX and records it as staged', () => {
+  // The locked OQ-1 answer. Two projects improvised `HEAD..STAGED` for exactly
+  // this scope (verbatim 2026-08-30T18:28:50, weathervane 2026-08-31T11:21:11)
+  // because the seam was ref-only and the gate fires BEFORE the commit lands,
+  // so the scope the workflows describe in prose had no machine spelling at all.
+  const { repo, dir } = riskRepo();
+  const head = commitFile(repo, 'README.md', 'start\n');
+  stageFile(repo, 'src/auth/login.ts', AUTH_MODULE);
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(r.matches.some((m) => m.category === 'auth'), JSON.stringify(r.matches));
+  assert.equal(r.staged, true, JSON.stringify(r));
+  assert.equal(r.base_id, head, JSON.stringify(r));
+  assert.equal(r.head_id, null);
+  assert.equal(r.head, null);
+
+  const rec = riskRecords(dir)[0];
+  assert.equal(rec.staged, true, 'the envelope said staged and the record did not');
+  assert.equal(rec.base_id, head);
+  assert.equal(rec.head_id, null);
+  assert.equal(rec.head, null);
+  assert.ok(rec.matches.includes('auth'), JSON.stringify(rec.matches));
+});
+
+test('risk-check run: --staged reads the INDEX alone - an unadded worktree file is outside it', () => {
+  // `--cached` is the whole difference. A file merely written is not what is
+  // about to be committed, so a gate that read the worktree would fire on
+  // changes the caller had not offered.
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  writeFileSync(join(repo, 'notes-only.ts'), AUTH_MODULE);
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.matches, [], JSON.stringify(r));
+});
+
+test('risk-check run: an EMPTY index is a completed empty check, not an unchecked one', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.equal(r.empty, true, JSON.stringify(r));
+  assert.equal(r.staged, true);
+});
+
+test('risk-check run: --head and --staged together are two spellings of one scope, refused', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--base', 'HEAD', '--head', 'HEAD', '--staged']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args', JSON.stringify(r));
+  assert.deepEqual(traceLines(dir), [], 'a malformed call appended a record anyway');
+});
+
+test('risk-check run: a --staged run whose base does not resolve keeps the staged shape', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'no-such-ref', '--staged']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-diff', JSON.stringify(r));
+  assert.equal(r.staged, true, JSON.stringify(r));
+  assert.equal(r.base_id, null);
+  const rec = riskRecords(dir)[0];
+  assert.equal(rec.staged, true);
+  assert.equal(rec.checked, false);
+  assert.match(rec.detail, /^base\b/, rec.detail);
+});
+
+test('risk-check run: a REF-RANGE row carries no `staged` field at all', () => {
+  // Not `staged: false`: a row written before this arm existed is honestly not
+  // staged, so absence and `false` say the same thing here - unlike `empty`,
+  // whose absence marked a record the seam could not speak for (D-03).
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'docs/notes.md', 'text\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal('staged' in r, false, JSON.stringify(r));
+  assert.equal('staged' in riskRecords(dir)[0], false);
+});
+
 test('risk-check run: --plan with nothing after it is refused, never read as plan 1', () => {
   // The VAL-01 rail: `parseArgs` gives a valueless flag the boolean `true`, and
   // `Number(true)` is 1, so the record would land on a plan nobody named.

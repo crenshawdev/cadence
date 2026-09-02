@@ -61,10 +61,12 @@
 //
 //   required  absent-and-required is a refusal; absent-and-optional lets the
 //             caller's own default answer. Required-ness is per SUBCOMMAND and
-//             never per flag - `risk-check run` requires `--base` and `--head`
-//             while `risk-check status` takes the same pair optionally - so
-//             folding two faces onto one row would state a bound one of them
-//             does not hold.
+//             never per flag - `risk-check run` requires `--base` while
+//             `risk-check status` takes the same flag optionally - so folding
+//             two faces onto one row would state a bound one of them does not
+//             hold. `--head` is no longer the example: `risk-check run` takes
+//             exactly one of `--head`/`--staged`, which is an EITHER-OR the
+//             four fields cannot state and the seam checks itself.
 //   type      which of this tree's EXISTING classifiers judges the value.
 //             Never a re-derived predicate: `int` is lib/require-int.mjs's
 //             `requireInt`, `cursor` its `requireCursorNumber`, `phase` its
@@ -490,9 +492,9 @@ export function evaluatePresence(argv, table, key) {
 // arg-contract.test.mjs walks all 156 of them, so a row added later without a
 // complete grammar reddens rather than picking up a silent default.
 //
-// REQUIRED-NESS IS PER SUBCOMMAND. `risk-check run` requires `--base` and
-// `--head`; `risk-check status` takes the same pair optionally, because its
-// triple is all-three-or-none and the seam owns that rule. `--plan` is three
+// REQUIRED-NESS IS PER SUBCOMMAND. `risk-check run` requires `--base`;
+// `risk-check status` takes it optionally, because its named range is
+// all-or-none and the seam owns that rule. `--plan` is three
 // different types on three rows for the same reason - `lease-check` names a
 // plan FILE and stays `int`, `risk-check` names the worker key and reads
 // `plan-key`, `trace append` stores the caller's string verbatim. Folding any
@@ -779,11 +781,21 @@ export const CONTRACTS = {
     // head is a range the caller never stated - and `--surfaces` narrows the
     // scope to the project's resolved set, refusing any token outside the
     // eight rather than answering about a narrower one.
+    // `--head` is NOT `required: false` because a head became optional. Exactly
+    // one of `--head <ref>` and `--staged` names this run's scope, and an
+    // either-or is not one of the four fields a row states - the same bound
+    // `trace append` leaves to its seam by declaring `--detail` and
+    // `--detail-file` both optional. `risk-check run` refuses both-or-neither
+    // itself, in its own `bad-args` vocabulary; declaring `--head` required here
+    // would refuse the staged spelling at the door before that check is reached.
+    // `--staged` is BOOLEAN: presence is its whole grammar, so both axes are
+    // `fallback`, the shape `--plan-time` and `--replay` already declare.
     'risk-check run': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
       '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
-      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--staged': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
       '--surfaces': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // The completion gate. `--phase` alone keeps plan-level matching; the
