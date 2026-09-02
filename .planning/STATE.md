@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 3 (The record states the effort that actually ran)
-Status: phase complete
-Next: /cad-milestone (last phase of the cycle - the audit gate precedes any ship)
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-09-02

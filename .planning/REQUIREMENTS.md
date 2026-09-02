@@ -5,14 +5,17 @@
 
 ## Active
 
-`v3.7.10 - review receipts` opened 2026-09-01 against the `Review receipts`
-milestone. Three phases and five ids - `TRC-12` and `CST-04` in phase 1,
-`RSK-09` and `AUT-03` in phase 2, `TRC-13` in phase 3, the last one gated on
-OQ-2 confirming the host actually downgrades. The source is the receipts
-cluster the v3.7.9 overview named and left open: `GH-228`, `GH-221`, `GH-227`,
-`GH-220`, `GH-226`. The theme is one claim - a review ran, and the run record
-must not say something untrue about it. `## Traceability` is empty until
-`/cad-plan` seeds each row as its phase is planned.
+No cycle open. `/cad-phase add` opens the next one.
+
+`v3.7.10 - review receipts` opened 2026-09-01 and closed 2026-09-02. Three
+phases, five ids - `TRC-12` and `CST-04` in phase 1, `RSK-09` and `AUT-03` in
+phase 2, `TRC-13` in phase 3 - are rows under the `Shipped` heading below, all
+five Complete. They came off the receipts cluster the v3.7.9 overview named and
+left open: `GH-228`, `GH-221`, `GH-227`, `GH-220`, `GH-226`. The theme was one
+claim: a review ran, and the run record must not say something untrue about it.
+The audit passed 5/5 traced with 20/20 acceptance criteria covered and nothing
+deferred. The ids under `## Deferred` keep their own reasons and none is
+promoted here to fill this section.
 
 
 `v3.7.9 - progress not perfection` opened 2026-08-31 and closed 2026-09-01.
