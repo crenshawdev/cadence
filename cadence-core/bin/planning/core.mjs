@@ -679,6 +679,26 @@ function fireIdentity(face, dir, opts) {
     return null;
   }
 
+  // AND THE CONVERSE, which was accepted and is just as wrong (D-08). `--task`
+  // beside any phase but 0 routed the record to `tasks/<slug>/` and answered
+  // ok:true, leaving the phase's OWN sibling REVIEW file unsettled - the same
+  // failure the guard above describes, arriving from the other side: a fire
+  // reported as recorded and filed where nothing reads it. `fireHome` cannot
+  // catch it, because it takes `task` as the home the caller chose and finds
+  // that directory really there. The phase is compared as the CALLER SPELLED
+  // IT, exactly as the guard above compares it, so `--phase 0.1` is a phase and
+  // not the task number.
+  if (n !== '0' && task !== undefined) {
+    fail('bad-args',
+      `${face} --task is a TASK's home and --phase ${n} is a roadmap phase's - one fire cannot `
+      + 'be both, and the record would land under the slug while the sibling REVIEW file under '
+      + `phases/${n}/ stayed unsettled`,
+      'a task fire passes --phase 0 with --task <slug>, because 0 is the one number no roadmap '
+      + `phase carries; a phase fire passes --phase ${n} and no --task at all. Drop whichever of `
+      + 'the two names the fire this is not');
+    return null;
+  }
+
   return { n, trigger, discriminator, round, base, head, task };
 }
 
@@ -723,11 +743,14 @@ function fireIdentity(face, dir, opts) {
  * `high` survived has to re-arm, and a re-arm with nowhere to write its round-2
  * member leaves the cap reading unspent off a queue that could never gain one.
  *
- * `recordForFire` deliberately does NOT widen with them. It resolves the
- * receipt RECOUNT, whose own contract already states that an unresolvable
- * record OMITS the check rather than failing the append - so a carried fire
- * degrades to no cross-check instead of to a wrong one, and that is the safe
- * direction there while it is the unsafe one here.
+ * `recordForFire` deliberately does NOT widen with the SECOND of them. It
+ * resolves the receipt RECOUNT, whose own contract already states that an
+ * unresolvable record OMITS the check rather than failing the append - so a
+ * carried fire degrades to no cross-check instead of to a wrong one, and that is
+ * the safe direction there while it is the unsafe one here. The task home is
+ * different and the recount DOES share it (D-04): a task's record is written
+ * under a slug the receipt cannot name, so leaving it unresolved meant every
+ * task settlement asserted its own counts with nothing able to disagree.
  *
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording

@@ -843,7 +843,8 @@ test('a corpus recorded before files existed yields no file measurement rather t
 // is confidently wrong rather than honestly absent. Pure by injection, so the
 // caller supplies the bracket rows and this needs no trace file.
 
-import { joinReads, HOST_AGENT_TYPES, roleOfAgent } from './lib/read-trace.mjs';
+import { joinReads, HOST_AGENT_TYPES, roleOfAgent, rungOfAgent } from './lib/read-trace.mjs';
+import { RUNG_FILES } from './lib/rung-agent.mjs';
 
 /** One paired bracket row, the shape `renderTrace(...).brackets` returns. */
 const span = (role, plan, from, to) => ({
@@ -922,6 +923,45 @@ test('the role mapping is EXPORTED, so the stop hook reads it rather than copyin
   for (const a of [...HOST_AGENT_TYPES, 'Explore', 'claude-code-guide', 'coordinator', '', 7, null]) {
     assert.equal(roleOfAgent(a), null, `${String(a)} resolved to a role`);
   }
+});
+
+test('the rung mapping answers off the TABLE, never off a filename suffix', () => {
+  // `cad-assumptions-analyzer` is that role's `xhigh` rung while
+  // `cad-assumptions-analyzer-high` is its lower one, so a `-<rung>` suffix
+  // regex would report the wrong rung for the unsuffixed file of every role.
+  // This pair is the one that catches it.
+  assert.equal(typeof rungOfAgent, 'function');
+  assert.equal(rungOfAgent('cadence:cad-assumptions-analyzer'), 'xhigh');
+  assert.equal(rungOfAgent('cadence:cad-assumptions-analyzer-high'), 'high');
+  assert.equal(rungOfAgent('cadence:cad-executor'), 'high');
+  // The bare stem is the same spelling as the prefixed one - ONE split, shared
+  // with `roleOfAgent`, so the two answers cannot disagree about which file a
+  // recorded value names.
+  for (const stem of ['cad-executor', 'cad-verifier-medium', 'cad-planner-max']) {
+    assert.equal(rungOfAgent(stem), rungOfAgent(`cadence:${stem}`), stem);
+  }
+  assert.equal(rungOfAgent('cad-verifier-medium'), 'medium');
+  // Null for the host's own types, for `coordinator`, and for a non-string -
+  // the caller decides what each absence means.
+  for (const a of [...HOST_AGENT_TYPES, 'coordinator', 'Explore', '', 'cadence:', 7, null, undefined, {}]) {
+    assert.equal(rungOfAgent(/** @type {any} */ (a)), null, `${String(a)} resolved to a rung`);
+  }
+});
+
+test('the rung mapping and RUNG_FILES cannot drift apart', () => {
+  // Every stem the table files answers the rung it is filed under. A rung added
+  // to `RUNG_FILES` reaches this function through the same import in the same
+  // walk, so there is nothing to keep in agreement by hand - and this loop is
+  // what says so out loud.
+  let checked = 0;
+  for (const role of Object.keys(RUNG_FILES)) {
+    for (const [rung, stem] of Object.entries(RUNG_FILES[role])) {
+      assert.equal(rungOfAgent(`cadence:${stem}`), rung, `${stem} is ${role}'s ${rung}`);
+      assert.equal(roleOfAgent(`cadence:${stem}`), role, `${stem} is a ${role} file`);
+      checked += 1;
+    }
+  }
+  assert.equal(checked, 19, 'the rung table stopped naming 19 files');
 });
 
 test('join: a record with no agent field names the field absent rather than defaulting', () => {

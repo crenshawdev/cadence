@@ -255,7 +255,10 @@ test('lease-check: --phase 08 refuses against a tree holding phases/8/', () => {
 // `deferred list` echoes nothing numeric but selects a directory under
 // `phases/` by exact name inside `readQueue`; `trace append` and `trace close`
 // share one body whose `.raw` reaches `recountReceipt` and then
-// `recordForFire`'s `join(dir, 'phases', ...)`.
+// `recordForFire`'s `join(dir, 'phases', ...)` - on the ONE spelling `0` it
+// reaches that function's task arm and the `tasks/<slug>/` walk instead, which
+// changes nothing here: `0` is the number no roadmap phase carries, so it is
+// the one spelling that can collide with no phase directory at all.
 
 /** A queue member straight into `phases/<phase>/`, no repository needed - the
  * same shape planning-deferred.test.mjs's `putMember` writes. */

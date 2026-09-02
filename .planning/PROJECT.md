@@ -206,6 +206,26 @@ context-gathering, and debugging — without any external memory system.
 
 No cycle open.
 
+**`v3.7.10 - review receipts`, opened 2026-09-01, closed 2026-09-02.** Three
+phases, 50 commits off `main` (11 feat and 8 fix against 27 docs, 3 chore and
+1 test). Five requirement ids - `TRC-12`, `CST-04`, `RSK-09`, `AUT-03`,
+`TRC-13` - each traced to a verified phase; `/cad-audit` passed 5/5 with 20/20
+acceptance criteria covered and nothing deferred. Manifest bumped to 3.7.10.
+The ids came off the receipts cluster the v3.7.9 overview named and left open -
+`GH-228`, `GH-221`, `GH-227`, `GH-220` and `GH-226`. One claim held all three
+phases: a review ran, and the run record must not say something untrue about
+it. A fallback reviewer that was never closed, a provider review whose cost was
+dropped on the floor, a settlement with no home the seam accepts, one
+authorization writing two receipts, and a declared effort nothing verified.
+Phase 3's gate held - OQ-2 was answered against the installed host before any
+code (Claude Code 2.1.258 downgrades silently, the hook payload cannot see it,
+the worker's transcript can), so the cycle ran to three phases rather than
+closing at two. Their rows are now under `## Shipped` in REQUIREMENTS.md, the
+narrative is the `[3.7.10]` section of CHANGELOG.md, and the phase residue -
+deviations, UAT items, CONTEXT decisions - is in `.planning/ARCHIVE.md` (59
+rows). Outstanding: the merge to `main` and the `v3.7.10` tag, both
+`/cad-land`'s. `/cad-phase add` opens the next cycle.
+
 **`v3.7.9 - progress not perfection`, opened 2026-08-31, closed 2026-09-01.**
 One phase, 15 commits off `main` (2 feat and 3 fix against 6 docs, 1 refactor
 and 3 chore). Three requirement ids - `PHS-03`, `RTE-01`, `DOC-05` - each

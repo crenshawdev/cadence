@@ -51,8 +51,12 @@ whose close carried a tool-call count), `outcomes` (every outcome event),
 `roles` (per-role dispatch, token and turn totals, with `unrecorded` and
 `turns_unrecorded` beside them), `coordinator` (the
 coordinator's own per-step residue, present only where markers were written),
-`unpaired`, `mismatched`, `capped`, `malformed`, and `rotated` where the record
-was cut at its size bound. Never ask for the raw `events`
+`provider_spend` (what the PROVIDERS said this scope's cross-model reviews cost:
+`calls`, `tokens`, `unrecorded` - REVIEW calls that were actually sent, so a
+`detect-models` listing, a `/cad-debug` consult and a call refused before the
+request left the machine are none of them in it; present only where the scope
+holds such a call), `unpaired`, `mismatched`, `capped`, `malformed`, and `rotated` where the
+record was cut at its size bound. Never ask for the raw `events`
 array: nothing here reads one, and the flag re-buys 27 KB on the one path that
 reads a record into a model's context. The third reads the SAME `brackets[]`
 rows against the per-role `workflow.max_dispatch_tokens` ceilings and
@@ -107,11 +111,12 @@ Compose the report, tersest form that keeps the receipts. Shape:
 
 ```
 Phase <N>: <name> - run record
-Dispatches: <table: role | rung | tokens | turns | step minutes | worker minutes, one row per `brackets` entry (step minutes from its `ms`, worker minutes from its `duration_ms`, turns from its `turns` key - absent on a row whose close carried none), rung from routing resolves>
+Dispatches: <table: role | rung | ran | tokens | turns | step minutes | worker minutes, one row per `brackets` entry (step minutes from its `ms`, worker minutes from its `duration_ms`, turns from its `turns` key - absent on a row whose close carried none), rung from the row's own `rung` key - the rung the worker was DISPATCHED under - and ran from the row's own `effort` key, what its transcript says it RAN at; a row carrying no `effort` reads `unrecorded` under ran and is never shown as agreeing, and a row whose two values differ names the disagreement ON that row>
 Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from `outcomes` and REVIEW files. Where the fire left an ADJUDICATION record, the survivor figure is that record's rulings COUNTED and checked against the `survivors`/`downgraded`/`refuted` on the event; a fire with no record reads `unrecorded`>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
-Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns, cross-model provider calls, and figureless returns): <total recorded; top role and its share; unrecorded dispatch count>
+Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns and figureless returns; cross-model provider spend is not excluded but separately denominated, and is on the `Cross-model reviews` line below): <total recorded; top role and its share; unrecorded dispatch count>
 Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
+Cross-model reviews (what the PROVIDERS reported off the wire, a different denomination from the token line above and never added to it): <only when `provider_spend` is present: its `tokens` as a provider-reported input+output count, over its `calls` calls, with `unrecorded` beside it when present; no line at all where the scope holds no provider review call>
 Window budget (from `trace window`): <only when `problems` is non-empty: one line per crossing - the role, the dispatch it belongs to, its figure and the ceiling it crossed, both as given; then `unbudgeted` roles and `unrecorded` when either is non-zero>
 Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, rotated record (from `rotated`: the record was cut at the newest phase anchor, so everything older than the run in flight is in the sibling it names and is not in this report - a cut, not a truncation, and not the same fact as capped), coordinator residue (one RUN's, joined on `corr`, not the phase's) - each named, never silently dropped>
 Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; then per role from `inDispatch.roles`, each row whose `ratio` is non-null - the ratio as opens per distinct file inside ONE dispatch, its `worst` file with that file's count, and beside them `inDispatch.coverage` and the `inDispatch.coordinatorFiles` it excluded; then only when `reads.rotated` is present: the record was cut at its size bound, so everything older than the cut is in the sibling it names and is not in this report - a cut, not a truncation; omit the whole line when the record is empty>
@@ -131,22 +136,44 @@ Rules, all load-bearing:
   `unrecorded` in that column and never `0`: an absent wall clock and a worker
   that took no time are different claims, and only one of them is a
   measurement.
+- TWO EFFORTS, and those columns are labelled apart on the same grounds. `rung`
+  is what the worker was DISPATCHED under - the row's own `rung` key, the
+  `agent_type` the host was asked to run, mapped back through the same rung
+  table Cadence routed with. `ran` is what the worker's OWN transcript says the
+  host actually served it - the row's own `effort` key, written by the
+  `SubagentStop` hook and held nowhere else. BOTH come off the `brackets` row
+  and neither comes off a routing resolve: the default `trace render` envelope
+  carries `brackets`, `outcomes`, `provider_spend`, `unpaired`, `roles`,
+  `coordinator` and `counts`, and no routing event at all. A bracket with no
+  `effort` key prints `unrecorded` under ran and is NEVER shown as agreeing: an
+  absent observation and a match are different claims, and only one of them is a
+  measurement. Where the two DISAGREE, state it ON that row and nowhere else -
+  no summary line and no count line, because the row is the only place a reader
+  can see WHICH dispatch it was. It is worth stating because it is silent
+  everywhere else: on Claude Code 2.1.258 a `max` dispatch with extended
+  thinking off runs at `high` and nothing announces it, so a report reading the
+  routed rung alone reports a match on exactly the runs that were downgraded.
 - What that token line EXCLUDES, stated where the figure is printed, in the
-  same three names `cadence-core/bin/lib/trace-suggest.mjs` exports as
+  same two names `cadence-core/bin/lib/trace-suggest.mjs` exports as
   `SPEND_EXCLUDES` and `/cad-suggest` relays - one list, so the two surfaces
   cannot end up claiming different things:
   - the orchestrator's own turns. A figure is read off a subagent RETURN and
     the coordinator has no return of its own, so every turn it takes
     contributes nothing to this total. It is the majority of what is missing
     and the one arm this report never stated.
-  - cross-model provider calls. None by design - no lifecycle bracket and no
-    token field on that arm at all.
   - figureless returns. A close that carried no `--tokens`, an advisory fire
     among them because its reviewer closes its own bracket without one
     (`references/review-triggers.md`, the advisory persistence tail); they
     count under `unrecorded`, never as a zero.
   So the total prices recorded claude-subagent returns only, short by an
   unstated amount, and it is not what the run cost.
+  Cross-model provider spend is NOT on that list and has not been since
+  v3.7.10, when the seam started recording the provider's own reported usage on
+  the `provider/request` event. It IS reported - on the `Cross-model reviews`
+  line above, in the provider's own denomination - so it is separate from this
+  total rather than missing from it, and the two are never added. Do not read
+  this figure as covering it, and do not put it back on the exclusion list,
+  where a reader would go hunting for a number already on the page.
 - The gap is printed as its TERMS and never as one number: the dispatch count,
   the turn count with `turns_unrecorded` beside it, the per-dispatch window
   figure, and the count of dispatches that came back with no figure. The
@@ -157,6 +184,30 @@ Rules, all load-bearing:
   a later budgeting decision needs the factors, and a stored product recreates
   the maintenance loop `v2.7.0` deleted when it removed the checked-in derived
   figures.
+- The cross-model line is a SECOND denomination and the two are never added.
+  `provider_spend.tokens` is an input+output count the PROVIDER reported off the
+  wire, summed across the panel; the token line above is a final-window figure
+  the execution HOST reported for one dispatch. Print them as two lines with
+  their sources named, never as one total and never as a share of each other.
+  It is fed from `provider_spend` and never from a Dispatches row: that table is
+  one row per bracket, and a phase whose reviews all ran cross-model has no
+  `cad-reviewer` bracket to make a row from - measured 2026-09-01,
+  `/code/verbatim` phases 5-8 hold 4, 4, 5 and 4 provider reviews against zero
+  `cad-reviewer` dispatches each. A call whose event carried no usage counts
+  under `unrecorded`, never as a zero, and a scope holding no such call at all
+  prints NO line rather than an empty one - the same silence the `coordinator`
+  block gets.
+- What `calls` COUNTS, because the label is a claim about it: review calls that
+  reached a provider. The seam writes the same event for two other commands -
+  `detect-models`, which lists a provider's model ids, and `consult`,
+  `/cad-debug`'s dead-end second opinion - and for a review it refused before
+  sending anything, and `provider_spend` leaves all of them out. So this line is
+  not the phase's whole provider bill and must not be printed as one; the calls
+  it omits are still counted in the render's `counts.provider`, which is where
+  to look when the two numbers disagree. Read the key with the same guarded `node -e` field
+  read every other line uses, carrying the same two printed literals and
+  refusing the same three ways; never a whole-file read-back and never the raw
+  `events` array.
 - A window crossing is a FINDING and refuses nothing. The dispatch it names
   already returned - nothing in the dispatch seam can resize or cancel a running
   one - so the line reports what a completed run cost against a ceiling, and the

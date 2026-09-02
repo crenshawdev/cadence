@@ -1982,6 +1982,9 @@ test('MSR-01: the spawn seam\'s close-half rule states the turn count, its omiss
 //
 //   $ node --test cadence-core/bin/prose-agreement.test.mjs
 //   x MSR-02: report.md names the seam's three excluded sources where it prints the spend figure
+//     ^ the case was RENAMED in v3.7.10 when the list went three to two; the
+//       recipe and the assertion that fails are unchanged, so a re-watch prints
+//       the same failure under the current name.
 //     AssertionError [ERR_ASSERTION]: report.md's spend line does not name `the
 //     orchestrator's own turns`, so it presents a worker-return token sum as the
 //     run's cost. Got: Tokens on subagent returns (the host's own per-dispatch
@@ -2005,7 +2008,7 @@ test('MSR-01: the spawn seam\'s close-half rule states the turn count, its omiss
 // `workflows/report.md` has no executor at all - moving the caveat into the
 // seam envelope was rejected for exactly that reason, because the file would
 // still be relaying a sentence no check reads. So the sentence is read here,
-// and the three names are IMPORTED from `lib/trace-suggest.mjs` rather than
+// and the names are IMPORTED from `lib/trace-suggest.mjs` rather than
 // restated: the subject of this check is that the seam and the prose claim the
 // same thing, and a literal copy in this file would assert nothing about
 // agreement - it would go green on the day the two lists diverged.
@@ -2022,12 +2025,12 @@ import * as traceSuggestModule from './lib/trace-suggest.mjs';
 
 const REPORT_EXCLUDES = Array.isArray(traceSuggestModule.SPEND_EXCLUDES)
   ? traceSuggestModule.SPEND_EXCLUDES
-  : ["the orchestrator's own turns", 'cross-model provider calls', 'figureless returns'];
+  : ["the orchestrator's own turns", 'figureless returns'];
 
-test('MSR-02: report.md names the seam\'s three excluded sources where it prints the spend figure', () => {
+test('MSR-02: report.md names every excluded source the seam exports, where it prints the spend figure', () => {
   const text = doc('cadence-core', 'workflows', 'report.md');
-  assert.equal(REPORT_EXCLUDES.length, 3,
-    'the exported exclusion list is no longer the three sources the caveat is written about');
+  assert.equal(REPORT_EXCLUDES.length, 2,
+    'the exported exclusion list is no longer the two sources the caveat is written about');
 
   // 1. The shape block's own spend line - the point at which the figure is
   //    PRINTED. A caveat further down the file is a caveat a reader can compose
@@ -3568,4 +3571,71 @@ test('PHS-03: the phase-sized arm names both doors where there is no planning tr
   assert.match(treeless, /\/cad-adopt/, regressed);
   assert.match(treeless, /\/cad-new-project/, regressed);
   assert.doesNotMatch(treeless, /\/cad-phase add/, regressed);
+});
+
+// --- TRC-13: report.md prints what RAN beside what was DISPATCHED -----------
+//
+// Modelled on MSR-02 and RDX-01 above, which are this repo's one mechanism for
+// pinning a workflow's prose to a record: `workflows/report.md` has no
+// executor, so a claim written into it is a claim no check reads unless a check
+// like this one reads it. AC4 of this phase has no other falsifiable check
+// short of a live run against a minted disagreement.
+//
+// A WHOLE-FILE grep cannot serve: `rung` and `effort` both already appear
+// elsewhere in the file, so a file-wide search passes whether the column and
+// its rule are written or not. Both sites are sliced by their NAMED anchors -
+// the shape block's Dispatches line and the `TWO EFFORTS` rule - so a rewrap
+// that changed no fact stays green while a deleted clause reddens.
+
+test('TRC-13: report.md prints ran beside rung, off the bracket row, and names the disagreement', () => {
+  const text = doc('cadence-core', 'workflows', 'report.md');
+
+  // 1. The shape block's Dispatches LINE - the point at which the columns are
+  //    PRINTED. A rule further down is a rule a reader can compose the table
+  //    without.
+  const lineStart = text.indexOf('Dispatches: <table:');
+  assert.ok(lineStart >= 0, 'report.md has no Dispatches table line');
+  const line = text.slice(lineStart, text.indexOf('\n', lineStart));
+  assert.ok(/role \| rung \| ran \|/.test(line),
+    `report.md's Dispatches table has no \`ran\` column beside \`rung\`, so what a dispatch `
+    + `actually ran at never reaches the report. Got: ${line}`);
+  assert.ok(line.includes('`effort` key'),
+    "report.md's Dispatches line does not read the ran column off the bracket row's own "
+    + '`effort` key, so the one value the record holds is not the one the report prints');
+  assert.equal(line.includes('rung from routing resolves'), false,
+    "report.md's Dispatches line still sources the rung from routing resolves - the default "
+    + '`trace render` envelope carries no routing event at all, so that source is unfillable');
+  assert.ok(line.includes('unrecorded'),
+    "report.md's Dispatches line has no disposition for a row carrying no observed effort");
+
+  // 2. The rule, read from its named anchor to the next TOP-LEVEL bullet.
+  //    Whitespace-FLATTENED before matching, so a rewrap that changed no fact
+  //    stays green while a deleted clause reddens.
+  const ruleStart = text.indexOf('- TWO EFFORTS');
+  assert.ok(ruleStart >= 0, 'report.md has no TWO EFFORTS rule beside its TWO CLOCKS one');
+  const next = text.indexOf('\n- ', ruleStart + 1);
+  const rule = text.slice(ruleStart, next > ruleStart ? next : text.length).replace(/\s+/g, ' ');
+
+  // The two SOURCES, and that both are the row's own keys. This is the half
+  // that stops a composer going looking for a routing event that is not in the
+  // envelope it was handed.
+  assert.ok(/`rung` key/.test(rule) && /`effort` key/.test(rule),
+    'the TWO EFFORTS rule does not name the two bracket-row keys the columns are read off');
+  assert.ok(/no routing event at all/.test(rule),
+    'the TWO EFFORTS rule does not say the render carries no routing event, so a composer '
+    + 'is left to source the routed rung from a resolve the envelope never carries');
+  // The ABSENT arm, and its reason - the reason is the half that stops
+  // `unrecorded` reading as an arbitrary spelling of agreement.
+  assert.ok(/NEVER shown as agreeing/.test(rule),
+    'the TWO EFFORTS rule permits a row with no observed effort to be reported as agreeing, '
+    + 'which is the one claim an absent observation cannot support');
+  assert.ok(/different claims, and only one of them is a\s*measurement/.test(rule),
+    'the TWO EFFORTS rule states the `unrecorded` arm without the grounds the TWO CLOCKS '
+    + 'rule beside it states, so it reads as a formatting preference');
+  // The DISAGREEMENT, on the row and nowhere else.
+  assert.ok(/ON that row/.test(rule),
+    'the TWO EFFORTS rule does not put the disagreement on the row that disagrees');
+  assert.ok(/no summary line/.test(rule),
+    'the TWO EFFORTS rule does not forbid a separate summary line, which is the shape that '
+    + 'reports a count without naming which dispatch it was');
 });

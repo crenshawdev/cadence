@@ -39,6 +39,7 @@ import {
 import * as reviewProvider from './review-provider.mjs';
 import { evaluateSchema } from './lib/schema-eval.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
+import { appendEvent, renderTrace } from './lib/trace.mjs';
 
 const FINDING_SCHEMA = reviewProvider.FINDING_SCHEMA;
 // The bounds FINDING_SCHEMA states, read OUT of it rather than restated here -
@@ -1747,6 +1748,224 @@ test('fault: a 200 the schema does not match is bad-shape, distinct from bad-jso
   // `validateFindings` names the FIRST defect, which for a `{file}`-only
   // finding is `claim` - the field order it checks, not the schema's order.
   assert.match(r.envelope.detail, /finding\.claim must be a string/);
+});
+
+// --- what the provider says the call cost (CST-04) ----------------------------
+//
+// Every fixture below is shaped like the response of the provider it is fed to,
+// verified against that provider's own live documentation on 2026-09-01: the
+// OpenAI Responses openapi spec (`ResponseUsage`), the Gemini v1beta discovery
+// document (`UsageMetadata`), and the DeepSeek create-chat-completion page. One
+// fixture PER ADAPTER and not one shared shape, because the defect this guards
+// against is a reader spelling one provider's field wrong - which a shared
+// fixture would hide, and which `references/provider-api.md` cannot catch on its
+// own if the doc repeats the same mistake the reader made.
+
+/** OpenAI Responses. `output_tokens` already includes `reasoning_tokens`. */
+const OPENAI_USAGE = {
+  input_tokens: 1837,
+  input_tokens_details: { cached_tokens: 512, cache_write_tokens: 0 },
+  output_tokens: 402,
+  output_tokens_details: { reasoning_tokens: 320 },
+  total_tokens: 2239,
+};
+/** Gemini. `candidatesTokenCount` EXCLUDES `thoughtsTokenCount`. */
+const GEMINI_USAGE = {
+  promptTokenCount: 1204,
+  candidatesTokenCount: 96,
+  thoughtsTokenCount: 250,
+  totalTokenCount: 1550,
+};
+/** DeepSeek Chat Completions. `completion_tokens` already includes reasoning. */
+const DEEPSEEK_USAGE = {
+  prompt_tokens: 980,
+  completion_tokens: 311,
+  total_tokens: 1291,
+  prompt_cache_hit_tokens: 640,
+  prompt_cache_miss_tokens: 340,
+  completion_tokens_details: { reasoning_tokens: 208 },
+};
+const CLEAN_FINDINGS = '{"findings":[]}';
+
+/** One 200 body in each provider's own response shape. */
+const openaiBody = (usage) => JSON.stringify({
+  output_text: CLEAN_FINDINGS, ...(usage ? { usage } : {}),
+});
+const geminiBody = (usage) => JSON.stringify({
+  candidates: [{ content: { parts: [{ text: CLEAN_FINDINGS }] } }],
+  ...(usage ? { usageMetadata: usage } : {}),
+});
+const deepseekBody = (usage) => JSON.stringify({
+  choices: [{ message: { content: CLEAN_FINDINGS } }], ...(usage ? { usage } : {}),
+});
+
+/** The newest provider event, which is the one the call just made wrote. */
+function lastProviderEvent() {
+  const ev = providerEvents();
+  return ev[ev.length - 1];
+}
+
+test('CST-04: every adapter records the usage ITS provider reported, in its own spelling', async () => {
+  const cases = [
+    ['openai', ['review', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+      '--payload', FAULT_PAYLOAD], openaiBody(OPENAI_USAGE), OPENAI_USAGE,
+    { input: 1837, output: 402 }, {}],
+    // `output` is 96 + 250: Gemini reports thinking tokens beside the answer
+    // tokens where the other two fold them in, so a normalized pair that took
+    // `candidatesTokenCount` alone would price a thinking reviewer at a quarter
+    // of what it burned.
+    ['gemini', ['review', '--provider', 'gemini', '--model', 'gemini-fault-fixture',
+      '--payload', FAULT_PAYLOAD], geminiBody(GEMINI_USAGE), GEMINI_USAGE,
+    { input: 1204, output: 346 }, { GEMINI_API_KEY: 'test-not-a-real-key' }],
+    ['deepseek', ['review', '--provider', 'deepseek', '--model', 'deepseek-fault-fixture',
+      '--payload', FAULT_PAYLOAD], deepseekBody(DEEPSEEK_USAGE), DEEPSEEK_USAGE,
+    { input: 980, output: 311 }, { DEEPSEEK_API_KEY: 'test-not-a-real-key' }],
+  ];
+  for (const [provider, argv, body, raw, normalized, env] of cases) {
+    const before = providerEvents().length;
+    const r = await runFaked(argv, { status: 200, body }, env);
+    assert.equal(r.envelope.ok, true, `${provider}: ${r.line}`);
+    const ev = providerEvents().slice(before);
+    assert.equal(ev.length, 1, `${provider} writes ONE event: ${JSON.stringify(ev)}`);
+    assert.equal(ev[0].outcome, 'ok');
+    assert.equal(ev[0].provider, provider);
+    // BOTH keys: the normalized pair a reader sums across a mixed panel, and
+    // the provider's own object an auditor joins back to the wire (D-02).
+    assert.deepEqual(ev[0].usage, normalized, `${provider} normalized pair`);
+    assert.deepEqual(ev[0].usage_raw, raw, `${provider} raw usage object`);
+  }
+});
+
+test('CST-04: a response carrying no usage writes NEITHER key - absent, never zero', async () => {
+  // D-11. Asserted as absence with `in`, the shape the no-`--trigger` test
+  // already uses: a zero here would make every provider event written before
+  // this change read as a call that cost nothing.
+  for (const [argv, body, env] of [
+    [['review', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+      '--payload', FAULT_PAYLOAD], openaiBody(null), {}],
+    [['review', '--provider', 'gemini', '--model', 'gemini-fault-fixture',
+      '--payload', FAULT_PAYLOAD], geminiBody(null), { GEMINI_API_KEY: 'test-not-a-real-key' }],
+    [['review', '--provider', 'deepseek', '--model', 'deepseek-fault-fixture',
+      '--payload', FAULT_PAYLOAD], deepseekBody(null), { DEEPSEEK_API_KEY: 'test-not-a-real-key' }],
+  ]) {
+    const r = await runFaked(argv, { status: 200, body }, env);
+    assert.equal(r.envelope.ok, true, r.line);
+    const ev = lastProviderEvent();
+    assert.equal('usage' in ev, false, JSON.stringify(ev));
+    assert.equal('usage_raw' in ev, false, JSON.stringify(ev));
+  }
+});
+
+test('CST-04: a credential-shaped span in the provider usage object never reaches the trace', async () => {
+  // The usage object is bytes a PROVIDER chose, and the event carrying it
+  // persists in `.planning/trace.jsonl` - so a hostile or compromised
+  // OpenAI-compatible gateway can answer 200 with a well-formed usage object
+  // carrying one extra field and, unfenced, that field is copied verbatim into
+  // the run record for good. The outbound fence cannot catch it: it runs on the
+  // instruction and the artifact, which are what leaves the machine.
+  //
+  // One case per rule the shared fence owns, because a fix that reached only
+  // the `name: value` spelling would leave the other three: a snake_case pair,
+  // an `authorization` echo, a URL carrying userinfo, and a camelCase name
+  // (which rule 4 structurally cannot see - it crosses `_`, `-` and `.` only).
+  const hostile = [
+    ['a credential-shaped name/value pair', { api_key: 'sk-live-AAAA1111BBBB2222' }],
+    ['an authorization echo', { authorization: 'Bearer sk-live-CCCC3333DDDD4444' }],
+    ['a URL carrying userinfo', { gateway: 'https://cad:s3cr3t-tok@gw.example.invalid/v1' }],
+    ['a camelCase credential name', { apiSecret: 'hunter2-not-a-real-secret' }],
+  ];
+  for (const [name, extra] of hostile) {
+    const before = providerEvents().length;
+    const r = await runFaked(REVIEW_ARGS,
+      { status: 200, body: openaiBody({ ...OPENAI_USAGE, ...extra }) });
+    assert.equal(r.envelope.ok, true, `${name}: ${r.line}`);
+    const ev = providerEvents().slice(before);
+    assert.equal(ev.length, 1, `${name} writes ONE event: ${JSON.stringify(ev)}`);
+    // The raw object is dropped WHOLE - asserted as absence, the same shape
+    // D-11 is asserted in, since a fenced-but-present object would still be a
+    // provider-shaped blob nobody vetted.
+    assert.equal('usage_raw' in ev[0], false, `${name}: ${JSON.stringify(ev[0])}`);
+    // And the PAIR still rides: a hostile extra field must not cost the event
+    // the figure it exists to carry, or the fence would be a denial-of-pricing.
+    assert.deepEqual(ev[0].usage, { input: 1837, output: 402 }, name);
+  }
+  // Not merely off that one key: none of the four planted values is anywhere in
+  // the record, which is the property the trace file actually has to have.
+  const written = readFileSync(FAULT_TRACE, 'utf8');
+  for (const needle of ['sk-live-', 's3cr3t-tok', 'hunter2']) {
+    assert.equal(written.includes(needle), false, `${needle} reached the trace`);
+  }
+  // The negative control, so none of the above can pass by dropping `usage_raw`
+  // always: a clean usage object from the same adapter still writes it.
+  const before = providerEvents().length;
+  await runFaked(REVIEW_ARGS, { status: 200, body: openaiBody(OPENAI_USAGE) });
+  assert.deepEqual(providerEvents().slice(before)[0].usage_raw, OPENAI_USAGE);
+});
+
+test('CST-04: a call that burned its budget and came back unusable still records what it burned', async () => {
+  // D-04, one case per degraded terminal outcome. Three cases and not one,
+  // because the usage read happens on the way to `extractText` and each of
+  // these leaves that frame at a different line - a `bad-shape` case alone
+  // would pass with the read sitting anywhere after the two earlier exits, and
+  // those two would then record nothing.
+  const cases = [
+    // No output text at all: the response body carries usage and nothing else.
+    ['no-output', JSON.stringify({ usage: OPENAI_USAGE })],
+    // Output that is not JSON.
+    ['bad-json', JSON.stringify({ output_text: '{"findings":[{"file":"a.mjs",',
+      usage: OPENAI_USAGE })],
+    // Parsed, but not a findings list.
+    ['bad-shape', JSON.stringify({ output_text: '{"findings":[{"file":"a.mjs"}]}',
+      usage: OPENAI_USAGE })],
+  ];
+  for (const [outcome, body] of cases) {
+    const before = providerEvents().length;
+    const r = await runFaked(REVIEW_ARGS, { status: 200, body });
+    assert.equal(r.envelope.reason, outcome, r.line);
+    const ev = providerEvents().slice(before);
+    assert.equal(ev.length, 1, `${outcome} writes ONE event: ${JSON.stringify(ev)}`);
+    assert.equal(ev[0].outcome, outcome);
+    assert.deepEqual(ev[0].usage, { input: 1837, output: 402 }, outcome);
+    assert.deepEqual(ev[0].usage_raw, OPENAI_USAGE, outcome);
+  }
+  // The other side of D-04: a call that reached no response has nothing to
+  // read, so `http` records the drop-out and no usage at all.
+  const before = providerEvents().length;
+  const http = await runFaked(REVIEW_ARGS, { status: 429, body: '{"error":"rate limited"}' });
+  assert.equal(http.envelope.reason, 'http');
+  const ev = providerEvents().slice(before);
+  assert.equal(ev[0].outcome, 'http');
+  assert.equal('usage' in ev[0], false, JSON.stringify(ev[0]));
+});
+
+test('CST-04: provider usage is its OWN denomination and reaches no role total (D-01)', async () => {
+  // AC4, stated positively. `cad-reviewer` has to be PRESENT under `roles` with
+  // no token figure: an assertion that merely finds no number under that role
+  // passes vacuously when the role is missing from the block altogether, which
+  // is exactly what a provider-only phase renders today.
+  const planning = join(faultCwd, '.planning');
+  appendEvent(planning, { phase: 7, family: 'lifecycle', event: 'dispatch', plan: '7', role: 'cad-reviewer' });
+  appendEvent(planning, { phase: 7, family: 'lifecycle', event: 'return', plan: '7', role: 'cad-reviewer' });
+  await runFaked(REVIEW_ARGS, { status: 200, body: openaiBody(OPENAI_USAGE) });
+
+  const r = renderTrace(planning, 7);
+  // Not vacuous: the usage this render must NOT fold is really in the record.
+  const priced = r.events.filter((e) => e.family === 'provider' && e.usage);
+  assert.ok(priced.length > 0, 'the render has to see a priced provider call at all');
+  assert.deepEqual(priced[priced.length - 1].usage, { input: 1837, output: 402 });
+
+  assert.ok('cad-reviewer' in r.roles, `cad-reviewer under roles: ${JSON.stringify(r.roles)}`);
+  assert.equal(r.roles['cad-reviewer'].dispatches, 1);
+  assert.equal('tokens' in r.roles['cad-reviewer'], false,
+    `no host figure was recorded, so no total: ${JSON.stringify(r.roles['cad-reviewer'])}`);
+  assert.equal(r.roles['cad-reviewer'].unrecorded, 1);
+  // And no provider figure anywhere else in the block either - the numbers off
+  // the wire must not appear under ANY role, whatever the row is called.
+  const rolesJson = JSON.stringify(r.roles);
+  for (const n of [1837, 402, 2239, 512, 320]) {
+    assert.doesNotMatch(rolesJson, new RegExp(`\\b${n}\\b`),
+      `${n} came off the wire and must not be billed to a role: ${rolesJson}`);
+  }
 });
 
 // --- the RVP-01 falsifier -----------------------------------------------------

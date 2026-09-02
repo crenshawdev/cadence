@@ -1,70 +1,87 @@
-# Roadmap: v3.7.9 - progress not perfection
+# Roadmap: v3.7.10 - review receipts
 
 ## Overview
 
-**`v3.7.9`, opened 2026-08-31.** The source is the open tracker after the
-v3.7.8 close: nine `S2-real` issues, minus the two closed as tasks and merged in
-`#235` (`GH-231`, the plan marked complete before the suite ran, and `GH-148`,
-the digest that could not say a dispatch committed nothing).
+**`v3.7.10`, opened 2026-09-01.** The source is the receipts cluster the
+v3.7.9 overview named and deliberately left open: `GH-228`, `GH-221`, `GH-227`,
+`GH-220` and `GH-226`. Three tracker rows closed with that cycle rather than
+against this one - `GH-233`, `GH-232` and `GH-218` all shipped in v3.7.9 and
+were still open on the board.
 
-**The thread.** Cadence names a next step and the step is wrong. Not missing,
-not unimplemented - named, printed, and either unreachable or not the work that
-is actually outstanding. `/cad-task` classifies a task as phase-sized and sends
-you to `/cad-phase add` in a repository that may have no roadmap to add to,
-after making you answer branch questions for work it was never going to do.
-`/cad-progress` re-derives `executed` from a SUMMARY on disk and routes to
-`/cad-verify` while a gap plan sits unexecuted beside it, because it never
-learned the fact `/cad-execute` already asks the replay seam for. And three
-shipped documents, one of them riding every session's prompt, promise an
-auto-resume that `progress.md:236` exists to refuse.
+**The thread.** A review ran, and the run record says something untrue about
+it. Not silent, not missing - written down, and wrong. A fallback reviewer is
+dispatched and never closed, so the record shows a worker that vanished. A
+provider review returns its usage on the wire and the code drops it, so the
+reviewer row reads zero and the phase looks like review was free. A settlement
+that correctly closes a blocking gate has no home the seam will accept, so it
+gets hand-typed and no guard can see it. One human authorization writes two
+override receipts and nothing says which. And nine rung files declare an effort
+the host may not honour, with nothing anywhere that would notice.
 
 **What is broken.**
 
-`cadence-core/workflows/task.md:21` runs the protected-branch guard "before any
-work", and the `scope` step that decides inline / planned / too-big does not run
-until `:26`. Classification reads the task description and nothing else, so the
-guard is charging an engineer branch questions for work that stops one step
-later. The same file's `:37` then takes `total + 1` off `planning.mjs status`
-unconditionally, in a workflow that says four separate times it supports a
-repository with no `.planning/` tree at all.
+`cadence-core/references/review-triggers.md:202-203` sends the empty-set
+fallback to step 3's reviewer-selection rule rather than to the
+`claude-subagent` arm at `:110-148` that owns the bracket. A model on that path
+dispatches and is never routed to the close at `:143`. Observed on smithers
+phase 3: a 429 at 03:58:43, a `claude-subagent` dispatch at 03:58:50, and no
+return, checkpoint or escalation ever - `corr` `3-5812523`, the phase's only
+unpaired worker.
 
-`cadence-core/workflows/progress.md:23-24` derives **executed** from the
-presence of a SUMMARY, and `:188` routes every executed phase to `/cad-verify`.
-The string `replay-check` appears nowhere in that file, while
-`cadence-core/workflows/execute.md:56,66,74` reads `dispatch_set` off that
-exact seam to decide what is still outstanding. `/cad-plan --gaps` writes a
-plan, sets the cursor to `planned`, and a cleared session between that command
-and `/cad-execute` loses the plan to progress's own re-derivation.
+`cadence-core/bin/review-provider.mjs` has no reference to a response `usage`
+field. Its only token arithmetic is the outbound cap at `:29,402,437`. Five
+provider reviews on verbatim phase 2 spent 372 seconds between them and
+recorded not one token, and only two of the five were preceded by a
+`routing/resolve` at all.
 
-`README.md:49`, `skills/cad-progress/SKILL.md:3` and
-`cadence-core/workflows/progress.md:6` all claim auto-resume. The routing is
-derived automatically; the invocation is deliberately not. The docs name the
-half that is manual.
+`cadence-core/bin/lib/adjudication-record.mjs` refuses any phase without a
+`phases/<N>/` or `deferred/<N>/` directory, while `workflows/task.md:135`
+chooses phase 0 on purpose and `:171` puts a planned task's artifacts under
+`.planning/tasks/{slug}/`. The REVIEW half already resolves that path; the
+adjudication half does not. Separately, `cadence-core/bin/lib/trace.mjs:12-20`
+derives the correlation id off the phase's NEWEST `phase_start`, so a receipt
+for an earlier window has no id to be written under - and this repository's own
+`ADJUDICATION-risk_surface-declines-off-the-tracker.json` carries a `note`
+field explaining in prose why it was written by hand.
 
-**The standard.** Would a user on their own project feel it. All three would.
-The `/cad-task` dead end fires on any repository without a planning tree, which
-is the case that command exists to serve. The gap-plan skip fires on the
-healthy verify -> gap -> plan -> execute loop, at the handoff a cleared session
-is most likely to land on. The doc claim rides every session's prompt.
+`cadence-core/references/triage-gate.md:109` keys an override receipt on
+`--sha <head>`, which moves as work lands, so one authorization applied to two
+ranges is two receipts by construction. `risk-check.mjs:710-722` puts
+`override` in `FIRE_RECEIPTS` and its `:718` guard checks only that a reason
+string is non-empty, so two receipts on one human answer can settle two ranges.
 
-**Out of scope, deliberately.** The receipts cluster (`GH-226`, `GH-227`,
-`GH-220`, `GH-221`, `GH-228`) and the unresolved-input guards (`GH-229`,
-`GH-202`, `GH-196`) are real and stay open. They are a different thread and
-mostly bite Cadence-on-Cadence; naming them here would make this cycle a queue
-rather than a theme.
+`cadence-core/bin/route.mjs:974-976` states that the agent file carries the
+effort and the router only reports it. Nothing reads what the host actually
+ran, so a `routing/resolve` saying `effort: max` beside a request that ran at
+`high` is contradicted by nothing.
+
+**The standard.** Would a user on their own project feel it. Every observation
+above came off verbatim and smithers, not off Cadence-on-Cadence. The cost
+figures `/cad-report` narrates and the retune signals `/cad-suggest` reads are
+both drawn from these records, so a false zero and an unpaired worker are not
+bookkeeping - they are the evidence the tool asks the engineer to act on.
+
+**Out of scope, deliberately.** `GH-229` (a blocking risk check scoped on a
+range it could not resolve) and `GH-178` (`reads.jsonl` stores a program, not a
+shape) are real and stay open. Both are about resolving an INPUT before a gate
+runs; this cycle is about what the record says AFTER one did. `GH-230` and
+`GH-140` are decisions, not defects.
 
 ## Open Questions
 
-- **OQ-1 - where progress learns about outstanding work.** `GH-232` names two
-  fixes and prefers the first: `planning.mjs status` exposes the outstanding
-  executable plan set, so progress reads it off the envelope it already fetches,
-  and every other consumer of `status` sees it too. The alternative is
-  `progress.md` consulting `replay-check` itself before routing an executed
-  phase. Either way the derived-status table stops treating "has a SUMMARY" as
-  "has nothing left to run", and that is the part that is not optional.
+- **OQ-1 - what a receipt names when it settles an earlier window.** `GH-227`
+  Case A gives two shapes: a receipt may NAME the anchor it settles under, so a
+  later run can close an earlier window, or re-anchoring must carry unsettled
+  fires forward. The first is smaller and the second is more honest about what
+  a phase window means. Case B (`tasks/<slug>/` as a third home) does not
+  depend on this and can land first.
+- **OQ-2 - whether the host actually downgrades.** `GH-226` rests on a
+  changelog reading, not an observation: that Claude Code 2.1.251 turns
+  `xhigh`/`max` into a silent downgrade to `high` when thinking is off. Confirm
+  it on the installed version before writing code. If the host still
+  hard-errors, phase 3 is void and the cycle closes at two phases.
 
 ## Phases
 
-  - Requirements: `PHS-03`, `RTE-01`, `DOC-05`
 
 ## Phase Details

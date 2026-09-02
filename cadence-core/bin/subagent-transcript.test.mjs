@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { terminalOf, cacheOf, STOP_STATE } from './lib/subagent-transcript.mjs';
+import { terminalOf, cacheOf, effortOf, STOP_STATE } from './lib/subagent-transcript.mjs';
 
 /** One transcript line, in the host's own shape. */
 const line = (o) => JSON.stringify(o);
@@ -258,4 +258,95 @@ test('transcript: a non-numeric cache figure contributes NOTHING', () => {
     assert.doesNotThrow(() => cacheOf(/** @type {any} */ (input)));
     assert.deepEqual(cacheOf(/** @type {any} */ (input)), {});
   }
+});
+// --- the effort the worker actually ran at (TRC-13) --------------------------
+
+/** An assistant line carrying a TOP-LEVEL `effort`, the host's own shape. */
+const ran = (effort, timestamp = T2) => line({
+  type: 'assistant', agentId: 'a1852a9b36a6c52b8', timestamp, effort,
+  message: { id: nextId(), role: 'assistant', content: [], stop_reason: 'end_turn' },
+});
+
+test('transcript: every line agreeing answers that value, in the host spelling', () => {
+  // The value is the TOP-LEVEL `effort` string - measured 2026-09-02, 5,701 of
+  // 5,701 recent assistant lines carry it there. It is what the host actually
+  // SERVED, which on a downgraded run is not what the dispatch asked for.
+  const text = [user(T1), ran('high', T1), ran('high'), ran('high')].join('\n') + '\n';
+  assert.equal(effortOf(text), 'high');
+  // Recorded VERBATIM against no enum: a spelling Cadence does not use is the
+  // signal, not the error. Validating here would erase a renamed host rung at
+  // exactly the moment its appearance matters.
+  assert.equal(effortOf([ran('xhigh', T1), ran('xhigh')].join('\n')), 'xhigh');
+  assert.equal(effortOf(ran('P4-turbo')), 'P4-turbo');
+});
+
+test('transcript: two lines reporting DIFFERENT efforts answer absent', () => {
+  // TRC-06's unambiguous-or-nothing, never last-line-wins and never
+  // first-line-wins: a transcript reporting two efforts has not said what the
+  // worker ran at. 0 of 368 measured transcripts mix values, so this arm is a
+  // refusal rather than a merge rule.
+  assert.equal(effortOf([ran('high', T1), ran('max')].join('\n')), null);
+  assert.equal(effortOf([ran('max', T1), ran('high')].join('\n')), null);
+  // ...and a third line agreeing with the first does not break the tie.
+  assert.equal(effortOf([ran('high', T1), ran('max'), ran('high')].join('\n')), null);
+});
+
+test('transcript: a transcript reporting no effort at all answers absent', () => {
+  // 6 of 368 measured transcripts carry no `effort` on any assistant line, so
+  // this is an observed state and not a defensive one. Absent is the answer the
+  // caller OMITS the key on - the record never stores a placeholder.
+  const cases = {
+    'assistant lines with no effort key': [user(T1), asst('end_turn', T2)].join('\n'),
+    'user lines only': [user(T1), user(T2)].join('\n'),
+    'nothing readable at all': '',
+    'unparseable lines': 'not json\n{oops\n',
+  };
+  for (const [why, text] of Object.entries(cases)) assert.equal(effortOf(text), null, why);
+});
+
+test('transcript: an effort that is not a non-empty string is not an answer', () => {
+  // Anything unreadable is a line reporting nothing, which is the same as a
+  // line with no key at all.
+  for (const bad of ['', 7, null, true, [], {}, { level: 'max' }]) {
+    assert.equal(effortOf(ran(/** @type {any} */ (bad))), null, JSON.stringify(bad));
+  }
+});
+
+test('transcript: a line reporting NO effort is SKIPPED, not a disagreement', () => {
+  // The posture `cacheOf` takes for an entry with no usable `usage`: a missing
+  // value is not an ambiguity. The mixed-PRESENCE case is unmeasured in both
+  // directions, so the direction chosen keeps a real observation. If this is
+  // ever shown wrong the flip is toward absent - losing an observation rather
+  // than inventing one - and it is this assertion that flips.
+  const text = [ran('high', T1), asst('end_turn', T2), ran('high')].join('\n');
+  assert.equal(effortOf(text), 'high');
+  // An unreadable value between two agreeing lines is the same skip.
+  assert.equal(effortOf([ran('high', T1), ran(''), ran('high')].join('\n')), 'high');
+});
+
+test('transcript: an effort nested under `message` is NOT read', () => {
+  // 0 of 5,701 measured assistant lines carry it there. Reaching inside the
+  // message for a value the host puts at the top level would invent a shape.
+  const nested = line({
+    type: 'assistant', agentId: 'a1', timestamp: T2,
+    message: { id: 'msg_nested', role: 'assistant', content: [], stop_reason: 'end_turn', effort: 'max' },
+  });
+  assert.equal(effortOf(nested), null);
+  // ...and it does not disturb a top-level value on another line either.
+  assert.equal(effortOf([ran('high', T1), nested].join('\n')), 'high');
+});
+
+test('transcript: the effort rule never throws, whatever it is handed', () => {
+  // Same contract as its two siblings: the only caller is a hook that emits
+  // nothing on any stream, so a thrown error is just an observation the record
+  // silently lost.
+  for (const input of [undefined, null, 0, [], {}, Symbol('x'), ' ', 'null', '[]', '{}']) {
+    assert.doesNotThrow(() => effortOf(/** @type {any} */ (input)));
+    assert.equal(effortOf(/** @type {any} */ (input)), null);
+  }
+  // A truncated final line is skipped rather than fatal, so it cannot change
+  // the answer the complete lines ahead of it already gave.
+  const complete = [user(T1), ran('high', T2)].join('\n');
+  assert.equal(effortOf(`${complete}\n{"type":"assistant","eff`), 'high');
+  assert.equal(effortOf(`${complete}\n{"type":"assistant","eff`), effortOf(complete));
 });

@@ -1,4 +1,4 @@
-# Requirements: Cadence (v3.7.8)
+# Requirements: Cadence (v3.7.10)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
@@ -6,6 +6,17 @@
 ## Active
 
 No cycle open. `/cad-phase add` opens the next one.
+
+`v3.7.10 - review receipts` opened 2026-09-01 and closed 2026-09-02. Three
+phases, five ids - `TRC-12` and `CST-04` in phase 1, `RSK-09` and `AUT-03` in
+phase 2, `TRC-13` in phase 3 - are rows under the `Shipped` heading below, all
+five Complete. They came off the receipts cluster the v3.7.9 overview named and
+left open: `GH-228`, `GH-221`, `GH-227`, `GH-220`, `GH-226`. The theme was one
+claim: a review ran, and the run record must not say something untrue about it.
+The audit passed 5/5 traced with 20/20 acceptance criteria covered and nothing
+deferred. The ids under `## Deferred` keep their own reasons and none is
+promoted here to fill this section.
+
 
 `v3.7.9 - progress not perfection` opened 2026-08-31 and closed 2026-09-01.
 One phase, three ids - `PHS-03`, `RTE-01`, `DOC-05` - are rows under the
@@ -368,6 +379,11 @@ parses only the Traceability table).
 | PHS-03 (`/cad-task` classifies before it guards, and its phase-sized arm stops assuming a planning tree. Today `workflows/task.md:21` runs the protected-branch guard "before any work" while the `scope` step that decides inline / planned / too-big does not run until `:26`, so an engineer answers branch questions for work that stops one step later; and `:37` takes `total + 1` off `planning.mjs status` unconditionally, in a workflow that says four separate times it supports a repository with no `.planning/` tree. The arm's route branches on what is on disk: an initialised project to `/cad-phase add`, existing code with no `.planning/` to `/cad-adopt`, a blank repository to `/cad-new-project`. Successor to `PHS-02`, which fixed the same arm's destination and not its reachability. `GH-233`) | 1 | Complete | v3.7.9 |
 | RTE-01 (`/cad-progress` stops reading a SUMMARY as the end of the work. It gets the outstanding executable plan set from the seam rather than inferring absence, and an executed phase with outstanding dispatches routes to `/cad-execute`, not `/cad-verify`. Today `workflows/progress.md:23-24` derives **executed** from the presence of a SUMMARY and `:188` routes every executed phase to `/cad-verify`, while `workflows/execute.md:56,66,74` reads `dispatch_set` off the replay seam to decide what is still outstanding - the string `replay-check` appears nowhere in `progress.md`. Carries the `--gaps` naming fix `CONTEXT.md` D-01 measured, without which the seam cannot see a gap plan at all. `GH-232`) | 1 | Complete | v3.7.9 |
 | DOC-05 (the shipped auto-resume claims describe what the command does. `README.md:49`, `skills/cad-progress/SKILL.md:3` and `workflows/progress.md:6` promise an auto-resume that `progress.md:236` exists to refuse; all three become the offer the command actually makes, and the `SKILL.md` byte pin in `weight-budgets.json` is re-pinned in the same commit. No behaviour changes. A real `--resume` flag is a separate decision. `GH-218`) | 1 | Complete | v3.7.9 |
+| CST-04 (A provider-voiced review records what it spent and appears in the routing ledger. `review-provider.mjs` reads the usage the provider returns and puts it on the `provider/request` event, and a review fire emits a `routing/resolve` whichever backend serves it. Today the only token arithmetic is the outbound cap at `:29,402,437`, and two of five fires on verbatim phase 2 had no resolve at all. An absent usage is recorded as unrecorded, never as zero. `GH-221` Phase 1.) | 1 | Complete | v3.7.10 |
+| TRC-12 (A review dispatch that falls back to `claude-subagent` after a provider failure closes the bracket it opened. `references/review-triggers.md:202-203` routes the empty-set fallback to the `claude-subagent` arm's bracket procedure at `:110-148` rather than to step 3's reviewer-selection rule, so the fallback reaches the close at `:143` including its failure case. Observed unpaired on smithers phase 3, `corr` `3-5812523`. `GH-228` Phase 1.) | 1 | Complete | v3.7.10 |
+| RSK-09 (A settlement receipt can name a home the seam accepts. `adjudication` already accepts `tasks/<slug>/` as a third home beside `phases/<N>/` and `deferred/<N>/`, landed 2026-08-30 in `f860560e`; what remains is the record catching up to it - the hand-written `ADJUDICATION-risk_surface-declines-off-the-tracker.json` replaced by one the seam produced and naming its task, the converse `--phase <N> --task` direction guarded, and `recordForFire` widened so a task settlement's counts are recounted rather than self-asserted; and per OQ-1, a receipt for an earlier phase window is writable through the seam rather than hand-appended. `GH-227` Phase 2.) | 2 | Complete | v3.7.10 |
+| AUT-03 (An `override` receipt names the authorization it descends from, not only the range it settles. An id minted when the engineer answers is carried by every receipt written on that answer, so a reader can tell a duplicate write from the same decision applied to a second range, and `/cad-suggest` counts decisions rather than writes. `GH-220` Phase 2.) | 2 | Complete | v3.7.10 |
+| TRC-13 (The run record states the effort a rung actually ran at beside the effort it was routed at. `subagent-trace.mjs` reads `effort` off the stopped worker's OWN transcript, the file the stop names on `agent_transcript_path`, and never off the hook input, which carries the CONFIGURED level and cannot see the host's silent downgrade. It puts that string, beside the rung the worker was dispatched under, on BOTH writes the hook makes - the `return` when it can close the bracket and the `worker_cache` fact when it cannot - because 114 of those facts stand against 2 hook-written returns on this record, so the `return` alone would record it on nothing. A dispatch whose transcript reported no effort is unrecorded, never a match. OQ-2 is answered and the id is live: on Claude Code 2.1.258 a `max` dispatch with extended thinking off runs at `high` and nothing announces it (`.planning/spikes/host-effort-downgrade/SPIKE.md`). `GH-226` Phase 3.) | 3 | Complete | v3.7.10 |
 
 ## Deferred
 
@@ -482,4 +498,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-26 v3.7.4 opened against the `Dispatch cost` milestone with three phases and four ids - BUD-03, RSK-05 and RNG-03 promoted out of deferral, plus TRC-08 new for the trace rotation. Grew to four phases and five ids the same day at phase 2 planning: TRC-07 promoted as phase 3, because RNG-03's measurement clause is unbuildable without it. `## Traceability` is empty until `/cad-plan` seeds each row as its phase is planned*
+*Last updated: 2026-09-01 v3.7.10 opened against the `Review receipts` milestone with three phases and five ids - TRC-12, CST-04, RSK-09, AUT-03 and TRC-13. Three v3.7.9 tracker rows (GH-233, GH-232, GH-218) were closed the same day as already shipped. `## Traceability` is empty until `/cad-plan` seeds each row as its phase is planned*

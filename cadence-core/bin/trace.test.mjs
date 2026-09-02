@@ -1267,6 +1267,136 @@ test('seam: --events hands back the raw array the two in-process readers use', (
   assert.ok(!('outcomes' in full));
 });
 
+// --- the provider-spend fold (CST-04) ----------------------------------------
+//
+// The cross-model panel's cost reaches the CLI response FOLDED, for the same
+// reason the raw array is withheld: 293 `provider/request` events sit on this
+// repository's own record and the response is read into a model's context. It
+// is a different denomination from `roles.tokens` - an input+output count off
+// the wire against a host-reported final-window proxy - so it never reaches a
+// `roles` total (D-01), and a call whose event carried no usage raises
+// `unrecorded` rather than folding in as a zero (D-11).
+
+/**
+ * One `provider/request` event `m` minutes in, with or without a usage pair.
+ * `extra` overrides the two fields the fold SELECTS on - the seam writes this
+ * same event shape for its other two commands and for a call it refused before
+ * sending anything, and those are what must not be priced as reviews.
+ */
+function provider(dir, m, usage, extra) {
+  appendEvent(dir, {
+    phase: 9, family: 'provider', event: 'request', command: 'review',
+    provider: 'openai', outcome: 'ok', ts: at(m), ...(usage ? { usage } : {}),
+    ...extra,
+  });
+}
+
+test('seam: the default render folds what the providers said the reviews cost', () => {
+  const dir = root();
+  provider(dir, 0, { input: 900, output: 100 });
+  provider(dir, 1, { input: 400, output: 60 });
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  // input+output, summed across the panel, with the count of calls it prices.
+  assert.deepEqual(r.provider_spend, { calls: 2, tokens: 1460 });
+  assert.equal(r.counts.provider, 2, 'the fold prices every call the counts count');
+  // FOLDED, never passed through: the raw events stay withheld.
+  assert.ok(!('events' in r), JSON.stringify(Object.keys(r)));
+});
+
+test('seam: a scope holding no provider call carries no provider_spend key', () => {
+  const dir = root();
+  billed(dir, '1', 'cad-executor', 0, 4, 100);
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  assert.equal('provider_spend' in r, false,
+    'a record without a provider call renders the envelope every reader already parses');
+  assert.deepEqual(r.counts, { routing: 0, provider: 0, lifecycle: 2, outcome: 0 });
+});
+
+test('seam: a provider call whose event carried no usage is unrecorded, never zero', () => {
+  const dir = root();
+  provider(dir, 0, { input: 900, output: 100 });
+  provider(dir, 1);
+  // A foreign producer's non-number is refused the way a string `tokens` on a
+  // return is: it must never be string-concatenated onto a numeric total.
+  provider(dir, 2, { input: 'lots' });
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
+    { calls: 3, tokens: 1000, unrecorded: 2 });
+});
+
+test('seam: a scope whose every provider call reported nothing shows no total', () => {
+  const dir = root();
+  provider(dir, 0);
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
+    { calls: 1, unrecorded: 1 },
+    'no `tokens: 0` - every event written before the seam read usage would price at nothing');
+});
+
+test('seam: a model listing and a debug consult are provider calls, not reviews', () => {
+  const dir = root();
+  provider(dir, 0, { input: 900, output: 100 });
+  // Both cost money and neither is a review: `detect-models` lists a provider's
+  // model ids and `consult` is `/cad-debug`'s dead-end second opinion. Folded
+  // in, they price a listing call under a line that says `Cross-model reviews`.
+  provider(dir, 1, { input: 4000, output: 40 }, { command: 'detect-models' });
+  provider(dir, 2, { input: 7000, output: 70 }, { command: 'consult' });
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  assert.deepEqual(r.provider_spend, { calls: 1, tokens: 1000 });
+  // Nothing is HIDDEN by the filter: the count of provider events is untouched,
+  // so the two calls this figure leaves out are still visible in the envelope.
+  assert.equal(r.counts.provider, 3);
+});
+
+test('seam: a scope holding no review call carries no provider_spend key', () => {
+  const dir = root();
+  provider(dir, 0, { input: 4000, output: 40 }, { command: 'detect-models' });
+  // No `command` at all: this figure prices only a call it can NAME, and no
+  // event carrying `usage` predates that field.
+  provider(dir, 1, { input: 900, output: 100 }, { command: undefined });
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  assert.equal('provider_spend' in r, false,
+    'a scope whose provider calls are none of them reviews renders the envelope every reader already parses');
+  assert.equal(r.counts.provider, 2);
+});
+
+test('seam: a review refused before the request was sent is not a call', () => {
+  const dir = root();
+  provider(dir, 0, { input: 900, output: 100 });
+  for (const [i, outcome] of ['no-key', 'bad-provider', 'bad-args', 'bad-payload', 'over-cap'].entries()) {
+    provider(dir, i + 1, null, { outcome });
+  }
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
+    { calls: 1, tokens: 1000 },
+    'no `unrecorded: 5` - nothing left the machine on those, so their cost is not unknown, it is nothing');
+});
+
+test('seam: a review that reached the wire and failed still cost something', () => {
+  const dir = root();
+  // D-04: usage is recorded on the degraded outcomes that still burned the
+  // call, and an `http` refusal has nothing to read but did reach a provider.
+  provider(dir, 0, { input: 900, output: 100 }, { outcome: 'bad-json' });
+  provider(dir, 1, null, { outcome: 'http' });
+  provider(dir, 2, null, { outcome: 'transport' });
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '9']).provider_spend,
+    { calls: 3, tokens: 1000, unrecorded: 2 });
+});
+
+test('render: provider usage reaches no roles total, with or without it (D-01)', () => {
+  const dir = root();
+  billed(dir, '1', 'cad-reviewer', 0, 4, 100);
+  appendEvent(dir, {
+    phase: 9, family: 'provider', event: 'request', command: 'review', role: 'cad-reviewer',
+    provider: 'openai', outcome: 'ok', ts: at(5),
+    usage: { input: 9000, output: 900 }, usage_raw: { input_tokens: 9000, output_tokens: 900 },
+  });
+  const withUsage = renderTrace(dir, 9).roles;
+  assert.deepEqual(withUsage, { 'cad-reviewer': { dispatches: 1, tokens: 100 } });
+  // The SAME record with every usage key stripped: a byte off the host's bill
+  // either way, which is what makes the two denominations separable.
+  const stripped = lines(dir).map((e) => { delete e.usage; delete e.usage_raw; return e; });
+  writeFileSync(tracePath(dir), `${stripped.map((e) => JSON.stringify(e)).join('\n')}\n`);
+  assert.deepEqual(renderTrace(dir, 9).roles, withUsage);
+});
+
 // --- what a dispatch COST: --tokens, --role, --read --------------------------
 
 /** The trace file's exact bytes, or null when it does not exist yet. */
@@ -1879,6 +2009,151 @@ test('seam: an append with no --trigger is byte-identical to today\'s', () => {
     '--survivors', '2', '--downgraded', '0', '--refuted', '0']);
   const [e] = lines(dir);
   assert.equal('trigger' in e, false, JSON.stringify(e));
+});
+
+// --- --anchor: the window a receipt settles, when the run has moved past it ---
+//
+// `correlationId` derives a run's id off the phase's NEWEST
+// `lifecycle/phase_start`, so a settlement written after a phase re-anchored is
+// stamped with the new window and can never settle the fire that ran under the
+// old one - GH-227 Case A, repaired today by hand-appending the line.
+// `renderEvent` already prefers an explicit non-empty `corr`, so the whole of
+// the fix is a flag that supplies one.
+
+/** A settle receipt for phase 1, plus whatever extra args a case needs. */
+const settle = (...extra) => ['trace', 'append', '--phase', '1', '--family', 'outcome',
+  '--event', 'gate_pass', '--trigger', 'risk_surface', '--plan', '1',
+  '--base', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  '--sha', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  '--survivors', '0', '--downgraded', '0', '--refuted', '0', ...extra];
+
+/** A phase whose window has already re-anchored: two `phase_start` lines. */
+function reAnchored() {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'aaa1111' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'bbb2222' });
+  return dir;
+}
+
+test('seam: --anchor stamps the receipt with the window it names, not the newest one', () => {
+  const dir = reAnchored();
+  const r = run(dir, settle('--anchor', 'aaa1111'));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const e = lines(dir).at(-1);
+  // The VALUE is a sha and the id is DERIVED from it, through the one
+  // derivation in the tree - so a receipt can only ever name a window of the
+  // phase it already declares.
+  assert.equal(e.corr, '1-aaa1111');
+  assert.equal(correlationId(dir, 1), '1-bbb2222', 'the newest anchor is still the run\'s own');
+});
+
+test('seam: the same receipt WITHOUT --anchor takes the newest anchor, as it always did', () => {
+  const dir = reAnchored();
+  assert.equal(run(dir, settle()).ok, true);
+  const e = lines(dir).at(-1);
+  assert.equal(e.corr, '1-bbb2222');
+});
+
+test('seam: a bare or blank --anchor appends NOTHING at all', () => {
+  // The `--trigger` disposition and for its reason: a blank anchor would read
+  // as "no anchor" while the caller believes the receipt was bound to a window.
+  const dir = root();
+  for (const extra of [['--anchor'], ['--anchor', ''], ['--anchor', '  ']]) {
+    const r = run(dir, settle(...extra));
+    assert.equal(r.ok, false, JSON.stringify(extra));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(extra));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: render still lists the flagged event - the pre-anchor repair leaves it alone', () => {
+  // D-11: the repair at lib/trace.mjs fires only where `e.corr === <phase>`,
+  // the BARE form, so an event carrying an explicit earlier id is not rewritten
+  // forward onto the newest anchor - which is the one way shape (a) could have
+  // been silently undone by a reader.
+  const dir = reAnchored();
+  assert.equal(run(dir, settle('--anchor', 'aaa1111')).ok, true);
+  const rendered = run(dir, ['trace', 'render', '--phase', '1', '--events']);
+  assert.equal(rendered.ok, true, JSON.stringify(rendered));
+  const receipt = rendered.events.find((e) => e.event === 'gate_pass');
+  assert.ok(receipt, 'the flagged receipt vanished from the phase render');
+  assert.equal(receipt.corr, '1-aaa1111');
+});
+
+test('seam: --anchor rides no other event - an append without it is byte-identical', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors',
+    '--survivors', '2', '--downgraded', '0', '--refuted', '0']);
+  const [e] = lines(dir);
+  assert.equal(e.corr, '1', 'no anchor at all still derives the phase-only form');
+});
+
+// --- --authorization-id: which human answer a receipt descends from -----------
+//
+// One authorization applied to two ranges is two receipts by construction, and
+// nothing on either said they came from one decision (GH-220). The id is MINTED
+// by the coordinator when the engineer answers, never derived from the reason
+// text: measured over nine shipped `outcome/override` events, grouping by exact
+// `--detail` text collapses the two duplicate pairs and misses the trio of
+// three distinct texts written on one standing authorization (D-02).
+
+/** An override receipt over one range, plus whatever extra args a case needs. */
+const override = (sha, ...extra) => ['trace', 'append', '--phase', '1', '--family', 'outcome',
+  '--event', 'override', '--trigger', 'risk_surface', '--plan', '1',
+  '--base', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '--sha', sha,
+  '--survivors', '1', '--downgraded', '0', '--refuted', '0',
+  '--detail', 'the engineer accepted the risk', ...extra];
+
+const HEAD_A = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const HEAD_B = 'cccccccccccccccccccccccccccccccccccccccc';
+
+test('seam: two receipts on ONE authorization carry the same id', () => {
+  const dir = root();
+  assert.equal(run(dir, override(HEAD_A, '--authorization-id', 'auth-7')).ok, true);
+  assert.equal(run(dir, override(HEAD_B, '--authorization-id', 'auth-7')).ok, true);
+  const [first, second] = lines(dir);
+  assert.equal(first.authorization_id, 'auth-7');
+  assert.equal(second.authorization_id, 'auth-7');
+  // The two are still DIFFERENT receipts over different ranges: the id labels
+  // the pair, it does not merge them.
+  assert.notEqual(first.sha, second.sha);
+});
+
+test('seam: two receipts on TWO authorizations carry different ids', () => {
+  const dir = root();
+  assert.equal(run(dir, override(HEAD_A, '--authorization-id', 'auth-7')).ok, true);
+  assert.equal(run(dir, override(HEAD_B, '--authorization-id', 'auth-8')).ok, true);
+  const [first, second] = lines(dir);
+  assert.notEqual(first.authorization_id, second.authorization_id);
+});
+
+test('seam: an append with no --authorization-id carries NO such key at all', () => {
+  // Absence, never an empty string: every event written before this flag
+  // existed carries no key, and a stored `''` would read as a labelled one.
+  const dir = root();
+  assert.equal(run(dir, override(HEAD_A)).ok, true);
+  const [e] = lines(dir);
+  assert.equal('authorization_id' in e, false, JSON.stringify(e));
+});
+
+test('seam: a bare or blank --authorization-id appends NOTHING at all', () => {
+  // The `--agent-id` disposition and for its reason: a blank id would read as
+  // "no id" while the caller believes the receipt was labelled.
+  const dir = root();
+  for (const extra of [['--authorization-id'], ['--authorization-id', ''],
+    ['--authorization-id', '  ']]) {
+    const r = run(dir, override(HEAD_A, ...extra));
+    assert.equal(r.ok, false, JSON.stringify(extra));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(extra));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: the authorization id is stored TRIMMED - a padded copy is one decision', () => {
+  const dir = root();
+  assert.equal(run(dir, override(HEAD_A, '--authorization-id', '  auth-7  ')).ok, true);
+  assert.equal(lines(dir)[0].authorization_id, 'auth-7');
 });
 
 test('seam: --read stores a comma-separated set as an array, verbatim', () => {
@@ -3814,6 +4089,102 @@ test('render: the worker id survives the hook closing the bracket first', () => 
     'the second writer overwrote the id the first one named');
 });
 
+// --- what the worker RAN at, beside what it was DISPATCHED under (TRC-13) ---
+//
+// Two strings the `SubagentStop` hook writes and no other writer holds:
+// `effort`, read off the worker's OWN transcript, and `rung`, mapped back off
+// the `agent_type` the host was asked to run. They ride a CLOSE here; the
+// `WORKER_CACHE` fact carrying the same pair is the fold section further down.
+// The point of the pair is the DISAGREEMENT it can express - a `max` dispatch
+// that ran at `high` is invisible on a record holding the routed rung alone.
+
+test('render: a bracket carries the effort it RAN at beside the rung it was DISPATCHED under', () => {
+  const r = closedWith({ effort: 'high', rung: 'max' });
+  const [row] = r.brackets;
+  assert.equal(row.effort, 'high');
+  assert.equal(row.rung, 'max');
+  // VERBATIM, in the host's own spelling, and never checked against Cadence's
+  // rung enum: that enum is a config rule about what a user may ASK for, and a
+  // renamed host rung has to appear on the record rather than vanish at the
+  // moment its appearance is the signal.
+  assert.equal(closedWith({ effort: 'ultrathink-9', rung: 'max' }).brackets[0].effort,
+    'ultrathink-9');
+  // D-09, and this is the assertion that holds it: the per-role bill is
+  // DEEP-EQUAL to the same fixture rendered without the two keys. An enum has
+  // nothing to sum and the roles bill is denominated in tokens, so a string
+  // that reached `roles` could only reach it as a wrong number.
+  assert.deepEqual(r.roles, closedWith({}).roles);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 1200 } });
+});
+
+test('render: a close naming no effort leaves NEITHER key on the bracket', () => {
+  // ABSENT, not `unrecorded`. `unrecorded` is something a READER prints for a
+  // row carrying no observation; storing the literal beside real rungs would
+  // put a non-observation into the column a comparison reads. Checked with
+  // `in`, so every trace written before this phase renders byte-identically.
+  const [row] = closedWith({}).brackets;
+  assert.equal('effort' in row, false, JSON.stringify(row));
+  assert.equal('rung' in row, false, JSON.stringify(row));
+  // The two answer INDEPENDENTLY at the render even though the hook writes
+  // them as a pair: a producer that carried one is not a reason to drop it,
+  // and a reader asking `in` gets a straight answer either way.
+  const [one] = closedWith({ effort: 'high' }).brackets;
+  assert.equal(one.effort, 'high');
+  assert.equal('rung' in one, false, JSON.stringify(one));
+});
+
+test('render: a non-string or empty effort or rung contributes NOTHING to the bracket', () => {
+  // The guard `tokens`, `turns`, `duration_ms` and the two cache figures carry,
+  // for the same hazard and with the answer this field's type demands: a
+  // hand-edited or foreign-producer line must never put a number, or a blank,
+  // where a reader prints a rung name and compares two of them.
+  const [row] = closedWith({ effort: 3, rung: '' }).brackets;
+  assert.equal('effort' in row, false, JSON.stringify(row));
+  assert.equal('rung' in row, false, JSON.stringify(row));
+  const [half] = closedWith({ effort: '', rung: 'xhigh' }).brackets;
+  assert.equal('effort' in half, false, JSON.stringify(half));
+  assert.equal(half.rung, 'xhigh', 'the readable half of the same row survived');
+});
+
+test('render: a second close does not overwrite the effort or rung the first supplied', () => {
+  // FILL-ONLY-EMPTY, the clause `agent_id` follows and NOT the larger-wins
+  // clause the two cache keys use one line above it: `moreComplete` compares
+  // with `>`, which for an enum-shaped string is a lexicographic accident
+  // rather than a fuller read, and a rung does not GROW between two reads of
+  // one transcript the way a running cache sum does.
+  const twice = (first, second) => {
+    const dir = root();
+    appendEvent(dir, {
+      phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+      ts: '2026-08-26T10:00:00.000Z',
+    });
+    appendEvent(dir, cacheClose({ ts: '2026-08-26T10:05:00.000Z', ...first }));
+    appendEvent(dir, {
+      phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+      ts: '2026-08-26T10:05:30.000Z', ...second,
+    });
+    const r = renderTrace(dir, 6);
+    assert.equal(r.brackets.length, 1, 'two closes, one dispatch, one row');
+    return r.brackets[0];
+  };
+  const kept = twice({ effort: 'high', rung: 'max' }, { effort: 'xhigh', rung: 'xhigh' });
+  assert.equal(kept.effort, 'high', 'the second close overwrote an observation the first read');
+  assert.equal(kept.rung, 'max');
+
+  // ...and it FILLS what the first left empty. The hook is the writer that
+  // holds the pair and it does not always land first, so a close that opened
+  // the row without them must not freeze it against the one that has them.
+  const filled = twice({}, { effort: 'high', rung: 'max' });
+  assert.equal(filled.effort, 'high');
+  assert.equal(filled.rung, 'max');
+
+  // Per key and independently, so a writer that named one and not the other
+  // neither blocks nor invents the half it never had.
+  const mixed = twice({ effort: 'high' }, { effort: 'xhigh', rung: 'max' });
+  assert.equal(mixed.effort, 'high');
+  assert.equal(mixed.rung, 'max');
+});
+
 test('render: the span ends at the LATER close, not whichever landed first', () => {
   // `ms` is DISPATCH-TO-CLOSE and the brackets typedef says it includes what
   // the orchestrator did between writing the two halves. Freezing `end` at the
@@ -4090,4 +4461,106 @@ test('render: rendering one fixture TWICE gives byte-identical brackets', () => 
     'a second render of the same bytes answered differently');
   assert.equal(JSON.parse(first)[0].cache_creation_input_tokens, 150);
   assert.equal(JSON.parse(first)[0].cache_read_input_tokens, 3000);
+});
+
+// --- the fact carries what the worker RAN at, too (TRC-13) ------------------
+//
+// The same three withholding gates hold the effort the worker's own transcript
+// reported and the rung it was dispatched under, and on this repository's own
+// record they are the writer that holds them on almost every live dispatch:
+// 114 facts against 2 hook-written returns. A pair that reached the row only
+// off a `return` would be recorded on effectively nothing.
+
+/** A fact in the shape a gate writes for a worker whose transcript named an effort. */
+const vRan = (extra) => ({
+  phase: 7, family: 'lifecycle', event: WORKER_CACHE, role: 'cad-verifier',
+  ts: '2026-08-26T10:05:00.000Z', agent_id: 'W1', effort: 'high', rung: 'max', ...extra,
+});
+
+test('render: a fact carries the effort and the rung onto its bracket, in EITHER order', () => {
+  // Before the `--agent-id` close is the ORDINARY order and the reason the fold
+  // is a post-pass at all: the host fires `SubagentStop` the moment the worker
+  // stops, while the orchestrator writes its own close only once it has
+  // processed the return.
+  for (const [why, rows] of Object.entries({
+    'the fact arrived BEFORE the id': [vDispatch(), vRan(), vClose({ agent_id: 'W1' })],
+    'the fact arrived AFTER the id': [vDispatch(), vClose({ agent_id: 'W1' }), vRan()],
+  })) {
+    const r = folded(rows);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal(r.brackets[0].effort, 'high', why);
+    assert.equal(r.brackets[0].rung, 'max', why);
+  }
+});
+
+test('render: a fact reporting an effort and NO cache figure still reaches the row', () => {
+  // The case the collection gate used to drop. It demanded a cache figure, so
+  // a transcript that named an effort and billed no cache traffic - the one
+  // observation of a silent downgrade - was refused here while the hook's own
+  // test said the fact was written. An effort counts as something to give.
+  const r = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1' }),
+    vRan(),
+  ]);
+  assert.equal(r.brackets.length, 1);
+  assert.equal(r.brackets[0].effort, 'high');
+  assert.equal(r.brackets[0].rung, 'max');
+  // ...and it added no cache figure it never had. Absent is not zero.
+  assert.equal('cache_read_input_tokens' in r.brackets[0], false,
+    JSON.stringify(r.brackets[0]));
+  assert.equal('cache_creation_input_tokens' in r.brackets[0], false,
+    JSON.stringify(r.brackets[0]));
+});
+
+test('render: a fact never overwrites an effort or rung the close already carried', () => {
+  // FILL-ONLY-EMPTY, and NOT the larger-wins clause the two cache figures take
+  // one line above it in the same fold: `moreComplete` compares with `>`, which
+  // for a rung name is a lexicographic accident, and there is no fuller read of
+  // a value that does not grow. It holds in EITHER arrival order, because the
+  // rule is about which value the ROW already holds and never about which line
+  // landed first.
+  for (const [why, rows] of Object.entries({
+    'the fact arrived second': [
+      vDispatch(), vClose({ agent_id: 'W1', effort: 'xhigh', rung: 'xhigh' }), vRan(),
+    ],
+    'the fact arrived first': [
+      vDispatch(), vRan({ effort: 'xhigh', rung: 'xhigh' }), vClose({ agent_id: 'W1' }),
+    ],
+  })) {
+    const r = folded(rows);
+    assert.equal(r.brackets[0].effort, 'xhigh', why);
+    assert.equal(r.brackets[0].rung, 'xhigh', why);
+  }
+
+  // TWO FACTS for one worker resolve on the same rule: the first value stands,
+  // per field, so a second read of the same transcript cannot rewrite an
+  // observation - while the cache figures beside them still take the larger.
+  const two = folded([
+    vDispatch(),
+    vClose({ agent_id: 'W1' }),
+    vRan({ cache_read_input_tokens: 7 }),
+    vRan({ effort: 'xhigh', rung: 'xhigh', cache_read_input_tokens: 900 }),
+  ]);
+  assert.equal(two.brackets[0].effort, 'high', 'the second fact rewrote the first one\'s effort');
+  assert.equal(two.brackets[0].rung, 'max');
+  assert.equal(two.brackets[0].cache_read_input_tokens, 900,
+    'the figures beside them stopped taking the larger read');
+});
+
+test('render: a fact with no bracket to name adds no effort, no rung and no row', () => {
+  // The join is `corr` AND `agent_id`, never the id alone, and an id-less fact
+  // has no bracket it could ever reach. None of the three is an error and none
+  // of them adds a row - the same answer the cache half already gives.
+  for (const [why, extra] of Object.entries({
+    'a fact from another run': { corr: 'ANOTHER-RUN' },
+    'a fact carrying no id at all': { agent_id: undefined },
+    'a fact naming an id no bracket carries': { agent_id: 'NOBODY' },
+  })) {
+    const r = folded([vDispatch(), vClose({ agent_id: 'W1' }), vRan(extra)]);
+    assert.equal(r.brackets.length, 1, why);
+    assert.equal('effort' in r.brackets[0], false, why);
+    assert.equal('rung' in r.brackets[0], false, why);
+    assert.deepEqual(r.unpaired, [], why);
+  }
 });

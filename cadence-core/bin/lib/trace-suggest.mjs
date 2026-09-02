@@ -60,6 +60,13 @@ export const MIN_DISPATCHES_FOR_RUNG_INFO = 4;
 export const MIN_ESCALATIONS_FOR_RUNG_SUGGESTION = 2;
 export const MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION = 2;
 /**
+ * R9's floor, counted in OVERRIDE RECEIPTS carrying one trigger - the WRITES,
+ * never the authorizations behind them. Two is the least that can be: a single
+ * receipt cannot be the second application of an answer, so one override says
+ * nothing about whether a decision was reused.
+ */
+export const MIN_OVERRIDES_FOR_AUTHORIZATION_INFO = 2;
+/**
  * The coordinator receipt's floor, in milliseconds. Ten minutes: below that the
  * residue is dominated by the second or two between a step's marker and the
  * dispatch that follows it, which is a measurement artefact rather than time
@@ -96,7 +103,7 @@ export const IN_DISPATCH_FLOORS = Object.freeze({
 });
 
 /**
- * The three sources the recorded token total DOES NOT include, in the words
+ * The two sources the recorded token total DOES NOT include, in the words
  * every reader of that total states.
  *
  * Exported and frozen for the reason `lib/trace.mjs` exports
@@ -107,22 +114,30 @@ export const IN_DISPATCH_FLOORS = Object.freeze({
  * on the day the two stop claiming the same thing. `prose-agreement.test.mjs`
  * reads THIS array to check the prose, so there is one list and one claim.
  *
- * Why these three, and why they are not a hedge:
+ * Why these two, and why they are not a hedge:
  *   1. the orchestrator's own turns - a figure is read off a subagent RETURN
  *      and the coordinator has no return, so it contributes nothing to a total
  *      that most of the run's spend belongs to;
- *   2. cross-model provider calls - no lifecycle bracket and no token field on
- *      that arm at all, by design;
- *   3. figureless returns - a close that carried no `--tokens`, the advisory
+ *   2. figureless returns - a close that carried no `--tokens`, the advisory
  *      fire among them, counted under `unrecorded` rather than as a zero.
  *
- * No fourth entry is a ratio or a correction factor, and none is coming: the
+ * THREE until v3.7.10, when `'cross-model provider calls'` was DROPPED from
+ * this list - and it must not come back. The entry's stated reason was that the
+ * arm had no lifecycle bracket and no token field at all; the seam now records
+ * the provider's own reported usage on the `provider/request` event,
+ * `planning/trace.mjs` folds it into `provider_spend`, and
+ * `workflows/report.md` prints it on its own `Cross-model reviews` line. That
+ * spend is a DIFFERENT denomination and still never sums into this total, so
+ * the arithmetic did not move - but "excluded" became the wrong word for it,
+ * because it is reported rather than missing, and naming it here would send a
+ * reader hunting for a figure already on the page.
+ *
+ * No third entry is a ratio or a correction factor, and none is coming: the
  * terms are what MSR-03 and PLN-01 need, and a stored product is the
  * maintenance loop `v2.7.0` deleted.
  */
 export const SPEND_EXCLUDES = Object.freeze([
   "the orchestrator's own turns",
-  'cross-model provider calls',
   'figureless returns',
 ]);
 
@@ -319,6 +334,18 @@ export function suggestFromRender(render, resolution, reads) {
    */
   const corrOf = (e) => (typeof e.corr === 'string' || typeof e.corr === 'number' ? String(e.corr) : '');
   /**
+   * The authorization an override receipt descends from, as a comparable
+   * string - the SAME guard `corrOf` applies to `corr`, because this value is a
+   * join key too and an object or an array must not become the group key
+   * `[object Object]`. Empty string means unlabelled, which R9 reads as an
+   * unknown rather than as a shared answer. Trimmed for the reason the writer
+   * trims it: a padded copy of an id must not read as a second decision.
+   * @param {any} e
+   */
+  const authOf = (e) => (typeof e.authorization_id === 'string' || typeof e.authorization_id === 'number'
+    ? String(e.authorization_id).trim()
+    : '');
+  /**
    * Per role: the resolve counts R3 reads, and the rung its ESCALATED resolves
    * actually landed on, off the `effort` field those events carry. That rung is
    * R3's `proposed` - a rung the routing table really resolved for this role,
@@ -328,6 +355,14 @@ export function suggestFromRender(render, resolution, reads) {
   const rungs = new Map();
   /** @type {Map<string, number>} */
   const checkpoints = new Map();
+  /**
+   * Per trigger, R9's two figures: the override receipts WRITTEN, and the
+   * distinct authorizations that stood behind them. The labelled ids go in the
+   * set and the rest are counted, because an unlabelled receipt is its own
+   * decision - see R9 for why that half is load-bearing.
+   * @type {Map<string, {writes: number, ids: Set<string>, unlabelled: number}>}
+   */
+  const overrides = new Map();
 
   for (const e of events) {
     if (!e || typeof e !== 'object') continue;
@@ -377,6 +412,21 @@ export function suggestFromRender(render, resolution, reads) {
       const role = typeof e.role === 'string' ? e.role : '';
       if (!role) continue;
       checkpoints.set(role, (checkpoints.get(role) || 0) + 1);
+    } else if (e.family === 'outcome' && e.event === 'override') {
+      // The trigger comes off the STRUCTURED field and is never parsed out of
+      // `detail` (D-12), the same rule `risk-check status` holds when it reads
+      // these events: on this repository's own record the trigger is spelled
+      // four different ways in that free text. An override carrying no
+      // structured trigger reaches no reader today - the gate filters on the
+      // same field - so it is grouped by nothing here either.
+      const trigger = typeof e.trigger === 'string' ? e.trigger.trim() : '';
+      if (!trigger) continue;
+      const row = overrides.get(trigger) || { writes: 0, ids: new Set(), unlabelled: 0 };
+      row.writes++;
+      const id = authOf(e);
+      if (id) row.ids.add(id);
+      else row.unlabelled++;
+      overrides.set(trigger, row);
     }
   }
 
@@ -527,7 +577,7 @@ export function suggestFromRender(render, resolution, reads) {
   }
 
   // R5: the spend receipt. Names where the recorded tokens went and what that
-  // total is NOT - the three `SPEND_EXCLUDES` names ride the evidence string
+  // total is NOT - the two `SPEND_EXCLUDES` names ride the evidence string
   // rather than the envelope, because `workflows/suggest.md` relays evidence
   // unchanged and adds no flag, so this is the only way the caveat reaches a
   // `/cad-suggest` reader at all. Asks for nothing: still `kind: 'info'`,
@@ -732,6 +782,43 @@ export function suggestFromRender(render, resolution, reads) {
         + '. This is the WORKER\'s own run time and not the dispatch-to-close `ms`'
         + " /cad-report prints beside it, which includes the orchestrator's own time"
         + ' between the two writes.',
+      action: null,
+    });
+  }
+
+  // R9: one human authorization, written as two receipts (AUT-03). An override
+  // re-applied to a second range is TWO events by construction - `risk-check
+  // status` requires every fired range to carry a receipt naming its own base
+  // and head, and a shared id never changes that (D-03) - so nothing on either
+  // event said the pair came from one answer, and a reader could not tell it
+  // from one range settled twice by hand. `trace append --authorization-id`
+  // carries the id the coordinator minted when the engineer answered, and this
+  // rule counts DECISIONS against WRITES off it.
+  //
+  // An UNLABELLED receipt counts as its OWN decision, and that half is the
+  // load-bearing one: every override written before the flag existed carries no
+  // id, and reading those as one shared answer would report a reuse on every
+  // trace already on disk. Unrecorded is never a match - the same disposition
+  // the token and turn totals take.
+  //
+  // SILENT where the two figures agree, which is every unlabelled trace and
+  // every run whose overrides were genuinely separate answers: `2 decisions
+  // from 2 writes` is a line added to every render that says nothing about the
+  // run it read, which is R6's disposition for a render with no coordinator
+  // block. `action` is null because no `config.schema.json` key governs this -
+  // the receipt is for a reader, not a retune.
+  for (const [trigger, row] of [...overrides.entries()].sort()) {
+    if (row.writes < MIN_OVERRIDES_FOR_AUTHORIZATION_INFO) continue;
+    const decisions = row.ids.size + row.unlabelled;
+    if (decisions >= row.writes) continue;
+    out.push({
+      kind: 'info',
+      subject: trigger,
+      evidence: `${row.writes} override receipt(s) on ${decisions} authorization(s)`
+        + ` - ${decisions} decision(s) from ${row.writes} writes, so one answer applied to a`
+        + ' second range is distinguishable from a duplicate write of one range. The shared id'
+        + ' LABELS that pair only: every fired range still carries a receipt naming its own'
+        + ' base and head.',
       action: null,
     });
   }

@@ -1112,6 +1112,34 @@ const ROLE_OF_STEM = new Map(
 );
 
 /**
+ * The same 19 stems, mapped back to the RUNG each one is filed under. Built off
+ * the SAME import in the same shape as `ROLE_OF_STEM`, because the two answers
+ * are two columns of one table: a rung added to `RUNG_FILES` reaches both maps
+ * or neither, and neither can go stale while the other does not.
+ */
+const RUNG_OF_STEM = new Map(
+  Object.keys(RUNG_FILES).flatMap(
+    (role) => Object.entries(RUNG_FILES[role]).map(([rung, stem]) => [stem, rung]),
+  ),
+);
+
+/**
+ * The agent-file stem inside a recorded `agent` value - the host writes
+ * `<plugin>:<agent-file-stem>` and a bare stem is accepted as itself.
+ *
+ * ONE copy of the split, called by both readers below. A second copy is how the
+ * role answer and the rung answer start disagreeing about which file a spelling
+ * names, and `helper-census.test.mjs` matches shared-contract BODY idioms
+ * precisely so a paste-back under another name is caught rather than noticed.
+ * @param {any} agent
+ * @returns {string|null} null for anything that is not a non-empty string.
+ */
+function stemOfAgent(agent) {
+  if (typeof agent !== 'string' || !agent) return null;
+  return agent.includes(':') ? agent.slice(agent.indexOf(':') + 1) : agent;
+}
+
+/**
  * The role a recorded `agent` value names, or null when it names none.
  *
  * The corpus carries `cadence:cad-executor`, `cadence:cad-planner`,
@@ -1129,9 +1157,36 @@ const ROLE_OF_STEM = new Map(
  * @returns {string|null}
  */
 export function roleOfAgent(agent) {
-  if (typeof agent !== 'string' || !agent) return null;
-  const stem = agent.includes(':') ? agent.slice(agent.indexOf(':') + 1) : agent;
+  const stem = stemOfAgent(agent);
+  if (stem === null) return null;
   return ROLE_OF_STEM.get(stem) || null;
+}
+
+/**
+ * The RUNG a recorded `agent` value names, or null when it names none.
+ *
+ * The sibling of `roleOfAgent` over the same spelling and the same table:
+ * `cadence:cad-verifier-medium` is the `cad-verifier` role at its `medium`
+ * rung, so the two functions answer the two halves of one lookup. Null for
+ * anything `RUNG_FILES` does not file - the host's own types, `coordinator`, a
+ * non-string - so the caller decides what the absence means.
+ *
+ * NEVER derived from a `-<rung>` filename suffix, for the reason this file's
+ * `RUNG_FILES` import already states: `cad-assumptions-analyzer` is that role's
+ * `xhigh` rung while `cad-assumptions-analyzer-high` is its lower one, so no
+ * suffix convention is true of all 19 files and a suffix rule would report the
+ * wrong rung for the unsuffixed file of every role.
+ *
+ * EXPORTED for `lib/subagent-trace.mjs`, whose `SubagentStop` close records the
+ * rung a worker was DISPATCHED under beside the effort its own transcript says
+ * it RAN at - the pair the run record exists to let a reader compare.
+ * @param {any} agent
+ * @returns {string|null}
+ */
+export function rungOfAgent(agent) {
+  const stem = stemOfAgent(agent);
+  if (stem === null) return null;
+  return RUNG_OF_STEM.get(stem) || null;
 }
 
 /**

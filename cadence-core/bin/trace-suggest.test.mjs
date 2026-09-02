@@ -701,6 +701,15 @@ test('seam: a real trace written through appendEvent reads back through `trace s
 // `lib/trace-suggest.mjs`, so this literal moves again only when that array
 // does. D-12: a necessary re-pin carries its arithmetic rather than being
 // quietly edited until it agrees.
+//
+// RE-PINNED A SECOND TIME in v3.7.10 (TRC-12/CST-04), and the array is exactly
+// what moved: `'cross-model provider calls'` left `SPEND_EXCLUDES` once the
+// seam started recording provider-reported usage, so the `join(', ')` is now
+// two names instead of three. The arithmetic did not move again either - still
+// `423,846 of 968,705 recorded tokens (44%)`, the same three figures, because
+// that spend was never in this total and still is not; it is reported in its
+// own denomination on `report.md`'s `Cross-model reviews` line. One clause
+// shortened, nothing recomputed.
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'verbatim.trace.jsonl');
 
@@ -716,7 +725,7 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
         kind: 'info',
         subject: 'cad-executor',
         evidence: 'largest recorded spend: 423,846 of 968,705 recorded tokens (44%)'
-          + '; excludes the orchestrator\'s own turns, cross-model provider calls, figureless returns',
+          + '; excludes the orchestrator\'s own turns, figureless returns',
         action: null,
       },
       {
@@ -738,6 +747,9 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
 //
 //   $ node --test cadence-core/bin/trace-suggest.test.mjs
 //   x MSR-02: the spend receipt names all three excluded sources, from the one exported list
+//     ^ the case was RENAMED in v3.7.10 when the list went three to two; the
+//       recipe and the assertion that fails are unchanged, so a re-watch prints
+//       the same failure under the current name.
 //     AssertionError [ERR_ASSERTION]: the spend receipt does not name `the
 //     orchestrator's own turns` - a /cad-suggest reader is told a worker-return
 //     token sum is the run's cost. Got: largest recorded spend: 300,000 of
@@ -750,7 +762,7 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
 // into the old checkout would carry the fixed evidence string in with it and
 // the check would go GREEN there, proving nothing. So only this file is copied,
 // the old seam emits the old string, and the fallback list below supplies the
-// three names the absent export would have.
+// names the absent export would have.
 //
 // The second failure in that run is the committed-fixture deepEqual, which is
 // the same fact read from the other end - the old seam's literal string against
@@ -762,7 +774,7 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
 //
 // The subject is the RULE, not the committed fixture: the assertion runs over a
 // render built by this file's own `render()` helper, so a fixture re-pin can
-// never carry this check green. And the three names are READ from the frozen
+// never carry this check green. And the names are READ from the frozen
 // export rather than copied here - a test holding its own copy of the list goes
 // green on the day the seam and `workflows/report.md` stop agreeing about what
 // the figure excludes, which is the one failure this check exists to catch.
@@ -777,7 +789,7 @@ import * as traceSuggestModule from './lib/trace-suggest.mjs';
 
 const SPEND_EXCLUDES_READ = Array.isArray(traceSuggestModule.SPEND_EXCLUDES)
   ? traceSuggestModule.SPEND_EXCLUDES
-  : ["the orchestrator's own turns", 'cross-model provider calls', 'figureless returns'];
+  : ["the orchestrator's own turns", 'figureless returns'];
 
 // --- SGT-01: the whole path returns a retune, not a description -------------
 //
@@ -874,7 +886,7 @@ test('SGT-01: `trace suggest` returns a direction, a current, and a proposed whe
   }
 });
 
-test('MSR-02: the spend receipt names all three excluded sources, from the one exported list', () => {
+test('MSR-02: the spend receipt names every excluded source, from the one exported list', () => {
   const out = suggestFromRender(render([], {
     'cad-executor': { dispatches: 2, tokens: 300000 },
     'cad-planner': { dispatches: 1, tokens: 100000 },
@@ -882,8 +894,8 @@ test('MSR-02: the spend receipt names all three excluded sources, from the one e
   const s = out.find((x) => x.evidence.includes('largest recorded spend'));
   assert.ok(s, 'the spend receipt no longer fires on a render carrying token figures');
 
-  assert.equal(SPEND_EXCLUDES_READ.length, 3,
-    'the exclusion list is no longer the three sources the caveat is written about');
+  assert.equal(SPEND_EXCLUDES_READ.length, 2,
+    'the exclusion list is no longer the two sources the caveat is written about');
   for (const name of SPEND_EXCLUDES_READ) {
     assert.ok(s.evidence.includes(name),
       `the spend receipt does not name \`${name}\` - a /cad-suggest reader is told a`
@@ -1297,4 +1309,112 @@ test('R8: a scope where NO bracket carries a wall clock says nothing at all', ()
   })) {
     assert.equal(workerReceipt(/** @type {any} */ (r)), null, why);
   }
+});
+
+// --- R9: one human authorization, written as two receipts (AUT-03) ----------
+//
+// Nothing in the tree counted `outcome/override` events before this phase
+// except the blocking gate's own FIRE_RECEIPTS list, so this is a new reader
+// rather than a retarget. Every other render in this file holds ZERO override
+// events, which makes each case above double as proof that a trace written
+// before `--authorization-id` existed reaches exactly the suggestions it always
+// did - and the committed-fixture deepEqual is that same proof over a real
+// trace, which holds none either.
+
+import { MIN_OVERRIDES_FOR_AUTHORIZATION_INFO } from './lib/trace-suggest.mjs';
+
+/** An `outcome/override` receipt, with or without the id it descends from. */
+const override = (trigger, extra = {}) =>
+  ({ family: 'outcome', event: 'override', trigger, ...extra });
+
+/** R9's entry for a trigger, or null when the rule stayed silent. */
+const authReceipt = (events, subject = 'risk_surface') => suggestFromRender(render(events))
+  .find((x) => x.subject === subject && /override receipt/.test(x.evidence)) || null;
+
+test('R9: two override receipts on ONE authorization read as one decision from two writes', () => {
+  const out = suggestFromRender(render([
+    override('risk_surface', { authorization_id: 'auth-7', detail: 'the finding stands; ship it' }),
+    override('risk_surface', { authorization_id: 'auth-7', detail: 'same answer, second range' }),
+  ]));
+  assert.equal(out.length, 1, `expected exactly one entry: ${JSON.stringify(out)}`);
+  const [e] = out;
+  assert.equal(e.kind, 'info');
+  assert.equal(e.subject, 'risk_surface');
+  // BOTH figures, drawn from the record rather than described: the writes, and
+  // the authorizations that stood behind them.
+  assert.match(e.evidence, /2 override receipt\(s\) on 1 authorization\(s\)/);
+  assert.match(e.evidence, /1 decision\(s\) from 2 writes/);
+  // No `config.schema.json` key governs this, so it asks for nothing - and the
+  // closed Suggestion vocabulary D-12 pins, which `suggest.md`'s ask step reads
+  // to build a `/cad-config <key>=<value>` out of `action` plus `proposed`.
+  assert.deepEqual(Object.keys(e).sort(), ['action', 'evidence', 'kind', 'subject']);
+  assert.equal(e.action, null);
+});
+
+test('R9: two authorizations, two unlabelled receipts, and one receipt alone all stay SILENT', () => {
+  // Two ids is two decisions from two writes - the figures agree and there is
+  // nothing to say. Two receipts carrying NO id is the same silence for the
+  // opposite reason: an unlabelled receipt is an unknown, not a shared answer,
+  // so every trace written before the flag existed keeps reading N from N.
+  assert.equal(authReceipt([
+    override('risk_surface', { authorization_id: 'auth-7' }),
+    override('risk_surface', { authorization_id: 'auth-8' }),
+  ]), null);
+  assert.equal(authReceipt([
+    override('risk_surface', { detail: 'stands' }),
+    override('risk_surface', { detail: 'stands again' }),
+  ]), null);
+  // And below the floor, which is counted in writes: one receipt cannot be the
+  // second application of anything.
+  assert.equal(MIN_OVERRIDES_FOR_AUTHORIZATION_INFO, 2);
+  assert.equal(authReceipt([override('risk_surface', { authorization_id: 'auth-7' })]), null);
+});
+
+test('R9: an unlabelled receipt counts as its OWN decision, beside a labelled pair', () => {
+  // Three writes: two on `auth-7` and one carrying no id at all. Two decisions,
+  // not one - the mixed case is where reading an absent id as a shared answer
+  // would overstate the reuse.
+  const e = authReceipt([
+    override('risk_surface', { authorization_id: 'auth-7' }),
+    override('risk_surface', { authorization_id: 'auth-7' }),
+    override('risk_surface', { detail: 'a third, written before the flag existed' }),
+  ]);
+  assert.ok(e, 'the mixed case stayed silent');
+  assert.match(e.evidence, /3 override receipt\(s\) on 2 authorization\(s\)/);
+  assert.match(e.evidence, /2 decision\(s\) from 3 writes/);
+});
+
+test('R9: the trigger is the STRUCTURED field, and a non-string id is never a group key', () => {
+  // D-12 applied to this rule's grouping: an override with no structured
+  // `trigger` reaches no reader today - `risk-check status` filters on the same
+  // field - so it is grouped by nothing here either, and never by its detail.
+  assert.deepEqual(suggestFromRender(render([
+    { family: 'outcome', event: 'override', authorization_id: 'a', detail: 'risk_surface stands' },
+    { family: 'outcome', event: 'override', authorization_id: 'a', detail: 'risk_surface stands' },
+  ])), []);
+  // A hand-written id that is not a string reads as UNLABELLED rather than
+  // collapsing two writes onto one group key - `corrOf`'s guard, applied here.
+  for (const bad of [{}, [], true, null]) {
+    assert.equal(authReceipt([
+      override('risk_surface', { authorization_id: bad }),
+      override('risk_surface', { authorization_id: bad }),
+    ]), null, JSON.stringify(bad));
+  }
+  // Padding is not a second decision: the writer trims, and so does the reader.
+  assert.ok(authReceipt([
+    override('risk_surface', { authorization_id: 'auth-7' }),
+    override('risk_surface', { authorization_id: '  auth-7  ' }),
+  ]));
+});
+
+test('R9: a render holding NO override event returns exactly what it returned before', () => {
+  // The regression the rule must not cause, on the shape the ordering case
+  // above already pins: one R1 suggestion and one R2 receipt, and no third line.
+  const out = suggestFromRender(render([
+    rearm('risk_surface'),
+    adjudication('plan: 0 survivors; voices claude-subagent'),
+    adjudication('plan: 0 survivors; voices claude-subagent'),
+  ]));
+  assert.equal(out.length, 2, JSON.stringify(out));
+  assert.equal(out.some((x) => /override receipt/.test(x.evidence)), false, JSON.stringify(out));
 });

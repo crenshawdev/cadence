@@ -38,7 +38,7 @@ import {
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
-import { FAMILIES, ROTATED_TRACE_FILE, appendEvent, renderTrace } from '../lib/trace.mjs';
+import { FAMILIES, ROTATED_TRACE_FILE, appendEvent, correlationId, renderTrace } from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
 // ---------------------------------------------------------------------------
@@ -466,10 +466,11 @@ const TRACE_GRAMMAR = {
 };
 
 // The flags whose whole rule is the value grammar, in the order they are read.
-// The first four declare `fallback` on both axes and the last four `refuse` -
-// the two dispositions this one body has always run side by side (D-05), now
-// stated once in the table instead of seven times here.
-const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer', '--trigger', '--agent-id'];
+// The first three declare `fallback` on both axes and every one after them
+// `refuse` - the two dispositions this one body has always run side by side
+// (D-05), now stated once in the table instead of once per flag here.
+const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer',
+  '--trigger', '--agent-id', '--anchor', '--authorization-id'];
 
 // The `--duration-ms` grammar, CLOSED to digits and unit letters.
 //
@@ -507,6 +508,125 @@ function parseDurationMs(raw) {
     total += Number(n) * DURATION_UNITS[unit];
   }
   return Number.isSafeInteger(total) ? total : null;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE PROVIDERS SAID THIS SCOPE'S REVIEW CALLS COST.
+//
+// Folded rather than passed through, for the same reason the raw event array is
+// withheld below: this response is read into a model's context, and this
+// repository's own record holds 293 `provider/request` events. A summed figure
+// with its call count answers "what did the cross-model panel cost" in three
+// numbers instead of three hundred objects.
+//
+// ITS OWN DENOMINATION, and it never touches `roles`. `roles.tokens` is a
+// final-window figure the execution HOST reported for one dispatch; this is an
+// input+output count off the WIRE, reported by the provider. Summing the two
+// would denominate `roles.cad-reviewer.tokens` in nothing, which is the rule
+// lib/trace.mjs's `TraceRender` typedef already states for the two cache keys
+// ("They stop HERE either way") - so nothing here reads or writes `r.roles`
+// (D-01).
+//
+// A call whose event carried NO usage raises `unrecorded` and contributes no
+// zero to the total: every `provider/request` event written before the seam
+// read usage at all carries neither key, and folding those in as zeros would
+// price a whole cycle's reviews at nothing (D-11). The block itself is absent
+// where the scope holds no provider REVIEW call, the omit-when-empty discipline
+// `roles`, `coordinator`, `mismatched` and `rotated` already follow, so a
+// record without one renders byte-identically for every reader already parsing
+// this envelope.
+//
+// WHICH CALLS IT PRICES, and the answer is one field: `command`. The seam
+// writes its one event for three different commands, and only one of them is a
+// review - this repository's own record holds `review` (298), `detect-models`
+// (16), which lists a provider's model ids, and `consult` (3), `/cad-debug`'s
+// dead-end second opinion. All three cost money and only the first is a review,
+// so folding all three into a figure `/cad-report` prints as `Cross-model
+// reviews` prices a model listing as review spend. `command === 'review'` and
+// nothing else, which also means an event carrying no `command` is not priced:
+// this figure may only price a call it can NAME, and no event carrying `usage`
+// predates that field. The consult arm is deliberately not re-reported here
+// under a second name - what a debug consult cost is a different question from
+// what a phase's review panel cost, and `counts.provider` still carries every
+// provider event in scope, so leaving it out of this one hides nothing.
+//
+// AND ONLY THE CALLS THAT REACHED THE WIRE. The seam writes its event for a
+// call it refused before sending anything, too - no key, no model id, an
+// unknown provider, an unparseable payload, an artifact over the cap - and D-04
+// says those "have nothing to read" for the same reason they are dropped here:
+// no request left the machine, so there was no spend and no reviewer. Counted,
+// each would raise `unrecorded`, claiming an unknown cost for a call that
+// provably cost nothing. Everything PAST the send stays counted, degraded
+// outcomes included: a call that burned its budget and came back unusable is
+// exactly the one whose cost must still reach this figure (D-04).
+// `UNSENT_OUTCOMES` is `review-provider.mjs`'s vocabulary read back out of a
+// FILE rather than imported, so a refusal reason added there and not here lands
+// as one more unrecorded call - the safe direction, because this figure may
+// overstate what is unknown and may never hide what was spent.
+//
+// Not filtered on `event`: the seam writes exactly ONE event per call and every
+// provider event on this record reads `request`, so a second filter would
+// defend against a shape the seam does not produce (D-06).
+
+/**
+ * The `outcome` values `review-provider.mjs` writes for a call it refused
+ * BEFORE the request was sent, each one a `fail()` reached above the transport.
+ * No bytes on the wire, so no spend to price and no call to count (D-04).
+ */
+const UNSENT_OUTCOMES = new Set([
+  'bad-provider', 'bad-args', 'no-key', 'bad-payload', 'over-cap',
+]);
+
+/**
+ * One token count off a provider event, or `undefined` where the line carries
+ * something that is not one. The trace is a file, and a hand-edited or
+ * foreign-producer line must never be string-concatenated onto a numeric total
+ * - the same refusal `renderTrace` makes for a string `tokens` on a return.
+ * @param {any} v @returns {number|undefined}
+ */
+function usageCount(v) {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
+/**
+ * The provider-spend fold for a set of scoped events, spread into the response.
+ * `calls` counts `provider/request` events whose `command` is `review` and whose
+ * `outcome` is not one the seam wrote without sending anything; every other
+ * provider event in scope is outside this figure and stays visible in
+ * `counts.provider`.
+ * @param {Record<string, any>[]} events the events already scoped to `--phase`
+ * @returns {{provider_spend?: {calls: number, tokens?: number, unrecorded?: number}}}
+ */
+function providerSpend(events) {
+  let calls = 0;
+  let priced = 0;
+  let tokens = 0;
+  for (const e of events) {
+    if (e.family !== 'provider') continue;
+    // A REVIEW, and one that was actually sent. The other two commands on this
+    // family are real provider calls with real costs; neither is what the line
+    // reading this figure tells a human it is counting.
+    if (e.command !== 'review' || UNSENT_OUTCOMES.has(e.outcome)) continue;
+    calls++;
+    const u = e.usage;
+    if (!u || typeof u !== 'object' || Array.isArray(u)) continue;
+    const input = usageCount(u.input);
+    const output = usageCount(u.output);
+    if (input === undefined && output === undefined) continue;
+    priced++;
+    tokens += (input ?? 0) + (output ?? 0);
+  }
+  if (!calls) return {};
+  const unrecorded = calls - priced;
+  return {
+    provider_spend: {
+      calls,
+      // Gated on a figure having LANDED, exactly as `roles.tokens` is: a scope
+      // whose every call reported nothing says `unrecorded`, never `0`.
+      ...(priced ? { tokens } : {}),
+      ...(unrecorded ? { unrecorded } : {}),
+    },
+  };
 }
 
 function cmdTrace(dir, sub, opts) {
@@ -789,7 +909,7 @@ function cmdTrace(dir, sub, opts) {
       read = list;
     }
 
-    // The seven string flags, each read through its DECLARED row. One loop
+    // The ten string flags, each read through its DECLARED row. One loop
     // where seven hand-written guards used to state the same two rules, and
     // the ONE place this body's two bare-flag dispositions are decided (D-05):
     // `--plan`, `--sha` and `--base` declare `fallback` and read as absent, so
@@ -851,6 +971,54 @@ function cmdTrace(dir, sub, opts) {
     const trigger = trimmed('--trigger');
     const agentId = trimmed('--agent-id');
 
+    // THE WINDOW THIS RECEIPT SETTLES, when it is not the window the run is in
+    // (D-01). `correlationId` derives a run's id off the phase's NEWEST
+    // `lifecycle/phase_start`, so a settlement written after the phase
+    // re-anchored is stamped with the new window's id and can never settle the
+    // fire that ran under the old one - the state GH-227 Case A reports,
+    // repaired today by hand-appending the line. `renderEvent` already prefers
+    // an explicit non-empty `corr` on the event and falls back to the
+    // derivation only when there is none, so the whole of the fix is a flag
+    // that supplies one.
+    //
+    // The flag carries the earlier window's own anchor SHA, never a whole
+    // correlation id, and the id is derived from it through `correlationId` -
+    // the one derivation in the tree, which short-circuits on a supplied sha
+    // and returns `<phase>-<sha>` with no file read. So a receipt can only name
+    // a window of the phase it already declares, and the two spellings cannot
+    // drift apart.
+    //
+    // NO KEY when the flag is absent, so every existing call derives exactly as
+    // it does today. Not coupled to an event NAME either: this seam carries no
+    // runtime refusal keyed to an event, and the first one would be read as
+    // drift and deleted.
+    const anchor = trimmed('--anchor');
+    const corr = anchor === undefined
+      ? undefined
+      : correlationId(dir, parsedPhase.raw, anchor);
+
+    // THE HUMAN ANSWER THIS RECEIPT DESCENDS FROM (D-02, GH-220). One
+    // authorization applied to two ranges is two receipts by construction, and
+    // nothing on either said they came from one decision. The id is MINTED by
+    // the coordinator when the engineer answers - never hashed, never
+    // normalized out of the reason text: measured over nine shipped
+    // `outcome/override` events, grouping by exact `--detail` text collapses
+    // the two duplicate pairs and misses the trio of three distinct texts
+    // written on one standing authorization, so a derived key answers two cases
+    // of three and misses the one that motivated the issue.
+    //
+    // TRIMMED, like the other refusing flags: a stored id is a JOIN KEY and a
+    // padded copy must not read as a second decision. ABSENT AND EMPTY STAY
+    // DISTINGUISHABLE - the key rides the event only when the flag was given,
+    // or every event written before this flag existed would read as a labelled
+    // one.
+    //
+    // Not keyed to the `override` event name. This seam is event-agnostic by
+    // contract, and the rule that only an override carries an id is held by the
+    // prose that writes it, exactly as the rule that a coordinator marker
+    // carries no `--role` is.
+    const authorizationId = trimmed('--authorization-id');
+
     // THE CROSS-ARTIFACT CHECK (AC4). The three settled figures are DERIVED by
     // the `adjudication` seam from the record's own rulings and copied onto
     // this line by hand, so this is where a mistyped one is still cheap: the
@@ -895,6 +1063,9 @@ function cmdTrace(dir, sub, opts) {
       phase: parsedPhase.raw,
       family,
       event,
+      // Present ONLY when `--anchor` named an earlier window; absent, the
+      // derivation in `renderEvent` answers exactly as it always has.
+      ...(corr === undefined ? {} : { corr }),
       // The four below carry no guard of their own any more: the loop above
       // already applied each flag's declared disposition, so an absent flag and
       // a `fallback` one both arrive here as `undefined` and omit their key.
@@ -942,6 +1113,13 @@ function cmdTrace(dir, sub, opts) {
       // half cannot carry it (that event is written before the subagent
       // exists), and the orchestrator learns it the moment the host returns.
       ...(agentId === undefined ? {} : { agent_id: agentId }),
+      // The authorization a settle descends from, so a reader can tell a second
+      // range settled by ONE human answer from a duplicate write of one range.
+      // It LABELS that pair and nothing more (D-03): `risk-check status` still
+      // requires every fired record to carry its own receipt naming both ends
+      // of its own range, so a shared id never lets one receipt settle a second
+      // range.
+      ...(authorizationId === undefined ? {} : { authorization_id: authorizationId }),
     });
     return ok({
       written: res.written,
@@ -1071,7 +1249,14 @@ function cmdTrace(dir, sub, opts) {
       ...(r.malformed ? { malformed: r.malformed } : {}),
       ...(full
         ? { events: r.events }
-        : { brackets: r.brackets, outcomes: r.events.filter((e) => e.family === 'outcome') }),
+        : {
+          brackets: r.brackets,
+          outcomes: r.events.filter((e) => e.family === 'outcome'),
+          // The third bounded projection, and it rides the SAME arm as the
+          // other two: `--events` is an either/or, so a caller asking for the
+          // raw array gets today's envelope and folds the spend itself.
+          ...providerSpend(r.events),
+        }),
       unpaired: r.unpaired,
       // Emitted the way `roles` and `coordinator` are - only when there is
       // something to say, so a clean trace's envelope is byte-identical to the
@@ -1148,6 +1333,26 @@ function cmdTrace(dir, sub, opts) {
  * EVERY ARM ANSWERS '' RATHER THAN THROWING. This resolves a cross-check, and
  * an unresolvable one omits the check - it never fails the append.
  *
+ * TWO HOMES, CHOSEN BY THE PHASE (D-04). `phases/<N>/` for every phase but one,
+ * and `.planning/tasks/<slug>/` for phase 0. A `/cad-task` fire deliberately
+ * spells its phase `0` - the one number no roadmap phase carries, so there is no
+ * `phases/0/` and there never will be - and keeps its record beside the sibling
+ * REVIEW file under its slug. Resolving only the phase join meant every task
+ * settlement's counts were self-asserted: the recount below found no record and
+ * omitted itself, so a receipt naming any figure at all was appended. The
+ * receipt carries NO slug to look it up by (`references/triage-gate.md` states
+ * `--plan <k>` is omitted on a task fire, and the live receipts confirm it), so
+ * the phase is the only signal there is and every task directory is searched.
+ * `deferred/<N>/` is deliberately NOT here - see the block comment on `fireHome`
+ * in planning/core.mjs, which states why the safe direction differs between the
+ * writer and this recount.
+ *
+ * A SEARCH ACROSS HOMES DOES NOT WEAKEN THE ONE-CANDIDATE RULE. Candidates are
+ * counted across every home together, so two task directories holding a record
+ * that matches this trigger, round and head answer '' exactly as two records in
+ * one directory already do: a check that might be reading another fire's
+ * rulings is worse than no check.
+ *
  * `trigger` is validated against `RECORD_TOKEN` before it reaches `join`, the
  * same rail the writer applies for the same reason (VAL-01): it reaches a
  * FILENAME, and a `--trigger ../../etc` that resolved anything at all would be
@@ -1160,11 +1365,32 @@ function cmdTrace(dir, sub, opts) {
  */
 function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
   if (typeof trigger !== 'string' || !RECORD_TOKEN.test(trigger)) return '';
-  const pdir = join(dir, 'phases', String(phaseRaw));
-  /** A regular FILE at `name` under the phase directory, or ''. A symlink is
-   * not a record: it is followed out of the tree by every reader after it. */
-  const regular = (name) => {
-    const file = join(pdir, name);
+  /** @type {string[]} */
+  let homes = [];
+  if (String(phaseRaw) !== '0') {
+    homes = [join(dir, 'phases', String(phaseRaw))];
+  } else {
+    // `lstatSync` on `tasks/` itself before the walk, the discipline `fireHome`
+    // takes at the write face: `readdirSync` follows a symlinked directory, so
+    // without this a symlinked `tasks` would be enumerated outside the planning
+    // tree and this recount would compare a receipt against a record from
+    // somewhere else. Each entry is then held to the same bar by `isDirectory()`
+    // off the dirent, which reads as `lstat` does and so answers false for a
+    // symlink pointing at a directory.
+    const troot = join(dir, 'tasks');
+    let root = null;
+    try { root = lstatSync(troot); } catch { /* no tasks/ is no candidate */ }
+    if (root && root.isDirectory()) {
+      try {
+        homes = readdirSync(troot, { withFileTypes: true })
+          .filter((d) => d.isDirectory()).map((d) => join(troot, d.name));
+      } catch { homes = []; }
+    }
+  }
+  /** A regular FILE at `name` under `home`, or ''. A symlink is not a record:
+   * it is followed out of the tree by every reader after it. */
+  const regular = (home, name) => {
+    const file = join(home, name);
     try { return lstatSync(file).isFile() ? file : ''; } catch { return ''; }
   };
 
@@ -1174,33 +1400,45 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
     // Refused here for the reason the writer refuses it: a discriminator
     // outside this grammar names no record the writer could ever have written.
     if (!RECORD_TOKEN.test(discriminator)) return '';
-    return regular(recordName(trigger, discriminator, round));
+    const name = recordName(trigger, discriminator, round);
+    const found = homes.map((home) => regular(home, name)).filter(Boolean);
+    return found.length === 1 ? found[0] : '';
   }
 
   const head = typeof sha === 'string' ? sha.trim().toLowerCase() : '';
   if (!/^[0-9a-f]{7,40}$/.test(head)) return '';
   const prefix = `ADJUDICATION-${trigger}-`;
   const suffix = round > 1 ? `-r${round}.json` : '.json';
-  /** @type {string[]} */
-  let names = [];
-  try { names = readdirSync(pdir); } catch { return ''; }
-  const hits = names.filter((name) => {
-    if (!name.startsWith(prefix) || !name.endsWith(suffix)) return false;
-    const discriminator = name.slice(prefix.length, name.length - suffix.length);
-    // At round 1 the suffix is bare `.json`, which every higher round's file
-    // also ends with - so a `-r<n>` tail is another round's record, not this
-    // fire's discriminator.
-    if (round === 1 && /-r\d+$/.test(discriminator)) return false;
-    // The discriminator's last segment is the short head sha. Compared as a
-    // PREFIX in whichever direction is shorter, because the receipt may spell
-    // the head 7-char or full while the filename is abbreviated.
-    const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
-    return tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head));
-  });
-  // Through `regular` like the per-plan arm above: the glob found a NAME, and a
+  /** @type {{home: string, name: string}[]} */
+  const hits = [];
+  for (const home of homes) {
+    /** @type {string[]} */
+    let names = [];
+    // `continue`, never `return`: an unreadable home is one candidate source
+    // that answered nothing, and on the task arm the others are still to come.
+    try { names = readdirSync(home); } catch { continue; }
+    for (const name of names) {
+      if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
+      const discriminator = name.slice(prefix.length, name.length - suffix.length);
+      // At round 1 the suffix is bare `.json`, which every higher round's file
+      // also ends with - so a `-r<n>` tail is another round's record, not this
+      // fire's discriminator.
+      if (round === 1 && /-r\d+$/.test(discriminator)) continue;
+      // The discriminator's last segment is the short head sha. Compared as a
+      // PREFIX in whichever direction is shorter, because the receipt may spell
+      // the head 7-char or full while the filename is abbreviated.
+      const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
+      if (tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head))) {
+        hits.push({ home, name });
+      }
+    }
+  }
+  // Counted as NAMES and filtered through `regular` only once one stands alone,
+  // the order the single-home walk already took: the glob found a name, and a
   // symlink wearing that name is followed out of the tree by every reader after
-  // it, which is the disposition this function already declares.
-  return hits.length === 1 ? regular(hits[0]) : '';
+  // it. Dropping symlinks first would turn an ambiguous pair into a confident
+  // single, which is the guess this function exists not to make.
+  return hits.length === 1 ? regular(hits[0].home, hits[0].name) : '';
 }
 
 /**
@@ -1221,6 +1459,15 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
  * advisory arm that wrote none. The trace is gitignored, so it is the local
  * cross-check and the committed record is the custody artifact; a receipt that
  * could not be cross-checked is not thereby wrong.
+ *
+ * ABSENT MEANS ABSENT FROM THE TWO HOMES `recordForFire` READS, which is two of
+ * the three a record may live in: `phases/<N>/` and, on phase 0, the task's own
+ * `tasks/<slug>/`. A fire `deferred carry` moved into `deferred/<N>/` resolves
+ * nothing here and takes this omission by design (D-04) - the writer widened to
+ * that home so a carried finding could still be ruled on, and widening the
+ * recount with it would compare a receipt against a record it may not be for.
+ * So a carried fire's counts stay self-asserted, and that is stated rather than
+ * accidental.
  *
  * @param {string} dir @param {string|number} phaseRaw
  * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
@@ -1296,6 +1543,10 @@ function recountReceipt(dir, phaseRaw, fire) {
  * AN ABSENT RECORD OMITS THE CHECK, as `recordForFire` and the recount both
  * already declare - a fire predating the format, or an advisory arm that wrote
  * none. A cross-check whose record does not exist must never fail an append.
+ * ABSENT is again absent from the two homes `recordForFire` reads of the three a
+ * record may live in - `phases/<N>/`, and `tasks/<slug>/` on phase 0 - so a fire
+ * carried into `deferred/<N>/` clears this guard by resolving nothing, on the
+ * same stated posture the recount above names (D-04).
  *
  * AN UNREADABLE ONE IS REFUSED, exactly as the recount refuses it, and the two
  * cases are not one case: an absent record is a record nobody wrote, an

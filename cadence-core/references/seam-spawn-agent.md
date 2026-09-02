@@ -169,15 +169,28 @@ worker's OWN `agent_id`, so a bracket the hook closed is joinable rather than
 a dead end. When it CANNOT claim
 a close - a worker that had not stopped when the host fired, a worker whose
 bracket the caller had already closed, a worker whose role has two open
-dispatches the evidence cannot separate - it writes a cache-only lifecycle
+dispatches the evidence cannot separate - it writes a bracketless lifecycle
 fact instead, `worker_cache`, claiming no bracket and carrying the stopped
-worker's OWN `agent_id` plus the two cache figures it sums off that worker's
-own transcript, `cache_creation_input_tokens` and `cache_read_input_tokens`,
-alongside the `corr` and `phase` every lifecycle event carries. BOTH of the
-hook's writes sum those figures off the stopped WORKER's own transcript, which
-the stop payload names on `agent_transcript_path` - never the `transcript_path`
+worker's OWN `agent_id` alongside the `corr` and `phase` every lifecycle event
+carries. The name stays `worker_cache` while its meaning widens - from the two
+cache figures to what the hook read off the worker's own transcript, the
+`effort` it ran at and the `rung` it was dispatched under included - because a
+rename orphans every fact already written, here and on every other project's
+record. BOTH writes now carry the same four values: the cache figures
+`cache_creation_input_tokens` and `cache_read_input_tokens`, `effort`, the level
+that worker's own transcript says the host actually served it, and `rung`, the
+one it was DISPATCHED under. The pair is the point - the record states what a
+rung was routed at beside what it ran at, so a reader can see them disagree, and
+on Claude Code 2.1.258 they do: a `max` dispatch with extended thinking off runs
+at `high` and nothing announces it. `effort` and `rung` are OMITTED together
+where the transcript reported no effort, the same absent-is-not-zero rule
+`--agent-id` follows above. The three the transcript answers - both cache
+figures and `effort` - come off the stopped WORKER's own transcript, which the
+stop payload names on `agent_transcript_path` - never the `transcript_path`
 every hook event carries, which names this caller's own SESSION and is a
-different actor's traffic entirely. That fact is
+different actor's traffic entirely. `rung` is the one value off the payload and
+it is `agent_type`'s stem through the one rung table, never the payload's own
+`effort`, which carries the CONFIGURED level and cannot see that downgrade. That fact is
 joined to a bracket at render time on `corr` plus `agent_id` - which is
 exactly why `--agent-id` rides this caller's own line: without it there, no
 bracket in the record carries the id the fact would need to join against,

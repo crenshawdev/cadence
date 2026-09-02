@@ -45,6 +45,19 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   composed. By SHAPE, never a known-token prefix list, so a bare token with no
   credential-shaped name beside it crosses - do not send an artifact you know
   holds one.
+- What the call COST rides the `provider/request` event as two keys, written
+  only when real on the same rule as `redactions: <n>`: `usage`, the normalized
+  `{input, output}` pair, and `usage_raw`, the provider's own usage object.
+  `usage_raw` crosses the same fence the payload does and is dropped WHOLE - the
+  pair still rides - when the provider's object carries a credential-shaped span
+  or overruns its size bound. A response that carried no usage writes NEITHER key - never a zero, so an event
+  from before this existed reads as a cost nobody knows rather than a call that
+  was free. A call that burned its budget and came back unusable records what it
+  burned (`no-output`, `bad-json`, `bad-shape`); a call that reached no response
+  has nothing to read. The figure is a provider-reported input+output count off
+  the wire, NOT the host's final-window token figure, so it is a different
+  denomination: it stops at this event, never sums into a `roles` total, and no
+  reader may add the two together.
 - The default backend `claude-subagent` does NOT use this seam - it goes
   through spawn-agent with a fresh-context, refute-prompted reviewer, and takes
   that seam's turn cap as its bound in place of anything stated here.

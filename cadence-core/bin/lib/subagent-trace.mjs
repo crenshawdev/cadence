@@ -186,6 +186,36 @@
 //    worker-key dedup folds whichever writer arrives second into the row the
 //    first opened, filling only the fields that row left empty.
 //
+// WHAT THE WORKER RAN AT, ON BOTH WRITES (TRC-13). `effort` is the effort the
+// worker's OWN transcript says the host actually served it, and `rung` is the
+// rung it was DISPATCHED under - `payload.agent_type`'s stem mapped back
+// through the same `RUNG_FILES` table gate 1 already resolves the role from.
+// Two numbers side by side is the whole point: on Claude Code 2.1.258 a `max`
+// dispatch with extended thinking off RUNS at `high` and nothing announces it,
+// so a record holding only the routed rung reports a match on exactly the runs
+// that were downgraded (`.planning/spikes/host-effort-downgrade/SPIKE.md`).
+//
+// NEVER OFF THE PAYLOAD, not even as a fallback. `SubagentStop` does carry an
+// `effort`, and it is the CONFIGURED level: measured `{"level":"max"}` on a run
+// whose transcript recorded `high`. A field that is present and answers a
+// different question is worse than an absent one here, which is the same hazard
+// the disk half's "NO FALLBACK to `transcript_path`" posture guards (D-01).
+//
+// ON EVERY WRITE, not on the `return` alone (D-02). Measured on this
+// repository's own record: 114 `worker_cache` facts against 2 hook-written
+// returns, and 108 of the 114 precede the hand-written close in file order, so
+// a pair that rode the `return` alone would be recorded on effectively no live
+// dispatch. Both writes carry it, and the post-pass fold in `lib/trace.mjs`
+// lands whichever arrived on the same bracket row.
+//
+// ONE PAIR, VERBATIM, ABSENT OMITS. The host's string is stored in its own
+// spelling with no validation against Cadence's rung enum - the enum is a
+// config rule about what a user may ASK for, and checking an observation
+// against the request would erase a renamed host rung at the moment its
+// appearance is the signal (D-04). Where the transcript named no effort BOTH
+// keys are omitted: a rung with nothing to compare it against is not a
+// half-answer worth storing, and `unrecorded` is something a reader prints.
+//
 // THE CACHE-ONLY FACT, on every gate that withholds the close (D-07). All
 // three refusing arms above - not-terminal, already-closed, and two open
 // dispatches of one role - used to throw the worker's two cache figures away
@@ -196,8 +226,9 @@
 // under `WORKER_CACHE` - never a `return`, never a `checkpoint`, never an
 // `escalation` - and the termination gate is unchanged rather than relaxed.
 //
-// The fact carries `corr`, `phase`, `role`, `agent_id` and whichever cache keys
-// the transcript supplied, plus `ts` on exactly the rule the close follows. It
+// The fact carries `corr`, `phase`, `role`, `agent_id`, whichever cache keys
+// the transcript supplied and the `effort`/`rung` pair where it named an
+// effort, plus `ts` on exactly the rule the close follows. It
 // carries NO `plan`: with two open dispatches of one role there is no single
 // plan to name, and one shape for the event whatever gate wrote it is worth
 // more than a field that would sometimes be a guess.
@@ -214,15 +245,19 @@
 //
 // NO FACT AT ALL in three cases. When neither a bracket nor a candidate row is
 // there to name, because an invented `corr` is a row no reader could join.
-// When the transcript reported NEITHER figure, because absent is not zero and
-// an event carrying both keys omitted states nothing (D-12). And when the
+// When the transcript reported NOTHING AT ALL - neither cache figure and no
+// effort - because absent is not zero and an event carrying every key omitted
+// states nothing (D-12). An effort COUNTS as something to state (D-08): a
+// transcript that named one and billed no cache traffic still writes the fact,
+// because the effort is exactly the observation nothing else on the record
+// holds. And when the
 // payload carries no `agent_id`, because `corr` plus `agent_id` is the fold's
 // only key (D-10) - a worker-key fallback of that shape was refuted in `v3.7.3`
 // phase 1 and reverted at `4fbf7280`, and an id-less fact is a row that can
 // never reach a bracket.
 //
 // The unambiguous terminal path answers its single `return` carrying the
-// figures and the worker's id. No fact rides beside it: that would put one
+// figures, the worker's id and the same `effort`/`rung` pair. No fact rides beside it: that would put one
 // worker's traffic on the record twice.
 //
 // There is deliberately NO refusing envelope here. The hook emits nothing on
@@ -235,9 +270,9 @@
 // `lib/trace.mjs`'s `millis` reads the instants it sorts by.
 'use strict';
 
-import { roleOfAgent } from './read-trace.mjs';
+import { roleOfAgent, rungOfAgent } from './read-trace.mjs';
 import { WORKER_CACHE } from './trace.mjs';
-import { terminalOf, cacheOf, STOP_STATE } from './subagent-transcript.mjs';
+import { terminalOf, cacheOf, effortOf, STOP_STATE } from './subagent-transcript.mjs';
 
 /**
  * The payload's `agent_id`, or null when it carries none this rule can use.
@@ -308,10 +343,21 @@ function closedBracket(render, id, corr) {
  * @param {any} source the row this fact quotes `corr` and `phase` off: the
  *   bracket already carrying the id, else a candidate dispatch of the current
  *   run. Null means the rule can see no run to name and writes nothing.
+ * @param {{effort?: string, rung?: string}} ran the effort the worker's own
+ *   transcript says it RAN at and the rung it was DISPATCHED under, already
+ *   paired by the caller - EMPTY where the transcript named no effort, on the
+ *   same absent-omits rule `cache` and `ts` follow.
  * @returns {any[]}
  */
-function cacheFact(id, role, cache, ts, source) {
-  if (!id || !source || !Object.keys(cache).length) return [];
+function cacheFact(id, role, cache, ts, source, ran) {
+  // NOTHING TO GIVE, and an effort COUNTS as something to give (D-08). The
+  // guard used to ask for a cache figure alone, which would have thrown away
+  // the one observation of the downgrade on a transcript that reported an
+  // effort and no `usage`. The `id` and `source` guards beside it are
+  // unchanged and are a different question: `corr` plus `agent_id` is the
+  // fold's only key (D-10), so a fact missing either can never reach a bracket
+  // however much it has to say.
+  if (!id || !source || !(Object.keys(cache).length || Object.keys(ran).length)) return [];
   return [{
     corr: source.corr,
     phase: source.phase,
@@ -321,6 +367,7 @@ function cacheFact(id, role, cache, ts, source) {
     agent_id: id,
     ...(ts ? { ts } : {}),
     ...cache,
+    ...ran,
   }];
 }
 
@@ -429,9 +476,12 @@ function currentRun(rows, clocks) {
  *   Omitted - the shape every pre-evidence caller uses - the termination gate
  *   answers `unknown`, the cache sums answer nothing at all, and this rule
  *   proceeds exactly as it does with one.
- * @returns {{corr: any, phase: any, plan?: any, family: string, event: string, role: string, agent_id?: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number}[]}
+ * @returns {{corr: any, phase: any, plan?: any, family: string, event: string, role: string, agent_id?: string, ts?: string, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, effort?: string, rung?: string}[]}
  *   Either the single `return` an unambiguous terminal stop closes with, or the
  *   single `WORKER_CACHE` fact a withholding gate states instead, or nothing.
+ *   `effort` and `rung` ride BOTH shapes - what the worker ran at and what it
+ *   was dispatched under - and are omitted together where the transcript named
+ *   no effort.
  */
 export function closeForStop(payload, render, evidence) {
   const transcript = evidence && evidence.transcript;
@@ -450,6 +500,28 @@ export function closeForStop(payload, render, evidence) {
   const id = agentIdOf(payload);
   const cache = cacheOf(transcript);
   const stopped = terminalOf(transcript);
+  // WHAT THE WORKER RAN AT, beside WHAT IT WAS DISPATCHED UNDER - the pair the
+  // whole record exists to let a reader compare, and the pair that rides every
+  // write below (D-02). The effort is read off the WORKER's own transcript and
+  // NEVER off the payload, not even as a fallback: the payload reports the
+  // CONFIGURED level, measured 2026-09-02 as `{"level":"max"}` on a run whose
+  // transcript recorded `high`, which is the exact silent downgrade this pair
+  // exists to expose (D-01,
+  // `.planning/spikes/host-effort-downgrade/SPIKE.md`). It is the same posture
+  // the disk half already states as "NO FALLBACK to `transcript_path`", about
+  // the same hazard: a field that is there and answers a different question.
+  //
+  // THEY ARE ONE PAIR. Both keys are spread where the transcript named an
+  // effort and BOTH are omitted where it did not, on the omit-never-null rule
+  // `ts` and `agent_id` already follow - a rung with no effort beside it is a
+  // number with nothing to compare it against, and `unrecorded` is something a
+  // reader prints rather than something this record stores (D-04). Gate 1
+  // above already refused every type `RUNG_FILES` does not name, and
+  // `ROLE_OF_STEM` and `RUNG_OF_STEM` are two columns of that one table, so a
+  // resolved role means a resolved rung: there is no second arm here for a
+  // rung that could not be found.
+  const effort = effortOf(transcript);
+  const ran = effort ? { effort, rung: rungOfAgent(payload && payload.agent_type) } : {};
   const rows = render && Array.isArray(render.unpaired) ? render.unpaired : [];
   // THE RUN IN FLIGHT, named ONCE and before either gate reads it. Both gate
   // 2b's candidate set and gate 2a's match are scoped by this one value, so
@@ -463,7 +535,7 @@ export function closeForStop(payload, render, evidence) {
   const mine = run.rows;
   const closed = id ? closedBracket(render, id, run.corr) : null;
   // The one answer a withholding gate gives: the figures, and never a close.
-  const withheld = () => cacheFact(id, role, cache, stopped.ts, closed || mine[0] || null);
+  const withheld = () => cacheFact(id, role, cache, stopped.ts, closed || mine[0] || null, ran);
 
   // GATE 0 - the termination gate. NOT-TERMINAL alone refuses the CLOSE;
   // `unknown` falls through to the behaviour this hook had before it read a
@@ -539,5 +611,6 @@ export function closeForStop(payload, render, evidence) {
     ...(id ? { agent_id: id } : {}),
     ...(stopped.ts ? { ts: stopped.ts } : {}),
     ...cache,
+    ...ran,
   }];
 }

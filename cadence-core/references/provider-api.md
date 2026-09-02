@@ -25,6 +25,11 @@ provider ships is selectable even if Cadence has never heard of it.
     completeness, not configurable.
   - Output text: `output_text`, or the `output[]` message item's
     `content[].text` where `type == "output_text"`. The adapter reads both.
+  - Usage (checked 2026-09-01): `usage.input_tokens`, `usage.output_tokens`,
+    `usage.total_tokens`, with `usage.input_tokens_details.cached_tokens` and
+    `usage.output_tokens_details.reasoning_tokens` as BREAKDOWNS - `output_tokens`
+    already includes the reasoning tokens. `extractUsage` reads `input_tokens`
+    and `output_tokens`.
 - **Detect:** `GET /v1/models` -> `{data:[{id, ...}]}`. IDs live in `data[].id`.
 
 ## Gemini (Generative Language API, generateContent)
@@ -41,6 +46,12 @@ provider ships is selectable even if Cadence has never heard of it.
     `minimal|low|medium|high`. (Gemini 2.5 uses a numeric `thinkingBudget` instead;
     the effort dial targets current 3.x reviewers.)
   - Output text: `candidates[0].content.parts[].text`.
+  - Usage (checked 2026-09-01): `usageMetadata`, NOT `usage` - fields
+    `promptTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount`,
+    `totalTokenCount`, `cachedContentTokenCount`. `candidatesTokenCount`
+    EXCLUDES thinking tokens where OpenAI and DeepSeek fold theirs in, so
+    `extractUsage` reads `promptTokenCount` and
+    `candidatesTokenCount + thoughtsTokenCount` to keep the pair comparable.
 - **Detect:** `GET /v1beta/models` -> `{models:[{name:"models/<id>", supportedGenerationMethods:[...]}]}`.
   The adapter keeps entries whose `supportedGenerationMethods` include
   `generateContent` OR that omit the field entirely (absence is not evidence
@@ -67,6 +78,11 @@ provider ships is selectable even if Cadence has never heard of it.
     shared config effort enum also allows `minimal`, which DeepSeek rejects, so
     the adapter clamps `minimal` up to `low`.
   - Output text: `choices[0].message.content`.
+  - Usage (checked 2026-09-01): `usage.prompt_tokens`, `usage.completion_tokens`,
+    `usage.total_tokens`, plus `prompt_cache_hit_tokens`,
+    `prompt_cache_miss_tokens` and `completion_tokens_details.reasoning_tokens`;
+    `completion_tokens` already includes the reasoning tokens. `extractUsage`
+    reads `prompt_tokens` and `completion_tokens`.
 - **Detect:** `GET /models` -> `{data:[{id, ...}]}`. IDs live in `data[].id`.
 - Model ids as of 2026-07: `deepseek-v4-pro`, `deepseek-v4-flash` (the legacy
   `deepseek-chat`/`deepseek-reasoner` names retire 2026-07-24). Discovered live

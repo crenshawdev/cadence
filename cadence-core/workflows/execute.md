@@ -280,8 +280,8 @@ closes a `return`; carry it for any checkpoint return and the seam closes a
 seam does not infer - it stays on `trace append`. All three close a bracket. A
 dispatch that gets none of them is closed by the host's `SubagentStop` hook
 instead, so `trace render` reports as `unpaired` only a worker NEITHER writer
-closed - but that hook carries none of the RETURN's figures, so a skipped close
-still costs the record this worker's tokens, turns and wall clock.
+closed - but that hook never sees the RETURN, so a skipped close still costs
+the record this worker's tokens, turns and wall clock.
 
 `--plan`/`--bracket-plan` is the WORKER key that pairs a dispatch with its
 close; `--role` is what the per-role totals group on, and BOTH are required.
@@ -602,7 +602,8 @@ verification runs in a fresh subagent.
   CLOSE half is the orchestrator's hand-written `trace close`, which alone sees
   the return and so alone carries `--tokens`, `--turns` and `--duration-ms`; and
   the host's `SubagentStop` hook (`cadence-core/bin/subagent-trace.mjs`) writes
-  a figureless close for a dispatch whose hand-written one never ran. Executors
+  a close for a dispatch whose hand-written one never ran, carrying what it
+  reads off that worker rather than the return's three figures. Executors
   write no trace events of their own, on either path.
 - The hand-written close is a FALLBACK kept on purpose - never prune it as a
   duplicate of the hook. Two closes of one dispatch render as ONE bracket.

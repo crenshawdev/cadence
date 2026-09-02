@@ -936,6 +936,38 @@ export const CONTRACTS = {
     // by one rule.
     // All four are OFF the `close` row below, for the reason `--raised` is off
     // it: a flag row never widens what a subcommand accepts.
+    // `--anchor` names the WINDOW a receipt settles, as the sha that window's
+    // own `lifecycle/phase_start` carried. lib/trace.mjs's `correlationId`
+    // derives a run's id off the phase's NEWEST anchor, so a settlement written
+    // after the phase re-anchored is stamped with the new window and can never
+    // settle the fire that ran under the old one - the state GH-227 reports,
+    // repaired today by hand-appending the line. The value is that anchor's SHA
+    // and never a whole correlation id: the id is then derived through the one
+    // derivation in the tree, so a receipt can only name a window of the phase
+    // it already declares and the two spellings cannot drift. REFUSES on both
+    // axes, the `--trigger` disposition and for its reason - a blank anchor
+    // reads as "no anchor" while the caller believes the receipt was bound.
+    // Nothing checks that the named window EXISTS, and that is the accepted
+    // cost stated rather than hidden (D-01): a receipt can name a window it
+    // does not belong to, and `risk-check status`'s range check is what objects.
+    // `--authorization-id` is the id of the HUMAN ANSWER a receipt descends
+    // from. One authorization applied to two ranges is two receipts by
+    // construction, and nothing on either said they came from one decision:
+    // measured over `/code/smithers`'s nine `outcome/override` events, grouping
+    // by exact `--detail` text collapses two duplicate pairs and misses the
+    // phase-3 trio - three receipts with three distinct texts on one standing
+    // authorization - so a key DERIVED from the reason text answers two cases
+    // of three and misses the one that motivated GH-220. The id is therefore
+    // minted and typed by the coordinator when the engineer answers, never
+    // hashed or normalized out of anything (D-02), and it rides a declared flag
+    // rather than a substring of `--detail` for the reason `--trigger` does: on
+    // this repository's 35 `outcome/adjudication` events the trigger is spelled
+    // four different ways inside that free text. It LABELS the pair for a
+    // reader and never widens what a receipt settles (D-03) - `risk-check
+    // status` still requires every fired record to carry its own receipt naming
+    // both ends of its own range. REFUSES on both axes, the `--agent-id` row
+    // character for character and for its reason: a blank id would read as "no
+    // id" while the caller believes the receipt was labelled.
     'trace append': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--family': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -957,6 +989,8 @@ export const CONTRACTS = {
       '--step': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--reviewer': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--trigger': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--anchor': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--authorization-id': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
     },
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
     // family is fixed to `lifecycle` in the seam and the arm is inferred from

@@ -182,6 +182,17 @@ function cmdAdjudication(dir, opts) {
   // judged at sends the auditor back to the file it came from to find out.
   const record = {
     phase: n,
+    // THE SLUG ON THE RECORD, present only on a task's fire (D-07). Without it
+    // the body states `"phase": "0"` and nothing else, leaving the directory
+    // path as the record's only statement of what was settled - and a path is
+    // not something a reader holding the parsed JSON still has. `phase` itself
+    // stays the caller's own spelling: the hand-written file it replaces wrote
+    // `"phase": "0 (task: <slug>)"`, a string a reader has to parse back apart,
+    // which is the substitution the structured `--trigger` flag already exists
+    // to refuse. Absent, never empty, on a phase fire - the
+    // present-only-when-real convention `redactions` and `config_warnings`
+    // already take, so a phase record's key set is the shape it always was.
+    ...(task === undefined ? {} : { task }),
     trigger,
     discriminator,
     round,

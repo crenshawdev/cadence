@@ -124,7 +124,8 @@ function ok(obj) { emit({ ok: true, ...obj }); throw DONE; }
 // the wire refused. `null` means no command has begun, so `fail('bad-command')`
 // from `main()` records nothing by construction rather than by a check.
 /** @type {{command: string, provider: any, model: any, effort: any,
- *   trigger?: any, started: number, redactions?: number}|null} */
+ *   trigger?: any, started: number, redactions?: number,
+ *   usage?: ProviderUsage}|null} */
 let activeMeta = null;
 
 // Exactly one event per call, whichever site records first. The explicit
@@ -582,7 +583,8 @@ function tierOf(provider, model) {
  *
  * Never throws, never writes to a stream, never touches the caller's envelope.
  * @param {{command: string, provider: any, model: any, effort: any,
- *   trigger?: any, started: number, redactions?: number}} meta
+ *   trigger?: any, started: number, redactions?: number,
+ *   usage?: ProviderUsage}} meta
  * @param {string} outcome the fail() reason, or 'ok'
  * @param {string} [detail]
  */
@@ -629,6 +631,16 @@ function traceProvider(meta, outcome, detail) {
       // a record that carried them would be the leak wearing a different hat.
       ...(typeof meta.redactions === 'number' && meta.redactions > 0
         ? { redactions: meta.redactions } : {}),
+      // WHAT THE PROVIDER SAYS THIS CALL COST, on the same written-only-when-
+      // real rule the two keys above take: a response that carried no usage
+      // writes NEITHER key, so every event written before this existed keeps
+      // reading as a call whose cost is unknown rather than one that cost zero
+      // (D-11). `usage` is the normalized input/output pair, `usage_raw` the
+      // provider's own object. This figure never reaches `roles` and is never
+      // summed with a host token total - it is a different denomination (D-01).
+      ...(meta.usage ? { usage: meta.usage.normalized } : {}),
+      ...(meta.usage && meta.usage.raw !== undefined
+        ? { usage_raw: meta.usage.raw } : {}),
     });
   } catch { /* a record of a call may never change the call */ }
 }
@@ -942,6 +954,98 @@ export function stripAdditionalProperties(node) {
   return node;
 }
 
+// ---------------------------------------------------------------------------
+// What the provider says the call cost (CST-04).
+//
+// A DIFFERENT denomination from the host's `roles.tokens`, and it stops at the
+// `provider/request` event: the host figure is a final-window proxy measured by
+// the execution host, this is an input+output count off the wire, and summing
+// the two would denominate `roles.cad-reviewer.tokens` in nothing (D-01).
+//
+// Two keys, always together, and NEITHER of them written when the response
+// carried no usage - never a zero, which is what every event written before
+// this existed would otherwise read as (D-11). `usage` is the NORMALIZED pair a
+// reader sums across a mixed-provider panel; `usage_raw` is the provider's own
+// object, which an auditor joins straight back to the wire response with no
+// translation table (D-02).
+// ---------------------------------------------------------------------------
+
+// The bound on `usage_raw`. The usage object is bytes a PROVIDER chose, and the
+// event carrying it is appended to a record whose whole ceiling is
+// `MAX_TRACE_BYTES` (1 MiB) - so an unbounded copy of it would let one hostile
+// or broken response rotate the run record away on every append and take the
+// history with it. Every shipped provider's usage object is well under 400
+// bytes; over this bound the normalized pair still rides and the raw object is
+// dropped, because the pair is the figure a reader needs and the raw object is
+// the convenience.
+const MAX_USAGE_RAW_CHARS = 2048;
+
+/**
+ * One token count, or `undefined` where the provider sent something that is not
+ * one. Negative is refused with non-numeric: a count below zero is not a count.
+ * @param {any} v @returns {number|undefined}
+ */
+function tokenCount(v) {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
+/**
+ * @typedef {{normalized: {input?: number, output?: number}, raw?: any}} ProviderUsage
+ */
+
+/**
+ * Build the usage an adapter read into the shape the event carries, or
+ * `undefined` when there is nothing real to record. `undefined` is what makes
+ * the two keys absent rather than zero, so it is returned for every shape that
+ * is not a usage object with at least one usable count in it.
+ * @param {any} usage the provider's own usage object, as returned
+ * @param {any} input @param {any} output
+ * @returns {ProviderUsage|undefined}
+ */
+function usageOf(usage, input, output) {
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return undefined;
+  const i = tokenCount(input);
+  const o = tokenCount(output);
+  if (i === undefined && o === undefined) return undefined;
+  let raw;
+  try {
+    const rendered = JSON.stringify(usage);
+    // TWO gates, and the raw object rides only past both. The size bound above
+    // is the first, and it is checked FIRST so the fence below never runs on
+    // more than `MAX_USAGE_RAW_CHARS` characters.
+    //
+    // The second is the SAME fence the outbound payload crosses - `fence()`,
+    // `redactUrl` composed with `redactCredentials`, never a second copy of
+    // either rule (D-14) - read here for its VERDICT rather than its text. A
+    // usage object is bytes a PROVIDER chose and this one is copied verbatim
+    // into an event that persists, so a hostile or compromised gateway
+    // answering 200 with `{"input_tokens":10,"api_key":"sk-live-..."}` would
+    // otherwise land a credential in `.planning/trace.jsonl` for good - and the
+    // outbound fence cannot see it, because it runs on the instruction and the
+    // artifact, which are what LEAVES the machine, not on what comes back.
+    //
+    // Dropped WHOLE rather than kept as the fenced text, for two reasons. The
+    // credential rule removes the NAME with its value, so a fenced usage object
+    // is no longer JSON (`{"a":1,<redacted>}`) and would have to be re-parsed to
+    // ride as an object at all. And a usage object is a small fixed set of
+    // counts - every shipped provider's is numbers and nested numbers - so a
+    // credential-shaped span inside one is not usage, and what an auditor would
+    // be joining back to the wire is a response no auditor should trust. Same
+    // arm the size bound already takes: the normalized pair still rides, and
+    // that pair is numbers alone (`tokenCount` refuses every non-number), so
+    // nothing it carries can be a credential.
+    if (typeof rendered === 'string' && rendered.length <= MAX_USAGE_RAW_CHARS
+      && fence(rendered).redactions === 0) raw = usage;
+  } catch { /* unserializable (a cycle, a BigInt): the normalized pair still rides */ }
+  return {
+    normalized: {
+      ...(i !== undefined ? { input: i } : {}),
+      ...(o !== undefined ? { output: o } : {}),
+    },
+    ...(raw !== undefined ? { raw } : {}),
+  };
+}
+
 // ===========================================================================
 // Provider adapters. The ONLY provider-specific bytes live here: endpoint,
 // auth, request builders, and response extractors. Everything above is shared.
@@ -985,6 +1089,15 @@ export const ADAPTERS = {
       }
       return text;
     },
+    // Responses API `usage` (verified against the live openapi spec 2026-09-01):
+    // `{input_tokens, output_tokens, total_tokens, input_tokens_details:
+    // {cached_tokens, cache_write_tokens}, output_tokens_details:
+    // {reasoning_tokens}}`. `output_tokens` already INCLUDES the reasoning
+    // tokens - the details object is a breakdown of it, not an addition to it.
+    extractUsage(json) {
+      const u = json?.usage;
+      return usageOf(u, u?.input_tokens, u?.output_tokens);
+    },
     detectRequest() { return { path: '/v1/models', method: 'GET' }; },
     extractModels(json) { return (json.data || []).map((m) => m.id); },
   },
@@ -1016,6 +1129,23 @@ export const ADAPTERS = {
         for (const p of parts) if (typeof p.text === 'string') return p.text;
       }
       return undefined;
+    },
+    // Gemini reports usage under `usageMetadata`, not `usage` (verified against
+    // the live v1beta discovery document 2026-09-01): `{promptTokenCount,
+    // candidatesTokenCount, thoughtsTokenCount, totalTokenCount,
+    // cachedContentTokenCount, ...Details[]}`. `candidatesTokenCount` EXCLUDES
+    // thinking tokens where OpenAI's `output_tokens` and DeepSeek's
+    // `completion_tokens` both include them, so the normalized output adds
+    // `thoughtsTokenCount` back - without it a thinking reviewer's output reads
+    // short against the same work on either other provider, which is exactly
+    // the comparison the normalized pair exists to serve.
+    extractUsage(json) {
+      const u = json?.usageMetadata;
+      const answer = tokenCount(u?.candidatesTokenCount);
+      const thoughts = tokenCount(u?.thoughtsTokenCount);
+      const output = answer === undefined && thoughts === undefined
+        ? undefined : (answer ?? 0) + (thoughts ?? 0);
+      return usageOf(u, u?.promptTokenCount, output);
     },
     detectRequest() { return { path: '/v1beta/models', method: 'GET' }; },
     extractModels(json) {
@@ -1065,6 +1195,15 @@ export const ADAPTERS = {
     extractText(json) {
       const content = json?.choices?.[0]?.message?.content;
       return typeof content === 'string' ? content : undefined;
+    },
+    // Chat Completions `usage` (verified against the live DeepSeek API docs
+    // 2026-09-01): `{prompt_tokens, completion_tokens, total_tokens,
+    // prompt_cache_hit_tokens, prompt_cache_miss_tokens,
+    // completion_tokens_details:{reasoning_tokens}}`. Like OpenAI's,
+    // `completion_tokens` already includes the reasoning tokens.
+    extractUsage(json) {
+      const u = json?.usage;
+      return usageOf(u, u?.prompt_tokens, u?.completion_tokens);
     },
     detectRequest() { return { path: '/models', method: 'GET' }; },
     extractModels(json) { return (json.data || []).map((m) => m.id); },
@@ -1198,6 +1337,17 @@ async function callStructured(adapter, key, reqSpec, meta) {
     fail('http', { status: res.status, body: bodyExcerpt(res.raw) },
       HTTP_HINT);
   }
+  // BEFORE the three degrading exits below, not after them: a call that burned
+  // its budget and came back unusable is exactly the one whose cost must still
+  // reach the record (D-04), and `no-output`, `bad-json` and the caller's
+  // `bad-shape` all record through this same `meta`. Read off the RAW response,
+  // which this frame is the only one holding - `extractText` consumes it and
+  // the frame then discards it, and `traceProvider` is handed `meta` alone and
+  // never sees a response at all (D-03). Carried on `meta` the way
+  // `redactions` already is, so the one event per call keeps being written by
+  // whichever site records first. `http` and every pre-request refusal reach no
+  // response and so set nothing here.
+  meta.usage = adapter.extractUsage(res.json);
   const text = adapter.extractText(res.json);
   if (typeof text !== 'string') {
     traceProvider(meta, 'no-output', 'no text in provider response');

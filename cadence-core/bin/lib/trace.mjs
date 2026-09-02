@@ -1240,7 +1240,7 @@ export function appendEvent(planningRoot, event) {
  *   counter appear only where at least one figure of that kind landed on the
  *   role, so a record written before either flag existed renders unchanged.
  * @property {Record<string, any>[]} events
- * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, agent_id?: string}[]} brackets
+ * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number, duration_ms?: number, cache_creation_input_tokens?: number, cache_read_input_tokens?: number, agent_id?: string, effort?: string, rung?: string}[]} brackets
  *   every dispatch that PAIRED, one row each, in the order its terminal was
  *   read. The pairing was already computed here for the accounting; exposing it
  *   is what lets a caller print per-worker rows without re-deriving `open` and
@@ -1277,11 +1277,45 @@ export function appendEvent(planningRoot, event) {
  *   nothing. That is the same rule `cadence-core/workflows/report.md` states
  *   when it forbids a second, differently denominated window number.
  *
- *   `turns`, `duration_ms` and the two cache keys are the OPTIONAL keys: `ms`
+ *   WHAT IT RAN AT, BESIDE WHAT IT WAS DISPATCHED UNDER (TRC-13). `effort` is
+ *   the effort the worker's OWN transcript says the host actually served it;
+ *   `rung` is the rung it was DISPATCHED under, the `agent_type` stem mapped
+ *   back through the same `RUNG_FILES` table. Both are written by the
+ *   `SubagentStop` hook and by no other writer (`lib/subagent-trace.mjs`), and
+ *   both reach a row by the SAME TWO ROUTES the cache figures do: on a close
+ *   the hook could write, folded inline; or on a `WORKER_CACHE` fact, folded by
+ *   the post-pass that matches `corr` AND `agent_id`. Two strings side by side
+ *   is the whole point - on Claude Code 2.1.258 a `max` dispatch with extended
+ *   thinking off RUNS at `high` and nothing announces it, so a record holding
+ *   the routed rung alone reports a match on exactly the runs that were
+ *   downgraded (`.planning/spikes/host-effort-downgrade/SPIKE.md`).
+ *
+ *   THE RULE FOR THESE TWO IS FILL-ONLY-EMPTY - the clause `agent_id` follows,
+ *   NOT the larger-wins clause the two cache keys use one paragraph up.
+ *   `moreComplete` compares with `>`, which is meaningless for an enum-shaped
+ *   string, and there is no "more complete read" of a value that does not grow.
+ *   Each is stored VERBATIM in the host's own spelling with no validation
+ *   against Cadence's rung enum: that enum is a config rule about what a user
+ *   may ASK for, and checking an observation against the request would erase a
+ *   renamed host rung at the moment its appearance is the signal.
+ *
+ *   MIND THE INVERSION, because a reader will otherwise trip on it. On a
+ *   `routing/resolve` event `effort` is the ROUTED rung - what the resolver
+ *   decided, written by `route.mjs`. On a bracket row `effort` is what the
+ *   worker's own transcript RECORDED and `rung` is the one it was dispatched
+ *   under. One key name, two families, two different questions.
+ *
+ *   Neither key reaches `roles` and neither may, for the reason the cache
+ *   figures state above: an enum has nothing to sum, and the roles bill is
+ *   denominated in tokens.
+ *
+ *   `turns`, `duration_ms`, the two cache keys and these two strings are the
+ *   OPTIONAL keys: `ms`
  *   and `tokens` are on every row (null where they could not be computed),
  *   while a bracket whose close carried no tool-call count has no `turns` key,
- *   one whose close carried no wall clock has no `duration_ms` key, and one
- *   whose close reported no cache traffic has neither cache key at all - so a
+ *   one whose close carried no wall clock has no `duration_ms` key, one
+ *   whose close reported no cache traffic has neither cache key at all, and one
+ *   whose writers named no effort has no `effort` key and no `rung` key - so a
  *   record written before any of those flags existed renders byte-identically.
  *
  *   ONE ROW PER DISPATCH, not per close. Two writers close one bracket - the
@@ -1634,7 +1668,21 @@ export function renderTrace(planningRoot, phase) {
   // double-bill every turn both reads covered. If the host ever produces
   // genuinely disjoint partial sums this understates rather than double-bills,
   // which is the direction this record already prefers.
-  /** @type {Map<string, Record<string, number>>} */
+  //
+  // AND THE TWO STRINGS RIDE THE SAME MAP (TRC-13). A fact carries the effort
+  // the worker's own transcript reported and the rung it was dispatched under
+  // exactly as the close does, because a hook gate that could not close
+  // anything is the writer that holds them on almost every live dispatch. They
+  // are entries in this same map rather than a second one: a second map is a
+  // second key to keep in agreement with this one, and they join a bracket on
+  // the identical `corr` + `agent_id` pair.
+  //
+  // TWO FACTS FOR ONE WORKER RESOLVE PER FIELD, and the two fields do not share
+  // a rule. The cache figures keep larger-wins for the reason stated directly
+  // above; the two strings take FILL-ONLY-EMPTY, because `moreComplete`
+  // compares with `>` and a rung name does not grow between two reads of one
+  // transcript.
+  /** @type {Map<string, Record<string, any>>} */
   const cacheFacts = new Map();
   for (const e of out.events) {
     // Every family feeds the RUN's end-of-record mark, not the lifecycle one
@@ -1692,6 +1740,22 @@ export function renderTrace(planningRoot, phase) {
       if (typeof e[k] === 'number' && Number.isFinite(e[k])) cache[k] = e[k];
     }
 
+    // AND THE TWO STRINGS the `SubagentStop` hook writes (TRC-13): the effort
+    // the worker's own transcript says it RAN at, and the rung it was
+    // DISPATCHED under. Guarded for the hazard the four numeric fields above
+    // are guarded for and answered the way that hazard demands here: a value
+    // that is not a NON-EMPTY STRING contributes NOTHING and leaves the key
+    // absent. A hand-edited or foreign-producer line carrying `"effort": 3` or
+    // `"rung": ""` must not put a number, or a blank, where a reader prints a
+    // rung name and compares two of them.
+    //
+    // NOT validated against Cadence's rung enum, deliberately (D-04). The enum
+    // is a config rule about what a user may ASK for; this is an OBSERVATION of
+    // what the host served, and checking it against the request would erase a
+    // renamed host rung at the moment its appearance is the signal.
+    const effort = typeof e.effort === 'string' && e.effort ? e.effort : null;
+    const rung = typeof e.rung === 'string' && e.rung ? e.rung : null;
+
     // The cache-only fact: collected here for the guarded `cache` object above,
     // and folded only AFTER the loop. It cannot join its bracket inline (D-09):
     // the host fires `SubagentStop` the moment the worker stops, while the
@@ -1699,14 +1763,36 @@ export function renderTrace(planningRoot, phase) {
     // return, so the fact ordinarily arrives BEFORE the id it joins on - and the
     // whole existing fold runs inside the `TERMINAL` branch, which this name
     // deliberately never enters. A fact carrying no id can never reach a
-    // bracket, and one whose transcript reported neither figure has nothing to
-    // give, so neither is collected; neither is an error.
+    // bracket, and one whose event reported NOTHING AT ALL - neither cache
+    // figure and neither string - has nothing to give, so neither is
+    // collected; neither is an error.
+    //
+    // AN EFFORT COUNTS AS SOMETHING TO GIVE (D-08). The gate used to demand a
+    // cache figure, which would drop on the floor exactly the fact the hook
+    // writes for a transcript that reported an effort and no `usage` - the one
+    // observation of a silent downgrade, refused here while the hook's own
+    // test says it was written. The `agent_id` half of the gate is unchanged
+    // and is a different question: `corr` plus `agent_id` is the fold's only
+    // key, so a fact missing the id can never reach a bracket however much it
+    // has to say.
     if (e.event === WORKER_CACHE) {
-      if (typeof e.agent_id === 'string' && e.agent_id && CACHE_KEYS.some((k) => k in cache)) {
+      if (typeof e.agent_id === 'string' && e.agent_id
+        && (CACHE_KEYS.some((k) => k in cache) || effort !== null || rung !== null)) {
         const pair = `${key(e.corr)}\0${e.agent_id}`;
         const prior = cacheFacts.get(pair);
-        if (!prior) cacheFacts.set(pair, cache);
-        else for (const k of CACHE_KEYS) if (moreComplete(prior, cache, k)) prior[k] = cache[k];
+        if (!prior) {
+          cacheFacts.set(pair, {
+            ...cache,
+            ...(effort !== null ? { effort } : {}),
+            ...(rung !== null ? { rung } : {}),
+          });
+        } else {
+          for (const k of CACHE_KEYS) if (moreComplete(prior, cache, k)) prior[k] = cache[k];
+          // FILL-ONLY-EMPTY for the two strings, per field, and NOT the
+          // larger-wins clause the line above applies to the figures.
+          if (!('effort' in prior) && effort !== null) prior.effort = effort;
+          if (!('rung' in prior) && rung !== null) prior.rung = rung;
+        }
       }
       continue;
     }
@@ -1833,6 +1919,16 @@ export function renderTrace(planningRoot, phase) {
           // read. They ride this row and go NOWHERE else - see the `brackets`
           // typedef for why the `roles` bill cannot have them.
           ...cache,
+          // WHAT IT RAN AT and WHAT IT WAS DISPATCHED UNDER, off the TERMINAL
+          // alone - the dispatch half has no transcript to read and no
+          // `agent_type` to map. OMITTED, each independently, on the
+          // `turns`/`duration_ms`/`agent_id` rule, so a record written before
+          // this phase grows no new key and the committed fixture renders
+          // byte-identically. See the `brackets` typedef for why fill-only-empty
+          // is their fold rule, why they are stored verbatim, and why `effort`
+          // on this row is not `effort` on a `routing/resolve` event.
+          ...(effort !== null ? { effort } : {}),
+          ...(rung !== null ? { rung } : {}),
           // The worker's host id, off the TERMINAL alone - the dispatch half
           // never has one. OMITTED when neither writer carried it, the same
           // rule `turns` and `duration_ms` follow, so a record written before
@@ -1882,8 +1978,19 @@ export function renderTrace(planningRoot, phase) {
         // not freeze the row. This is still the arm that lands them on a row
         // the hand-written close opened first.
         for (const k of CACHE_KEYS) if (moreComplete(b, cache, k)) b[k] = cache[k];
+        // BACK TO FILL-ONLY-EMPTY for the two strings, and NOT the larger-wins
+        // clause one line up. `moreComplete` compares with `>`, which is
+        // meaningless for an enum-shaped string - `high` > `max` is a
+        // lexicographic accident, not a fuller read - and a rung does not grow
+        // between two reads of one transcript the way a running cache sum does.
+        // Each fills independently: a writer that named an effort and no rung
+        // still supplies the effort.
+        if (!('effort' in b) && effort !== null) b.effort = effort;
+        if (!('rung' in b) && rung !== null) b.rung = rung;
         // Identity folds on the SAME fill-only-empty rule, and it has to: the
-        // hook's figureless close is the writer that ordinarily opens this row
+        // hook's close - which carries no token figure of its own, though it
+        // does now carry the two strings above - is the writer that ordinarily
+        // opens this row
         // (the host fires SubagentStop when the worker stops, before the
         // orchestrator has processed the return), so without this clause an id
         // supplied on the hand-written close is dropped on exactly the arrival
@@ -1963,20 +2070,34 @@ export function renderTrace(planningRoot, phase) {
   // It touches the bracket ROW and nothing else - not `roleTotals`, not
   // `out.roles`, not `seenTerminals`, not `pairedRows` - because a cache read
   // summed over a worker's turns is a different denomination from a return's
-  // final-window `tokens` (D-03), and `roles` is byte-identical with and without
-  // every fact in the file. It reuses the SAME clause the repeat-close arm
-  // applies to these two keys - the larger read wins, per key and independently
-  // (see `moreComplete`) - so there is no second rule to keep in agreement with
-  // the first, and a close that carried a SHORTER read of the worker's own
-  // transcript is corrected by the fact rather than freezing it. A bracket
-  // whose close carried the larger figure keeps it. A fact naming no bracket changes
-  // nothing and is not an error. Where two brackets under one `corr` somehow
-  // carry one `agent_id`, the fold stops at the first: one worker's traffic
-  // copied onto two rows would bill it twice.
-  for (const [pair, cache] of cacheFacts) {
+  // final-window `tokens` (D-03), and an effort is an enum with nothing to sum
+  // at all, so `roles` is byte-identical with and without every fact in the
+  // file. A fact naming no bracket changes nothing and is not an error. Where
+  // two brackets under one `corr` somehow carry one `agent_id`, the fold stops
+  // at the first: one worker's traffic copied onto two rows would bill it
+  // twice.
+  //
+  // EACH FIELD FOLDS BY THE SAME RULE IT FOLDS BY ON A REPEAT CLOSE, which is
+  // the point of reusing the clauses rather than restating them - a second rule
+  // is one that disagrees with the first the day either changes. So the two
+  // read differently here, on purpose:
+  //
+  //   - the CACHE FIGURES take the larger read, per key and independently (see
+  //     `moreComplete`). One writer, and two values for one worker are two
+  //     reads of a transcript that only GROWS - so a close carrying a SHORTER
+  //     read is corrected by the fact rather than freezing the row, and a
+  //     close carrying the larger figure keeps it.
+  //   - the TWO STRINGS take FILL-ONLY-EMPTY (D-10). `moreComplete` compares
+  //     with `>`, which for an enum-shaped rung name is a lexicographic
+  //     accident rather than a fuller read, and there is no more complete read
+  //     of a value that does not grow. A value the close already supplied
+  //     stands.
+  for (const [pair, fact] of cacheFacts) {
     for (const b of out.brackets) {
       if (!b.agent_id || `${key(b.corr)}\0${b.agent_id}` !== pair) continue;
-      for (const k of CACHE_KEYS) if (moreComplete(b, cache, k)) b[k] = cache[k];
+      for (const k of CACHE_KEYS) if (moreComplete(b, fact, k)) b[k] = fact[k];
+      if (!('effort' in b) && 'effort' in fact) b.effort = fact.effort;
+      if (!('rung' in b) && 'rung' in fact) b.rung = fact.rung;
       break;
     }
   }
