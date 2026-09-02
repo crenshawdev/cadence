@@ -38,9 +38,7 @@ import {
 import { requireInt, requirePhaseArg } from '../lib/require-int.mjs';
 import { resolveTextFlag } from '../lib/text-flag-file.mjs';
 import { parseAdjudication, suggestFromRender } from '../lib/trace-suggest.mjs';
-import {
-  FAMILIES, ROTATED_TRACE_FILE, appendEvent, correlationId, renderTrace,
-} from '../lib/trace.mjs';
+import { FAMILIES, ROTATED_TRACE_FILE, appendEvent, correlationId, renderTrace } from '../lib/trace.mjs';
 import { windowBudget } from '../lib/window-budget.mjs';
 
 // ---------------------------------------------------------------------------
