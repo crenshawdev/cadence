@@ -4089,6 +4089,102 @@ test('render: the worker id survives the hook closing the bracket first', () => 
     'the second writer overwrote the id the first one named');
 });
 
+// --- what the worker RAN at, beside what it was DISPATCHED under (TRC-13) ---
+//
+// Two strings the `SubagentStop` hook writes and no other writer holds:
+// `effort`, read off the worker's OWN transcript, and `rung`, mapped back off
+// the `agent_type` the host was asked to run. They ride a CLOSE here; the
+// `WORKER_CACHE` fact carrying the same pair is the fold section further down.
+// The point of the pair is the DISAGREEMENT it can express - a `max` dispatch
+// that ran at `high` is invisible on a record holding the routed rung alone.
+
+test('render: a bracket carries the effort it RAN at beside the rung it was DISPATCHED under', () => {
+  const r = closedWith({ effort: 'high', rung: 'max' });
+  const [row] = r.brackets;
+  assert.equal(row.effort, 'high');
+  assert.equal(row.rung, 'max');
+  // VERBATIM, in the host's own spelling, and never checked against Cadence's
+  // rung enum: that enum is a config rule about what a user may ASK for, and a
+  // renamed host rung has to appear on the record rather than vanish at the
+  // moment its appearance is the signal.
+  assert.equal(closedWith({ effort: 'ultrathink-9', rung: 'max' }).brackets[0].effort,
+    'ultrathink-9');
+  // D-09, and this is the assertion that holds it: the per-role bill is
+  // DEEP-EQUAL to the same fixture rendered without the two keys. An enum has
+  // nothing to sum and the roles bill is denominated in tokens, so a string
+  // that reached `roles` could only reach it as a wrong number.
+  assert.deepEqual(r.roles, closedWith({}).roles);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 1200 } });
+});
+
+test('render: a close naming no effort leaves NEITHER key on the bracket', () => {
+  // ABSENT, not `unrecorded`. `unrecorded` is something a READER prints for a
+  // row carrying no observation; storing the literal beside real rungs would
+  // put a non-observation into the column a comparison reads. Checked with
+  // `in`, so every trace written before this phase renders byte-identically.
+  const [row] = closedWith({}).brackets;
+  assert.equal('effort' in row, false, JSON.stringify(row));
+  assert.equal('rung' in row, false, JSON.stringify(row));
+  // The two answer INDEPENDENTLY at the render even though the hook writes
+  // them as a pair: a producer that carried one is not a reason to drop it,
+  // and a reader asking `in` gets a straight answer either way.
+  const [one] = closedWith({ effort: 'high' }).brackets;
+  assert.equal(one.effort, 'high');
+  assert.equal('rung' in one, false, JSON.stringify(one));
+});
+
+test('render: a non-string or empty effort or rung contributes NOTHING to the bracket', () => {
+  // The guard `tokens`, `turns`, `duration_ms` and the two cache figures carry,
+  // for the same hazard and with the answer this field's type demands: a
+  // hand-edited or foreign-producer line must never put a number, or a blank,
+  // where a reader prints a rung name and compares two of them.
+  const [row] = closedWith({ effort: 3, rung: '' }).brackets;
+  assert.equal('effort' in row, false, JSON.stringify(row));
+  assert.equal('rung' in row, false, JSON.stringify(row));
+  const [half] = closedWith({ effort: '', rung: 'xhigh' }).brackets;
+  assert.equal('effort' in half, false, JSON.stringify(half));
+  assert.equal(half.rung, 'xhigh', 'the readable half of the same row survived');
+});
+
+test('render: a second close does not overwrite the effort or rung the first supplied', () => {
+  // FILL-ONLY-EMPTY, the clause `agent_id` follows and NOT the larger-wins
+  // clause the two cache keys use one line above it: `moreComplete` compares
+  // with `>`, which for an enum-shaped string is a lexicographic accident
+  // rather than a fuller read, and a rung does not GROW between two reads of
+  // one transcript the way a running cache sum does.
+  const twice = (first, second) => {
+    const dir = root();
+    appendEvent(dir, {
+      phase: 6, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor',
+      ts: '2026-08-26T10:00:00.000Z',
+    });
+    appendEvent(dir, cacheClose({ ts: '2026-08-26T10:05:00.000Z', ...first }));
+    appendEvent(dir, {
+      phase: 6, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor',
+      ts: '2026-08-26T10:05:30.000Z', ...second,
+    });
+    const r = renderTrace(dir, 6);
+    assert.equal(r.brackets.length, 1, 'two closes, one dispatch, one row');
+    return r.brackets[0];
+  };
+  const kept = twice({ effort: 'high', rung: 'max' }, { effort: 'xhigh', rung: 'xhigh' });
+  assert.equal(kept.effort, 'high', 'the second close overwrote an observation the first read');
+  assert.equal(kept.rung, 'max');
+
+  // ...and it FILLS what the first left empty. The hook is the writer that
+  // holds the pair and it does not always land first, so a close that opened
+  // the row without them must not freeze it against the one that has them.
+  const filled = twice({}, { effort: 'high', rung: 'max' });
+  assert.equal(filled.effort, 'high');
+  assert.equal(filled.rung, 'max');
+
+  // Per key and independently, so a writer that named one and not the other
+  // neither blocks nor invents the half it never had.
+  const mixed = twice({ effort: 'high' }, { effort: 'xhigh', rung: 'max' });
+  assert.equal(mixed.effort, 'high');
+  assert.equal(mixed.rung, 'max');
+});
+
 test('render: the span ends at the LATER close, not whichever landed first', () => {
   // `ms` is DISPATCH-TO-CLOSE and the brackets typedef says it includes what
   // the orchestrator did between writing the two halves. Freezing `end` at the
