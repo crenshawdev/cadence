@@ -6,6 +6,68 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.10] - 2026-09-02
+
+A review ran, and the run record said things about it that were not true. Not
+wrong in the sense of a crash, wrong in the sense of a receipt that does not
+add up: a fallback reviewer nothing closed, a provider bill dropped on the
+floor, a settlement with no home the seam would accept, one human answer
+written down as two, and a declared effort nothing ever checked against what
+the host actually served.
+
+Cross-model reviews are now priced in their own denomination. The review seam
+records the usage the provider reported on its own `provider/request` event,
+behind the same credential fence the outbound payload crosses, with the raw
+object dropped whole if the fence alters it or it runs past 2048 serialized
+characters. `trace render` folds those figures into a `provider_spend`
+projection scoped to calls that actually reached a review on the wire, so the
+16 `detect-models` and 3 `consult` calls in a typical record no longer get
+billed to a line labelled `Cross-model reviews`. That line is what `/cad-report`
+prints, and it is never summed into the host's token count, because they are
+not the same currency. A scope with no provider review call prints no line at
+all; a scope whose events carry no usage key prints `unrecorded`, never `0`.
+The three adapters' usage field names are pinned against live provider
+documentation (OpenAI `ResponseUsage`, Gemini v1beta `UsageMetadata`, DeepSeek
+chat completion), read 2026-09-01. And the empty-set review fallback routes to
+the `claude-subagent` arm that brackets and closes it, instead of falling
+through to the selection rule and leaving the fire open: one `routing/resolve`
+is owed per review FIRE now, before any backend is chosen, including a fire no
+claude-subagent serves.
+
+Settlement receipts learned to name their home and their authorization.
+`trace append --anchor` takes the earlier window's own SHA, derived through
+`correlationId` so a receipt can only name a window of the phase it declares,
+which is what a settlement written after a phase re-anchored needs.
+`--authorization-id` carries the coordinator-minted id of the human answer, and
+an id shared across two disjoint ranges labels the pair rather than settling the
+second one: `risk-check status` still answers `unfired` on the range with no
+receipt of its own. On the record side, `planning.mjs adjudication --task
+<slug>` writes a task's record beside its own artifacts instead of into a
+`phases/0/` that does not exist, `--task` is required at `--phase 0` and refused
+beside a real phase, and the counts are recounted from the record rather than
+taken from the caller. The one hand-written settlement in the tree
+(`.planning/tasks/declines-off-the-tracker/`) is now a record the seam produced.
+`/cad-suggest` rule R9 counts decisions grouped on the structured trigger field,
+not override writes, so one answer over two ranges stops reading as two
+overrides.
+
+The last one needed a spike before any code, because the answer was not knowable
+from the hook payload. Claude Code 2.1.258 downgrades a dispatched effort
+silently, the `SubagentStop` payload cannot see it, and the worker's own
+transcript can. So the hook reads the effort the worker ACTUALLY ran at off
+`agent_transcript_path` (top-level key only, verbatim, unambiguous-or-nothing)
+and carries it on both of its writes beside the rung the dispatch was routed
+under. Both land on the bracket row by two routes, the close and the post-pass
+`worker_cache` fold, omitted independently when absent. `/cad-report`'s
+Dispatches table gains a `ran` column beside `rung` and states a disagreement on
+the row it happened on rather than smoothing it into a summary: a dispatch that
+reported nothing reads `unrecorded` and is never shown as agreeing. What to DO
+about a mismatch, warn or refuse or re-dispatch, is deliberately not in this
+release.
+
+Five requirement ids, three phases, 48 commits. `/cad-audit` passed 5/5 with
+20/20 acceptance criteria covered and nothing deferred.
+
 ## [3.7.9] - 2026-09-01
 
 Three places where Cadence printed a next step you could not take. The command
@@ -4498,6 +4560,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.10]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.10
 [3.7.9]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.9
 [3.7.8]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.8
 [3.7.7]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.7
