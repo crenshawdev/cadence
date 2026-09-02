@@ -243,3 +243,5 @@ Raised in review of the v3.7.2 release, adjudicated against the code 2026-08-26.
 - 2026-09-01 github crenshawdev/cadence 2a392538c19c1099: [cadence 2a392538c19c1099] Task 1 does not cover AC4's required `outcome/adjudication` path.
 - 2026-09-01 github crenshawdev/cadence eff9c7d883b229c6: [cadence eff9c7d883b229c6] The close-out task cannot perform the source repairs its action requires because it declares only `weight-budgets.json`.
 - 2026-09-01 github crenshawdev/cadence 058802bb9f12a4dc: [cadence 058802bb9f12a4dc] Allowing Plan 3 to re-pin a budget left over from earlier plans contradicts D-13's same-commit rule and places the dependency too late.
+- 2026-09-02 github crenshawdev/cadence 4dfc49a8ba41b061: [cadence 4dfc49a8ba41b061] `--anchor` is documented and relied on as a window anchor SHA, but its contract and implementation accept any nonblank string and turn it directly into a correlation id.
+- 2026-09-02 github crenshawdev/cadence 268076ad1d854623: [cadence 268076ad1d854623] R9 treats every override event carrying the same authorization_id as a separate application of one decision without checking whether the receipts name distinct fired ranges.

@@ -1,0 +1,35 @@
+{
+  "phase": "2",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "94807df1",
+  "head": "c59e0e26",
+  "base_id": "94807df1545a7f0402b339979b851a0f91e5ca5a",
+  "head_id": "c59e0e26d18e108206aa055e814bc9bf72fb5c97",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/planning/trace.mjs",
+      "line": 1381,
+      "severity": "high",
+      "claim": "Multiple matching task records are treated as no record, so the recount is silently omitted and settlement counts become caller-controlled again.",
+      "failure_scenario": "Create task homes `tasks/a` and `tasks/b` with the same matching filename, such as `ADJUDICATION-risk_surface-cad-task-abcdef0.json`; the second can even be an empty malformed regular file. A phase-0 receipt with SHA `abcdef0...` produces two hits, this line returns `''`, and `recountReceipt` treats that as absence. `trace append --survivors 999 ...` is then accepted without parsing either record or comparing its counts. This can also arise legitimately when two task fires at the same HEAD share the trigger and round.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "trace.mjs:1291-1296 and 1377-1382 state the two-candidate answer as the declared disposition, and PLAN-1.md task 4 plus CONTEXT D-04 specify it: two task homes matching one trigger, round and head answer empty exactly as two records in one phase directory already do, a degrade-to-no-check posture that predates this range. The phases arm (line 1346) carries the same behaviour. Planting a second matching record requires write access to .planning/, which already lets a caller rewrite the record the recount reads, so the check is tamper-VISIBILITY, not a security boundary. The legitimate collision needs two task fires at an identical head sha with one trigger and round. Confirmed as a real silent-omit gap, not a high: the stronger answer is an ambiguous-record refusal, which is a design change against D-04 the user owns.",
+      "base_id": "94807df1545a7f0402b339979b851a0f91e5ca5a",
+      "head_id": "c59e0e26d18e108206aa055e814bc9bf72fb5c97"
+    }
+  ]
+}

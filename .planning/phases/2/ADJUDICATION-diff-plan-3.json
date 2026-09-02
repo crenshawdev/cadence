@@ -1,0 +1,39 @@
+{
+  "phase": "2",
+  "trigger": "diff",
+  "discriminator": "plan-3",
+  "round": 1,
+  "base": "04655c44",
+  "head": "9241b17c",
+  "base_id": "04655c44cd0455536f57f8a1fa74c75ac69946f8",
+  "head_id": "9241b17c91005afe1471ed40f79ad2e776f5ea0e",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/lib/trace-suggest.mjs",
+      "line": 425,
+      "severity": "medium",
+      "claim": "R9 treats every override event carrying the same authorization_id as a separate application of one decision without checking whether the receipts name distinct fired ranges.",
+      "failure_scenario": "If a receipt is appended twice for the same range (for example, a retry/replay produces two identical `outcome/override` events with trigger `risk_surface`, authorization_id `auth-7`, and identical base/head), `row.writes` becomes 2 while `ids.size` remains 1. The new rule emits `1 decision(s) from 2 writes` and describes one answer as applying to a second range, although the trace contains only a duplicate write for one range. The implementation never reads the base/head fields that its evidence says distinguish this case.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/trace-suggest.mjs",
+        "line": 818,
+        "note": "The emitted text does the opposite of what the claim says. It reads \"one answer applied to a second range is distinguishable from a duplicate write of one range. The shared id LABELS that pair only: every fired range still carries a receipt naming its own base and head.\" Both readings are named, neither is asserted, and the reader is pointed at base and head as where the two are told apart - which is exactly the check the finding says is missing, stated as the row's own limit rather than skipped. The row is kind 'info' with action null (trace-suggest.mjs:814-822), so it proposes no retune and claims no second range. The duplicate-write case the scenario builds lands on this row and is described correctly by it."
+      },
+      "base_id": "04655c44cd0455536f57f8a1fa74c75ac69946f8",
+      "head_id": "9241b17c91005afe1471ed40f79ad2e776f5ea0e"
+    }
+  ]
+}
