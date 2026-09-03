@@ -1,0 +1,49 @@
+{
+  "phase": "1",
+  "trigger": "diff",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "61c39022",
+  "head": "163339e7",
+  "base_id": "61c39022d4a6d95a6058174ca02d420f4185bdb6",
+  "head_id": "163339e7fa615dc02a7e21229a5d889221d0fcb0",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/workflows/verify.md",
+      "line": 270,
+      "severity": "high",
+      "claim": "The new Apply-now sequence invokes `risk-check run --staged` without first requiring the just-made fix to be staged.",
+      "failure_scenario": "A verifier edits a tracked file and follows the stated order literally: make the change, run the displayed command, then commit. Because `--staged` reads the index/tree written by `git write-tree`, not unstaged working-tree changes, the index still equals `HEAD`; the seam refuses with `no-diff` and the workflow tells the verifier to repair and rerun. The actual risk-surface change is never inspected until the verifier independently infers that `git add` must precede the command. State an explicit staging step before the risk check (and retain the command before the commit).",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "0fceb073",
+      "base_id": "61c39022d4a6d95a6058174ca02d420f4185bdb6",
+      "head_id": "163339e7fa615dc02a7e21229a5d889221d0fcb0"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/workflows/debug.md",
+      "line": 109,
+      "severity": "high",
+      "claim": "The debug fix path likewise calls the staged-scope seam without directing the user to stage the applied fix before the call.",
+      "failure_scenario": "After applying an approved debug fix, an agent can run the shown `--base HEAD --staged` command while the fix remains only in the working tree. The seam scans the unchanged index and returns `no-diff`; the new prose treats that refusal as a blocking condition, creating a loop rather than evaluating the fix. The statement that the fix 'is staged' is not an instruction that performs staging; require staging before this invocation.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "0fceb073",
+      "base_id": "61c39022d4a6d95a6058174ca02d420f4185bdb6",
+      "head_id": "163339e7fa615dc02a7e21229a5d889221d0fcb0"
+    }
+  ]
+}
