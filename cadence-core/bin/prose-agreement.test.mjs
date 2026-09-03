@@ -1697,6 +1697,32 @@ test('ENFORCEMENT, task.md: the completion rule decides `written: false`, in ONE
   assert.equal(ownVerdict(record), undefined, `${restated} - record step: ${ownVerdict(record)}`);
 });
 
+test('RSK-11, task.md: the surfaces-unanswered refusal is answered in the run, not stopped at', () => {
+  // `risk-check run` refuses `surfaces-unanswered` whenever no config layer
+  // answered `review.triggers.risk_surface.surfaces` and the caller named no
+  // `--surfaces` - which is EVERY fresh user, and on a treeless repository
+  // there is no repo layer to have answered it in. A coordinator that reads
+  // that refusal as a verdict or as a skip stops there, and the one trigger
+  // that blocks at every stakes level never runs for exactly the audience the
+  // inline path exists for. So the arm is prose or it is nothing: the seam has
+  // no way to ask.
+  const risk = stepBody(doc(...TASK_WF), 'risk_check', 'task.md');
+  const regressed = "RSK-11: task.md's risk_check step no longer answers the seam's "
+    + '`surfaces-unanswered` refusal in the run, so a coordinator stops at it and the '
+    + 'blocking risk_surface gate never runs for a user who has answered the surface '
+    + 'question nowhere - which on a treeless repository is every user';
+  assert.match(risk, /surfaces-unanswered/, regressed);
+  // The ASK, in the sentence that names the refusal: the scan runs first so the
+  // question arrives carrying evidence, and it is put to the user here.
+  const arm = sentenceAround(risk, 'surfaces-unanswered', 'task.md');
+  assert.match(arm, /detect-surfaces/, `${regressed} - the arm names no scan: ${arm}`);
+  assert.match(arm, /question to the user/i, `${regressed} - the arm never asks: ${arm}`);
+  // And the RE-RUN, which is what turns the answer into a verdict.
+  const rerun = sentenceAround(risk, '--surfaces', 'task.md');
+  assert.match(rerun, /risk-check run/,
+    `${regressed} - the step names --surfaces without re-running the check on it: ${rerun}`);
+});
+
 // --- ENFORCEMENT: the FAIL branch is a DISPATCH, and its guardrail ----------
 //
 // Two halves of one rule, asserted on TWO SLICES of execute.md so neither can

@@ -177,6 +177,23 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phas
 required: 0 is the one number no roadmap phase carries, so a task's records
 never join a phase's.
 
+When that call answers `ok:false` with reason `surfaces-unanswered` it has
+delivered neither a verdict nor a skip - the seam is declining to scan on the
+all-eight set nobody chose - so run `detect-surfaces --root .` and put the
+one-time surface question to the user IN THIS RUN, exactly as
+`references/risk-surface.md` states it: the envelope's `options` rendered in
+the order they arrive, the eight-line legend beside them, through the ask-user
+seam. Then re-run the same `risk-check run --phase 0` line with `--surfaces
+<the chosen set, comma-separated>` and carry on from THAT envelope. Persisting
+the answer at the repo layer is the `config.mjs set` line that reference
+already carries and is not restated here; but where this run's own `bracket`
+append answered the absent-root reason there is no repo layer to persist into,
+because `config.mjs set` writes `.planning/config.json` and creating it is the
+scaffolding this workflow's success criterion forbids - so the answer rides
+`--surfaces` for this run alone and the question is asked once per run. Stopping
+at the refusal instead is how the one gate that blocks at every stakes level
+never runs at all for the fresh user this inline path exists for.
+
 A non-empty `matches` OR `inconclusive: true` fires the `risk_surface` review
 trigger per references/review-triggers.md before reporting done - an unjudged
 range is not a cleared one. The commits
