@@ -6,8 +6,8 @@
 ## Active
 
 `v3.7.11 - unresolved inputs` opened 2026-09-02. Three phases; the ids are
-minted as each phase is planned - `RNG-05` and `RSK-10` in phase 1 so far,
-phases 2 and 3 to follow at their own `/cad-plan`. The source is the sentence
+minted as each phase is planned - `RNG-05` and `RSK-10` in phase 1, `RSK-11`
+in phase 2 so far, phase 3 to follow at its own `/cad-plan`. The source is the sentence
 v3.7.10's overview used to defer `GH-229`, plus `GH-246` and `GH-244`, which
 joined the board since. The theme is one claim - a gate ran on an input it could
 not resolve, and the record treated "could not resolve" as an ordinary value.
@@ -16,6 +16,7 @@ planned.
 
 - **RNG-05**: A range with one unresolvable end keeps the end that resolved and names the one that failed. `resolveRange` (`core.mjs:509-528`) runs both `rev-parse` calls inside one `try`, so `HEAD..STAGED` on verbatim 2026-08-30T18:28:50 wrote `base_id` and `head_id` both null when `HEAD` always resolves. Resolved independently, each end failing covered by a test. And the staged scope has exactly one machine spelling, per OQ-1: a `--staged` arm on `risk-check run` and `status`, so no workflow in the tree passes a rev value `git rev-parse --verify` rejects. `GH-229` Phase 1.
 - **RSK-10**: A `risk_check` that had no diff to compute writes a row a reader can tell apart from a clean check - `checked:false` with a stated cause, never a bare `inconclusive` a caller proceeds past - and a plan that landed no commits produces no `checked:true, empty:true` row for a range whose two ends are the same commit. Observed twice on smithers, 2026-08-27T23:55:38 and 2026-08-28T14:28:12. `execute.md:339` and `task.md:155` stop emitting the self-comparing range and record a skip that says so. `GH-229` Phase 1.
+- **RSK-11**: A `/cad-task` whose record cannot reach the trace finishes under one rule, not two. `task.md:190-198` withheld done on every `written:false` while `:275-279` promised a treeless run scaffolds nothing, so on a repository with no `.planning/` the inline path could never report done; measured 2026-09-02 on a scratch repo. A `written:false` whose reason is the absent planning root - `ENOENT` from the trace seams, "no planning root" from `task-record` - reports done with the risk check's disposition stated and the record called unrecorded; any other reason still withholds done. The `surfaces-unanswered` refusal is asked in the run and re-run with `--surfaces`, so blocking detection actually runs for the audience the inline arm exists for, and that run creates no `.planning/` and no `tasks/<slug>/`. `GH-246` Phase 2.
 
 `v3.7.10 - review receipts` opened 2026-09-01 and closed 2026-09-02. Three
 phases, five ids - `TRC-12` and `CST-04` in phase 1, `RSK-09` and `AUT-03` in
@@ -502,6 +503,7 @@ section only, bounded at the next `## ` heading.
 |-------------|-------|--------|
 | RNG-05 | Phase 1 | Complete |
 | RSK-10 | Phase 1 | Complete |
+| RSK-11 | Phase 2 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its

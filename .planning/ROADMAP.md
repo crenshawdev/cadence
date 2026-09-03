@@ -96,7 +96,24 @@ decisions, not defects.
   as a file the way shape (c) already does, which leaves detection with no
   spelling at all. The partial-resolve fix is owed either way and does not
   depend on this.
-- **OQ-2 - whether a treeless task may report done at all.** `GH-246` can be
+- **OQ-2 - whether a treeless task may report done at all. ANSWERED 2026-09-02:
+  it may - the lightweight path stands, and the done block says what did not
+  land.** A `/cad-task` on a repository with no `.planning/` finishes; its
+  report states the risk check's verdict and that the receipt is unrecorded
+  because there is no planning root, and git is the code record. Done is
+  reported on a `written:false` ONLY when the seam's own `reason` is the absent
+  root - `ENOENT` from the trace seams, "no planning root" from `task-record` -
+  and any other reason still withholds done, told apart on the envelope and
+  never on a `[ -d .planning ]` check beside it. The deciding evidence: every
+  seam the task calls already answers `ok:true, written:false` and creates
+  nothing (`lib/trace.mjs:1110-1209`, `task-record.mjs:132-143`,
+  `risk-check.mjs:386-450`), the check itself genuinely runs and returns a real
+  verdict, and the rail-1 guard and atomic commits hold there - what a treeless
+  run cannot deliver is a durable Cadence receipt, and the report says so. The
+  mandatory-record direction was considered and rejected: it narrows the
+  product the workflow advertises in four places, and refusing before the
+  first commit buys nothing the honest report does not. Phase 2 CONTEXT
+  D-01/D-02 hold the decision. As originally posed: `GH-246` can be
   closed in two directions and they are not equivalent. Preserve the advertised
   lightweight path - the task finishes, states plainly that no durable Cadence
   receipt exists, and leans on git for the code record - or make a durable gate
@@ -153,6 +170,8 @@ clean check over an empty diff. Worth checking in the same pass whether
 - `GH-229` traces to a REQUIREMENTS row pointing at Phase 1.
 
 ### Phase 2: A treeless task can finish honestly
+
+**Requirements:** `RSK-11`
 
 `GH-246`. The defect is a contradiction inside one workflow, and OQ-2 decides
 which sentence survives.
