@@ -267,17 +267,24 @@ For each item with `status: fail` and no recorded cause:
    1. Apply the fix now
    2. Re-plan it through /cad-plan (phase-sized gap)
    3. Leave it open
-3. **Apply now** -> make the change, then ask the seam whether it touched a
-   risk surface BEFORE the commit lands (references/git-guard.md fires the
-   trigger at commit time, and the fix is staged in THIS tree, so the scope is
-   the index against HEAD and `--staged` is its one machine spelling - the
-   index has no commit for a `--head` to name):
+3. **Apply now** -> make the change, then `git add` exactly the files it
+   touched, and only THEN ask the seam whether it touched a risk surface
+   BEFORE the commit lands. Staging is a STEP here, not a description:
+   references/git-guard.md fires the trigger at commit time, `--staged` reads
+   the index against HEAD and that is its one machine spelling (the index has
+   no commit for a `--head` to name), so a fix still sitting in the worktree
+   is outside the scope this call reads and no sentence saying it is staged
+   puts it there.
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --base HEAD --staged
    ```
 
-   `<N>` is the phase under verification. A non-empty `matches` or an
+   `<N>` is the phase under verification. `empty: true` on this arm is NOT a
+   pass: it says the read found no scannable change between HEAD and the
+   index, which is exactly what an unstaged fix looks like - the seam returns
+   `ok: true, checked: true, matches: []` over nothing at all. Stage the fix
+   and re-run; never commit on that answer. A non-empty `matches` or an
    `inconclusive: true` fires the `risk_surface` trigger and the fire carries
    the staged-diff scope, shape (b): the reviewer runs
    `git diff --cached` in the cwd it inherits; that gate is blocking and its

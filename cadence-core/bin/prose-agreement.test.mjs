@@ -3714,6 +3714,38 @@ test('RSK-10: every risk-check run invocation names --base and exactly one scope
     "debug.md's fix step no longer asks the seam over the staged set with `--staged --phase 0` "
     + '- a debug session sits outside the phase spine, so any other phase number files its '
     + "range against a real phase's records");
+
+  // THE STAGING HAS TO BE AN INSTRUCTION, AHEAD OF THE CALL (diff-review
+  // finding, 2026-09-02). Both sites said "the fix is staged in THIS tree",
+  // which describes a state nothing performs. A coordinator following either
+  // one literally edits the worktree and runs the call with an UNCHANGED
+  // index, and the seam does not refuse that: `--staged` reads the tree
+  // `git write-tree` wrote, `no-diff` fires only when git could not READ, so
+  // an unstaged fix comes back `ok: true, checked: true, empty: true,
+  // matches: []` - a clean check over nothing, and the fix is committed
+  // unreviewed. So each site needs a `git add` BEFORE its invocation line,
+  // and `empty: true` named as the not-a-pass it is on this arm.
+  const stagedSites = [
+    { where: 'workflows/verify.md', body: verify },
+    { where: 'workflows/debug.md', body: debug.slice(debug.indexOf('## Resolve')) },
+  ];
+  for (const { where, body } of stagedSites) {
+    const call = body.split('\n').findIndex((l) => l.includes('risk-check run')
+      && /--staged\b/.test(l));
+    const add = body.split('\n').findIndex((l) => l.includes('git add'));
+    assert.ok(add !== -1 && add < call,
+      `${where} ${add === -1 ? 'never tells the coordinator to stage the fix before' : 'tells the '
+        + 'coordinator to stage the fix only AFTER'} the \`risk-check run --staged\` call - an `
+      + 'unstaged fix leaves the index at HEAD, which the seam answers `empty: true` rather than '
+      + 'refusing, so the risky change is committed having never been scanned');
+    // Matched over whitespace-collapsed prose: these sentences are hard-wrapped
+    // at 79 columns, so the phrase this pins is split across lines in both
+    // files and a raw-text regex would pin the wrap rather than the claim.
+    assert.match(body.replace(/\s+/g, ' '), /`empty: true`.{0,80}?NOT a pass/,
+      `${where} does not say that \`empty: true\` on the staged arm is not a pass - it is the `
+      + 'answer an unstaged fix produces, and a reader who takes it for a clean check commits '
+      + 'the thing the gate exists to stop');
+  }
 });
 
 // --- RSK-10: a range whose two ends are ONE commit is skipped, not cleared ---
