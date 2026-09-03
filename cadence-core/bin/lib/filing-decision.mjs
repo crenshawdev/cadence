@@ -639,21 +639,23 @@ export function normalizeLookup(text, limit, numberKey) {
  *
  * WHETHER THE LOOKUP HAS BEEN MEASURED IS A STATED FACT TOO, and this one is
  * LOAD-BEARING rather than documentary. `lookupMeasured` is true on the github
- * row ALONE: that argv was run live against `crenshawdev/cadence` on 2026-09-03
- * and its answer read by hand. The other two rows join a chunk's tokens with a
- * SPACE because their CLIs offer one search string and no OR, and whether
- * either reads that as more than one term is unknown (CONTEXT D-12). On an
- * unmeasured row a wrongly-EMPTY response cannot be told apart from a genuine
- * miss, so `cmdFile` does not let a complete miss overrule a confirmed
- * `.planning/FILED.md` row there - the ledger keeps suppressing, exactly as it
- * does for a lookup that could not run at all. On a MEASURED row the miss stays
- * final, which is D-04's stated cost for the nine ledger rows whose issues were
- * deleted. Without this flag the lookup would make duplicate filing MORE likely
- * on forgejo and gitlab than it was before the lookup existed, because an
- * assumed query's empty answer would override the only authority those two had.
- * A row's flag flips to true when that exact argv has been run against a live
- * instance holding a known fingerprint and seen to return it - not before, and
- * never from a transcript.
+ * and forgejo rows: each argv was run live against a real instance holding a
+ * known fingerprint and its answer read by hand - github against
+ * `crenshawdev/cadence` on 2026-09-03, forgejo against the Forgejo mirror of
+ * the same repository on 2026-09-03. The GITLAB row is the one that still joins
+ * a chunk's tokens with a SPACE on an assumption: glab offers one search string
+ * and no OR, and whether it reads that as more than one term is unknown
+ * (CONTEXT D-12). On an unmeasured row a wrongly-EMPTY response cannot be told
+ * apart from a genuine miss, so `cmdFile` does not let a complete miss overrule
+ * a confirmed `.planning/FILED.md` row there - the ledger keeps suppressing,
+ * exactly as it does for a lookup that could not run at all. On a MEASURED row
+ * the miss stays final, which is D-04's stated cost for the nine ledger rows
+ * whose issues were deleted. Without this flag the lookup would make duplicate
+ * filing MORE likely on an assumed forge than it was before the lookup existed,
+ * because an assumed query's empty answer would override the only authority
+ * that forge had. A row's flag flips to true when that exact argv has been run
+ * against a live instance holding a known fingerprint and seen to return it -
+ * not before, and never from a transcript.
  *
  * The forgejo row takes a LOGIN on both calls and the other two take none, the
  * split `HOST_TABLE` already states: an unqualified `tea --repo` falls back to
@@ -673,24 +675,25 @@ export const FILING_TABLE = Object.freeze({
     needsLogin: true,
     limit: 50,
     numberKey: 'index',
-    lookupMeasured: false,
+    lookupMeasured: true,
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @param {string} login @returns {string[]} */
     create: (slug, issue, login) => ['issues', 'create', '--repo', slug,
       '--login', login, '--title', issue.title, '--description', issue.body,
       ...(issue.declined ? ['--labels', DECLINE_LABEL] : [])],
-    /** ASSUMED, NOT MEASURED (CONTEXT D-12): that `tea --keyword` matches a
-     *  bracketed hex token inside an issue TITLE, and that a space-joined list
-     *  of tokens is read as more than one term. tea offers one search string
-     *  and no OR, so space-joining is the only spelling available. If either
-     *  half is wrong this arm returns nothing for an issue that exists, and
-     *  nothing here can tell that from a genuine miss - which is what
-     *  `lookupMeasured: false` above says and what keeps the failure from
-     *  becoming a duplicate: a complete miss on this row does NOT overrule a
-     *  confirmed `.planning/FILED.md` row, so the ledger still suppresses and
-     *  only a fingerprint no row holds is created. The page-fill rail holds
-     *  either way, and the pinned vector below passes either way.
+    /** MEASURED live 2026-09-03 against `crenshawdev/cadence` on a Forgejo
+     *  instance, which is what `lookupMeasured: true` above records. Both
+     *  halves of CONTEXT D-12's assumption held. `--keyword` on a single token
+     *  returned the issue whose TITLE carried it as `[cadence <hex>] ...`, so
+     *  tea matches a bracketed hex token inside a title; the same flag given
+     *  two tokens joined with a SPACE returned BOTH issues, so tea reads a
+     *  space-joined list as more than one term rather than one literal string.
+     *  A token no title carried returned `[]`, which is the reading that makes
+     *  an empty answer here real evidence: a complete miss on this row is
+     *  final, and overrules a confirmed `.planning/FILED.md` row exactly as
+     *  github's does. Space-joining is still the only spelling available - tea
+     *  offers one search string and no OR - it is now a measured one.
      *  @param {string} slug @param {number} limit @param {string[]} fingerprints
      *  @param {string} login @returns {string[]} */
     lookup: (slug, limit, fingerprints, login) => ['issues', 'list', '--repo', slug,
@@ -731,14 +734,18 @@ export const FILING_TABLE = Object.freeze({
     create: (slug, issue) => ['issue', 'create', '--repo', slug,
       '--title', issue.title, '--description', issue.body, '-y',
       ...(issue.declined ? ['--label', DECLINE_LABEL] : [])],
-    /** ASSUMED, NOT MEASURED (CONTEXT D-12), the same two halves as the forgejo
-     *  row: that `--search` with `--in title` matches a bracketed hex token in
-     *  a title, and that space-joined tokens are read as more than one term.
-     *  glab offers one search string and no OR either. Wrong either way, this
-     *  arm returns nothing for an issue that exists, which is why it carries
-     *  `lookupMeasured: false` above: an empty answer from this query is not
-     *  evidence, so a confirmed `.planning/FILED.md` row keeps suppressing over
-     *  it rather than being overruled by it.
+    /** ASSUMED, NOT MEASURED (CONTEXT D-12), and now the ONLY row that is: that
+     *  `--search` with `--in title` matches a bracketed hex token in a title,
+     *  and that space-joined tokens are read as more than one term. glab offers
+     *  one search string and no OR, the same shape tea does - but tea's was run
+     *  live and this one has no instance here to run it against. Wrong either
+     *  way, this arm returns nothing for an issue that exists, which is why it
+     *  carries `lookupMeasured: false` above: an empty answer from this query is
+     *  not evidence, so a confirmed `.planning/FILED.md` row keeps suppressing
+     *  over it rather than being overruled by it. Measuring it is the same
+     *  procedure the forgejo row's comment records: put an issue titled
+     *  `[cadence <hex>] ...` on a live GitLab project, run this exact argv for
+     *  one token and then for two, and flip the flag only if both come back.
      *  `--in title` is what keeps a body match out - glab's default is
      *  `title,description`, which is the bare-token failure the header states.
      *  @param {string} slug @param {number} limit @param {string[]} fingerprints

@@ -515,11 +515,12 @@ test('no provider\'s lookup vector carries DECLINE_LABEL - an ACCEPTED issue has
 test('only the row whose lookup was RUN is marked measured', () => {
   // The flag gates precedence in `cmdFile`: a complete MISS overrules a
   // confirmed `.planning/FILED.md` row only where the query behind that miss
-  // was measured. github's was, live on 2026-09-03; forgejo and gitlab
-  // space-join their tokens on D-12's flagged assumption, so an empty answer
-  // from either is not evidence and must not override the ledger.
+  // was measured. github's was and forgejo's was, both live on 2026-09-03;
+  // gitlab space-joins its tokens on D-12's flagged assumption with no instance
+  // here to settle it, so an empty answer from that row is not evidence and
+  // must not override the ledger.
   assert.equal(FILING_TABLE.github.lookupMeasured, true);
-  assert.equal(FILING_TABLE.forgejo.lookupMeasured, false);
+  assert.equal(FILING_TABLE.forgejo.lookupMeasured, true);
   assert.equal(FILING_TABLE.gitlab.lookupMeasured, false);
   // Every row states it, so the seam reads one key and never asks which
   // provider it is talking to - and a row added without the fact reads as

@@ -48,6 +48,10 @@ function repoWith(git) {
 
 const GITHUB = { forge_provider: 'github', forge_repo: 'acme/widget' };
 const FORGEJO = { forge_provider: 'forgejo', forge_repo: 'acme/widget', forge_host: 'git.example.test' };
+// gitlab is the one row whose lookup argv is still ASSUMED rather than measured
+// (`FILING_TABLE.gitlab.lookupMeasured`), so it is what the unmeasured-row cases
+// below are written against. github and forgejo were both run live 2026-09-03.
+const GITLAB = { forge_provider: 'gitlab', forge_repo: 'acme/widget' };
 
 /**
  * A forge-CLI stub: it logs its argv, answers a `list` with `listBody` (or
@@ -1011,25 +1015,25 @@ test('a lookup that could not run with NO ledger creates every accept', () => {
 });
 
 test('on a forge whose lookup is UNMEASURED, a complete miss cannot overrule a confirmed row', () => {
-  // `tea` space-joins the chunk's tokens because it offers one search string
+  // `glab` space-joins the chunk's tokens because it offers one search string
   // and no OR, and whether it reads that as more than one term - or matches a
   // bracketed hex token in a title at all - is CONTEXT D-12's flagged
-  // assumption, stated in the forgejo row itself. So an empty answer there is
+  // assumption, stated in the gitlab row itself. So an empty answer there is
   // NOT evidence the tracker lacks the fingerprint, and letting it overrule the
-  // ledger would make this seam file more duplicates on forgejo than it did
+  // ledger would make this seam file more duplicates on gitlab than it did
   // before the lookup existed. The github case above is the control: there the
   // same empty answer DOES create over a confirmed row, because that query was
-  // run live.
-  const logins = JSON.stringify([{ name: 'mine', url: 'https://git.example.test', user: 'me' }]);
+  // run live - as forgejo's now has been, which is why this case is written
+  // against gitlab, the one row left carrying `lookupMeasured: false`.
   const payload = dispositions([[FIVE[0], 'accept'], [FIVE[2], 'accept']]);
   const { status, envelope, calls } = run(['file', '--payload', payload], {
-    git: FORGEJO,
-    bins: ['tea'],
-    stub: { loginBody: logins, listBody: '[]' },
+    git: GITLAB,
+    bins: ['glab'],
+    stub: { listBody: '[]' },
     prepare: (d) => {
       mkdirSync(join(d, '.planning'), { recursive: true });
       writeFileSync(join(d, '.planning', 'FILED.md'),
-        '# Filed\n\n- 2026-08-25 forgejo acme/widget '
+        '# Filed\n\n- 2026-08-25 gitlab acme/widget '
         + `${fingerprint(FIVE[0])}: ${issueTitle(FIVE[0])}\n`);
     },
   });
@@ -1044,19 +1048,18 @@ test('on a forge whose lookup is UNMEASURED, a complete miss cannot overrule a c
     [[fingerprint(FIVE[0]), 'FILED.md', '2026-08-25']]);
   assert.equal(envelope.ledger_stood_in, true, JSON.stringify(envelope));
   // The lookup still RAN - this is not the child-failed arm wearing a new hat.
-  // `listCalls` would also count `tea login list`, so match the issue face.
-  assert.equal(calls.filter((c) => /issues list /.test(c)).length, 1, calls.join('\n'));
+  assert.equal(calls.filter((c) => /issue list /.test(c)).length, 1, calls.join('\n'));
 });
 
 test('an unmeasured forge still honours a lookup HIT, which is the arm that was measured true', () => {
   // Only the MISS is downgraded on an unmeasured row. A title that carries the
   // fingerprint is a positive answer whatever the query semantics were, so it
-  // suppresses by NUMBER exactly as github's does.
-  const logins = JSON.stringify([{ name: 'mine', url: 'https://git.example.test', user: 'me' }]);
+  // suppresses by NUMBER exactly as github's does. gitlab is the unmeasured row
+  // and `iid` is its `numberKey`.
   const payload = dispositions([[FIVE[0], 'accept']]);
-  const listBody = JSON.stringify([{ index: 12, title: issueTitle(FIVE[0]) }]);
+  const listBody = JSON.stringify([{ iid: 12, title: issueTitle(FIVE[0]) }]);
   const { status, envelope, calls } = run(['file', '--payload', payload],
-    { git: FORGEJO, bins: ['tea'], stub: { loginBody: logins, listBody } });
+    { git: GITLAB, bins: ['glab'], stub: { listBody } });
   assert.equal(status, 0);
   assert.equal(createCalls(calls).length, 0, calls.join('\n'));
   assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.authority, e.issue]),
