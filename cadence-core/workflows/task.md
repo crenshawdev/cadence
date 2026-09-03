@@ -149,7 +149,24 @@ No PLAN.md, no SUMMARY.md, no state writes.
 <step name="risk_check">
 ASK THE SEAM whether any commit's diff touched a risk surface - never by reading
 the diff against a prose list, which left no record at all when it matched
-nothing:
+nothing.
+
+FIRST, whether there is a range to ask about. A run that landed no commits
+leaves HEAD where it was, so `git rev-parse --short HEAD` still prints the
+echoed `$S` and the range's two ends are ONE commit. Nothing landed, so nothing
+can have matched: do NOT run `risk-check run`. Append the skip in its place:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family outcome --event risk_check_skipped --plan <the task's slug> --sha "$S"
+```
+
+The event NAME is the record that nothing was checked because nothing landed.
+Asking the seam over that pair instead writes `checked: true, empty: true` - a
+completed clean check over a range that could not have matched. Done is reported
+on that append's `written: true` under the same rule as below, and the `record`
+step proceeds as written.
+
+When HEAD has moved, the range is real:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base <parent of the task's first commit> --head HEAD

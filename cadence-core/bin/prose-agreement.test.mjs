@@ -3715,3 +3715,75 @@ test('RSK-10: every risk-check run invocation names --base and exactly one scope
     + '- a debug session sits outside the phase spine, so any other phase number files its '
     + "range against a real phase's records");
 });
+
+// --- RSK-10: a range whose two ends are ONE commit is skipped, not cleared ---
+//
+// The defect, observed twice on smithers (2026-08-27T23:55:38 and
+// 2026-08-28T14:28:12). `execute.md`'s post-plan call is
+// `--base {pre-plan HEAD} --head HEAD`, so a plan that landed no commits asks
+// the seam about a range whose ends are the same commit. The seam answers
+// `checked: true, empty: true` - the correct answer for a zero-byte diff, and a
+// COMPLETED clean check on the one gate that is blocking at every stakes level,
+// standing in the record as if a range had been judged. `lib/risk-diff.mjs`
+// decides `empty` from the diff BODY and never from equal ids on purpose (a
+// revert pair has differing ids and an empty net diff), so the fix is the
+// caller's: do not ask.
+//
+// What is pinned is the GUARD, not the wording. The skip is worthless
+// unconditional - it would silence every real range - so each site is read for
+// the invocation AND for the sentence that says when it applies, and the end
+// spelling in that sentence is the site's own recorded end.
+
+const SKIP_EVENT = 'risk_check_skipped';
+const SKIP_CONDITION = 'landed no commits';
+
+/**
+ * The three sites that emit a per-plan range and can emit a self-comparing one.
+ * The end marker differs per site because the recorded end does: the pre-plan
+ * HEAD, the echoed start sha, and the pre-merge HEAD step 3 wrote down.
+ */
+const SKIP_SITES = [
+  {
+    where: 'cadence-core/workflows/execute.md',
+    body: () => stepBody(doc('cadence-core', 'workflows', 'execute.md'),
+      'execute_sequential', 'workflows/execute.md'),
+    end: '{pre-plan HEAD}',
+  },
+  {
+    where: 'cadence-core/workflows/task.md',
+    body: () => stepBody(doc('cadence-core', 'workflows', 'task.md'),
+      'risk_check', 'workflows/task.md'),
+    end: '`$S`',
+  },
+  {
+    // No `<step>` blocks in this reference - its step 5 is a numbered item, and
+    // the file is the parallel path's whole sequence.
+    where: 'cadence-core/references/execute-parallel.md',
+    body: () => doc('cadence-core', 'references', 'execute-parallel.md'),
+    end: 'step 3 recorded',
+  },
+];
+
+test('RSK-10: a plan that landed no commits records the skip rather than a clean check', () => {
+  for (const { where, body, end } of SKIP_SITES) {
+    const text = body();
+    const call = text.split('\n').find((l) => l.includes('planning.mjs')
+      && /\btrace\s+append\b/.test(l) && l.includes(`--event ${SKIP_EVENT}`));
+    assert.ok(call,
+      `${where} has no \`trace append --event ${SKIP_EVENT}\` invocation, so a plan that `
+      + 'landed no commits still asks the seam about a range whose two ends are one commit '
+      + 'and books the answer as a completed clean check');
+    assert.ok(call.includes('--family outcome'),
+      `${where}'s ${SKIP_EVENT} append is not in the \`outcome\` family, so it does not sit `
+      + `beside the \`risk_check\` rows it stands in for: ${call.trim()}`);
+
+    // The GUARD. An unconditional skip silences every real range, so the
+    // sentence stating WHEN it applies is the half worth pinning - and it has
+    // to name the end this site recorded, which is what makes "the two ends are
+    // one commit" a thing a coordinator can actually test.
+    const when = sentenceAround(text, SKIP_CONDITION, where);
+    assert.ok(when.includes(end),
+      `${where} states the skip's condition without naming the end it compares HEAD against `
+      + `(${end}), so the arm cannot be evaluated: ${when}`);
+  }
+});
