@@ -1628,17 +1628,73 @@ test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check st
     + 'detection without enforcement is the outcome RSK-02 exists to prevent');
 });
 
-test('ENFORCEMENT, task.md: done is withheld on `written: false`', () => {
-  // `ok:true, written:false` - a symlinked trace, a failed stat, a full disk,
-  // the size-cap bound - is NOT a completed check. The execute path is covered
-  // by its own `risk-check status` call, which re-reads the trace and finds
-  // nothing; the task path has no status call, so this flag is its whole guard.
+/**
+ * The first sentence of `slice` delivering a done verdict ON `written: false`.
+ *
+ * `sentencesOf` above is the file's one sentence bound - `.!?` followed by
+ * WHITESPACE, so `.planning/` and `trace.jsonl` are not ends - and each
+ * sentence is wrap-collapsed before it is read, because a workflow file breaks
+ * lines wherever the column runs out and "reports done" must match across one.
+ */
+const ownVerdict = (slice) => sentencesOf(slice).map((x) => x.replace(/\s+/g, ' '))
+  .find((x) => /`written: false`/.test(x) && /reports? done/i.test(x));
+
+test('ENFORCEMENT, task.md: the completion rule decides `written: false`, in ONE place', () => {
+  // RSK-11. `ok:true, written:false` splits in two and the split is the rule:
+  // an absent planning root is a run that HAS no receipt to land - git is the
+  // code record, the seams create nothing, the check itself genuinely ran - and
+  // it reports done saying so. Every OTHER `written: false` - a symlinked
+  // trace, a failed stat, a full disk, the size-cap bound - is a receipt that
+  // SHOULD have landed and did not, and it is still not a completed check. The
+  // execute path is covered by its own `risk-check status` call, which re-reads
+  // the trace and finds nothing; the task path has no status call, so this flag
+  // is its whole guard.
+  //
+  // Both halves are read out of the `risk_check` step by its own anchor and
+  // asserted SENTENCE-WISE, because the failure that matters is a half quietly
+  // dropped: keep the reporting half alone and a lost record on an adopted repo
+  // reports done, keep the withholding half alone and a treeless task can never
+  // finish - which is the defect GH-246 filed.
   const task = doc('cadence-core', 'workflows', 'task.md');
-  assert.match(task, /`written: false`/,
-    'task.md never states the written flag, so a record that never landed reports done');
-  assert.match(task, /`written: false`[^.]*(do not|does not|never)\s+report\s+done/i,
-    "task.md's risk_check step states the written flag but not that done is withheld on it - "
-    + 'detection without enforcement is the outcome RSK-02 exists to prevent');
+  const risk = stepBody(task, 'risk_check', 'task.md');
+
+  // HALF ONE: the absent root REPORTS done - and names both seam spellings of
+  // it, since those two strings are the whole discriminator.
+  const reports = sentenceAround(risk, 'the absent planning root', 'task.md');
+  const lostReporting = "task.md's completion rule no longer reports done on a `written: false` "
+    + 'whose reason is the absent planning root, so an inline /cad-task on a repository with no '
+    + '.planning/ can never finish - the defect GH-246 filed';
+  assert.match(reports, /`written: false`/, lostReporting);
+  assert.match(reports, /ENOENT/, lostReporting);
+  assert.match(reports, /no planning root/, lostReporting);
+  assert.match(reports, /reports? done/i, lostReporting);
+  assert.doesNotMatch(reports, /\b(do not|does not|never|withhold)\b/i,
+    `${lostReporting} - the reporting half now carries a negation: ${reports}`);
+
+  // HALF TWO: every other reason WITHHOLDS done. Detection without enforcement
+  // is the outcome RSK-02 exists to prevent.
+  const withheld = sentenceAround(risk, 'any other reason', 'task.md');
+  const lostWithholding = "task.md's completion rule no longer withholds done on a "
+    + '`written: false` for any other reason, so a symlinked trace or a full disk on an '
+    + 'ADOPTED repository reports done over a record that never landed - detection without '
+    + 'enforcement is the outcome RSK-02 exists to prevent';
+  assert.match(withheld, /`written: false`/, lostWithholding);
+  assert.match(withheld, /(do not|does not|never)\s+report\s+done/i, lostWithholding);
+
+  // ONCE: the two other sites POINT at the rule rather than restating it. Three
+  // statements of one rule in one file is how the treeless arm gets restored in
+  // one place and lost in another (CONTEXT D-04).
+  const at = risk.indexOf('The event NAME');
+  assert.ok(at > -1, "task.md's risk_check step has no skip-arm paragraph");
+  const skip = risk.slice(at, risk.indexOf('\n\n', at));
+  const record = stepBody(task, 'record', 'task.md');
+  const restated = 'task.md states the completion rule in more than one place again - the '
+    + 'skip arm and the `record` step must POINT at the `risk_check` rule, because a rule '
+    + 'written three times is a rule that gets edited once';
+  assert.match(skip, /completion rule/, restated);
+  assert.match(record, /completion rule/, restated);
+  assert.equal(ownVerdict(skip), undefined, `${restated} - skip arm: ${ownVerdict(skip)}`);
+  assert.equal(ownVerdict(record), undefined, `${restated} - record step: ${ownVerdict(record)}`);
 });
 
 // --- ENFORCEMENT: the FAIL branch is a DISPATCH, and its guardrail ----------

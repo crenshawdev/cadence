@@ -163,8 +163,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 The event NAME is the record that nothing was checked because nothing landed.
 Asking the seam over that pair instead writes `checked: true, empty: true` - a
 completed clean check over a range that could not have matched. Done is reported
-on that append's `written: true` under the same rule as below, and the `record`
-step proceeds as written.
+on that append's `written: true` under the completion rule below, and its
+`written: false` takes that same rule's absent-root arm rather than a verdict of
+its own; the `record` step proceeds as written either way.
 
 When HEAD has moved, the range is real:
 
@@ -187,15 +188,29 @@ table admits for `risk_surface`. That file is transient exactly like
 `execute.md`'s `plan-<k>-risk-task-<n>.diff`: never stage it, and delete it once
 the trigger returns.
 
-Done is reported only on an `ok:true` run whose record actually REACHED the
-trace, which the envelope states as `written: true`. On `written: false` - a
-symlinked trace, a failed stat, a full disk, or the size cap - do not report
-done: state the reason and re-run once a record can land. This path has no
-`risk-check status` call of its own the way `execute.md` does, so that flag is
-its whole guard, and `ok:true` with nothing on the record is exactly the state
-this step exists to refuse. When there is no `.planning/` at all the record has
-nowhere to go and the same rule holds - create it, or say the check is unrecorded
-rather than reporting done on it.
+THE COMPLETION RULE, stated here and nowhere else - it decides every
+`written: false` this run can see: the skip append above, this check's own
+`trace`, and the `record` step's envelope below.
+
+On `ok:true`, done is reported in exactly two states: the record REACHED the
+trace, which the envelope states as `written: true`; and a `written: false`
+whose `reason` is the absent planning root - `ENOENT` from the trace seams, "no
+planning root" from `task-record` - where the run reports done with the check's
+disposition stated and its record called unrecorded, because git is the code
+record and the durable Cadence receipt is the one thing a treeless run has
+nowhere to put. `ENOENT` is the whole of that spelling on the trace side:
+`trace.jsonl` sits directly under `.planning/`, so an append that raised it
+found no planning root, and there is no second reading of it.
+
+A `written: false` for any other reason - a symlinked trace, a failed stat,
+`EACCES` or `ENOSPC` on the append, `oversized-event`, a rotation that failed,
+an unwritable or symlinked `tasks/{slug}/` - does not report done: state the
+reason and re-run once a record can land. The two are told apart on the
+envelope's own `reason`, never on a `[ -d .planning ]` check beside the seam;
+the `scope` step already states why two ways of asking one question drift. This
+path has no `risk-check status` call of its own the way `execute.md` does, so
+that flag is its whole guard, and an `ok:true` with nothing on the record for
+any other cause is exactly the state this step exists to refuse.
 
 `{slug}` is this task's own slug, and neither it nor that directory is created
 by the INLINE path - `planned_path` step 1 is the only writer of
@@ -274,9 +289,11 @@ same bytes.
 
 The seam creates `.planning/tasks/{slug}/` under an EXISTING `.planning/` and
 creates NOTHING where `.planning/` is absent: there it answers `written: false`
-with a reason and writes no record at all. So an inline task in a repository
-with no planning tree still scaffolds nothing, which is what this workflow's
-success criterion actually protects.
+with a reason and writes no record at all. That reason is the absent-root one
+the `risk_check` step's completion rule already decided - the run reports done
+and calls its record unrecorded - so an inline task in a repository with no
+planning tree scaffolds nothing AND still finishes, which is what this
+workflow's success criterion actually protects.
 </step>
 
 <step name="done">
