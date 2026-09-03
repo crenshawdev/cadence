@@ -334,15 +334,25 @@ Report:
 Done: {what changed}
 Commit(s): {hashes}
 Files: {list}
+Risk check: {`risk_check_skipped` when nothing landed | `checked: false` and the row's cause when the range could not be read | `checked: true, empty: true` when it was read and held nothing | the `matches` list or `inconclusive: true` and the review's outcome when the trigger fired}, {recorded, or unrecorded because <the reason, in words>}
 Record: {the `record` path from the task-record envelope}
 ```
 
-The `Record:` line rides an envelope that said `written: true`. On
-`written: false` - no planning tree, an unwritable or symlinked
-`tasks/{slug}/`, a range that would not resolve - drop the line and state the
-envelope's reason in its place: a record that never landed must not read as one
-that did. This is the same discipline the `risk_check` step applies to its own
-flag.
+Two lines, two rules. The `Record:` line rides an envelope that said
+`written: true`; on `written: false` - no planning tree, an unwritable or
+symlinked `tasks/{slug}/`, a range that would not resolve - drop the line and
+state the envelope's reason in its place, because a record that never landed
+must not read as one that did.
+
+The `Risk check:` line is never dropped, because a verdict that RAN is reported
+whether or not its receipt landed. Both halves are the envelope's own words and
+nothing minted: the verdict from the `risk-check run` envelope or the
+`risk_check_skipped` event that stood in for it, then `trace: {written: true}`
+rendered as recorded and `trace: {written: false, reason}` as unrecorded with
+the reason in words - the absent planning root where that reason is `ENOENT`.
+That second half is what tells a treeless run's done block apart from an adopted
+one's. Whether this block is reached at all was decided by the `risk_check`
+step's completion rule; this step only renders what that rule let through.
 
 No next-step menu.
 </step>
