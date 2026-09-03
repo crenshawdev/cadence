@@ -702,6 +702,28 @@ function cmdFile(dir, payloadFile) {
     return;
   }
 
+  // ONE FINGERPRINT, ONE ENTRY, decided before anything else looks at the set.
+  // First occurrence wins, so the lookup, the loop, `filed`, `unfiled` and every
+  // count below run over the collapsed set and a duplicate appears nowhere
+  // twice.
+  //
+  // NOT IN `readDispositions`: that function validates SHAPE and is not a dedup
+  // site (CONTEXT D-03), and folding a second job into it would make a payload
+  // the caller sent and the payload this face acted on differ silently at the
+  // door. And NOT IN THE TRACKER PATH, which cannot see this shape at all: two
+  // identical entries in one fire are one query and one answer, and the create
+  // for the second would run before any lookup could learn of the first. The
+  // four seconds between `#241` and `#242` fit an in-payload duplicate exactly
+  // as well as they fit a retry (D-08), so both halves are closed.
+  const entries = [];
+  const seenPrints = new Set();
+  for (const e of read.entries) {
+    const print = fingerprint(e.finding);
+    if (seenPrints.has(print)) continue;
+    seenPrints.add(print);
+    entries.push(e);
+  }
+
   // THE LEDGER IS READ BEFORE THE FORGE IS RESOLVED, so a refusal it raises
   // precedes every child this fire would spawn - `cmdUnfixed` takes the same
   // posture about its own local file, and for the same reason: a local read
@@ -709,7 +731,7 @@ function cmdFile(dir, payloadFile) {
   // fire with an accept reads it; a decline never consults what was filed.
   /** @type {Map<string, {date: string, unconfirmed: boolean}>} */
   let ledger = new Map();
-  const hasAccept = read.entries.some((e) => e.disposition === 'accept');
+  const hasAccept = entries.some((e) => e.disposition === 'accept');
   if (hasAccept) {
     const filedRows = readFiled(dir);
     if (filedRows.ok === false) {
@@ -734,7 +756,7 @@ function cmdFile(dir, payloadFile) {
   // the create (CONTEXT D-04), and the user has already answered here.
   /** @type {Map<string, {answered: boolean, number: number|null}>} */
   let answers = new Map();
-  const acceptPrints = [...new Set(read.entries
+  const acceptPrints = [...new Set(entries
     .filter((e) => e.disposition === 'accept')
     .map((e) => fingerprint(e.finding)))];
   if (acceptPrints.length) {
@@ -760,8 +782,8 @@ function cmdFile(dir, payloadFile) {
   // envelope says the local file stood in, rather than letting a suppression
   // read as something the tracker confirmed.
   let ledgerStoodIn = false;
-  for (let i = 0; i < read.entries.length; i += 1) {
-    const { finding, disposition } = read.entries[i];
+  for (let i = 0; i < entries.length; i += 1) {
+    const { finding, disposition } = entries[i];
     const title = issueTitle(finding);
     const print = fingerprint(finding);
     // A DECLINE NEVER TOUCHES THE FORGE. It used to be created as a labelled
@@ -815,7 +837,7 @@ function cmdFile(dir, payloadFile) {
       title, body: issueBody(finding), declined: false,
     }, forge.login);
     if (!run(forge.bin, argv, { cwd: dir, timeout: CREATE_TIMEOUT_MS }).ok) {
-      const unfiled = read.entries.slice(i).map((e) => ({
+      const unfiled = entries.slice(i).map((e) => ({
         fingerprint: fingerprint(e.finding),
         disposition: e.disposition,
         title: issueTitle(e.finding),
@@ -884,7 +906,7 @@ function cmdFile(dir, payloadFile) {
         mirror_reason: mirror.ok === false ? mirror.reason : null,
         mirror_detail: mirror.ok === false ? mirror.detail : null,
         detail: `${forge.bin} could not create the issue for ${unfiled[0].fingerprint} on `
-          + `${forge.repo}: ${filed.length} of ${read.entries.length} were filed and `
+          + `${forge.repo}: ${filed.length} of ${entries.length} were filed and `
           + `${unfiled.length} were not`
           + (suppressed.length
             ? `, and ${suppressed.length} were already on ${forge.repo} and not filed again`

@@ -938,6 +938,36 @@ test('an UNCONFIRMED write over a CONFIRMED row rewrites that row rather than ad
   assert.match(rows[0], new RegExp(`${fingerprint(FIVE[0])} unconfirmed: `), rows[0]);
 });
 
+// --- one fingerprint, one entry, whatever the payload holds ------------------
+
+test('a payload carrying the same fingerprint TWICE spawns one create', () => {
+  // No tracker lookup can catch this shape: both entries are in one fire, so
+  // the second create would run before any query could learn of the first.
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[0], 'accept']]);
+  const { status, envelope, calls, dir } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(listCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(envelope.filed.length, 1, JSON.stringify(envelope.filed));
+  assert.equal(envelope.accepted, 1);
+  const rows = filedText(dir).split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(rows.length, 1, filedText(dir));
+});
+
+test('an accept followed by a DECLINE of the same finding creates once and declines nothing', () => {
+  // First occurrence wins, so the collapsed entry is the accept - and the
+  // decline that followed it writes no DECLINED.md row, because it is not in
+  // the set any more.
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[0], 'decline']]);
+  const { status, envelope, calls, dir } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(envelope.accepted, 1);
+  assert.equal(envelope.declined, 0);
+  assert.equal(declinedText(dir), '', declinedText(dir));
+});
+
 // --- the ledger answers when the lookup cannot -------------------------------
 //
 // D-04: the tracker decides when its answer came back COMPLETE, `.planning/
