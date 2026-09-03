@@ -467,6 +467,95 @@ export function normalizeDeclines(text, limit) {
   return { complete: true, fingerprints, detail: null };
 }
 
+/** An issue number however its CLI spells it, or null when the field carries no
+ * readable one.
+ *
+ * `tea issues list` prints `index` as a STRING and gh prints `number` as a
+ * NUMBER, both measured, so both shapes answer. Written here rather than
+ * imported from lib/issue-decision.mjs for the reason `normalizeDeclines`
+ * states about itself: that module is a read-only face this work does not
+ * extend, and its own helper is not exported.
+ *
+ * POSITIVE, and outside the safe-integer range is no readable number. `0` is
+ * not an issue on any of the three, and `9007199254740993` reads back as
+ * `...992` - a number that names a DIFFERENT issue than the tracker holds,
+ * which is the whole value of "this one already exists" gone.
+ * @param {unknown} raw @returns {number|null} */
+function issueNumber(raw) {
+  const n = typeof raw === 'number' ? raw
+    : (typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : NaN);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * One TITLE-SCOPED LOOKUP response -> the (fingerprint, issue number) pairs it
+ * carries, plus whether the read is COMPLETE. Total: any input at all answers,
+ * and an incomplete answer carries NOTHING.
+ *
+ * BESIDE `normalizeDeclines`, NOT A WIDENING OF IT (CONTEXT D-10). That one
+ * answers `fingerprints: string[]` and drops the number, and its own header
+ * states that its two readers stay two on purpose. The NUMBER is the thing this
+ * one exists for: a fire that finds a fingerprint already on the tracker has to
+ * report WHICH issue holds it, and no create face on any of the three CLIs
+ * prints a machine-readable number, so the lookup is the only place one can
+ * come from. Three readers now, each reading the field its own question needs.
+ *
+ * A RESPONSE THAT FILLS ITS PAGE IS INCOMPLETE AND CARRIES NOTHING, the rule
+ * `normalizeDeclines` states and `normalizeList` in lib/issue-decision.mjs
+ * shares. The consequence here is a create rather than an ask: a truncated page
+ * read as the whole answer says "not filed" about an issue that is filed, and
+ * the duplicate that follows is the defect this work exists to close.
+ *
+ * A row that is not an object, or whose `title` is not a string, fails the
+ * WHOLE read - a renamed or missing field means the CLI's output shape moved.
+ * A row whose title carries a Cadence token but whose number key is absent or
+ * unreadable fails the whole read too, which is where this normalizer and
+ * `normalizeDeclines` genuinely differ: the output shape moved from a token to
+ * a pair, so a token without its number is half a record and there is nowhere
+ * to put it. A row whose title carries NO token is SKIPPED, unchanged - a human
+ * can title an issue anything, and a title-scoped search still matches on a
+ * substring of a word.
+ *
+ * `state` IS NEVER READ, and that is CONTEXT D-05 rather than an omission: an
+ * existing issue suppresses whether it is open or closed. The fingerprint is
+ * `sha256(file + NUL + claim)`, so nothing about it changes when the code is
+ * fixed, and a finding filed, fixed and closed can never be filed again. The
+ * same coarseness was already accepted for declines in v3.7.1.
+ *
+ * `detail` is a fixed phrase, never a slice of the response: the bytes a forge
+ * CLI prints are not this seam's to put in an envelope (CONTEXT D-16).
+ *
+ * @param {unknown} text the CLI's stdout
+ * @param {number} limit the page size the argv asked for
+ * @param {string} numberKey the row's own `numberKey` fact - never spelled by a caller
+ * @returns {{complete: boolean,
+ *   records: Array<{fingerprint: string, number: number}>, detail: string|null}}
+ */
+export function normalizeLookup(text, limit, numberKey) {
+  /** @param {string} detail */
+  const bad = (detail) => ({ complete: false, records: [], detail });
+  if (typeof text !== 'string') return bad('response was not text');
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return bad('response was not JSON'); }
+  if (!Array.isArray(parsed)) return bad('response was not a JSON array');
+  /** @type {Array<{fingerprint: string, number: number}>} */
+  const records = [];
+  for (const row of parsed) {
+    if (!row || typeof row !== 'object') return bad('a row was not an object');
+    const title = /** @type {Record<string, unknown>} */ (row).title;
+    if (typeof title !== 'string') return bad('a row carried no readable title');
+    const token = fingerprintInTitle(title);
+    if (token === null) continue;
+    const number = issueNumber(/** @type {Record<string, unknown>} */ (row)[numberKey]);
+    if (number === null) return bad(`a row carrying a Cadence token had no readable ${numberKey}`);
+    records.push({ fingerprint: token, number });
+  }
+  if (parsed.length >= limit) {
+    return bad(`the response filled the ${limit}-row page and may be truncated`);
+  }
+  return { complete: true, records, detail: null };
+}
+
 /**
  * How each provider's CLI is told to CREATE an issue and to LIST the declined
  * ones - one row per provider, in the shape `CREATE_TABLE` in
@@ -535,10 +624,18 @@ export function normalizeDeclines(text, limit) {
  *   glab  100 - the GitLab API's per_page ceiling
  *   tea    50 - Forgejo/Gitea clamps the page server-side whatever `--limit`
  *               asks, so a bigger number buys nothing but false coverage
- * `normalizeDeclines` above applies the truncation rule that goes with them -
+ * `normalizeDeclines` and `normalizeLookup` above apply the truncation rule -
  * and on a title-scoped search a filled page is a stronger signal than on a
  * list, because a query naming at most six tokens has no business returning
  * fifty rows.
+ *
+ * THE NUMBER KEY IS A STATED FACT PER ROW, never something a caller spells.
+ * `numberKey` names the field that row's CLI puts the issue number in, and the
+ * three are all different - `number`, `iid`, `index`, exactly the three
+ * `HOST_TABLE` in lib/issue-decision.mjs already reads. It rides the row for
+ * the reason `limit` does: a seam that spelled `iid` at a call site would be a
+ * seam that knows which provider it is talking to, which is the knowledge this
+ * table exists to hold instead.
  *
  * The forgejo row takes a LOGIN on both calls and the other two take none, the
  * split `HOST_TABLE` already states: an unqualified `tea --repo` falls back to
@@ -557,6 +654,7 @@ export const FILING_TABLE = Object.freeze({
   forgejo: Object.freeze({
     needsLogin: true,
     limit: 50,
+    numberKey: 'index',
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @param {string} login @returns {string[]} */
@@ -579,6 +677,7 @@ export const FILING_TABLE = Object.freeze({
   github: Object.freeze({
     needsLogin: false,
     limit: 200,
+    numberKey: 'number',
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @returns {string[]} */
@@ -597,6 +696,7 @@ export const FILING_TABLE = Object.freeze({
   gitlab: Object.freeze({
     needsLogin: false,
     limit: 100,
+    numberKey: 'iid',
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @returns {string[]} */

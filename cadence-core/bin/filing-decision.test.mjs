@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import {
   DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, LOOKUP_CHUNK, fingerprint,
   fingerprintInTitle, HALTING_SEVERITIES, issueBody, issueTitle, normalizeDeclines,
+  normalizeLookup,
   unfixedFindings, unfixedFromEntries, usableFixCommit,
 } from './lib/filing-decision.mjs';
 import { PROVIDER_TABLE } from './lib/forge-decision.mjs';
@@ -576,6 +577,105 @@ test('a hand-labelled issue is SKIPPED, not a failure - a human can apply a labe
   const out = normalizeDeclines(rows, 50);
   assert.equal(out.complete, true);
   assert.deepEqual(out.fingerprints, [fingerprint(finding('src/a.mjs', 1, 'low', 'a real one'))]);
+});
+
+// --- the LOOKUP normalizer: the same three-way shape, carrying NUMBERS -------
+//
+// A separate reader beside `normalizeDeclines` (D-10) because the create face
+// has to report WHICH issue already holds a fingerprint, and no create prints a
+// machine-readable number on any of the three CLIs.
+
+/** `n` rows whose titles carry real fingerprints, numbered under `key`. */
+const numbered = (n, key = 'number', extra = {}) => JSON.stringify(
+  Array.from({ length: n }, (_, i) => ({
+    [key]: i + 1,
+    title: issueTitle(finding(`src/f${i}.mjs`, 1, 'low', `claim ${i}`)),
+    ...extra,
+  })),
+);
+
+test('lookup: a page of exactly the limit is INCOMPLETE and carries no pairs', () => {
+  const out = normalizeLookup(numbered(50), 50, 'number');
+  assert.equal(out.complete, false);
+  assert.deepEqual(out.records, []);
+  assert.match(out.detail, /filled the 50-row page/);
+});
+
+test('lookup: one row under the page size is COMPLETE and every number is read', () => {
+  const out = normalizeLookup(numbered(49), 50, 'number');
+  assert.equal(out.complete, true);
+  assert.equal(out.detail, null);
+  assert.equal(out.records.length, 49);
+  assert.deepEqual(out.records[0], {
+    fingerprint: fingerprint(finding('src/f0.mjs', 1, 'low', 'claim 0')),
+    number: 1,
+  });
+  assert.deepEqual(out.records.map((r) => r.number), out.records.map((_, i) => i + 1));
+});
+
+test('lookup: the junk table answers incomplete without throwing', () => {
+  for (const junk of ['not json at all', '{"issues": []}', '42', '"a string"', '', null, 7]) {
+    const out = normalizeLookup(junk, 50, 'number');
+    assert.equal(out.complete, false, JSON.stringify(junk));
+    assert.deepEqual(out.records, []);
+    assert.notEqual(out.detail, null);
+  }
+});
+
+test('lookup: a token-carrying row missing its number fails WHOLE, naming the shape', () => {
+  // Where this reader and `normalizeDeclines` genuinely part: the output shape
+  // moved from a token to a PAIR, so a token with no number is half a record.
+  const title = issueTitle(finding('src/a.mjs', 1, 'low', 'a real one'));
+  for (const row of [{ title }, { title, number: 0 }, { title, number: -3 },
+    { title, number: 'twelve' }, { title, number: 9007199254740993 }]) {
+    const out = normalizeLookup(JSON.stringify([row]), 50, 'number');
+    assert.equal(out.complete, false, JSON.stringify(row));
+    assert.match(out.detail, /no readable number/);
+    assert.deepEqual(out.records, []);
+  }
+});
+
+test('lookup: a row whose title carries no token is SKIPPED, not a failure', () => {
+  // A human can title an issue anything, and a title-scoped search matches on a
+  // substring of a word - so a stranger's issue is not a broken response.
+  const rows = JSON.stringify([
+    { title: 'somebody wrote about 084c9ce03c072e0b in here' },
+    { number: 7, title: issueTitle(finding('src/a.mjs', 1, 'low', 'a real one')) },
+  ]);
+  const out = normalizeLookup(rows, 50, 'number');
+  assert.equal(out.complete, true);
+  assert.deepEqual(out.records, [{
+    fingerprint: fingerprint(finding('src/a.mjs', 1, 'low', 'a real one')), number: 7,
+  }]);
+});
+
+test('lookup: each provider\'s number key is read through its row\'s stated fact', () => {
+  // `number` / `iid` / `index` - the three HOST_TABLE already reads, and the
+  // seam never spells one at a call site.
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(FILING_TABLE).map(([p, r]) => [p, r.numberKey])),
+    { forgejo: 'index', github: 'number', gitlab: 'iid' },
+  );
+  for (const row of Object.values(FILING_TABLE)) {
+    const out = normalizeLookup(numbered(3, row.numberKey), row.limit, row.numberKey);
+    assert.equal(out.complete, true, row.numberKey);
+    assert.deepEqual(out.records.map((r) => r.number), [1, 2, 3], row.numberKey);
+  }
+  // tea prints `index` as a STRING; the same read answers.
+  const asString = JSON.stringify([{
+    index: '171', title: issueTitle(finding('src/a.mjs', 1, 'low', 'a real one')),
+  }]);
+  assert.deepEqual(normalizeLookup(asString, 50, 'index').records,
+    [{ fingerprint: fingerprint(finding('src/a.mjs', 1, 'low', 'a real one')), number: 171 }]);
+});
+
+test('lookup: a CLOSED row is returned like any other - `state` is never read (D-05)', () => {
+  const out = normalizeLookup(numbered(2, 'number', { state: 'closed' }), 50, 'number');
+  assert.equal(out.complete, true);
+  assert.equal(out.records.length, 2);
+  assert.deepEqual(out.records[0], {
+    fingerprint: fingerprint(finding('src/f0.mjs', 1, 'low', 'claim 0')), number: 1,
+  });
 });
 
 // --- the title carries the token the lookup reads back -----------------------
