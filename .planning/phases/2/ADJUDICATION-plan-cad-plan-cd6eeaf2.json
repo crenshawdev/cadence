@@ -1,0 +1,102 @@
+{
+  "phase": "2",
+  "trigger": "plan",
+  "discriminator": "cad-plan-cd6eeaf2",
+  "round": 1,
+  "base": "b8f5e913",
+  "head": "cd6eeaf21439e579357c90c2ce474bf035047214",
+  "base_id": "b8f5e913617fc237bed7ab44d6aa404d1a1f7765",
+  "head_id": "cd6eeaf21439e579357c90c2ce474bf035047214",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/2/PLAN.md",
+      "line": 312,
+      "severity": "medium",
+      "claim": "Task 5 has no failing-capable verification for the required disposition line: `sed -n` exits successfully even when the line is absent, and the plan explicitly adds no prose pin for D-06.",
+      "failure_scenario": "An executor omits the new risk-check disposition line, leaves the existing four-line report block intact, re-pins the unchanged file size, and passes the full suite, typecheck, self-verify, `sed`, and `grep`. The task reports complete without delivering its central change.",
+      "ruling": "survived",
+      "convergent": false,
+      "base_id": "b8f5e913617fc237bed7ab44d6aa404d1a1f7765",
+      "head_id": "cd6eeaf21439e579357c90c2ce474bf035047214"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/2/PLAN.md",
+      "line": 41,
+      "severity": "high",
+      "claim": "No task performs the live treeless `/cad-task` run required by the Phase 2 success criteria; it is relegated to a note as human verification.",
+      "failure_scenario": "All five tasks can complete using seam and prose tests even if the assembled workflow stops after `surfaces-unanswered`, emits the wrong done block, or creates `.planning/` during a real session. The roadmap's completion and no-scaffolding criteria therefore remain undelivered.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/workflows/verify.md",
+        "line": 85,
+        "note": "A plan task is executed by a cad-executor subagent that cannot run a live /cad-task session; the (human-verify: needs <tool>) tag at verify.md:85 and :144 is the designed hand-off, and the plan carries it on AC3/AC4 with the seam test as the mechanical half."
+      },
+      "base_id": "b8f5e913617fc237bed7ab44d6aa404d1a1f7765",
+      "head_id": "cd6eeaf21439e579357c90c2ce474bf035047214"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/2/PLAN.md",
+      "line": 93,
+      "severity": "high",
+      "claim": "Task 1 contradicts locked D-12 by directing the executor to hand-add RSK-11 to REQUIREMENTS.md, although D-12 says the row is minted by `/cad-plan` through `seed-reqs` and nothing is hand-added.",
+      "failure_scenario": "If the coordinator subsequently runs the required seed operation, the manually created requirement can be duplicated or rejected; if it does not, the plan bypasses the locked seeding path and leaves no Phase 2 Traceability row—the verification even requires zero RSK-11 occurrences there.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "cd6eeaf2",
+      "base_id": "b8f5e913617fc237bed7ab44d6aa404d1a1f7765",
+      "head_id": "cd6eeaf21439e579357c90c2ce474bf035047214"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/2/PLAN.md",
+      "line": 215,
+      "severity": "medium",
+      "claim": "Task 3 adds a new exact-occurrence census to `prose-agreement.test.mjs` but neither the task nor plan frontmatter declares the census-registry file that shipped requirements CEN-01/CEN-02 require updating for such a test.",
+      "failure_scenario": "The executor either edits the registry outside its lease and is stopped at commit time, or leaves the new census unregistered, causing the census guard to fail or silently violating the repository's registered-census invariant.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/census-registry.mjs",
+        "line": 97,
+        "note": "CENSUSES holds no row for prose-agreement.test.mjs; lease-check --plan-time answered ok:true on the declared set; the new pins are string-match assertions, which the registry's own D-05 comment (:44-52) says are measurements and not a typed count."
+      },
+      "base_id": "b8f5e913617fc237bed7ab44d6aa404d1a1f7765",
+      "head_id": "cd6eeaf21439e579357c90c2ce474bf035047214"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": ".planning/phases/2/PLAN.md",
+      "line": 69,
+      "severity": "high",
+      "claim": "The plan promotes the flagged assumption that trace `ENOENT` uniquely proves a legitimately treeless run to “confirmed” using only an asserted description of `tracePath`; it provides no test for an adopted repository losing its planning root during the append.",
+      "failure_scenario": "On an adopted repository, deletion or a race that removes `.planning/` before `appendFileSync` also yields `ENOENT`. The proposed discriminator then takes the treeless exception, reports done, and conceals loss of a durable receipt—the exact failure the original assumption warned about.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/trace.mjs",
+        "line": 1203,
+        "note": "appendEvent swallows the lstat ENOENT (:1119-1121) and the stat ENOENT (:1157-1163) and refuses a symlink first, so the only ENOENT it returns is appendFileSync's at :1203-1206: the parent of .planning/trace.jsonl, which is the planning root, is absent. A .planning/ removed mid-run on an adopted repo IS that condition, and the done block reports it as unrecorded for that reason rather than concealing it (D-02)."
+      },
+      "base_id": "b8f5e913617fc237bed7ab44d6aa404d1a1f7765",
+      "head_id": "cd6eeaf21439e579357c90c2ce474bf035047214"
+    }
+  ]
+}
