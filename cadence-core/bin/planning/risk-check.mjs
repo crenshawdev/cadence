@@ -466,6 +466,11 @@ function cmdRiskCheckRun(dir, opts) {
  * that writes the record and the gate that fires on it are the same trigger,
  * and a second spelling is how the two halves start clearing each other. */
 const RISK_TRIGGER = 'risk_surface';
+/** The outcome event a caller appends IN PLACE of a check for a plan that landed
+ * no commits (RSK-10). Read by `status` so the row that skip stands in for is
+ * `skipped` rather than `missing`; the three sites that write it are named on
+ * the `skips` map in `cmdRiskCheckStatus`. */
+const RISK_SKIP_EVENT = 'risk_check_skipped';
 
 /**
  * The five `outcome` event names a `risk_surface` fire can settle at, and the
@@ -865,6 +870,41 @@ function cmdRiskCheckStatus(dir, opts) {
   }
 
   /**
+   * THE SKIP a caller writes IN PLACE of a check (RSK-10). A plan that landed
+   * no commits leaves HEAD where it was, so the range its coordinator would have
+   * named has one commit at both ends; `workflows/execute.md`, `workflows/task.md`
+   * and `references/execute-parallel.md` append `outcome/risk_check_skipped`
+   * carrying that commit as `sha` rather than asking `run` for a `checked:true,
+   * empty:true` row over nothing. This reader has to know the event, or the row
+   * those sites wrote it for stays `missing`: every executor return bracket in
+   * the cycle is a row here, so on a multi-plan phase one skipped plan refused
+   * every LATER plan's own `status` call - a gate that is blocking at every
+   * stakes level with no exit but an `override`.
+   *
+   * A skip carrying NO sha satisfies nothing, the rule fire receipts already
+   * follow: a skip that cannot name the commit it stood at cannot say which
+   * range it stood in for. A skip satisfies its row as `skipped`, never as
+   * `recorded` - a reader can still tell a range nobody had to read from one
+   * the detector read and cleared.
+   * @type {Map<string, {sha: string}[]>}
+   */
+  const skips = new Map();
+  /** The same skips keyed by PLAN alone, for the named-range arm. @type {Map<string, {sha: string}[]>} */
+  const skipsByPlan = new Map();
+  for (const e of r.events) {
+    if (!inCycle(e)) continue;
+    if (e.family !== 'outcome' || e.event !== RISK_SKIP_EVENT) continue;
+    if (typeof e.sha !== 'string' || !e.sha.trim()) continue;
+    const k = rowKey(e.corr, e.plan);
+    if (!skips.has(k)) skips.set(k, []);
+    const p = planKey(e.plan);
+    if (!skipsByPlan.has(p)) skipsByPlan.set(p, []);
+    const skip = { sha: e.sha.trim() };
+    skips.get(k).push(skip);
+    skipsByPlan.get(p).push(skip);
+  }
+
+  /**
    * THE FIRE'S OWN RECEIPTS, keyed the same way the records are (GAT-04).
    *
    * The defect: `risk-check status` proved a range was READ and RECORDED, and
@@ -1029,20 +1069,43 @@ function cmdRiskCheckStatus(dir, opts) {
     // that had to follow ever happened. The join is the row's own identity -
     // `rowKey(corr, plan)`, which for the asked row is the
     // `planRow(r.corr, wanted.plan)` this invocation registered.
+    //
+    // SKIPPED is the sixth, and it is reached only where NO record answers the
+    // row: a record the detector wrote is always the stronger claim about the
+    // same plan, so a skip never overrides one. On the phase-wide arm any skip
+    // that names its commit stands in for the plan. On the named-range arm a
+    // skip answers only for the range it describes - the two asked ends are ONE
+    // commit and the skip names it - and never for a staged ask, which names an
+    // index with bytes in it that the skip did not read. A staged ask carries
+    // `head_id: null`, so the equal-ends test below already refuses it.
+    const skipped = asked ? (skipsByPlan.get(planKey(row.plan)) || []) : (skips.get(k) || []);
+    const skipMatches = (/** @type {{sha: string}} */ s) =>
+      (asked
+        ? !asked.staged && asked.base_id !== null && asked.base_id === asked.head_id
+          && shaMatches(s.sha, asked.base_id)
+        : true);
     const state = asked
       ? (usable.some(sameRange) ? (fired && !settles(k, satisfying) ? 'unfired' : 'recorded')
         : found.some(sameRange) ? 'unchecked'
-          : found.length ? 'stale' : 'missing')
+          : found.length ? 'stale'
+            : skipped.some(skipMatches) ? 'skipped' : 'missing')
       : (usable.length ? (fired && !settles(k, satisfying) ? 'unfired' : 'recorded')
-        : (found.length ? 'unchecked' : 'missing'));
+        : found.length ? 'unchecked'
+          : skipped.some(skipMatches) ? 'skipped' : 'missing');
     // `matched_unnamed` is this reader's own conservative flag, not part of the
     // record a caller wrote, so it stays out of the reported shape - the rows
     // report what the trace holds.
     const pub = found.map(({ matched_unnamed: _u, ...rest }) => rest);
-    return { ...row, state, records: pub, ...(asked ? { wanted: asked } : {}) };
+    // The skips ride the row only where one exists, so a row that has none
+    // keeps the shape every reader of it already pins.
+    return {
+      ...row, state, records: pub,
+      ...(skipped.length ? { skips: skipped.map((s) => s.sha) } : {}),
+      ...(asked ? { wanted: asked } : {}),
+    };
   });
 
-  const offending = rows.filter((row) => row.state !== 'recorded');
+  const offending = rows.filter((row) => row.state !== 'recorded' && row.state !== 'skipped');
   if (offending.length) {
     // The hint names the step that is actually MISSING. Every offending row in
     // the `unfired` state has its record already: telling that caller to re-run
@@ -1069,7 +1132,9 @@ function cmdRiskCheckStatus(dir, opts) {
           + ` (one of ${FIRE_RECEIPTS.join(', ')}) under this phase's correlation id and that plan,`
           + ' then re-run this check'
         : `run risk-check run --phase ${parsedPhase.raw} --plan <k> --base <ref> --head <ref>`
-          + ' for each plan listed, then re-run this check',
+          + ' for each plan listed (or, for a plan that landed no commits,'
+          + ` trace append --family outcome --event ${RISK_SKIP_EVENT} --plan <k> --sha <that end>),`
+          + ' then re-run this check',
     });
   }
   // Nothing to require is not a failure: a phase with no completed executor

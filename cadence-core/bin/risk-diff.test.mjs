@@ -2193,3 +2193,101 @@ test('scanDeclared: one signal ORDER serves both faces - path evidence wins over
   assert.deepEqual(declared.matches, [{ category: 'secrets', signal: '.pem file' }]);
   assert.deepEqual(diffed.matches, declared.matches);
 });
+
+// --- RSK-10, the reader's half: a skipped plan is `skipped`, not `missing` ------
+
+/** One `outcome`/`risk_check_skipped` line, as the three RSK-10 sites append
+ * it in place of a `run` for a plan that landed no commits. `sha` is the one
+ * commit at both ends of the range the caller did not ask about. */
+const skipLine = (plan, sha, extra = {}) => JSON.stringify({
+  corr: '1-ae5ca09', phase: '1', ts: '2026-08-15T18:46:00.000Z',
+  family: 'outcome', event: 'risk_check_skipped', plan, sha,
+  ...extra,
+});
+
+/** A second completed plan under FROZEN_PHASE_1's anchor, so a fixture can hold
+ * one plan that landed nothing beside one that landed a range. */
+const PLAN_2_RETURN = [
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:50:00.000Z","family":"lifecycle","event":"dispatch","plan":"2","role":"cad-executor","read":[".planning/phases/1/PLAN-2.md"]}',
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:55:00.000Z","family":"lifecycle","event":"return","plan":"2","role":"cad-executor","tokens":40000}',
+];
+
+test('risk-check status: a skipped EARLIER plan does not refuse a LATER plan\'s named range', () => {
+  // The defect the deep verify of phase 1 (v3.7.11) found after RSK-10's
+  // workflow half landed: execute.md, task.md and execute-parallel.md append
+  // `risk_check_skipped` in place of the run for a plan that landed no commits,
+  // and this reader knew only `risk_check`. Every executor return in the cycle
+  // is a row, so the skipped plan stayed `missing` and every later plan's own
+  // gating `status` call answered `risk-record-missing` - a blocking gate with
+  // no exit but an override. Real binary, real repo: plan 1 skipped at the
+  // pre-plan HEAD, plan 2 committed and checked.
+  const { repo, dir } = repoFixture(FROZEN_PHASE_1);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  writeFileSync(join(dir, 'trace.jsonl'),
+    `${[...FROZEN_PHASE_1, skipLine('1', a), ...PLAN_2_RETURN].join('\n')}\n`);
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const run = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--plan', '2', '--base', a, '--head', b]);
+  assert.equal(run.ok, true, JSON.stringify(run));
+
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '2', '--base', a, '--head', b], repo);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0);
+  assert.equal(r.missing, undefined);
+  const one = r.plans.find((/** @type {any} */ p) => p.plan === '1');
+  const two = r.plans.find((/** @type {any} */ p) => p.plan === '2');
+  // A skip is its OWN state, never `recorded`: a reader can still tell a range
+  // nobody had to read from one the detector read and cleared.
+  assert.equal(one.state, 'skipped', JSON.stringify(one));
+  assert.deepEqual(one.skips, [a]);
+  assert.deepEqual(one.records, []);
+  assert.equal(two.state, 'recorded', JSON.stringify(two));
+  assert.equal(two.skips, undefined, 'a row with no skip keeps the shape it had');
+  // And the phase-wide arm agrees.
+  const w = riskStatus(dir, ['--phase', '1'], repo);
+  assert.equal(w.ok, true, JSON.stringify(w));
+});
+
+test('risk-check status: a skip carrying NO sha satisfies nothing', () => {
+  // The rule fire receipts already follow: a skip that cannot name the commit
+  // it stood at cannot say which range it stood in for.
+  const dir = traceFixture([...FROZEN_PHASE_1, skipLine('1', undefined)]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-record-missing');
+  assert.equal(r.plans[0].state, 'missing');
+  assert.equal(r.plans[0].skips, undefined);
+  assert.match(r.hint, /risk_check_skipped/);
+});
+
+test('risk-check status: a skip answers only for the self-comparing range it describes', () => {
+  // The named-range arm. A skip at commit `a` stands in for `a..a` and for
+  // nothing else: a real range `a..b` is a diff the skip did not read, and a
+  // staged ask over `a` names an index with bytes in it.
+  const { repo, dir } = repoFixture([FROZEN_PHASE_1[0]]);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  writeFileSync(join(dir, 'trace.jsonl'), `${[...FROZEN_PHASE_1, skipLine('1', a)].join('\n')}\n`);
+  const same = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', a], repo);
+  assert.equal(same.ok, true, JSON.stringify(same));
+  assert.equal(same.plans.find((/** @type {any} */ p) => p.plan === '1').state, 'skipped');
+
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const real = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', b], repo);
+  assert.equal(real.ok, false, JSON.stringify(real));
+  assert.equal(real.plans.find((/** @type {any} */ p) => p.plan === '1').state, 'missing');
+
+  const staged = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--staged'], repo);
+  assert.equal(staged.ok, false, JSON.stringify(staged));
+  assert.equal(staged.plans.find((/** @type {any} */ p) => p.plan === '1').state, 'missing');
+});
+
+test('risk-check status: a record outranks a skip for the same plan', () => {
+  // A record the detector wrote is the stronger claim. A skip beside an
+  // unchecked record does not turn `unchecked` into `skipped`.
+  const dir = traceFixture([...FROZEN_PHASE_1,
+    recordLine('1', 'ae5ca09', 'HEAD', { checked: false, inconclusive: true }),
+    skipLine('1', 'ae5ca09ae5ca09')]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'unchecked');
+});
