@@ -206,6 +206,8 @@ completion rule agreeing with it.
 
 ### Phase 3: A create states what it did
 
+**Requirements:** `TRK-02`
+
 `GH-244`. A create whose outcome the client could not determine is retried with
 no idempotence key, and the fingerprint that would make the retry safe is
 already in the issue title.
