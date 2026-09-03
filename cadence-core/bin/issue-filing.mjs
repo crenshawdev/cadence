@@ -9,9 +9,11 @@
 // Modelled on bin/forge.mjs: exactly one JSON line on stdout through
 // lib/seam-io.mjs's `emit`, every child spawned with its stderr DISCARDED at
 // the spawn and bounded by an explicit timeout, and NO BYTE OF ANY CHILD'S
-// OUTPUT ON ANY ENVELOPE (CONTEXT D-16). No forge CLI's stdout is read here at
-// all any more: the only child this seam spawns is a create, and its output is
-// discarded with its stderr.
+// OUTPUT ON ANY ENVELOPE (CONTEXT D-16). EXACTLY ONE child's stdout is read
+// here - the title-scoped lookup below - and it is read by `normalizeLookup`,
+// which answers fixed phrases and integers. A create's output is discarded with
+// its stderr, because no create face on any of the three CLIs prints anything
+// machine-readable to read.
 //
 // THE PAYLOAD RIDES A FILE ON BOTH FACES, never an inline flag and never
 // stdin. It is caller-derived free text - a reviewer's claim carries quotes,
@@ -31,9 +33,14 @@
 // problems were the same problem: the answer was being kept somewhere it did
 // not belong. A local file has no page and no audience.
 //
-// SO THE ONLY REMOTE WRITE LEFT IS AN ACCEPTED FINDING'S CREATE. That is the
-// whole of this seam's traffic with a forge, and criterion 11's "no round trip
-// per finding" now holds trivially on the read side rather than by care.
+// SO THE ONLY REMOTE WRITE LEFT IS AN ACCEPTED FINDING'S CREATE, and the only
+// remote READ is the lookup that decides whether to make one. `file` asks the
+// tracker, before its first create, which of the fire's own fingerprints a
+// title already carries; an issue that already holds one is reported by number
+// and not filed again. Criterion 11's "no round trip per finding" holds by
+// CONSTRUCTION of one query per chunk of `LOOKUP_CHUNK` fingerprints - which is
+// a stronger statement than the "trivially" it held by when there was no read
+// at all, and a weaker one than a promise of a single call.
 //
 // AND A CREATE THAT DOES NOT LAND REFUSES, NAMING WHAT WAS NOT FILED
 // (criterion 9). The batch stops at the first failure on the `runTransition`
@@ -57,11 +64,20 @@ import { onPath } from './lib/on-path.mjs';
 import { teaLoginNameForHost } from './lib/issue-decision.mjs';
 import { PROVIDER_TABLE, missingForgeKeys } from './lib/forge-decision.mjs';
 import {
-  FILING_TABLE, fingerprint, issueBody, issueTitle, unfixedFindings,
+  FILING_TABLE, LOOKUP_CHUNK, fingerprint, issueBody, issueTitle, normalizeLookup,
+  unfixedFindings,
 } from './lib/filing-decision.mjs';
 
 /** The bound on the login probe. Local config read on every arm that needs it. */
 const LOGIN_TIMEOUT_MS = 10000;
+
+/** The bound on one title-scoped lookup - the value the lookup's removal took
+ * away, restored with it. A READ is bounded shorter than a write because the
+ * two failures are not the same: a forge slow to ANSWER a query has nothing at
+ * stake in the delay, and giving up on it costs one unanswered chunk, which
+ * this seam has an arm for. Giving up on a create that the forge may already
+ * have committed costs the ambiguity `run`'s own header states. */
+const LOOKUP_TIMEOUT_MS = 30000;
 
 /** The bound on one create. Longer than the lookup because a create WRITES, and
  * a forge that is slow to accept one is not the same failure as a forge that is
@@ -491,6 +507,68 @@ function readDispositions(value) {
 }
 
 /**
+ * Ask the forge which of these fingerprints a title already carries, one query
+ * per chunk of `LOOKUP_CHUNK`, and answer PER FINGERPRINT.
+ *
+ * WHY PER FINGERPRINT AND NOT ONE FLAG FOR THE FIRE. A chunk whose child came
+ * back clean keeps its answer even when a sibling chunk's child did not: a
+ * fire-wide "the lookup was unavailable" would throw away an answer the forge
+ * actually gave and re-file an issue this call had just found. That is the same
+ * defect phase 1 fixed in `resolveRange`, where one unresolvable end discarded
+ * the end that resolved.
+ *
+ * So each fingerprint ends in one of three states, and the caller can tell them
+ * apart: ANSWERED-HIT (`answered`, with a `number`), ANSWERED-MISS (`answered`,
+ * `number` null - the tracker looked and does not hold it) and UNANSWERED
+ * (`answered` false - no child came back for this one, and only the local
+ * ledger can speak for it).
+ *
+ * AN INCOMPLETE ANSWER REFUSES THE WHOLE FIRE, and that one IS fire-wide on
+ * purpose: it refuses before any create, so no per-fingerprint state survives
+ * it to be discarded. A page-filling response to a query naming at most six
+ * tokens is either a truncated page or a forge that ignored the search, and
+ * reading either as "not filed" is exactly the duplicate this work closes
+ * (CONTEXT D-11 keeps this arm separate from the child-failed one).
+ *
+ * @param {string} dir @param {any} forge @param {string[]} fingerprints distinct
+ * @returns {{ok: true, answers: Map<string, {answered: boolean, number: number|null}>}
+ *   | {ok: false, reason: string, detail: string, hint: string}}
+ */
+function lookupFiled(dir, forge, fingerprints) {
+  /** @type {Map<string, {answered: boolean, number: number|null}>} */
+  const answers = new Map();
+  for (let i = 0; i < fingerprints.length; i += LOOKUP_CHUNK) {
+    const chunk = fingerprints.slice(i, i + LOOKUP_CHUNK);
+    const call = run(forge.bin,
+      forge.row.lookup(forge.repo, forge.row.limit, chunk, forge.login),
+      { cwd: dir, timeout: LOOKUP_TIMEOUT_MS });
+    if (!call.ok) {
+      // NOT A REFUSAL. An offline forge that refused every fire would be a gate
+      // nobody can get past, and the local ledger is the fallback for exactly
+      // this arm (CONTEXT D-04, D-11).
+      for (const fp of chunk) answers.set(fp, { answered: false, number: null });
+      continue;
+    }
+    const read = normalizeLookup(call.stdout, forge.row.limit, forge.row.numberKey);
+    if (!read.complete) {
+      return { ok: false, reason: 'incomplete-lookup',
+        detail: `the title-scoped lookup on ${forge.repo} came back incomplete: ${read.detail}`,
+        hint: 'NOTHING has been filed and no finding is lost. A page-filling answer to a '
+          + `search naming at most ${LOOKUP_CHUNK} tokens is one of two things - a truncated `
+          + 'page, or a forge that did not apply the search at all and listed the tracker - '
+          + `and re-filing on either would duplicate an issue that already exists. Run \`${forge.bin}\` `
+          + 'yourself in this directory with that same search to see which it is, then re-run '
+          + 'this step' };
+    }
+    const hits = new Map(read.records.map((r) => [r.fingerprint, r.number]));
+    for (const fp of chunk) {
+      answers.set(fp, { answered: true, number: hits.has(fp) ? hits.get(fp) : null });
+    }
+  }
+  return { ok: true, answers };
+}
+
+/**
  * `file --payload <file>` - one issue per entry, the declined ones labelled.
  *
  * STOP AT THE FIRST FAILURE, on lib/file-transition.mjs's `runTransition`
@@ -524,18 +602,50 @@ function cmdFile(dir, payloadFile) {
     return;
   }
 
+  // THE TRACKER IS ASKED ONCE, BEFORE THE FIRST CREATE, and only when there is
+  // an accept to ask about - a fire of declines alone touches no forge at all,
+  // which is the same posture `cmdUnfixed` takes about its own local read.
+  // `DECLINED.md` is never read on this face: a decline gates the ASK and never
+  // the create (CONTEXT D-04), and the user has already answered here.
+  /** @type {Map<string, {answered: boolean, number: number|null}>} */
+  let answers = new Map();
+  const acceptPrints = [...new Set(read.entries
+    .filter((e) => e.disposition === 'accept')
+    .map((e) => fingerprint(e.finding)))];
+  if (acceptPrints.length) {
+    const looked = lookupFiled(dir, forge, acceptPrints);
+    if (looked.ok === false) {
+      emit({ ok: false, reason: looked.reason, provider: forge.provider, repo: forge.repo,
+        detail: looked.detail, hint: looked.hint, warnings: forge.warnings });
+      return;
+    }
+    answers = looked.answers;
+  }
+
   /** @type {Array<{fingerprint: string, disposition: string, title: string}>} */
   const filed = [];
+  // An accept the tracker already holds: reported by NUMBER, no create child,
+  // and deliberately no `.planning/FILED.md` row - the row is a pointer this
+  // fire would be minting for an issue it did not file, and criterion 1 makes
+  // that file the record of what THIS repository's gates opened.
+  /** @type {Array<{fingerprint: string, disposition: string, title: string, issue: number}>} */
+  const suppressed = [];
   for (let i = 0; i < read.entries.length; i += 1) {
     const { finding, disposition } = read.entries[i];
     const title = issueTitle(finding);
+    const print = fingerprint(finding);
     // A DECLINE NEVER TOUCHES THE FORGE. It used to be created as a labelled
     // issue, because that label was the only place a decline persisted; the row
     // in DECLINED.md is that place now. Filing it on the tracker as well would
     // publish every refusal on a board that is supposed to state real work, and
     // would leave the dedup key in two places that can disagree.
     if (disposition === 'decline') {
-      filed.push({ fingerprint: fingerprint(finding), disposition, title });
+      filed.push({ fingerprint: print, disposition, title });
+      continue;
+    }
+    const answer = answers.get(print);
+    if (answer && answer.answered && answer.number !== null) {
+      suppressed.push({ fingerprint: print, disposition, title, issue: answer.number });
       continue;
     }
     const argv = forge.row.create(forge.repo, {
@@ -596,17 +706,20 @@ function cmdFile(dir, payloadFile) {
           + 'ACCEPTED filed entry by hand. Do not re-file them - they already exist.'
         : '';
       emit({ ok: false, reason: 'create-failed', provider: forge.provider, repo: forge.repo,
-        filed, unfiled, warnings: forge.warnings,
+        filed, unfiled, suppressed, warnings: forge.warnings,
         mirrored: mirror.ok === true,
         mirror_reason: mirror.ok === false ? mirror.reason : null,
         mirror_detail: mirror.ok === false ? mirror.detail : null,
         detail: `${forge.bin} could not create the issue for ${unfiled[0].fingerprint} on `
           + `${forge.repo}: ${filed.length} of ${read.entries.length} were filed and `
-          + `${unfiled.length} were not`,
+          + `${unfiled.length} were not`
+          + (suppressed.length
+            ? `, and ${suppressed.length} were already on ${forge.repo} and not filed again`
+            : ''),
         hint: retry + lostPointer });
       return;
     }
-    filed.push({ fingerprint: fingerprint(finding), disposition, title });
+    filed.push({ fingerprint: print, disposition, title });
   }
 
   const mirror = mirrorFiled(dir, forge.provider, forge.repo, filed);
@@ -626,8 +739,10 @@ function cmdFile(dir, payloadFile) {
   }
 
   emit({ ok: true, provider: forge.provider, repo: forge.repo,
-    filed, accepted: filed.filter((f) => f.disposition === 'accept').length,
+    filed, suppressed,
+    accepted: filed.filter((f) => f.disposition === 'accept').length,
     declined: filed.filter((f) => f.disposition === 'decline').length,
+    suppressed_count: suppressed.length,
     detail: null, warnings: forge.warnings });
 }
 
