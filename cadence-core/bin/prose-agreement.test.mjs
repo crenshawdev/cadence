@@ -3639,3 +3639,79 @@ test('TRC-13: report.md prints ran beside rung, off the bracket row, and names t
     'the TWO EFFORTS rule does not forbid a separate summary line, which is the shape that '
     + 'reports a count without naming which dispatch it was');
 });
+
+// --- RSK-10: every risk-check invocation names a scope git can resolve -------
+//
+// The defect. `workflows/verify.md` and `workflows/debug.md` described the
+// staged scope in PROSE - "the fix is staged in THIS tree" - and gave no
+// argument spelling for it, so two projects improvised a rev pair git cannot
+// name: `HEAD..STAGED` on verbatim 2026-08-30T18:28:50 and on weathervane
+// 2026-08-31T11:21:11. Both ends came back null, the blocking gate wrote
+// `checked: false, inconclusive: true`, and the review that followed scoped
+// itself on nothing.
+//
+// The rule this pins is the invariant, not the wording: a line that INVOKES
+// the seam names `--base` and exactly one scope end. `--head <ref>` for a
+// committed range, `--staged` for the index - never both, which the seam
+// itself refuses, and never neither, which is the shape that leaves a
+// coordinator inventing one. Read line by line rather than per file, because a
+// file may legitimately carry both spellings (references/risk-surface.md does)
+// and a whole-file match would pass on the file that carries one good line and
+// one improvised one.
+//
+// Prose ABOUT the seam is out of scope by construction: the line has to name
+// `planning.mjs` as well, which is what separates an invocation from a mention.
+
+/** Every line under workflows/ and references/ that INVOKES `risk-check run`. */
+function riskCheckInvocations() {
+  const out = [];
+  for (const dir of [['workflows'], ['references']]) {
+    for (const abs of everyFileUnder(join(REPO, 'cadence-core', ...dir))) {
+      if (!abs.endsWith('.md')) continue;
+      const where = repoPath(abs);
+      readFileSync(abs, 'utf8').split('\n').forEach((text, i) => {
+        if (text.includes('planning.mjs') && text.includes('risk-check run')) {
+          out.push({ where, line: i + 1, text: text.trim() });
+        }
+      });
+    }
+  }
+  return out;
+}
+
+test('RSK-10: every risk-check run invocation names --base and exactly one scope end', () => {
+  const found = riskCheckInvocations();
+  // A floor, not a count: the point is that the walk found the fire sites at
+  // all, so a rename that hid every one of them cannot pass as compliance.
+  assert.ok(found.length >= 5,
+    `only ${found.length} risk-check run invocation lines found under cadence-core/workflows `
+    + 'and cadence-core/references - the walk is no longer reaching the fire sites, so this '
+    + 'check would pass a tree with an unresolvable range in it');
+
+  for (const { where, line, text } of found) {
+    assert.match(text, /--base \S+/,
+      `${where}:${line} invokes risk-check run without \`--base <ref>\`, so the seam is asked `
+      + `about a range with no stated base: ${text}`);
+    const head = /--head \S+/.test(text);
+    const staged = /--staged\b/.test(text);
+    assert.notEqual(head, staged,
+      `${where}:${line} names ${head ? 'both --head and --staged' : 'neither --head nor --staged'}`
+      + ' - a risk-check run carries exactly one scope end, `--head <ref>` for a committed range'
+      + ` or \`--staged\` for the index against --base: ${text}`);
+  }
+
+  // The two sites the improvised spelling came from, each asking the seam over
+  // the index rather than describing the scope in words.
+  const verify = stepBody(doc('cadence-core', 'workflows', 'verify.md'),
+    'route_failures', 'workflows/verify.md');
+  assert.ok(verify.split('\n').some((l) => l.includes('risk-check run') && /--staged\b/.test(l)),
+    "verify.md's route_failures step no longer asks the seam over the staged set with "
+    + '`--staged`, which is the gap a coordinator filled with `HEAD..STAGED`');
+
+  const debug = doc('cadence-core', 'workflows', 'debug.md');
+  assert.ok(debug.split('\n').some((l) => l.includes('risk-check run')
+    && /--staged\b/.test(l) && /--phase 0\b/.test(l)),
+    "debug.md's fix step no longer asks the seam over the staged set with `--staged --phase 0` "
+    + '- a debug session sits outside the phase spine, so any other phase number files its '
+    + "range against a real phase's records");
+});

@@ -20,7 +20,7 @@ maps the range's changed PATHS and its ADDED and REMOVED lines to
 the same record a matching one does, and "the detection step was skipped" stops
 reading like "it ran and matched nothing".
 
-A change STAGED in this tree and not yet committed has no head commit to name,
+A change staged in this tree and not yet committed has no head commit to name,
 so the same call carries the scope's other spelling:
 
 ```

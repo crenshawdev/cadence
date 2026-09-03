@@ -267,14 +267,27 @@ For each item with `status: fail` and no recorded cause:
    1. Apply the fix now
    2. Re-plan it through /cad-plan (phase-sized gap)
    3. Leave it open
-3. **Apply now** -> make the change as an atomic conventional commit per
-   references/git-guard.md (protected-branch guard, specific files, risk-surface
-   trigger at commit time - the fix is staged in THIS tree, so that fire
-   carries the staged-diff scope, shape (b): the reviewer runs
+3. **Apply now** -> make the change, then ask the seam whether it touched a
+   risk surface BEFORE the commit lands (references/git-guard.md fires the
+   trigger at commit time, and the fix is staged in THIS tree, so the scope is
+   the index against HEAD and `--staged` is its one machine spelling - the
+   index has no commit for a `--head` to name):
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --base HEAD --staged
+   ```
+
+   `<N>` is the phase under verification. A non-empty `matches` or an
+   `inconclusive: true` fires the `risk_surface` trigger and the fire carries
+   the staged-diff scope, shape (b): the reviewer runs
    `git diff --cached` in the cwd it inherits; that gate is blocking and its
    re-arm is capped at ONE narrowed round by the same triage-gate.md this step
-   already re-reads). Then set the item back to
-   pending for retest:
+   already re-reads. An `ok:false` answer (`no-diff`, `surfaces-unanswered`)
+   is not a clean one: the gate is blocking and a check that could not run
+   clears nothing, so repair what the refusal's `hint` names and re-run rather
+   than landing the fix on it. Then commit as an atomic conventional commit
+   per references/git-guard.md (protected-branch guard, specific files) and
+   set the item back to pending for retest:
    `uat record --item <k> --result pending --fix "{hash}, retest"` and offer
    to re-walk it immediately (first_pass keeps the original fail).
 4. **Re-plan** -> `--fix "routed to /cad-plan"`, leave it failed, and tell
