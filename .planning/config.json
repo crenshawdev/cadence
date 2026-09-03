@@ -24,8 +24,8 @@
   },
   "model": {
     "effort": {
-      "cad-planner": "high",
-      "cad-executor": "high",
+      "cad-planner": "xhigh",
+      "cad-executor": "xhigh",
       "cad-plan-checker": "high",
       "cad-verifier": "high"
     },
