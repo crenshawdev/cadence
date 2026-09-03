@@ -6,6 +6,59 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.11] - 2026-09-03
+
+A gate ran, the input it ran on could not be resolved, and the code treated
+"could not resolve" as an ordinary value. Three phases, one claim. An empty diff
+because a ref did not exist looks exactly like an empty diff because nothing
+changed. A record that could not be written looks exactly like a record that had
+nothing to say. A tracker search that never ran looks exactly like a tracker
+holding nothing. In each case the caller read the second meaning and carried on.
+
+Risk checks now refuse the range they could not resolve. `risk-check run` and
+`status` resolve each end of a range on its own and name the end that failed, so
+a `no-diff` refusal keeps the id of the end that DID resolve and states its cause
+on the appended row instead of reporting a clean check. The staged scope has one
+machine spelling - `--base <ref> --staged`, with `--head` beside it refused - and
+a staged record binds to the index it actually read through an `index_id` from
+`git write-tree`, the body diffed `<base> <tree>` so the id and the bytes are one
+object rather than two reads with a window between them. `verify.md` and
+`debug.md` stage the fix before they ask, and read `empty: true` as not-checked.
+Every spine caller that would have handed a blocking check a range whose two ends
+are the same commit now appends a `risk_check_skipped` event instead - that range
+can never match, and a check that cannot match is not a check that passed.
+
+A task on a repository with no `.planning/` can finish honestly. `task.md` states
+one completion rule for a record that could not land, in one place, and the skip
+arm, the record step and the done step point at it rather than restating it: an
+absent planning root reports done and calls the record unrecorded, while a
+symlinked trace, a failed stat, `EACCES`, `ENOSPC`, an oversized event or a
+failed rotation withholds it. The difference is whether the write failed or was
+never owed. The `surfaces-unanswered` refusal is answered in the run - scan with
+`detect-surfaces`, ask once, re-run with `--surfaces` - because a bare refusal is
+neither a verdict nor a skip, and the answer rides the flag per run rather than
+persisting, since persisting it would create the `.planning/` the run is meant
+not to create. The done block now names the verdict the seam returned, or the
+skip event that stood in for it, and says recorded or unrecorded in words.
+
+Issue filing asks the tracker before its first create. `issue-filing.mjs file`
+runs one title-scoped lookup per fire on all three forges, chunked at six
+fingerprints, and an issue already carrying a fingerprint is reported by number
+instead of filed again - open or closed alike, since a closed duplicate is still
+a duplicate. A page that came back filled refuses as `incomplete-lookup` rather
+than concluding a miss from a truncated answer; a lookup that could not run at
+all falls through to the `FILED.md` ledger; and one payload carrying the same
+fingerprint twice spawns one create, collapsed before the ledger is read. An
+ambiguous create - the request went out, the answer did not come back - writes an
+unconfirmed row that the retry honours, so the second attempt knows something may
+already exist. The guarantee is stated at the strength it was measured at, not
+at the strength it was hoped for: `lookupMeasured` scopes a complete tracker miss
+to the forge whose query was actually measured. GitHub and Forgejo are measured -
+the Forgejo half against a live instance on 2026-09-03 - and GitLab's
+space-joined query is still an assumption, written into that row in code rather
+than into a transcript. Flipping it is one boolean once a GitLab host is there to
+measure against.
+
 ## [3.7.10] - 2026-09-02
 
 A review ran, and the run record said things about it that were not true. Not
@@ -4560,6 +4613,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.11]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.11
 [3.7.10]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.10
 [3.7.9]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.9
 [3.7.8]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.8
