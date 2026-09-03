@@ -55,7 +55,7 @@ import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { withPlanningFileLock } from './lib/capture-file.mjs';
 import {
-  appendDeclinedRow, appendFiledRow, atomicWrite, parseDeclinedRows,
+  appendDeclinedRow, appendFiledRow, atomicWrite, parseDeclinedRows, parseFiledRows,
 } from './lib/planning-files.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
@@ -382,6 +382,30 @@ function cmdUnfixed(dir, payloadFile) {
 }
 
 /**
+ * Turn the CONFIRMED row for `print` into an unconfirmed one, in the text held
+ * under the lock, and leave every other byte alone.
+ *
+ * THE LINE IS FOUND BY PARSING IT, never by a second copy of the row grammar:
+ * `parseFiledRows` over one line is the same reader that decided the row was
+ * there, so the two cannot drift. The substitution is the first ` <print>: ` in
+ * that line, which is the grammar's own position by construction - the fields
+ * before it hold no spaces, so the sequence cannot occur earlier, and anything
+ * that could imitate it sits in the title, after.
+ *
+ * @param {string} text @param {string} print @returns {string}
+ */
+function markUnconfirmed(text, print) {
+  const lines = text.split('\n');
+  const at = lines.findIndex((line) => {
+    const [row] = parseFiledRows(line);
+    return Boolean(row) && row.fingerprint === print && row.unconfirmed !== true;
+  });
+  if (at < 0) return text;
+  lines[at] = lines[at].replace(`${print}: `, `${print} unconfirmed: `);
+  return lines.join('\n');
+}
+
+/**
  * Mirror the batch into its two records, or say why not: the ACCEPTED filings
  * into `.planning/FILED.md`, the DECLINED ones into `.planning/DECLINED.md`.
  *
@@ -404,15 +428,35 @@ function cmdUnfixed(dir, payloadFile) {
  * rather than one shared lock: they are independent targets, and a batch that
  * is all accepts or all declines then takes exactly one.
  *
+ * ONE ROW PER FINGERPRINT IN FILED.md, decided under the lock. Two fires of one
+ * finding used to leave two rows, because `appendFiledRow` appends
+ * unconditionally, and the tracker duplicated with them (`#241` and `#242`,
+ * byte-identical titles four seconds apart). Presence is checked BEFORE the
+ * appender is called: `appendFiledRow` says "refused by grammar" by returning
+ * its input unchanged, so a skip that went through it would be indistinguishable
+ * from a malformed row.
+ *
+ * The one case that WRITES over a present row is an UNCONFIRMED entry landing
+ * on a CONFIRMED one: that row's state is rewritten in place, no second row
+ * appended. Skipping it instead would swallow the marker `unconfirmed` exists
+ * for - over a confirmed row whose issue the tracker no longer holds, a complete
+ * miss creates, the create comes back nonzero, and with the row left confirmed
+ * the retry reads another complete miss and files the same issue again.
+ *
+ * The DECLINED.md arm does none of this. A declined fingerprint never reaches a
+ * second fire, because `cmdUnfixed` filters on `readDeclines` before the user
+ * is ever asked, and an in-payload duplicate is collapsed before the loop runs.
+ *
  * @param {string} dir @param {string} provider @param {string} repo
- * @param {Array<{fingerprint: string, disposition: string, title: string}>} filed
+ * @param {Array<{fingerprint: string, disposition: string, title: string,
+ *   unconfirmed?: boolean}>} filed
  * @returns {{ok: true} | {ok: false, reason: string, detail: string}}
  */
 function mirrorFiled(dir, provider, repo, filed) {
   const date = new Date().toISOString().slice(0, 10);
   for (const arm of [
-    { name: 'FILED.md', want: 'accept', append: appendFiledRow, lock: 'filed-locked' },
-    { name: 'DECLINED.md', want: 'decline', append: appendDeclinedRow, lock: 'declined-locked' },
+    { name: 'FILED.md', want: 'accept', append: appendFiledRow, lock: 'filed-locked', dedup: true },
+    { name: 'DECLINED.md', want: 'decline', append: appendDeclinedRow, lock: 'declined-locked', dedup: false },
   ]) {
     const rows = filed.filter((f) => f.disposition === arm.want);
     if (!rows.length) continue;
@@ -434,9 +478,21 @@ function mirrorFiled(dir, provider, repo, filed) {
           if (/** @type {any} */ (e)?.code !== 'ENOENT') throw e;
         }
         for (const row of rows) {
+          if (arm.dedup) {
+            // Re-read per row: an earlier row in this same batch may already
+            // have landed the fingerprint this one carries.
+            const held = parseFiledRows(text).find((r) => r.fingerprint === row.fingerprint);
+            if (held) {
+              if (row.unconfirmed === true && held.unconfirmed !== true) {
+                text = markUnconfirmed(text, row.fingerprint);
+              }
+              continue;
+            }
+          }
           const before = text;
           text = arm.append(text, { date, provider, slug: repo,
-            fingerprint: row.fingerprint, title: row.title });
+            fingerprint: row.fingerprint, title: row.title,
+            ...(row.unconfirmed === true ? { unconfirmed: true } : {}) });
           // THE APPENDER REFUSES BY RETURNING THE TEXT UNCHANGED, which is the
           // right shape for a pure function and the wrong thing to ignore here:
           // a slug or a fingerprint the grammar rejects would leave the row
@@ -669,41 +725,50 @@ function cmdFile(dir, payloadFile) {
       // `.planning/FILED.md` row is unreachable through recall AND is never
       // revisited by the retry. `mirrored` says which of the two happened and
       // the hint below says what to do about it.
-      const mirror = mirrorFiled(dir, forge.provider, forge.repo, filed);
-      // A NONZERO CREATE IS AMBIGUOUS, and the instruction says so rather than
-      // pretending otherwise. `run` collapses every `execFileSync` throw into
-      // one `{ok: false}`: a forge that REFUSED, a SIGKILL on this seam's own
+      //
+      // A NONZERO CREATE IS AMBIGUOUS, and the entry is recorded as such rather
+      // than dropped. `run` collapses every `execFileSync` throw into one
+      // `{ok: false}`: a forge that REFUSED, a SIGKILL on this seam's own
       // CREATE_TIMEOUT_MS bound and a transport failure are indistinguishable
       // here, and the last two are exactly the cases where the forge accepted
       // and created the issue before the client stopped listening.
       //
-      // Nothing in this seam can tell them apart, and nothing cheap could:
-      // `readDeclines` reads a local file that no create ever writes, so it
-      // structurally cannot see an accepted issue, and no row reads a number off
-      // a create (there is no `--json` on any create face - task 2's measured
-      // fact). A second lookup would be a second network call inside a gate
-      // step and a second page-clamp to reason about, for an answer the
-      // operator can get by looking. So the hint hands the ambiguity to the
-      // human WITH the one token that resolves it: the fingerprint is in the
-      // issue TITLE by construction (`issueTitle`), which makes "search for it
-      // before re-filing" an instruction that can actually be followed. Without
-      // this sentence the retry files a duplicate.
+      // NOTHING IN THIS SEAM CAN TELL THEM APART, SO IT WRITES DOWN THAT IT
+      // COULD NOT (CONTEXT D-06). The entry rides the mirror flagged
+      // `unconfirmed`, which lands a marked `.planning/FILED.md` row beside the
+      // confirmed ones, and the retry suppresses on it without asking anybody
+      // anything. That is the half a lookup alone cannot cover: the observed
+      // duplicate landed four seconds after its twin, and whether a search
+      // index is current within seconds is not measurable read-only. The row is
+      // local, so it has no index and no latency.
+      //
+      // It is a ROW rather than a queue: a human who looks at the tracker and
+      // finds the issue there deletes the marker, and one who finds nothing
+      // deletes the whole row. Either way the ambiguity is written down where
+      // the next fire reads it, instead of in an instruction nobody re-reads.
       const failed = unfiled[0].fingerprint;
+      const mirror = mirrorFiled(dir, forge.provider, forge.repo,
+        [...filed, { fingerprint: print, disposition, title, unconfirmed: true }]);
       const retry = `run \`${forge.bin}\` yourself in this directory to see why. The create for `
         + `${failed} is AMBIGUOUS rather than known-failed: a timeout, a kill on this step's `
         + 'own bound and a dropped connection all look here exactly like a refusal, and the '
-        + `forge may have created that issue anyway. So SEARCH ${forge.repo}'s issues for the `
-        + `title carrying \`${failed}\` BEFORE re-filing it. Then re-run this step with ONLY `
-        + 'the unfiled entries this envelope names, minus any whose fingerprint is already on '
-        + 'the tracker - they are still in hand, so none of them is lost.';
+        + `forge may have created that issue anyway. You do not have to resolve that by hand: `
+        + `${failed} now has an \`unconfirmed\` row in .planning/FILED.md, and this seam asks `
+        + `${forge.repo} for the titles carrying a fire's own fingerprints before it creates `
+        + 'anything. So re-run this step with ONLY the unfiled entries this envelope names - '
+        + 'the row and the lookup between them suppress the duplicate, and they are still in '
+        + 'hand, so none of them is lost.';
       // Only when the mirror ALSO failed, because a hint that always warns
       // about the recall pointer teaches the reader to skip the sentence.
       const lostPointer = mirror.ok === false
         ? ` AND the recall pointer was NOT written (${mirror.reason}: ${mirror.detail}), so the `
           + `${filed.length} entries this envelope lists as \`filed\` are on ${forge.repo} with `
-          + 'NOTHING in .planning/FILED.md pointing at them: fix the write that detail names '
-          + '(a stale .planning/FILED.md.lock is the usual answer) and add one `- ` row per '
-          + 'ACCEPTED filed entry by hand. Do not re-file them - they already exist.'
+          + 'NOTHING in .planning/FILED.md pointing at them, and the ambiguous one got no '
+          + `\`unconfirmed\` row either - so re-running is NOT safe until this is fixed. Fix `
+          + 'the write that detail names (a stale .planning/FILED.md.lock is the usual answer) '
+          + 'and add one `- ` row per ACCEPTED filed entry by hand, plus one carrying '
+          + `\`${failed} unconfirmed:\` for the ambiguous one. Do not re-file them - they `
+          + 'already exist.'
         : '';
       emit({ ok: false, reason: 'create-failed', provider: forge.provider, repo: forge.repo,
         filed, unfiled, suppressed, warnings: forge.warnings,

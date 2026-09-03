@@ -797,18 +797,30 @@ test('a second fire appends rather than replacing the first run\'s rows', () => 
   assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, 2, text);
 });
 
-test('a create that fails part way still mirrors the issues that DID land', () => {
+test('a create that fails part way mirrors what landed AND marks the ambiguous one', () => {
   // The tracker holds two issues; a pointer they never got would be a second
-  // loss on top of the first.
+  // loss on top of the first. The third create came back nonzero, which is
+  // AMBIGUOUS rather than known-failed, so it gets a row of its own carrying
+  // the word `unconfirmed` - the local pointer a retry reads (D-06).
   const payload = dispositions([
     [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
   ]);
   const { status, envelope, dir } = run(['file', '--payload', payload], { stub: { failAt: 3 } });
   assert.equal(status, 1);
   assert.equal(envelope.reason, 'create-failed');
-  const text = filedText(dir);
-  assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, 2, text);
-  assert.ok(!text.includes(fingerprint(FIVE[2])), 'the unfiled one is not mirrored');
+  const rows = filedText(dir).split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(rows.length, 3, filedText(dir));
+  for (const f of [FIVE[0], FIVE[1]]) {
+    const row = rows.find((l) => l.includes(fingerprint(f)));
+    assert.ok(row, `no row for ${fingerprint(f)}`);
+    assert.ok(!row.includes('unconfirmed'), row);
+  }
+  const ambiguous = rows.find((l) => l.includes(fingerprint(FIVE[2])));
+  assert.ok(ambiguous, 'the ambiguous create left no row at all');
+  assert.match(ambiguous, new RegExp(`${fingerprint(FIVE[2])} unconfirmed: `), ambiguous);
+  // The entries after it were never attempted, so they get no row - and
+  // `unfiled` still lists every one of them.
+  assert.deepEqual(envelope.unfiled.map((f) => f.fingerprint), [fingerprint(FIVE[2])]);
   // The mirror LANDED, and the envelope says so rather than leaving the caller
   // to assume it - which is the other half of the case below.
   assert.equal(envelope.mirrored, true, JSON.stringify(envelope));
@@ -866,8 +878,12 @@ test('the create-failed hint is honest that the failed create may have LANDED', 
   assert.equal(envelope.unfiled[0].fingerprint, failed);
   assert.ok(envelope.hint.includes(failed), envelope.hint);
   assert.match(envelope.hint, /AMBIGUOUS rather than known-failed/, envelope.hint);
-  assert.match(envelope.hint, /BEFORE re-filing it/, envelope.hint);
-  assert.match(envelope.hint, /SEARCH acme\/widget's issues/, envelope.hint);
+  // The operator is no longer sent to search by hand: the seam wrote the
+  // pointer and asks the tracker itself on the next fire.
+  assert.doesNotMatch(envelope.hint, /BEFORE re-filing it/, envelope.hint);
+  assert.doesNotMatch(envelope.hint, /SEARCH acme\/widget's issues/, envelope.hint);
+  assert.match(envelope.hint, /`unconfirmed` row in \.planning\/FILED\.md/, envelope.hint);
+  assert.match(envelope.hint, /before it creates anything/, envelope.hint);
   // The instruction is runnable only because the title carries that token, so
   // assert the two agree rather than trusting the sentence.
   assert.ok(issueTitle(FIVE[2]).includes(failed), issueTitle(FIVE[2]));
@@ -877,6 +893,49 @@ test('the create-failed hint is honest that the failed create may have LANDED', 
   const { calls } = run(['file', '--payload', payload], { stub: { failAt: 3 } });
   assert.equal(createCalls(calls).length, 3, calls.join('\n'));
   assert.equal(listCalls(calls).length, 1, calls.join('\n'));
+});
+
+test('a fingerprint FILED.md already carries gets no SECOND row, even when it is re-filed', () => {
+  // D-04's stated cost: the tracker decides on a complete answer, and an empty
+  // response is a complete MISS - so one of the 9 fingerprints whose issue was
+  // deleted in the 2026-08-30 cleanup is re-filed rather than frozen. What must
+  // NOT happen is a second ledger row for it, which is how `#241`/`#242` looked
+  // locally: `appendFiledRow` appends unconditionally and nothing checked.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const planted = (dir) => {
+    mkdirSync(join(dir, '.planning'), { recursive: true });
+    writeFileSync(join(dir, '.planning', 'FILED.md'),
+      `# Filed\n\n- 2026-08-25 github acme/widget ${fingerprint(FIVE[0])}: ${issueTitle(FIVE[0])}\n`);
+  };
+  const { status, envelope, calls, dir } = run(['file', '--payload', payload],
+    { stub: { listBody: '[]' }, prepare: planted });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  const rows = filedText(dir).split('\n')
+    .filter((l) => l.includes(fingerprint(FIVE[0])) && l.startsWith('- '));
+  assert.equal(rows.length, 1, filedText(dir));
+  assert.equal(rows[0].slice(2, 12), '2026-08-25', 'the planted row was rewritten, not kept');
+});
+
+test('an UNCONFIRMED write over a CONFIRMED row rewrites that row rather than adding one', () => {
+  // Skipping it would swallow the marker: over a confirmed row whose issue the
+  // tracker no longer holds, a complete miss creates, the create comes back
+  // nonzero, and a row left confirmed lets the next fire file it again.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const planted = (dir) => {
+    mkdirSync(join(dir, '.planning'), { recursive: true });
+    writeFileSync(join(dir, '.planning', 'FILED.md'),
+      `# Filed\n\n- 2026-08-25 github acme/widget ${fingerprint(FIVE[0])}: ${issueTitle(FIVE[0])}\n`);
+  };
+  const { status, envelope, dir } = run(['file', '--payload', payload],
+    { stub: { listBody: '[]', failAt: 1 }, prepare: planted });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'create-failed');
+  const rows = filedText(dir).split('\n')
+    .filter((l) => l.includes(fingerprint(FIVE[0])) && l.startsWith('- '));
+  assert.equal(rows.length, 1, filedText(dir));
+  assert.match(rows[0], new RegExp(`${fingerprint(FIVE[0])} unconfirmed: `), rows[0]);
 });
 
 test('`unfixed` writes nothing at all - the ask is not a filing', () => {
