@@ -1628,17 +1628,99 @@ test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check st
     + 'detection without enforcement is the outcome RSK-02 exists to prevent');
 });
 
-test('ENFORCEMENT, task.md: done is withheld on `written: false`', () => {
-  // `ok:true, written:false` - a symlinked trace, a failed stat, a full disk,
-  // the size-cap bound - is NOT a completed check. The execute path is covered
-  // by its own `risk-check status` call, which re-reads the trace and finds
-  // nothing; the task path has no status call, so this flag is its whole guard.
+/**
+ * The first sentence of `slice` delivering a done verdict ON `written: false`.
+ *
+ * `sentencesOf` above is the file's one sentence bound - `.!?` followed by
+ * WHITESPACE, so `.planning/` and `trace.jsonl` are not ends - and each
+ * sentence is wrap-collapsed before it is read, because a workflow file breaks
+ * lines wherever the column runs out and "reports done" must match across one.
+ */
+const ownVerdict = (slice) => sentencesOf(slice).map((x) => x.replace(/\s+/g, ' '))
+  .find((x) => /`written: false`/.test(x) && /reports? done/i.test(x));
+
+test('ENFORCEMENT, task.md: the completion rule decides `written: false`, in ONE place', () => {
+  // RSK-11. `ok:true, written:false` splits in two and the split is the rule:
+  // an absent planning root is a run that HAS no receipt to land - git is the
+  // code record, the seams create nothing, the check itself genuinely ran - and
+  // it reports done saying so. Every OTHER `written: false` - a symlinked
+  // trace, a failed stat, a full disk, the size-cap bound - is a receipt that
+  // SHOULD have landed and did not, and it is still not a completed check. The
+  // execute path is covered by its own `risk-check status` call, which re-reads
+  // the trace and finds nothing; the task path has no status call, so this flag
+  // is its whole guard.
+  //
+  // Both halves are read out of the `risk_check` step by its own anchor and
+  // asserted SENTENCE-WISE, because the failure that matters is a half quietly
+  // dropped: keep the reporting half alone and a lost record on an adopted repo
+  // reports done, keep the withholding half alone and a treeless task can never
+  // finish - which is the defect GH-246 filed.
   const task = doc('cadence-core', 'workflows', 'task.md');
-  assert.match(task, /`written: false`/,
-    'task.md never states the written flag, so a record that never landed reports done');
-  assert.match(task, /`written: false`[^.]*(do not|does not|never)\s+report\s+done/i,
-    "task.md's risk_check step states the written flag but not that done is withheld on it - "
-    + 'detection without enforcement is the outcome RSK-02 exists to prevent');
+  const risk = stepBody(task, 'risk_check', 'task.md');
+
+  // HALF ONE: the absent root REPORTS done - and names both seam spellings of
+  // it, since those two strings are the whole discriminator.
+  const reports = sentenceAround(risk, 'the absent planning root', 'task.md');
+  const lostReporting = "task.md's completion rule no longer reports done on a `written: false` "
+    + 'whose reason is the absent planning root, so an inline /cad-task on a repository with no '
+    + '.planning/ can never finish - the defect GH-246 filed';
+  assert.match(reports, /`written: false`/, lostReporting);
+  assert.match(reports, /ENOENT/, lostReporting);
+  assert.match(reports, /no planning root/, lostReporting);
+  assert.match(reports, /reports? done/i, lostReporting);
+  assert.doesNotMatch(reports, /\b(do not|does not|never|withhold)\b/i,
+    `${lostReporting} - the reporting half now carries a negation: ${reports}`);
+
+  // HALF TWO: every other reason WITHHOLDS done. Detection without enforcement
+  // is the outcome RSK-02 exists to prevent.
+  const withheld = sentenceAround(risk, 'any other reason', 'task.md');
+  const lostWithholding = "task.md's completion rule no longer withholds done on a "
+    + '`written: false` for any other reason, so a symlinked trace or a full disk on an '
+    + 'ADOPTED repository reports done over a record that never landed - detection without '
+    + 'enforcement is the outcome RSK-02 exists to prevent';
+  assert.match(withheld, /`written: false`/, lostWithholding);
+  assert.match(withheld, /(do not|does not|never)\s+report\s+done/i, lostWithholding);
+
+  // ONCE: the two other sites POINT at the rule rather than restating it. Three
+  // statements of one rule in one file is how the treeless arm gets restored in
+  // one place and lost in another (CONTEXT D-04).
+  const at = risk.indexOf('The event NAME');
+  assert.ok(at > -1, "task.md's risk_check step has no skip-arm paragraph");
+  const skip = risk.slice(at, risk.indexOf('\n\n', at));
+  const record = stepBody(task, 'record', 'task.md');
+  const restated = 'task.md states the completion rule in more than one place again - the '
+    + 'skip arm and the `record` step must POINT at the `risk_check` rule, because a rule '
+    + 'written three times is a rule that gets edited once';
+  assert.match(skip, /completion rule/, restated);
+  assert.match(record, /completion rule/, restated);
+  assert.equal(ownVerdict(skip), undefined, `${restated} - skip arm: ${ownVerdict(skip)}`);
+  assert.equal(ownVerdict(record), undefined, `${restated} - record step: ${ownVerdict(record)}`);
+});
+
+test('RSK-11, task.md: the surfaces-unanswered refusal is answered in the run, not stopped at', () => {
+  // `risk-check run` refuses `surfaces-unanswered` whenever no config layer
+  // answered `review.triggers.risk_surface.surfaces` and the caller named no
+  // `--surfaces` - which is EVERY fresh user, and on a treeless repository
+  // there is no repo layer to have answered it in. A coordinator that reads
+  // that refusal as a verdict or as a skip stops there, and the one trigger
+  // that blocks at every stakes level never runs for exactly the audience the
+  // inline path exists for. So the arm is prose or it is nothing: the seam has
+  // no way to ask.
+  const risk = stepBody(doc(...TASK_WF), 'risk_check', 'task.md');
+  const regressed = "RSK-11: task.md's risk_check step no longer answers the seam's "
+    + '`surfaces-unanswered` refusal in the run, so a coordinator stops at it and the '
+    + 'blocking risk_surface gate never runs for a user who has answered the surface '
+    + 'question nowhere - which on a treeless repository is every user';
+  assert.match(risk, /surfaces-unanswered/, regressed);
+  // The ASK, in the sentence that names the refusal: the scan runs first so the
+  // question arrives carrying evidence, and it is put to the user here.
+  const arm = sentenceAround(risk, 'surfaces-unanswered', 'task.md');
+  assert.match(arm, /detect-surfaces/, `${regressed} - the arm names no scan: ${arm}`);
+  assert.match(arm, /question to the user/i, `${regressed} - the arm never asks: ${arm}`);
+  // And the RE-RUN, which is what turns the answer into a verdict.
+  const rerun = sentenceAround(risk, '--surfaces', 'task.md');
+  assert.match(rerun, /risk-check run/,
+    `${regressed} - the step names --surfaces without re-running the check on it: ${rerun}`);
 });
 
 // --- ENFORCEMENT: the FAIL branch is a DISPATCH, and its guardrail ----------
@@ -3638,4 +3720,184 @@ test('TRC-13: report.md prints ran beside rung, off the bracket row, and names t
   assert.ok(/no summary line/.test(rule),
     'the TWO EFFORTS rule does not forbid a separate summary line, which is the shape that '
     + 'reports a count without naming which dispatch it was');
+});
+
+// --- RSK-10: every risk-check invocation names a scope git can resolve -------
+//
+// The defect. `workflows/verify.md` and `workflows/debug.md` described the
+// staged scope in PROSE - "the fix is staged in THIS tree" - and gave no
+// argument spelling for it, so two projects improvised a rev pair git cannot
+// name: `HEAD..STAGED` on verbatim 2026-08-30T18:28:50 and on weathervane
+// 2026-08-31T11:21:11. Both ends came back null, the blocking gate wrote
+// `checked: false, inconclusive: true`, and the review that followed scoped
+// itself on nothing.
+//
+// The rule this pins is the invariant, not the wording: a line that INVOKES
+// the seam names `--base` and exactly one scope end. `--head <ref>` for a
+// committed range, `--staged` for the index - never both, which the seam
+// itself refuses, and never neither, which is the shape that leaves a
+// coordinator inventing one. Read line by line rather than per file, because a
+// file may legitimately carry both spellings (references/risk-surface.md does)
+// and a whole-file match would pass on the file that carries one good line and
+// one improvised one.
+//
+// Prose ABOUT the seam is out of scope by construction: the line has to name
+// `planning.mjs` as well, which is what separates an invocation from a mention.
+
+/** Every line under workflows/ and references/ that INVOKES `risk-check run`. */
+function riskCheckInvocations() {
+  const out = [];
+  for (const dir of [['workflows'], ['references']]) {
+    for (const abs of everyFileUnder(join(REPO, 'cadence-core', ...dir))) {
+      if (!abs.endsWith('.md')) continue;
+      const where = repoPath(abs);
+      readFileSync(abs, 'utf8').split('\n').forEach((text, i) => {
+        if (text.includes('planning.mjs') && text.includes('risk-check run')) {
+          out.push({ where, line: i + 1, text: text.trim() });
+        }
+      });
+    }
+  }
+  return out;
+}
+
+test('RSK-10: every risk-check run invocation names --base and exactly one scope end', () => {
+  const found = riskCheckInvocations();
+  // A floor, not a count: the point is that the walk found the fire sites at
+  // all, so a rename that hid every one of them cannot pass as compliance.
+  assert.ok(found.length >= 5,
+    `only ${found.length} risk-check run invocation lines found under cadence-core/workflows `
+    + 'and cadence-core/references - the walk is no longer reaching the fire sites, so this '
+    + 'check would pass a tree with an unresolvable range in it');
+
+  for (const { where, line, text } of found) {
+    assert.match(text, /--base \S+/,
+      `${where}:${line} invokes risk-check run without \`--base <ref>\`, so the seam is asked `
+      + `about a range with no stated base: ${text}`);
+    const head = /--head \S+/.test(text);
+    const staged = /--staged\b/.test(text);
+    assert.notEqual(head, staged,
+      `${where}:${line} names ${head ? 'both --head and --staged' : 'neither --head nor --staged'}`
+      + ' - a risk-check run carries exactly one scope end, `--head <ref>` for a committed range'
+      + ` or \`--staged\` for the index against --base: ${text}`);
+  }
+
+  // The two sites the improvised spelling came from, each asking the seam over
+  // the index rather than describing the scope in words.
+  const verify = stepBody(doc('cadence-core', 'workflows', 'verify.md'),
+    'route_failures', 'workflows/verify.md');
+  assert.ok(verify.split('\n').some((l) => l.includes('risk-check run') && /--staged\b/.test(l)),
+    "verify.md's route_failures step no longer asks the seam over the staged set with "
+    + '`--staged`, which is the gap a coordinator filled with `HEAD..STAGED`');
+
+  const debug = doc('cadence-core', 'workflows', 'debug.md');
+  assert.ok(debug.split('\n').some((l) => l.includes('risk-check run')
+    && /--staged\b/.test(l) && /--phase 0\b/.test(l)),
+    "debug.md's fix step no longer asks the seam over the staged set with `--staged --phase 0` "
+    + '- a debug session sits outside the phase spine, so any other phase number files its '
+    + "range against a real phase's records");
+
+  // THE STAGING HAS TO BE AN INSTRUCTION, AHEAD OF THE CALL (diff-review
+  // finding, 2026-09-02). Both sites said "the fix is staged in THIS tree",
+  // which describes a state nothing performs. A coordinator following either
+  // one literally edits the worktree and runs the call with an UNCHANGED
+  // index, and the seam does not refuse that: `--staged` reads the tree
+  // `git write-tree` wrote, `no-diff` fires only when git could not READ, so
+  // an unstaged fix comes back `ok: true, checked: true, empty: true,
+  // matches: []` - a clean check over nothing, and the fix is committed
+  // unreviewed. So each site needs a `git add` BEFORE its invocation line,
+  // and `empty: true` named as the not-a-pass it is on this arm.
+  const stagedSites = [
+    { where: 'workflows/verify.md', body: verify },
+    { where: 'workflows/debug.md', body: debug.slice(debug.indexOf('## Resolve')) },
+  ];
+  for (const { where, body } of stagedSites) {
+    const call = body.split('\n').findIndex((l) => l.includes('risk-check run')
+      && /--staged\b/.test(l));
+    const add = body.split('\n').findIndex((l) => l.includes('git add'));
+    assert.ok(add !== -1 && add < call,
+      `${where} ${add === -1 ? 'never tells the coordinator to stage the fix before' : 'tells the '
+        + 'coordinator to stage the fix only AFTER'} the \`risk-check run --staged\` call - an `
+      + 'unstaged fix leaves the index at HEAD, which the seam answers `empty: true` rather than '
+      + 'refusing, so the risky change is committed having never been scanned');
+    // Matched over whitespace-collapsed prose: these sentences are hard-wrapped
+    // at 79 columns, so the phrase this pins is split across lines in both
+    // files and a raw-text regex would pin the wrap rather than the claim.
+    assert.match(body.replace(/\s+/g, ' '), /`empty: true`.{0,80}?NOT a pass/,
+      `${where} does not say that \`empty: true\` on the staged arm is not a pass - it is the `
+      + 'answer an unstaged fix produces, and a reader who takes it for a clean check commits '
+      + 'the thing the gate exists to stop');
+  }
+});
+
+// --- RSK-10: a range whose two ends are ONE commit is skipped, not cleared ---
+//
+// The defect, observed twice on smithers (2026-08-27T23:55:38 and
+// 2026-08-28T14:28:12). `execute.md`'s post-plan call is
+// `--base {pre-plan HEAD} --head HEAD`, so a plan that landed no commits asks
+// the seam about a range whose ends are the same commit. The seam answers
+// `checked: true, empty: true` - the correct answer for a zero-byte diff, and a
+// COMPLETED clean check on the one gate that is blocking at every stakes level,
+// standing in the record as if a range had been judged. `lib/risk-diff.mjs`
+// decides `empty` from the diff BODY and never from equal ids on purpose (a
+// revert pair has differing ids and an empty net diff), so the fix is the
+// caller's: do not ask.
+//
+// What is pinned is the GUARD, not the wording. The skip is worthless
+// unconditional - it would silence every real range - so each site is read for
+// the invocation AND for the sentence that says when it applies, and the end
+// spelling in that sentence is the site's own recorded end.
+
+const SKIP_EVENT = 'risk_check_skipped';
+const SKIP_CONDITION = 'landed no commits';
+
+/**
+ * The three sites that emit a per-plan range and can emit a self-comparing one.
+ * The end marker differs per site because the recorded end does: the pre-plan
+ * HEAD, the echoed start sha, and the pre-merge HEAD step 3 wrote down.
+ */
+const SKIP_SITES = [
+  {
+    where: 'cadence-core/workflows/execute.md',
+    body: () => stepBody(doc('cadence-core', 'workflows', 'execute.md'),
+      'execute_sequential', 'workflows/execute.md'),
+    end: '{pre-plan HEAD}',
+  },
+  {
+    where: 'cadence-core/workflows/task.md',
+    body: () => stepBody(doc('cadence-core', 'workflows', 'task.md'),
+      'risk_check', 'workflows/task.md'),
+    end: '`$S`',
+  },
+  {
+    // No `<step>` blocks in this reference - its step 5 is a numbered item, and
+    // the file is the parallel path's whole sequence.
+    where: 'cadence-core/references/execute-parallel.md',
+    body: () => doc('cadence-core', 'references', 'execute-parallel.md'),
+    end: 'step 3 recorded',
+  },
+];
+
+test('RSK-10: a plan that landed no commits records the skip rather than a clean check', () => {
+  for (const { where, body, end } of SKIP_SITES) {
+    const text = body();
+    const call = text.split('\n').find((l) => l.includes('planning.mjs')
+      && /\btrace\s+append\b/.test(l) && l.includes(`--event ${SKIP_EVENT}`));
+    assert.ok(call,
+      `${where} has no \`trace append --event ${SKIP_EVENT}\` invocation, so a plan that `
+      + 'landed no commits still asks the seam about a range whose two ends are one commit '
+      + 'and books the answer as a completed clean check');
+    assert.ok(call.includes('--family outcome'),
+      `${where}'s ${SKIP_EVENT} append is not in the \`outcome\` family, so it does not sit `
+      + `beside the \`risk_check\` rows it stands in for: ${call.trim()}`);
+
+    // The GUARD. An unconditional skip silences every real range, so the
+    // sentence stating WHEN it applies is the half worth pinning - and it has
+    // to name the end this site recorded, which is what makes "the two ends are
+    // one commit" a thing a coordinator can actually test.
+    const when = sentenceAround(text, SKIP_CONDITION, where);
+    assert.ok(when.includes(end),
+      `${where} states the skip's condition without naming the end it compares HEAD against `
+      + `(${end}), so the arm cannot be evaluated: ${when}`);
+  }
 });

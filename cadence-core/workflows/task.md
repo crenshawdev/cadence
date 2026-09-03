@@ -149,7 +149,25 @@ No PLAN.md, no SUMMARY.md, no state writes.
 <step name="risk_check">
 ASK THE SEAM whether any commit's diff touched a risk surface - never by reading
 the diff against a prose list, which left no record at all when it matched
-nothing:
+nothing.
+
+FIRST, whether there is a range to ask about. A run that landed no commits
+leaves HEAD where it was, so `git rev-parse --short HEAD` still prints the
+echoed `$S` and the range's two ends are ONE commit. Nothing landed, so nothing
+can have matched: do NOT run `risk-check run`. Append the skip in its place:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 0 --family outcome --event risk_check_skipped --plan <the task's slug> --sha "$S"
+```
+
+The event NAME is the record that nothing was checked because nothing landed.
+Asking the seam over that pair instead writes `checked: true, empty: true` - a
+completed clean check over a range that could not have matched. Done is reported
+on that append's `written: true` under the completion rule below, and its
+`written: false` takes that same rule's absent-root arm rather than a verdict of
+its own; the `record` step proceeds as written either way.
+
+When HEAD has moved, the range is real:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base <parent of the task's first commit> --head HEAD
@@ -158,6 +176,23 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phas
 `--phase 0` because a task sits outside the phase spine while `--phase` is
 required: 0 is the one number no roadmap phase carries, so a task's records
 never join a phase's.
+
+When that call answers `ok:false` with reason `surfaces-unanswered` it has
+delivered neither a verdict nor a skip - the seam is declining to scan on the
+all-eight set nobody chose - so run `detect-surfaces --root .` and put the
+one-time surface question to the user IN THIS RUN, exactly as
+`references/risk-surface.md` states it: the envelope's `options` rendered in
+the order they arrive, the eight-line legend beside them, through the ask-user
+seam. Then re-run the same `risk-check run --phase 0` line with `--surfaces
+<the chosen set, comma-separated>` and carry on from THAT envelope. Persisting
+the answer at the repo layer is the `config.mjs set` line that reference
+already carries and is not restated here; but where this run's own `bracket`
+append answered the absent-root reason there is no repo layer to persist into,
+because `config.mjs set` writes `.planning/config.json` and creating it is the
+scaffolding this workflow's success criterion forbids - so the answer rides
+`--surfaces` for this run alone and the question is asked once per run. Stopping
+at the refusal instead is how the one gate that blocks at every stakes level
+never runs at all for the fresh user this inline path exists for.
 
 A non-empty `matches` OR `inconclusive: true` fires the `risk_surface` review
 trigger per references/review-triggers.md before reporting done - an unjudged
@@ -170,15 +205,29 @@ table admits for `risk_surface`. That file is transient exactly like
 `execute.md`'s `plan-<k>-risk-task-<n>.diff`: never stage it, and delete it once
 the trigger returns.
 
-Done is reported only on an `ok:true` run whose record actually REACHED the
-trace, which the envelope states as `written: true`. On `written: false` - a
-symlinked trace, a failed stat, a full disk, or the size cap - do not report
-done: state the reason and re-run once a record can land. This path has no
-`risk-check status` call of its own the way `execute.md` does, so that flag is
-its whole guard, and `ok:true` with nothing on the record is exactly the state
-this step exists to refuse. When there is no `.planning/` at all the record has
-nowhere to go and the same rule holds - create it, or say the check is unrecorded
-rather than reporting done on it.
+THE COMPLETION RULE, stated here and nowhere else - it decides every
+`written: false` this run can see: the skip append above, this check's own
+`trace`, and the `record` step's envelope below.
+
+On `ok:true`, done is reported in exactly two states: the record REACHED the
+trace, which the envelope states as `written: true`; and a `written: false`
+whose `reason` is the absent planning root - `ENOENT` from the trace seams, "no
+planning root" from `task-record` - where the run reports done with the check's
+disposition stated and its record called unrecorded, because git is the code
+record and the durable Cadence receipt is the one thing a treeless run has
+nowhere to put. `ENOENT` is the whole of that spelling on the trace side:
+`trace.jsonl` sits directly under `.planning/`, so an append that raised it
+found no planning root, and there is no second reading of it.
+
+A `written: false` for any other reason - a symlinked trace, a failed stat,
+`EACCES` or `ENOSPC` on the append, `oversized-event`, a rotation that failed,
+an unwritable or symlinked `tasks/{slug}/` - does not report done: state the
+reason and re-run once a record can land. The two are told apart on the
+envelope's own `reason`, never on a `[ -d .planning ]` check beside the seam;
+the `scope` step already states why two ways of asking one question drift. This
+path has no `risk-check status` call of its own the way `execute.md` does, so
+that flag is its whole guard, and an `ok:true` with nothing on the record for
+any other cause is exactly the state this step exists to refuse.
 
 `{slug}` is this task's own slug, and neither it nor that directory is created
 by the INLINE path - `planned_path` step 1 is the only writer of
@@ -257,9 +306,11 @@ same bytes.
 
 The seam creates `.planning/tasks/{slug}/` under an EXISTING `.planning/` and
 creates NOTHING where `.planning/` is absent: there it answers `written: false`
-with a reason and writes no record at all. So an inline task in a repository
-with no planning tree still scaffolds nothing, which is what this workflow's
-success criterion actually protects.
+with a reason and writes no record at all. That reason is the absent-root one
+the `risk_check` step's completion rule already decided - the run reports done
+and calls its record unrecorded - so an inline task in a repository with no
+planning tree scaffolds nothing AND still finishes, which is what this
+workflow's success criterion actually protects.
 </step>
 
 <step name="done">
@@ -283,15 +334,25 @@ Report:
 Done: {what changed}
 Commit(s): {hashes}
 Files: {list}
+Risk check: {`risk_check_skipped` when nothing landed | `checked: false` and the row's cause when the range could not be read | `checked: true, empty: true` when it was read and held nothing | the `matches` list or `inconclusive: true` and the review's outcome when the trigger fired}, {recorded, or unrecorded because <the reason, in words>}
 Record: {the `record` path from the task-record envelope}
 ```
 
-The `Record:` line rides an envelope that said `written: true`. On
-`written: false` - no planning tree, an unwritable or symlinked
-`tasks/{slug}/`, a range that would not resolve - drop the line and state the
-envelope's reason in its place: a record that never landed must not read as one
-that did. This is the same discipline the `risk_check` step applies to its own
-flag.
+Two lines, two rules. The `Record:` line rides an envelope that said
+`written: true`; on `written: false` - no planning tree, an unwritable or
+symlinked `tasks/{slug}/`, a range that would not resolve - drop the line and
+state the envelope's reason in its place, because a record that never landed
+must not read as one that did.
+
+The `Risk check:` line is never dropped, because a verdict that RAN is reported
+whether or not its receipt landed. Both halves are the envelope's own words and
+nothing minted: the verdict from the `risk-check run` envelope or the
+`risk_check_skipped` event that stood in for it, then `trace: {written: true}`
+rendered as recorded and `trace: {written: false, reason}` as unrecorded with
+the reason in words - the absent planning root where that reason is `ENOENT`.
+That second half is what tells a treeless run's done block apart from an adopted
+one's. Whether this block is reached at all was decided by the `risk_check`
+step's completion rule; this step only renders what that rule let through.
 
 No next-step menu.
 </step>

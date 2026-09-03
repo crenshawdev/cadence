@@ -1229,12 +1229,25 @@ export function appendArchiveRows(text, label, rows) {
  * slug, the fingerprint token, a colon, a space, then the title to end of line.
  *
  * Everything before the `: ` is fully constrained - a date, a lowercase
- * provider word, a slug with no spaces, a lowercase hex token - which is what
- * lets the TITLE carry a colon, a backtick or a pipe with no second escaping
- * rule, exactly as `ARCHIVE_ROW` above earns the same freedom. Nothing after
- * `: ` is parsed at all.
+ * provider word, a slug with no spaces, a lowercase hex token, and optionally
+ * the literal word `unconfirmed` - which is what lets the TITLE carry a colon,
+ * a backtick or a pipe with no second escaping rule, exactly as `ARCHIVE_ROW`
+ * above earns the same freedom. Nothing after `: ` is parsed at all.
+ *
+ * `unconfirmed` MARKS A CREATE WHOSE OUTCOME NOBODY COULD DETERMINE. A nonzero
+ * create collapses a refusal, a kill on the seam's own timeout and a dropped
+ * connection into one answer, and the last two can follow a forge that already
+ * created the issue - so the row is written anyway, marked, and a retry reads
+ * it as "do not file this again" without depending on a search index having
+ * caught up. It sits BEFORE the colon because everything before the colon is
+ * grammar and everything after it is free text: a marker in the title would be
+ * a marker a title could forge, and it would land in the recall corpus.
+ *
+ * A title that merely begins with the word is not misread - a confirmed row
+ * writes `<fingerprint>: unconfirmed ...` and the optional group needs the
+ * space and the colon on its own side.
  */
-const FILED_ROW = /^- (\d{4}-\d{2}-\d{2}) ([a-z]+) (\S+) ([0-9a-f]+): (.*)$/;
+const FILED_ROW = /^- (\d{4}-\d{2}-\d{2}) ([a-z]+) (\S+) ([0-9a-f]+)( unconfirmed)?: (.*)$/;
 
 /**
  * The preamble an empty FILED.md is created with. It names the writer and the
@@ -1252,6 +1265,11 @@ pointer to an issue, not a copy of it, and NOTHING here is a queue. A declined
 finding is never written here; its record is a row in DECLINED.md beside this
 file, which is deliberately outside the recall corpus. A line that is not a row
 is skipped, so a note added here mints no recall entry.
+
+A row carrying the word \`unconfirmed\` before its colon is a create this
+repository could not confirm landed - the forge may hold that issue and may not.
+It is kept so a later fire does not file the same finding twice; delete the row
+once you have looked, and nothing else here is unverified.
 `;
 
 /**
@@ -1297,12 +1315,18 @@ the seam reads.
  * dropped for the reason `appendArchiveRows` drops an empty snippet: an empty
  * corpus entry ranks against every query and says nothing.
  *
+ * A row the writer marked `unconfirmed` comes back carrying `unconfirmed: true`
+ * and nothing else different - one row, `text` still the title alone, so the
+ * marker never reaches the recall corpus. The field is ABSENT on a confirmed
+ * row rather than `false`, the same way the writer's flag is absent: one shape
+ * for "ordinary", so every existing reader of this answer is untouched.
+ *
  * Pure reader, normalizing through the shared `normalize` (BOM, CRLF, lone CR)
  * exactly as `captureSections` does: a CRLF checkout must index as its plain-LF
  * twin.
  * @param {string} text
  * @returns {Array<{text: string, source: string, provider: string, slug: string,
- *   fingerprint: string, date: string}>}
+ *   fingerprint: string, date: string, unconfirmed?: true}>}
  */
 export function parseFiledRows(text) {
   return parseRows(text, 'FILED.md');
@@ -1316,9 +1340,14 @@ export function parseFiledRows(text) {
  * The consumer is `issue-filing.mjs unfixed`, which wants `fingerprint` alone.
  * `text` and `source` ride along because the shape is shared, NOT because this
  * file is a recall source: it is not one, and `DECLINED_PREAMBLE` says so.
+ *
+ * It accepts an `unconfirmed` row too, because this is ONE grammar read by two
+ * functions. Nothing writes one here - `appendDeclinedRow` never sets the flag,
+ * for the reason stated on it - and refusing the word on this file alone would
+ * be a second grammar to keep in step with the first.
  * @param {string} text
  * @returns {Array<{text: string, source: string, provider: string, slug: string,
- *   fingerprint: string, date: string}>}
+ *   fingerprint: string, date: string, unconfirmed?: true}>}
  */
 export function parseDeclinedRows(text) {
   return parseRows(text, 'DECLINED.md');
@@ -1326,14 +1355,16 @@ export function parseDeclinedRows(text) {
 
 /** The shared body of both parsers. @param {string} text @param {string} source */
 function parseRows(text, source) {
+  /** @type {Array<{text: string, source: string, provider: string, slug: string,
+   *   fingerprint: string, date: string, unconfirmed?: true}>} */
   const out = [];
   for (const line of normalize(text).split('\n')) {
     const m = line.match(FILED_ROW);
     if (!m) continue;
-    const title = m[5].trim();
+    const title = m[6].trim();
     if (!title) continue;
     out.push({ text: title, source, date: m[1], provider: m[2],
-      slug: m[3], fingerprint: m[4] });
+      slug: m[3], fingerprint: m[4], ...(m[5] ? { unconfirmed: true } : {}) });
   }
   return out;
 }
@@ -1352,8 +1383,17 @@ function parseRows(text, source) {
  * text unchanged - a row this file's own parser could not read back is not a
  * pointer, it is a line of noise inside the recall corpus.
  *
+ * `unconfirmed: true` on the row object writes the marker before the colon. Its
+ * ABSENCE means confirmed, so every caller and fixture written before the
+ * marker existed keeps writing exactly the bytes it always did.
+ *
+ * The refusal-by-unchanged-text is why the fingerprint DEDUP does not live
+ * here: a second meaning for "returned its input" would be indistinguishable
+ * from the first, and `mirrorFiled` reads that return as "the grammar said no".
+ *
  * @param {string} text
- * @param {{date: string, provider: string, slug: string, fingerprint: string, title: string}} row
+ * @param {{date: string, provider: string, slug: string, fingerprint: string,
+ *   title: string, unconfirmed?: boolean}} row
  * @returns {string}
  */
 export function appendFiledRow(text, row) {
@@ -1365,6 +1405,12 @@ export function appendFiledRow(text, row) {
  * text. Identical discipline to `appendFiledRow` - flatten on write, refuse a
  * row this file's own parser could not read back - because it is the same
  * grammar; only the preamble an empty file is created with differs.
+ *
+ * IT NEVER SETS THE `unconfirmed` FLAG, and cannot: the marker records a CREATE
+ * whose outcome could not be determined, and no create precedes a decline - a
+ * decline is written here and nowhere else, so there is no ambiguous remote
+ * write for it to describe. The shared parser still reads the word, because one
+ * grammar read by two functions is the arrangement, not a per-file dialect.
  *
  * @param {string} text
  * @param {{date: string, provider: string, slug: string, fingerprint: string, title: string}} row
@@ -1380,7 +1426,7 @@ function appendRow(text, row, preamble) {
   const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
   const r = row && typeof row === 'object' ? row : /** @type {any} */ ({});
   const line = `- ${flat(r.date)} ${flat(r.provider)} ${flat(r.slug)} `
-    + `${flat(r.fingerprint)}: ${flat(r.title)}`;
+    + `${flat(r.fingerprint)}${r.unconfirmed === true ? ' unconfirmed' : ''}: ${flat(r.title)}`;
   if (!FILED_ROW.test(line)) return typeof text === 'string' ? text : '';
   const base = typeof text === 'string' ? text : '';
   if (!base.trim()) return `${preamble}\n${line}\n`;

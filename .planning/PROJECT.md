@@ -204,7 +204,34 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open.
+**No cycle open.** `/cad-phase add` opens the next one.
+
+**`v3.7.11 - unresolved inputs`, opened 2026-09-02, closed 2026-09-03.** Three
+phases, 43 commits off `main` (9 feat and 10 fix against 21 docs, 2 chore and
+1 test). Four requirement ids - `RNG-05`, `RSK-10`, `RSK-11`, `TRK-02` - each
+traced to a verified phase; `/cad-audit` passed 4/4 with 13/13 acceptance
+criteria covered and nothing deferred. Manifest bumped to 3.7.11. The ids came
+off the sentence v3.7.10's overview used to defer `GH-229`, plus `GH-246` and
+`GH-244`. One claim held all three phases: a gate ran, the input it ran on could
+not be resolved, and the code treated "could not resolve" as an ordinary value.
+An empty diff from a ref that does not exist, a record that could not be
+written, a tracker search that never ran - each read as the benign second
+meaning. Phase 1 made `risk-check` resolve each end of a range on its own and
+name the end that failed, gave the staged scope one spelling bound to the
+index's own tree id, and replaced the self-comparing range at three spine
+callers with a `risk_check_skipped` event. Phase 2 stated one completion rule
+for a record that cannot land - an absent planning root reports done and calls
+it unrecorded, every other reason withholds it - so a task on a repository with
+no `.planning/` finishes honestly and creates nothing. Phase 3 put a
+title-scoped lookup in front of `issue-filing.mjs file`'s first create, with an
+ambiguous create written as an unconfirmed `FILED.md` row the retry honours, and
+scoped a complete tracker miss to the forge whose query was actually measured
+(`lookupMeasured`) - github and forgejo measured, the forgejo half against the
+live mirror during UAT, gitlab still assuming. Their rows are now under
+`## Shipped` in REQUIREMENTS.md, the narrative is the `[3.7.11]` section of
+CHANGELOG.md, and the phase residue - deviations, UAT items, CONTEXT decisions -
+is in `.planning/ARCHIVE.md` (49 rows). Outstanding: the merge to `main` and the
+`v3.7.11` tag, both `/cad-land`'s. `/cad-phase add` opens the next cycle.
 
 **`v3.7.10 - review receipts`, opened 2026-09-01, closed 2026-09-02.** Three
 phases, 50 commits off `main` (11 feat and 8 fix against 27 docs, 3 chore and

@@ -48,16 +48,27 @@ function repoWith(git) {
 
 const GITHUB = { forge_provider: 'github', forge_repo: 'acme/widget' };
 const FORGEJO = { forge_provider: 'forgejo', forge_repo: 'acme/widget', forge_host: 'git.example.test' };
+// gitlab is the one row whose lookup argv is still ASSUMED rather than measured
+// (`FILING_TABLE.gitlab.lookupMeasured`), so it is what the unmeasured-row cases
+// below are written against. github and forgejo were both run live 2026-09-03.
+const GITLAB = { forge_provider: 'gitlab', forge_repo: 'acme/widget' };
 
 /**
- * A forge-CLI stub: it logs its argv, answers a `list` with `listBody`, answers
- * a `login` with `loginBody`, and exits 1 on the `failAt`-th create.
+ * A forge-CLI stub: it logs its argv, answers a `list` with `listBody` (or
+ * exits 1 printing nothing when `listFails`), answers a `login` with
+ * `loginBody`, and exits 1 on the `failAt`-th create.
+ *
+ * `listFails` is how a case reaches the arm where the lookup COULD NOT RUN,
+ * which is a different answer from a lookup that ran and found nothing: an
+ * expired login and an unreachable host land here, and neither is evidence that
+ * a fingerprint is absent from the tracker.
  *
  * `echo`, never a heredoc, for the reason issue-check.test.mjs's own stub
  * states: /bin/sh has no `cat` builtin, and a stub whose PATH lost it prints
  * nothing while still exiting zero.
  */
-function stubBin(dir, name, { listBody = '[]', loginBody = '[]', failAt = 0, createLog }) {
+function stubBin(dir, name,
+  { listBody = '[]', loginBody = '[]', failAt = 0, listFails = false, createLog }) {
   const q = (text) => `'${String(text).replace(/'/g, `'\\''`)}'`;
   const script = ['#!/bin/sh',
     // ONE log line per invocation whatever the argv holds: an issue BODY carries
@@ -66,7 +77,7 @@ function stubBin(dir, name, { listBody = '[]', loginBody = '[]', failAt = 0, cre
     `{ echo "${name} $*" | tr '\\n' ' '; echo; } >> "$CAD_ARGV_LOG"`,
     `if [ "$1" = "login" ]; then echo ${q(loginBody)}; exit 0; fi`,
     'case "$2" in',
-    `  list) echo ${q(listBody)}; exit 0 ;;`,
+    `  list) ${listFails ? 'exit 1' : `echo ${q(listBody)}; exit 0`} ;;`,
     '  create)',
     `    echo x >> ${q(createLog)}`,
     `    n=$(wc -l < ${q(createLog)})`,
@@ -423,6 +434,140 @@ test('a create exiting nonzero refuses and NAMES the findings that were not file
   assert.equal(createCalls(calls).length, 3, calls.join('\n'));
 });
 
+// --- the tracker is asked BEFORE any create ---------------------------------
+//
+// GH-244: a create whose outcome could not be determined was retried blind, and
+// the tracker holds `#241` and `#242` - byte-identical titles, four seconds
+// apart - because of it. The lookup is the half that stops a retry re-filing
+// something the forge already holds.
+
+/** A lookup response holding `title` under `number`, the gh shape. */
+const onTracker = (pairs) => JSON.stringify(
+  pairs.map(([f, number, extra = {}]) => ({ number, title: issueTitle(f), ...extra })),
+);
+
+test('a fire with accepts asks the tracker ONCE, and the ask precedes every create', () => {
+  const payload = dispositions([
+    [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
+  ]);
+  const { status, envelope, calls } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(listCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(createCalls(calls).length, 3, calls.join('\n'));
+  // Order off the stub's own log, not off anything the seam said about itself.
+  const firstList = calls.findIndex((c) => / list /.test(` ${c} `));
+  const firstCreate = calls.findIndex((c) => / create /.test(` ${c} `));
+  assert.ok(firstList >= 0, calls.join('\n'));
+  assert.ok(firstList < firstCreate, calls.join('\n'));
+});
+
+test('the list call is TITLE-SCOPED and names every accepted fingerprint', () => {
+  // Bare tokens match BODIES: measured 2026-09-03, a bare fingerprint returned
+  // an issue that merely quotes it, while `in:title` returned only the filings.
+  const payload = dispositions([
+    [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
+  ]);
+  const { calls } = run(['file', '--payload', payload]);
+  const list = listCalls(calls)[0];
+  assert.match(list, /--search /, list);
+  assert.match(list, /in:title /, list);
+  for (const f of [FIVE[0], FIVE[1], FIVE[2]]) {
+    assert.ok(list.includes(fingerprint(f)), `${fingerprint(f)} missing from: ${list}`);
+  }
+  assert.ok(!list.includes(DECLINE_LABEL), list);
+});
+
+test('a fingerprint the tracker already holds gets no create and is reported by NUMBER', () => {
+  const payload = dispositions([
+    [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
+  ]);
+  const { status, envelope, calls, dir } = run(['file', '--payload', payload],
+    { stub: { listBody: onTracker([[FIVE[1], 7]]) } });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 2, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.issue]),
+    [[fingerprint(FIVE[1]), 7]]);
+  assert.equal(envelope.suppressed_count, 1);
+  assert.equal(envelope.accepted, 2);
+  // No pointer row is minted for an issue this fire did not file.
+  const text = filedText(dir);
+  assert.ok(!text.includes(fingerprint(FIVE[1])), text);
+  for (const f of [FIVE[0], FIVE[2]]) assert.ok(text.includes(fingerprint(f)), text);
+});
+
+test('a CLOSED issue suppresses exactly as an open one does (D-05)', () => {
+  // The fingerprint is over (file, claim), so it does not move when the code is
+  // fixed - a finding filed, fixed and closed can never be filed again, and
+  // that cost is stated rather than discovered.
+  const payload = dispositions([
+    [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
+  ]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { stub: { listBody: onTracker([[FIVE[1], 7, { state: 'closed' }]]) } });
+  assert.equal(status, 0);
+  assert.equal(createCalls(calls).length, 2, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.issue]),
+    [[fingerprint(FIVE[1]), 7]]);
+});
+
+test('a lookup that FILLED ITS PAGE refuses the fire before any create', () => {
+  // 200 rows against gh's 200-row page: either truncation or a forge that did
+  // not apply the search. Reading either as "not filed" is the duplicate.
+  const full = JSON.stringify(Array.from({ length: 200 }, (_, i) => ({
+    number: i + 1,
+    title: issueTitle(finding(`src/x${i}.mjs`, 1, 'low', `claim ${i}`)),
+  })));
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[1], 'accept']]);
+  const { status, envelope, calls, dir } = run(['file', '--payload', payload],
+    { stub: { listBody: full } });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'incomplete-lookup');
+  assert.match(envelope.detail, /acme\/widget/);
+  assert.match(envelope.detail, /filled the 200-row page/);
+  assert.ok(envelope.hint);
+  assert.equal(createCalls(calls).length, 0, calls.join('\n'));
+  assert.equal(filedText(dir), '', 'nothing was mirrored either');
+});
+
+test('a lookup child that could NOT RUN does not refuse - the creates still run', () => {
+  // D-11: "incomplete" and "unavailable" are two arms. An offline forge that
+  // refused every fire would be a gate nobody can get past.
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[1], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { stub: { listFails: true } });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(listCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(createCalls(calls).length, 2, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed, []);
+});
+
+test('a fire of DECLINES alone spawns no child at all - no list and no create', () => {
+  const payload = dispositions([[FIVE[0], 'decline'], [FIVE[1], 'decline']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(calls, [], calls.join('\n'));
+  assert.equal(envelope.declined, 2);
+});
+
+test('the forgejo arm\'s ISSUE list call carries --login, like its create', () => {
+  // An unqualified `tea --repo` falls back to config file order, so a lookup
+  // without a login would read a stranger's tracker and answer about it.
+  const logins = JSON.stringify([{ name: 'mine', url: 'https://git.example.test', user: 'me' }]);
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const { status, calls } = run(['file', '--payload', payload],
+    { git: FORGEJO, bins: ['tea'], stub: { loginBody: logins } });
+  assert.equal(status, 0);
+  const issueList = calls.filter((c) => /issues list /.test(c));
+  assert.equal(issueList.length, 1, calls.join('\n'));
+  assert.match(issueList[0], /--login mine/, issueList[0]);
+  assert.match(issueList[0], /--keyword /, issueList[0]);
+  assert.ok(issueList[0].includes(fingerprint(FIVE[0])), issueList[0]);
+});
+
 // --- the forge record is read, and every refusal precedes the first create ---
 
 test('the forgejo arm carries --login on both calls, resolved off the persisted host', () => {
@@ -656,18 +801,30 @@ test('a second fire appends rather than replacing the first run\'s rows', () => 
   assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, 2, text);
 });
 
-test('a create that fails part way still mirrors the issues that DID land', () => {
+test('a create that fails part way mirrors what landed AND marks the ambiguous one', () => {
   // The tracker holds two issues; a pointer they never got would be a second
-  // loss on top of the first.
+  // loss on top of the first. The third create came back nonzero, which is
+  // AMBIGUOUS rather than known-failed, so it gets a row of its own carrying
+  // the word `unconfirmed` - the local pointer a retry reads (D-06).
   const payload = dispositions([
     [FIVE[0], 'accept'], [FIVE[1], 'accept'], [FIVE[2], 'accept'],
   ]);
   const { status, envelope, dir } = run(['file', '--payload', payload], { stub: { failAt: 3 } });
   assert.equal(status, 1);
   assert.equal(envelope.reason, 'create-failed');
-  const text = filedText(dir);
-  assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, 2, text);
-  assert.ok(!text.includes(fingerprint(FIVE[2])), 'the unfiled one is not mirrored');
+  const rows = filedText(dir).split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(rows.length, 3, filedText(dir));
+  for (const f of [FIVE[0], FIVE[1]]) {
+    const row = rows.find((l) => l.includes(fingerprint(f)));
+    assert.ok(row, `no row for ${fingerprint(f)}`);
+    assert.ok(!row.includes('unconfirmed'), row);
+  }
+  const ambiguous = rows.find((l) => l.includes(fingerprint(FIVE[2])));
+  assert.ok(ambiguous, 'the ambiguous create left no row at all');
+  assert.match(ambiguous, new RegExp(`${fingerprint(FIVE[2])} unconfirmed: `), ambiguous);
+  // The entries after it were never attempted, so they get no row - and
+  // `unfiled` still lists every one of them.
+  assert.deepEqual(envelope.unfiled.map((f) => f.fingerprint), [fingerprint(FIVE[2])]);
   // The mirror LANDED, and the envelope says so rather than leaving the caller
   // to assume it - which is the other half of the case below.
   assert.equal(envelope.mirrored, true, JSON.stringify(envelope));
@@ -725,16 +882,249 @@ test('the create-failed hint is honest that the failed create may have LANDED', 
   assert.equal(envelope.unfiled[0].fingerprint, failed);
   assert.ok(envelope.hint.includes(failed), envelope.hint);
   assert.match(envelope.hint, /AMBIGUOUS rather than known-failed/, envelope.hint);
-  assert.match(envelope.hint, /BEFORE re-filing it/, envelope.hint);
-  assert.match(envelope.hint, /SEARCH acme\/widget's issues/, envelope.hint);
+  // The operator is no longer sent to search by hand: the seam wrote the
+  // pointer and asks the tracker itself on the next fire.
+  assert.doesNotMatch(envelope.hint, /BEFORE re-filing it/, envelope.hint);
+  assert.doesNotMatch(envelope.hint, /SEARCH acme\/widget's issues/, envelope.hint);
+  assert.match(envelope.hint, /`unconfirmed` row in \.planning\/FILED\.md/, envelope.hint);
+  assert.match(envelope.hint, /before it creates anything/, envelope.hint);
   // The instruction is runnable only because the title carries that token, so
   // assert the two agree rather than trusting the sentence.
   assert.ok(issueTitle(FIVE[2]).includes(failed), issueTitle(FIVE[2]));
-  // No extra network call was bought to resolve the ambiguity: still one create
-  // attempt per entry up to the failure, and no list call on the `file` face.
+  // Still one create attempt per entry up to the failure, and exactly ONE list
+  // call for the whole fire - the tracker is asked once, before the first
+  // create, not once per ambiguous outcome.
   const { calls } = run(['file', '--payload', payload], { stub: { failAt: 3 } });
   assert.equal(createCalls(calls).length, 3, calls.join('\n'));
-  assert.deepEqual(listCalls(calls), []);
+  assert.equal(listCalls(calls).length, 1, calls.join('\n'));
+});
+
+test('a fingerprint FILED.md already carries gets no SECOND row, even when it is re-filed', () => {
+  // D-04's stated cost: the tracker decides on a complete answer, and an empty
+  // response is a complete MISS - so one of the 9 fingerprints whose issue was
+  // deleted in the 2026-08-30 cleanup is re-filed rather than frozen. What must
+  // NOT happen is a second ledger row for it, which is how `#241`/`#242` looked
+  // locally: `appendFiledRow` appends unconditionally and nothing checked.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const planted = (dir) => {
+    mkdirSync(join(dir, '.planning'), { recursive: true });
+    writeFileSync(join(dir, '.planning', 'FILED.md'),
+      `# Filed\n\n- 2026-08-25 github acme/widget ${fingerprint(FIVE[0])}: ${issueTitle(FIVE[0])}\n`);
+  };
+  const { status, envelope, calls, dir } = run(['file', '--payload', payload],
+    { stub: { listBody: '[]' }, prepare: planted });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  const rows = filedText(dir).split('\n')
+    .filter((l) => l.includes(fingerprint(FIVE[0])) && l.startsWith('- '));
+  assert.equal(rows.length, 1, filedText(dir));
+  assert.equal(rows[0].slice(2, 12), '2026-08-25', 'the planted row was rewritten, not kept');
+});
+
+test('an UNCONFIRMED write over a CONFIRMED row rewrites that row rather than adding one', () => {
+  // Skipping it would swallow the marker: over a confirmed row whose issue the
+  // tracker no longer holds, a complete miss creates, the create comes back
+  // nonzero, and a row left confirmed lets the next fire file it again.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const planted = (dir) => {
+    mkdirSync(join(dir, '.planning'), { recursive: true });
+    writeFileSync(join(dir, '.planning', 'FILED.md'),
+      `# Filed\n\n- 2026-08-25 github acme/widget ${fingerprint(FIVE[0])}: ${issueTitle(FIVE[0])}\n`);
+  };
+  const { status, envelope, dir } = run(['file', '--payload', payload],
+    { stub: { listBody: '[]', failAt: 1 }, prepare: planted });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'create-failed');
+  const rows = filedText(dir).split('\n')
+    .filter((l) => l.includes(fingerprint(FIVE[0])) && l.startsWith('- '));
+  assert.equal(rows.length, 1, filedText(dir));
+  assert.match(rows[0], new RegExp(`${fingerprint(FIVE[0])} unconfirmed: `), rows[0]);
+});
+
+// --- one fingerprint, one entry, whatever the payload holds ------------------
+
+test('a payload carrying the same fingerprint TWICE spawns one create', () => {
+  // No tracker lookup can catch this shape: both entries are in one fire, so
+  // the second create would run before any query could learn of the first.
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[0], 'accept']]);
+  const { status, envelope, calls, dir } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(listCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(envelope.filed.length, 1, JSON.stringify(envelope.filed));
+  assert.equal(envelope.accepted, 1);
+  const rows = filedText(dir).split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(rows.length, 1, filedText(dir));
+});
+
+test('an accept followed by a DECLINE of the same finding creates once and declines nothing', () => {
+  // First occurrence wins, so the collapsed entry is the accept - and the
+  // decline that followed it writes no DECLINED.md row, because it is not in
+  // the set any more.
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[0], 'decline']]);
+  const { status, envelope, calls, dir } = run(['file', '--payload', payload]);
+  assert.equal(status, 0);
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.equal(envelope.accepted, 1);
+  assert.equal(envelope.declined, 0);
+  assert.equal(declinedText(dir), '', declinedText(dir));
+});
+
+// --- the ledger answers when the lookup cannot -------------------------------
+//
+// D-04: the tracker decides when its answer came back COMPLETE, `.planning/
+// FILED.md` is the fallback consulted only when the lookup could not run, and
+// `.planning/DECLINED.md` keeps gating the ask and never the create.
+
+/** Plant a `.planning/FILED.md` holding one row per (finding, marker) pair. */
+const filedWith = (pairs) => (dir) => {
+  mkdirSync(join(dir, '.planning'), { recursive: true });
+  const rows = pairs.map(([f, unconfirmed]) => `- 2026-08-25 github acme/widget `
+    + `${fingerprint(f)}${unconfirmed ? ' unconfirmed' : ''}: ${issueTitle(f)}`);
+  writeFileSync(join(dir, '.planning', 'FILED.md'),
+    `# Filed: issues this repository's gates opened\n\n${rows.join('\n')}\n`);
+};
+
+test('a lookup that could not run falls through to FILED.md, per fingerprint', () => {
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[2], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { stub: { listFails: true }, prepare: filedWith([[FIVE[0], false]]) });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  // Only FIVE[2] is created: the ledger stood in for FIVE[0].
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.ok(createCalls(calls)[0].includes(fingerprint(FIVE[2])), calls.join('\n'));
+  assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.authority, e.filed_on]),
+    [[fingerprint(FIVE[0]), 'FILED.md', '2026-08-25']]);
+  assert.equal(envelope.suppressed[0].issue, null, 'no lookup completed, so no number exists');
+  assert.equal(envelope.ledger_stood_in, true, JSON.stringify(envelope));
+});
+
+test('a lookup that could not run with NO ledger creates every accept', () => {
+  // An offline forge that suppressed everything would drop findings on the
+  // floor, which is the one thing this seam may never do.
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[2], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { stub: { listFails: true } });
+  assert.equal(status, 0);
+  assert.equal(createCalls(calls).length, 2, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed, []);
+  assert.equal(envelope.ledger_stood_in, false);
+});
+
+test('on a forge whose lookup is UNMEASURED, a complete miss cannot overrule a confirmed row', () => {
+  // `glab` space-joins the chunk's tokens because it offers one search string
+  // and no OR, and whether it reads that as more than one term - or matches a
+  // bracketed hex token in a title at all - is CONTEXT D-12's flagged
+  // assumption, stated in the gitlab row itself. So an empty answer there is
+  // NOT evidence the tracker lacks the fingerprint, and letting it overrule the
+  // ledger would make this seam file more duplicates on gitlab than it did
+  // before the lookup existed. The github case above is the control: there the
+  // same empty answer DOES create over a confirmed row, because that query was
+  // run live - as forgejo's now has been, which is why this case is written
+  // against gitlab, the one row left carrying `lookupMeasured: false`.
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[2], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload], {
+    git: GITLAB,
+    bins: ['glab'],
+    stub: { listBody: '[]' },
+    prepare: (d) => {
+      mkdirSync(join(d, '.planning'), { recursive: true });
+      writeFileSync(join(d, '.planning', 'FILED.md'),
+        '# Filed\n\n- 2026-08-25 gitlab acme/widget '
+        + `${fingerprint(FIVE[0])}: ${issueTitle(FIVE[0])}\n`);
+    },
+  });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  // FIVE[2] holds no row, so it is still created: an unmeasured lookup never
+  // suppresses a fingerprint the ledger cannot speak for, or an offline-shaped
+  // answer would drop findings on the floor.
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.ok(createCalls(calls)[0].includes(fingerprint(FIVE[2])), calls.join('\n'));
+  assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.authority, e.filed_on]),
+    [[fingerprint(FIVE[0]), 'FILED.md', '2026-08-25']]);
+  assert.equal(envelope.ledger_stood_in, true, JSON.stringify(envelope));
+  // The lookup still RAN - this is not the child-failed arm wearing a new hat.
+  assert.equal(calls.filter((c) => /issue list /.test(c)).length, 1, calls.join('\n'));
+});
+
+test('an unmeasured forge still honours a lookup HIT, which is the arm that was measured true', () => {
+  // Only the MISS is downgraded on an unmeasured row. A title that carries the
+  // fingerprint is a positive answer whatever the query semantics were, so it
+  // suppresses by NUMBER exactly as github's does. gitlab is the unmeasured row
+  // and `iid` is its `numberKey`.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const listBody = JSON.stringify([{ iid: 12, title: issueTitle(FIVE[0]) }]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { git: GITLAB, bins: ['glab'], stub: { listBody } });
+  assert.equal(status, 0);
+  assert.equal(createCalls(calls).length, 0, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.authority, e.issue]),
+    [[fingerprint(FIVE[0]), 'tracker', 12]]);
+  assert.equal(envelope.ledger_stood_in, false, JSON.stringify(envelope));
+});
+
+test('AC4 end to end: an ambiguous create is not re-filed on the next fire', () => {
+  // The whole of GH-244 in one case. Fire once with a create that comes back
+  // nonzero; fire the SAME payload again on the same directory with a fresh
+  // stub whose tracker answers `[]` - a complete MISS, which is exactly the
+  // answer a search index that has not caught up would give.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const first = run(['file', '--payload', payload], { stub: { failAt: 1 } });
+  assert.equal(first.envelope.reason, 'create-failed');
+  assert.match(filedText(first.dir), new RegExp(`${fingerprint(FIVE[0])} unconfirmed: `));
+
+  const stubDir = tmp('bin');
+  const createLog = join(tmp('log'), 'creates');
+  const argvLog = join(tmp('log'), 'argv');
+  stubBin(stubDir, 'gh', { createLog, listBody: '[]' });
+  const out = execFileSync(process.execPath,
+    [SEAM, 'file', '--dir', first.dir, '--payload', payload],
+    { encoding: 'utf8', cwd: tmpdir(),
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
+        CAD_ARGV_LOG: argvLog, PATH: `${stubDir}:${process.env.PATH}` } });
+  const envelope = JSON.parse(out);
+  const calls = readFileSync(argvLog, 'utf8').trim().split('\n').filter(Boolean);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 0, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.authority, e.filed_on]),
+    [[fingerprint(FIVE[0]), 'FILED.md', new Date().toISOString().slice(0, 10)]]);
+  // Still one row, still marked: nothing was appended and nothing was cleared.
+  const rows = filedText(first.dir).split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(rows.length, 1, filedText(first.dir));
+  assert.match(rows[0], new RegExp(`${fingerprint(FIVE[0])} unconfirmed: `), rows[0]);
+});
+
+test('an unreadable FILED.md refuses BEFORE any create, like the decline record', () => {
+  // A fire that cannot tell what it already filed must not guess: guessing here
+  // means a second issue for a finding that already has one.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload], {
+    prepare: (d) => {
+      filedWith([[FIVE[0], false]])(d);
+      chmodSync(join(d, '.planning', 'FILED.md'), 0o000);
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'filed-unreadable');
+  assert.match(envelope.detail, /FILED\.md/);
+  assert.ok(envelope.hint);
+  assert.deepEqual(calls, [], calls.join('\n'));
+});
+
+test('a DECLINED.md row never stops `file` creating what the user just accepted', () => {
+  // D-04: the decline record gates the ASK. By the time `file` runs the user has
+  // answered, and letting an old decline veto that answer would silently drop it.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { prepare: declinedWith([FIVE[0]]) });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed, []);
 });
 
 test('`unfixed` writes nothing at all - the ask is not a filing', () => {

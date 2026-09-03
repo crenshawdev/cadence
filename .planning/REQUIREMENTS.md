@@ -1,11 +1,24 @@
-# Requirements: Cadence (v3.7.10)
+# Requirements: Cadence (v3.7.11)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-No cycle open. `/cad-phase add` opens the next one.
+**No cycle open.** The shipped ids are rows under `## Shipped` below.
+`/cad-phase add` opens the next cycle; `/cad-plan` seeds each `## Traceability`
+row as its phase is planned. The ids under `## Deferred` keep their own reasons
+and none is promoted here to fill this section.
+
+`v3.7.11 - unresolved inputs` opened 2026-09-02 and closed 2026-09-03. Three
+phases, four ids - `RNG-05` and `RSK-10` in phase 1, `RSK-11` in phase 2,
+`TRK-02` in phase 3 - are rows under the `Shipped` heading below, all four
+Complete. They came off the sentence v3.7.10's overview used to defer `GH-229`,
+plus `GH-246` and `GH-244`, which joined the board since. The theme was one
+claim: a gate ran on an input it could not resolve, and the record treated
+"could not resolve" as an ordinary value. The audit passed 4/4 traced with 13/13
+acceptance criteria covered and nothing deferred.
+
 
 `v3.7.10 - review receipts` opened 2026-09-01 and closed 2026-09-02. Three
 phases, five ids - `TRC-12` and `CST-04` in phase 1, `RSK-09` and `AUT-03` in
@@ -384,6 +397,10 @@ parses only the Traceability table).
 | RSK-09 (A settlement receipt can name a home the seam accepts. `adjudication` already accepts `tasks/<slug>/` as a third home beside `phases/<N>/` and `deferred/<N>/`, landed 2026-08-30 in `f860560e`; what remains is the record catching up to it - the hand-written `ADJUDICATION-risk_surface-declines-off-the-tracker.json` replaced by one the seam produced and naming its task, the converse `--phase <N> --task` direction guarded, and `recordForFire` widened so a task settlement's counts are recounted rather than self-asserted; and per OQ-1, a receipt for an earlier phase window is writable through the seam rather than hand-appended. `GH-227` Phase 2.) | 2 | Complete | v3.7.10 |
 | AUT-03 (An `override` receipt names the authorization it descends from, not only the range it settles. An id minted when the engineer answers is carried by every receipt written on that answer, so a reader can tell a duplicate write from the same decision applied to a second range, and `/cad-suggest` counts decisions rather than writes. `GH-220` Phase 2.) | 2 | Complete | v3.7.10 |
 | TRC-13 (The run record states the effort a rung actually ran at beside the effort it was routed at. `subagent-trace.mjs` reads `effort` off the stopped worker's OWN transcript, the file the stop names on `agent_transcript_path`, and never off the hook input, which carries the CONFIGURED level and cannot see the host's silent downgrade. It puts that string, beside the rung the worker was dispatched under, on BOTH writes the hook makes - the `return` when it can close the bracket and the `worker_cache` fact when it cannot - because 114 of those facts stand against 2 hook-written returns on this record, so the `return` alone would record it on nothing. A dispatch whose transcript reported no effort is unrecorded, never a match. OQ-2 is answered and the id is live: on Claude Code 2.1.258 a `max` dispatch with extended thinking off runs at `high` and nothing announces it (`.planning/spikes/host-effort-downgrade/SPIKE.md`). `GH-226` Phase 3.) | 3 | Complete | v3.7.10 |
+| RNG-05 (A range with one unresolvable end keeps the end that resolved and names the one that failed. `resolveRange` (`core.mjs:509-528`) runs both `rev-parse` calls inside one `try`, so `HEAD..STAGED` on verbatim 2026-08-30T18:28:50 wrote `base_id` and `head_id` both null when `HEAD` always resolves. Resolved independently, each end failing covered by a test. And the staged scope has exactly one machine spelling, per OQ-1: a `--staged` arm on `risk-check run` and `status`, so no workflow in the tree passes a rev value `git rev-parse --verify` rejects. `GH-229` Phase 1.) | 1 | Complete | v3.7.11 |
+| RSK-10 (A `risk_check` that had no diff to compute writes a row a reader can tell apart from a clean check - `checked:false` with a stated cause, never a bare `inconclusive` a caller proceeds past - and a plan that landed no commits produces no `checked:true, empty:true` row for a range whose two ends are the same commit. Observed twice on smithers, 2026-08-27T23:55:38 and 2026-08-28T14:28:12. `execute.md:339` and `task.md:155` stop emitting the self-comparing range and record a skip that says so. `GH-229` Phase 1.) | 1 | Complete | v3.7.11 |
+| RSK-11 (A `/cad-task` whose record cannot reach the trace finishes under one rule, not two. `task.md:190-198` withheld done on every `written:false` while `:275-279` promised a treeless run scaffolds nothing, so on a repository with no `.planning/` the inline path could never report done; measured 2026-09-02 on a scratch repo. A `written:false` whose reason is the absent planning root - `ENOENT` from the trace seams, "no planning root" from `task-record` - reports done with the risk check's disposition stated and the record called unrecorded; any other reason still withholds done. The `surfaces-unanswered` refusal is asked in the run and re-run with `--surfaces`, so blocking detection actually runs for the audience the inline arm exists for, and that run creates no `.planning/` and no `tasks/<slug>/`. `GH-246` Phase 2.) | 2 | Complete | v3.7.11 |
+| TRK-02 (A create is preceded by ONE title-scoped tracker lookup for the fire's fingerprints, so an issue already carrying a finding's fingerprint - open or closed - is never filed again. `issue-filing.mjs run` collapses every `execFileSync` throw into `{ ok: false, stdout: '' }`, so a create that landed on the forge and one that never ran are the same value; this repository filed `#241` and `#242` four seconds apart, byte-identical, fingerprint `084c9ce03c072e0b`, with one row in `.planning/FILED.md:35`, and both are on the tracker (measured 2026-09-03). The lookup is chunked at GitHub's documented five boolean operators and pinned byte-exact for tea, gh and glab. A response that FILLED ITS PAGE refuses the fire before any create and names the incomplete cause; a lookup that COULD NOT RUN does not refuse and falls through to `.planning/FILED.md`, which suppresses on a fingerprint with a row. An ambiguous create appends a `FILED.md` row marked unconfirmed so the retry has a local pointer, a fire payload carrying the same fingerprint twice spawns one create, and the append path skips a fingerprint already present. `DECLINED.md` keeps gating the ask and never the create. `GH-244` Phase 3.) | 3 | Complete | v3.7.11 |
 
 ## Deferred
 

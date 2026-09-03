@@ -61,13 +61,23 @@ export function taskRepo(commits, { planning = true } = {}) {
   return { root, dir, shas };
 }
 
-/** planning.mjs, run FROM `root` so the seam's git reads resolve there. */
-export function runIn(root, args, dir) {
+/**
+ * planning.mjs, run FROM `root` so the seam's git reads resolve there.
+ *
+ * `env` overlays `GIT_FIXTURE_ENV` and defaults to nothing, so every existing
+ * caller - including planning-recall.test.mjs, which imports this - is byte
+ * identical to before. The one row that passes it needs `CADENCE_GLOBAL_CONFIG`
+ * pointed somewhere that does not exist, the way git-branch.test.mjs does with
+ * its `NO_GLOBAL`: a developer whose own user-global config answered the
+ * surface question would otherwise watch the treeless row's refusal come from
+ * their machine rather than from the seam.
+ */
+export function runIn(root, args, dir, env = {}) {
   let stdout;
   let code = 0;
   try {
     stdout = execFileSync('node', [PLANNING, ...args, '--dir', dir],
-      { encoding: 'utf8', cwd: root, env: GIT_FIXTURE_ENV });
+      { encoding: 'utf8', cwd: root, env: { ...GIT_FIXTURE_ENV, ...env } });
   } catch (e) {
     stdout = e.stdout; code = e.status;
   }
@@ -128,6 +138,80 @@ test('task-record: no planning root means nothing is created and written:false s
   assert.match(r.reason, /no planning root/);
   // NEITHER the root NOR tasks/: the fast path's guarantee is that it scaffolds
   // nothing where nothing exists.
+  assert.equal(existsSync(dir), false);
+  assert.equal(existsSync(join(root, 'tasks')), false);
+});
+
+test('treeless run: every seam /cad-task calls answers written:false, and nothing is created', () => {
+  // RSK-11. The mechanical half of "a treeless task can finish honestly": the
+  // FOUR seams `workflows/task.md` calls on a repository with no `.planning/`,
+  // in the order that workflow calls them, each answering `ok:true` with
+  // `written: false` and the ABSENT-ROOT reason. That reason is the whole
+  // discriminator the workflow's completion rule rests on - report done on this
+  // `written: false`, withhold done on any other - so it is asserted by its
+  // exact spelling on the trace side and by `/no planning root/` on the record
+  // side. A looser assertion would let the prose rule rest on words the seams
+  // do not emit.
+  //
+  // `'ENOENT'` is the trace seams' whole spelling of it: `lib/trace.mjs`'s
+  // `tracePath` is `join(planningRoot, TRACE_FILE)` with no intermediate
+  // directory and `appendEvent` swallows the stat's own ENOENT as an ordinary
+  // first write, so the only ENOENT an append can return is `appendFileSync`'s
+  // - the planning root itself.
+  const { root, dir, shas } = taskRepo(TASK_COMMITS, { planning: false });
+  // The refusal below must be the SEAM's, not this machine's: a user-global
+  // config that answered the surface question would clear the gate here and the
+  // row would prove nothing.
+  const noGlobal = { CADENCE_GLOBAL_CONFIG: join(root, 'no-global.json') };
+  const run = (args) => runIn(root, args, dir, noGlobal);
+  const readSet = join(root, 'read-set.txt');
+  writeFileSync(readSet, 'alpha.txt,beta.txt');
+
+  // 1. The `bracket` step: the phase-0 anchor and the dispatch that opens it.
+  const start = run(['trace', 'append', '--phase', '0', '--family', 'lifecycle',
+    '--event', 'phase_start', '--sha', `${shas[0]}-1234-5678`]);
+  const dispatch = run(['trace', 'append', '--phase', '0', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'treeless-task', '--role', 'cad-task',
+    '--read-file', readSet]);
+  // 2. The `risk_check` step's skip arm, for a run that landed no commits.
+  const skip = run(['trace', 'append', '--phase', '0', '--family', 'outcome',
+    '--event', 'risk_check_skipped', '--plan', 'treeless-task', '--sha', shas[0]]);
+  // 3. The `risk_check` step's real range - refused first, because no layer
+  //    answered the surface question, then run for the scope this run named.
+  const bare = run(['risk-check', 'run', '--phase', '0', '--base', shas[0], '--head', 'HEAD']);
+  const scoped = run(['risk-check', 'run', '--phase', '0', '--base', shas[0],
+    '--head', 'HEAD', '--surfaces', 'auth']);
+  // 4. The `record` step, and 5. the `done` step's one close.
+  const record = run(['task-record', '--slug', 'treeless-task', '--base', shas[0],
+    '--head', 'HEAD', '--text', 'What this treeless task shipped.']);
+  const close = run(['trace', 'close', '--phase', '0', '--plan', 'treeless-task',
+    '--role', 'cad-task', '--agent-id', 'agent-1']);
+
+  for (const [name, r] of [['phase_start', start], ['dispatch', dispatch],
+    ['risk_check_skipped', skip], ['close', close]]) {
+    assert.equal(r.ok, true, `trace ${name} is not ok:true on a treeless repo`);
+    assert.equal(r.written, false, `trace ${name} claims it wrote to an absent planning root`);
+    assert.equal(r.reason, 'ENOENT', `trace ${name} names something other than the absent root`);
+  }
+
+  // The bare call is a REFUSAL, not a verdict and not a skip: the seam declines
+  // to scan on the all-eight set nobody chose. `task.md`'s risk_check step
+  // answers it in the run and re-runs with --surfaces.
+  assert.equal(bare.ok, false);
+  assert.equal(bare.reason, 'surfaces-unanswered');
+
+  // And the re-run REACHES a verdict - the blocking gate genuinely runs on a
+  // repository with no planning tree - while its own receipt does not land.
+  assert.equal(scoped.ok, true);
+  assert.equal(scoped.checked, true);
+  assert.equal(scoped.trace.written, false);
+  assert.equal(scoped.trace.reason, 'ENOENT');
+
+  assert.equal(record.ok, true);
+  assert.equal(record.written, false);
+  assert.match(record.reason, /no planning root/);
+
+  // The point of the row, after seven seam calls: NOTHING was scaffolded.
   assert.equal(existsSync(dir), false);
   assert.equal(existsSync(join(root, 'tasks')), false);
 });

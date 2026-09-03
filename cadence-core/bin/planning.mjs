@@ -102,21 +102,28 @@
 //                                   manifests, file types, never source text
 //                                   (NOT --dir: --root is the PROJECT root,
 //                                   two levels deep)
-//   risk-check run --phase N --base <ref> --head <ref> [--plan k]
-//                  [--surfaces <a,b,c>]
+//   risk-check run --phase N --base <ref> (--head <ref> | --staged)
+//                  [--plan k] [--surfaces <a,b,c>]
 //                                   whether a COMMITTED range touched a risk
 //                                   surface, recorded on the trace whatever the
 //                                   answer - so "the check was skipped" stops
 //                                   reading like "it ran and matched nothing".
+//                                   --staged is the other scope and the ONE
+//                                   spelling of it: the INDEX against --base,
+//                                   recorded `staged: true` with a null head.
+//                                   Exactly one of the two, never both.
 //                                   --plan is the WORKER key, not a plan
 //                                   number: `1-fix` is a key a dispatch is
 //                                   bracketed under and is recorded verbatim
-//   risk-check status --phase N [--plan k --base <ref> --head <ref>]
+//   risk-check status --phase N
+//                     [--plan k --base <ref> (--head <ref> | --staged)]
 //                                   every COMPLETED executor range in that
 //                                   phase against the records, refusing by plan
-//                                   when one carries none; the optional triple
-//                                   requires a record for THAT range, so an
-//                                   earlier narrower one does not satisfy it.
+//                                   when one carries none; the optional named
+//                                   scope requires a record for THAT scope, so
+//                                   an earlier narrower range does not satisfy
+//                                   it and a ref-range record does not satisfy
+//                                   a --staged ask.
 //                                   --plan is the same WORKER key `run` takes,
 //                                   read through the same grammar; a bracketed
 //                                   key that grammar refuses is reported in

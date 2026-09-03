@@ -2397,6 +2397,55 @@ test('filed: the parser is total over junk', () => {
   for (const junk of ['', '\n\n', '# Filed\n']) assert.deepEqual(parseFiledRows(junk), []);
 });
 
+// --- the UNCONFIRMED row: a create nobody could confirm landed ---------------
+// GH-244. `run` collapses a refusal, a kill on the seam's own timeout and a
+// dropped connection into one nonzero answer, and the last two can follow a
+// forge that already created the issue. The marker is the local pointer a retry
+// reads instead of trusting a search index to have caught up.
+
+test('filed: an unconfirmed row reads back as ONE row, title-only, state readable', () => {
+  const text = appendFiledRow('', { ...FILED, unconfirmed: true });
+  assert.match(text, / unconfirmed: /);
+  assert.deepEqual(parseFiledRows(text), [{
+    text: FILED.title, source: 'FILED.md', date: FILED.date,
+    provider: FILED.provider, slug: FILED.slug, fingerprint: FILED.fingerprint,
+    unconfirmed: true,
+  }]);
+});
+
+test('filed: a confirmed row is byte-identical to what it was before the marker', () => {
+  // The flag's ABSENCE means confirmed, so every caller written before it
+  // existed keeps writing exactly the bytes it always did - and `false` is not
+  // a third state that could write something new.
+  const base = appendFiledRow('', FILED);
+  assert.equal(appendFiledRow('', { ...FILED, unconfirmed: false }), base);
+  assert.equal(appendFiledRow('', { ...FILED, unconfirmed: undefined }), base);
+  assert.ok(!base.includes('unconfirmed:'), base);
+  assert.equal(parseFiledRows(base)[0].unconfirmed, undefined);
+});
+
+test('filed: a title that itself begins with the word is not misread as a marker', () => {
+  // The optional group needs its own space before and colon after, so the word
+  // is only a marker where the grammar puts it.
+  for (const title of ['unconfirmed and then some', 'unconfirmed: really', 'unconfirmed']) {
+    const rows = parseFiledRows(appendFiledRow('', { ...FILED, title }));
+    assert.equal(rows.length, 1, title);
+    assert.equal(rows[0].text, title);
+    assert.equal(rows[0].unconfirmed, undefined, title);
+  }
+});
+
+test('filed: a hand-written unconfirmed row parses on the stated grammar line', () => {
+  // The shape FILED_PREAMBLE and FILED_ROW both state, typed by a human rather
+  // than produced by the appender.
+  const text = `- 2026-09-03 github acme/widget 0123456789abcdef unconfirmed: [cadence 0123456789abcdef] a claim\n`;
+  assert.deepEqual(parseFiledRows(text), [{
+    text: '[cadence 0123456789abcdef] a claim', source: 'FILED.md', date: '2026-09-03',
+    provider: 'github', slug: 'acme/widget', fingerprint: '0123456789abcdef',
+    unconfirmed: true,
+  }]);
+});
+
 // --- the DECLINED.md pointer grammar (parseDeclinedRows / appendDeclinedRow) -
 // The same five-field row as FILED.md, written to a different file because it
 // means the opposite thing: FILED.md points at work that was accepted and

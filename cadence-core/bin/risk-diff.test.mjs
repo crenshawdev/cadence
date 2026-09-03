@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { scanDiff, scanDeclared } from './lib/risk-diff.mjs';
 import { CATEGORIES } from './lib/surface-scan.mjs';
 import { REVIEWER_TEXT_PATHSPECS } from './planning/risk-check.mjs';
@@ -269,6 +269,52 @@ function traceLines(dir) {
 /** The `outcome`/`risk_check` lines alone. */
 const riskRecords = (dir) => traceLines(dir)
   .filter((e) => e.family === 'outcome' && e.event === 'risk_check');
+
+/**
+ * `resolveRange` run in a CHILD process whose cwd is the fixture repo.
+ *
+ * NEVER in-process: `resolveRange` asks git about the CWD, and the test
+ * runner's cwd is this repository - so an in-process call would answer about a
+ * tree the fixture never built, and `no-such-ref` would still fail for the
+ * right reason in the wrong place. The child imports `planning/core.mjs` by
+ * absolute file URL for the same reason the specifier cannot be relative: the
+ * child has no script file to be relative TO.
+ */
+function resolveRangeIn(repo, base, head) {
+  const core = pathToFileURL(join(HERE, 'planning', 'core.mjs')).href;
+  const src = `import { resolveRange } from ${JSON.stringify(core)};\n`
+    + 'process.stdout.write(JSON.stringify(resolveRange('
+    + `${JSON.stringify(base)}, ${JSON.stringify(head)})));`;
+  return parseJson(execFileSync(process.execPath, ['--input-type=module', '-e', src],
+    { encoding: 'utf8', cwd: repo }));
+}
+
+test('resolveRange: an unresolvable HEAD keeps the base git DID resolve, and names `head`', () => {
+  // The all-or-nothing catch this splits. One `try` around the toplevel probe
+  // and both `rev-parse --verify` calls meant any single failure returned
+  // `base: '', head: ''`, so a caller was told nothing about WHICH end failed
+  // and an id git had already handed over was discarded (verbatim
+  // 2026-08-30T18:28:50 wrote both ids null on exactly this shape).
+  const { repo } = riskRepo({ answered: false });
+  const sha = commitFile(repo, 'README.md', 'start\n');
+  const r = resolveRangeIn(repo, sha, 'no-such-ref');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.base, sha, 'the end git resolved was thrown away with the one it could not');
+  assert.equal(r.head, '');
+  assert.match(r.error, /^head\b/, r.error);
+  assert.ok(r.error.includes('no-such-ref'), r.error);
+});
+
+test('resolveRange: an unresolvable BASE keeps the head, and names `base`', () => {
+  // The mirror, so the end-naming is a rule and not one branch's wording.
+  const { repo } = riskRepo({ answered: false });
+  const sha = commitFile(repo, 'README.md', 'start\n');
+  const r = resolveRangeIn(repo, 'no-such-ref', 'HEAD');
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.base, '');
+  assert.equal(r.head, sha, 'HEAD resolved and was discarded with its unresolvable sibling');
+  assert.match(r.error, /^base\b/, r.error);
+});
 
 test('risk-check run: a risky range answers ok:true with matches AND leaves one record', () => {
   const { repo, dir } = riskRepo();
@@ -593,6 +639,50 @@ test('risk-check run: an unreadable range is ok:false, and STILL leaves its reco
   assert.equal(records[0].empty, false);
 });
 
+test('risk-check run: an unresolvable HEAD keeps the base id and states the cause on the row', () => {
+  // The half the record used to drop. Both ids went null the moment either ref
+  // failed, and the redacted git message reached the ENVELOPE only - so the row
+  // on disk was a bare `checked:false, inconclusive:true` that a trace reader
+  // could walk straight past (smithers 2026-08-27T23:55:38, 2026-08-28T14:28:12).
+  const { repo, dir } = riskRepo();
+  const sha = commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--plan', '1', '--base', sha, '--head', 'no-such-ref']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-diff', JSON.stringify(r));
+  assert.equal(r.base_id, sha, 'the end git DID resolve was dropped with the one it could not');
+  assert.equal(r.head_id, null);
+  assert.equal(r.checked, false);
+
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.equal(records[0].base_id, sha);
+  assert.equal(records[0].head_id, null);
+  assert.equal(records[0].checked, false);
+  assert.equal(records[0].inconclusive, true);
+  assert.equal(records[0].empty, false);
+  assert.equal(typeof records[0].detail, 'string');
+  assert.ok(records[0].detail, 'the row carries no cause at all');
+  assert.match(records[0].detail, /^head\b/, records[0].detail);
+});
+
+test('risk-check run: the mirror - an unresolvable BASE keeps the head id and names `base`', () => {
+  const { repo, dir } = riskRepo();
+  const head = commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--plan', '1', '--base', 'no-such-ref', '--head', 'HEAD']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-diff', JSON.stringify(r));
+  assert.equal(r.base_id, null);
+  assert.equal(r.head_id, head, JSON.stringify(r));
+
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.equal(records[0].base_id, null);
+  assert.equal(records[0].head_id, head);
+  assert.match(records[0].detail, /^base\b/, records[0].detail);
+});
+
 test('risk-check run: --base and --head are required, and a flag-shaped ref is refused', () => {
   const { repo, dir } = riskRepo();
   const base = commitFile(repo, 'README.md', 'start\n');
@@ -605,6 +695,126 @@ test('risk-check run: --base and --head are required, and a flag-shaped ref is r
   assert.equal(flagged.ok, false, JSON.stringify(flagged));
   assert.equal(flagged.reason, 'bad-args');
   assert.deepEqual(traceLines(dir), [], 'a malformed call appended a record anyway');
+});
+
+/** Write and `git add` one file WITHOUT committing it - the staged scope's
+ * whole subject. */
+function stageFile(repo, rel, body) {
+  const file = join(repo, rel);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, body);
+  execFileSync('git', ['add', '--', rel], { cwd: repo });
+}
+
+test('risk-check run: --base <ref> --staged scans the INDEX and records it as staged', () => {
+  // The locked OQ-1 answer. Two projects improvised `HEAD..STAGED` for exactly
+  // this scope (verbatim 2026-08-30T18:28:50, weathervane 2026-08-31T11:21:11)
+  // because the seam was ref-only and the gate fires BEFORE the commit lands,
+  // so the scope the workflows describe in prose had no machine spelling at all.
+  const { repo, dir } = riskRepo();
+  const head = commitFile(repo, 'README.md', 'start\n');
+  stageFile(repo, 'src/auth/login.ts', AUTH_MODULE);
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(r.matches.some((m) => m.category === 'auth'), JSON.stringify(r.matches));
+  assert.equal(r.staged, true, JSON.stringify(r));
+  assert.equal(r.base_id, head, JSON.stringify(r));
+  assert.equal(r.head_id, null);
+  assert.equal(r.head, null);
+
+  const rec = riskRecords(dir)[0];
+  assert.equal(rec.staged, true, 'the envelope said staged and the record did not');
+  assert.equal(rec.base_id, head);
+  assert.equal(rec.head_id, null);
+  assert.equal(rec.head, null);
+  assert.ok(rec.matches.includes('auth'), JSON.stringify(rec.matches));
+});
+
+test('risk-check run: a staged row carries the INDEX id, the identity its base cannot carry', () => {
+  // HEAD does not move when a file is staged, so the base is only HALF of what
+  // a staged scope is. `git write-tree` names the contents that were scanned,
+  // and it is the field a later `status` ask compares - see the mutation row
+  // under `risk-check status` below for the hole it closes.
+  const { repo, dir } = riskRepo();
+  const head = commitFile(repo, 'README.md', 'start\n');
+  stageFile(repo, 'docs/notes.md', 'text\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.base_id, head, JSON.stringify(r));
+  // git's OWN id for this index, read back out of the repository the seam read:
+  // an id the seam computed some other way would agree with itself and with
+  // nothing else.
+  const tree = execFileSync('git', ['write-tree'], { cwd: repo, encoding: 'utf8' }).trim();
+  assert.match(r.index_id, /^[0-9a-f]{40,64}$/, JSON.stringify(r));
+  assert.equal(r.index_id, tree, 'the envelope named an index other than the one it read');
+  assert.equal(riskRecords(dir)[0].index_id, tree,
+    'the envelope said one index and the record said another');
+});
+
+test('risk-check run: --staged reads the INDEX alone - an unadded worktree file is outside it', () => {
+  // `--cached` is the whole difference. A file merely written is not what is
+  // about to be committed, so a gate that read the worktree would fire on
+  // changes the caller had not offered.
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  writeFileSync(join(repo, 'notes-only.ts'), AUTH_MODULE);
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.matches, [], JSON.stringify(r));
+});
+
+test('risk-check run: an EMPTY index is a completed empty check, not an unchecked one', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.equal(r.empty, true, JSON.stringify(r));
+  assert.equal(r.staged, true);
+});
+
+test('risk-check run: --head and --staged together are two spellings of one scope, refused', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--base', 'HEAD', '--head', 'HEAD', '--staged']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args', JSON.stringify(r));
+  assert.deepEqual(traceLines(dir), [], 'a malformed call appended a record anyway');
+});
+
+test('risk-check run: a --staged run whose base does not resolve keeps the staged shape', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'no-such-ref', '--staged']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-diff', JSON.stringify(r));
+  assert.equal(r.staged, true, JSON.stringify(r));
+  assert.equal(r.base_id, null);
+  const rec = riskRecords(dir)[0];
+  assert.equal(rec.staged, true);
+  assert.equal(rec.checked, false);
+  assert.match(rec.detail, /^base\b/, rec.detail);
+  // Written and null, never omitted: a staged record with no index identity is
+  // one no later ask can match, and the field says so rather than going absent.
+  assert.equal(rec.index_id, null, JSON.stringify(rec));
+});
+
+test('risk-check run: a REF-RANGE row carries no `staged` field at all', () => {
+  // Not `staged: false`: a row written before this arm existed is honestly not
+  // staged, so absence and `false` say the same thing here - unlike `empty`,
+  // whose absence marked a record the seam could not speak for (D-03).
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'docs/notes.md', 'text\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal('staged' in r, false, JSON.stringify(r));
+  assert.equal('staged' in riskRecords(dir)[0], false);
+  // Nor an `index_id`: a committed range has no index end, so the field would
+  // be null on every row that is not about the index.
+  assert.equal('index_id' in r, false, JSON.stringify(r));
+  assert.equal('index_id' in riskRecords(dir)[0], false);
 });
 
 test('risk-check run: --plan with nothing after it is refused, never read as plan 1', () => {
@@ -726,10 +936,17 @@ test('risk-check status: appending the plan-1 record makes the identical call pa
   assert.equal(r.plans.length, 1);
   assert.equal(r.plans[0].state, 'recorded');
   // The record's own refs ride the row, so a stale one is visible rather than
-  // silently counted on the phase-wide arm.
+  // silently counted on the phase-wide arm. `staged: false` is the reader's
+  // NORMALIZED reading of a row that carries no such field - the same
+  // absence-is-not-a-verdict rule `empty: false` above it already states - and
+  // it rides the reported shape because the scope a row was written over is
+  // what decides whether a staged ask may match it. `index_id: null` is that
+  // same normalization for the staged scope's OTHER end: a ref range has no
+  // index end at all, so null here reads as "not an index", and on a staged row
+  // it reads as "no identity", which is a row no staged ask can match.
   assert.deepEqual(r.plans[0].records,
     [{
-      base: 'ae5ca09', head: 'HEAD', base_id: null, head_id: null,
+      base: 'ae5ca09', head: 'HEAD', base_id: null, head_id: null, staged: false, index_id: null,
       checked: true, inconclusive: false, matches: [], empty: false,
     }]);
 });
@@ -844,6 +1061,116 @@ test('risk-check status: a ref that cannot be resolved is a refusal, never a mat
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'unresolved-range', JSON.stringify(r));
   assert.equal(r._exit, 1);
+});
+
+test('risk-check status: a STAGED run is the record a staged ask finds', () => {
+  // The other half of the locked OQ-1 answer. `run` can record a staged scope,
+  // so the gate that reports on records has to be able to ask about one - a
+  // staged run nothing could find would be written and then demanded again.
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const run = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(run.ok, true, JSON.stringify(run));
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged'], repo);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'recorded', JSON.stringify(r.plans[0]));
+  assert.equal(r.plans[0].wanted.staged, true, JSON.stringify(r.plans[0].wanted));
+  assert.equal(r.plans[0].wanted.head_id, null);
+  // The index the ask was ABOUT rides `wanted` beside the base, so a reader of
+  // a refusal can see which two ends were asked for.
+  const tree = execFileSync('git', ['write-tree'], { cwd: repo, encoding: 'utf8' }).trim();
+  assert.equal(r.plans[0].wanted.index_id, tree, JSON.stringify(r.plans[0].wanted));
+});
+
+test('risk-check status: a staged record does not answer for a LATER index', () => {
+  // THE MUTABLE END. HEAD does not move when a file is staged, so a record
+  // identified by its base and the word `staged` alone was satisfied by every
+  // later index over that same base: run the detector over a benign index, then
+  // stage the risky change, and the gate answered `recorded` for contents
+  // nothing had ever read - the widened-range bypass, in the one scope whose
+  // second end is not a commit.
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  stageFile(repo, 'docs/notes.md', 'text\n');
+  const run = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(run.ok, true, JSON.stringify(run));
+  assert.deepEqual(run.matches, [], JSON.stringify(run.matches));
+  const ask = ['--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged'];
+  const before = riskStatus(dir, ask, repo);
+  assert.equal(before.ok, true, JSON.stringify(before));
+  assert.equal(before.plans[0].state, 'recorded', JSON.stringify(before.plans[0]));
+
+  // The index moves and HEAD does not - no commit, so the base id is unchanged.
+  stageFile(repo, 'src/auth/login.ts', AUTH_MODULE);
+  const after = riskStatus(dir, ask, repo);
+  assert.equal(after.ok, false, JSON.stringify(after));
+  assert.equal(after.reason, 'risk-record-missing', JSON.stringify(after));
+  assert.equal(after.plans[0].state, 'stale', JSON.stringify(after.plans[0]));
+
+  // And the answer the refusal sends the caller to: re-running the detector
+  // over the index that actually exists finds what the stale record never saw.
+  const again = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(again.ok, true, JSON.stringify(again));
+  assert.ok(again.matches.some((m) => m.category === 'auth'), JSON.stringify(again.matches));
+});
+
+test('risk-check status: a staged record carrying NO index id is never a match', () => {
+  // The legacy arm, and the same safe direction the resolved commit ids take:
+  // a record that cannot say which index it read has no identity to bind to, so
+  // it reports `stale` and the range is re-run rather than passing on a base
+  // that any number of indexes share. The row is written by the SEAM and then
+  // stripped, so it is otherwise exactly what a run leaves.
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  stageFile(repo, 'docs/notes.md', 'text\n');
+  const run = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged']);
+  assert.equal(run.ok, true, JSON.stringify(run));
+  const stripped = traceLines(dir).map((e) => {
+    if (e.family === 'outcome' && e.event === 'risk_check') delete e.index_id;
+    return JSON.stringify(e);
+  });
+  writeFileSync(join(dir, 'trace.jsonl'), `${stripped.join('\n')}\n`);
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged'], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-record-missing', JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'stale', JSON.stringify(r.plans[0]));
+});
+
+test('risk-check status: a REF-RANGE record does not satisfy a STAGED ask', () => {
+  // Two different scopes over the same base are two different diffs. Letting
+  // the committed one answer for the index would clear a staged change nothing
+  // ever read - the widened-range bypass in another spelling.
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'docs/one.md', 'one\n');
+  riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', 'HEAD']);
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'HEAD', '--staged'], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-record-missing', JSON.stringify(r));
+});
+
+test('risk-check status: both scopes together, and a staged ask with no --plan, are refused', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const both = riskStatus(dir,
+    ['--phase', '1', '--plan', '1', '--base', 'HEAD', '--head', 'HEAD', '--staged'], repo);
+  assert.equal(both.ok, false, JSON.stringify(both));
+  assert.equal(both.reason, 'bad-args', JSON.stringify(both));
+  // A half-named scope reads as the phase-wide arm if it is let through, and
+  // then passes on a record some other range left.
+  const planless = riskStatus(dir, ['--phase', '1', '--base', 'HEAD', '--staged'], repo);
+  assert.equal(planless.ok, false, JSON.stringify(planless));
+  assert.equal(planless.reason, 'bad-args', JSON.stringify(planless));
+});
+
+test('risk-check status: a staged ask whose base does not resolve refuses, naming `base`', () => {
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'no-such-ref', '--staged'], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unresolved-range', JSON.stringify(r));
+  assert.equal(r.staged, true, JSON.stringify(r));
+  assert.match(r.detail, /^base\b/, r.detail);
 });
 
 test('risk-check run: the record carries the resolved commit ids beside the spellings', () => {
@@ -1865,4 +2192,102 @@ test('scanDeclared: one signal ORDER serves both faces - path evidence wins over
   const diffed = scanDiff(wholeFileAdd('deploy/host.pem', body), ['secrets']);
   assert.deepEqual(declared.matches, [{ category: 'secrets', signal: '.pem file' }]);
   assert.deepEqual(diffed.matches, declared.matches);
+});
+
+// --- RSK-10, the reader's half: a skipped plan is `skipped`, not `missing` ------
+
+/** One `outcome`/`risk_check_skipped` line, as the three RSK-10 sites append
+ * it in place of a `run` for a plan that landed no commits. `sha` is the one
+ * commit at both ends of the range the caller did not ask about. */
+const skipLine = (plan, sha, extra = {}) => JSON.stringify({
+  corr: '1-ae5ca09', phase: '1', ts: '2026-08-15T18:46:00.000Z',
+  family: 'outcome', event: 'risk_check_skipped', plan, sha,
+  ...extra,
+});
+
+/** A second completed plan under FROZEN_PHASE_1's anchor, so a fixture can hold
+ * one plan that landed nothing beside one that landed a range. */
+const PLAN_2_RETURN = [
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:50:00.000Z","family":"lifecycle","event":"dispatch","plan":"2","role":"cad-executor","read":[".planning/phases/1/PLAN-2.md"]}',
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:55:00.000Z","family":"lifecycle","event":"return","plan":"2","role":"cad-executor","tokens":40000}',
+];
+
+test('risk-check status: a skipped EARLIER plan does not refuse a LATER plan\'s named range', () => {
+  // The defect the deep verify of phase 1 (v3.7.11) found after RSK-10's
+  // workflow half landed: execute.md, task.md and execute-parallel.md append
+  // `risk_check_skipped` in place of the run for a plan that landed no commits,
+  // and this reader knew only `risk_check`. Every executor return in the cycle
+  // is a row, so the skipped plan stayed `missing` and every later plan's own
+  // gating `status` call answered `risk-record-missing` - a blocking gate with
+  // no exit but an override. Real binary, real repo: plan 1 skipped at the
+  // pre-plan HEAD, plan 2 committed and checked.
+  const { repo, dir } = repoFixture(FROZEN_PHASE_1);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  writeFileSync(join(dir, 'trace.jsonl'),
+    `${[...FROZEN_PHASE_1, skipLine('1', a), ...PLAN_2_RETURN].join('\n')}\n`);
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const run = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--plan', '2', '--base', a, '--head', b]);
+  assert.equal(run.ok, true, JSON.stringify(run));
+
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '2', '--base', a, '--head', b], repo);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0);
+  assert.equal(r.missing, undefined);
+  const one = r.plans.find((/** @type {any} */ p) => p.plan === '1');
+  const two = r.plans.find((/** @type {any} */ p) => p.plan === '2');
+  // A skip is its OWN state, never `recorded`: a reader can still tell a range
+  // nobody had to read from one the detector read and cleared.
+  assert.equal(one.state, 'skipped', JSON.stringify(one));
+  assert.deepEqual(one.skips, [a]);
+  assert.deepEqual(one.records, []);
+  assert.equal(two.state, 'recorded', JSON.stringify(two));
+  assert.equal(two.skips, undefined, 'a row with no skip keeps the shape it had');
+  // And the phase-wide arm agrees.
+  const w = riskStatus(dir, ['--phase', '1'], repo);
+  assert.equal(w.ok, true, JSON.stringify(w));
+});
+
+test('risk-check status: a skip carrying NO sha satisfies nothing', () => {
+  // The rule fire receipts already follow: a skip that cannot name the commit
+  // it stood at cannot say which range it stood in for.
+  const dir = traceFixture([...FROZEN_PHASE_1, skipLine('1', undefined)]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-record-missing');
+  assert.equal(r.plans[0].state, 'missing');
+  assert.equal(r.plans[0].skips, undefined);
+  assert.match(r.hint, /risk_check_skipped/);
+});
+
+test('risk-check status: a skip answers only for the self-comparing range it describes', () => {
+  // The named-range arm. A skip at commit `a` stands in for `a..a` and for
+  // nothing else: a real range `a..b` is a diff the skip did not read, and a
+  // staged ask over `a` names an index with bytes in it.
+  const { repo, dir } = repoFixture([FROZEN_PHASE_1[0]]);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  writeFileSync(join(dir, 'trace.jsonl'), `${[...FROZEN_PHASE_1, skipLine('1', a)].join('\n')}\n`);
+  const same = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', a], repo);
+  assert.equal(same.ok, true, JSON.stringify(same));
+  assert.equal(same.plans.find((/** @type {any} */ p) => p.plan === '1').state, 'skipped');
+
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const real = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', b], repo);
+  assert.equal(real.ok, false, JSON.stringify(real));
+  assert.equal(real.plans.find((/** @type {any} */ p) => p.plan === '1').state, 'missing');
+
+  const staged = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--staged'], repo);
+  assert.equal(staged.ok, false, JSON.stringify(staged));
+  assert.equal(staged.plans.find((/** @type {any} */ p) => p.plan === '1').state, 'missing');
+});
+
+test('risk-check status: a record outranks a skip for the same plan', () => {
+  // A record the detector wrote is the stronger claim. A skip beside an
+  // unchecked record does not turn `unchecked` into `skipped`.
+  const dir = traceFixture([...FROZEN_PHASE_1,
+    recordLine('1', 'ae5ca09', 'HEAD', { checked: false, inconclusive: true }),
+    skipLine('1', 'ae5ca09ae5ca09')]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'unchecked');
 });

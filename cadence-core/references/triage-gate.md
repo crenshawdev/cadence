@@ -301,8 +301,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" unfixed --payload
 ```
 
 `<path>` is THE SAME composed payload file the adjudication record was written
-from - the `{voices: [...]}` object, not the rendered findings. It reads
-`.planning/DECLINED.md`, spawns nothing, and has no page to fill. What comes back
+from - the `{voices: [...]}` object, not the rendered findings. THE ASK FACE
+reads `.planning/DECLINED.md` and nothing else: it spawns no forge child and has
+no page to fill, whatever the finding count. The one lookup this gate makes
+belongs to the `file` call below, which is where it is stated. What comes back
 is exactly the same set on all three arms that reach here: the `blocking` arm's
 below-blocker/high remainder, the `adjudicated` arm's non-survivors, and any
 `recorded not fixed` disposition. THREE things are held back, and one case that
@@ -337,7 +339,24 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-filing.mjs" file --payload <p
 
 `<path>` here holds `{"entries": [{"finding": ..., "disposition": "accept" |
 "decline"}, ...]}` - the findings the call above returned, each paired with what
-the user chose. Only the accepts cross the network. A refusal from EITHER call is reported and the findings are
+the user chose.
+
+ONLY THE ACCEPTS CROSS THE NETWORK, and what they do there is now two steps. A
+fire holding at least one accept makes ONE title-scoped lookup per chunk of six
+of its own fingerprints BEFORE its first create, then one create per accept the
+tracker does not already hold. A fingerprint already on the tracker - open or
+closed - or carrying an `unconfirmed` row in `.planning/FILED.md` is reported
+with the issue it already has and is not filed again. A lookup that came back
+having FILLED ITS PAGE refuses the whole fire before any create, because a page
+full of rows in answer to a six-token title search is either truncation or a
+forge that ignored the search, and reading either as "not filed" duplicates an
+issue that exists. A lookup that COULD NOT RUN does not refuse: it falls through
+to `.planning/FILED.md`, where a row for the fingerprint suppresses. And a
+create the seam could not confirm landed leaves an `unconfirmed` row of its own,
+so the retry cannot duplicate it - a nonzero create is ambiguous rather than
+known-failed, and the row says so where the next fire reads it.
+
+A refusal from EITHER call is reported and the findings are
 STILL IN HAND: an unreachable tracker is not a reason to drop a finding, and a
 refusal names which ones were not filed. Add no receipt and no trace event -
 this is a step inside a fire that already leaves one.

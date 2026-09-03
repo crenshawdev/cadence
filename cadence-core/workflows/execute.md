@@ -333,7 +333,27 @@ checked. The seam does not require a NUMBER - `--plan` takes the worker key - so
 keeping one spelling is the coordinator's job, not the seam's.
 
 After each plan completes, ASK THE SEAM whether the plan's committed range
-touched a risk surface - never by reading the diff against a prose list:
+touched a risk surface - never by reading the diff against a prose list.
+
+FIRST, whether there is a range to ask about. A plan that landed no commits
+leaves HEAD where it was, so `git rev-parse HEAD` still prints the recorded
+`{pre-plan HEAD}` and the range's two ends are ONE commit. Nothing landed, so
+nothing can have matched: do NOT run `risk-check run` for that plan, and do NOT
+run the `status` call that gates it done below either - that call would refuse
+`risk-record-missing` for a record nothing wrote. Append the skip in its place:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event risk_check_skipped --plan <k> --sha {pre-plan HEAD}
+```
+
+The event NAME is the record that nothing was checked because nothing landed.
+Asking the seam over that pair instead writes `checked: true, empty: true` - a
+completed clean check over a range that could not have matched - and that row is
+what this arm exists to keep out of the record. Report the plan done on that
+append's `written: true`, held exactly as the run's own record is below.
+Everything after this point proceeds as written.
+
+When HEAD has moved, the range is real:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD

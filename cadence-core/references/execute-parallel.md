@@ -30,7 +30,15 @@ on this path is a real defect to report, not the fork-point default.
    and run it once if set.
 
    Then the risk sequence, per plan, in the main tree the merges landed in - a
-   fire issued before them asks git for a commit this tree does not hold:
+   fire issued before them asks git for a commit this tree does not hold.
+
+   FIRST, whether that plan has a range to ask about. A worktree plan that
+   landed no commits merges to the same HEAD, so the two ends step 3 recorded
+   are ONE commit. Neither seam call below is issued for it - the second would
+   refuse `risk-record-missing` for a record the first never wrote - and the
+   skip is appended in their place, the spelling `workflows/execute.md` states:
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event risk_check_skipped --plan <k> --sha {that plan's pre-merge HEAD from step 3}`
+   When the two ends differ, the range is real:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --plan <k> --base {that plan's pre-merge HEAD from step 3} --head {that plan's post-merge HEAD from step 3}`
    That pair and never the pre-plan HEAD, for the reason step 3 records both
    ends. What that answer means, when the trigger fires, the range-diff file it

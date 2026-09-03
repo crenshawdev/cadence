@@ -420,8 +420,8 @@ test('every flag in every row declares a complete grammar', () => {
     }
   }
   // The walk reached the whole table, so no arm above is vacuous.
-  // CADENCE-CENSUS: arg-contract-flag-entries | asserts: the CONTRACTS table declares 199 flag entries across 20 top-level rows
-  assert.equal(entries, 199, `the table declares ${entries} flag entries`);
+  // CADENCE-CENSUS: arg-contract-flag-entries | asserts: the CONTRACTS table declares 201 flag entries across 20 top-level rows
+  assert.equal(entries, 201, `the table declares ${entries} flag entries`);
   assert.equal(Object.keys(CONTRACTS).length, 20, 'one row per top-level bin script');
 });
 
@@ -476,10 +476,19 @@ test('the declarations the CONTEXT decisions bind are the ones in the table', ()
     }
   }
   // Required-ness is per subcommand, and this pair is the case that proves it.
-  assert.equal(CONTRACTS['planning.mjs']['risk-check run']['--head'].required, true,
-    'a defaulted head is a range the caller never stated');
+  // `run`'s `--head` is optional NOT because a head is - `--base` still is not -
+  // but because exactly one of `--head <ref>` and `--staged` names the scope,
+  // and an either-or is not one of the four fields a row can state. Declaring
+  // it required would refuse the staged spelling at the door, before the seam's
+  // own both-or-neither check is ever reached.
+  assert.equal(CONTRACTS['planning.mjs']['risk-check run']['--base'].required, true,
+    'a defaulted base is a scope the caller never stated');
+  assert.equal(CONTRACTS['planning.mjs']['risk-check run']['--head'].required, false,
+    'exactly one of --head/--staged is the seam\'s own check, not a bound this table can state');
+  assert.equal(CONTRACTS['planning.mjs']['risk-check run']['--staged'].type, 'boolean',
+    'presence is the staged flag\'s whole grammar - it names no value');
   assert.equal(CONTRACTS['planning.mjs']['risk-check status']['--head'].required, false,
-    "status takes the triple all-three-or-none, so requiring --head would state a bound that face does not hold");
+    "status takes its named range all-or-none, so requiring --head would state a bound that face does not hold");
 });
 
 test('every declared spec is one the evaluator can actually apply', () => {

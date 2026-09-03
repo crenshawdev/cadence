@@ -106,14 +106,34 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 2. If diagnose-only: write the Root Cause Report into Resolution and stop
    (no fix applied).
 3. Else propose the minimal fix and apply it ONLY with user approval (ask-user
-   seam). A fix that touches a risk surface fires the `risk_surface` review
-   trigger (references/review-triggers.md) before it is trusted. The fix is
-   staged in THIS tree, so the artifact is the staged-diff scope - shape (b):
+   seam). Then `git add` exactly the files the fix touched - staging is a STEP
+   here, not a description - and only THEN ask the seam. Whether the fix
+   touched a risk surface is the SEAM's answer over the index, never a reading
+   of the diff, and `--staged` is that scope's one machine spelling (the index
+   has no commit for a `--head` to name), so a fix still sitting in the
+   worktree is outside what this call reads:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base HEAD --staged
+   ```
+
+   `--phase 0` for the reason task.md gives: 0 is the one number no roadmap
+   phase carries, and a debug session sits outside the phase spine.
+   `empty: true` on this arm is NOT a pass: it says the read found no
+   scannable change between HEAD and the index, which is exactly what an
+   unstaged fix looks like - the seam returns `ok: true, checked: true,
+   matches: []` over nothing at all. Stage the fix and re-run rather than
+   trusting it. A non-empty `matches` or an `inconclusive: true` fires the
+   `risk_surface` review trigger (references/review-triggers.md) before the
+   fix is trusted, and the artifact is the staged-diff scope - shape (b):
    the reviewer runs `git diff --cached` in the cwd it inherits, never the
    diff text. That gate is `blocking` and its re-arm is CAPPED at ONE narrowed
    round - RE-READ
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
-   fixing a FAIL, since this workflow does not preload it.
+   fixing a FAIL, since this workflow does not preload it. An `ok:false`
+   answer (`no-diff`, `surfaces-unanswered`) is not a clean one: a check that
+   could not run clears nothing, so repair what the refusal's `hint` names and
+   re-run rather than landing the fix on it.
 4. Verify: re-run the reproduction. Symptom gone -> set Status: resolved, fill
    Resolution, done. Symptom remains -> increment Attempts, record what the
    attempt changed and did not, and return to the method loop (the failed fix

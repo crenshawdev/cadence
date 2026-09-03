@@ -24,12 +24,15 @@
   },
   "model": {
     "effort": {
-      "cad-planner": "xhigh",
+      "cad-planner": "high",
       "cad-executor": "high",
       "cad-plan-checker": "high",
       "cad-verifier": "high"
     },
-    "escalate_on_failure": false
+    "escalate_on_failure": false,
+    "overrides": {
+      "cad-planner": "fable"
+    }
   },
   "git": {
     "auto_close": true,
