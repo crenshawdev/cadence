@@ -10,9 +10,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, fingerprint, fingerprintInTitle,
-  HALTING_SEVERITIES, issueBody, issueTitle, normalizeDeclines, unfixedFindings,
-  unfixedFromEntries, usableFixCommit,
+  DECLINE_LABEL, FILING_TABLE, FINGERPRINT_CHARS, LOOKUP_CHUNK, fingerprint,
+  fingerprintInTitle, HALTING_SEVERITIES, issueBody, issueTitle, normalizeDeclines,
+  unfixedFindings, unfixedFromEntries, usableFixCommit,
 } from './lib/filing-decision.mjs';
 import { PROVIDER_TABLE } from './lib/forge-decision.mjs';
 
@@ -407,9 +407,9 @@ test('the forgejo create and lookup vectors are exactly these', () => {
       '--title', 'T', '--description', 'B', '--labels', DECLINE_LABEL],
   );
   assert.deepEqual(
-    row.lookup('acme/widget', row.limit, 'my-login'),
+    row.lookup('acme/widget', row.limit, ['aaaabbbbccccdddd', '1111222233334444'], 'my-login'),
     ['issues', 'list', '--repo', 'acme/widget', '--login', 'my-login',
-      '--labels', DECLINE_LABEL, '--state', 'all',
+      '--keyword', 'aaaabbbbccccdddd 1111222233334444', '--state', 'all',
       '--fields', 'index,title', '--output', 'json', '--limit', '50'],
   );
   assert.equal(row.limit, 50);
@@ -428,8 +428,9 @@ test('the github create and lookup vectors are exactly these', () => {
       '--label', DECLINE_LABEL],
   );
   assert.deepEqual(
-    row.lookup('acme/widget', row.limit),
-    ['issue', 'list', '--repo', 'acme/widget', '--label', DECLINE_LABEL,
+    row.lookup('acme/widget', row.limit, ['aaaabbbbccccdddd', '1111222233334444']),
+    ['issue', 'list', '--repo', 'acme/widget',
+      '--search', 'in:title aaaabbbbccccdddd OR 1111222233334444',
       '--state', 'all', '--json', 'number,title', '--limit', '200'],
   );
   assert.equal(row.limit, 200);
@@ -451,8 +452,9 @@ test('the gitlab create vector carries -y, and its lookup is exactly this', () =
       '-y', '--label', DECLINE_LABEL],
   );
   assert.deepEqual(
-    row.lookup('acme/widget', row.limit),
-    ['issue', 'list', '--repo', 'acme/widget', '--label', DECLINE_LABEL,
+    row.lookup('acme/widget', row.limit, ['aaaabbbbccccdddd', '1111222233334444']),
+    ['issue', 'list', '--repo', 'acme/widget',
+      '--search', 'aaaabbbbccccdddd 1111222233334444', '--in', 'title',
       '--all', '--output', 'json', '--per-page', '100'],
   );
   assert.equal(row.limit, 100);
@@ -477,12 +479,40 @@ test('no row names a binary: PROVIDER_TABLE already says which drives which', ()
   for (const [provider, row] of Object.entries(FILING_TABLE)) {
     const argv = [
       ...row.create('a/b', { title: 'T', body: 'B', declined: true }, 'login'),
-      ...row.lookup('a/b', row.limit, 'login'),
+      ...row.lookup('a/b', row.limit, ['aaaabbbbccccdddd'], 'login'),
     ];
     for (const bin of Object.values(PROVIDER_TABLE)) {
       assert.ok(!argv.includes(bin), `${provider} argv names the binary ${bin}`);
     }
   }
+});
+
+test('a github chunk of six is five OR operators, and the query opens with in:title', () => {
+  // Five is GitHub's DOCUMENTED boolean ceiling, and `LOOKUP_CHUNK` is set from
+  // it rather than from the seven measured working on 2026-09-03 (D-09): a
+  // limit the index starts enforcing later truncates silently, and a silent
+  // truncation here re-files an issue that already exists.
+  const six = Array.from({ length: LOOKUP_CHUNK }, (_, i) => `${i}`.repeat(FINGERPRINT_CHARS));
+  const argv = FILING_TABLE.github.lookup('a/b', FILING_TABLE.github.limit, six);
+  const q = argv[argv.indexOf('--search') + 1];
+  assert.ok(q.startsWith('in:title '), q);
+  assert.equal(q.split(' OR ').length - 1, 5);
+  for (const token of six) assert.ok(q.includes(token), token);
+});
+
+test('no provider\'s lookup vector carries DECLINE_LABEL - an ACCEPTED issue has none', () => {
+  // The label-filtered lookup could not see the set a create must not
+  // duplicate, which is the whole reason the query moved to the title (D-07).
+  for (const [provider, row] of Object.entries(FILING_TABLE)) {
+    const argv = row.lookup('a/b', row.limit, ['aaaabbbbccccdddd'], 'login');
+    assert.ok(!argv.includes(DECLINE_LABEL), `${provider} still filters on the decline label`);
+    assert.ok(!argv.includes('--label') && !argv.includes('--labels'),
+      `${provider} still passes a label flag`);
+  }
+});
+
+test('the chunk constant is six, and it is what the builders are exercised with', () => {
+  assert.equal(LOOKUP_CHUNK, 6);
 });
 
 test('the decline label is one frozen literal with no separator a forge reads', () => {

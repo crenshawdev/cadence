@@ -284,10 +284,15 @@ export function fingerprint(finding) {
  *
  * A FACT OF THE TABLE, exactly as `--private` is a fact of `CREATE_TABLE`'s
  * rows: one frozen literal, never a parameter, never a flag, never text a
- * caller derived. What it is read back by is `LOOKUP` below, whose whole query
- * is this label - so a caller that could choose it could split the decline set
- * in two and start re-asking about half of it, and a caller-derived one would
- * put free text on a command line.
+ * caller derived. A caller that could choose it would put free text on a
+ * command line, and could split the decline set in two by writing a second
+ * spelling.
+ *
+ * NOTHING READS IT BACK ANY MORE. `LOOKUP` below used to be one list call
+ * filtered by exactly this label; it is a title-scoped search now, because an
+ * issue Cadence ACCEPTED never carries the label and was therefore invisible to
+ * a label-filtered query (CONTEXT D-07). The label remains a fact of the CREATE
+ * rows alone - written on a declined create, read by a human on the tracker.
  *
  * No colon, no `::`, no space. GitLab reads `::` as a SCOPED label with
  * mutual-exclusion semantics inside its scope, and a label a forge interprets
@@ -309,6 +314,23 @@ export const DECLINE_LABEL = 'cadence-declined';
  */
 const TITLE_MAX = 200;
 
+/**
+ * How many fingerprints one `lookup` query may carry.
+ *
+ * SIX, because six terms joined by ` OR ` is FIVE boolean operators, and five
+ * is the ceiling GitHub's own search documentation states. Seven and eight
+ * terms were measured working against `crenshawdev/cadence` on 2026-09-03
+ * (`rc=0`, results growing monotonically), and the measurement is deliberately
+ * NOT what this number is set from (CONTEXT D-09): a documented limit the index
+ * begins enforcing later truncates a page silently, and a silent truncation on
+ * this query re-files an issue that already exists. An extra round trip on a
+ * fire with more than six accepts costs latency and nothing else.
+ *
+ * One number, exported, so the table's builders and `issue-filing.mjs`'s
+ * chunking loop cannot disagree about how many a query holds.
+ */
+export const LOOKUP_CHUNK = 6;
+
 /** The prefix that makes a title recognizable as a Cadence filing, and the
  * capture that recovers its fingerprint. One spelling, used to WRITE by
  * `issueTitle` and to READ by `fingerprintInTitle`, so the two cannot drift. */
@@ -325,7 +347,7 @@ const flatten = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
  * The issue TITLE for a finding: the fingerprint token, then the claim.
  *
  * The token is in the title rather than in the body because the title is the
- * only field the decline lookup can ask all three CLIs for in one bounded list
+ * only field the lookup can ask all three CLIs for in one bounded list
  * call - `gh --json number,title`, `glab --output json` and `tea --fields
  * index,title` - and reading a body back would be one call per issue, which is
  * the per-finding query criterion 11 forbids.
@@ -457,19 +479,22 @@ export function normalizeDeclines(text, limit) {
  * as the key here. A second spelling would be a lookup miss rather than a
  * naming preference.
  *
- * THE FLAGS ARE MEASURED, not recalled - read 2026-08-25 on this machine from
- * each CLI's own `--help`, gh 2.98.0, glab 1.114.0, tea 0.15.1:
+ * THE FLAGS ARE MEASURED, not recalled - read 2026-09-03 on this machine from
+ * each CLI's own `--help`, gh 2.99.0, glab 1.116.0, tea 0.15.1 - a re-reading
+ * of a block first taken against gh 2.98.0 and glab 1.114.0; tea has not moved:
  *   gh    `issue create`: `-t/--title`, `-b/--body`, `-l/--label name`,
  *         `-R/--repo` (inherited). `issue list`: `-l/--label strings`,
- *         `-s/--state {open|closed|all}`, `--json fields`, `-L/--limit int`.
+ *         `-S/--search query`, `-s/--state {open|closed|all}`, `--json fields`,
+ *         `-L/--limit int`.
  *   glab  `issue create`: `-t/--title`, `-d/--description`, `-l/--label`,
- *         `-R/--repo`, `-y/--yes`. `issue list`: `-l/--label`, `-A/--all`,
+ *         `-R/--repo`, `-y/--yes`. `issue list`: `-l/--label`,
+ *         `--search <string>`, `--in title,description`, `-A/--all`,
  *         `-O/--output json`, `-P/--per-page int`, `-R/--repo`.
  *   tea   `issues create`: `-t/--title`, `-d/--description`, `-L/--labels`
  *         (comma-separated), `-r/--repo`, `-l/--login`. `issues list`:
- *         `-L/--labels`, `--state (all|open|closed)`, `-f/--fields` (which
- *         offers `index,title`), `-o/--output json`, `--limit int`,
- *         `-l/--login`.
+ *         `-L/--labels`, `-k/--keyword string`, `--state (all|open|closed)`,
+ *         `-f/--fields` (which offers `index,title`), `-o/--output json`,
+ *         `--limit int`, `-l/--login`.
  * The LABEL flag is singular on gh and glab and plural-comma on tea, and it is
  * the one spelling all three share on the CREATE call - which is what makes a
  * label the decline marker rather than `gh issue close --reason` (gh-only) or
@@ -489,14 +514,31 @@ export function normalizeDeclines(text, limit) {
  * keeps no-third-party-output (CONTEXT D-16) true by CONSTRUCTION here: there
  * is no create response to be tempted to put on an envelope.
  *
- * THE DECLINE LOOKUP IS ONE LIST CALL FILTERED BY `DECLINE_LABEL`, never one
- * call per finding, and it carries the same per-provider page size `HOST_TABLE`
- * in lib/issue-decision.mjs states, for the same measured reasons:
+ * THE LOOKUP IS A TITLE-SCOPED SEARCH FOR THE FIRE'S OWN FINGERPRINTS, one
+ * query per chunk of `LOOKUP_CHUNK` of them, never one call per finding. It
+ * used to be one list call filtered by `DECLINE_LABEL`, and that shape could
+ * not answer the question this seam now asks: an issue Cadence ACCEPTED carries
+ * no label, so a label-filtered query is blind to exactly the set a create must
+ * not duplicate (CONTEXT D-07).
+ *
+ * BARE FINGERPRINTS ARE REFUSED, TITLES ONLY. Measured 2026-09-03 against
+ * `crenshawdev/cadence`: `gh issue list --search 084c9ce03c072e0b` returned
+ * THREE issues, one of them a bug report that merely quotes the token in its
+ * body, while `--search 'in:title 084c9ce03c072e0b'` returned exactly the two
+ * duplicates that token names. A body match is a discussion OF a finding, not a
+ * filing of it, and treating one as the other suppresses a create that should
+ * happen.
+ *
+ * The page size is the same per-provider one `HOST_TABLE` in
+ * lib/issue-decision.mjs states, for the same measured reasons:
  *   gh    200 - `--limit` pages internally, so the row count is the real answer
  *   glab  100 - the GitLab API's per_page ceiling
  *   tea    50 - Forgejo/Gitea clamps the page server-side whatever `--limit`
  *               asks, so a bigger number buys nothing but false coverage
- * `normalizeDeclines` above applies the truncation rule that goes with them.
+ * `normalizeDeclines` above applies the truncation rule that goes with them -
+ * and on a title-scoped search a filled page is a stronger signal than on a
+ * list, because a query naming at most six tokens has no business returning
+ * fifty rows.
  *
  * The forgejo row takes a LOGIN on both calls and the other two take none, the
  * split `HOST_TABLE` already states: an unqualified `tea --repo` falls back to
@@ -521,10 +563,17 @@ export const FILING_TABLE = Object.freeze({
     create: (slug, issue, login) => ['issues', 'create', '--repo', slug,
       '--login', login, '--title', issue.title, '--description', issue.body,
       ...(issue.declined ? ['--labels', DECLINE_LABEL] : [])],
-    /** @param {string} slug @param {number} limit @param {string} login
-     *  @returns {string[]} */
-    lookup: (slug, limit, login) => ['issues', 'list', '--repo', slug,
-      '--login', login, '--labels', DECLINE_LABEL, '--state', 'all',
+    /** ASSUMED, NOT MEASURED (CONTEXT D-12): that `tea --keyword` matches a
+     *  bracketed hex token inside an issue TITLE, and that a space-joined list
+     *  of tokens is read as more than one term. tea offers one search string
+     *  and no OR, so space-joining is the only spelling available. If either
+     *  half is wrong this arm returns nothing, which reads here as a complete
+     *  miss and files - the page-fill rail still holds and the pinned vector
+     *  below still passes, so the failure is invisible until a duplicate lands.
+     *  @param {string} slug @param {number} limit @param {string[]} fingerprints
+     *  @param {string} login @returns {string[]} */
+    lookup: (slug, limit, fingerprints, login) => ['issues', 'list', '--repo', slug,
+      '--login', login, '--keyword', fingerprints.join(' '), '--state', 'all',
       '--fields', 'index,title', '--output', 'json', '--limit', String(limit)],
   }),
   github: Object.freeze({
@@ -536,9 +585,13 @@ export const FILING_TABLE = Object.freeze({
     create: (slug, issue) => ['issue', 'create', '--repo', slug,
       '--title', issue.title, '--body', issue.body,
       ...(issue.declined ? ['--label', DECLINE_LABEL] : [])],
-    /** @param {string} slug @param {number} limit @returns {string[]} */
-    lookup: (slug, limit) => ['issue', 'list', '--repo', slug,
-      '--label', DECLINE_LABEL, '--state', 'all',
+    /** The one arm MEASURED live (2026-09-03, crenshawdev/cadence): `in:title`
+     *  followed by the tokens joined with ` OR ` returned exactly the issues
+     *  whose titles carry them, where the same tokens bare also matched a body.
+     *  @param {string} slug @param {number} limit @param {string[]} fingerprints
+     *  @returns {string[]} */
+    lookup: (slug, limit, fingerprints) => ['issue', 'list', '--repo', slug,
+      '--search', `in:title ${fingerprints.join(' OR ')}`, '--state', 'all',
       '--json', 'number,title', '--limit', String(limit)],
   }),
   gitlab: Object.freeze({
@@ -550,9 +603,17 @@ export const FILING_TABLE = Object.freeze({
     create: (slug, issue) => ['issue', 'create', '--repo', slug,
       '--title', issue.title, '--description', issue.body, '-y',
       ...(issue.declined ? ['--label', DECLINE_LABEL] : [])],
-    /** @param {string} slug @param {number} limit @returns {string[]} */
-    lookup: (slug, limit) => ['issue', 'list', '--repo', slug,
-      '--label', DECLINE_LABEL, '--all',
+    /** ASSUMED, NOT MEASURED (CONTEXT D-12), the same two halves as the forgejo
+     *  row: that `--search` with `--in title` matches a bracketed hex token in
+     *  a title, and that space-joined tokens are read as more than one term.
+     *  glab offers one search string and no OR either. Wrong either way, this
+     *  arm returns nothing, which reads as a complete miss and files.
+     *  `--in title` is what keeps a body match out - glab's default is
+     *  `title,description`, which is the bare-token failure the header states.
+     *  @param {string} slug @param {number} limit @param {string[]} fingerprints
+     *  @returns {string[]} */
+    lookup: (slug, limit, fingerprints) => ['issue', 'list', '--repo', slug,
+      '--search', fingerprints.join(' '), '--in', 'title', '--all',
       '--output', 'json', '--per-page', String(limit)],
   }),
 });
