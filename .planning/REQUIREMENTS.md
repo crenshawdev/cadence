@@ -500,8 +500,8 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RNG-05 | Phase 1 | Pending |
-| RSK-10 | Phase 1 | Pending |
+| RNG-05 | Phase 1 | Complete |
+| RSK-10 | Phase 1 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
