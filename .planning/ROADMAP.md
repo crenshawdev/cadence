@@ -126,7 +126,7 @@ decisions, not defects.
 
 - [x] **Phase 1: A gate refuses the range it could not resolve** - a partial resolve keeps the end that resolved, and no caller hands a blocking check a range that cannot match
 - [x] **Phase 2: A treeless task can finish honestly** - one rule for whether done may be reported when no record can land, and the inline path holds to it
-- [ ] **Phase 3: A create states what it did** - an ambiguous create is resolved against the tracker before it is retried, never re-filed blind
+- [x] **Phase 3: A create states what it did** - an ambiguous create is resolved against the tracker before it is retried, never re-filed blind
 
 ## Phase Details
 

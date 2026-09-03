@@ -63,14 +63,23 @@ and one fingerprint never created twice from a single payload.
 
 ## Open items
 
-- On forgejo and gitlab, a fingerprint the tracker holds but `.planning/FILED.md`
-  does not - filed from another checkout, or one of D-04's 9 pre-phase orphans -
-  can still be created twice when the assumed query returns nothing, because
-  nothing local speaks for it. The assumption is written into those two rows'
-  comments in `cadence-core/bin/lib/filing-decision.mjs` rather than into a
-  transcript. Measuring `tea --keyword` and `glab --search --in title` against a
-  live instance holding a known fingerprint closes it; flipping that row's
-  `lookupMeasured` to `true` is the whole change.
+- On GITLAB, a fingerprint the tracker holds but `.planning/FILED.md` does not -
+  filed from another checkout, or one of D-04's 9 pre-phase orphans - can still
+  be created twice when the assumed query returns nothing, because nothing local
+  speaks for it. The assumption is written into that row's comment in
+  `cadence-core/bin/lib/filing-decision.mjs` rather than into a transcript.
+  Measuring `glab --search --in title` against a live instance holding a known
+  fingerprint closes it; flipping that row's `lookupMeasured` to `true` is the
+  whole change. No GitLab host is configured on this machine
+  (`~/.config/glab-cli/config.yml` names none), which is why it is still open.
+- [closed during UAT] The forgejo half of this item was measured live 2026-09-03
+  against the Forgejo mirror of `crenshawdev/cadence`: `tea --keyword` on one
+  token returned the issue whose title carried it, the same flag on two
+  space-joined tokens returned both, and a token no title carried returned `[]`.
+  Both halves of D-12's assumption held, so that row now carries
+  `lookupMeasured: true` and its comment records the measurement. The two
+  unmeasured-row cases in `issue-filing.test.mjs` moved to gitlab, the one row
+  left assuming.
 
 ## Goal check
 
@@ -88,6 +97,6 @@ separate cases in `issue-filing.test.mjs` (61 pass); the in-payload collapse is
 tsconfig.ci.json` and `self-verify.mjs` both exit 0 with no `budget-overrun`.
 `lease-check --phase 3 --plan 1` returns `ok:true` over `510fcf9e^..b615aa9b`.
 What is NOT delivered is the goal's "never" at full strength on every forge: the
-open item above means the guarantee is measured on github and assumed on forgejo
-and gitlab, which `lookupMeasured` now states in code rather than leaving
-implied.
+open item above means the guarantee is measured on github and forgejo and
+assumed on gitlab alone, which `lookupMeasured` now states in code rather than
+leaving implied.
