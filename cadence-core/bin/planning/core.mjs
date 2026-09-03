@@ -553,6 +553,39 @@ function resolveRef(end, ref, top) {
 }
 
 /**
+ * THE OTHER END OF A STAGED SCOPE: the index's own content identity.
+ *
+ * A staged check has no head commit, so its record was identified by its base
+ * alone - and the index is MUTABLE, which made that identity a hole. Run the
+ * detector over a benign index, then stage a risky change without committing:
+ * HEAD has not moved, so `risk-check status --base HEAD --staged` found the
+ * earlier record over the same base and answered `recorded` for contents
+ * nothing ever scanned. The base is only half of what a staged scope IS.
+ *
+ * `git write-tree` is git's own name for the index's contents - the id `commit`
+ * and `stash` take from it - so two identical indexes give one id and any
+ * staged byte that differs gives another. It writes a content-addressed tree
+ * object and NOTHING else: no ref moves, no index is rewritten, no worktree
+ * file is touched, which is what lets a reporting call take it too. An index
+ * git cannot name - unmerged entries mid-conflict, an unwritable object store -
+ * is a REFUSAL whose `error` opens with the end that failed (`index`), the way
+ * `resolveRef`'s names `base` or `head`: there is no id to record, and a staged
+ * record carrying no identity is one no later ask could ever match.
+ *
+ * `top` is the caller's own already-resolved toplevel, so the identity and the
+ * diff are read out of one repository - and out of one index file, whatever
+ * `GIT_INDEX_FILE` names.
+ * @param {string} top
+ * @returns {{ok: boolean, id: string, error: string}}
+ */
+function resolveIndex(top) {
+  const r = gitLine(['-C', top, 'write-tree']);
+  return r.ok
+    ? { ok: true, id: r.out, error: '' }
+    : { ok: false, id: '', error: `index: ${r.error}` };
+}
+
+/**
  * The repository, and the COMMIT IDS a caller's two refs name.
  *
  * RANGE IDENTITY IS THE COMMIT PAIR, never the ref SPELLING.
@@ -1133,6 +1166,7 @@ export {
   readPlanReports,
   readQueue,
   readReadsRecords,
+  resolveIndex,
   resolveRange,
   resolveRef,
   riskRef,

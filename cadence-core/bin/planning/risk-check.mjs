@@ -19,7 +19,8 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
-  RISK_DIFF_MAX_BUFFER, fail, ok, planKey, resolveRange, resolveRef, riskRef, routeLadder,
+  RISK_DIFF_MAX_BUFFER, fail, ok, planKey, resolveIndex, resolveRange, resolveRef, riskRef,
+  routeLadder,
 } from './core.mjs';
 import { isPlainObject, mergeLayers } from '../lib/config-merge.mjs';
 import { requirePlanKey } from '../lib/plan-key.mjs';
@@ -270,6 +271,10 @@ function cmdRiskCheckRun(dir, opts) {
   // for the end it could, so only the FAILING end goes null here.
   let baseId = null;
   let headId = null;
+  /** The STAGED scope's second end, and null on every ref range: the index has
+   * no commit id, so `git write-tree` names its contents instead (resolveIndex).
+   * @type {string|null} */
+  let indexId = null;
   /**
    * The `git diff` argv this run's scope names, or null when the scope did not
    * resolve and there is nothing to read. Built per arm and READ once below, so
@@ -317,8 +322,29 @@ function cmdRiskCheckRun(dir, opts) {
     baseId = b.id || null;
     if (!b.ok) diffError = b.error;
     else {
-      diffArgs = ['-C', b.top, 'diff', '--cached', '--no-ext-diff', '--no-textconv', b.id, '--',
-        ...REVIEWER_TEXT_PATHSPECS];
+      // THE INDEX'S IDENTITY, TAKEN BEFORE THE BODY IS READ, and the scope's
+      // other end: a staged record identified by its base alone was satisfiable
+      // by any LATER index over that same unmoved base, so a risky change staged
+      // after the run cleared the gate having never been scanned.
+      //
+      // BEFORE and not after, because only that order fails closed. Should the
+      // index change between these two reads, the id names the earlier state and
+      // the body is the later one: a status ask over the later index then sees a
+      // different id, reports `stale`, and the range is re-run. Taking the id
+      // AFTER would record the state that was never scanned as the checked one,
+      // which is the hole in another spelling.
+      //
+      // An index git cannot name fails the check the way an unresolvable ref
+      // does - no read, a `no-diff` refusal, and the cause on the row. A record
+      // written without this id is a staged record no later ask can match, and
+      // scanning to write one would be work no gate can ever clear.
+      const ix = resolveIndex(b.top);
+      indexId = ix.id || null;
+      if (!ix.ok) diffError = ix.error;
+      else {
+        diffArgs = ['-C', b.top, 'diff', '--cached', '--no-ext-diff', '--no-textconv', b.id, '--',
+          ...REVIEWER_TEXT_PATHSPECS];
+      }
     }
   } else {
     const range = resolveRange(base, head);
@@ -371,11 +397,15 @@ function cmdRiskCheckRun(dir, opts) {
     head: staged ? null : head,
     base_id: baseId,
     head_id: headId,
-    // ONLY THE STAGED ARM CARRIES IT. A ref-range row written before this arm
+    // ONLY THE STAGED ARM CARRIES THEM. A ref-range row written before this arm
     // existed is honestly not staged, so its absence and a `false` would say the
     // same thing - which is not the case `empty` was in (D-03), where an absent
-    // field marked a record the seam could not speak for.
-    ...(staged ? { staged: true } : {}),
+    // field marked a record the seam could not speak for. `index_id` rides the
+    // same spread for the same reason and for one more: a ref range HAS no index
+    // end, so the field would be null on every row that is not about the index.
+    // Written even when null on this arm, exactly as the two ids above are, so a
+    // staged record the gate can never match says so rather than omitting it.
+    ...(staged ? { staged: true, index_id: indexId } : {}),
     checked: scan.checked,
     categories: scan.categories,
     // TOKENS on the record, the `{category, signal}` pairs on the envelope: the
@@ -408,7 +438,7 @@ function cmdRiskCheckRun(dir, opts) {
     head: staged ? null : head,
     base_id: baseId,
     head_id: headId,
-    ...(staged ? { staged: true } : {}),
+    ...(staged ? { staged: true, index_id: indexId } : {}),
     checked: scan.checked,
     categories: scan.categories,
     matches: scan.matches,
@@ -485,7 +515,7 @@ function cmdRiskCheckStatus(dir, opts) {
   const given = ['plan', 'base', 'head', 'staged'].filter((f) => f in opts);
   const staged = 'staged' in opts;
   /** @type {{plan: string, base: string, head: string|null, base_id: string,
-   *   head_id: string|null, staged?: boolean} | null} */
+   *   head_id: string|null, staged?: boolean, index_id?: string|null} | null} */
   let wanted = null;
   if (given.length) {
     const scopes = ['head', 'staged'].filter((f) => f in opts);
@@ -531,9 +561,20 @@ function cmdRiskCheckStatus(dir, opts) {
     // each other below.
     let baseId;
     let headId = null;
+    let indexId = null;
     if (staged) {
       const b = resolveRef('base', base);
-      if (!b.ok) {
+      // BOTH ENDS OF THE STAGED SCOPE, and the index is the second one
+      // (resolveIndex): the ask resolves it here the way the ref arm below
+      // resolves its head, because a staged ask that cannot name the index it is
+      // asking about could only fall back to matching on the base - and the base
+      // alone is precisely the identity a later, unscanned index satisfied.
+      //
+      // ONE refusal for both ends: the base's own error rides through the
+      // stand-in, so an unresolvable `--base` still answers with the detail that
+      // names it and an unnameable index answers with one that names `index`.
+      const ix = b.ok ? resolveIndex(b.top) : { ok: false, id: '', error: b.error };
+      if (!ix.ok) {
         return emit({
           ok: false,
           reason: 'unresolved-range',
@@ -542,11 +583,16 @@ function cmdRiskCheckStatus(dir, opts) {
           base,
           head: null,
           staged: true,
-          detail: b.error,
-          hint: 'name a --base this repository can resolve, then re-run this check',
+          detail: ix.error,
+          hint: b.ok
+            ? 'git could not name this repository\'s index, so there is no staged scope to ask'
+              + ' about - an unmerged index has no single identity, so finish or abort the merge'
+              + ' and re-run this check'
+            : 'name a --base this repository can resolve, then re-run this check',
         });
       }
       baseId = b.id;
+      indexId = ix.id;
     } else {
       const resolved = resolveRange(base, head);
       if (!resolved.ok) {
@@ -565,7 +611,7 @@ function cmdRiskCheckStatus(dir, opts) {
       headId = resolved.head;
     }
     wanted = { plan: parsedPlan.key, base, head, base_id: baseId, head_id: headId,
-      ...(staged ? { staged: true } : {}) };
+      ...(staged ? { staged: true, index_id: indexId } : {}) };
   }
 
   // ONE reader of the record, through renderTrace and nothing else: a second
@@ -739,7 +785,7 @@ function cmdRiskCheckStatus(dir, opts) {
    * submodule bump permanently unclearable - the caller cannot make git render
    * it - and an unclearable gate is one that gets bypassed.
    * @type {Map<string, {base: any, head: any, base_id: string|null, head_id: string|null,
-   *   checked: boolean, inconclusive: boolean, staged: boolean}[]>}
+   *   checked: boolean, inconclusive: boolean, staged: boolean, index_id: string|null}[]>}
    */
   const records = new Map();
   /** The same records keyed by PLAN alone, for the named-range arm. That arm
@@ -771,6 +817,13 @@ function cmdRiskCheckStatus(dir, opts) {
       // and an absent one is not a staged scope. It is what keeps the two
       // scopes from satisfying each other in `sameRange`.
       staged: e.staged === true,
+      // THE INDEX THE STAGED RECORD WAS WRITTEN OVER - the identity that makes
+      // a staged scope a scope, since its base can sit unmoved across any number
+      // of different indexes. Null on every ref range, and null for a staged row
+      // whose run could not name the index or that predates the field: null
+      // never matches below, so such a record reports `stale` and the range is
+      // re-run, which is the same safe direction the two ids above take.
+      index_id: typeof e.index_id === 'string' && e.index_id ? e.index_id : null,
       // `=== true`, never truthiness: a record written by an older seam carries
       // neither field, and an absent verdict is not a passing one.
       checked: e.checked === true,
@@ -922,21 +975,31 @@ function cmdRiskCheckStatus(dir, opts) {
     const usable = found.filter((f) => f.checked);
     const asked = asked0
       ? { base: wanted.base, head: wanted.head, base_id: wanted.base_id, head_id: wanted.head_id,
-        ...(wanted.staged ? { staged: true } : {}) }
+        ...(wanted.staged ? { staged: true, index_id: wanted.index_id } : {}) }
       : null;
     // COMMIT IDS on both sides. Comparing the spellings is what let a record
     // left under `--head HEAD` satisfy a later, wider `--head HEAD` - the very
     // spelling workflows/execute.md documents for both calls.
     //
-    // A STAGED ASK MATCHES A STAGED ROW AND NOTHING ELSE. The index has no
-    // commit id, so its identity is the base it was read against plus the fact
-    // that it WAS the index: a ref-range row over the same base is a different
-    // scope entirely and must not answer for it. The reverse needs no clause -
-    // a staged row's `head_id` is null, so the ref arm's own two-id test already
-    // refuses it.
-    const sameRange = (/** @type {{base_id: string|null, head_id: string|null, staged: boolean}} */ f) =>
+    // A STAGED ASK MATCHES A STAGED ROW AND NOTHING ELSE. A ref-range row over
+    // the same base is a different scope entirely and must not answer for it.
+    // The reverse needs no clause - a staged row's `head_id` is null, so the ref
+    // arm's own two-id test already refuses it.
+    //
+    // TWO ENDS ON THIS ARM TOO, and the second one is the INDEX. Matching on the
+    // base and the scope alone left the mutable half of a staged scope out of
+    // its identity: HEAD does not move when a file is staged, so a record
+    // written over a benign index answered for every later index over that same
+    // base, and a risky change staged after the run cleared the gate having
+    // never been scanned. `index_id` is the tree `git write-tree` names, so a
+    // single changed staged byte makes this row STALE and the detector runs
+    // again. A row carrying no index id never matches, the same way a record
+    // with no resolved commit ids never satisfies the ref arm.
+    const sameRange = (/** @type {{base_id: string|null, head_id: string|null,
+     *   staged: boolean, index_id: string|null}} */ f) =>
       (asked.staged
         ? f.staged && f.base_id !== null && f.base_id === asked.base_id
+          && f.index_id !== null && f.index_id === asked.index_id
         : f.base_id !== null && f.head_id !== null
           && f.base_id === asked.base_id && f.head_id === asked.head_id);
     // STALE, not satisfied: a plan re-dispatched over a widened range
