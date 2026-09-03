@@ -20,6 +20,20 @@ maps the range's changed PATHS and its ADDED and REMOVED lines to
 the same record a matching one does, and "the detection step was skipped" stops
 reading like "it ran and matched nothing".
 
+A change STAGED in this tree and not yet committed has no head commit to name,
+so the same call carries the scope's other spelling:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --base <ref> --staged
+```
+
+`--staged` is the one machine spelling for that scope - the `/cad-verify` and
+`/cad-debug` fires, whose reviewer scope is shape (b) - and it stands in place
+of `--head`, never beside it. The read is the index against the resolved base,
+and the record carries `staged: true`, `head_id` null because no head commit
+exists yet, and `index_id` naming the tree `git write-tree` wrote, which is the
+object the body is read from so the id and the scanned bytes are one thing.
+
 That read WITHHOLDS four filename shapes under `.planning/phases/`:
 `ADJUDICATION-*.json`, `REVIEW-*.md`, `FINDINGS.json` and
 `verifier-findings.json`. All four store reviewer text VERBATIM by design -
