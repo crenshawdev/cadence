@@ -5,14 +5,19 @@
 
 ## Active
 
-`v3.7.11 - unresolved inputs` opened 2026-09-02. Three phases; the ids are
-minted as each phase is planned - `RNG-05` and `RSK-10` in phase 1, `RSK-11`
-in phase 2, `TRK-02` in phase 3. The source is the sentence
-v3.7.10's overview used to defer `GH-229`, plus `GH-246` and `GH-244`, which
-joined the board since. The theme is one claim - a gate ran on an input it could
-not resolve, and the record treated "could not resolve" as an ordinary value.
-`## Traceability` is empty until `/cad-plan` seeds each row as its phase is
-planned.
+**No cycle open.** The shipped ids are rows under `## Shipped` below.
+`/cad-phase add` opens the next cycle; `/cad-plan` seeds each `## Traceability`
+row as its phase is planned. The ids under `## Deferred` keep their own reasons
+and none is promoted here to fill this section.
+
+`v3.7.11 - unresolved inputs` opened 2026-09-02 and closed 2026-09-03. Three
+phases, four ids - `RNG-05` and `RSK-10` in phase 1, `RSK-11` in phase 2,
+`TRK-02` in phase 3 - are rows under the `Shipped` heading below, all four
+Complete. They came off the sentence v3.7.10's overview used to defer `GH-229`,
+plus `GH-246` and `GH-244`, which joined the board since. The theme was one
+claim: a gate ran on an input it could not resolve, and the record treated
+"could not resolve" as an ordinary value. The audit passed 4/4 traced with 13/13
+acceptance criteria covered and nothing deferred.
 
 
 `v3.7.10 - review receipts` opened 2026-09-01 and closed 2026-09-02. Three
