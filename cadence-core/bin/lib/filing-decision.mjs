@@ -637,6 +637,24 @@ export function normalizeLookup(text, limit, numberKey) {
  * seam that knows which provider it is talking to, which is the knowledge this
  * table exists to hold instead.
  *
+ * WHETHER THE LOOKUP HAS BEEN MEASURED IS A STATED FACT TOO, and this one is
+ * LOAD-BEARING rather than documentary. `lookupMeasured` is true on the github
+ * row ALONE: that argv was run live against `crenshawdev/cadence` on 2026-09-03
+ * and its answer read by hand. The other two rows join a chunk's tokens with a
+ * SPACE because their CLIs offer one search string and no OR, and whether
+ * either reads that as more than one term is unknown (CONTEXT D-12). On an
+ * unmeasured row a wrongly-EMPTY response cannot be told apart from a genuine
+ * miss, so `cmdFile` does not let a complete miss overrule a confirmed
+ * `.planning/FILED.md` row there - the ledger keeps suppressing, exactly as it
+ * does for a lookup that could not run at all. On a MEASURED row the miss stays
+ * final, which is D-04's stated cost for the nine ledger rows whose issues were
+ * deleted. Without this flag the lookup would make duplicate filing MORE likely
+ * on forgejo and gitlab than it was before the lookup existed, because an
+ * assumed query's empty answer would override the only authority those two had.
+ * A row's flag flips to true when that exact argv has been run against a live
+ * instance holding a known fingerprint and seen to return it - not before, and
+ * never from a transcript.
+ *
  * The forgejo row takes a LOGIN on both calls and the other two take none, the
  * split `HOST_TABLE` already states: an unqualified `tea --repo` falls back to
  * config FILE ORDER, so a stranger's tracker answers - and here it would be a
@@ -655,6 +673,7 @@ export const FILING_TABLE = Object.freeze({
     needsLogin: true,
     limit: 50,
     numberKey: 'index',
+    lookupMeasured: false,
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @param {string} login @returns {string[]} */
@@ -665,9 +684,13 @@ export const FILING_TABLE = Object.freeze({
      *  bracketed hex token inside an issue TITLE, and that a space-joined list
      *  of tokens is read as more than one term. tea offers one search string
      *  and no OR, so space-joining is the only spelling available. If either
-     *  half is wrong this arm returns nothing, which reads here as a complete
-     *  miss and files - the page-fill rail still holds and the pinned vector
-     *  below still passes, so the failure is invisible until a duplicate lands.
+     *  half is wrong this arm returns nothing for an issue that exists, and
+     *  nothing here can tell that from a genuine miss - which is what
+     *  `lookupMeasured: false` above says and what keeps the failure from
+     *  becoming a duplicate: a complete miss on this row does NOT overrule a
+     *  confirmed `.planning/FILED.md` row, so the ledger still suppresses and
+     *  only a fingerprint no row holds is created. The page-fill rail holds
+     *  either way, and the pinned vector below passes either way.
      *  @param {string} slug @param {number} limit @param {string[]} fingerprints
      *  @param {string} login @returns {string[]} */
     lookup: (slug, limit, fingerprints, login) => ['issues', 'list', '--repo', slug,
@@ -678,6 +701,7 @@ export const FILING_TABLE = Object.freeze({
     needsLogin: false,
     limit: 200,
     numberKey: 'number',
+    lookupMeasured: true,
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @returns {string[]} */
@@ -687,6 +711,9 @@ export const FILING_TABLE = Object.freeze({
     /** The one arm MEASURED live (2026-09-03, crenshawdev/cadence): `in:title`
      *  followed by the tokens joined with ` OR ` returned exactly the issues
      *  whose titles carry them, where the same tokens bare also matched a body.
+     *  That live reading is what `lookupMeasured: true` records, and this is the
+     *  only row carrying it: a complete MISS from this query is trusted over a
+     *  confirmed ledger row, and no other row's miss is.
      *  @param {string} slug @param {number} limit @param {string[]} fingerprints
      *  @returns {string[]} */
     lookup: (slug, limit, fingerprints) => ['issue', 'list', '--repo', slug,
@@ -697,6 +724,7 @@ export const FILING_TABLE = Object.freeze({
     needsLogin: false,
     limit: 100,
     numberKey: 'iid',
+    lookupMeasured: false,
     /** @param {string} slug
      *  @param {{title: string, body: string, declined: boolean}} issue
      *  @returns {string[]} */
@@ -707,7 +735,10 @@ export const FILING_TABLE = Object.freeze({
      *  row: that `--search` with `--in title` matches a bracketed hex token in
      *  a title, and that space-joined tokens are read as more than one term.
      *  glab offers one search string and no OR either. Wrong either way, this
-     *  arm returns nothing, which reads as a complete miss and files.
+     *  arm returns nothing for an issue that exists, which is why it carries
+     *  `lookupMeasured: false` above: an empty answer from this query is not
+     *  evidence, so a confirmed `.planning/FILED.md` row keeps suppressing over
+     *  it rather than being overruled by it.
      *  `--in title` is what keeps a body match out - glab's default is
      *  `title,description`, which is the bare-token failure the header states.
      *  @param {string} slug @param {number} limit @param {string[]} fingerprints

@@ -778,9 +778,10 @@ function cmdFile(dir, payloadFile) {
   /** @type {Array<{fingerprint: string, disposition: string, title: string,
    *   issue: number|null, authority: string, filed_on: string|null}>} */
   const suppressed = [];
-  // Set when a CONFIRMED ledger row answered because the lookup could not: the
-  // envelope says the local file stood in, rather than letting a suppression
-  // read as something the tracker confirmed.
+  // Set when a CONFIRMED ledger row answered instead of the tracker - either
+  // the lookup could not run, or it came back a MISS on a forge whose query is
+  // unmeasured. The envelope says the local file stood in, rather than letting
+  // a suppression read as something the tracker confirmed.
   let ledgerStoodIn = false;
   for (let i = 0; i < entries.length; i += 1) {
     const { finding, disposition } = entries[i];
@@ -806,10 +807,20 @@ function cmdFile(dir, payloadFile) {
     //    completed lookup returned one: suppression is the row's, reporting is
     //    whatever is in hand, and withholding a number the forge just gave
     //    would answer "which issue already exists" with a date.
-    // 2. Otherwise a COMPLETED lookup is final. A hit suppresses naming the
-    //    number; a MISS creates, even over a confirmed row - that is D-04's
-    //    stated cost for the nine ledger rows whose issues were deleted, which
-    //    become re-fileable because nothing on the tracker records them.
+    // 2. Otherwise a COMPLETED lookup is final - but its MISS is final only on
+    //    a forge whose lookup argv has been MEASURED. A hit suppresses naming
+    //    the number, on every provider. A miss creates even over a confirmed
+    //    row on github, whose query was run live against a real tracker: that
+    //    is D-04's stated cost for the nine ledger rows whose issues were
+    //    deleted, which become re-fileable because nothing on the tracker
+    //    records them. On forgejo and gitlab the query is `FILING_TABLE`'s
+    //    flagged assumption (D-12) - each space-joins the chunk's tokens
+    //    because its CLI offers no OR, and a query read as a phrase returns
+    //    NOTHING for an issue that exists. An empty answer there is not
+    //    evidence, so a confirmed row still suppresses and the ledger stands in
+    //    exactly as it does for a lookup that could not run. Otherwise adding
+    //    the lookup would make a duplicate MORE likely on those two than it was
+    //    before the lookup existed, which is the opposite of what it is for.
     // 3. Otherwise the lookup could not run, and a CONFIRMED row stands in.
     //    With no row at all, the fire creates: an offline forge that suppressed
     //    everything would drop findings on the floor.
@@ -825,6 +836,15 @@ function cmdFile(dir, payloadFile) {
       if (known !== null) {
         suppressed.push({ fingerprint: print, disposition, title,
           issue: known, authority: 'tracker', filed_on: null });
+        continue;
+      }
+      // A MISS IS ONLY AS GOOD AS THE QUERY BEHIND IT. `lookupMeasured` is
+      // false on every row whose search behaviour is assumed rather than run,
+      // and there the ledger keeps the last word it had.
+      if (held && forge.row.lookupMeasured !== true) {
+        ledgerStoodIn = true;
+        suppressed.push({ fingerprint: print, disposition, title,
+          issue: null, authority: 'FILED.md', filed_on: held.date });
         continue;
       }
     } else if (held) {
