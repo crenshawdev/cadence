@@ -314,10 +314,11 @@ function cmdRiskCheckRun(dir, opts) {
     // single-ref half `resolveRange` is itself built on, so both arms resolve a
     // ref through one function and one refusal vocabulary.
     //
-    // `--cached` is what makes the scope the INDEX against the base: a file
-    // written into the worktree and never added is outside this diff, which is
-    // the point - the gate fires before the commit lands (git-guard.md:123) and
-    // what it must judge is what is about to be committed.
+    // The scope is the INDEX against the base: a file written into the worktree
+    // and never added is outside this diff, which is the point - the gate fires
+    // before the commit lands (git-guard.md:123) and what it must judge is what
+    // is about to be committed. The diff names the index by the TREE OBJECT
+    // `write-tree` returned rather than by `--cached`, for the reason below.
     const b = resolveRef('base', base);
     baseId = b.id || null;
     if (!b.ok) diffError = b.error;
@@ -327,12 +328,13 @@ function cmdRiskCheckRun(dir, opts) {
       // by any LATER index over that same unmoved base, so a risky change staged
       // after the run cleared the gate having never been scanned.
       //
-      // BEFORE and not after, because only that order fails closed. Should the
-      // index change between these two reads, the id names the earlier state and
-      // the body is the later one: a status ask over the later index then sees a
-      // different id, reports `stale`, and the range is re-run. Taking the id
-      // AFTER would record the state that was never scanned as the checked one,
-      // which is the hole in another spelling.
+      // THE BODY IS READ FROM THAT SAME TREE OBJECT, never from `--cached`. Two
+      // git calls against the live index leave a window between them, and an
+      // index swapped inside it and restored after would record this id against
+      // a body that scanned something else. Diffing `<base> <tree>` closes the
+      // window by construction: the id and the bytes are one object, and an
+      // index that moves after `write-tree` is simply a different tree the next
+      // status ask reports `stale` on.
       //
       // An index git cannot name fails the check the way an unresolvable ref
       // does - no read, a `no-diff` refusal, and the cause on the row. A record
@@ -342,7 +344,7 @@ function cmdRiskCheckRun(dir, opts) {
       indexId = ix.id || null;
       if (!ix.ok) diffError = ix.error;
       else {
-        diffArgs = ['-C', b.top, 'diff', '--cached', '--no-ext-diff', '--no-textconv', b.id, '--',
+        diffArgs = ['-C', b.top, 'diff', '--no-ext-diff', '--no-textconv', b.id, ix.id, '--',
           ...REVIEWER_TEXT_PATHSPECS];
       }
     }
