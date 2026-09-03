@@ -938,6 +938,108 @@ test('an UNCONFIRMED write over a CONFIRMED row rewrites that row rather than ad
   assert.match(rows[0], new RegExp(`${fingerprint(FIVE[0])} unconfirmed: `), rows[0]);
 });
 
+// --- the ledger answers when the lookup cannot -------------------------------
+//
+// D-04: the tracker decides when its answer came back COMPLETE, `.planning/
+// FILED.md` is the fallback consulted only when the lookup could not run, and
+// `.planning/DECLINED.md` keeps gating the ask and never the create.
+
+/** Plant a `.planning/FILED.md` holding one row per (finding, marker) pair. */
+const filedWith = (pairs) => (dir) => {
+  mkdirSync(join(dir, '.planning'), { recursive: true });
+  const rows = pairs.map(([f, unconfirmed]) => `- 2026-08-25 github acme/widget `
+    + `${fingerprint(f)}${unconfirmed ? ' unconfirmed' : ''}: ${issueTitle(f)}`);
+  writeFileSync(join(dir, '.planning', 'FILED.md'),
+    `# Filed: issues this repository's gates opened\n\n${rows.join('\n')}\n`);
+};
+
+test('a lookup that could not run falls through to FILED.md, per fingerprint', () => {
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[2], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { stub: { listFails: true }, prepare: filedWith([[FIVE[0], false]]) });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  // Only FIVE[2] is created: the ledger stood in for FIVE[0].
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.ok(createCalls(calls)[0].includes(fingerprint(FIVE[2])), calls.join('\n'));
+  assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.authority, e.filed_on]),
+    [[fingerprint(FIVE[0]), 'FILED.md', '2026-08-25']]);
+  assert.equal(envelope.suppressed[0].issue, null, 'no lookup completed, so no number exists');
+  assert.equal(envelope.ledger_stood_in, true, JSON.stringify(envelope));
+});
+
+test('a lookup that could not run with NO ledger creates every accept', () => {
+  // An offline forge that suppressed everything would drop findings on the
+  // floor, which is the one thing this seam may never do.
+  const payload = dispositions([[FIVE[0], 'accept'], [FIVE[2], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { stub: { listFails: true } });
+  assert.equal(status, 0);
+  assert.equal(createCalls(calls).length, 2, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed, []);
+  assert.equal(envelope.ledger_stood_in, false);
+});
+
+test('AC4 end to end: an ambiguous create is not re-filed on the next fire', () => {
+  // The whole of GH-244 in one case. Fire once with a create that comes back
+  // nonzero; fire the SAME payload again on the same directory with a fresh
+  // stub whose tracker answers `[]` - a complete MISS, which is exactly the
+  // answer a search index that has not caught up would give.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const first = run(['file', '--payload', payload], { stub: { failAt: 1 } });
+  assert.equal(first.envelope.reason, 'create-failed');
+  assert.match(filedText(first.dir), new RegExp(`${fingerprint(FIVE[0])} unconfirmed: `));
+
+  const stubDir = tmp('bin');
+  const createLog = join(tmp('log'), 'creates');
+  const argvLog = join(tmp('log'), 'argv');
+  stubBin(stubDir, 'gh', { createLog, listBody: '[]' });
+  const out = execFileSync(process.execPath,
+    [SEAM, 'file', '--dir', first.dir, '--payload', payload],
+    { encoding: 'utf8', cwd: tmpdir(),
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
+        CAD_ARGV_LOG: argvLog, PATH: `${stubDir}:${process.env.PATH}` } });
+  const envelope = JSON.parse(out);
+  const calls = readFileSync(argvLog, 'utf8').trim().split('\n').filter(Boolean);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 0, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed.map((e) => [e.fingerprint, e.authority, e.filed_on]),
+    [[fingerprint(FIVE[0]), 'FILED.md', new Date().toISOString().slice(0, 10)]]);
+  // Still one row, still marked: nothing was appended and nothing was cleared.
+  const rows = filedText(first.dir).split('\n').filter((l) => l.startsWith('- '));
+  assert.equal(rows.length, 1, filedText(first.dir));
+  assert.match(rows[0], new RegExp(`${fingerprint(FIVE[0])} unconfirmed: `), rows[0]);
+});
+
+test('an unreadable FILED.md refuses BEFORE any create, like the decline record', () => {
+  // A fire that cannot tell what it already filed must not guess: guessing here
+  // means a second issue for a finding that already has one.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload], {
+    prepare: (d) => {
+      filedWith([[FIVE[0], false]])(d);
+      chmodSync(join(d, '.planning', 'FILED.md'), 0o000);
+    },
+  });
+  assert.equal(status, 1);
+  assert.equal(envelope.reason, 'filed-unreadable');
+  assert.match(envelope.detail, /FILED\.md/);
+  assert.ok(envelope.hint);
+  assert.deepEqual(calls, [], calls.join('\n'));
+});
+
+test('a DECLINED.md row never stops `file` creating what the user just accepted', () => {
+  // D-04: the decline record gates the ASK. By the time `file` runs the user has
+  // answered, and letting an old decline veto that answer would silently drop it.
+  const payload = dispositions([[FIVE[0], 'accept']]);
+  const { status, envelope, calls } = run(['file', '--payload', payload],
+    { prepare: declinedWith([FIVE[0]]) });
+  assert.equal(status, 0);
+  assert.equal(envelope.ok, true);
+  assert.equal(createCalls(calls).length, 1, calls.join('\n'));
+  assert.deepEqual(envelope.suppressed, []);
+});
+
 test('`unfixed` writes nothing at all - the ask is not a filing', () => {
   const payload = payloadFile(payloadFor(FIVE.map((f) => [f, 'survived'])));
   const { dir } = run(['unfixed', '--payload', payload]);
