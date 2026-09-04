@@ -33,11 +33,14 @@
 //   8. routing cells the five grids in route-table.json, cell by cell (every
 //                    problem NAMES the cell), the shared vocabulary arrays
 //                    against the schema's own enums,
-//                    plus both directions between the grids and agents/: every
-//                    rung a cell names must have an agent file, and every
-//                    rung-suffixed agent file must be a rung some cell reaches. route.mjs returns an agent name it
-//                    never checks exists, so an unbuilt or stale rung would
-//                    surface as a failed spawn instead of in CI.
+//                    plus the grids -> agents/ direction: every rung a cell
+//                    names must have an agent file. route.mjs returns an agent
+//                    name it never checks exists, so an unbuilt rung would
+//                    surface as a failed spawn instead of in CI. Coming back
+//                    the other way, only the STALE half: a rung-suffixed agent
+//                    file lib/rung-agent.mjs maps to nothing is refused, while
+//                    a mapped rung no cell reaches is legal - a rung file
+//                    ships before the cell that names it.
 //   9. config reach  references/config-reach.md must carry one reach row per
 //                    config.schema.json key, name no key the schema lacks, and
 //                    every reach narrower than `universal` must appear in that
@@ -1131,12 +1134,22 @@ function run(root) {
             detail: `${cell}: agents/${stem}.md absent` });
         }
       }
-      // disk -> table, which "exactly the files the grids name" needs and the
-      // walk above does not give. Matched ONLY on the rung-suffixed shape: a
-      // blanket "not named by the table" rule would outlaw the one-off agent
-      // with inline prose D-04 deliberately keeps legal. Without this
-      // direction, a stale rung file - one no cell reaches - stays green while
-      // still paying standing context in every main-session prompt.
+      // disk -> map: a rung-suffixed agent file lib/rung-agent.mjs files for
+      // NOBODY is stale, and stays green without this while still paying
+      // standing context in every main-session prompt. Matched ONLY on the
+      // rung-suffixed shape: a blanket "not named by the table" rule would
+      // outlaw the one-off agent with inline prose D-04 deliberately keeps
+      // legal.
+      //
+      // This arm used to also file the reverse of the walk above - a file the
+      // map DOES name that no cell reaches - and that half is gone (phase 1,
+      // D-03). The two faults wanted opposite fixes, and the mapped one is the
+      // ordinary state of a ladder that is complete on disk before the routing
+      // cells catch up: every role carries every rung, and a cell names the
+      // subset it needs. Refusing that would make the map's own shape a CI
+      // failure. Reachability is still stated - route-table.json's `_meta`
+      // says the reachable rungs are the ones some cell names - it is just not
+      // a refusal any more.
       const order = Array.isArray(table.rung_order) ? table.rung_order : [];
       // Longest role name first, so a role that prefixes another cannot claim
       // the other's file.
@@ -1148,15 +1161,11 @@ function run(root) {
         for (const role of roleNames) {
           if (!stem.startsWith(`${role}-`)) continue;
           const rung = stem.slice(role.length + 1);
-          if (order.includes(rung)) {
-            // Two faults reach here and want opposite fixes. A file the rung
-            // map names is a cell that went missing (add the cell); a file it
-            // does not name is a stale rung file (delete it).
-            const mapped = rungFile(role, rung) === stem;
+          if (order.includes(rung) && rungFile(role, rung) !== stem) {
+            // The fix is always the same one: delete the file, or file it in
+            // the map. A file the map DOES name is not this arm's business.
             problems.push({ kind: 'undeclared-rung-agent', file: `agents/${stem}.md`,
-              detail: mapped
-                ? `${rung} is ${role}'s rung in lib/rung-agent.mjs, but no cell at any level resolves to it`
-                : `no cell names ${role} at rung ${rung}, and lib/rung-agent.mjs maps no file to it` });
+              detail: `no cell names ${role} at rung ${rung}, and lib/rung-agent.mjs maps no file to it` });
           }
           break;
         }

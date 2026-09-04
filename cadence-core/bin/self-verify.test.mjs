@@ -1118,10 +1118,12 @@ test('check 8: a NULL cell is one reported problem, not a collapse to reason:int
     JSON.stringify(r.problems));
 });
 
-test('check 8 (reverse): a rung file no cell reaches is undeclared-rung-agent', () => {
-  // The direction "exactly the files the grids name" needs. Without it, a stale
-  // rung file stays green while still paying standing context in every
-  // main-session prompt.
+test('check 8 (reverse): a MAPPED rung file no cell reaches is left alone', () => {
+  // The half that is deliberately gone (D-03). `max` IS cad-verifier's rung in
+  // lib/rung-agent.mjs and this table's cells reach only high/xhigh, which is
+  // the ordinary state of a ladder complete on disk while the routing cells
+  // name the subset they need - not a fault, and refusing it would make the
+  // map's own shape a CI failure.
   const root = fixtureWith({
     agents: {
       ...VERIFIER_AGENTS,
@@ -1130,24 +1132,26 @@ test('check 8 (reverse): a rung file no cell reaches is undeclared-rung-agent', 
     routeTable: cellTable('cad-verifier'), // no cell resolves to `max`
   });
   const p = run(['--root', root]).problems;
-  const hit = p.find((x) => x.kind === 'undeclared-rung-agent'
-    && x.file === 'agents/cad-verifier-max.md');
-  assert.ok(hit, JSON.stringify(p));
-  assert.match(hit.detail, /no cell at any level resolves to it/);
+  assert.ok(!p.some((x) => x.kind === 'undeclared-rung-agent'), JSON.stringify(p));
 });
 
-test('check 8 (reverse): a rung file the map does not name either says so instead', () => {
-  // Same kind, different fix: `medium` IS a cad-verifier rung with a file, so
-  // that message says "add a cell". A rung nothing maps says "delete the file".
+test('check 8 (reverse): a rung file the map does not name is undeclared-rung-agent', () => {
+  // The stale half, still at full strength: a rung-suffixed file
+  // lib/rung-agent.mjs files for nobody is standing context nothing can ever
+  // dispatch, and the fix is to delete it or file it. The rung token is one no
+  // role's ladder carries, so this stays the unmapped case however many rungs
+  // the map grows.
+  const table = cellTable('cad-verifier');
+  table.rung_order = [...RUNG_ORDER, 'ultra'];
   const root = fixtureWith({
     agents: {
       ...VERIFIER_AGENTS,
-      'cad-verifier-low.md': '---\nname: cad-verifier-low\ntools: Read\n---\nbody\n',
+      'cad-verifier-ultra.md': '---\nname: cad-verifier-ultra\ntools: Read\n---\nbody\n',
     },
-    routeTable: cellTable('cad-verifier'),
+    routeTable: table,
   });
   const hit = run(['--root', root]).problems.find((x) => x.kind === 'undeclared-rung-agent'
-    && x.file === 'agents/cad-verifier-low.md');
+    && x.file === 'agents/cad-verifier-ultra.md');
   assert.ok(hit);
   assert.match(hit.detail, /maps no file to it/);
 });

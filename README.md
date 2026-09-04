@@ -111,7 +111,7 @@ The level you set is a MINIMUM a phase pays, not a fixed price: a phase whose de
 
 That one word lands in a grid of 18 cells, one per level and role pair, and the cell hands a dispatch its model, the effort rung it starts on, and the rung a failed attempt climbs to. At `solo` the planner runs Sonnet at `high`. At `shipped` it runs Opus. At `critical` it runs Opus at `xhigh` and a retry goes to `max`. The whole thing is [`cadence-core/route-table.json`](./cadence-core/route-table.json) and you can read it in one screen.
 
-The rungs are `low`, `medium`, `high`, `xhigh`, `max`. Effort is fixed in an agent file's frontmatter rather than passed per dispatch, which makes a rung a real file on disk, and self-verify fails in both directions, on a cell naming a rung with no file and on a rung file no cell reaches.
+The rungs are `low`, `medium`, `high`, `xhigh`, `max`. Effort is fixed in an agent file's frontmatter rather than passed per dispatch, which makes a rung a real file on disk, and self-verify refuses a cell naming a rung with no file, and a rung-suffixed agent file the rung map files for no role.
 
 Escalation is one key, `model.escalate_on_failure`, off by default: a retry holds the rung it started on, because a retry is usually a narrower job than the pass that failed it. Set it true and a failed attempt gets re-dispatched at the retry rung its own cell names.
 

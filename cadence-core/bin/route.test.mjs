@@ -8,7 +8,7 @@ import { writeFileSync, mkdtempSync, mkdirSync, chmodSync, readFileSync, existsS
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RUNG_FILES, rungFile, rungFiles } from './lib/rung-agent.mjs';
+import { rungFile } from './lib/rung-agent.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
 
 const ROUTE = join(dirname(fileURLToPath(import.meta.url)), 'route.mjs');
@@ -889,14 +889,9 @@ test('every rung a cell can name has an agent file carrying exactly that effort'
     assert.ok(existsSync(join(AGENTS, `${name}.md`)), `agents/${name}.md must exist`);
     assert.equal(frontmatterEffort(name), rung, `${name} frontmatter effort`);
   }
-  // ...and the other direction: a rung file RUNG_FILES names that no cell can
-  // reach is standing context nothing dispatches.
-  const named = new Set([...byName.keys()]);
-  for (const role of Object.keys(RUNG_FILES)) {
-    for (const stem of rungFiles(role)) {
-      assert.ok(named.has(stem), `agents/${stem}.md is named by no cell`);
-    }
-  }
+  // The other direction is deliberately NOT asserted (phase 1, D-03): a rung
+  // file RUNG_FILES names that no cell reaches is the ordinary state of a
+  // ladder complete on disk while the cells name the subset they need.
 });
 
 test('table exposes rung_order, the five rungs the host accepts', () => {
