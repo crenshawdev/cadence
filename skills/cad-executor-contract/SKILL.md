@@ -37,8 +37,9 @@ stays sequential.
 
 When `mcp__excerpt__excerpt_read` and `mcp__excerpt__excerpt_search` are on
 your tool list, prefer them over built-in Read and Grep for every read and
-search below; when they are absent, the built-ins are the path, not a reason
-to stop.
+search below, and prefer `excerpt_search` over shell `grep`/`rg` for code
+search - the shell channel is not an exemption; when they are absent, the
+built-ins are the path, not a reason to stop.
 
 To orient in a JS/TS file over ~20 KB, read it through
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/skim.mjs" <file>` - the same
