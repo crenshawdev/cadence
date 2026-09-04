@@ -1,7 +1,7 @@
 ---
 name: cad-verifier-xhigh
 description: The `xhigh` rung of `cad-verifier`; `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Bash, Grep, Glob
+tools: Read, Write, Bash, Grep, Glob, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
 color: green
 effort: xhigh
 maxTurns: 200
