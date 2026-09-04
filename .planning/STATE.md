@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 0 (no active cycle)
+Phase: 1 of 3 (Every role has every rung)
 Status: ready to plan
-Next: /cad-phase add
-Updated: 2026-09-03
+Next: /cad-context 1
+Updated: 2026-09-04

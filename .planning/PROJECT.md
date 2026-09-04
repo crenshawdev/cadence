@@ -204,7 +204,23 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**No cycle open.** `/cad-phase add` opens the next one.
+**`v3.8.0 - what each role runs at`, opened 2026-09-04. This cycle does not tag
+and does not publish a release.** Cadence runs from this repository, so the work
+lands by merge and is in force at the next restart; the version labels the
+branch and the roadmap, nothing more. Three phases on `cadence/v3.8.0`. The
+source is `GH-249`, filed 2026-09-02 and sized there as a milestone. One claim
+holds all three phases: config says what each role runs at, in words the user
+chose, with nothing between them and the model but a string they typed. Twelve
+routing commits since v3.2 are the evidence - two set the stakes level and ten
+override what it chose - and the model alias list is the same failure in a
+second place, four names checked only against themselves. Phase 1 fills the
+eleven missing rung files so every role offers every rung. Phase 2 adds the
+roles block and resolves from it while `stakes` still answers as the fallback,
+so no intermediate commit strands a config that exists today. Phase 3 deletes
+the key, the cells grid and the alias list, and puts the thirteen-question
+interview in their place with the migration beside it. Two open questions are
+load-bearing and unanswered: whether the retry rung survives the roles block,
+and what a model string the host does not know does.
 
 **`v3.7.11 - unresolved inputs`, opened 2026-09-02, closed 2026-09-03.** Three
 phases, 43 commits off `main` (9 feat and 10 fix against 21 docs, 2 chore and

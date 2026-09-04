@@ -5,10 +5,14 @@
 
 ## Active
 
-**No cycle open.** The shipped ids are rows under `## Shipped` below.
-`/cad-phase add` opens the next cycle; `/cad-plan` seeds each `## Traceability`
-row as its phase is planned. The ids under `## Deferred` keep their own reasons
-and none is promoted here to fill this section.
+**`v3.8.0 - what each role runs at` opened 2026-09-04 and does not tag or
+publish a release.** Three phases on `cadence/v3.8.0`, sourced from `GH-249`.
+`/cad-plan` seeds each `## Traceability` row as its phase is planned, so this
+cycle's ids are assigned there rather than reserved here. The theme is one
+claim: config says what each role runs at, in words the user chose. The shipped
+ids from earlier cycles are rows under `## Shipped` below, and the ids under
+`## Deferred` keep their own reasons - none is promoted here to fill this
+section.
 
 `v3.7.11 - unresolved inputs` opened 2026-09-02 and closed 2026-09-03. Three
 phases, four ids - `RNG-05` and `RSK-10` in phase 1, `RSK-11` in phase 2,
