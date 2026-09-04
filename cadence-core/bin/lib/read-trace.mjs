@@ -54,8 +54,21 @@ export const READS_FILE = 'reads.jsonl';
  */
 export const MAX_READS_BYTES = 8388608;
 
-/** The tools whose calls are worth billing. Anything else is not a read. */
-export const RECORDED_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead'];
+/**
+ * The tools whose calls are worth billing. Anything else is not a read.
+ *
+ * The two `mcp__excerpt__*` entries are named the same way the rung agents name
+ * them on their `tools:` lines: a user without excerpt never emits one, so the
+ * entry costs them nothing, and a user with it gets the read counted in the
+ * same denominator as `Read` and `Bash` instead of vanishing. Without them a
+ * dispatch that reads entirely through excerpt records ZERO reads, which is
+ * indistinguishable from a dispatch that read nothing.
+ */
+export const RECORDED_TOOLS = ['Read', 'Grep', 'Glob', 'Bash', 'NotebookRead',
+  'mcp__excerpt__excerpt_read', 'mcp__excerpt__excerpt_search'];
+
+/** The longest error text a record may carry. A cause, never a payload. */
+export const MAX_ERROR_TEXT = 200;
 
 /**
  * The most in-repo file paths one Bash call may bill. A glob expansion or a
@@ -296,6 +309,51 @@ export function filesOf(cmd, opts) {
  *   shape every existing caller and test uses - no `files` field is added and
  *   the record is exactly what it was.
  */
+/**
+ * Whether a `tool_response` reports failure, or `null` when it does not say.
+ *
+ * Both spellings are accepted because they come from different layers: the MCP
+ * wire shape is `isError`, and the host's own hook payloads use snake_case
+ * throughout. Neither is documented for PostToolUse, so this reads whatever is
+ * there and returns `null` rather than guessing when neither key exists.
+ * @param {any} resp
+ * @returns {boolean|null}
+ */
+export function errorFlagOf(resp) {
+  if (!resp || typeof resp !== 'object' || Array.isArray(resp)) return null;
+  if (typeof resp.is_error === 'boolean') return resp.is_error;
+  if (typeof resp.isError === 'boolean') return resp.isError;
+  return null;
+}
+
+/**
+ * The FIRST LINE of a failed response's text, capped at `MAX_ERROR_TEXT`.
+ *
+ * One line and a cap, deliberately. The cause is what makes a refusal legible -
+ * excerpt writes `<path>: <reason>` - while the rest of a failure is a payload
+ * this file has never stored (`:24` - it needs the target and the count, never
+ * the payload). A stack trace or a dumped file body in `reads.jsonl` would put
+ * bytes nobody reviewed into a record that /cad-report prints.
+ * @param {any} resp
+ * @returns {string|null}
+ */
+export function errorTextOf(resp) {
+  let raw = null;
+  if (typeof resp === 'string') raw = resp;
+  else if (resp && typeof resp === 'object') {
+    if (typeof resp.error === 'string') raw = resp.error;
+    else if (typeof resp.text === 'string') raw = resp.text;
+    else if (Array.isArray(resp.content)) {
+      const first = resp.content.find((c) => c && typeof c.text === 'string');
+      if (first) raw = first.text;
+    }
+  }
+  if (typeof raw !== 'string') return null;
+  const line = raw.split('\n', 1)[0].trim();
+  if (!line) return null;
+  return line.length > MAX_ERROR_TEXT ? line.slice(0, MAX_ERROR_TEXT) : line;
+}
+
 export function recordFromHook(input, now, opts) {
   if (!input || typeof input !== 'object') return null;
   const tool = input.tool_name;
@@ -324,6 +382,14 @@ export function recordFromHook(input, now, opts) {
     // SCOPE only. The pattern is the field that can carry a secret.
     rec.target = ti.path ?? null;
     if (ti.output_mode) rec.mode = ti.output_mode;
+  } else if (tool === 'mcp__excerpt__excerpt_read') {
+    rec.target = ti.path ?? ti.file_path ?? null;
+    if (Number.isFinite(ti.offset)) rec.offset = ti.offset;
+    if (Number.isFinite(ti.limit)) rec.limit = ti.limit;
+  } else if (tool === 'mcp__excerpt__excerpt_search') {
+    // SCOPE only, exactly as `Grep` above: the pattern is the field that can
+    // carry a secret, and an excerpt search takes the same kind of pattern.
+    rec.target = ti.path ?? null;
   } else if (tool === 'Bash') {
     // `target` stays the PROGRAM, unchanged: it is what `byTool`/`topTargets`
     // have always counted and what every record on disk already carries.
@@ -344,6 +410,18 @@ export function recordFromHook(input, now, opts) {
     try {
       rec.bytes = typeof resp === 'string' ? resp.length : JSON.stringify(resp).length;
     } catch { /* unserializable response: leave `bytes` absent */ }
+    const failed = errorFlagOf(resp);
+    // Written ONLY when the response actually says so. An absent flag stays
+    // absent rather than defaulting to `false`: a host that sends no response
+    // shape at all would otherwise have every call recorded as a success, which
+    // is the invented figure `bytes` above already refuses to make.
+    if (failed === true) {
+      rec.is_error = true;
+      const text = errorTextOf(resp);
+      if (text) rec.error = text;
+    } else if (failed === false) {
+      rec.is_error = false;
+    }
   }
   return rec;
 }
