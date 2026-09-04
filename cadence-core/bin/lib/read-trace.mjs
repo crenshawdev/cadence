@@ -39,7 +39,7 @@ import { join, resolve, sep, relative, isAbsolute } from 'node:path';
 // the role a dispatch event names - and deriving it from a `-<rung>` suffix
 // regex would be a SECOND statement of the mapping: `cad-assumptions-analyzer`
 // is that role's `xhigh` rung while `cad-assumptions-analyzer-high` is its
-// lower one, so no suffix convention is true of all 19 files, and a rung added
+// lower one, so no suffix convention is true of all 30 files, and a rung added
 // to the table but not to the regex would leave those reads silently unjoined.
 // Pure and fs-free, so the hook path this file also serves stays a plain parse.
 import { RUNG_FILES } from './rung-agent.mjs';
@@ -1217,7 +1217,7 @@ const ROLE_OF_STEM = new Map(
 );
 
 /**
- * The same 19 stems, mapped back to the RUNG each one is filed under. Built off
+ * The same 30 stems, mapped back to the RUNG each one is filed under. Built off
  * the SAME import in the same shape as `ROLE_OF_STEM`, because the two answers
  * are two columns of one table: a rung added to `RUNG_FILES` reaches both maps
  * or neither, and neither can go stale while the other does not.
@@ -1279,7 +1279,7 @@ export function roleOfAgent(agent) {
  * NEVER derived from a `-<rung>` filename suffix, for the reason this file's
  * `RUNG_FILES` import already states: `cad-assumptions-analyzer` is that role's
  * `xhigh` rung while `cad-assumptions-analyzer-high` is its lower one, so no
- * suffix convention is true of all 19 files and a suffix rule would report the
+ * suffix convention is true of all 30 files and a suffix rule would report the
  * wrong rung for the unsuffixed file of every role.
  *
  * EXPORTED for `lib/subagent-trace.mjs`, whose `SubagentStop` close records the

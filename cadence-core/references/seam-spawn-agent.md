@@ -13,9 +13,9 @@ How a workflow dispatches work to a fresh-context subagent.
   (`cad-plan-checker` at `medium` -> `cad-plan-checker-medium`); the map is
   stated per role rather than derived, because the unsuffixed `agents/<role>.md`
   is one rung among the others rather than the lowest. Self-verify fails in both
-  directions: a rung with no file, and a rung file no cell reaches.
+  directions: a rung with no file, and a rung file no role maps.
 - A turn bound, but no timeout and no cancel. Every `agents/*.md` carries
-  `maxTurns: 200` in its frontmatter, one uniform value across all 19 rung
+  `maxTurns: 200` in its frontmatter, one uniform value across all 30 rung
   files, so that is the bound a dispatch runs under - and it is the only one
   this seam has: no wall-clock kill, and no way to cancel a dispatch already
   running. A config key claimed a wall-clock kill until v2.7.0, when it was

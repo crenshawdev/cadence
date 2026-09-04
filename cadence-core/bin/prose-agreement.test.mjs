@@ -643,7 +643,7 @@ test('the turn bound: every rung file and the spawn-agent seam name one maxTurns
   const wrong = [...new Set(stated.filter((v) => v !== bound))];
   assert.deepEqual(wrong, [],
     `references/seam-spawn-agent.md's spawn-agent bullet states maxTurns ${wrong.join('/')}, `
-    + `which no rung file carries - the 19 rung files carry ${bound}`);
+    + `which no rung file carries - the 30 rung files carry ${bound}`);
 });
 
 // --- WIR-01: the recovery arm's producers, and the default reviewer's bound --
