@@ -1,8 +1,8 @@
-# Roadmap: v3.8.0 - what each role runs at
+# Roadmap: v4.0.0 - what each role runs at
 
 ## Overview
 
-**`v3.8.0`, opened 2026-09-04. This cycle does not tag and does not publish a
+**`v4.0.0`, opened 2026-09-04. This cycle does not tag and does not publish a
 release.** Cadence runs from this repository - `settings.json` points the
 marketplace at `/code/cadence` - so the work lands by merge and is in force at
 the next restart. The version is a label for the branch and the roadmap, not a

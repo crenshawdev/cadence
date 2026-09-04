@@ -204,10 +204,10 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v3.8.0 - what each role runs at`, opened 2026-09-04. This cycle does not tag
+**`v4.0.0 - what each role runs at`, opened 2026-09-04. This cycle does not tag
 and does not publish a release.** Cadence runs from this repository, so the work
 lands by merge and is in force at the next restart; the version labels the
-branch and the roadmap, nothing more. Three phases on `cadence/v3.8.0`. The
+branch and the roadmap, nothing more. Three phases on `cadence/v4.0.0`. The
 source is `GH-249`, filed 2026-09-02 and sized there as a milestone. One claim
 holds all three phases: config says what each role runs at, in words the user
 chose, with nothing between them and the model but a string they typed. Twelve
