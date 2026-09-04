@@ -349,9 +349,36 @@ export function errorTextOf(resp) {
     }
   }
   if (typeof raw !== 'string') return null;
-  const line = raw.split('\n', 1)[0].trim();
+  const line = redactCause(raw.split('\n', 1)[0].trim());
   if (!line) return null;
   return line.length > MAX_ERROR_TEXT ? line.slice(0, MAX_ERROR_TEXT) : line;
+}
+
+/**
+ * Mask credential-shaped values in a cause line before it is stored.
+ *
+ * The line is text this process did not author - a failing tool wrote it - and
+ * it lands in a durable record `/cad-report` prints. Redaction is by
+ * DESTINATION, not by whether the author is trusted, so the same
+ * `token|password|secret|key|api|bearer` vocabulary the risk detector uses
+ * gates what may be written. The NAME survives and only the VALUE is masked:
+ * "auth failed: api_key=<redacted>" still says what went wrong, which is the
+ * whole reason the field exists.
+ *
+ * A blocking `risk_surface` round on 2026-09-04 raised the reverse claim - that
+ * a whole non-string response could be serialized here - and its own scenario
+ * refuted it, since only three string fields are ever read. This is the part of
+ * that objection that survived: one of those three strings can itself carry a
+ * credential.
+ * @param {string} line
+ * @returns {string}
+ */
+export function redactCause(line) {
+  if (typeof line !== 'string') return '';
+  return line
+    .replace(/\b(bearer)\s+\S+/gi, '$1 <redacted>')
+    .replace(/\b([\w.-]*(?:token|password|passwd|secret|key|api)[\w.-]*)\s*[=:]\s*\S+/gi,
+      '$1=<redacted>');
 }
 
 export function recordFromHook(input, now, opts) {

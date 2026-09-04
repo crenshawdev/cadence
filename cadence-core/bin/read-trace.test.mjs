@@ -20,7 +20,7 @@ import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
   rotatedReadsPath, readsClaimPath, isReadsRotationMarker, rotateReads,
-  READS_MARKER_BYTES, MAX_ERROR_TEXT, errorFlagOf, errorTextOf,
+  READS_MARKER_BYTES, MAX_ERROR_TEXT, errorFlagOf, errorTextOf, redactCause,
 } from './lib/read-trace.mjs';
 
 const TS = '2026-08-14T00:00:00.000Z';
@@ -136,6 +136,18 @@ test('a response that says nothing about failure records no is_error at all', ()
     tool_name: 'Read', tool_input: { file_path: '/a' }, tool_response: 'plain text',
   }, TS);
   assert.equal('is_error' in r, false);
+});
+
+test('a cause line masks a credential VALUE and keeps its name', () => {
+  const r = recordFromHook({
+    tool_name: 'mcp__excerpt__excerpt_read',
+    tool_input: { path: '/a' },
+    tool_response: { isError: true, error: 'auth failed: api_key=sk-live-ABC123 rejected' },
+  }, TS);
+  assert.equal(r.error.includes('sk-live-ABC123'), false);
+  assert.equal(r.error.includes('api_key'), true);
+  assert.equal(redactCause('sent Bearer sk-live-XYZ'), 'sent Bearer <redacted>');
+  assert.equal(redactCause('/etc/hosts: declined'), '/etc/hosts: declined');
 });
 
 test('an error line is capped rather than storing a payload', () => {
