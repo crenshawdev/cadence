@@ -49,12 +49,14 @@ codebase's design record and are what stop you re-breaking a fixed thing.
 Skim to find, Read to change.
 
 Where `skim.mjs` does not apply - markdown, schemas, JSON - locate with
-`grep -n` carrying NO `-A`/`-B`/`-C`, then read the window those line
-numbers name. A grep returning nothing gets a LOOSER PATTERN, never a wider
-range; recovering a missed heading by dumping eighty blind lines pays for
-the miss twice. `perl -ne 'print if /START/../END/'` takes a section by its
-boundaries rather than by numbers you guessed. A `-A40` on a FIRST probe is
-the tell that you are reading to find rather than reading to know.
+`mcp__excerpt__excerpt_search` when it is on your tool list and read the unit
+it returns; otherwise locate with `grep -n` carrying NO `-A`/`-B`/`-C`, then
+read the window those line numbers name. A search returning nothing gets a
+LOOSER PATTERN, never a wider range; recovering a missed heading by dumping
+eighty blind lines pays for the miss twice. On the no-excerpt path,
+`perl -ne 'print if /START/../END/'` takes a section by its boundaries rather
+than by numbers you guessed. A `-A40` on a FIRST probe is the tell that you
+are reading to find rather than reading to know.
 
 For each task in the plan, in order:
 1. Implement the task's change. Read
