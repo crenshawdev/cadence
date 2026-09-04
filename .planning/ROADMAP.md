@@ -61,11 +61,14 @@ from the 2026-09-03 run record were declined on 2026-09-04 and are not filed.
   The roles block `GH-249` proposes carries `model` and `effort` and nothing
   else. Either the block grows a third field and the interview grows a
   fourteenth question, or retry escalation is deleted with the grid that
-  carried it. The evidence to settle it is in the run record: the
-  2026-09-03 `/cad-suggest` pass measured 7 of 290 executor resolves and 7 of
-  130 planner resolves climbing to the retry rung, so the mechanism does fire.
-  What is not measured is whether the climb changed an outcome. Answer before
-  phase 2 plans the block's shape.
+  carried it. The run record is weaker evidence than it looks: the 2026-09-03
+  `/cad-suggest` pass measured 7 of 290 executor resolves and 7 of 130 planner
+  resolves climbing to the retry rung, but `model.escalate_on_failure` is
+  `false` at HEAD (pinned there by `e40c9c30`), and the trace is unscoped, so
+  those climbs come from the window when it was on rather than from how the
+  project runs now. What the record shows is that the mechanism CAN fire. What
+  it does not show is whether a climb ever changed an outcome, which is the
+  thing worth keeping it for. Answer before phase 2 plans the block's shape.
 - **OQ-2 - what happens to a model string the host does not know.** Dropping
   `model_aliases` is the point of the cycle, and it also drops the only thing
   that catches a typo. A cell today cannot name a model outside four; a roles
