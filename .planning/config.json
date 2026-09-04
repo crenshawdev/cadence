@@ -7,6 +7,9 @@
           "destructive",
           "untrusted_input"
         ]
+      },
+      "diff": {
+        "tier": "flagship"
       }
     },
     "reviewers": [
