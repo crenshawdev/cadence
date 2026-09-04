@@ -1125,17 +1125,18 @@ test('the start rung is read from the merged config LAYERS, never a plugin file'
 });
 
 test('a hand-edited rung the role has no FILE for is refused, never fail-open dispatched', () => {
-  // `max` passes no schema enum for cad-executor, so only a hand-edited config
-  // reaches here. Handing it to the agentFor fail-open would dispatch the base
-  // file while reporting `max` - a rung nothing ran at.
-  const file = cfg({ stakes: 'shipped', effort: { 'cad-executor': 'max' } }, 'eff-unmapped.json');
+  // `ultra` is outside rung_order entirely, so no schema enum can carry it and
+  // only a hand-edited config reaches here - which stays true now that every
+  // role carries every rung of the ladder. Handing it to the agentFor fail-open
+  // would dispatch the base file while reporting `ultra` - a rung nothing ran at.
+  const file = cfg({ stakes: 'shipped', effort: { 'cad-executor': 'ultra' } }, 'eff-unmapped.json');
   const r = resolve('cad-executor', file);
   assert.equal(r.ok, true);                 // never blocks the spine
   assert.equal(r.effort, 'high');           // the cell's rung stands
   assert.equal(r.agent, 'cad-executor');    // ...and its file
   const named = (r.warnings || []).filter((w) => /model\.effort\.cad-executor/.test(w));
   assert.equal(named.length, 1, JSON.stringify(r.warnings));
-  assert.match(named[0], /"max"/);          // the value the user wrote
+  assert.match(named[0], /"ultra"/);        // the value the user wrote
   assert.match(named[0], /high, xhigh/);    // ...and the rungs this role does have
 });
 

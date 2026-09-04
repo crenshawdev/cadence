@@ -89,21 +89,29 @@ test('a verify value of "off" is present, not absent - falsy is not missing', ()
 
 // --- missing-rung-agent -------------------------------------------------------
 
+// The subject is an (role, rung) pair lib/rung-agent.mjs files no file for, and
+// every role it DOES know now carries every rung of rung_order - so the fixture
+// reaches the branch through the ROLE rather than through a rung some real role
+// happens to lack. A table built this way produces the issue for the `effort`
+// AND the `retry` of every level, so each row below selects its own hit by
+// level and arm instead of taking the first.
+const UNMAPPED_ROLE = 'cad-unmapped';
+const rungMiss = (t, at) => cellIssues(t, VOCAB)
+  .find((i) => i.code === 'missing-rung-agent' && i.detail.startsWith(at));
+
 test('a cell rung that maps to no agent file is missing-rung-agent naming the cell', () => {
-  const t = table();
-  t.cells.shipped['cad-verifier'].retry = 'low'; // cad-verifier has no `low` file
-  const hit = find(t, 'missing-rung-agent');
+  const t = table(UNMAPPED_ROLE);
+  const hit = rungMiss(t, `shipped/${UNMAPPED_ROLE}: retry`);
   assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
-  assert.match(hit.detail, /shipped\/cad-verifier/);
+  assert.match(hit.detail, /shipped\/cad-unmapped/);
   assert.match(hit.detail, /retry/);
 });
 
 test('the starting rung is checked as well as the retry rung', () => {
-  const t = table();
-  t.cells.solo['cad-verifier'].effort = 'low';
-  const hit = find(t, 'missing-rung-agent');
-  assert.ok(hit);
-  assert.match(hit.detail, /solo\/cad-verifier/);
+  const t = table(UNMAPPED_ROLE);
+  const hit = rungMiss(t, `solo/${UNMAPPED_ROLE}: effort`);
+  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+  assert.match(hit.detail, /solo\/cad-unmapped/);
   assert.match(hit.detail, /effort/);
 });
 
@@ -369,10 +377,13 @@ test('routableAgents maps every stem the grids produce to the cell that wants it
 });
 
 test('routableAgents skips a rung with no file rather than inventing a stem', () => {
-  const t = table();
-  t.cells.solo['cad-verifier'].effort = 'low';
-  const m = routableAgents(t);
-  assert.equal(m.has('cad-verifier-low'), false);
+  // Same unmapped ROLE the missing-rung-agent rows use: with every known role
+  // carrying every rung, an unmapped role is what leaves rungFile with nothing
+  // to return, and the guess it must not make is `<role>-<rung>`.
+  const m = routableAgents(table(UNMAPPED_ROLE));
+  assert.equal(m.has(`${UNMAPPED_ROLE}-high`), false);
+  assert.equal(m.has(`${UNMAPPED_ROLE}-xhigh`), false);
+  assert.equal(m.size, 0);
 });
 
 test('routableAgents on a malformed table is empty, never a throw', () => {

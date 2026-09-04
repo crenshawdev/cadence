@@ -49,7 +49,10 @@ test('rungFile is not a naming convention - the analyzer inverts it', () => {
 });
 
 test('a rung the role does not carry is null, never a guessed filename', () => {
-  assert.equal(rungFile('cad-executor', 'max'), null);
+  // A rung token outside route-table.json's rung_order, so it stays unfiled
+  // however far the ladder fills in - `cad-executor-ultra` is the filename the
+  // guess would produce and the file that does not exist.
+  assert.equal(rungFile('cad-executor', 'ultra'), null);
 });
 
 test('an unknown role is null, and a non-string rung does not throw', () => {
@@ -184,8 +187,10 @@ test('rungPrefixIssues: a role contributing ONE body yields nothing', () => {
 });
 
 test('rungPrefixIssues: a stem the map does not name is not this rule\'s business', () => {
+  // `ultra` is outside rung_order, so this stem stays unmapped whatever rungs
+  // the map grows - the point is the SCOPE, not which rung happens to be free.
   assert.deepEqual(rungPrefixIssues({ [EXEC.high]: EXEC_BODY, [EXEC.xhigh]: EXEC_BODY,
-    'cad-executor-low': 'something else entirely\n', 'not-an-agent': 'x' }), []);
+    'cad-executor-ultra': 'something else entirely\n', 'not-an-agent': 'x' }), []);
 });
 
 test('rungPrefixIssues: a non-string body is treated as absent, never as a difference', () => {
