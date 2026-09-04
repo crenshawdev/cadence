@@ -1,7 +1,7 @@
 ---
 name: cad-plan-checker
 description: The `low` rung of `cad-plan-checker` (goal-backward plan gate); `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Glob, Grep
+tools: Read, Bash, Glob, Grep, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
 disallowedTools: Write, Edit, MultiEdit
 color: green
 effort: low

@@ -1,7 +1,7 @@
 ---
 name: cad-reviewer
 description: The `high` rung of `cad-reviewer` (adversarial artifact review); `bin/route.mjs` picks it, not the user.
-tools: Read, Bash, Glob, Grep
+tools: Read, Bash, Glob, Grep, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
 disallowedTools: Write, Edit, MultiEdit
 color: red
 effort: high

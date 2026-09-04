@@ -70,6 +70,11 @@ Batch independent probes: greps, globs and reads whose target does not
 depend on another's result go out in ONE message, never one-then-wait. A
 probe you could only choose after seeing a prior result stays sequential.
 
+When `mcp__excerpt__excerpt_read` and `mcp__excerpt__excerpt_search` are on
+your tool list, prefer them over built-in Read and Grep for every read and
+search below; when they are absent, the built-ins are the path, not a reason
+to stop.
+
 To orient in a JS/TS file over ~20 KB, read it through
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/skim.mjs" <file>` - the same
 source with comments stripped and line numbers intact, roughly half the
