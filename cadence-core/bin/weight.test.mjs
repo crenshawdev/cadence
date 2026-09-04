@@ -202,10 +202,12 @@ test('AC1: --command eagerBytes is the sum of the files that same envelope lists
 
 test('AC1: --role returns EVERY agent under that role, each summed on its own', () => {
   const j = resident(REPO, '--role', 'cad-executor');
-  // Both rung files preload the one contract skill, so the role has two
-  // dispatch weights and no single role-wide figure exists to assert.
+  // Every rung file preloads the one contract skill, so the role has one
+  // dispatch weight per rung and no single role-wide figure exists to assert.
   assert.deepEqual(j.roles.map((r) => r.agent).sort(),
-    ['agents/cad-executor-xhigh.md', 'agents/cad-executor.md']);
+    ['agents/cad-executor-low.md', 'agents/cad-executor-max.md',
+      'agents/cad-executor-medium.md', 'agents/cad-executor-xhigh.md',
+      'agents/cad-executor.md']);
   for (const r of j.roles) {
     assert.equal(r.role, 'cad-executor');
     assert.equal(r.dispatchBytes, r.agentBytes + sumBytes(r.contracts));

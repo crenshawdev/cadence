@@ -70,7 +70,8 @@ test('rungFile never inherits a prototype property as a rung', () => {
 
 test('rungFiles lists every stem a role names, in rung order', () => {
   assert.deepEqual(rungFiles('cad-verifier'),
-    ['cad-verifier-medium', 'cad-verifier', 'cad-verifier-xhigh', 'cad-verifier-max']);
+    ['cad-verifier-low', 'cad-verifier-medium', 'cad-verifier',
+      'cad-verifier-xhigh', 'cad-verifier-max']);
 });
 
 test('rungFiles on an unknown role is empty, never a throw', () => {
@@ -78,11 +79,11 @@ test('rungFiles on an unknown role is empty, never a throw', () => {
   assert.deepEqual(rungFiles(undefined), []);
 });
 
-// CADENCE-CENSUS: rung-agent-files | asserts: RUNG_FILES names 19 file stems across the six roles, each serving exactly one rung
-test('RUNG_FILES names 19 files across the six roles, and is frozen', () => {
+// CADENCE-CENSUS: rung-agent-files | asserts: RUNG_FILES names 30 file stems across the six roles, each serving exactly one rung
+test('RUNG_FILES names 30 files across the six roles, and is frozen', () => {
   const stems = Object.keys(RUNG_FILES).flatMap((r) => rungFiles(r));
-  assert.equal(stems.length, 19);
-  assert.equal(new Set(stems).size, 19); // no file serves two rungs
+  assert.equal(stems.length, 30);
+  assert.equal(new Set(stems).size, 30); // no file serves two rungs
   assert.equal(Object.isFrozen(RUNG_FILES), true);
   assert.equal(Object.isFrozen(RUNG_FILES['cad-planner']), true);
 });
@@ -138,8 +139,9 @@ test('rungBodyIssue accepts a body pointing at ANY ONE declared skill', () => {
 // The rule rungBodyIssue deliberately cannot hold. That one normalizes
 // whitespace away, so a re-wrapped rung file passes it; this one refuses that
 // exact edit, because two line-break variants are two different cache
-// prefixes. cad-executor is used throughout: two rungs, the smallest role that
-// can disagree at all.
+// prefixes. cad-executor is used throughout, and every fixture below hands in
+// exactly TWO of its stems - the smallest input that can disagree at all, and
+// the one the rule's tie-break and majority arms are readable over.
 const EXEC = RUNG_FILES['cad-executor'];
 const EXEC_BODY = '\n\n' + rungBody('cad-executor-contract');
 /** EXEC_BODY with its ONE internal line break turned into a space. */
@@ -210,7 +212,7 @@ test('rungPrefixIssues: the SHIPPED agents/ tree carries one body per role', () 
     const fm = text.match(/^---\n([\s\S]*?)\n---/);
     bodies[e.slice(0, -3)] = fm ? text.slice(fm[0].length) : text;
   }
-  assert.equal(Object.keys(bodies).length, 19);
+  assert.equal(Object.keys(bodies).length, 30);
   assert.deepEqual(rungPrefixIssues(bodies), []);
 });
 
@@ -335,7 +337,7 @@ test('effort-enum-drift: a rung route-table.json\'s rung_order does not carry', 
   const executor = issues.filter((i) => /cad-executor/.test(i.detail));
   assert.deepEqual(executor, [{
     code: 'effort-enum-drift',
-    detail: 'model.effort.cad-executor offers ["xhigh"], which route-table.json\'s '
+    detail: 'model.effort.cad-executor offers ["xhigh","max"], which route-table.json\'s '
       + 'rung_order (low, medium, high) does not carry',
   }]);
   assert.ok(issues.every((i) => i.code === 'effort-enum-drift'), JSON.stringify(issues));

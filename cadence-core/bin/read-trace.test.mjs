@@ -1029,7 +1029,7 @@ test('the rung mapping and RUNG_FILES cannot drift apart', () => {
       checked += 1;
     }
   }
-  assert.equal(checked, 19, 'the rung table stopped naming 19 files');
+  assert.equal(checked, 30, 'the rung table stopped naming 30 files');
 });
 
 test('join: a record with no agent field names the field absent rather than defaulting', () => {

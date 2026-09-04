@@ -7,7 +7,7 @@
 // #43, #64): route.mjs would name a file the linter never looked for.
 //
 // RUNG_FILES is the whole mapping story - a stated table, not a naming
-// convention, because no convention is true of all 19 files.
+// convention, because no convention is true of all 30 files.
 // `rungBody`/`normalizeBody`/`rungBodyIssue` beside it state the one legitimate
 // BODY of a rung file, and `rungPrefixIssues` states that one role's rung files
 // all carry it byte for byte, for the same single-source reason.
@@ -36,35 +36,46 @@
  */
 export const RUNG_FILES = Object.freeze({
   'cad-planner': Object.freeze({
+    low: 'cad-planner-low',
+    medium: 'cad-planner-medium',
     high: 'cad-planner',
     xhigh: 'cad-planner-xhigh',
     max: 'cad-planner-max',
   }),
   'cad-assumptions-analyzer': Object.freeze({
+    low: 'cad-assumptions-analyzer-low',
+    medium: 'cad-assumptions-analyzer-medium',
     high: 'cad-assumptions-analyzer-high',
     xhigh: 'cad-assumptions-analyzer',
+    max: 'cad-assumptions-analyzer-max',
   }),
   'cad-verifier': Object.freeze({
+    low: 'cad-verifier-low',
     medium: 'cad-verifier-medium',
     high: 'cad-verifier',
     xhigh: 'cad-verifier-xhigh',
     max: 'cad-verifier-max',
   }),
   'cad-reviewer': Object.freeze({
+    low: 'cad-reviewer-low',
     medium: 'cad-reviewer-medium',
     high: 'cad-reviewer',
     xhigh: 'cad-reviewer-xhigh',
     max: 'cad-reviewer-max',
   }),
   'cad-executor': Object.freeze({
+    low: 'cad-executor-low',
+    medium: 'cad-executor-medium',
     high: 'cad-executor',
     xhigh: 'cad-executor-xhigh',
+    max: 'cad-executor-max',
   }),
   'cad-plan-checker': Object.freeze({
     low: 'cad-plan-checker',
     medium: 'cad-plan-checker-medium',
     high: 'cad-plan-checker-high',
     xhigh: 'cad-plan-checker-xhigh',
+    max: 'cad-plan-checker-max',
   }),
 });
 

@@ -912,29 +912,30 @@ test('SCP-01: the SHIPPED keys carrying the marker are the ones that authorize, 
 // --- model.effort.<role>: the per-role start rung, refused by key (RNG-02) ---
 
 test('check: a rung the role HAS is accepted', () => {
-  // `cad-verifier` carries medium/high/xhigh/max in lib/rung-agent.mjs.
+  // Every role carries every rung of the ladder in lib/rung-agent.mjs (RNG-06),
+  // so the accepted set is the same five for all six keys.
   assert.deepEqual(run(['check', 'model.effort.cad-verifier=xhigh']), { ok: true });
 });
 
 test('check: a rung the role LACKS is refused by key, naming that role\'s set', () => {
-  // `max` is a real rung of the ladder and a real value of OTHER roles' enums -
-  // which is why one uniform rung_order enum would have accepted it here and
-  // sent an unmapped rung down the dispatch path. cad-executor has two rungs.
-  const r = run(['check', 'model.effort.cad-executor=max']);
+  // Refused BY KEY, and the message names the set that key accepts. `ultra` is
+  // outside rung_order entirely: with the ladder complete no role LACKS a real
+  // rung any more, so the value that reaches this arm is one no role can file.
+  const r = run(['check', 'model.effort.cad-executor=ultra']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail.length, 1);
   assert.equal(r.detail[0].key, 'model.effort.cad-executor'); // BY KEY
-  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, null');
+  assert.equal(r.detail[0].error, 'must be one of: low, medium, high, xhigh, max, null');
 });
 
 test('check: null renders as the literal, not as a dangling separator', () => {
   // Every `default: null` enum ends its accepted set with null; Array#join
   // rendered it as '' and the message read "…: high, xhigh, " - a truncated
   // sentence rather than a settable value.
-  const r = run(['check', 'model.effort.cad-planner=medium']);
+  const r = run(['check', 'model.effort.cad-planner=ultra']);
   assert.equal(r.ok, false);
-  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, max, null');
+  assert.equal(r.detail[0].error, 'must be one of: low, medium, high, xhigh, max, null');
   assert.ok(!/,\s*$/.test(r.detail[0].error));
   // and the literal IS accepted, so the message is not advertising a fiction
   assert.deepEqual(run(['check', 'model.effort.cad-planner=null']), { ok: true });
@@ -947,12 +948,12 @@ test('set: the WRITE face refuses the same value and writes nothing', () => {
   const repo = join(dir, 'effort-write.json');
   writeFileSync(repo, JSON.stringify({ stakes: 'shipped' }, null, 2) + '\n');
   const before = readFileSync(repo, 'utf8');
-  const r = run(['set', '--file', repo, 'model.effort.cad-executor=max'],
+  const r = run(['set', '--file', repo, 'model.effort.cad-executor=ultra'],
     join(dir, 'effort-no-global.json'));
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail[0].key, 'model.effort.cad-executor');
-  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, null');
+  assert.equal(r.detail[0].error, 'must be one of: low, medium, high, xhigh, max, null');
   assert.equal(readFileSync(repo, 'utf8'), before); // byte-identical
 });
 
@@ -968,13 +969,13 @@ test('set: an accepted rung is written into the config layer, not the plugin', (
 
 test('validate: a whole config carrying a bad start rung names the key', () => {
   const repo = join(dir, 'effort-validate.json');
-  writeFileSync(repo, JSON.stringify({ model: { effort: { 'cad-plan-checker': 'max' } } }));
+  writeFileSync(repo, JSON.stringify({ model: { effort: { 'cad-plan-checker': 'ultra' } } }));
   const r = run(['validate', '--file', repo], join(dir, 'effort-no-global.json'));
   assert.equal(r.ok, false);
   assert.deepEqual(r.errors, [{
     key: 'model.effort.cad-plan-checker',
-    error: 'must be one of: low, medium, high, xhigh, null',
-    value: 'max',
+    error: 'must be one of: low, medium, high, xhigh, max, null',
+    value: 'ultra',
   }]);
 });
 
