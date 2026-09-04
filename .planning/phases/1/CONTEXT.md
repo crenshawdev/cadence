@@ -6,15 +6,26 @@ Feeds: /cad-plan 1
 ## Scope boundary
 
 In: the eleven missing rung agent files under `agents/`, their eleven
-`RUNG_FILES` entries in `cadence-core/bin/lib/rung-agent.mjs`, and their eleven
-byte ceilings in `cadence-core/bin/weight-budgets.json`. The gaps, measured by
+`RUNG_FILES` entries in `cadence-core/bin/lib/rung-agent.mjs`, their eleven
+byte ceilings in `cadence-core/bin/weight-budgets.json`, and the six
+`model.effort.*` enums in `cadence-core/config.schema.json`. The gaps, measured by
 reading the `effort:` line of all 19 existing files: `low` and `medium` for
 `cad-planner`, `cad-assumptions-analyzer` and `cad-executor`; `low` for
 `cad-verifier` and `cad-reviewer`; `max` for `cad-assumptions-analyzer`,
 `cad-executor` and `cad-plan-checker`.
 Out: renaming any existing agent file; any change to `route-table.json` cells,
-to the `stakes` key, or to config schema - those are phases 2 and 3. No new
-self-verify rule. No contract skill edits.
+to the `stakes` key, or to any config schema key OTHER than the six
+`model.effort.*` enums - those are phases 2 and 3. No new self-verify rule -
+narrowing check 8's existing arm per D-03 is not one. No contract skill edits.
+
+Amended 2026-09-04, after the `plan` review's first survivor. The enums were
+Out until the coupling was measured: `effortEnumIssues` in
+`cadence-core/bin/lib/rung-agent.mjs` holds each `model.effort.<role>` enum
+against `[...Object.keys(RUNG_FILES[role]), null]` element by element, so
+eleven map entries with the schema untouched produce six `effort-enum-drift`
+problems and AC3 (self-verify reports `ok: true`) is unreachable inside the
+original boundary. The enums are this phase's own subject, not phase 2 or 3
+work; every other schema key stays Out.
 Deferred: None.
 Plan shape: one plan.
 

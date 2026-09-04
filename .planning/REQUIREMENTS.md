@@ -14,6 +14,8 @@ ids from earlier cycles are rows under `## Shipped` below, and the ids under
 `## Deferred` keep their own reasons - none is promoted here to fill this
 section.
 
+- **RNG-06**: Every role offers every rung, so a user's effort choice is one uniform question per role rather than a per-role subset. The ladder is 19 of 30 files at HEAD, measured 2026-09-04 by reading the `effort:` line of every file in `agents/`: `cad-planner`, `cad-assumptions-analyzer` and `cad-executor` have no `low` and no `medium`; `cad-verifier` and `cad-reviewer` have no `low`; `cad-assumptions-analyzer`, `cad-executor` and `cad-plan-checker` have no `max`. Each missing cell becomes the same two-line pointer body its siblings carry, with its own `effort:` line and its role's contract skill preloaded, and `weight-budgets.json` gains a row per file in the same commit. The interview phase 3 introduces asks one question per role only if no role has to be explained as an exception. `GH-249` Phase 1.
+
 `v3.7.11 - unresolved inputs` opened 2026-09-02 and closed 2026-09-03. Three
 phases, four ids - `RNG-05` and `RSK-10` in phase 1, `RSK-11` in phase 2,
 `TRK-02` in phase 3 - are rows under the `Shipped` heading below, all four
@@ -511,6 +513,7 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| RNG-06 | Phase 1 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
