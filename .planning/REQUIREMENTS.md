@@ -20,8 +20,8 @@ from earlier cycles are rows under `## Shipped` below, and the ids under
 section.
 
 - **BAS-01**: The 3.x baseline that 4.0.0's go/no-go is judged against exists as a figure on disk rather than a memory. Prompt size per dispatch and main-thread context growth per phase, mined from the frozen record at `/projects/cadence-archive-v3.7.12/.planning/` - 3,619 lines / 933,844 bytes, 574 brackets over 118 `corr` values, spanning 2026-08-07 to 2026-09-05 - with every figure publishing its denominator and `unrecorded` never collapsing to zero. This is the one question that expires: once 3.x stops being what runs, it cannot be answered. `OQ-3` Phase 1.
-- **TSL-01**: Whether a conditional ToolSearch preamble is actually SKIPPED when the schema is already loaded is an observation, not an assumption, before that preamble is written into 28 skill files. Unconditional costs ~900 tokens per skill invocation and a context-to-plan-to-execute-to-verify run would pay ~3,600 for one useful load; measured on CLI 2.1.261, a repeat ToolSearch is not a no-op, costing 905 tokens against a first load of 914. The verdict decides the preamble's shape; writing the preamble itself is out of this phase. `OQ-1` Phase 1.
-- **TSL-02**: Whether loaded tool schemas survive a compaction is observed against one real compaction rather than inferred from the CLI carrying `preCompactDiscoveredTools` and a "carried from compact boundary" string. If they do not survive, a long phase pays the load again mid-run and the preamble must be reachable rather than one-shot. `OQ-2` Phase 1.
+- **TSL-01**: Whether a ToolSearch preamble is needed at all, and only then whether a conditional one is SKIPPED when the schema is already loaded, is an observation before that preamble is written into 28 skill files. Unconditional costs ~900 tokens per skill invocation and a context-to-plan-to-execute-to-verify run would pay ~3,600 for one useful load. On CLI 2.1.261 deferred tools were callable with no ToolSearch at all, including one MCP tool reaching its server, so necessity precedes cost. Answered against the phase 2 binary's own tool surface, not by proxy. `OQ-1` Phase 2.
+- **TSL-02**: Whether loaded tool schemas survive a compaction is observed against a real compaction WITH a paired never-loaded control, rather than inferred from the CLI carrying `preCompactDiscoveredTools` and a "carried from compact boundary" string. The 2026-09-05 attempt saw a pre-boundary tool stay callable, but its control stayed callable too, so it separates nothing. Answered against the phase 2 binary. `OQ-2` Phase 2.
 
 `v3.7.12 - what each role runs at` opened 2026-09-04 and closed 2026-09-05, the
 LAST 3.x release (4.0.0 is a Rust rewrite, decided 2026-09-05). Three phases,
@@ -536,8 +536,6 @@ section only, bounded at the next `## ` heading.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | BAS-01 | Phase 1 | Pending |
-| TSL-01 | Phase 1 | Pending |
-| TSL-02 | Phase 1 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its

@@ -3,56 +3,39 @@ phase: 1
 plan: 1
 requirements:
   - BAS-01
-  - TSL-01
-  - TSL-02
 files:
   - .planning/spikes/v3-baseline-dispatch-cost/SPIKE.md
-  - .planning/spikes/toolsearch-conditional-skip/SPIKE.md
-  - .planning/spikes/tools-survive-compaction/SPIKE.md
   - .planning/ROADMAP.md
   - docs/rationale/architecture-v4.md
 ---
 
-# Phase 1: The baseline and the two probes - Plan
+# Phase 1: The 3.x baseline - Plan
 
 ## Goal
 
-OQ-1, OQ-2 and OQ-3 are answered with observations rather than guesses, and the
-answers are written where phase 2 onward can read them.
+OQ-3 is answered with observations rather than guesses, and the answer is
+written where phase 2 onward can read it.
 
 ## Must be true when done
 
-- Three spike records exist under `.planning/spikes/`, one per open question,
-  each carrying exactly one `VERDICT:` line whose value is `validated`,
-  `invalidated` or `inconclusive`.
+- One spike record exists at
+  `.planning/spikes/v3-baseline-dispatch-cost/SPIKE.md`, carrying exactly one
+  `VERDICT:` line whose value is `validated`, `invalidated` or `inconclusive`.
 - The OQ-3 record states, for each of the six dispatched roles, a static
   `dispatchBytes` figure and a terminal `tokens` p75, each with the dispatch
   count it was computed over and the unrecorded count excluded from it.
 - The OQ-3 record states a per-phase-run coordinator byte figure for two
   populations - serial-only and all-phases - each with its n, and names the date
   range the reads corpus covers.
-- The OQ-1 record states, from an observed run, two token numbers: the cost of a
-  first `ToolSearch` load and the cost of a second `ToolSearch` for an
-  already-loaded schema. CONTEXT's AC6 admits no substitute, so a record carrying
-  `not yet observed` does NOT satisfy this truth - see the note below.
-- The OQ-2 record states, from one observed compaction, whether a tool loaded
-  before the boundary was still callable after it with no reload. CONTEXT's AC7
-  admits no substitute, on the same terms as AC6.
 
-A record that answers nothing is a PLACEHOLDER, never a completion, and the two
-tasks reach that state by different routes. Task 5 DISPATCHES its probe, so it
-is never blocked on a person: it writes `inconclusive` only when a step it ran
-could not answer - a preloaded wildcard subagent, say - with that reason and
-what would decide it. Task 6 needs a compaction nobody can force, so it stays
-blocked on John when none was observed, writing `inconclusive` with "not yet
-observed" so the executor has a defined action and never invents a result.
-Either way the truth above stays false until the observation lands, the task is
-reported BLOCKED rather than done, and the phase does not verify. That is the
-correct outcome: the question is unanswered.
+A record that answers nothing is a PLACEHOLDER, never a completion. Where the
+corpus cannot support a figure the record says so in place of the figure, the
+task is reported BLOCKED rather than done, and the phase does not verify. That
+is the correct outcome: the question is unanswered.
 - `.planning/ROADMAP.md`'s Open Questions section shows a verdict and a
-  spike-record path for each of OQ-1, OQ-2 and OQ-3, and the phrases "across one
-  real phase" and "on a real phase" no longer appear in the file, including
-  across a line wrap.
+  spike-record path for OQ-3, shows OQ-1 and OQ-2 reassigned to phase 2 with the
+  reason, and the phrases "across one real phase" and "on a real phase" no longer
+  appear in the file, including across a line wrap.
 - `docs/rationale/architecture-v4.md` carries the per-role and coordinator
   figures beside the go/no-go language in its section 7, with a citation to the
   spike record they came from.
@@ -71,48 +54,42 @@ offers that path first, but it sits inside the file lease tasks 1-4 declare, and
 a staged script there trips `lease-check`'s `undeclared-files` refusal. No
 analysis script is staged or committed by this phase.
 Every figure publishes its denominator and `unrecorded` stays distinct
-from a recorded zero (D-08). Out of scope: writing the ToolSearch preamble into
-any skill file - OQ-1's verdict decides whether and how, in a later phase.
+from a recorded zero (D-08). Out of scope: OQ-1 and OQ-2 entirely, along with
+the ToolSearch preamble text itself. Both questions were cut from this phase on
+2026-09-05 and reassigned to phase 2, where the skeleton binary's own tool
+surface answers them directly instead of by proxy.
 
 ## Tasks
 
-### Task 1: Write the three spike records' criteria before any observation exists
+### Task 1: Write the spike record's criteria before any observation exists
 
-- **Files:** `.planning/spikes/v3-baseline-dispatch-cost/SPIKE.md`,
-  `.planning/spikes/toolsearch-conditional-skip/SPIKE.md`,
-  `.planning/spikes/tools-survive-compaction/SPIKE.md`
-- **Action:** Create the three records, one per open question, using the slugs
-  named above (chosen here; D-09 fixes the count and the location but not the
-  spelling). Follow the shape of the TWO records named here, not a generalization
-  over the directory - of the nine records under `.planning/spikes/` only two
-  carry a `VERDICT:` line and three carry no `### C` heading at all, so
-  pattern-matching against an arbitrary neighbor gets the shape wrong. See
-  `.planning/spikes/host-effort-downgrade/SPIKE.md` for the heading set and
-  the single trailing `VERDICT:` line ONLY - it carries no `## Criteria` section
-  and no `### C` heading, and that absence is not the model here.
-  `.planning/spikes/maxturns-cap-behaviour/SPIKE.md` is the model for
-  `## Criteria, risk-first`, and that section is MANDATORY in all three records
-  regardless of how minimal the rest stays. Together they give: an `# Spike: <the question as a question>` heading, a `## Question`
-  section, a `## Decision that hinges on it` section, and a `## Criteria, risk-first`
+- **Files:** `.planning/spikes/v3-baseline-dispatch-cost/SPIKE.md`
+- **Action:** Create the record using the slug named above (chosen here; D-09
+  fixes the location but not the spelling). Follow the shape of the TWO records
+  named here, not a generalization over the directory - of the nine records
+  under `.planning/spikes/` only two carry a `VERDICT:` line and three carry no
+  `### C` heading at all, so pattern-matching against an arbitrary neighbor gets
+  the shape wrong. See `.planning/spikes/host-effort-downgrade/SPIKE.md` for the
+  heading set and the single trailing `VERDICT:` line ONLY - it carries no
+  `## Criteria` section and no `### C` heading, and that absence is not the
+  model here. `.planning/spikes/maxturns-cap-behaviour/SPIKE.md` is the model
+  for `## Criteria, risk-first`, and that section is MANDATORY regardless of how
+  minimal the rest stays. Together they give: an
+  `# Spike: <the question as a question>` heading, a `## Question` section, a
+  `## Decision that hinges on it` section, and a `## Criteria, risk-first`
   section whose `### C1`, `### C2` ... subsections each state Given/When/Then
   with the observable that decides validated and the opposite observation that
   decides invalidated (`cadence-core/workflows/spike.md` steps 2 and 3). Order
   the criteria so the assumption most likely to kill the answer is tested first.
-  Each `## Question` names its roadmap id - OQ-1, OQ-2, OQ-3 - so the ROADMAP
-  edit in task 7 has something to point at. Each `## Decision that hinges on it`
-  states what changes in phase 2 onward on each verdict: for OQ-1, whether a
-  conditional preamble is worth writing into 28 command skills at all; for OQ-2,
-  whether that preamble must be reachable mid-run rather than one-shot; for
-  OQ-3, what 4.0.0's go/no-go is judged against. Write NO `## Observation` body
-  and NO `VERDICT:` line in this task - the whole value of the ordering is that
-  the criteria are committed before the result exists and cannot be
-  rationalized backwards. Do not write the preamble text itself into any skill
-  file; that is out of scope for this phase.
-- **Verify:** Running `for f in .planning/spikes/{v3-baseline-dispatch-cost,toolsearch-conditional-skip,tools-survive-compaction}/SPIKE.md; do echo "$f"; grep -c '^### C' "$f"; grep -c '^VERDICT:' "$f"; done`
-  prints all three paths, a criteria count of at least 2 for each, and a
-  `VERDICT:` count of 0 for each; and `grep -l 'OQ-1' .planning/spikes/*/SPIKE.md`,
-  `grep -l 'OQ-2' ...`, `grep -l 'OQ-3' ...` each name exactly one of the three
-  new files.
+  The `## Question` names its roadmap id, OQ-3, so the ROADMAP edit in task 5
+  has something to point at. The `## Decision that hinges on it` states what
+  4.0.0's go/no-go is judged against. Write NO `## Observation` body and NO
+  `VERDICT:` line in this task - the whole value of the ordering is that the
+  criteria are committed before the result exists and cannot be rationalized
+  backwards.
+- **Verify:** `grep -c '^### C' .planning/spikes/v3-baseline-dispatch-cost/SPIKE.md`
+  prints at least 2, `grep -c '^VERDICT:' .planning/spikes/v3-baseline-dispatch-cost/SPIKE.md`
+  prints 0, and `grep -l 'OQ-3' .planning/spikes/*/SPIKE.md` names that file.
 
 ### Task 2: Record the per-role dispatch cost, static bytes and terminal token p75
 
@@ -245,152 +222,14 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
   `### C` criterion the file carries; and `grep -n 'capped\|Done (' ` on the file
   shows both caveats present in prose.
 
-### Task 5: Probe whether a conditional ToolSearch preamble gets skipped, and record OQ-1
-
-- **Files:** `.planning/spikes/toolsearch-conditional-skip/SPIKE.md`
-- **Action:** The probe is DISPATCHED, not handed to a person. It runs in three
-  steps and each one is observed from OUTSIDE the agent under test, by reading
-  its transcript under `/claude/.claude/projects/-code-cadence/`, never by asking
-  an agent to report on its own behaviour. A model cannot observe its own
-  skipping: it is the thing deciding, so its account of why it did not search is
-  a rationalization, not evidence.
-
-  STEP 1, preflight. Dispatch a `general-purpose` subagent and instruct it to
-  call one deferred MCP tool DIRECTLY, with no `ToolSearch` first. Read its
-  transcript: a `ToolSearch` it had to issue, or an `InputValidationError` naming
-  `ToolSearch`, means wildcard-tools subagents get their MCP tools DEFERRED and
-  steps 2 and 3 can run there. A clean first call means they get them PRELOADED,
-  the subagent route is dead for this question, and the verdict is `inconclusive`
-  with that as the reason and "a main-thread run under controlled surrounding
-  content" as what would decide it. Either answer also settles one of the design
-  doc's own section 9 open items; record it as such.
-
-  STEP 2, the two costs, only if step 1 said deferred. Dispatch a probe subagent
-  whose entire prompt is: call `ToolSearch` for tool X, then call `ToolSearch`
-  for tool X again, then return the single word `done`. Nothing else, no prose
-  between the calls. Read `cache_creation_input_tokens` on the turn FOLLOWING
-  each of the two calls in its transcript. The control is what makes the figures
-  comparable: `cache_creation` covers everything appended since the last cache
-  breakpoint, so any prose, tool result or system-reminder attachment riding one
-  turn and not the other lands in the figure as if it were schema cost.
-
-  Measured in this planning session on CLI 2.1.261, exactly that contamination
-  showed up: two `ToolSearch select:WebFetch` calls returned the full schema both
-  times, byte-identical and with no already-loaded notice, and the following-turn
-  `cache_creation` was 1,759 and 560 - a gap that is the paragraph of prose
-  riding the first call, not a schema saving. Record those two figures as a
-  CONTAMINATED PRIOR beside the design doc's 914/905, never as this probe's
-  result, and state that the design doc's pair was read by the same
-  uncontrolled method and inherits the same doubt.
-
-  What that session DID settle, and the record states it as observed on
-  2026-09-05 / CLI 2.1.261: a repeat `ToolSearch` for an already-loaded schema is
-  not a no-op - the full schema comes back again with no already-loaded notice.
-  That is the design doc's qualitative claim, now observed.
-
-  STEP 3, the skip. Dispatch TWO subagents with prompts identical in every byte
-  except the preamble: one unconditional ("ToolSearch `select:` excerpt_read,
-  then ..."), one conditional ("if `excerpt_read` is not in your loaded tools,
-  ToolSearch `select:` it, then ..."), both given the same task that needs the
-  tool, and both run twice so the tool is already loaded on the second run.
-  Count `ToolSearch` tool_use rows in each transcript. A skip is the conditional
-  arm issuing FEWER searches on its second run than the unconditional arm; equal
-  counts mean no skip. That count is the observation - not any agent's statement
-  about what it did.
-
-  Record the CLI version every step ran on: section 4 of
-  `docs/rationale/architecture-v4.md` pins its measured facts to CLI 2.1.261 and
-  a probe that cannot name its host cannot be compared to them. The doc's 914 and
-  905 are the PRIOR this probe tests, never a result, and they belong only in a
-  section headed as prior.
-
-  A step that could not run is `inconclusive` for that step, with the reason and
-  what would decide it - never a verdict borrowed from the design doc's strings.
-  Write one observed result per criterion from task 1 and one `VERDICT:` line.
-  Record the standing constraint the verdict has to be actionable against: an
-  unconditional preamble in all 28 command skills would cross 28 pinned ceilings
-  in `cadence-core/bin/weight-budgets.json` at once, enforced by
-  `cadence-core/bin/self-verify.mjs`. Do NOT add the preamble to any skill file,
-  to `weight-budgets.json`, or to any workflow - this phase decides the shape, a
-  later phase writes it.
-- **Verify:** `grep -c '^VERDICT:' .planning/spikes/toolsearch-conditional-skip/SPIKE.md`
-  returns 1. Every token figure and every stated skip/no-skip outcome carries its
-  provenance beside it, in one of exactly three forms - "observed <date>, CLI
-  <version>", "cited from `docs/rationale/architecture-v4.md` section 4", or
-  "contaminated prior, uncontrolled surrounding content" - so a transcribed
-  design-doc figure cannot be read as an observed one and the 1,759/560 pair
-  cannot be read as a clean first-vs-repeat delta. The record names, per step,
-  the agent type dispatched and the transcript path the count or figure was read
-  from, so every claim is re-checkable from disk without re-running the probe.
-  The step 1 answer - deferred or preloaded for a wildcard-tools subagent -
-  appears explicitly, since it also settles a section 9 open item. If the verdict
-  is not `inconclusive`, the file carries two distinct integer token figures
-  labeled first-load and repeat-load in the observed form, plus the two
-  `ToolSearch` counts step 3 compared. And
-  `git grep -l 'ToolSearch' -- skills/ cadence-core/workflows/` returns nothing,
-  proving no preamble leaked into the shipped surface.
-
-### Task 6: Observe one compaction and record whether loaded tools survive it, OQ-2
-
-- **Files:** `.planning/spikes/tools-survive-compaction/SPIKE.md`
-- **Action:** JOHN is the operator: he observes ONE compaction in a live Claude
-  Code CLI session and supplies what he saw. A subagent cannot do this - it
-  cannot force a compaction and, per section 4 of
-  `docs/rationale/architecture-v4.md`, never has a deferred tool to lose. The
-  executor writes the record's `## Observation` section by transcribing John's
-  account VERBATIM and writes nothing into the post-boundary result field from
-  any other source. A supplied observation reaches the executor exactly one of
-  two ways: a block John has appended to this record under an `## Observation`
-  heading before the dispatch, or observation text carried in the executor's own
-  dispatch prompt. If neither carries one, take the inconclusive path - do not
-  go looking for the account anywhere else. If no observation is supplied in this run, the `VERDICT:` is
-  `inconclusive` with "not yet observed" as its reason, the result field stays
-  empty, and the design doc's `[guess] loaded tools survive compaction` line is
-  cited in a section headed as prior - as the expectation being tested, never as
-  a result. The sequence the observation needs: before
-  the boundary, load a deferred MCP tool schema via `ToolSearch` and call that
-  tool successfully; let the session compact; after the boundary, call the SAME
-  tool with no intervening `ToolSearch`. Record the CLI version, the tool used,
-  and the post-boundary call's actual result - specifically whether it succeeded
-  or returned the `InputValidationError` naming `ToolSearch` that section 4 of
-  `docs/rationale/architecture-v4.md` records as the soft failure mode for
-  calling a deferred tool unloaded; that failure mode is the design doc's
-  prediction and goes in the prior section, so the result field carries only what
-  John reports coming back. State whether the CLI's
-  `preCompactDiscoveredTools` and "carried from compact boundary" strings, which
-  are the suggestive evidence this question exists to replace, agree with what
-  was observed. Write one observed result per criterion from task 1 and one
-  `VERDICT:` line. If the compaction could not be induced in one session, that is
-  `inconclusive` with the reason and what would decide it, not a verdict borrowed
-  from the CLI strings.
-- **Verify:** human-verify - needs a live Claude Code CLI session that actually
-  compacts, which cannot be forced from a subagent. John should confirm the
-  record describes the compaction he saw and that the post-boundary call's stated
-  result is what actually came back. Mechanically:
-  `grep -c '^VERDICT:' .planning/spikes/tools-survive-compaction/SPIKE.md`
-  returns 1, and the post-boundary result and every survival claim in the file
-  carry their provenance beside them, in
-  one of exactly two forms - "observed <date>, CLI <version>" or "cited from
-  `docs/rationale/architecture-v4.md` section 4" - so a transcribed prediction
-  cannot be read as an observation. If the verdict is not `inconclusive`, the
-  file carries a CLI version string plus one sentence stating
-  survived or did not survive with the post-boundary call's result quoted, both
-  in the observed form. An `inconclusive` verdict comes in two kinds and the
-  record must say which. NOT ATTEMPTED: the reason reads "not yet observed" and
-  nothing in the file carries the observed form. ATTEMPTED, NO COMPACTION: the
-  reason names what happened and what would decide it, the file DOES carry
-  observed-form provenance for the CLI version and the successful pre-boundary
-  call, and the post-boundary result field stays empty because there was no
-  boundary to call across. Rejecting the second kind would force John's truthful
-  account to be replaced by "not yet observed" to pass.
-
-### Task 7: Land the three verdicts in the ROADMAP's Open Questions section
+### Task 5: Land the OQ-3 verdict in the ROADMAP's Open Questions section
 
 - **Files:** `.planning/ROADMAP.md`
 - **Action:** Edit the `## Open Questions` section in place. Replace each of the
-  OQ-1, OQ-2 and OQ-3 bullets with its verdict plus the repository path to its
-  spike record, keeping the `**OQ-N - <question>**` bullet form the section
-  already uses so the block stays readable as a list of settled questions. This
+  OQ-3 bullet with its verdict plus the repository path to its spike record, and
+  rewrite the OQ-1 and OQ-2 bullets to state that both are reassigned to phase 2
+  and why, keeping the `**OQ-N - <question>**` bullet form the section already
+  uses so the block stays readable as a list. This
   tracked prose citation is the only mechanism that reaches phase 2 - nothing in
   `cadence-core/bin` parses a SPIKE.md and the records are not phase-linked
   (D-04). Then correct the two sentences the mined-baseline scope makes false:
@@ -408,12 +247,13 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
 - **Verify:** `tr '\n' ' ' < .planning/ROADMAP.md | grep -o 'across one real phase\|on a real phase'`
   prints nothing; and the `## Open Questions` section FLATTENED the same way -
   `sed -n '/^## Open Questions/,/^## Phases/p' .planning/ROADMAP.md | tr '\n' ' '` -
-  contains all three `spikes/<slug>/SPIKE.md` paths and three verdict words drawn
-  from `validated`, `invalidated`, `inconclusive`. Do not require a path and its
+  contains the `spikes/v3-baseline-dispatch-cost/SPIKE.md` path and one verdict
+  word drawn from `validated`, `invalidated`, `inconclusive`, and mentions
+  `Phase 2` in both the OQ-1 and OQ-2 bullets. Do not require a path and its
   verdict on the same physical line: the wrap that hid "on a real phase" will
   separate them in any correctly rewrapped bullet.
 
-### Task 8: Carry the baseline figures into the architecture doc beside the go/no-go
+### Task 6: Carry the baseline figures into the architecture doc beside the go/no-go
 
 - **Files:** `docs/rationale/architecture-v4.md`
 - **Action:** The doc is tracked in git as of the move on 2026-09-05, so a bad
@@ -459,31 +299,34 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
 ## Notes
 
 - Plan shape honors the CONTEXT directive: one plan. The file-independence test
-  agrees - tasks 2, 3 and 4 all write
-  `.planning/spikes/v3-baseline-dispatch-cost/SPIKE.md`, and tasks 7 and 8
-  cannot start until every verdict from tasks 4, 5 and 6 exists. No independent
-  slice exists to split out.
-- Requirement coverage, as declared in the frontmatter: `BAS-01` covers tasks 2,
-  3, 4 and 8; `TSL-01` covers tasks 1, 5 and 7; `TSL-02` covers tasks 1, 6 and 7.
-  All three are
-  live in `.planning/REQUIREMENTS.md`'s `## Active` section under the 4.0.0
-  cycle. Do not strip the frontmatter list.
+  agrees - tasks 1, 2, 3 and 4 all write
+  `.planning/spikes/v3-baseline-dispatch-cost/SPIKE.md`, and tasks 5 and 6
+  cannot start until task 4's verdict exists. No independent slice exists to
+  split out.
+- Requirement coverage, as declared in the frontmatter: `BAS-01` covers every
+  task in this plan. It is live in `.planning/REQUIREMENTS.md`'s `## Active`
+  section under the 4.0.0 cycle. Do not strip the frontmatter list.
+- OQ-1 and OQ-2 were cut from this phase on 2026-09-05 and reassigned to phase
+  2, and `TSL-01` and `TSL-02` were repointed there with them. The probes that
+  answered them here were proxies for an observation phase 2 makes directly:
+  once the skeleton binary serves a real tool surface, whether its tools arrive
+  deferred is watched against the binary rather than against `WebFetch`. A
+  session-scoped check on CLI 2.1.261 also found deferred tools callable with no
+  `ToolSearch` at all, including one MCP tool, which puts the preamble those
+  probes were sizing in question before its cost is worth measuring.
 - `docs/rationale/architecture-v4.md` moved into this repository on 2026-09-05,
-  from `/projects/cadence-v4-architecture.md`. Task 8's change therefore DOES
+  from `/projects/cadence-v4-architecture.md`. Task 6's change therefore DOES
   land in a commit and IS confirmable by a diff, and the file is inside
   `lease-check`'s reach - it is declared in this plan's `files:`, so a stray
-  edit is refused rather than silent. Keep the edit to what task 8 states.
+  edit is refused rather than silent. Keep the edit to what task 6 states.
 - CONTEXT's D-07 cites 3,823 coordinator rows with 96% attribution. Measured
   during planning, that is the LIVE `reads.jsonl` alone; `reads.1.jsonl` holds
   16,131 more, for 19,954 across the two files D-07 requires parsing. Task 3
   publishes its own both-files denominators rather than carrying the live-file
   figure forward.
-- Three corrections were noticed and deliberately NOT planned, because no locked
-  decision authorizes them and they are the human's call, not the executor's:
-  (1) `.planning/ROADMAP.md`'s Phase 1 detail says "Its output is a spike record
-  with three verdicts", which D-09's three one-verdict records makes false, but
-  D-04 licenses exactly two sentence corrections and this is not one of them;
-  (2) `docs/rationale/architecture-v4.md`'s section 7 heading reads "(no data;
-  tagged)" and will contain measured data after task 8; (3) that document's
-  section 9 carries the OQ-1 and OQ-2 questions as "(design) ... not observed",
-  which tasks 5 and 6 answer, but D-10 covers only the AC3 and AC4 figures.
+- One correction was noticed and deliberately NOT planned, because no locked
+  decision authorizes it and it is the human's call, not the executor's:
+  `docs/rationale/architecture-v4.md`'s section 7 heading reads "(no data;
+  tagged)" and will contain measured data after task 6. That document's section
+  9 carries OQ-1 and OQ-2 as "(design) ... not observed", which stays accurate
+  now that both are reassigned to phase 2.

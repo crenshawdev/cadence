@@ -34,11 +34,12 @@ zero-dependency ethos is revoked for the Rust codebase and replaced by a
 Cargo.lock-pinned offline cross-compile from one CI job.
 
 **The order, and why it is this order.** Phase 1 is a spike and it runs first
-because two of its three questions cannot be answered later. The 3.x baseline
-for prompt size per dispatch and main-thread context growth per phase is the
-go/no-go the rewrite is judged on, and it can only be measured while 3.x is
-still the thing that runs. The two deferral probes decide the shape of a
-preamble that would otherwise be written into 28 skill files twice. Phase 2
+because its question expires. The 3.x baseline for prompt size per dispatch and
+main-thread context growth per phase is the go/no-go the rewrite is judged on,
+and it can only be measured while 3.x is still the thing that runs. The two
+deferral questions started here and moved to phase 2 on 2026-09-05: they were
+being answered by proxy, and phase 2's skeleton binary answers them against a
+real tool surface instead. Phase 2
 seeds the crate from excerpt, which already carries rmcp, tree-sitter, the
 ripgrep crates, the PreToolUse hook and the cross-compile CI, so the skeleton
 is a move rather than a greenfield. Phase 3 builds the golden harness before
@@ -55,21 +56,24 @@ triaged by hand and are not carried into these phases.
 
 ## Open Questions
 
-- **OQ-1 - does a conditional ToolSearch preamble get skipped when the schema
-  is already loaded.** The deferral constraint means every command skill needs
-  a load preamble, not just one, because users enter at `/cad-context`,
-  `/cad-task`, `/cad-debug` and `/cad-adopt`. Unconditional costs about 900
-  tokens per skill invocation, so a context to plan to execute to verify run
-  would pay roughly 3,600 tokens for one useful load. Phrasing it
-  conditionally only helps if the model actually skips. Untested, and it goes
-  into 28 files either way, so it is answered in phase 1 before it is written
-  anywhere. Measured facts behind it are CLI 2.1.261: a repeat ToolSearch is
-  not a no-op, costing 905 tokens against a first load of 914.
-- **OQ-2 - do loaded tools survive compaction.** The CLI carries
-  `preCompactDiscoveredTools` and a "carried from compact boundary" string,
-  which is suggestive and not an observation. If they do not survive, a long
-  phase pays the load again mid-run and the preamble has to be reachable rather
-  than one-shot. Observe one compaction in phase 1.
+- **OQ-1 - is a ToolSearch preamble needed at all, and if so does a conditional
+  one get skipped when the schema is already loaded.** Moved to phase 2 on
+  2026-09-05. The original question assumed the preamble was required and only
+  asked what it costs: unconditional, about 900 tokens per skill invocation
+  across `/cad-context`, `/cad-task`, `/cad-debug` and `/cad-adopt`, so roughly
+  3,600 tokens per run for one useful load. A session-scoped check on CLI
+  2.1.261 then found deferred tools callable with no `ToolSearch` at all,
+  including one MCP tool reaching its server, so whether the preamble is needed
+  now comes before what it costs. Phase 2's skeleton binary serves a real tool
+  surface, which answers both directly instead of by proxy.
+- **OQ-2 - do loaded tools survive compaction.** Moved to phase 2 on 2026-09-05.
+  The CLI carries `preCompactDiscoveredTools` and a "carried from compact
+  boundary" string, which is suggestive and not an observation. A compaction was
+  observed on 2026-09-05 and a tool loaded before the boundary was callable
+  after it, but the paired negative control failed: a tool never loaded was
+  callable too, so the observation does not separate survival from the
+  enforcement simply being off. It is answered against the binary in phase 2,
+  where an unloaded tool has a defined failure to compare against.
 - **OQ-3 - what the 3.x baseline actually is.** Prompt size per invocation and
   main-thread context growth per phase, measured on the shipped 3.7.12 tree
   across one real phase. Without it, 4.0.0 has nothing to be judged against and
@@ -78,23 +82,22 @@ triaged by hand and are not carried into these phases.
 
 ## Phases
 
-- [ ] **Phase 1: The baseline and the two probes** - measure 3.x while it still runs, and answer OQ-1, OQ-2, OQ-3
-- [ ] **Phase 2: The crate skeleton** - a named binary that builds, cross-compiles, serves an empty tool surface and installs itself
+- [ ] **Phase 1: The 3.x baseline** - measure 3.x while it still runs, and answer OQ-3
+- [ ] **Phase 2: The crate skeleton** - a named binary that builds, cross-compiles, serves an empty tool surface, installs itself, and settles OQ-1 and OQ-2 against that surface
 - [ ] **Phase 3: The golden harness** - fixtures at the frozen tag and a Rust test that diffs the binary against recorded JavaScript output
 - [ ] **Phase 4: One vertical slice** - `/cad-execute` end to end, the shape every other command follows
 
 ## Phase Details
 
-### Phase 1: The baseline and the two probes
+### Phase 1: The 3.x baseline
 
-**Goal.** OQ-1, OQ-2 and OQ-3 are answered with observations rather than
-guesses, and the answers are written where phase 2 onward can read them.
+**Goal.** OQ-3 is answered with observations rather than guesses, and the answer
+is written where phase 2 onward can read it.
 
-A spike, not a code change. It measures the shipped 3.7.12 tree on a real
-phase, records prompt size per dispatch and main-thread growth per phase, and
-runs the two deferral probes against the current CLI. It writes no Rust and
-changes no behavior. Its output is a spike record with three verdicts, each
-`validated`, `invalidated` or `inconclusive`.
+A spike, not a code change. It mines the shipped 3.7.12 record for prompt size
+per dispatch and main-thread growth per phase. It writes no Rust and changes no
+behavior. Its output is one spike record carrying one verdict, `validated`,
+`invalidated` or `inconclusive`.
 
 ### Phase 2: The crate skeleton
 
@@ -105,6 +108,11 @@ Seeded from excerpt, which already carries the dependency set and the CI. Adds
 the binary's name, the typed envelope vocabulary from section 3a of the design
 doc, and the POSIX shell SessionStart bootstrap that fetches the platform
 release and verifies its checksum. No domain modules yet.
+
+The tool surface it serves is also what settles OQ-1 and OQ-2. Once the binary
+publishes real tools, whether they arrive deferred in a main thread is watched
+directly, with a never-loaded tool as the paired control, rather than inferred
+from a built-in standing in for them.
 
 ### Phase 3: The golden harness
 
