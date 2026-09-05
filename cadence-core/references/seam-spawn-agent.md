@@ -248,10 +248,6 @@ A raise floors the RUNG too: a configured `model.effort` rung below the floored
 cell's rung does not apply and `reason` says so, for post-plan roles only. A
 scope that took the discount keeps its configured rung.
 
-`route.mjs replay` answers what the floor does to this project's own phases -
-one row per phase directory, live and archived, today's level against the
-computed one and the evidence behind any raise, regression list always present.
-
 `--phase <N>` decides which phase the floor reads, the `.planning/STATE.md`
 cursor decides it when the flag is absent, and a MALFORMED `--phase` is refused
 - the alternative is a floor off another phase's files. `--plan <k>` narrows the

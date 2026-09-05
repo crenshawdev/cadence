@@ -1301,16 +1301,6 @@ export const CONTRACTS = {
       // opposite arms, the union versus fail-closed.
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
     },
-    // `replay` answers what the floor does to a project's own phases, live and
-    // archived. ONE flag, spelled exactly as `resolve`'s `--file` is, for the
-    // same reason: it reaches `dirname()` on the way to the layer read, and
-    // defaulting a valueless one to `.planning/config.json` would answer about a
-    // tree the caller never named. No `--role` and no `--phase` - the floor
-    // differs by role only through the pre-plan exemption, and the answer is
-    // every phase directory there is.
-    replay: {
-      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-    },
     table: {},
   },
   'worktree-base.mjs': {

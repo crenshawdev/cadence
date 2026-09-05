@@ -654,11 +654,19 @@ test('route: a retired risk.override is named by both faces, and routes nothing'
   const r = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', fx.repoFile, '--phase', '9'], fx);
   assert.equal(r.ok, true);
-  // `stakes: solo` is a FLOOR, and the declared `src/auth/session.rs` raises off
-  // it - this is the plan-time floor, not the waiver, and the level here is what
-  // the floor alone yields.
-  assert.equal(r.stakes, 'shipped');
-  assert.equal(r.model, 'opus');
+  // The declared `src/auth/session.rs` raises the floor, whose whole effect is
+  // the plan gate and the deep-verify pass - this is the plan-time floor, not
+  // the waiver, and the model and the rung are deliberately not among the
+  // things it moves.
+  assert.equal(r.review.plan, 'blocking');
+  assert.equal(r.verify, 'on');
+  const clear = layers({ global: {}, repo: { stakes: 'solo' } });
+  planFiles(clear, 9, ['README.md']);
+  const q = seam('route.mjs',
+    ['resolve', '--role', 'cad-executor', '--file', clear.repoFile, '--phase', '9'], clear);
+  assert.equal(q.review.plan, 'advisory', 'the clean fixture is the comparison, so it must be clean');
+  assert.equal(r.model, q.model);
+  assert.equal(r.effort, q.effort);
   assert.ok(r.reason.some((x) => /^risk floor: .*touches auth/.test(x)), JSON.stringify(r.reason));
   const named = (r.warnings || []).filter((w) => w.includes('risk.override.auth'));
   assert.ok(named.length >= 1, JSON.stringify(r.warnings));
