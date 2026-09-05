@@ -54,3 +54,7 @@ scratch/
 # ignoring these copies at exactly the moment they get staged. The same reason
 # covers tasks/<name>/ and spikes/<name>/, which are tracked trees too.
 /.planning/**/triage-work/
+
+# Cargo build output. Not just large - excerpt's own target/ measured 8.0G
+# on 2026-09-05 - but wholly derived from Cargo.lock and the sources beside it.
+target/

@@ -1,0 +1,54 @@
+[package]
+name = "cadence"
+version = "3.7.12"
+edition = "2024"
+license = "MIT"
+description = "The Cadence plan/execute/verify loop, served over MCP stdio."
+repository = "https://github.com/crenshawdev/cadence"
+rust-version = "1.90"
+# Not published to crates.io: the name is taken by an unrelated crate, and
+# Cadence ships as a GitHub release archive instead (D-03). This is belt and
+# braces on top of that - a stray `cargo publish` refuses rather than errors
+# out at the registry.
+publish = false
+
+# Copied whole from excerpt (D-10). Phase 1 calls rmcp, tokio, serde,
+# serde_json, schemars and clap; the parser, search and walk crates are here
+# because the fold-in that needs them is the point of the rewrite, and pinning
+# them once beside the versions excerpt already builds against is cheaper than
+# re-resolving the set per module. The cost is a tree-sitter C compile on every
+# cold build.
+[dependencies]
+rmcp = { version = "3.2.0", features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+serde = { version = "1", features = ["derive"] }
+# `preserve_order` keeps every key a file already had in the order it had them,
+# and `float_roundtrip` keeps a float this crate does not own byte-identical
+# through a parse and re-serialize. Nothing in phase 1 rewrites a JSON file it
+# did not author, so neither feature is load-bearing yet; they are declared here
+# rather than later because the config and record layers that will do exactly
+# that must not inherit them from a transitive enable another crate could drop.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+schemars = "1"
+clap = { version = "4", features = ["derive", "env"] }
+libc = "0.2"
+tree-sitter = "0.27.0"
+tree-sitter-javascript = "0.25.0"
+# Default features only. The `parser` feature is this crate's one optional
+# dependency and it pulls tree-sitter 0.26 in beside 0.27 - two copies of the
+# parser library in one binary - to gate a `MarkdownParser` wrapper that is not
+# used: the block grammar's `LANGUAGE` is set on our own parser.
+tree-sitter-md = { version = "0.5.3", default-features = false }
+tree-sitter-rust = "0.24.2"
+tree-sitter-python = "0.25.0"
+tree-sitter-json = "0.24.8"
+# ripgrep as a LIBRARY, never as a spawned `rg` binary: Cadence ships one
+# static binary per target with no runtime dependency, and an external binary
+# it has to find is an external binary it can fail to find.
+grep-searcher = "0.1.17"
+grep-regex = "0.1.14"
+grep-matcher = "0.1.9"
+# The walk and the scope filter. `ignore` is ripgrep's own traversal, so
+# `.gitignore` and `.ignore` semantics match what a user already expects.
+ignore = "0.4.33"
+globset = "0.4.20"
