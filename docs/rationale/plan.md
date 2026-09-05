@@ -27,9 +27,10 @@ the number would only be choosing to be told later.
 ## parse - why the plan gate is not in the config batch
 
 `fire(trigger)` takes every gate from the routing bundle (`route.mjs resolve`),
-which is what makes the stakes level reach a fire site rather than only the
+which is what makes the schema's own default - and the plan-time risk floor that
+raises the `plan` gate over it - reach a fire site rather than only the
 seam. A `config.mjs get` of a gate is not a source for one either way: unset, it
-answers `null` and names `route.mjs resolve` as where the level's gate is
+answers `null` and names `route.mjs resolve` as where the gate is
 resolved. Adding the gate to the batch would create a second, staler answer to a
 question the bundle already answers.
 

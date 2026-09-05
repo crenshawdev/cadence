@@ -101,7 +101,7 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REASON_TOKENS = Object.freeze([
   'archive-root-unusable', 'auto-close-off', 'bad-args', 'bad-command', 'bad-date',
   'bad-json', 'bad-payload', 'bad-provider', 'bad-query', 'bad-result', 'bad-schema',
-  'bad-shape', 'bad-status', 'bad-table', 'cannot-derive', 'carry-dest-unusable',
+  'bad-shape', 'bad-status', 'cannot-derive', 'carry-dest-unusable',
   'carry-exists', 'census-at-risk', 'collision', 'config-parse-failed', 'create-failed',
   'git-failed', 'http', 'invalid', 'line-count-drift', 'missing-file', 'no-cursor', 'no-diff',
   'no-git', 'no-key', 'no-output', 'no-payload', 'no-phase-dir', 'no-plan', 'no-planning-dir',

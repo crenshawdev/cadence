@@ -19,7 +19,7 @@
 // A keyed suggestion also names WHICH WAY to move the key and what it holds now
 // (SGT-01), and that is why `suggestFromRender` takes a second argument. The
 // values behind those keys live on disk - the merged config layers, the gate
-// ladder in `route-table.json`, the resolved task ceiling - and reading them
+// ladder in `config.schema.json`, the resolved task ceiling - and reading them
 // here would end the purity above. So the CALLER resolves them and passes them
 // in: `planning.mjs`'s `suggest` arm owns every read, this file owns every
 // rule, and the argument is optional so a test can still call
@@ -33,7 +33,7 @@
  *            action: string|null, direction?: 'raise'|'lower',
  *            current?: any, proposed?: any}} Suggestion
  * @typedef {{values?: Record<string, any>, gates?: string[], rungs?: string[],
- *            stakes?: string|null, checkpointTasks?: (number|null)[]}} Resolution
+ *            checkpointTasks?: (number|null)[]}} Resolution
  * @typedef {{counts: Record<string, number>,
  *            roles: Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>,
  *            events: any[],
@@ -152,8 +152,8 @@ function minutes(ms) {
 /**
  * The value a config layer (or the caller's schema-default fallback) holds for
  * `key`, or `undefined` when nothing does. `null` reads as nothing on purpose:
- * that is the schema sentinel for "no layer pins this, the stakes level decides
- * it", not a value anybody set.
+ * on the keys this seam names it is the sentinel for "no layer pins this", not
+ * a value anybody set.
  * @param {Resolution|undefined} resolution
  * @param {string} key
  */
@@ -168,21 +168,19 @@ function resolved(resolution, key) {
 
 /**
  * What an unset key prints as `current`: the refusal `config.mjs get` makes, in
- * the same words and for the same reason (D-06). It names the DECIDER - the
- * stakes level the record carries - and never the value that level would fire,
- * because printing an effective value invites the user to set it and pin the
- * key at every level, which is the pinning the schema's own purpose text warns
- * about. A record carrying no `routing/resolve` event names no level rather
- * than one it does not carry.
- * @param {Resolution|undefined} resolution
+ * the same words and for the same reason (D-06). It names the DECIDER and never
+ * the value that decider would fire, because printing an effective value
+ * invites the user to set it and pin a key the schema is already answering.
+ *
+ * The decider used to be the routing LEVEL the record carried, interpolated
+ * into the sentence. That level is gone and the schema's own default is what
+ * answers, so the sentence names that instead - and takes no `resolution`
+ * reading at all, because every historical `routing/resolve` row still carries
+ * the retired level string that the resolver no longer produces, and rendering
+ * it would name a decider that does not decide (D-05).
  */
-function unsetCurrent(resolution) {
-  const level = resolution && typeof resolution.stakes === 'string' && resolution.stakes.trim()
-    ? resolution.stakes.trim()
-    : null;
-  return level
-    ? `unset: no config layer pins this, so the stakes level (${level}) decides it`
-    : 'unset: no config layer pins this, so the stakes level decides it';
+function unsetCurrent() {
+  return 'unset: no config layer pins this, so the schema default decides it';
 }
 
 /**
@@ -198,7 +196,7 @@ function keyState(resolution, key, target) {
   const value = resolved(resolution, key);
   const proposed = value === undefined || !target ? undefined : target(value);
   return {
-    current: value === undefined ? unsetCurrent(resolution) : value,
+    current: value === undefined ? unsetCurrent() : value,
     ...(proposed === undefined ? {} : { proposed }),
   };
 }
@@ -227,7 +225,7 @@ function raiseTarget(resolution, key, rung) {
 }
 
 /**
- * One step DOWN the gate ladder `route-table.json` states, or `undefined` when
+ * One step DOWN the gate ladder `config.schema.json` states, or `undefined` when
  * there is no ladder, the value is not on it, or it is already the bottom rung.
  * The ladder is the caller's: an absent one omits `proposed`, and that omission
  * IS the report - no ladder is substituted from memory here.

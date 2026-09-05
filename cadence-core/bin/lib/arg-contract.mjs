@@ -879,9 +879,9 @@ export const CONTRACTS = {
       // homes only, so a member written under a task slug would be created
       // successfully and then never found - a deferred fire that reports queued
       // and is permanently unadjudicated. A task's only gate is `risk_surface`,
-      // which is `blocking` at every stakes level and never resolves
-      // `deferred`, so nothing is lost by refusing the shape outright rather
-      // than widening a reader this change does not touch.
+      // whose schema default is `blocking` and never `deferred`, so nothing is
+      // lost by refusing the shape outright rather than widening a reader this
+      // change does not touch.
     },
     // THE QUEUE AS A WHOLE: every member with no `ADJUDICATION` sibling, across
     // both homes. `--phase` is OPTIONAL here and required on every sibling row
@@ -1144,11 +1144,20 @@ export const CONTRACTS = {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `--global` sits on all three faces that take a file, with the same
-    // grammar on each. It was live on `get` and declared only on its two
-    // siblings, and self-verify was green solely because no workflow prose
-    // spelled the pair - so correct prose naming it would have been reported
-    // `unknown-flag` against a flag the seam accepts.
+    // `unset` selects its layer exactly as `set` does, and the row has to exist
+    // rather than merely be accepted: `optFile` READS the declaration, so a
+    // subcommand taking these flags without declaring them is not expressible
+    // here (see the `get` note below for the class). The keys it removes are
+    // positional words, so there is no third row.
+    unset: {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    // `--global` sits on every face that takes a file, with the same grammar on
+    // each. It was live on `get` and declared only on its siblings, and
+    // self-verify was green solely because no workflow prose spelled the pair -
+    // so correct prose naming it would have been reported `unknown-flag`
+    // against a flag the seam accepts.
     get: {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
@@ -1301,17 +1310,6 @@ export const CONTRACTS = {
       // opposite arms, the union versus fail-closed.
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
     },
-    // `replay` answers what the floor does to a project's own phases, live and
-    // archived. ONE flag, spelled exactly as `resolve`'s `--file` is, for the
-    // same reason: it reaches `dirname()` on the way to the layer read, and
-    // defaulting a valueless one to `.planning/config.json` would answer about a
-    // tree the caller never named. No `--role` and no `--phase` - the floor
-    // differs by role only through the pre-plan exemption, and the answer is
-    // every phase directory there is.
-    replay: {
-      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-    },
-    table: {},
   },
   'worktree-base.mjs': {
     '*': {

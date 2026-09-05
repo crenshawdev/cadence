@@ -233,7 +233,7 @@ status: gaps | score: 5/7 | passes 4, gaps 2, human checks 1
 - Batch independent probes: greps, globs and reads whose target does not
   depend on another's result go out in ONE message, never one-then-wait. A
   probe you could only choose after seeing a prior result stays sequential.
-- When `mcp__excerpt__excerpt_read` and `mcp__excerpt__excerpt_search` are on your tool list, prefer them over built-in Read and Grep for every read and search here; when they are absent, the built-ins are the path, not a reason to stop.
+- When `mcp__excerpt__excerpt_read` and `mcp__excerpt__excerpt_search` are on your tool list, prefer them over built-in Read and Grep for every read and search here, and prefer `excerpt_search` over shell `grep`/`rg` for code search - the shell channel is not an exemption; when they are absent, the built-ins are the path, not a reason to stop.
 - To orient in a JS/TS file over ~20 KB, read it through `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/skim.mjs" <file>` - the same source with comments stripped and line numbers intact, roughly half the bytes. Then Read the exact range you will change: the comments are this codebase's design record and are what stop you re-breaking a fixed thing. Skim to find, Read to change.
 - Do not start services, mutate state, or touch the network.
 </guardrails>

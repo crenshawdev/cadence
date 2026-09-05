@@ -7,7 +7,7 @@
 // #43, #64): route.mjs would name a file the linter never looked for.
 //
 // RUNG_FILES is the whole mapping story - a stated table, not a naming
-// convention, because no convention is true of all 19 files.
+// convention, because no convention is true of all 30 files.
 // `rungBody`/`normalizeBody`/`rungBodyIssue` beside it state the one legitimate
 // BODY of a rung file, and `rungPrefixIssues` states that one role's rung files
 // all carry it byte for byte, for the same single-source reason.
@@ -19,6 +19,18 @@
 'use strict';
 
 /**
+ * The rung ladder, weakest first - the whole vocabulary of rung names, and the
+ * order `rungFiles` returns a role's files in. It lived in the routing data
+ * table until the stakes level was deleted and that table with it; it now
+ * belongs beside RUNG_FILES because the two are the two halves of ONE
+ * statement - the ladder names the rungs, the map says which file carries each -
+ * and `rungOrderIssues` below is what holds them together now that no data file
+ * does.
+ * @type {readonly string[]}
+ */
+export const RUNG_ORDER = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
+
+/**
  * The rung -> agent-file map, stated per role rather than derived (D-05). The
  * unsuffixed `agents/<role>.md` is one rung among the others, and nothing about
  * a rung's NAME says which file carries it:
@@ -28,7 +40,7 @@
  * invalidates every one of their exact-fit weight budgets and buys nothing a
  * reader of this table cannot already see.
  *
- * Each role's rungs are listed in rung_order (low -> max), which is the order
+ * Each role's rungs are listed in RUNG_ORDER (low -> max), which is the order
  * `rungFiles` returns them in. Frozen: this is a statement of what is on disk,
  * and a caller mutating it would make route.mjs and self-verify disagree about
  * the same question.
@@ -36,37 +48,86 @@
  */
 export const RUNG_FILES = Object.freeze({
   'cad-planner': Object.freeze({
+    low: 'cad-planner-low',
+    medium: 'cad-planner-medium',
     high: 'cad-planner',
     xhigh: 'cad-planner-xhigh',
     max: 'cad-planner-max',
   }),
   'cad-assumptions-analyzer': Object.freeze({
+    low: 'cad-assumptions-analyzer-low',
+    medium: 'cad-assumptions-analyzer-medium',
     high: 'cad-assumptions-analyzer-high',
     xhigh: 'cad-assumptions-analyzer',
+    max: 'cad-assumptions-analyzer-max',
   }),
   'cad-verifier': Object.freeze({
+    low: 'cad-verifier-low',
     medium: 'cad-verifier-medium',
     high: 'cad-verifier',
     xhigh: 'cad-verifier-xhigh',
     max: 'cad-verifier-max',
   }),
   'cad-reviewer': Object.freeze({
+    low: 'cad-reviewer-low',
     medium: 'cad-reviewer-medium',
     high: 'cad-reviewer',
     xhigh: 'cad-reviewer-xhigh',
     max: 'cad-reviewer-max',
   }),
   'cad-executor': Object.freeze({
+    low: 'cad-executor-low',
+    medium: 'cad-executor-medium',
     high: 'cad-executor',
     xhigh: 'cad-executor-xhigh',
+    max: 'cad-executor-max',
   }),
   'cad-plan-checker': Object.freeze({
     low: 'cad-plan-checker',
     medium: 'cad-plan-checker-medium',
     high: 'cad-plan-checker-high',
     xhigh: 'cad-plan-checker-xhigh',
+    max: 'cad-plan-checker-max',
   }),
 });
+
+/**
+ * Whether the map and the ladder still say the same thing: every role's rung
+ * keys are exactly RUNG_ORDER, in that order.
+ *
+ * The routing data table used to hold the ladder and self-verify held the cells
+ * against it, so a rung the map dropped could not be named by any cell. With
+ * that table gone the two exports above are the only statement left, and nothing
+ * else compares them: a role missing `xhigh` would resolve `rungFile` to null
+ * and route.mjs would fail open, while a role whose keys were REORDERED would
+ * hand `rungFiles` and `rungPrefixIssues` a tie-break order that is not the
+ * ladder's - both silent.
+ *
+ * Takes the map so a caller can hold a drifted one against the ladder; defaults
+ * to the shipped map, which is the only one that exists today.
+ *
+ * @param {any} [files] the rung map to check, stem values unread
+ * @param {any} [order] the ladder to check it against, weakest first
+ * @returns {{code: string, role: string, detail: string}[]}
+ */
+export function rungOrderIssues(files, order) {
+  const map = files !== undefined && files !== null ? files : RUNG_FILES;
+  const ladder = Array.isArray(order) ? order : RUNG_ORDER;
+  /** @type {{code: string, role: string, detail: string}[]} */
+  const out = [];
+  const read = map !== null && typeof map === 'object' && !Array.isArray(map) ? map : {};
+  for (const role of Object.keys(read)) {
+    const rungs = read[role];
+    const got = rungs !== null && typeof rungs === 'object' && !Array.isArray(rungs)
+      ? Object.keys(rungs) : [];
+    if (got.length === ladder.length && ladder.every((r, i) => got[i] === r)) continue;
+    out.push({ code: 'rung-order-drift', role,
+      detail: `${role} files rungs ${JSON.stringify(got)}, but the rung ladder is ${
+        JSON.stringify([...ladder])} - the map and RUNG_ORDER are one statement `
+        + 'and nothing else holds them together' });
+  }
+  return out;
+}
 
 /**
  * The agent-file stem for one rung of one role, or null when the pair is not
@@ -250,23 +311,74 @@ export function rungBodyIssue(body, skills) {
 export const EFFORT_PREFIX = 'model.effort.';
 
 /**
- * Whether the shipped `model.effort.<role>` schema enums still say what
- * RUNG_FILES says. It belongs beside the map because the map is the statement
- * it checks against, and because the refusal it protects is one a USER meets:
+ * The roles-block spelling of the same quantity, as its two fixed halves:
+ * `roles.<role>.effort`. It is a SECOND key naming one role's start rung, not a
+ * rename - the older prefix above stays live as the narrower fallback - so both
+ * spellings are held to the rules below rather than one of them being trusted.
+ */
+export const ROLES_PREFIX = 'roles.';
+/** The last segment that makes a `roles.<role>.*` key a start rung. */
+export const ROLES_EFFORT_SUFFIX = '.effort';
+
+/**
+ * The two keys one role's start rung can be written under, older spelling
+ * first - which is also the order the issues below come out in, so a drift in
+ * the older key still reports before its roles-block sibling.
+ * @param {string} role
+ * @returns {string[]}
+ */
+function effortKeyNames(role) {
+  return [`${EFFORT_PREFIX}${role}`, `${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`];
+}
+
+/**
+ * The role a start-rung key names, or null when the key is neither spelling.
+ *
+ * `roles.<role>.model` is deliberately NOT one: D-10 types it `string_or_null`
+ * with nothing to drift against, so classifying it here would file a drift
+ * issue about a key that has no enum to drift.
+ * @param {string} key
+ * @returns {string|null}
+ */
+function effortKeyRole(key) {
+  if (key.startsWith(EFFORT_PREFIX)) return key.slice(EFFORT_PREFIX.length);
+  if (key.startsWith(ROLES_PREFIX) && key.endsWith(ROLES_EFFORT_SUFFIX)) {
+    return key.slice(ROLES_PREFIX.length, key.length - ROLES_EFFORT_SUFFIX.length);
+  }
+  return null;
+}
+
+/**
+ * Whether the shipped `model.effort.<role>` and `roles.<role>.effort` schema
+ * enums still say what RUNG_FILES says. It belongs beside the map because the
+ * map is the statement it checks against, and because the refusal it protects
+ * is one a USER meets:
  * `config.mjs` refuses a start rung by key off these enums, so an enum that
  * drifts from the map starts refusing the wrong values - accepting a rung with
  * no file (which route.mjs then has to warn its way out of) or refusing one
  * this role really has.
  *
+ * BOTH spellings, to the same rules and with no shared-enum shortcut: the two
+ * keys are separate schema rows and `checkValue` reads whichever one the user
+ * typed, so a guard that checked only the older prefix would leave the winning
+ * key - the roles block beats `model.effort.<role>` - the unguarded one.
+ *
+ * The DEFAULT is checked on the roles spelling ALONE. Since the cells grid went,
+ * `roles.<role>.effort`'s default is the rung a project with no config resolves
+ * at, so a default naming no rung of this role leaves nothing to dispatch;
+ * `model.effort.<role>` defaults to null on purpose, meaning "this key does not
+ * answer", and refusing that would refuse the fall-through itself.
+ *
  * self-verify never reads a user's config and so cannot refuse a user's value;
  * this is its half of that criterion (D-08), which is why every detail NAMES
  * THE KEY a maintainer would edit.
  *
- * `rungOrder` is the caller's rung vocabulary (route-table.json's `rung_order`).
- * An empty or absent one skips the vocabulary arm ALONE, the way `cellIssues`
- * tolerates an absent vocabulary - the schema-vs-map proof must still run on a
- * tree with no table, which is where a drifted enum is likeliest and least
- * noticed.
+ * `rungOrder` is the caller's rung vocabulary - RUNG_ORDER above, handed in
+ * rather than read here so a caller can hold a drifted ladder against these
+ * enums. An empty or absent one skips the vocabulary arm ALONE, the way
+ * `cellIssues` tolerates an absent vocabulary - the schema-vs-map proof must
+ * still run when the ladder is unavailable, which is where a drifted enum is
+ * likeliest and least noticed.
  *
  * @param {any} schema the `keys` map of config.schema.json, trusted for nothing
  * @param {any} [rungOrder] the declared rung vocabulary, lowest first
@@ -280,47 +392,70 @@ export function effortEnumIssues(schema, rungOrder) {
   const order = Array.isArray(rungOrder) ? rungOrder.filter((r) => typeof r === 'string') : [];
 
   for (const role of Object.keys(RUNG_FILES)) {
-    const key = `${EFFORT_PREFIX}${role}`;
-    const spec = keys[key];
-    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
-      out.push({ code: 'missing-effort-key',
-        detail: `${key} is absent, but lib/rung-agent.mjs files ${
-          Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
-      continue;
-    }
-    // Type BEFORE values: `checkValue` enforces an enum's `values` only when
-    // `type` IS "enum", so a key whose type drifted to "string" keeps a correct
-    // values list while the write face silently accepts any rung - the exact
-    // accepting-a-rung-with-no-file drift this function exists to refuse.
-    if (spec.type !== 'enum') {
-      out.push({ code: 'effort-enum-drift',
-        detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
-          + 'a non-enum type disables the write-face refusal' });
-      continue;
-    }
-    // The map's rungs in DECLARED order, then null - the exact shape D-03 ships,
-    // so a reordered enum reads as drift too: the order is what a reader of the
-    // refusal message sees, and it is meant to be the ladder's own order.
-    const want = [...Object.keys(RUNG_FILES[role]), null];
-    const got = Array.isArray(spec.values) ? spec.values : null;
-    if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
-      out.push({ code: 'effort-enum-drift',
-        detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
-          role} at ${JSON.stringify(want)}` });
-      continue;
-    }
-    if (!order.length) continue;
-    const strays = want.filter((v) => v !== null && !order.includes(v));
-    if (strays.length) {
-      out.push({ code: 'effort-enum-drift',
-        detail: `${key} offers ${JSON.stringify(strays)}, which route-table.json's `
-          + `rung_order (${order.join(', ')}) does not carry` });
+    for (const key of effortKeyNames(role)) {
+      const spec = keys[key];
+      if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+        out.push({ code: 'missing-effort-key',
+          detail: `${key} is absent, but lib/rung-agent.mjs files ${
+            Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
+        continue;
+      }
+      // Type BEFORE values: `checkValue` enforces an enum's `values` only when
+      // `type` IS "enum", so a key whose type drifted to "string" keeps a correct
+      // values list while the write face silently accepts any rung - the exact
+      // accepting-a-rung-with-no-file drift this function exists to refuse.
+      if (spec.type !== 'enum') {
+        out.push({ code: 'effort-enum-drift',
+          detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
+            + 'a non-enum type disables the write-face refusal' });
+        continue;
+      }
+      // The map's rungs in DECLARED order, then null - the exact shape D-03 ships,
+      // so a reordered enum reads as drift too: the order is what a reader of the
+      // refusal message sees, and it is meant to be the ladder's own order.
+      const want = [...Object.keys(RUNG_FILES[role]), null];
+      const got = Array.isArray(spec.values) ? spec.values : null;
+      if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
+        out.push({ code: 'effort-enum-drift',
+          detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
+            role} at ${JSON.stringify(want)}` });
+        continue;
+      }
+      // The DEFAULT half, and only for the roles spelling. `roles.<role>.effort`
+      // is what answers when no layer names a rung, so its default has to name a
+      // rung this role has a FILE for: a null or stray default hands `agentFor`
+      // nothing, and the dispatch falls open to the unsuffixed file while the
+      // resolve still reports a rung - the report-a-rung-nothing-ran-at shape
+      // `rungEffortIssue` exists to close, reached one door out.
+      //
+      // `model.effort.<role>` is EXEMPT and its null default is correct: null
+      // there means the key does not answer, and the roles row's own default
+      // decides. Checking both would refuse the very fall-through the two-key
+      // precedence is built on.
+      if (key.startsWith(ROLES_PREFIX)) {
+        const def = spec.default;
+        if (typeof def !== 'string'
+          || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
+          out.push({ code: 'effort-default-invalid',
+            detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
+              + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
+              + '- this default IS the rung route.mjs resolves when no layer sets one' });
+        }
+      }
+
+      if (!order.length) continue;
+      const strays = want.filter((v) => v !== null && !order.includes(v));
+      if (strays.length) {
+        out.push({ code: 'effort-enum-drift',
+          detail: `${key} offers ${JSON.stringify(strays)}, which the rung ladder `
+            + `(${order.join(', ')}) does not carry` });
+      }
     }
   }
 
   for (const key of Object.keys(keys)) {
-    if (!key.startsWith(EFFORT_PREFIX)) continue;
-    const role = key.slice(EFFORT_PREFIX.length);
+    const role = effortKeyRole(key);
+    if (role === null) continue;
     if (Object.prototype.hasOwnProperty.call(RUNG_FILES, role)) continue;
     out.push({ code: 'unknown-effort-role',
       detail: `${key} names "${role}", which lib/rung-agent.mjs files no rungs for `
@@ -341,7 +476,7 @@ export function effortEnumIssues(schema, rungOrder) {
  * file, and `rungBodyIssue` held a file's body against its OWN frontmatter, so
  * a file that was internally consistent and externally wrong passed it
  * anyway - which is why losing that arm loses no coverage this one has, and
- * why this one may not be weakened. Leave the gap and `route-table.json` can
+ * why this one may not be weakened. Leave the gap and a config layer can
  * name `xhigh`, this map
  * can resolve it to a file carrying `effort: high`, and the resolver's JSON,
  * the transcript's `subagent_type` and the escalation `reason` all report

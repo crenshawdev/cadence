@@ -8,7 +8,7 @@ import { writeFileSync, mkdtempSync, mkdirSync, chmodSync, readFileSync, existsS
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RUNG_FILES, rungFile, rungFiles } from './lib/rung-agent.mjs';
+import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
 
 const ROUTE = join(dirname(fileURLToPath(import.meta.url)), 'route.mjs');
@@ -18,16 +18,15 @@ const dir = mkdtempSync(join(tmpdir(), 'cad-route-'));
 // (never read the dev's real ~/.claude/cadence/config.json).
 const NO_GLOBAL = join(dir, 'no-global.json');
 
-// Write a config in the shape route.mjs now reads and return its path: bare
-// top-level `stakes`, everything else under `model`. A counter guarantees
+// Write a config in the shape route.mjs now reads and return its path:
+// everything the helper is handed goes under `model`. A counter guarantees
 // uniqueness - deriving names from the config's content collided when two
 // distinct configs shared a length/value.
 let cfgN = 0;
 function cfg(keys, name) {
   const p = join(dir, name || `c-${++cfgN}.json`);
-  const { stakes, ...model } = keys || {};
+  const model = keys || {};
   const body = {};
-  if (stakes !== undefined) body.stakes = stakes;
   if (Object.keys(model).length) body.model = model;
   writeFileSync(p, JSON.stringify(body));
   return p;
@@ -43,14 +42,14 @@ function rawCfg(body, name) {
 
 // resolve() defaults to an isolated (missing) global layer; pass opts.global to
 // point CADENCE_GLOBAL_CONFIG at a real global file for merge tests, and
-// opts.table to inject a route table through CADENCE_ROUTE_TABLE. That
-// injection is gated: route.mjs reads CADENCE_ROUTE_TABLE only when
-// CADENCE_TEST_SEAM is exactly `1`, so every fixture that sets the path sets
-// the sentinel beside it (lib/test-seam.mjs).
+// opts.schema to inject a config schema through CADENCE_CONFIG_SCHEMA. That
+// injection is gated: route.mjs reads the variable only when CADENCE_TEST_SEAM
+// is exactly `1`, so every fixture that sets a path sets the sentinel beside it
+// (lib/test-seam.mjs).
 function resolve(role, file, extra = [], opts = {}) {
   const args = ['resolve', '--role', role, ...(file ? ['--file', file] : []), ...extra];
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
-  if (opts.table) { env.CADENCE_ROUTE_TABLE = opts.table; env.CADENCE_TEST_SEAM = '1'; }
+  if (opts.schema) { env.CADENCE_CONFIG_SCHEMA = opts.schema; env.CADENCE_TEST_SEAM = '1'; }
   try {
     return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
   } catch (e) {
@@ -59,179 +58,152 @@ function resolve(role, file, extra = [], opts = {}) {
   }
 }
 
-test('a resolve returns the whole bundle off one cell, and no tier', () => {
-  // The full-shape row: every field of the contract in one place. The 18 cells
-  // themselves are pinned one test case per cell below.
-  const planner = resolve('cad-planner', cfg({ stakes: 'solo' }));
+/** The shipped config schema, parsed fresh so a mutation stays local. */
+const shippedSchema = () => JSON.parse(
+  readFileSync(join(dirname(ROUTE), '..', 'config.schema.json'), 'utf8'));
+
+/** A mutated schema on disk, for the injection door above. */
+function writeSchema(schema, name) {
+  const path = join(dir, name);
+  writeFileSync(path, JSON.stringify(schema));
+  return path;
+}
+
+test('a resolve returns the whole bundle, and no level anywhere in it', () => {
+  // The full-shape row: every field of the contract in one place. The per-role
+  // defaults themselves are pinned one case per role below.
+  const planner = resolve('cad-planner', cfg({}));
   assert.equal(planner.ok, true);
-  assert.equal(planner.model, 'sonnet');       // the solo/cad-planner cell
-  assert.equal(planner.effort, 'high');        // ...its starting rung
-  assert.equal(planner.agent, 'cad-planner');  // ...and that rung's file
-  assert.equal(planner.stakes, 'solo');
-  assert.equal(planner.escalated, false);      // a clean run never escalates
+  assert.equal(planner.model, null);            // no key set, so no parameter
+  assert.equal(planner.model_source, 'session');
+  assert.equal(planner.effort, 'high');         // the schema's own default rung
+  assert.equal(planner.agent, 'cad-planner');   // ...and that rung's file
+  assert.equal(planner.escalated, false);       // a clean run never escalates
   assert.equal(planner.verify, 'off');
   assert.equal(planner.review.plan, 'advisory');
-  // `tier` is gone: the model comes from the role's own cell, not from a
-  // column named after something else (D-03).
+  // `tier` is gone: the model comes from the role's own key, not from a column
+  // named after something else (D-03).
   assert.equal('tier' in planner, false);
+  // ...and so is the level, both halves of it. Nothing selects a row any more,
+  // so there is no row to report and no set-ness of one to qualify it with.
+  assert.equal('stakes' in planner, false);
+  assert.equal('stakes_set' in planner, false);
 });
 
-// --- the 18 cells, pinned literally (D-11) -----------------------------------
+// --- the six per-role defaults, pinned literally (D-01) ----------------------
 
-// HAND-WRITTEN DATA, typed out from .planning/phases/3/CONTEXT.md's grid. It is
-// never read, derived or spread from cadence-core/route-table.json: that file is
+// HAND-WRITTEN DATA, typed out from the plan's stated defaults - the `solo` row
+// a template-initialised project has resolved at since v3.5.7. It is never
+// read, derived or spread from cadence-core/config.schema.json: that file is
 // the subject under test, and a fixture that derives its expectations from its
 // subject cannot fail. Phase 2's SUMMARY records two mutation-proved losses of
 // exactly this shape (config.test.mjs:41, route.test.mjs:208).
-const CELLS = [
-  { stakes: 'solo', role: 'cad-planner', model: 'sonnet', effort: 'high', retry: 'xhigh', agent: 'cad-planner', retryAgent: 'cad-planner-xhigh' },
-  { stakes: 'solo', role: 'cad-assumptions-analyzer', model: 'sonnet', effort: 'high', retry: 'xhigh', agent: 'cad-assumptions-analyzer-high', retryAgent: 'cad-assumptions-analyzer' },
-  { stakes: 'solo', role: 'cad-verifier', model: 'sonnet', effort: 'high', retry: 'xhigh', agent: 'cad-verifier', retryAgent: 'cad-verifier-xhigh' },
-  { stakes: 'solo', role: 'cad-reviewer', model: 'sonnet', effort: 'medium', retry: 'high', agent: 'cad-reviewer-medium', retryAgent: 'cad-reviewer' },
-  { stakes: 'solo', role: 'cad-executor', model: 'sonnet', effort: 'high', retry: 'xhigh', agent: 'cad-executor', retryAgent: 'cad-executor-xhigh' },
-  { stakes: 'solo', role: 'cad-plan-checker', model: 'sonnet', effort: 'low', retry: 'high', agent: 'cad-plan-checker', retryAgent: 'cad-plan-checker-high' },
-
-  { stakes: 'shipped', role: 'cad-planner', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-planner', retryAgent: 'cad-planner-xhigh' },
-  { stakes: 'shipped', role: 'cad-assumptions-analyzer', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-assumptions-analyzer-high', retryAgent: 'cad-assumptions-analyzer' },
-  { stakes: 'shipped', role: 'cad-verifier', model: 'opus', effort: 'medium', retry: 'high', agent: 'cad-verifier-medium', retryAgent: 'cad-verifier' },
-  { stakes: 'shipped', role: 'cad-reviewer', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-reviewer', retryAgent: 'cad-reviewer-xhigh' },
-  { stakes: 'shipped', role: 'cad-executor', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-executor', retryAgent: 'cad-executor-xhigh' },
-  { stakes: 'shipped', role: 'cad-plan-checker', model: 'sonnet', effort: 'medium', retry: 'high', agent: 'cad-plan-checker-medium', retryAgent: 'cad-plan-checker-high' },
-
-  { stakes: 'critical', role: 'cad-planner', model: 'opus', effort: 'xhigh', retry: 'max', agent: 'cad-planner-xhigh', retryAgent: 'cad-planner-max' },
-  { stakes: 'critical', role: 'cad-assumptions-analyzer', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-assumptions-analyzer', retryAgent: 'cad-assumptions-analyzer' },
-  { stakes: 'critical', role: 'cad-verifier', model: 'opus', effort: 'xhigh', retry: 'max', agent: 'cad-verifier-xhigh', retryAgent: 'cad-verifier-max' },
-  { stakes: 'critical', role: 'cad-reviewer', model: 'opus', effort: 'xhigh', retry: 'max', agent: 'cad-reviewer-xhigh', retryAgent: 'cad-reviewer-max' },
-  { stakes: 'critical', role: 'cad-executor', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-executor-xhigh', retryAgent: 'cad-executor-xhigh' },
-  { stakes: 'critical', role: 'cad-plan-checker', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-plan-checker-xhigh', retryAgent: 'cad-plan-checker-xhigh' },
+//
+// `retry` is one rung up the ladder from `effort`, which is now the whole rule -
+// there is no per-role retry target left to state, so the column exists to
+// prove the climb lands on the RIGHT role's file rather than to state a policy.
+const ROLES = [
+  { role: 'cad-planner', effort: 'high', agent: 'cad-planner', retry: 'xhigh', retryAgent: 'cad-planner-xhigh' },
+  { role: 'cad-assumptions-analyzer', effort: 'high', agent: 'cad-assumptions-analyzer-high', retry: 'xhigh', retryAgent: 'cad-assumptions-analyzer' },
+  { role: 'cad-verifier', effort: 'high', agent: 'cad-verifier', retry: 'xhigh', retryAgent: 'cad-verifier-xhigh' },
+  { role: 'cad-reviewer', effort: 'medium', agent: 'cad-reviewer-medium', retry: 'high', retryAgent: 'cad-reviewer' },
+  { role: 'cad-executor', effort: 'high', agent: 'cad-executor', retry: 'xhigh', retryAgent: 'cad-executor-xhigh' },
+  { role: 'cad-plan-checker', effort: 'low', agent: 'cad-plan-checker', retry: 'medium', retryAgent: 'cad-plan-checker-medium' },
 ];
 
-// ONE test case per cell, never one case walking all 18: node:test aborts a
+// ONE test case per role, never one case walking all six: node:test aborts a
 // case at its first throwing assertion, so a single case would report one
-// failure and skip every later row - and the per-cell discrimination this
+// failure and skip every later row - and the per-role discrimination this
 // section exists to guarantee would go unproven.
-for (const c of CELLS) {
-  test(`cell ${c.stakes}/${c.role}`, () => {
-    // escalate_on_failure defaults false now; the retry half of every cell is
-    // still pinned here, so the fixture turns the mechanism on explicitly.
-    const file = cfg({ stakes: c.stakes, escalate_on_failure: true }, `cell-${c.stakes}.json`);
-    const first = resolve(c.role, file);
-    assert.equal(first.ok, true);
-    assert.equal(first.model, c.model, 'model');
-    assert.equal(first.effort, c.effort, 'effort');
-    assert.equal(first.agent, c.agent, 'agent');
+//
+// The no-config assertion is on the FIXTURE FILE's own parsed contents, not on
+// the helper's intent: a roles block that happened to agree with the schema
+// default would satisfy every other assertion here and prove nothing.
+for (const c of ROLES) {
+  test(`default ${c.role}: the schema's own rung, and no model`, () => {
+    const file = cfg({}, 'no-keys.json');
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.deepEqual(written, {}, 'the default fixture must carry no keys at all');
 
-    const retry = resolve(c.role, file, ['--attempt', '2']);
-    assert.equal(retry.ok, true);
-    assert.equal(retry.effort, c.retry, 'retry effort');
-    assert.equal(retry.agent, c.retryAgent, 'retry agent');
-    assert.equal(retry.model, c.model, 'the rung climbs, the model holds');
+    const r = resolve(c.role, file);
+    assert.equal(r.ok, true);
+    assert.equal(r.effort, c.effort, 'effort');
+    assert.equal(r.agent, c.agent, 'agent');
+    assert.equal(r.model, null, 'no key set, so no model parameter');
+    assert.equal(r.model_source, 'session', 'nothing decided the model');
   });
 }
 
-test('the three held retries say the rung was held, not that it escalated', () => {
-  // A (stakes, role) pair list, not one config: the held cells all sit at
-  // critical, where xhigh START rungs leave the retry nothing to climb to.
-  // (shipped/cad-reviewer left this list when its start dropped to high -
-  // an every-fire reviewer starting at the top rung was the cost, not the
-  // safety.)
-  const held = [
-    ['critical', 'cad-assumptions-analyzer'],
-    ['critical', 'cad-executor'],
-    ['critical', 'cad-plan-checker'],
-  ];
-  for (const [stakes, role] of held) {
-    const file = cfg({ stakes, escalate_on_failure: true }, `cell-${stakes}.json`);
-    const r = resolve(role, file, ['--attempt', '2']);
-    assert.equal(r.escalated, false, `${stakes}/${role}`);
-    assert.match(r.reason.join(' '), /rung held at xhigh/, `${stakes}/${role}`);
+test('a pin replaces the model at every role and never touches its rung', () => {
+  for (const c of ROLES) {
+    const file = rawCfg({ model: { overrides: { [c.role]: 'fable' } } }, `pin-${c.role}.json`);
+    const r = resolve(c.role, file);
+    assert.equal(r.model, 'fable', c.role);
+    assert.equal(r.pinned, true, c.role);
+    assert.equal(r.effort, c.effort, `${c.role} effort`); // frontmatter, untouched
+    assert.equal(r.agent, c.agent, `${c.role} agent`);
   }
 });
 
-test('no cell at any level holds fable or haiku - the routed vocabulary is sonnet and opus', () => {
-  // Walked over the shipped table rather than the literal rows above: this row
-  // is about what the DATA can reach, and CELLS is what it should reach (D-12).
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
-  const t = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env })).table;
-  const routed = Object.values(t.cells).flatMap((row) => Object.values(row).map((c) => c.model));
-  assert.equal(routed.includes('fable'), false);
-  assert.equal(routed.includes('haiku'), false);
-  assert.deepEqual([...new Set(routed)].sort(), ['opus', 'sonnet']);
-  // ...and both stay reachable by an explicit pin, which is a user assertion
-  // about their own org rather than a rung on this ladder.
-  for (const alias of ['opus', 'sonnet', 'haiku', 'fable']) {
-    assert.ok(t.model_aliases.includes(alias), alias);
-  }
+// --- the review map and the verify switch, both off the schema (D-01) -------
+
+test('the review map with nothing configured is the schema defaults', () => {
+  // Literal expectations, never derived from config.schema.json: a fixture that
+  // reads its own subject cannot fail (D-11). The grids that keyed on the level
+  // are gone - these four values are what a project with no gates answers.
+  const want = { plan: 'advisory', diff: 'off', risk_surface: 'blocking', phase_diff: 'off' };
+  assert.deepEqual(resolve('cad-planner', cfg({})).review, want);
 });
 
-test('a pin replaces the cell model at every level and never touches its effort', () => {
-  for (const c of CELLS.filter((x) => x.role === 'cad-executor')) {
-    const file = rawCfg({ stakes: c.stakes, model: { overrides: { 'cad-executor': 'fable' } } },
-      `pin-exec-${c.stakes}.json`);
-    const r = resolve('cad-executor', file);
-    assert.equal(r.model, 'fable', c.stakes);
-    assert.equal(r.pinned, true, c.stakes);
-    assert.equal(r.effort, c.effort, `${c.stakes} effort`); // frontmatter, untouched
-    assert.equal(r.agent, c.agent, `${c.stakes} agent`);
-  }
+test('verify is off wherever no floor raised', () => {
+  // The deep pass is what a raised floor turns on and the only thing that does.
+  // With no phase in hand there is no floor at all, so it is off - the state a
+  // project that had "always on" through `stakes: shipped` now reaches through
+  // `--deep` or a risk hit alone.
+  assert.equal(resolve('cad-planner', cfg({})).verify, 'off');
 });
 
-// --- the review and verify grids (D-01) --------------------------------------
-
-test('each level resolves its whole review map and its verify value, literally', () => {
-  // Literal expectations, never derived from route-table.json: a fixture that
-  // reads its own subject cannot fail (D-11).
-  const solo = resolve('cad-planner', cfg({ stakes: 'solo' }));
-  assert.deepEqual(solo.review, {
-    plan: 'advisory', diff: 'off', risk_surface: 'blocking',
-    phase_diff: 'off',
-  });
-  assert.equal(solo.verify, 'off');
-
-  const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
-  assert.deepEqual(shipped.review, {
-    plan: 'blocking', diff: 'off', risk_surface: 'blocking',
-    phase_diff: 'off',
-  });
-  assert.equal(shipped.verify, 'on');
-
-  const critical = resolve('cad-planner', cfg({ stakes: 'critical' }));
-  assert.deepEqual(critical.review, {
-    plan: 'adjudicated', diff: 'blocking', risk_surface: 'blocking',
-    phase_diff: 'adjudicated',
-  });
-  assert.equal(critical.verify, 'on');
+test('risk_surface is blocking with nothing configured - a match is never waved through', () => {
+  assert.equal(resolve('cad-planner', cfg({})).review.risk_surface, 'blocking');
 });
 
-test('risk_surface is blocking at every level - a detection match is never waved through', () => {
-  for (const stakes of ['solo', 'shipped', 'critical']) {
-    assert.equal(resolve('cad-planner', cfg({ stakes })).review.risk_surface, 'blocking', stakes);
-  }
-});
-
-test('a config gate that AGREES with the level is taken silently', () => {
-  const c = rawCfg({ stakes: 'shipped', review: { triggers: { phase_diff: { gate: 'off' } } } },
+test('a config gate that AGREES with the schema default is taken silently', () => {
+  const c = rawCfg({ review: { triggers: { phase_diff: { gate: 'off' } } } },
     'gate-agrees.json');
   const r = resolve('cad-planner', c);
   assert.equal(r.review.phase_diff, 'off');
   assert.equal(r.warnings, undefined); // agreement is not news
 });
 
-test('a config gate that DISAGREES wins, and says so exactly once (D-04)', () => {
-  // solo's `diff` gate is `off`; the user asked for blocking. The key the user
-  // set decides - a resolved-then-dropped gate is the defect class this
-  // milestone closes - and the disagreement is spoken, not swallowed.
-  const c = rawCfg({ stakes: 'solo', review: { triggers: { diff: { gate: 'blocking' } } } },
+test('a config gate that DISAGREES wins, and the reason names both values (D-04)', () => {
+  // The `diff` gate defaults to `off`; the user asked for blocking. The key the
+  // user set decides - a resolved-then-dropped gate is the defect class this
+  // milestone closes - and which source answered is spoken, not swallowed.
+  //
+  // A `reason` and not a `warning`: a schema default is not a second authority
+  // a user needs telling they overrode, it is what every other defaulted key
+  // does. The warning existed because a level-keyed grid was the other side of
+  // the disagreement, and that grid is gone.
+  const c = rawCfg({ review: { triggers: { diff: { gate: 'blocking' } } } },
     'gate-disagrees.json');
   const r = resolve('cad-planner', c);
   assert.equal(r.review.diff, 'blocking');
-  assert.equal(r.warnings.length, 1);
-  assert.match(r.warnings[0], /review\.triggers\.diff\.gate/); // names the trigger
-  assert.match(r.warnings[0], /"blocking"/);                   // ...the config value
-  assert.match(r.warnings[0], /"off"/);                        // ...and the level's
-  // every other trigger still comes from the level
+  assert.equal(r.warnings, undefined, JSON.stringify(r.warnings));
+  const said = r.reason.find((x) => x.startsWith('review.triggers.diff.gate='));
+  assert.ok(said, JSON.stringify(r.reason));
+  assert.match(said, /"blocking"/);   // the config value
+  assert.match(said, /"off"/);        // ...and the default it beat
+  // every other trigger still answers its own default
   assert.equal(r.review.plan, 'advisory');
   assert.equal(r.review.risk_surface, 'blocking');
+});
+
+test('an unset gate says the schema default answered it', () => {
+  // The other half of "reason says which": a bundle a reader cannot trace back
+  // to a source is the thing this vocabulary exists to prevent.
+  const r = resolve('cad-planner', cfg({}));
+  assert.ok(r.reason.some((x) => x === 'review.triggers.plan.gate: schema default "advisory"'),
+    JSON.stringify(r.reason));
 });
 
 // --- the reviewer set beside the gate map (RVW-02) ---------------------------
@@ -240,7 +212,7 @@ test('no configured reviewers resolves every trigger to claude-subagent, silentl
   // The shipped default: `review.reviewers` unset, so DEFAULTS backstops it and
   // the always-available subagent is the whole set. Nothing was dropped, so
   // there is nothing to warn about.
-  const r = resolve('cad-reviewer', cfg({ stakes: 'shipped' }));
+  const r = resolve('cad-reviewer', cfg({}));
   assert.deepEqual(r.reviewers, {
     plan: ['claude-subagent'], diff: ['claude-subagent'],
     risk_surface: ['claude-subagent'], phase_diff: ['claude-subagent'],
@@ -253,7 +225,7 @@ test('a provider with no model id at the trigger\'s tier falls back, naming both
   // set: the provider cannot be dispatched to, so the fire would go to a
   // subagent - the 2026-08-13 substitution. The fallback and its CAUSE are in
   // the return rather than inferred from a set the caller never sees resolved.
-  const c = rawCfg({ stakes: 'shipped', review: { reviewers: ['openai'] } },
+  const c = rawCfg({ review: { reviewers: ['openai'] } },
     'reviewers-unavailable.json');
   const r = resolve('cad-reviewer', c);
   assert.deepEqual(r.reviewers, {
@@ -262,52 +234,53 @@ test('a provider with no model id at the trigger\'s tier falls back, naming both
   });
   const plan = r.warnings.find((w) => w.startsWith('plan:'));
   assert.ok(plan, JSON.stringify(r.warnings));
-  assert.match(plan, /openai/);                                  // the provider dropped
-  assert.match(plan, /"balanced"/);                              // ...the tier it needed
-  assert.match(plan, /review\.providers\.openai\.tiers\.balanced/); // ...the key that answers it
-  assert.match(plan, /claude-subagent/);                         // ...and the fallback
-  // The tier is per trigger AND per level, so the answer is too: at `shipped`
-  // `diff` resolves at the `cheap` row, not at plan's `balanced`, and the
-  // warning names the level's row it came from (RVW-03).
-  assert.match(r.warnings.find((w) => w.startsWith('diff:')), /"cheap"/);
-  assert.match(plan, /tiers row for shipped/);
+  assert.match(plan, /openai/);                               // the provider dropped
+  assert.match(plan, /"cheap"/);                              // ...the tier it needed
+  assert.match(plan, /review\.providers\.openai\.tiers\.cheap/); // ...the key that answers it
+  assert.match(plan, /claude-subagent/);                      // ...and the fallback
+  // ...and WHERE the tier came from, which is now the key's own schema default
+  // rather than a row of a grid keyed on a level.
+  assert.match(plan, /review\.triggers\.plan\.tier's schema default/);
 });
 
 test('a provider WITH a model id at that tier is the resolved reviewer', () => {
-  // `shipped` resolves `plan` and `risk_surface` at `balanced` since RVW-03,
-  // so that is the tier this provider has to be configured at to be placed.
+  // Every trigger defaults to `cheap`, so that is the tier this provider has to
+  // be configured at to be placed at all.
   const c = rawCfg({
-    stakes: 'shipped',
-    review: { reviewers: ['openai'], providers: { openai: { tiers: { balanced: 'gpt-5' } } } },
+    review: { reviewers: ['openai'], providers: { openai: { tiers: { cheap: 'gpt-5-mini' } } } },
   }, 'reviewers-available.json');
   const r = resolve('cad-reviewer', c);
   assert.deepEqual(r.reviewers.plan, ['openai']);
-  assert.deepEqual(r.reviewers.risk_surface, ['openai']); // balanced too
-  // `diff` resolves at `cheap` here, which this config leaves unassigned.
-  assert.deepEqual(r.reviewers.diff, ['claude-subagent']);
+  assert.deepEqual(r.reviewers.risk_surface, ['openai']);
+  assert.deepEqual(r.reviewers.diff, ['openai']);
+  // The PAIRED NEGATIVE, or the row above passes on a resolver that never reads
+  // the tier: the same provider configured at a tier nothing resolves at is not
+  // placed anywhere.
+  const wrong = rawCfg({
+    review: { reviewers: ['openai'], providers: { openai: { tiers: { flagship: 'gpt-5' } } } },
+  }, 'reviewers-wrong-tier.json');
+  assert.deepEqual(resolve('cad-reviewer', wrong).reviewers.plan, ['claude-subagent']);
 });
 
-test('a config-set tier wins over the table row for the availability test (D-04)', () => {
-  // The tier a LAYER set is a user assertion; the table's row is the fallback.
-  // Reading config.schema.json's default here instead would make the schema's
-  // answer indistinguishable from the user's.
+test('a config-set tier wins over the schema default for the availability test (D-04)', () => {
+  // The tier a LAYER set is a user assertion and the schema default is the
+  // fallback, so a trigger the layer moved is placed where the layer says and
+  // every other trigger still answers the default.
   const c = rawCfg({
-    stakes: 'shipped',
     review: {
       reviewers: ['openai'],
-      providers: { openai: { tiers: { cheap: 'gpt-5-mini' } } },
-      triggers: { plan: { tier: 'cheap' } },
+      providers: { openai: { tiers: { flagship: 'gpt-5' } } },
+      triggers: { plan: { tier: 'flagship' } },
     },
   }, 'reviewers-tier-set.json');
   const r = resolve('cad-reviewer', c);
   assert.deepEqual(r.reviewers.plan, ['openai']);
-  assert.deepEqual(r.reviewers.phase_diff, ['claude-subagent']); // still flagship, unassigned
-  assert.match(r.warnings.find((w) => w.startsWith('phase_diff:')), /tiers row/);
+  assert.deepEqual(r.reviewers.phase_diff, ['claude-subagent']); // still cheap, unassigned
+  assert.match(r.warnings.find((w) => w.startsWith('phase_diff:')), /schema default/);
 });
 
 test('one available reviewer beside one unavailable keeps the set and names the drop', () => {
   const c = rawCfg({
-    stakes: 'shipped',
     review: {
       reviewers: ['claude-subagent', 'gemini'],
       providers: { openai: { tiers: { flagship: 'gpt-5' } } },
@@ -323,12 +296,11 @@ test('one available reviewer beside one unavailable keeps the set and names the 
 test('the reviewer set is its own field - `review` gains, loses and reorders nothing', () => {
   // D-05: folding reviewers into `review` turns each gate STRING into an
   // object and breaks every reader of the wiring table at once.
-  const c = rawCfg({ stakes: 'critical', review: { reviewers: ['openai'] } },
+  const c = rawCfg({ review: { reviewers: ['openai'] } },
     'reviewers-beside.json');
   const r = resolve('cad-reviewer', c);
   assert.deepEqual(r.review, {
-    plan: 'adjudicated', diff: 'blocking', risk_surface: 'blocking',
-    phase_diff: 'adjudicated',
+    plan: 'advisory', diff: 'off', risk_surface: 'blocking', phase_diff: 'off',
   });
   assert.deepEqual(Object.keys(r.review), Object.keys(r.reviewers));
 });
@@ -342,14 +314,14 @@ test('the key absent from both layers resolves all eight, marked unanswered', ()
   // D-12: absence means EVERYTHING and is a distinguishable state. Failing the
   // other way would narrow the only blocking review trigger on evidence nobody
   // supplied - and there would then be no state the one-time ask can detect.
-  const r = resolve('cad-reviewer', cfg({ stakes: 'shipped' }));
+  const r = resolve('cad-reviewer', cfg({}));
   assert.deepEqual(r.surfaces, ALL_SURFACES);
   assert.equal(r.surfaces_answered, false);
   assert.equal(r.warnings, undefined);
 });
 
 test('a repo layer setting two categories resolves exactly those two, marked answered', () => {
-  const c = rawCfg({ stakes: 'shipped',
+  const c = rawCfg({
     review: { triggers: { risk_surface: { surfaces: ['secrets', 'destructive'] } } } },
   'surfaces-two.json');
   const r = resolve('cad-reviewer', c);
@@ -364,7 +336,7 @@ test('an entry outside the vocabulary fails SAFE and is NAMED, never narrowed to
   // silently shrinking the only blocking gate - and the sibling test below
   // already fails safe on a scalar, so narrowing here gave one malformation
   // class two different answers.
-  const c = rawCfg({ stakes: 'shipped',
+  const c = rawCfg({
     review: { triggers: { risk_surface: { surfaces: ['secrets', 'nope'] } } } },
   'surfaces-bad-entry.json');
   const r = resolve('cad-reviewer', c);
@@ -378,7 +350,7 @@ test('an entry outside the vocabulary fails SAFE and is NAMED, never narrowed to
 });
 
 test('a non-list value contributes nothing and all eight stand', () => {
-  const c = rawCfg({ stakes: 'shipped',
+  const c = rawCfg({
     review: { triggers: { risk_surface: { surfaces: 'secrets' } } } },
   'surfaces-scalar.json');
   const r = resolve('cad-reviewer', c);
@@ -391,7 +363,7 @@ test('a list that resolves to no category reads as UNANSWERED, not as an empty s
   // An empty scope would turn the one blocking trigger off entirely while every
   // document says it is blocking - the control-that-reports-success shape this
   // milestone is named after.
-  const c = rawCfg({ stakes: 'shipped',
+  const c = rawCfg({
     review: { triggers: { risk_surface: { surfaces: [] } } } },
   'surfaces-empty.json');
   const r = resolve('cad-reviewer', c);
@@ -401,39 +373,33 @@ test('a list that resolves to no category reads as UNANSWERED, not as an empty s
 });
 
 test('the surface set is its own field - `review` and `reviewers` gain nothing', () => {
-  const c = rawCfg({ stakes: 'critical',
+  const c = rawCfg({
     review: { triggers: { risk_surface: { surfaces: ['secrets'] } } } },
   'surfaces-beside.json');
   const r = resolve('cad-reviewer', c);
   assert.deepEqual(r.review, {
-    plan: 'adjudicated', diff: 'blocking', risk_surface: 'blocking',
-    phase_diff: 'adjudicated',
+    plan: 'advisory', diff: 'off', risk_surface: 'blocking', phase_diff: 'off',
   });
   assert.deepEqual(Object.keys(r.review), Object.keys(r.reviewers));
   assert.deepEqual(r.surfaces, ['secrets']);
 });
 
-test('a level with no review row or no verify value degrades to unresolved', () => {
-  // A torn table must not emit half a bundle: two of the four knobs read as a
-  // whole answer is worse than no answer.
-  for (const drop of ['review', 'verify']) {
-    const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
-    delete t[drop].shipped;
-    const p = join(dir, `torn-${drop}.json`);
-    writeFileSync(p, JSON.stringify(t));
-    const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: p,
-      CADENCE_TEST_SEAM: '1' };
-    const args = ['resolve', '--role', 'cad-planner', '--file', cfg({ stakes: 'shipped' })];
-    const r = (() => {
-      try { return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env })); }
-      catch (e) { return JSON.parse(e.stdout); }
-    })();
-    assert.equal(r.ok, false, drop);
-    assert.equal(r.reason, 'unresolved', drop);
-  }
+test('a schema rung default naming no rung of the role degrades to unresolved', () => {
+  // Three sources answer the start rung and the schema's own default is the
+  // last of them, so a default naming no rung this role FILES leaves nothing to
+  // dispatch at. It must not emit half a bundle: three of the four knobs read
+  // as a whole answer is worse than no answer, and `effort` is the field the
+  // agent file itself is chosen by.
+  const s = shippedSchema();
+  s.keys['roles.cad-planner.effort'].default = null;
+  const r = resolve('cad-planner', cfg({}), [],
+    { schema: writeSchema(s, 'no-rung-default.json') });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unresolved');
+  assert.match(r.hint, /roles\.cad-planner\.effort/);
 });
 
-// --- escalation, now unconditional -------------------------------------------
+// --- escalation, now one rung up from wherever it started ---------------------
 
 test('the shipped DEFAULT holds a retry - escalation is opt-in, and the hold is diagnosable', () => {
   // Reversed from the axis change that made escalation unconditional: both
@@ -444,38 +410,54 @@ test('the shipped DEFAULT holds a retry - escalation is opt-in, and the hold is 
   const missing = join(dir, 'no-config-at-all.json');
   const first = resolve('cad-plan-checker', missing);
   assert.equal(first.escalated, false);            // a clean run never escalates
-  assert.equal(first.agent, 'cad-plan-checker-medium');
-  assert.equal(first.stakes, 'shipped');
+  assert.equal(first.agent, 'cad-plan-checker');   // the schema default rung, `low`
 
   const retry = resolve('cad-plan-checker', missing, ['--attempt', '2']);
   assert.equal(retry.ok, true);
-  assert.equal(retry.agent, 'cad-plan-checker-medium'); // held, not climbed
-  assert.equal(retry.effort, 'medium');
+  assert.equal(retry.agent, 'cad-plan-checker');   // held, not climbed
+  assert.equal(retry.effort, 'low');
   assert.equal(retry.escalated, false);
-  assert.equal(retry.stakes, 'shipped');
   assert.match(retry.reason.join(' '), /model\.escalate_on_failure/);
 });
 
-test('escalation fires at every stakes level, not just the default', () => {
-  // cad-planner, not cad-plan-checker: the retune makes critical/cad-plan-checker
-  // a HELD cell, so the checker can no longer carry a per-level proof of the
-  // escalation claim. The planner climbs at all three levels, which is the claim
-  // this row exists for - flipping the critical assertion to `false` instead
-  // would have kept the row green while it stopped proving anything.
-  const expected = { solo: 'cad-planner-xhigh', shipped: 'cad-planner-xhigh', critical: 'cad-planner-max' };
-  for (const [stakes, agent] of Object.entries(expected)) {
-    const r = resolve('cad-planner', cfg({ stakes, escalate_on_failure: true }), ['--attempt', '2']);
-    assert.equal(r.agent, agent, stakes);
-    assert.equal(r.escalated, true, stakes);
+test('escalation climbs exactly ONE rung, on every role', () => {
+  // One case walking six roles is acceptable HERE and not above, because the
+  // per-role assertion carries the role in its message: the rule under test is
+  // one rule, and a failure names which role broke it.
+  const file = cfg({ escalate_on_failure: true }, 'esc-on.json');
+  for (const c of ROLES) {
+    const r = resolve(c.role, file, ['--attempt', '2']);
+    assert.equal(r.effort, c.retry, c.role);
+    assert.equal(r.agent, c.retryAgent, c.role);
+    assert.equal(r.escalated, true, c.role);
   }
+});
+
+test('escalation climbs from the CONFIGURED start, never from the schema default', () => {
+  const file = rawCfg({ model: { escalate_on_failure: true },
+    roles: { 'cad-plan-checker': { effort: 'high' } } }, 'start-high.json');
+  const r = resolve('cad-plan-checker', file, ['--attempt', '2']);
+  assert.equal(r.effort, 'xhigh');                       // one above `high`
+  assert.equal(r.agent, 'cad-plan-checker-xhigh');
+  assert.equal(r.escalated, true);
+});
+
+test('at the TOP rung a retry holds, and says there is nothing above it', () => {
+  const file = rawCfg({ model: { escalate_on_failure: true },
+    roles: { 'cad-executor': { effort: 'max' } } }, 'top-rung.json');
+  const r = resolve('cad-executor', file, ['--attempt', '2']);
+  assert.equal(r.effort, 'max');
+  assert.equal(r.agent, 'cad-executor-max');
+  assert.equal(r.escalated, false);
+  assert.match(r.reason.join(' '), /rung held at max/);
 });
 
 test('model.escalate_on_failure: false holds the rung and names the key in reason', () => {
   const off = cfg({ escalate_on_failure: false });
   const r = resolve('cad-plan-checker', off, ['--attempt', '3']);
   assert.equal(r.escalated, false);
-  assert.equal(r.agent, 'cad-plan-checker-medium'); // the shipped cell's starting rung
-  assert.equal(r.effort, 'medium');
+  assert.equal(r.agent, 'cad-plan-checker'); // the schema default rung
+  assert.equal(r.effort, 'low');
   assert.match(r.reason.join(' '), /model\.escalate_on_failure/); // a held retry is diagnosable
 });
 
@@ -485,33 +467,27 @@ test('a config still holding model.profile warns and never reports a configured 
   const stale = rawCfg({ model: { profile: 'balanced' } }, 'stale-profile.json');
   const r = resolve('cad-planner', stale);
   assert.equal(r.ok, true);                       // never blocks the spine
-  assert.equal(r.stakes, 'shipped');              // resolved at the default
+  assert.equal(r.effort, 'high');                 // resolved at the schema default
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /model\.profile/);  // names the key the user wrote
-  assert.match(r.warnings[0], /stakes/);          // ...and the one that replaced it
-  // the reason must not claim a layer supplied a value no layer carried
-  assert.doesNotMatch(r.reason[0], /config:/);
-  assert.match(r.reason[0], /stakes default "shipped"/);
+  // ...and the reason must not claim a layer supplied a rung no layer carried
+  assert.match(r.reason.join(' '), /roles\.cad-planner\.effort default "high" \(unset in layers\)/);
 });
 
-test('a stakes value that IS set still reports its layer', () => {
-  const r = resolve('cad-planner', cfg({ stakes: 'critical' }));
-  assert.match(r.reason[0], /config:repo/);
-});
-
-test('bad enum string in config degrades to unresolved, never crashes', () => {
-  const r = resolve('cad-planner', cfg({ stakes: 'ludicrous' }));
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'unresolved');
-  assert.equal(r.stakes, 'ludicrous'); // names the value that failed to resolve
+test('the first reason names the LAYERS that were read, and claims nothing about them', () => {
+  // It used to open on the stakes level's source, which was a claim about a
+  // value; with the level gone there is no single value to make that claim
+  // about, and every key says its own source in its own entry below.
+  const r = resolve('cad-planner', cfg({}));
+  assert.equal(r.reason[0], 'config layers: repo');
 });
 
 test('resolve: a non-integer --attempt is usage, not silently coerced (#45.2)', () => {
-  const r = resolve('cad-planner', cfg({ stakes: 'solo' }), ['--attempt', 'abc']);
+  const r = resolve('cad-planner', cfg({}), ['--attempt', 'abc']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
 
-  const ok = resolve('cad-planner', cfg({ stakes: 'solo' }), ['--attempt', '2']);
+  const ok = resolve('cad-planner', cfg({}), ['--attempt', '2']);
   assert.equal(ok.ok, true);
   assert.equal(ok.attempt, 2);
 });
@@ -529,7 +505,7 @@ test('resolve: a valueless --file is usage, not reason:"internal" (both spelling
     assert.doesNotMatch(r.detail, /undefined/, extra.join(' '));
   }
   // The control: a real path still resolves, so the guard refuses only the gap.
-  assert.equal(resolve('cad-planner', cfg({ stakes: 'solo' })).ok, true);
+  assert.equal(resolve('cad-planner', cfg({})).ok, true);
 });
 
 test('usage degradation: missing --role and unknown subcommand', () => {
@@ -583,95 +559,76 @@ test('ARG-06: a flag-shaped value is refused BY NAME, never swallowed as the val
   }
   // The control: every one of those flags spelled with a real value still
   // resolves, so the rows refuse the gap and nothing else.
-  const good = resolve('cad-planner', cfg({ stakes: 'solo' }), ['--attempt', '2']);
+  const good = resolve('cad-planner', cfg({}), ['--attempt', '2']);
   assert.equal(good.ok, true, JSON.stringify(good));
   assert.equal(good.attempt, 2);
 });
 
-test('table dumps the routing table - the five grids and the declared roles', () => {
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
-  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
-  assert.equal(r.ok, true);
-  assert.ok(Array.isArray(r.table.roles), 'roles is the declared ARRAY');
-  assert.ok(r.table.roles.includes('cad-planner'));
-  assert.ok(r.table.cells.shipped['cad-planner']);
-  assert.ok(r.table.review.shipped.plan);
-  assert.equal(r.table.verify.shipped, 'on');
-  // The whole top-level key set, pinned: the retired blocks are GONE, not
-  // merely unread, and a new one cannot appear without a reader.
-  assert.ok(r.table.tiers.shipped.plan);
-  assert.ok(r.table.efforts.shipped.plan);
-  assert.deepEqual(Object.keys(r.table).sort(),
-    ['_meta', 'cells', 'effort_names', 'efforts', 'gates', 'model_aliases', 'review',
-      'risk_surface_categories', 'roles', 'rung_order', 'stakes_order', 'tier_names',
-      'tiers', 'verify']);
-});
-
-// WATCHED FAILING AT 478b1ff, the tip of this plan's unpatched tree. Observed
-// there: `resolve` carried no `reviewer_tiers` and no `reviewer_efforts` at
-// all, and the one `tiers` row it did read was keyed on the trigger alone, so
-// every level answered `flagship` for `plan` and `risk_surface` - the
-// cross-model half of a panel that never moved when `stakes` did (RVW-03).
+// WATCHED FAILING AT 478b1ff, the tip of RVW-03's unpatched tree. Observed
+// there: `resolve` carried no `reviewer_tiers` and no `reviewer_efforts` at all,
+// so the two fields that reach a cross-model provider call were read at the fire
+// site from a config key no layer sets.
 //
-// HAND-WRITTEN DATA, typed out from .planning/phases/3/CONTEXT.md and this
-// plan's own ladder, never read or derived from cadence-core/route-table.json:
-// that file is the subject under test.
-const PANEL = [
-  { stakes: 'solo', plan: ['cheap', 'low'], risk_surface: ['cheap', 'low'] },
-  { stakes: 'shipped', plan: ['balanced', 'medium'], risk_surface: ['balanced', 'medium'] },
-  { stakes: 'critical', plan: ['flagship', 'high'], risk_surface: ['flagship', 'high'] },
-];
+// The pair used to key on the stakes LEVEL and no longer does: the twelve
+// `review.triggers.<t>.{tier,effort}` rows carry real schema defaults, and a
+// level moves none of them. HAND-WRITTEN DATA, typed out from this phase's
+// CONTEXT.md, never read or derived from cadence-core/config.schema.json - that
+// file is the subject under test.
+const PANEL = {
+  plan: ['cheap', 'low'],
+  diff: ['cheap', 'minimal'],
+  risk_surface: ['cheap', 'low'],
+  phase_diff: ['cheap', 'low'],
+};
 
-// ONE case per level, never one case walking all three: node:test aborts a case
+// ONE case per trigger, never one case walking all four: node:test aborts a case
 // at its first throwing assertion, so a single case would report one failure and
-// skip the levels below it.
-for (const row of PANEL) {
-  test(`the cross-model panel at ${row.stakes}: both halves ride the envelope`, () => {
-    const r = resolve('cad-reviewer', cfg({ stakes: row.stakes }, `panel-${row.stakes}.json`));
+// skip the triggers below it.
+for (const [trigger, [tier, effort]] of Object.entries(PANEL)) {
+  test(`the cross-model panel for ${trigger}: both halves ride the envelope`, () => {
+    const r = resolve('cad-reviewer', cfg({}, 'panel-shipped.json'));
     assert.equal(r.ok, true);
-    assert.equal(r.reviewer_tiers.plan, row.plan[0], 'plan tier');
-    assert.equal(r.reviewer_efforts.plan, row.plan[1], 'plan effort');
-    assert.equal(r.reviewer_tiers.risk_surface, row.risk_surface[0], 'risk_surface tier');
-    assert.equal(r.reviewer_efforts.risk_surface, row.risk_surface[1], 'risk_surface effort');
+    assert.equal(r.reviewer_tiers[trigger], tier, `${trigger} tier`);
+    assert.equal(r.reviewer_efforts[trigger], effort, `${trigger} effort`);
     // Beside `reviewers`, keyed the same way, and never folded into `review`
     // (D-05) - whose values stay gate strings.
     assert.deepEqual(Object.keys(r.reviewer_tiers), Object.keys(r.reviewers));
     assert.deepEqual(Object.keys(r.reviewer_efforts), Object.keys(r.reviewers));
-    assert.equal(typeof r.review.plan, 'string');
+    assert.equal(typeof r.review[trigger], 'string');
   });
 }
 
-test('the three levels are pairwise distinct on BOTH halves of the panel', () => {
-  // The requirement in one assertion: raising `stakes` has to move the tier AND
-  // the effort, so no two levels may answer the same pair for these triggers.
-  for (const trigger of ['plan', 'risk_surface']) {
-    const seen = PANEL.map((row) => {
-      const r = resolve('cad-reviewer', cfg({ stakes: row.stakes }, `panel-${row.stakes}.json`));
+test('the panel does not move with the ROLE - only its own two keys decide it', () => {
+  // The inverse of the assertion this section used to make, said in the
+  // vocabulary that is left: six roles, one answer per trigger, because only
+  // `review.triggers.<t>.{tier,effort}` decides either half.
+  for (const trigger of Object.keys(PANEL)) {
+    const seen = ROLES.map((c) => {
+      const r = resolve(c.role, cfg({}, 'panel-none.json'));
       return `${r.reviewer_tiers[trigger]}/${r.reviewer_efforts[trigger]}`;
     });
-    assert.equal(new Set(seen).size, 3, `${trigger}: ${seen.join(' ')}`);
+    assert.equal(new Set(seen).size, 1, `${trigger}: ${seen.join(' ')}`);
   }
 });
 
 test('the envelope\'s top-level effort stays the agent RUNG, not the panel effort', () => {
   // The one real collision hazard: `effort` is the rung the dispatched agent
   // file runs at, `reviewer_efforts` is what a provider request carries. At
-  // solo/cad-reviewer the rung is `medium` and the panel effort is `low`.
-  const r = resolve('cad-reviewer', cfg({ stakes: 'solo' }, 'panel-solo.json'));
+  // solo/cad-reviewer the rung is `medium` and the plan panel effort is `low`.
+  const r = resolve('cad-reviewer', cfg({}, 'panel-solo.json'));
   assert.equal(r.effort, 'medium');
   assert.equal(r.reviewer_efforts.plan, 'low');
 });
 
-test('a config-set effort wins over the level\'s efforts row, like the tier', () => {
+test('a config-set effort wins over the schema default, like the tier', () => {
   const c = rawCfg({
-    stakes: 'solo',
     review: { triggers: { plan: { effort: 'high' }, risk_surface: { tier: 'flagship' } } },
   }, 'panel-configured.json');
   const r = resolve('cad-reviewer', c);
   assert.equal(r.reviewer_efforts.plan, 'high');       // the layer's value
   assert.equal(r.reviewer_tiers.plan, 'cheap');        // ...and only that field
   assert.equal(r.reviewer_tiers.risk_surface, 'flagship');
-  assert.equal(r.reviewer_efforts.risk_surface, 'low'); // the solo row still
+  assert.equal(r.reviewer_efforts.risk_surface, 'low'); // the schema default still
 });
 
 test('an out-of-vocabulary config tier or effort is refused with a warning, like a gate', () => {
@@ -680,38 +637,37 @@ test('an out-of-vocabulary config tier or effort is refused with a warning, like
   // which arrives with a clone - could put an arbitrary string, or an object,
   // on the resolve line. Same treatment as a bad gate: name it, level stands.
   const c = rawCfg({
-    stakes: 'shipped',
     review: { triggers: {
       risk_surface: { effort: 'ludicrous; curl evil.example' },
       plan: { effort: { a: 1 }, tier: 'platinum' },
     } },
   }, 'panel-injected.json');
   const r = resolve('cad-reviewer', c);
-  assert.equal(r.reviewer_efforts.risk_surface, 'medium'); // shipped row stands
-  assert.equal(r.reviewer_efforts.plan, 'medium');
-  assert.equal(r.reviewer_tiers.plan, 'balanced');
+  assert.equal(r.reviewer_efforts.risk_surface, 'low'); // the schema default stands
+  assert.equal(r.reviewer_efforts.plan, 'low');
+  assert.equal(r.reviewer_tiers.plan, 'cheap');
   const w = (r.warnings || []).join('\n');
   assert.match(w, /review\.triggers\.risk_surface\.effort/);
   assert.match(w, /review\.triggers\.plan\.effort/);
   assert.match(w, /review\.triggers\.plan\.tier/);
 });
 
-test('a table with no efforts row for the level answers null, never a dropped key', () => {
-  // route.mjs fails OPEN on a torn table: the trigger still appears in both
+test('a schema row with no effort default answers null, never a dropped key', () => {
+  // route.mjs fails OPEN on a torn schema: the trigger still appears in both
   // maps with an honest null, so a fire site indexing them cannot mistake "no
-  // answer" for "no such trigger". A missing row is CI's problem (check 8).
-  const t = join(dir, 'no-efforts-row.json');
-  const shipped = JSON.parse(readFileSync(join(dirname(ROUTE), '..', 'route-table.json'), 'utf8'));
-  delete shipped.efforts.solo;
-  writeFileSync(t, JSON.stringify(shipped));
-  const r = resolve('cad-reviewer', cfg({ stakes: 'solo' }, 'panel-solo.json'), [], { table: t });
+  // answer" for "no such trigger". A row with no usable default is CI's problem
+  // (self-verify check 18, `gate-default-invalid`).
+  const sch = shippedSchema();
+  delete sch.keys['review.triggers.plan.effort'].default;
+  const r = resolve('cad-reviewer', cfg({}, 'panel-solo.json'), [],
+    { schema: writeSchema(sch, 'no-effort-default.json') });
   assert.equal(r.ok, true);
   assert.equal(r.reviewer_efforts.plan, null);
   assert.equal(r.reviewer_tiers.plan, 'cheap');
 });
 
 test('unknown role degrades to ok:false (caller falls back to session default)', () => {
-  const shipped = cfg({ stakes: 'shipped' });
+  const shipped = cfg({});
   const r = resolve('cad-nope', shipped);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'unknown-role');
@@ -720,131 +676,199 @@ test('unknown role degrades to ok:false (caller falls back to session default)',
 test('missing config file uses schema defaults, does not crash', () => {
   const r = resolve('cad-planner', join(dir, 'does-not-exist.json'));
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
-  assert.equal(r.model, 'opus'); // heavy@shipped
-  assert.match(r.reason[0], /stakes default "shipped" \(unset in layers: defaults\)/);
+  assert.equal(r.effort, 'high');   // the schema's own default rung
+  assert.equal(r.model, null);      // ...and no key anywhere named a model
+  assert.equal(r.reason[0], 'config layers: defaults');
 });
 
-// --- set-ness of stakes on the envelope (RNG-04) ------------------------------
+// --- the level is gone from the envelope (RNG-04) -----------------------------
 //
-// `stakes` is ALWAYS a level, so on its own it cannot tell the two states the
-// floor routes differently on apart - a level a layer chose, and DEFAULTS
-// standing in the layers' silence. `stakes_set` is the pairing `surfaces` +
-// `surfaces_answered` already ships. Both arms below resolve to the SAME level
-// on purpose: the flag is the only thing that separates them, which is exactly
-// what a caller reading `stakes` alone cannot recover.
+// `stakes` and `stakes_set` were a pair: the level, and whether a layer chose it
+// or DEFAULTS stood in the layers' silence. Both leave the envelope with the key
+// they described. This is the negative that would otherwise only be true by
+// accident - a resolve that re-grew either field would still pass every other
+// row in this file, because nothing else looks for their absence.
 
-test('a config carrying no stakes reports stakes_set:false beside the default level', () => {
-  const r = resolve('cad-planner', cfg({}, 'stakes-unset.json'));
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped', 'the schema default, not a configured value');
-  assert.equal(r.stakes_set, false);
-});
-
-test('a config setting stakes reports stakes_set:true at that same level', () => {
-  const r = resolve('cad-planner', cfg({ stakes: 'shipped' }, 'stakes-set-shipped.json'));
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped', 'the level the arm above reports from silence');
-  assert.equal(r.stakes_set, true, 'a chosen level read as the default');
+test('neither stakes nor stakes_set rides the envelope, key present or not', () => {
+  // The second fixture is a config that still CARRIES the retired key, which is
+  // what every project has until it runs the migration: it must resolve exactly
+  // as the empty one does, not merely resolve.
+  const empty = resolve('cad-planner', cfg({}, 'level-gone-empty.json'));
+  const lingering = resolve('cad-planner',
+    rawCfg({ stakes: 'critical' }, 'level-gone-lingering.json'));
+  for (const r of [empty, lingering]) {
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal('stakes' in r, false);
+    assert.equal('stakes_set' in r, false);
+  }
+  assert.equal(lingering.effort, empty.effort, 'a lingering level moved the rung');
+  assert.equal(lingering.model, empty.model, 'a lingering level moved the model');
+  assert.deepEqual(lingering.review, empty.review, 'a lingering level moved a gate');
 });
 
 // --- global config layer -----------------------------------------------------
 
 test('global layer applies when no repo config is present', () => {
-  const g = cfg({ stakes: 'critical' }, 'g-critical.json');
+  const g = rawCfg({ roles: { 'cad-planner': { effort: 'max' } } }, 'g-rung-max.json');
   const r = resolve('cad-planner', join(dir, 'no-repo.json'), [], { global: g });
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.model, 'opus'); // heavy@critical
-  assert.match(r.reason.join(' '), /config:global/);
+  assert.equal(r.effort, 'max');
+  assert.equal(r.agent, 'cad-planner-max');
+  assert.match(r.reason.join(' '), /config layers: global/);
 });
 
 test('repo config overrides the global layer (repo wins)', () => {
-  const g = cfg({ stakes: 'critical' }, 'g-critical2.json');
-  const repo = cfg({ stakes: 'solo' }, 'repo-solo.json');
+  const g = rawCfg({ roles: { 'cad-planner': { effort: 'max' } } }, 'g-rung-max2.json');
+  const repo = rawCfg({ roles: { 'cad-planner': { effort: 'low' } } }, 'repo-rung-low.json');
   const r = resolve('cad-planner', repo, [], { global: g });
-  assert.equal(r.stakes, 'solo');  // repo wins over global
-  assert.equal(r.model, 'sonnet'); // heavy@solo
-  assert.match(r.reason.join(' '), /config:global\+repo/);
+  assert.equal(r.effort, 'low');   // repo wins over global
+  assert.equal(r.agent, 'cad-planner-low');
+  assert.match(r.reason.join(' '), /config layers: global\+repo/);
 });
 
-test('layers deep-merge: a global model block and a repo stakes key combine', () => {
+test('layers deep-merge: a global model block and a repo roles key combine', () => {
   const g = cfg({ escalate_on_failure: false }, 'g-esc-off.json');
-  const repo = cfg({ stakes: 'critical' }, 'repo-critical.json'); // only sets stakes
-  // repo picks the matrix row; global supplies the model.* sub-key -> the
-  // retry is held by a key the repo file never mentions.
+  const repo = rawCfg({ roles: { 'cad-plan-checker': { effort: 'xhigh' } } },
+    'repo-rung-xhigh.json');
+  // repo picks the rung; global supplies the model.* sub-key -> the retry is
+  // held by a key the repo file never mentions.
   const r = resolve('cad-plan-checker', repo, ['--attempt', '2'], { global: g });
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.model, 'opus');    // the critical/cad-plan-checker cell
+  assert.equal(r.effort, 'xhigh');
   assert.equal(r.agent, 'cad-plan-checker-xhigh'); // ...its STARTING rung
   assert.equal(r.escalated, false);
 });
 
 // --- per-role model overrides ------------------------------------------------
 
-test('an override pins one role and leaves the others routed', () => {
-  const c = cfg({ stakes: 'shipped', overrides: { 'cad-planner': 'fable' } }, 'ovr-planner.json');
+test('an override pins one role and leaves the others at the session model', () => {
+  const c = cfg({ overrides: { 'cad-planner': 'fable' } }, 'ovr-planner.json');
   const planner = resolve('cad-planner', c);
   assert.equal(planner.ok, true);
-  assert.equal(planner.model, 'fable');   // pinned, not the cell's opus
+  assert.equal(planner.model, 'fable');
   assert.equal(planner.pinned, true);
+  assert.equal(planner.model_source, 'model.overrides.cad-planner');
   assert.equal(planner.effort, 'high');   // effort is frontmatter, untouched
-  assert.match(planner.reason.join(' '), /override cad-planner: opus -> fable/);
-  // a sibling role is unaffected
+  assert.match(planner.reason.join(' '), /override cad-planner=fable/);
+  // a sibling role is unaffected, and unset means no parameter at all
   const exec = resolve('cad-executor', c);
-  assert.equal(exec.model, 'opus');       // the shipped/cad-executor cell
+  assert.equal(exec.model, null);
   assert.equal(exec.pinned, false);
+  assert.equal(exec.model_source, 'session');
 });
 
-test('a pin beats the routed model but keeps the rung swap', () => {
-  const c = cfg({ stakes: 'shipped', escalate_on_failure: true, overrides: { 'cad-plan-checker': 'fable' } }, 'ovr-checker.json');
+test('a pin keeps the rung swap - the two answers do not touch', () => {
+  const c = cfg({ escalate_on_failure: true, overrides: { 'cad-plan-checker': 'fable' } }, 'ovr-checker.json');
   const r = resolve('cad-plan-checker', c, ['--attempt', '2']);
-  assert.equal(r.model, 'fable');                 // pin wins over the matrix
-  assert.equal(r.agent, 'cad-plan-checker-high'); // ...but harder reasoning still applies
+  assert.equal(r.model, 'fable');                   // the pin
+  assert.equal(r.agent, 'cad-plan-checker-medium'); // ...and one rung up from `low`
   assert.equal(r.pinned, true);
 });
 
-test('an unknown alias warns and leaves the routed model standing', () => {
-  const c = cfg({ stakes: 'shipped', overrides: { 'cad-planner': 'gpt-5' } }, 'ovr-bogus.json');
+test('a pin the host does not accept warns and sends NO model parameter', () => {
+  const c = cfg({ overrides: { 'cad-planner': 'gpt-5' } }, 'ovr-bogus.json');
   const r = resolve('cad-planner', c);
   assert.equal(r.ok, true);      // never blocks the spawn
-  assert.equal(r.model, 'opus'); // typo does not silently redirect the spend
+  assert.equal(r.model, null);   // ...and never passes a string the host refuses
   assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'session');
   assert.equal(r.warnings.length, 1);
-  assert.match(r.warnings[0], /not a known alias/);
+  assert.match(r.warnings[0], /not a model the host accepts/);
+  assert.match(r.warnings[0], /"gpt-5"/);
 });
 
-test('a pin matching the routed model is a no-op, still marked pinned', () => {
-  const c = cfg({ stakes: 'shipped', overrides: { 'cad-planner': 'opus' } }, 'ovr-noop.json');
+// --- the model named outright: roles.<role>.model (ROL-01) -------------------
+
+test('a roles-block model and rung resolve together, and pinned stays FALSE', () => {
+  // AC1's row: the two keys of one role's entry, and nothing else in the file.
+  // `max` is above the planner's `high` schema default and `haiku` is a model
+  // no default names, so neither can be the unset answer by accident.
+  const c = rawCfg({ roles: { 'cad-planner': { model: 'haiku', effort: 'max' } } },
+    'roles-model-planner.json');
   const r = resolve('cad-planner', c);
-  assert.equal(r.model, 'opus');
-  assert.equal(r.pinned, true);
-  assert.match(r.reason.join(' '), /already the routed model/);
+  assert.equal(r.ok, true);
+  assert.equal(r.model, 'haiku');
+  assert.equal(r.effort, 'max');
+  assert.equal(r.agent, 'cad-planner-max');
+  // `pinned` means model.overrides chose it, and it did not (D-11) - so the
+  // announcement rule stays keyed on a pin while the source stays readable.
+  assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'roles.cad-planner.model');
+});
+
+test('a roles model the host does not accept warns, and no parameter is sent (AC7)', () => {
+  const c = rawCfg({ roles: { 'cad-planner': { model: 'notamodel' } } },
+    'roles-model-bogus.json');
+  const r = resolve('cad-planner', c);
+  assert.equal(r.ok, true);                 // never blocks the spawn
+  assert.equal(r.model, null);              // ...and never passes the string on
+  assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'session');  // the host's own model runs
+  const named = (r.warnings || []).filter((w) => /roles\.cad-planner\.model/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /"notamodel"/);    // the string the user wrote
+});
+
+test('a rejected roles model does NOT fall through to the pin', () => {
+  // The arm D-02 and ROL-01 both fix: a roles key that is SET owns this role's
+  // answer, so a typo cannot silently hand the role back to an older pin the
+  // user has already replaced. The answer is the session's model, never haiku.
+  const c = rawCfg({
+    model: { overrides: { 'cad-verifier': 'haiku' } },
+    roles: { 'cad-verifier': { model: 'gpt-5' } } }, 'roles-model-vs-pin-bad.json');
+  const r = resolve('cad-verifier', c);
+  assert.equal(r.ok, true);
+  assert.equal(r.model, null);              // never the pin's haiku
+  assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'session');
+  assert.ok((r.warnings || []).some((w) => /"gpt-5"/.test(w)), JSON.stringify(r.warnings));
+});
+
+test('a roles model WINS over the pin, and a warning names the winner', () => {
+  const c = rawCfg({
+    model: { overrides: { 'cad-executor': 'sonnet' } },
+    roles: { 'cad-executor': { model: 'haiku' } } }, 'roles-model-vs-pin.json');
+  const r = resolve('cad-executor', c);
+  assert.equal(r.model, 'haiku');
+  assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'roles.cad-executor.model');
+  const named = (r.warnings || []).filter((w) => /roles\.cad-executor\.model/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /model\.overrides\.cad-executor/);   // ...and the loser
 });
 
 test('overrides layer: repo pin wins over a global pin', () => {
-  const g = cfg({ stakes: 'shipped', overrides: { 'cad-planner': 'haiku' } }, 'g-ovr.json');
+  const g = cfg({ overrides: { 'cad-planner': 'haiku' } }, 'g-ovr.json');
   const repo = cfg({ overrides: { 'cad-planner': 'fable' } }, 'repo-ovr.json');
   const r = resolve('cad-planner', repo, [], { global: g });
   assert.equal(r.model, 'fable');
 });
 
-// --- shipped route-table.json absent/malformed (#40) ------------------------
+// --- shipped config.schema.json absent/malformed (#40) ----------------------
 
-test('CADENCE_ROUTE_TABLE malformed degrades to ok:false, reason bad-table, no stack', () => {
-  const bad = join(dir, 'bad-table.json');
+test('an unreadable schema degrades to ok:false, reason bad-schema, no stack', () => {
+  // Both shapes of unreadable, one arm: a file that does not parse and a path
+  // with no file at all. Neither may reach the caller as a stack trace, and
+  // neither may resolve a bundle off remembered defaults - the schema is the
+  // ONLY statement of them now, so an unreadable one is fatal by design.
+  const bad = join(dir, 'bad-schema.json');
   writeFileSync(bad, '{ not json');
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: bad,
-    CADENCE_TEST_SEAM: '1' };
-  const raw = (() => {
-    try { return execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }); }
-    catch (e) { return e.stdout; }
-  })();
-  const lines = raw.split('\n').filter(Boolean);
-  assert.equal(lines.length, 1); // exactly one JSON line, no raw stack trace
-  const r = JSON.parse(lines[0]);
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'bad-table');
-  assert.match(r.detail, /bad-table\.json/);
+  const missing = join(dir, 'does-not-exist-schema.json');
+  for (const path of [bad, missing]) {
+    const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
+      CADENCE_CONFIG_SCHEMA: path, CADENCE_TEST_SEAM: '1' };
+    const raw = (() => {
+      try {
+        return execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-planner'],
+          { encoding: 'utf8', env });
+      } catch (e) { return e.stdout; }
+    })();
+    const lines = raw.split('\n').filter(Boolean);
+    assert.equal(lines.length, 1, path); // exactly one JSON line, no raw stack trace
+    const r = JSON.parse(lines[0]);
+    assert.equal(r.ok, false, path);
+    assert.equal(r.reason, 'bad-schema', path);
+    assert.match(r.detail, new RegExp(path.split('/').pop()));
+    assert.match(r.hint, /config\.schema\.json/);
+  }
 });
 
 // --- reported effort == the frontmatter that actually runs (#64) ------------
@@ -856,9 +880,6 @@ test('CADENCE_ROUTE_TABLE malformed degrades to ok:false, reason bad-table, no s
 // claude-subagent review actually runs at (`cad-reviewer` = high), so that
 // claim gets a test rather than a promise.
 const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agents');
-const SHIPPED_TABLE = JSON.parse(
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'route-table.json'), 'utf8'),
-);
 
 /** Frontmatter `effort:` of a shipped agent file. */
 function frontmatterEffort(agentName) {
@@ -867,132 +888,79 @@ function frontmatterEffort(agentName) {
   return (fm.match(/^effort:\s*(\S+)\s*$/m) || [])[1];
 }
 
-test('every rung a cell can name has an agent file carrying exactly that effort', () => {
+test('every rung the MAP names has an agent file carrying exactly that effort', () => {
   // The ladder-consistency row, and the one walk in this file that is
-  // legitimate under D-11: it compares two INDEPENDENT sources - the shipped
-  // table and the frontmatter on disk - rather than deriving its expectations
-  // from the thing under test. route.mjs REPORTS a rung's effort; the only
-  // thing that makes the report true is the file for that rung agreeing.
+  // legitimate under D-11: it compares two INDEPENDENT sources - the rung map
+  // and the frontmatter on disk - rather than deriving its expectations from
+  // the thing under test. route.mjs REPORTS a rung's effort; the only thing
+  // that makes the report true is the file for that rung agreeing.
+  //
+  // The whole map, where it used to be the subset the cells grid reached: with
+  // the grid gone, a config layer can name ANY rung of any role, so every one
+  // of them is now a rung a dispatch can land on.
   /** @type {Map<string,string>} agent-file stem -> the rung that produced it */
   const byName = new Map();
-  for (const [level, row] of Object.entries(SHIPPED_TABLE.cells)) {
-    for (const [role, cell] of Object.entries(row)) {
-      for (const rung of [cell.effort, cell.retry]) {
-        const stem = rungFile(role, rung);
-        assert.ok(stem, `${level}/${role} rung ${rung} has no file in RUNG_FILES`);
-        byName.set(stem, rung);
-      }
+  for (const [role, rungs] of Object.entries(RUNG_FILES)) {
+    for (const rung of Object.keys(rungs)) {
+      const stem = rungFile(role, rung);
+      assert.ok(stem, `${role} rung ${rung} has no file in RUNG_FILES`);
+      byName.set(stem, rung);
     }
   }
-  assert.equal(byName.size, 19, `routable agent names: ${[...byName.keys()].join(', ')}`);
+  assert.equal(byName.size, 30, `routable agent names: ${[...byName.keys()].join(', ')}`);
   for (const [name, rung] of byName) {
     assert.ok(existsSync(join(AGENTS, `${name}.md`)), `agents/${name}.md must exist`);
     assert.equal(frontmatterEffort(name), rung, `${name} frontmatter effort`);
   }
-  // ...and the other direction: a rung file RUNG_FILES names that no cell can
-  // reach is standing context nothing dispatches.
-  const named = new Set([...byName.keys()]);
-  for (const role of Object.keys(RUNG_FILES)) {
-    for (const stem of rungFiles(role)) {
-      assert.ok(named.has(stem), `agents/${stem}.md is named by no cell`);
-    }
-  }
-});
-
-test('table exposes rung_order, the five rungs the host accepts', () => {
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
-  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
-  assert.deepEqual(r.table.rung_order, ['low', 'medium', 'high', 'xhigh', 'max']);
-});
-
-test('the cell retry is the SOURCE of the swap - repointing it moves the resolved agent', () => {
-  // Pins the mechanism rather than the shipped outcome: a name no code
-  // hardcodes (`cad-plan-checker-xhigh`) must appear purely because the data
-  // says so. If route.mjs went back to hardcoding a variant name or effort,
-  // this row fails while every shipped-value row above still passes.
-  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
-  t.cells.shipped['cad-plan-checker'].retry = 'xhigh';
-  const tablePath = join(dir, 'retry-xhigh.json');
-  writeFileSync(tablePath, JSON.stringify(t));
-
-  const c = cfg({ stakes: 'shipped', escalate_on_failure: true });
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: tablePath,
-    CADENCE_TEST_SEAM: '1' };
-  const args = ['resolve', '--role', 'cad-plan-checker', '--file', c, '--attempt', '2'];
-  const r = (() => {
-    try { return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env })); }
-    catch (e) { return JSON.parse(e.stdout); }
-  })();
-  assert.equal(r.agent, 'cad-plan-checker-xhigh');
-  assert.equal(r.effort, 'xhigh');
-  assert.equal(r.escalated, true);
-});
-
-test('a cell whose retry IS its starting rung reports the rung held, not an escalation', () => {
-  // critical/cad-executor already runs at `xhigh` and its retry names the same
-  // rung, so the arm is a no-op. Saying "held" beats reporting an escalation
-  // that never happened - and beats resolving a file for a rung nothing named.
-  const c = cfg({ stakes: 'critical', escalate_on_failure: true });
-  const r = resolve('cad-executor', c, ['--attempt', '2']);
-  assert.equal(r.agent, 'cad-executor-xhigh');
-  assert.equal(r.effort, 'xhigh');
-  assert.equal(r.escalated, false);
-  assert.match(r.reason.join(' '), /rung held at xhigh/);
 });
 
 // --- the injection is GATED behind CADENCE_TEST_SEAM (EXP-01) --------------
 
-test('CADENCE_ROUTE_TABLE without the sentinel is ignored; `table` is the shipped one', () => {
+test('CADENCE_CONFIG_SCHEMA without the sentinel is ignored, and silently', () => {
   // The attack the gate exists to refuse: a repo-supplied `.envrc` or
-  // devcontainer env block points the route table at a file whose
-  // `risk_surface` gate reads `off`, and the one trigger this repo blocks on
-  // goes quiet. Unset the sentinel and the variable is not read at all - and
-  // silently, with no warning field, because TABLE_PATH resolves at module
+  // devcontainer env block points the schema at a file whose `risk_surface`
+  // gate default reads `off`, and the one trigger this repo blocks on goes
+  // quiet. Unset the sentinel and the variable is not read at all - and
+  // silently, with no warning field, because SCHEMA_PATH resolves at module
   // load, before any dispatch exists to carry one.
-  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
-  t.review.shipped.risk_surface = 'off';
-  const hostile = join(dir, 'ungated-table.json');
-  writeFileSync(hostile, JSON.stringify(t));
+  const s = shippedSchema();
+  s.keys['review.triggers.risk_surface.gate'].default = 'off';
+  const hostile = writeSchema(s, 'ungated-schema.json');
 
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: hostile };
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
+    CADENCE_CONFIG_SCHEMA: hostile };
   delete env.CADENCE_TEST_SEAM; // hermetic: never inherit an open seam
-  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
+  // Hermetic about the REPO layer too, and for the same reason. With no
+  // `--file` the resolve reads THIS repository's own `.planning/config.json`,
+  // which still carries the retired `stakes` key, so the retirement notice
+  // lands in `warnings[]` and the assertion below flips true for a cause that
+  // has nothing to do with the sentinel. An absent path is a silent absence at
+  // the config-merge seam, so this is an empty repo layer, not a fixture.
+  const noRepoLayer = join(dir, 'no-repo-layer.json');
+  const run = (e2) => JSON.parse(execFileSync('node',
+    [ROUTE, 'resolve', '--role', 'cad-planner', '--file', noRepoLayer],
+    { encoding: 'utf8', env: e2 }));
+  const r = run(env);
   assert.equal(r.ok, true);
-  assert.equal(r.table.review.shipped.risk_surface, 'blocking');
-  assert.deepEqual(r.table, SHIPPED_TABLE);
+  assert.equal(r.review.risk_surface, 'blocking', 'the shipped default stood');
+  assert.equal('warnings' in r, false);
 
   // The SAME file with the sentinel set DOES take, so the arm above is proving
   // the gate rather than a fixture path that never worked.
-  const opened = JSON.parse(execFileSync('node', [ROUTE, 'table'],
-    { encoding: 'utf8', env: { ...env, CADENCE_TEST_SEAM: '1' } }));
-  assert.equal(opened.table.review.shipped.risk_surface, 'off');
-});
-
-test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no stack', () => {
-  const missing = join(dir, 'does-not-exist-table.json');
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: missing,
-    CADENCE_TEST_SEAM: '1' };
-  const raw = (() => {
-    try { return execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-planner'], { encoding: 'utf8', env }); }
-    catch (e) { return e.stdout; }
-  })();
-  const lines = raw.split('\n').filter(Boolean);
-  assert.equal(lines.length, 1);
-  const r = JSON.parse(lines[0]);
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'bad-table');
+  const opened = run({ ...env, CADENCE_TEST_SEAM: '1' });
+  assert.equal(opened.review.risk_surface, 'off');
 });
 
 // --- the gate-enum hole (AC6) ------------------------------------------------
 
-test('a config gate outside the four values loses to the level gate, and says so', () => {
-  // The CONTEXT-cited repro: today this resolved ok:true carrying "blockign",
-  // silently replacing critical's deliberately-blocking risk_surface gate.
-  const c = rawCfg({ stakes: 'critical', review: { triggers: { risk_surface: { gate: 'blockign' } } } },
+test('a config gate outside the five values loses to the schema default, and says so', () => {
+  // The CONTEXT-cited repro: this once resolved ok:true carrying "blockign",
+  // silently replacing the deliberately-blocking risk_surface gate.
+  const c = rawCfg({ review: { triggers: { risk_surface: { gate: 'blockign' } } } },
     'gate-typo.json');
   const r = resolve('cad-reviewer', c);
   assert.equal(r.ok, true);
-  assert.equal(r.review.risk_surface, 'blocking'); // the LEVEL's gate stands
+  assert.equal(r.review.risk_surface, 'blocking'); // the schema default stands
   assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
   assert.match(r.warnings[0], /blockign/);
   assert.match(r.warnings[0], /risk_surface/);
@@ -1001,224 +969,258 @@ test('a config gate outside the four values loses to the level gate, and says so
 test('a gate of the wrong TYPE takes the same path as a typo', () => {
   for (const [label, gate] of [['number', 3], ['bool', true], ['object', { gate: 'off' }],
     ['array', ['off']]]) {
-    const c = rawCfg({ stakes: 'critical', review: { triggers: { diff: { gate } } } },
+    const c = rawCfg({ review: { triggers: { diff: { gate } } } },
       `gate-type-${label}.json`);
     const r = resolve('cad-reviewer', c);
     assert.equal(r.ok, true, label);
-    assert.equal(r.review.diff, 'blocking', label); // critical's own diff gate
+    assert.equal(r.review.diff, 'off', label); // the diff gate's own default
     assert.equal(r.warnings.length, 1, `${label}: ${JSON.stringify(r.warnings)}`);
     assert.match(r.warnings[0], /review\.triggers\.diff\.gate/, label);
   }
 });
 
 test('a VALID disagreeing gate still wins - the check runs in front of D-04, not over it', () => {
-  const c = rawCfg({ stakes: 'critical', review: { triggers: { risk_surface: { gate: 'off' } } } },
+  const c = rawCfg({ review: { triggers: { risk_surface: { gate: 'off' } } } },
     'gate-valid-disagree.json');
   const r = resolve('cad-reviewer', c);
   assert.equal(r.review.risk_surface, 'off'); // the user's key still decides
-  assert.equal(r.warnings.length, 1);
-  assert.match(r.warnings[0], /wins over the critical level gate/);
+  assert.equal(r.warnings, undefined, JSON.stringify(r.warnings));
+  assert.ok(r.reason.some((x) => /^review\.triggers\.risk_surface\.gate="off" \(config/.test(x)),
+    JSON.stringify(r.reason));
 });
 
-// --- phase_diff resolves the same through all three surfaces -----------------
+// --- phase_diff resolves the same through every surface that states it ------
 
-test('with NO triggers block the level decides phase_diff, and nothing disagrees', () => {
-  // The three surfaces that decide this gate - the route table, the schema
-  // default and the scaffolded template - agreed on nothing before this. A
-  // config that writes no gate is the state a fresh scaffold is now in.
-  const shipped = rawCfg({ stakes: 'shipped' }, 'pd-shipped.json');
-  const rs = resolve('cad-executor', shipped);
-  assert.equal(rs.review.phase_diff, 'off');
+test('with NO triggers block the schema default decides phase_diff', () => {
+  // The surfaces that describe this gate - the schema default, the scaffolded
+  // template and the resolver - agreed on nothing before the agreement check.
+  // A config that writes no gate is the state a fresh scaffold is in.
+  const r = resolve('cad-executor', rawCfg({}, 'pd-empty.json'));
+  assert.equal(r.review.phase_diff, 'off');
   // route omits `warnings` entirely when empty, so an absent key IS the
   // no-disagreement answer - `?? []` states that rather than crashing on it.
-  assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
-
-  const critical = rawCfg({ stakes: 'critical' }, 'pd-critical.json');
-  const rc = resolve('cad-executor', critical);
-  assert.equal(rc.review.phase_diff, 'adjudicated');
-  assert.deepEqual(rc.warnings ?? [], [], String(rc.warnings));
-
-  const solo = rawCfg({ stakes: 'solo' }, 'pd-solo.json');
-  assert.equal(resolve('cad-executor', solo).review.phase_diff, 'off');
+  assert.deepEqual(r.warnings ?? [], [], String(r.warnings));
 });
 
-test('the SCAFFOLDED template carries no triggers block, so nothing overrides the level', () => {
+test('the SCAFFOLDED template carries no triggers block, so nothing overrides the default', () => {
   // The template is the fixture, not a hand-written stand-in: a pre-written
-  // gate WINS over the level's and warns, so a scaffolded repo later switched
-  // to `stakes: critical` would have kept `advisory` beating `adjudicated` -
-  // which is the whole point of dropping the block rather than retuning it.
+  // gate WINS over the default, so a scaffolded repo would have carried a
+  // pinned gate it never chose - which is the whole point of dropping the block
+  // rather than retuning it.
   const template = JSON.parse(readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'config.json'), 'utf8'));
   assert.equal(template.review.triggers, undefined, 'the template must write no gate at all');
 
-  const asShipped = rawCfg(template, 'pd-template-shipped.json');
-  const rs = resolve('cad-executor', asShipped);
-  assert.equal(rs.stakes, 'shipped', 'the template writes no stakes, so the schema default stands');
-  assert.equal(rs.review.phase_diff, 'off');
-  assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
-
-  const asCritical = rawCfg({ ...template, stakes: 'critical' }, 'pd-template-critical.json');
-  const rc = resolve('cad-executor', asCritical);
-  assert.equal(rc.review.phase_diff, 'adjudicated', 'the level decides after the switch');
-  assert.deepEqual(rc.warnings ?? [], [], String(rc.warnings));
+  const r = resolve('cad-executor', rawCfg(template, 'pd-template.json'));
+  assert.equal(r.review.phase_diff, 'off');
+  assert.deepEqual(r.warnings ?? [], [], String(r.warnings));
 });
 
 test('a VALID agreeing gate still emits no warning', () => {
-  const c = rawCfg({ stakes: 'critical', review: { triggers: { risk_surface: { gate: 'blocking' } } } },
+  const c = rawCfg({ review: { triggers: { risk_surface: { gate: 'blocking' } } } },
     'gate-valid-agree.json');
   const r = resolve('cad-reviewer', c);
   assert.equal(r.review.risk_surface, 'blocking');
   assert.equal(r.warnings, undefined);
 });
 
-test('the gate check FALLS BACK rather than skipping when the table declares no gates', () => {
-  // The row that proves the fallback rather than the skip: an older or
-  // hand-edited table carries no `gates` array, and that is exactly the input
-  // shape on which a typo must not reach the bundle.
-  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
-  delete t.gates;
-  const tablePath = join(dir, 'no-gates-table.json');
-  writeFileSync(tablePath, JSON.stringify(t));
-  const c = rawCfg({ stakes: 'critical', review: { triggers: { risk_surface: { gate: 'blockign' } } } },
-    'gate-typo-no-gates.json');
-  const r = resolve('cad-reviewer', c, [], { table: tablePath });
+// --- the SCHEMA is read, never remembered ------------------------------------
+
+test('an injected schema decides the gate - route.mjs reads the file, not a copy', () => {
+  // The whole of what moving these answers into config.schema.json means: the
+  // resolver holds no hand-kept vocabulary and no hand-kept default, so a schema
+  // whose plan gate defaults to `deferred` resolves `deferred`.
+  const sch = shippedSchema();
+  sch.keys['review.triggers.plan.gate'].default = 'deferred';
+  const r = resolve('cad-reviewer', cfg({}, 'sch-deferred.json'), [],
+    { schema: writeSchema(sch, 'schema-deferred.json') });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.review.plan, 'deferred');
+});
+
+test('the schema injection is GATED behind CADENCE_TEST_SEAM, like the table', () => {
+  // Without the sentinel the variable is ignored and the SHIPPED schema is read,
+  // silently. The gate is the point: this file sets every review trigger's gate,
+  // so an ungated override turns a blocking gate off.
+  const sch = shippedSchema();
+  sch.keys['review.triggers.risk_surface.gate'].default = 'off';
+  const path = writeSchema(sch, 'schema-ungated.json');
+  const args = ['resolve', '--role', 'cad-reviewer', '--file', cfg({})];
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_CONFIG_SCHEMA: path };
+  const r = JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
+  assert.equal(r.review.risk_surface, 'blocking', 'the ungated override was honoured');
+});
+
+test('a schema row with no values list accepts no configured gate at all', () => {
+  // The vocabulary is the KEY's own `values`, so a row that carries none can be
+  // matched by nothing - which fails toward the default rather than toward
+  // letting an unchecked string reach the bundle.
+  const sch = shippedSchema();
+  delete sch.keys['review.triggers.risk_surface.gate'].values;
+  const c = rawCfg({ review: { triggers: { risk_surface: { gate: 'off' } } } },
+    'gate-no-values.json');
+  const r = resolve('cad-reviewer', c, [], { schema: writeSchema(sch, 'schema-no-values.json') });
   assert.equal(r.review.risk_surface, 'blocking');
   assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /blockign/);
+  assert.match(r.warnings[0], /review\.triggers\.risk_surface\.gate/);
 });
 
 // --- the configured START rung, model.effort.<role> (RNG-02) ------------------
 
-test('a configured start rung replaces the cell\'s, and picks that rung\'s file', () => {
-  // shipped/cad-verifier is medium/cad-verifier-medium, so an xhigh row FAILS
-  // the moment the config value stops being read - a value equal to the cell's
-  // could not tell the two apart.
-  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'xhigh' } }, 'eff-verifier.json');
+test('a configured start rung replaces the schema default, and picks that rung\'s file', () => {
+  // cad-verifier defaults to high/cad-verifier, so an xhigh row FAILS the moment
+  // the config value stops being read - a value equal to the default could not
+  // tell the two apart.
+  const file = cfg({ effort: { 'cad-verifier': 'xhigh' } }, 'eff-verifier.json');
   const r = resolve('cad-verifier', file);
   assert.equal(r.ok, true);
   assert.equal(r.effort, 'xhigh');
   assert.equal(r.agent, 'cad-verifier-xhigh');
-  assert.equal(r.model, 'opus');      // the cell still supplies the model
-  assert.match(r.reason.join(' '), /model\.effort\.cad-verifier: medium -> xhigh/);
+  assert.equal(r.model, null);        // a rung key names no model
+  assert.match(r.reason.join(' '),
+    /model\.effort\.cad-verifier="xhigh" \(config, over the schema default "high"\)/);
 });
 
 test('a configured start rung reaches the top of a role\'s own ladder', () => {
-  const file = cfg({ stakes: 'solo', effort: { 'cad-planner': 'max' } }, 'eff-planner.json');
+  const file = cfg({ effort: { 'cad-planner': 'max' } }, 'eff-planner.json');
   const r = resolve('cad-planner', file);
   assert.equal(r.effort, 'max');
   assert.equal(r.agent, 'cad-planner-max'); // solo/cad-planner starts at high
 });
 
-test('a start rung equal to the cell\'s says so rather than claiming a change', () => {
-  const file = cfg({ stakes: 'shipped', effort: { 'cad-executor': 'high' } }, 'eff-same.json');
+test('a start rung equal to the default says so rather than claiming a change', () => {
+  const file = cfg({ effort: { 'cad-executor': 'high' } }, 'eff-same.json');
   const r = resolve('cad-executor', file);
   assert.equal(r.effort, 'high');
-  assert.match(r.reason.join(' '), /model\.effort\.cad-executor="high" \(already the routed rung\)/);
+  assert.match(r.reason.join(' '),
+    /model\.effort\.cad-executor="high" \(config, already the schema default rung\)/);
 });
 
 test('the start rung is read from the merged config LAYERS, never a plugin file', () => {
   // The update-survival claim itself: a global layer that does not carry the key
   // plus a repo layer that does resolves the repo value. Nothing under the
   // plugin root is consulted, so a plugin update cannot take the setting away.
-  const g = cfg({ stakes: 'shipped' }, 'g-no-effort.json');
+  const g = cfg({}, 'g-no-effort.json');
   const repo = cfg({ effort: { 'cad-verifier': 'xhigh' } }, 'repo-effort-only.json');
   const r = resolve('cad-verifier', repo, [], { global: g });
-  assert.equal(r.stakes, 'shipped');        // from the global layer
   assert.equal(r.effort, 'xhigh');          // from the repo layer
   assert.equal(r.agent, 'cad-verifier-xhigh');
-  assert.match(r.reason.join(' '), /config:global\+repo/);
+  assert.match(r.reason.join(' '), /config layers: global\+repo/);
 });
 
 test('a hand-edited rung the role has no FILE for is refused, never fail-open dispatched', () => {
-  // `max` passes no schema enum for cad-executor, so only a hand-edited config
-  // reaches here. Handing it to the agentFor fail-open would dispatch the base
-  // file while reporting `max` - a rung nothing ran at.
-  const file = cfg({ stakes: 'shipped', effort: { 'cad-executor': 'max' } }, 'eff-unmapped.json');
+  // `ultra` is outside rung_order entirely, so no schema enum can carry it and
+  // only a hand-edited config reaches here - which stays true now that every
+  // role carries every rung of the ladder. Handing it to the agentFor fail-open
+  // would dispatch the base file while reporting `ultra` - a rung nothing ran at.
+  const file = cfg({ effort: { 'cad-executor': 'ultra' } }, 'eff-unmapped.json');
   const r = resolve('cad-executor', file);
   assert.equal(r.ok, true);                 // never blocks the spine
   assert.equal(r.effort, 'high');           // the cell's rung stands
   assert.equal(r.agent, 'cad-executor');    // ...and its file
   const named = (r.warnings || []).filter((w) => /model\.effort\.cad-executor/.test(w));
   assert.equal(named.length, 1, JSON.stringify(r.warnings));
-  assert.match(named[0], /"max"/);          // the value the user wrote
+  assert.match(named[0], /"ultra"/);        // the value the user wrote
   assert.match(named[0], /high, xhigh/);    // ...and the rungs this role does have
+  assert.match(named[0], /the next source down answers/);
 });
 
-// --- a retry never resolves below the rung that failed (D-02) -----------------
+// --- the same start rung, one key out: roles.<role>.effort (ROL-01) ----------
 
-test('a configured start above the cell\'s retry HOLDS, and says what it out-ranked', () => {
-  // shipped/cad-verifier retries at `high`. A start rung of xhigh would step
-  // DOWN to high on attempt 2 - a retry thinking less than the attempt that
-  // failed, which is exactly what lib/route-cells.mjs refuses inside the table.
-  const file = cfg({ stakes: 'shipped', escalate_on_failure: true, effort: { 'cad-verifier': 'xhigh' } }, 'eff-retry-hold.json');
-  const r = resolve('cad-verifier', file, ['--attempt', '2']);
+test('a roles-block start rung replaces the schema default, and picks that rung\'s file', () => {
+  // cad-verifier defaults to high/cad-verifier, so an xhigh row FAILS the moment
+  // the roles entry stops being read.
+  const file = rawCfg({ roles: { 'cad-verifier': { effort: 'xhigh' } } },
+    'roles-eff-verifier.json');
+  const r = resolve('cad-verifier', file);
   assert.equal(r.ok, true);
-  assert.equal(r.effort, 'xhigh');            // held, not demoted to the cell's high
+  assert.equal(r.effort, 'xhigh');
   assert.equal(r.agent, 'cad-verifier-xhigh');
-  assert.equal(r.escalated, false);           // and never reported as an escalation
-  assert.match(r.reason.join(' '), /retry rung "high"/);
-  assert.match(r.reason.join(' '), /model\.effort\.cad-verifier="xhigh"/);
+  assert.equal(r.model, null);        // a rung key names no model
+  assert.match(r.reason.join(' '),
+    /roles\.cad-verifier\.effort="xhigh" \(config, over the schema default "high"\)/);
+  assert.equal(r.warnings, undefined, JSON.stringify(r.warnings));
 });
 
-test('a configured start BELOW the cell\'s retry climbs exactly as it does today', () => {
-  const file = cfg({ stakes: 'shipped', escalate_on_failure: true, effort: { 'cad-verifier': 'medium' } }, 'eff-retry-climb.json');
+test('the roles block WINS over model.effort, and a warning names the winner', () => {
+  // Two keys, one quantity. Different rungs on purpose: a value equal to the
+  // older key's could not tell "the roles block decided" from "nothing changed".
+  const file = rawCfg({
+    model: { effort: { 'cad-verifier': 'low' } },
+    roles: { 'cad-verifier': { effort: 'xhigh' } } }, 'roles-eff-both.json');
+  const r = resolve('cad-verifier', file);
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.agent, 'cad-verifier-xhigh');
+  const named = (r.warnings || []).filter((w) => /roles\.cad-verifier\.effort/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /model\.effort\.cad-verifier/);   // ...and the loser
+  // The reason names the key that DECIDED and never the one that did not.
+  assert.match(r.reason.join(' '), /roles\.cad-verifier\.effort="xhigh" \(config/);
+  assert.doesNotMatch(r.reason.join(' '), /model\.effort\.cad-verifier="/);
+});
+
+test('a rung outside the ladder loses its turn, and the NEXT source answers', () => {
+  // Three sources, walked in order. A hand-edited roles rung names no file, so
+  // it warns and `model.effort` answers; with BOTH out of the ladder the schema
+  // default answers and the resolve still carries a whole bundle.
+  const one = resolve('cad-verifier', rawCfg({
+    model: { effort: { 'cad-verifier': 'low' } },
+    roles: { 'cad-verifier': { effort: 'ultra' } } }, 'roles-eff-stray.json'));
+  assert.equal(one.ok, true);
+  assert.equal(one.effort, 'low', JSON.stringify(one.reason));
+  assert.equal(one.agent, 'cad-verifier-low');
+  assert.ok((one.warnings || []).some((w) => /roles\.cad-verifier\.effort="ultra"/.test(w)),
+    JSON.stringify(one.warnings));
+
+  const both = resolve('cad-verifier', rawCfg({
+    model: { effort: { 'cad-verifier': 'ultra' } },
+    roles: { 'cad-verifier': { effort: 'hyper' } } }, 'roles-eff-stray-both.json'));
+  assert.equal(both.ok, true);
+  assert.equal(both.effort, 'high');   // the schema default, last in the walk
+  assert.equal(both.agent, 'cad-verifier');
+  assert.match(both.reason.join(' '),
+    /config\.schema\.json's roles\.cad-verifier\.effort default "high" \(unset in layers\)/);
+});
+
+test('a roles entry that is not a map contributes nothing, and the older key answers', () => {
+  // The defensive arm: a config layer arrives with a clone, so a scalar where
+  // the block belongs must fall back rather than throw.
+  const file = rawCfg({
+    model: { effort: { 'cad-verifier': 'xhigh' } },
+    roles: { 'cad-verifier': 'xhigh' } }, 'roles-eff-scalar.json');
+  const r = resolve('cad-verifier', file);
+  assert.equal(r.ok, true);
+  assert.equal(r.effort, 'xhigh');
+  assert.match(r.reason.join(' '), /model\.effort\.cad-verifier="xhigh" \(config/);
+});
+
+// --- a retry climbs from the rung that FAILED (D-02) --------------------------
+
+test('a retry climbs one rung from the CONFIGURED start, not from the schema default', () => {
+  const file = cfg({ escalate_on_failure: true, effort: { 'cad-verifier': 'medium' } }, 'eff-retry-climb.json');
   const r = resolve('cad-verifier', file, ['--attempt', '2']);
-  assert.equal(r.effort, 'high');             // the cell's retry rung
+  assert.equal(r.effort, 'high');             // one above the configured medium
   assert.equal(r.agent, 'cad-verifier');
   assert.equal(r.escalated, true);
   assert.match(r.reason.join(' '), /rung medium->high/);
 });
 
-test('the equal-rungs no-op and the out-ranked hold are different messages', () => {
-  // Both hold at the same rung; conflating them would make an out-ranked retry
-  // read as a cell whose retry rung is simply the same rung.
-  const outranked = resolve('cad-plan-checker',
-    cfg({ stakes: 'solo', escalate_on_failure: true, effort: { 'cad-plan-checker': 'xhigh' } }, 'eff-outrank.json'),
-    ['--attempt', '2']);
-  assert.equal(outranked.effort, 'xhigh');
-  assert.equal(outranked.escalated, false);
-  assert.match(outranked.reason.join(' '), /out-ranks the solo\/cad-plan-checker retry rung "high"/);
-  assert.doesNotMatch(outranked.reason.join(' '), /retry rung is the same rung/);
-});
-
-test('a torn rung_order never demotes a CONFIGURED start on retry - it holds and says why', () => {
-  // Pre-phase, a torn table's fallback to cell.retry could not demote (the
-  // start was always the cell's own). A configured max start swapped for an
-  // incomparable "high" retry WOULD - two rungs less than the attempt that
-  // failed, reported as an escalation.
-  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
-  delete t.rung_order;
-  const tablePath = join(dir, 'no-rung-order-table.json');
-  writeFileSync(tablePath, JSON.stringify(t));
-  const file = cfg({ stakes: 'shipped', escalate_on_failure: true, effort: { 'cad-verifier': 'max' } }, 'eff-torn-retry.json');
-  const r = resolve('cad-verifier', file, ['--attempt', '2'], { table: tablePath });
-  assert.equal(r.ok, true);
-  assert.equal(r.effort, 'max');              // the configured start stands
-  assert.equal(r.agent, 'cad-verifier-max');
-  assert.equal(r.escalated, false);
-  const named = (r.warnings || []).filter((w) => /rung_order cannot compare/.test(w));
-  assert.equal(named.length, 1, JSON.stringify(r.warnings));
-  assert.match(named[0], /"max"/);
-  assert.match(named[0], /retry rung "high"/);
-  assert.doesNotMatch(r.reason.join(' '), /out-ranks/); // unprovable, so unclaimed
-});
-
-test('a config start that LANDS ON the retry rung is attributed to the config, not the cell', () => {
-  // shipped/cad-verifier is medium start / high retry: a configured high start
-  // holds at high on attempt 2, but "retry rung is the same rung" would claim
-  // the CELL was designed that way - the conflation the messages exist to avoid.
-  const file = cfg({ stakes: 'shipped', escalate_on_failure: true, effort: { 'cad-verifier': 'high' } }, 'eff-retry-equal.json');
+test('a retry never resolves BELOW the rung that failed', () => {
+  // The invariant the cells grid needed a `rung-demotion` CI rule to hold: a
+  // configured xhigh start used to be swapped for a cell's `high` retry target,
+  // which is a retry thinking LESS than the attempt that just failed. With
+  // one-rung-up as the whole rule, that door does not exist.
+  const file = cfg({ escalate_on_failure: true, effort: { 'cad-verifier': 'xhigh' } }, 'eff-retry-hold.json');
   const r = resolve('cad-verifier', file, ['--attempt', '2']);
-  assert.equal(r.effort, 'high');
-  assert.equal(r.escalated, false);
-  assert.match(r.reason.join(' '),
-    /model\.effort\.cad-verifier="high" already sits at the shipped\/cad-verifier retry rung/);
-  assert.doesNotMatch(r.reason.join(' '), /retry rung is the same rung/);
+  assert.equal(r.ok, true);
+  assert.equal(r.effort, 'max');              // up from xhigh, never down
+  assert.equal(r.agent, 'cad-verifier-max');
+  assert.equal(r.escalated, true);
 });
 
 test('model.escalate_on_failure: false still wins over the start rung, unchanged', () => {
   const file = cfg({
-    stakes: 'shipped', escalate_on_failure: false, effort: { 'cad-verifier': 'medium' },
+    escalate_on_failure: false, effort: { 'cad-verifier': 'medium' },
   }, 'eff-esc-off.json');
   const r = resolve('cad-verifier', file, ['--attempt', '2']);
   assert.equal(r.effort, 'medium');
@@ -1241,21 +1243,27 @@ test('unknown-role still reports the retired key the config is holding', () => {
 });
 
 test('unresolved still reports it too, where the whole array was dropped', () => {
-  const stale = rawCfg({ stakes: 'nonesuch', model: { profile: 'balanced' } },
+  const stale = rawCfg({ model: { profile: 'balanced' } },
     'nofail-unres-stale.json');
-  const r = resolve('cad-planner', stale);
+  const s = shippedSchema();
+  s.keys['roles.cad-planner.effort'].default = null;
+  const r = resolve('cad-planner', stale, [],
+    { schema: writeSchema(s, 'nofail-unres-schema.json') });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'unresolved');
-  assert.equal(r.stakes, 'nonesuch');              // the value that resolved nothing
-  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /model\.profile/);
+  // Both diagnostics ride: the retired key the CONFIG holds, and the schema
+  // default that resolved nothing. Dropping either leaves the caller with the
+  // one thing it cannot act on.
+  assert.ok(r.warnings.some((w) => /model\.profile/.test(w)), JSON.stringify(r.warnings));
+  assert.ok(r.warnings.some((w) => /roles\.cad-planner\.effort/.test(w)),
+    JSON.stringify(r.warnings));
 });
 
 test('a clean ok:false carries no empty warnings array', () => {
   // The field stays ABSENT when there is nothing to say, matching every ok:true
   // return - a caller testing `warnings` for truthiness must not start seeing
   // an empty array on every degraded resolve.
-  const clean = cfg({ stakes: 'shipped' }, 'nofail-clean.json');
+  const clean = cfg({}, 'nofail-clean.json');
   assert.equal('warnings' in resolve('cad-nonesuch', clean), false);
 });
 
@@ -1272,7 +1280,7 @@ test('a usage refusal names no config layer, because none was read', () => {
 function traceRoot(name, breakTrace) {
   const planning = join(mkdtempSync(join(tmpdir(), `cad-route-${name}-`)), '.planning');
   mkdirSync(planning, { recursive: true });
-  writeFileSync(join(planning, 'config.json'), JSON.stringify({ stakes: 'solo' }));
+  writeFileSync(join(planning, 'config.json'), JSON.stringify({}));
   // trace.jsonl as a DIRECTORY is the unwritable case: appendFileSync fails
   // EISDIR for ANY uid, where a chmod is silently a no-op under a root test
   // runner and would make this pass without proving anything.
@@ -1308,7 +1316,11 @@ test('a resolve records ONE routing event carrying the decision, not the text', 
   // put `1.1` and `1.10` under one trace key and one correlation id.
   assert.equal(e.phase, '4');
   assert.equal(e.role, 'cad-executor');
-  assert.equal(e.stakes, r.stakes);
+  // `model_source` took the place `stakes` held on this event (D-05): the field
+  // that names WHAT decided the dispatch. Both halves are asserted, because a
+  // record that re-grew `stakes` would satisfy the positive on its own.
+  assert.equal('stakes' in e, false, JSON.stringify(e));
+  assert.equal(e.model_source, r.model_source);
   assert.equal(e.agent, r.agent);
   assert.equal(e.model, r.model);
   assert.equal(e.effort, r.effort);
@@ -1482,43 +1494,41 @@ test('a valueless --bracket-read is refused, not recorded as an empty read-set',
 // `deferred` - which is the phase-3 author being told to bring the quoting
 // surfaces with them, not being told no.
 
-test('no stakes level fires `deferred` - the review grid holds it in no cell', () => {
-  // 1. The shipped table, read directly: every cell of the grid, so a level or
-  //    a trigger ADDED to it is censused too rather than silently exempt.
-  for (const [level, row] of Object.entries(SHIPPED_TABLE.review)) {
-    for (const [trigger, gate] of Object.entries(row)) {
-      assert.notEqual(gate, 'deferred',
-        `route-table.json's review grid fires deferred at ${level}/${trigger}. No level `
-        + 'fires it this cycle (D-03): it is reachable by a config-set '
-        + 'review.triggers.<t>.gate alone. Moving a cell is phase 3\'s work and carries '
-        + 'README.md, METHOD.md, docs/WORKFLOW.md and .planning/DOCS-CLAIMS.md with it.');
-    }
+test('nothing fires `deferred` on its own - no schema default names it', () => {
+  // 1. The shipped schema, read directly: every gate row, so a trigger ADDED to
+  //    it is censused too rather than silently exempt.
+  const keys = shippedSchema().keys;
+  for (const [key, spec] of Object.entries(keys)) {
+    if (!/^review\.triggers\.[^.]+\.gate$/.test(key)) continue;
+    assert.notEqual(spec.default, 'deferred',
+      `${key} defaults to deferred. Nothing fires it on its own this cycle (D-03): it is `
+      + 'reachable by a config-set review.triggers.<t>.gate alone, and moving a default '
+      + 'carries README.md, METHOD.md, docs/WORKFLOW.md and .planning/DOCS-CLAIMS.md with it.');
   }
 
   // 2. What a resolve actually RETURNS with no config layer pinning a gate -
   //    the same question asked of the resolver rather than of its data, so a
-  //    default injected anywhere between the table and the envelope is caught
-  //    by the half that never reads the table.
-  for (const stakes of ['solo', 'shipped', 'critical']) {
-    const r = resolve('cad-reviewer', cfg({ stakes }, `deferred-hold-${stakes}.json`));
-    assert.equal(r.ok, true, `${stakes}: ${r.reason}`);
-    for (const [trigger, gate] of Object.entries(r.review)) {
-      assert.notEqual(gate, 'deferred',
-        `stakes ${stakes} resolves ${trigger} to deferred with nothing configured`);
-    }
+  //    default injected anywhere between the schema and the envelope is caught
+  //    by the half that never reads the schema.
+  const r = resolve('cad-reviewer', cfg({}, 'deferred-hold.json'));
+  assert.equal(r.ok, true, String(r.reason));
+  for (const [trigger, gate] of Object.entries(r.review)) {
+    assert.notEqual(gate, 'deferred',
+      `an unconfigured resolve answers ${trigger} with deferred`);
   }
 
   // 3. And the door it IS reachable through still opens, or this arm would be
   //    pinning a dead value rather than holding a live one.
-  const pinned = rawCfg({ stakes: 'solo', review: { triggers: { diff: { gate: 'deferred' } } } },
+  const pinned = rawCfg({ review: { triggers: { diff: { gate: 'deferred' } } } },
     'gate-deferred-pin.json');
   assert.equal(resolve('cad-reviewer', pinned).review.diff, 'deferred');
 });
 
 // --- the plan-time risk floor (CER-01) ---------------------------------------
 //
-// `stakes` is the MINIMUM a project accepts, and the phase's own declared
-// `files:` are what raise it. Every fixture here is a whole repo root - the
+// The floor does exactly TWO things now (D-02): it makes the plan review
+// blocking and it turns the deep-verify pass on. It names no level, moves no
+// model and moves no rung. Every fixture here is a whole repo root - the
 // declared paths are repo-relative and are read against the planning root's
 // PARENT, so a fixture that wrote only a `.planning/` would be testing the
 // unreadable-body arm by accident.
@@ -1563,54 +1573,109 @@ const ANSWERED = { review: { triggers: { risk_surface: {
 // written credential assignment here would be a line it matches.
 const SECRET_BODY = `export const FIXTURE_${'API'}_${'KEY'} = read();\n`;
 
-test('floor: an explicit stakes=critical is never resolved below (AC1)', () => {
-  const fx = floorRoot({ stakes: 'critical', ...ANSWERED },
+/** The two effects a raised floor has, and the only two, as one pair. */
+const effects = (r) => [r.review.plan, r.verify];
+
+test('floor: a phase that reads clean raises neither effect, and says it read', () => {
+  const fx = floorRoot({ ...ANSWERED },
     { '3/PLAN-1.md': ['docs/README.md'] }, { 'docs/README.md': '# Readme\n' });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.model, 'opus');
-  // It read the plan and found nothing, and SAYS so - the configured level
-  // standing because nothing raised it is a different fact from no floor.
+  assert.deepEqual(effects(r), ['advisory', 'off']);
+  // It read the plan and found nothing, and SAYS so - nothing raising is a
+  // different fact from no floor having been computed.
   assert.ok(floorReasons(r).some((x) => /declaring nothing that touches/.test(x)),
     JSON.stringify(r.reason));
 });
 
-test('floor: with stakes UNSET a surfaceless phase resolves solo, where today it is shipped (AC2)', () => {
-  const plans = { '3/PLAN-1.md': ['docs/README.md'] };
-  const files = { 'docs/README.md': '# Readme\n' };
-  const computed = floorRoot({ ...ANSWERED }, plans, files);
-  const r = resolve('cad-executor', computed.file, ['--phase', '3']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'solo');
-  assert.equal(r.model, 'sonnet');
-  assert.ok(floorReasons(r).some((x) => /floors at "solo"/.test(x)), JSON.stringify(r.reason));
-  // The BOTH-OUTPUTS half of the criterion: the same config with no phase in
-  // hand at all is the pre-CER-01 answer, and it is the schema default.
-  const today = resolve('cad-executor', computed.file);
-  assert.equal(today.stakes, 'shipped');
-  assert.equal(today.model, 'opus');
-});
-
-test('floor: a declared file on an answered surface raises to shipped and cites it', () => {
+test('floor: a declared file on an answered surface raises BOTH effects and cites it', () => {
   const fx = floorRoot({ ...ANSWERED },
     { '3/PLAN-1.md': ['docs/README.md', 'src/load.mjs'] },
     { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   const cited = floorReasons(r);
-  assert.equal(cited.length, 1, JSON.stringify(r.reason));
-  assert.match(cited[0], /src\/load\.mjs touches secrets/);
-  assert.match(cited[0], /level solo -> shipped/);
+  assert.ok(cited.some((x) => /src\/load\.mjs touches secrets/.test(x)), JSON.stringify(r.reason));
+  assert.ok(cited.some((x) => /plan review "advisory" -> "blocking"/.test(x)),
+    JSON.stringify(r.reason));
+  // The surface is NAMED in the reason, which is AC5's last clause.
+  assert.ok(cited.some((x) => /secrets/.test(x)), JSON.stringify(r.reason));
 });
 
-test('floor: stakes=solo is a FLOOR, so the same phase still raises to shipped', () => {
-  const fx = floorRoot({ stakes: 'solo', ...ANSWERED },
+test('floor: a raise moves NOTHING else - the model, the rung and the other gates hold', () => {
+  // AC5's second half and D-03 in one row: the rung clamp is gone, so a raised
+  // phase resolves the same model, rung, agent and panel a clean phase does.
+  const plans = { '3/PLAN-1.md': ['src/f.mjs'] };
+  const clean = floorRoot({ ...ANSWERED }, plans, { 'src/f.mjs': '# nothing\n' });
+  const risky = floorRoot({ ...ANSWERED }, plans, { 'src/f.mjs': SECRET_BODY });
+  const c = resolve('cad-executor', clean.file, ['--phase', '3']);
+  const k = resolve('cad-executor', risky.file, ['--phase', '3']);
+  assert.deepEqual(effects(c), ['advisory', 'off']);
+  assert.deepEqual(effects(k), ['blocking', 'on']);
+  assert.equal(k.model, c.model);
+  assert.equal(k.effort, c.effort);
+  assert.equal(k.agent, c.agent);
+  assert.equal(k.review.diff, c.review.diff);
+  assert.equal(k.review.risk_surface, c.review.risk_surface);
+  assert.equal(k.review.phase_diff, c.review.phase_diff);
+  assert.deepEqual(k.reviewer_tiers, c.reviewer_tiers);
+  assert.deepEqual(k.reviewer_efforts, c.reviewer_efforts);
+});
+
+test('floor: a config still CARRYING stakes changes nothing about what the floor does', () => {
+  // The level is not a floor any more, and it is not an input to one either.
+  // A project that has not run the migration yet must floor identically to one
+  // that has, or the migration itself would move the routing.
+  const withKey = floorRoot({ stakes: 'critical', ...ANSWERED },
     { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const without = floorRoot({ ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const a = resolve('cad-executor', withKey.file, ['--phase', '3']);
+  const b = resolve('cad-executor', without.file, ['--phase', '3']);
+  assert.deepEqual(effects(a), ['blocking', 'on']);
+  assert.deepEqual(effects(a), effects(b));
+  assert.equal(a.effort, b.effort);
+  assert.equal(a.model, b.model);
+  assert.equal('stakes' in a, false);
+});
+
+test('floor: a CONFIGURED plan gate stands, and the floor says it moved none', () => {
+  // The config-wins precedence review-triggers.md states, held on the one gate
+  // the floor touches: a gate the user validly set is what fires.
+  const fx = floorRoot({ ...ANSWERED, review: { triggers: {
+    risk_surface: { surfaces: ['secrets', 'destructive', 'untrusted_input'] },
+    plan: { gate: 'advisory' } } } },
+  { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped');
-  assert.match(floorReasons(r)[0], /level solo -> shipped/);
+  assert.equal(r.review.plan, 'advisory');
+  assert.equal(r.verify, 'on', 'the deep pass is not a gate and is not suppressed');
+  assert.ok(floorReasons(r).some((x) => /is configured, so the floor moved no gate/.test(x)),
+    JSON.stringify(r.reason));
+});
+
+test('floor: an INVALID configured plan gate never won, so it does not withhold the raise', () => {
+  // Test the ANSWER's validity, never the key's presence: a hand-edited typo
+  // would otherwise leave a detected risk surface on an advisory plan review,
+  // which is exactly what AC5 forbids.
+  const fx = floorRoot({ ...ANSWERED, review: { triggers: {
+    risk_surface: { surfaces: ['secrets', 'destructive', 'untrusted_input'] },
+    plan: { gate: 'advisroy' } } } },
+  { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.review.plan, 'blocking');
+  const said = floorReasons(r).find((x) => /-> "blocking"/.test(x));
+  assert.ok(said, JSON.stringify(r.reason));
+  assert.match(said, /"advisroy"/);   // the invalid string, named
+});
+
+test('floor: a plan gate already AT or ABOVE blocking is left where it is', () => {
+  const fx = floorRoot({ ...ANSWERED, review: { triggers: {
+    risk_surface: { surfaces: ['secrets', 'destructive', 'untrusted_input'] },
+    plan: { gate: 'adjudicated' } } } },
+  { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.review.plan, 'adjudicated');
 });
 
 test('floor: an UNANSWERED category cannot raise - the scope is the answered set (D-10)', () => {
@@ -1620,7 +1685,7 @@ test('floor: an UNANSWERED category cannot raise - the scope is the answered set
     { review: { triggers: { risk_surface: { surfaces: ['destructive'] } } } },
     { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(effects(r), ['advisory', 'off']);
   assert.deepEqual(r.surfaces, ['destructive']);
 });
 
@@ -1630,7 +1695,7 @@ test('floor: a declared file that does not exist yet still evidences by PATH', (
   const fx = floorRoot({ review: { triggers: { risk_surface: { surfaces: ['auth'] } } } },
     { '3/PLAN-1.md': ['src/auth/session.rs'] });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.match(floorReasons(r)[0], /src\/auth\/session\.rs touches auth \(path segment auth\)/);
 });
 
@@ -1652,8 +1717,8 @@ test('floor: an OVERSIZED declared body withholds the discount rather than readi
     { '3/PLAN-1.md': ['src/big.mjs'] }, { 'src/big.mjs': body });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  // NOT solo: the unset default stands because nothing was proved.
-  assert.equal(r.stakes, 'shipped');
+  // RAISED, not passed as clean: nothing was proved, so the floor fails closed.
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3 declares src\/big\.mjs, unread \(body over \d+ bytes\)/.test(w)),
     JSON.stringify(r.warnings));
   assert.ok(floorReasons(r).some((x) => /1 declared file in phase 3 went unread/.test(x)),
@@ -1673,7 +1738,7 @@ test('floor: a declared path that is not a REGULAR file is refused unopened and 
   // resolve read /dev/zero to an EOF that never comes.
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3 declares src\/link\.mjs, unread \(not a regular file\)/.test(w)),
     JSON.stringify(r.warnings));
 });
@@ -1693,8 +1758,7 @@ test('floor: a declared path through a symlinked PARENT is refused at the reposi
   symlinkSync(outside, join(fx.repo, 'vendor', 'linked'));
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped', 'the discount was taken on a body outside the tree');
-  assert.equal(r.model, 'opus');
+  assert.deepEqual(effects(r), ['blocking', 'on'], 'a body outside the tree passed as read');
   assert.ok((r.warnings || []).some((w) =>
     /^risk floor: phase 3 declares vendor\/linked\/load\.mjs, unread \(path resolves outside the repository\)/.test(w)),
   JSON.stringify(r.warnings));
@@ -1712,7 +1776,7 @@ test('floor: an ordinary NESTED path is still read and still raises', () => {
     { 'src/deep/nest/load.mjs': SECRET_BODY });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.match(floorReasons(r)[0], /src\/deep\/nest\/load\.mjs touches secrets/);
   assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
 });
@@ -1720,15 +1784,16 @@ test('floor: an ordinary NESTED path is still read and still raises', () => {
 test('floor: the two pre-plan roles are exempt and say they were not computed', () => {
   const fx = floorRoot({ ...ANSWERED },
     { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
-  // The same phase raises an executor to shipped...
-  assert.equal(resolve('cad-executor', fx.file, ['--phase', '3']).stakes, 'shipped');
-  // ...and moves neither role dispatched before a plan exists. The cursor lags
-  // at both their call sites, so a floor computed for them is computed off
-  // another phase's file list.
+  // The same phase raises both effects for an executor...
+  assert.deepEqual(effects(resolve('cad-executor', fx.file, ['--phase', '3'])),
+    ['blocking', 'on']);
+  // ...and reaches neither role dispatched before a plan exists (D-16). The
+  // cursor lags at both their call sites, so a floor computed for them is
+  // computed off another phase's file list.
   for (const role of ['cad-planner', 'cad-assumptions-analyzer']) {
     const r = resolve(role, fx.file, ['--phase', '3']);
     assert.equal(r.ok, true, role);
-    assert.equal(r.stakes, 'shipped', role);
+    assert.deepEqual(effects(r), ['advisory', 'off'], role);
     assert.deepEqual(floorReasons(r), [], `${role}: ${JSON.stringify(r.reason)}`);
     assert.ok(r.reason.some((x) => x.startsWith(`no risk-floor computation: ${role}`)),
       `${role}: ${JSON.stringify(r.reason)}`);
@@ -1742,46 +1807,31 @@ test('floor: a --file pointed at ANOTHER tree reads that tree\'s files, not this
   // exist, so nothing is read and nothing raises.
   const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['cadence-core/bin/lib/config-merge.mjs'] });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(effects(r), ['advisory', 'off']);
   assert.deepEqual(floorReasons(r).filter((x) => /touches \w+ \(/.test(x)), []);
-});
-
-test('floor: a stakes_order that cannot place the levels keeps the baseline and warns', () => {
-  // A reason claiming a baseline is "already at or above" a floor nothing could
-  // compare is a flatly false sentence this seam has emitted before.
-  const t = join(dir, 'torn-stakes-order.json');
-  const shipped = JSON.parse(readFileSync(join(dirname(ROUTE), '..', 'route-table.json'), 'utf8'));
-  shipped.stakes_order = ['low', 'high'];
-  writeFileSync(t, JSON.stringify(shipped));
-  const fx = floorRoot({ ...ANSWERED },
-    { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
-  const r = resolve('cad-executor', fx.file, ['--phase', '3'], { table: t });
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped', 'the configured baseline, not a level nothing could compare');
-  assert.ok((r.warnings || []).some((w) => /stakes_order cannot place/.test(w)),
-    JSON.stringify(r.warnings));
-  assert.deepEqual(floorReasons(r).filter((x) => /already at or above/.test(x)), []);
 });
 
 // --- the floor fails CLOSED (AC5) --------------------------------------------
 //
-// Every row here has `stakes` UNSET and asserts ok:true at the schema default.
-// The direction is the whole point: `ok:false` drops the caller to the base
-// agent at the host session default with no model override, which is BELOW every
-// floor - so a plan this cannot read may never refuse, and may never discount.
+// Every row here asserts ok:true and BOTH effects raised. The direction is the
+// whole point: `ok:false` drops the caller to the base agent at the host session
+// default with no review at all, so a plan this cannot read may never refuse -
+// and it may never pass as clean either, which is what raising means here.
+// "Held at the configured level" was the old wording and has no meaning left.
 
 /** A surfaceless plan, and the repo file it declares. */
 const CLEAN_PLAN = ['docs/README.md'];
 const CLEAN_FILES = { 'docs/README.md': '# Readme\n' };
 
-test('fail-closed: an absent phase directory holds the configured stakes', () => {
+test('fail-closed: an absent phase directory raises both effects', () => {
   const fx = floorRoot({ ...ANSWERED }, {}, CLEAN_FILES);
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok(floorReasons(r).some((x) => /holds no plan file this could read/.test(x)),
     JSON.stringify(r.reason));
-  assert.ok(floorReasons(r).some((x) => /discount below the "shipped" default is withheld/.test(x)));
+  assert.ok(floorReasons(r).some((x) => /no surface could be computed/.test(x)),
+    JSON.stringify(r.reason));
   // An absent phase directory is the ordinary pre-plan state, so it is said in
   // `reason` and NOT warned about - warning would fire on every dispatch of
   // every project that has not planned its next phase yet.
@@ -1792,7 +1842,7 @@ test('fail-closed: a phase directory with no PLAN file is the same arm', () => {
   const fx = floorRoot({ ...ANSWERED }, { '3/CONTEXT.md': '# Context\n' }, CLEAN_FILES);
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok(floorReasons(r).some((x) => /holds no plan file this could read/.test(x)),
     JSON.stringify(r.reason));
 });
@@ -1803,7 +1853,7 @@ test('fail-closed: a PLAN whose frontmatter is out of grammar holds the configur
     CLEAN_FILES);
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   // The `files:` list PARSES here - the grammar rejects the plan, and the paths
   // it did read are dropped with it rather than half-trusted.
   assert.ok((r.warnings || []).some((w) => /^risk floor: .*out of grammar/.test(w)),
@@ -1820,7 +1870,7 @@ test('fail-closed: a PLAN whose file mode makes it unreadable holds the configur
   mkdirSync(join(fx.planning, 'phases', '3', 'PLAN-1.md'), { recursive: true });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   // EITHER spelling, because the CONTRACT is the arm and not the errno: the
   // pre-read `lstatSync` guard refuses a directory as a non-regular entry before
   // `readFileSync` ever reaches EISDIR. Both land the same plan on the same
@@ -1837,22 +1887,20 @@ test('fail-closed: ONE unreadable plan holds a whole two-plan scope up (the aggr
   mkdirSync(join(fx.planning, 'phases', '3', 'PLAN-2.md'), { recursive: true });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
-  assert.equal(r.model, 'opus');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok(floorReasons(r).some((x) => /1 of 2 plans in phase 3 could not be read/.test(x)),
     JSON.stringify(r.reason));
 });
 
-test('fail-closed: the paired POSITIVE - both plans clean and surfaceless resolves solo', () => {
-  // Without this row the five above are satisfied by a floor that never
-  // discounts anything at all.
+test('fail-closed: the paired POSITIVE - both plans clean and surfaceless raises nothing', () => {
+  // Without this row the five above are satisfied by a floor that raises on
+  // everything it is ever handed.
   const fx = floorRoot({ ...ANSWERED },
     { '3/PLAN-1.md': CLEAN_PLAN, '3/PLAN-2.md': ['docs/GUIDE.md'] },
     { ...CLEAN_FILES, 'docs/GUIDE.md': '# Guide\n' });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'solo');
-  assert.equal(r.model, 'sonnet');
+  assert.deepEqual(effects(r), ['advisory', 'off']);
   assert.ok(floorReasons(r).some((x) => /2 plans read clean/.test(x)), JSON.stringify(r.reason));
   assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
 });
@@ -1874,23 +1922,21 @@ test('template-initialised: a repo scaffolded from the SHIPPED template reaches 
   // this template does not produce.
 
   // Arm one - every plan in the phase read clean and declared a file touching
-  // no surface, so the unset default is discounted to the floor.
+  // no surface, so nothing is raised.
   const clean = floorRoot(template, { '3/PLAN-1.md': CLEAN_PLAN }, CLEAN_FILES);
   const rc = resolve('cad-executor', clean.file, ['--phase', '3']);
   assert.equal(rc.ok, true);
-  assert.equal(rc.stakes, 'solo', JSON.stringify(rc.reason));
-  assert.equal(rc.model, 'sonnet');
+  assert.deepEqual(effects(rc), ['advisory', 'off'], JSON.stringify(rc.reason));
 
   // Arm two - the same phase with one plan nobody can read, as a DIRECTORY at
   // the plan's own name for the reason the file-mode row above states. The
-  // withheld-discount warning naming that plan is expected here and is part of
-  // what fail-closed means, so this arm asserts the level and never an empty
-  // `warnings`.
+  // warning naming that plan is expected here and is part of what fail-closed
+  // means, so this arm asserts the effects and never an empty `warnings`.
   const broken = floorRoot(template, { '3/PLAN-1.md': CLEAN_PLAN }, CLEAN_FILES);
   mkdirSync(join(broken.planning, 'phases', '3', 'PLAN-2.md'), { recursive: true });
   const rb = resolve('cad-executor', broken.file, ['--phase', '3']);
   assert.equal(rb.ok, true, JSON.stringify(rb));
-  assert.equal(rb.stakes, 'shipped', JSON.stringify(rb.reason));
+  assert.deepEqual(effects(rb), ['blocking', 'on'], JSON.stringify(rb.reason));
 });
 
 // --- a scope that declared NOTHING proves nothing (UAT item 11) --------------
@@ -1900,19 +1946,18 @@ test('template-initialised: a repo scaffolded from the SHIPPED template reaches 
 // floor scanned zero bytes and reported it as a clean read. Absence of evidence
 // reported as absence of surface.
 
-test('declared-nothing: a plan with an EMPTY files: list is not discounted', () => {
+test('declared-nothing: a plan with an EMPTY files: list does not pass as clean', () => {
   const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': [] }, CLEAN_FILES);
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
-  assert.equal(r.model, 'opus');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   // The warning names the plan file, on the `risk floor: ` vocabulary route.mjs
   // relays verbatim, so a reader can see WHICH plan declared nothing.
   assert.ok((r.warnings || []).some((w) => /^risk floor: phase 3: .*PLAN-1\.md declares no files at all/.test(w)),
     JSON.stringify(r.warnings));
   // ...and the reason says which of the two sentences this is. "Declaring
-  // nothing that touches [...]" is the DISCOUNT's sentence and would claim a
-  // scope nobody looked at had been found clean.
+  // nothing that touches [...]" is the CLEAN sentence and would claim a scope
+  // nobody looked at had been read.
   const said = floorReasons(r);
   assert.ok(said.some((x) => /1 of 1 plan in phase 3 declared no files at all/.test(x)),
     JSON.stringify(r.reason));
@@ -1924,7 +1969,7 @@ test('declared-nothing: a plan with NO files: key at all takes the same arm', ()
   const fx = floorRoot({ ...ANSWERED },
     { '3/PLAN-1.md': '---\nphase: 3\nplan: 1\n---\n\n# Plan\n' }, CLEAN_FILES);
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok(floorReasons(r).some((x) => /declared no files at all/.test(x)),
     JSON.stringify(r.reason));
 });
@@ -1933,16 +1978,15 @@ test('declared-nothing: the UAT probe verbatim - the SHIPPED template plus a tas
   // Reproduced from the template this project actually ships, read here rather
   // than retyped: `files:` arrives with no items, and D-05 keeps the task prose
   // out of the floor, so the probe scans nothing while LOOKING fully declared.
-  // It returned solo/sonnet - verify off, the plan gate down to advisory - on a
-  // plan whose one task names a secrets file.
+  // It returned verify off and the plan gate down to advisory on a plan whose
+  // one task names a secrets file.
   const template = readFileSync(join(dirname(ROUTE), '..', 'templates', 'PLAN.md'), 'utf8');
   const body = `${template}\n### Task 1\n\n- **Files:** src/load.mjs\n`;
   const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': body },
     { 'src/load.mjs': SECRET_BODY });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
-  assert.equal(r.model, 'opus');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.equal(floorReasons(r).some((x) => /read clean, declaring nothing/.test(x)), false,
     JSON.stringify(r.reason));
 });
@@ -1954,21 +1998,22 @@ test('declared-nothing: ONE silent plan holds a two-plan scope up, like an unrea
   const fx = floorRoot({ ...ANSWERED },
     { '3/PLAN-1.md': CLEAN_PLAN, '3/PLAN-2.md': [] }, CLEAN_FILES);
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok(floorReasons(r).some((x) => /1 of 2 plans in phase 3 declared no files at all/.test(x)),
     JSON.stringify(r.reason));
 });
 
-test('declared-nothing: an EXPLICIT stakes is untouched - this arm withholds a discount', () => {
-  // It never raises anything: `critical` stays `critical` and `solo` stays
-  // `solo`, because the configured level is a floor and this arm only refuses to
-  // go below it.
-  for (const [stakes, model] of [['critical', 'opus'], ['solo', 'sonnet']]) {
-    const fx = floorRoot({ stakes, ...ANSWERED }, { '3/PLAN-1.md': [] }, CLEAN_FILES);
-    const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-    assert.equal(r.stakes, stakes, JSON.stringify(r.reason));
-    assert.equal(r.model, model);
-  }
+test('declared-nothing: the model and the rung are untouched - this arm raises two things', () => {
+  // The role's own keys are not what this arm moves: a configured model and a
+  // configured rung both survive a scope that proved nothing, and only the two
+  // review effects change.
+  const fx = floorRoot(
+    { roles: { 'cad-executor': { model: 'haiku', effort: 'low' } }, ...ANSWERED },
+    { '3/PLAN-1.md': [] }, CLEAN_FILES);
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.model, 'haiku', JSON.stringify(r.reason));
+  assert.equal(r.effort, 'low');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
 });
 
 // --- --plan: an executor floors on the plan it was handed (D-06) -------------
@@ -1978,12 +2023,11 @@ const mixedPhase = () => floorRoot({ ...ANSWERED },
   { '3/PLAN-1.md': ['docs/README.md'], '3/PLAN-2.md': ['src/load.mjs'] },
   { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
 
-test('--plan: a clean plan in a mixed phase routes BELOW its risky sibling', () => {
+test('--plan: a clean plan in a mixed phase is NOT raised by its risky sibling', () => {
   const fx = mixedPhase();
   const clean = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '1']);
   assert.equal(clean.ok, true);
-  assert.equal(clean.stakes, 'solo');
-  assert.equal(clean.model, 'sonnet');
+  assert.deepEqual(effects(clean), ['advisory', 'off']);
   assert.ok(floorReasons(clean).some((x) => /phase 3 plan 1 read clean/.test(x)),
     JSON.stringify(clean.reason));
 });
@@ -1991,12 +2035,12 @@ test('--plan: a clean plan in a mixed phase routes BELOW its risky sibling', () 
 test('--plan: the risky plan of the same phase, and the phase UNION, both raise', () => {
   const fx = mixedPhase();
   const risky = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '2']);
-  assert.equal(risky.stakes, 'shipped');
+  assert.deepEqual(effects(risky), ['blocking', 'on']);
   assert.match(floorReasons(risky)[0], /^risk floor: phase 3 plan 2: src\/load\.mjs touches secrets/);
   // No --plan is the PHASE union, which is what a phase-scoped role resolves on:
   // one risky member raises the whole phase.
   const union = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(union.stakes, 'shipped');
+  assert.deepEqual(effects(union), ['blocking', 'on']);
   assert.match(floorReasons(union)[0], /^risk floor: phase 3: src\/load\.mjs touches secrets/);
 });
 
@@ -2006,7 +2050,7 @@ test('--plan: a key naming no plan file fails CLOSED, never widening to the unio
   const fx = mixedPhase();
   const r = resolve('cad-executor', fx.file, ['--phase', '3', '--plan', '9']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok(floorReasons(r).some((x) => /phase 3 plan 9 names no plan file/.test(x)),
     JSON.stringify(r.reason));
   assert.ok((r.warnings || []).some((w) => /^risk floor: plan 9 names no plan file/.test(w)),
@@ -2034,203 +2078,9 @@ test('--plan: it is NOT --bracket-plan, which still keys the trace alone', () =>
   const r = resolve('cad-executor', fx.file,
     ['--phase', '3', '--bracket-read', 'PLAN-1.md', '--bracket-plan', '1']);
   // The floor still took the phase UNION, so the risky sibling raised it.
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   const dispatch = traceLines(fx.planning).find((e) => e.family === 'lifecycle');
   assert.equal(dispatch.plan, '1');
-});
-
-// --- replay: what the floor does to a project's own phases (AC3) -------------
-//
-// The whole point is that AC3 is PRINTABLE rather than asserted, so these pin
-// the row shape a reader acts on - and that the computed column comes off the
-// same `levelFor` a resolve routes on rather than off a second arithmetic.
-
-/** `route.mjs replay`, on the same isolated-global rail `resolve` uses. */
-function replay(file, extra = [], opts = {}) {
-  const args = ['replay', ...(file ? ['--file', file] : []), ...extra];
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
-  try {
-    return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
-  } catch (e) {
-    return JSON.parse(e.stdout);
-  }
-}
-
-/** An archived phase directory - where `milestone-prune --mode archive` puts a
- * closed milestone's phases, and where 27 of this repository's 30 live. */
-function archivePhase(planning, label, name, files) {
-  const dir = join(planning, `_archive-${label}`, name);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'PLAN.md'), `---\nphase: 1\nplan: 1\nfiles:\n${
-    files.map((f) => `  - ${f}\n`).join('')}---\n\n# Plan\n`);
-}
-
-test('replay: one row per phase, and the RAISE carries the evidence even at today\'s level', () => {
-  const fx = floorRoot({ ...ANSWERED }, {
-    '3/PLAN-1.md': ['docs/README.md'],
-    '4/PLAN-1.md': ['src/load.mjs'],
-  }, { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
-  const r = replay(fx.file);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped', 'today IS the configured stakes - the schema default here');
-  assert.deepEqual(r.rows.map((x) => x.label), ['phases/3', 'phases/4']);
-
-  const [clean, risky] = r.rows;
-  assert.equal(clean.today, 'shipped');
-  assert.equal(clean.computed, 'solo', 'the surfaceless phase computes BELOW today');
-  assert.equal(clean.raised, false);
-  assert.equal('surface' in clean, false, 'a row that did not raise cites nothing');
-  assert.equal(clean.plans_found, 1);
-  assert.equal(clean.plans_clean, 1);
-
-  // The raise that does not move the column, which is why evidence keys off the
-  // RAISE and never off the diff: `RAISE_TARGET` and the default are both
-  // `shipped`, so a diff-triggered evidence column would be blank for exactly
-  // the rows whose surface a reader needs.
-  assert.equal(risky.computed, 'shipped');
-  assert.equal(risky.computed, risky.today);
-  assert.equal(risky.raised, true);
-  assert.equal(risky.surface, 'secrets');
-  assert.equal(risky.file, 'src/load.mjs');
-  assert.ok(risky.signal, JSON.stringify(risky));
-  assert.deepEqual(r.regressions, [], 'always present, empty on a healthy tree');
-});
-
-test('replay: an ARCHIVED phase directory is measured in the same run', () => {
-  // 27 of this repository's own 30 phases are archived; a locator that joined
-  // `phases/<N>` and nothing else would answer AC3 off a tenth of the evidence.
-  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['docs/README.md'] },
-    { 'docs/README.md': '# Readme\n', 'src/load.mjs': SECRET_BODY });
-  archivePhase(fx.planning, 'v1.0.0', '1', ['src/load.mjs']);
-  const r = replay(fx.file);
-  assert.deepEqual(r.rows.map((x) => x.label), ['_archive-v1.0.0/1', 'phases/3']);
-  assert.equal(r.rows[0].raised, true);
-  assert.equal(r.rows[0].surface, 'secrets');
-  assert.equal(r.rows[1].computed, 'solo');
-  assert.deepEqual(r.regressions, []);
-});
-
-// A body whose ONE line imports a risky name and calls nothing - the shape the
-// line-kind exemption withholds (RSK-05, D-03). Assembled for the reason
-// SECRET_BODY is: this file is read by the same detector.
-const IMPORT_ONLY_BODY = `import { ${'rm'}${'Sync'} } from 'node:fs';\n`;
-/** The same import followed by the call it brought into scope, which is a
- * genuine call site and is never withheld. */
-const IMPORT_THEN_CALL_BODY = `${IMPORT_ONLY_BODY}${'rm'}${'Sync'}(dir, { recursive: true });\n`;
-
-test('replay: a row NAMES the file whose only evidence for a surface was withheld', () => {
-  // AC4's second half: a raise that used to rest on an import says which file
-  // and which surface stopped counting, instead of moving its cited evidence
-  // silently. Said as a `reason` and not a `warning` - `warnings[]` is for an
-  // input the floor could not READ, and a withheld line is one it read and
-  // judged.
-  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['src/teardown.mjs'] },
-    { 'src/teardown.mjs': IMPORT_ONLY_BODY });
-  const [row] = replay(fx.file).rows;
-  assert.equal(row.raised, false, 'an import alone no longer raises');
-  assert.ok(row.reason.some((x) => x.includes('src/teardown.mjs') && x.includes('destructive')
-    && /no longer counts/.test(x)), JSON.stringify(row.reason));
-  assert.equal('warnings' in row, false, 'the floor READ this file - nothing was unreadable');
-});
-
-test('replay: a file whose surface SURVIVES on a called line is not named as withheld', () => {
-  // The half that keeps the sentence honest: the exemption still ran on the
-  // import line, and the category answers anyway, so nothing was cost and
-  // saying it was would be false.
-  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['src/teardown.mjs'] },
-    { 'src/teardown.mjs': IMPORT_THEN_CALL_BODY });
-  const [row] = replay(fx.file).rows;
-  assert.equal(row.raised, true);
-  assert.equal(row.surface, 'destructive');
-  assert.equal(row.file, 'src/teardown.mjs');
-  assert.deepEqual(row.reason.filter((x) => /no longer counts/.test(x)), []);
-});
-
-test('replay: every row carries the BYTES it read, and a path that does not exist reports 0', () => {
-  // AC6 (D-11): the read this floor pays for is on the record rather than
-  // inferred. Zero and ABSENT are different answers - a scope that opened
-  // nothing still opened nothing measurably - so the field is always present.
-  const fx = floorRoot({ ...ANSWERED }, {
-    '3/PLAN-1.md': ['src/absent.mjs'],
-    '4/PLAN-1.md': ['docs/README.md'],
-  }, { 'docs/README.md': '# Readme\n' });
-  const [absent, present] = replay(fx.file).rows;
-  assert.equal(absent.bytes_read, 0, 'a plan that CREATES its file read nothing');
-  assert.equal('bytes_read' in absent, true, 'omitting the field would read as "not measured"');
-  assert.equal(present.bytes_read, '# Readme\n'.length,
-    'the on-disk size of the one body it opened');
-});
-
-test('replay: an UNREAD declared body contributes no bytes - nothing was read to skip it', () => {
-  // The bound's own arm: a body over `MAX_BODY_BYTES` is refused unopened, so
-  // counting its size would claim a read that never happened. The scope still
-  // holds at today's level, which is the `unread` discount rule and not this
-  // figure's business.
-  const oversized = 'x'.repeat(512 * 1024 + 1);
-  const fx = floorRoot({ ...ANSWERED }, { '3/PLAN-1.md': ['docs/README.md', 'src/huge.mjs'] },
-    { 'docs/README.md': '# Readme\n', 'src/huge.mjs': oversized });
-  const [row] = replay(fx.file).rows;
-  assert.equal(row.bytes_read, '# Readme\n'.length, 'only the body that was opened');
-  assert.equal(row.computed, 'shipped', 'the unread file still withholds the discount');
-});
-
-test('replay: a phase whose plan cannot be read prints today\'s level and says so', () => {
-  const fx = floorRoot({ ...ANSWERED }, {
-    '3/PLAN-1.md': '---\nphase: 3\nplan: 1\nfiles:\n  - src/a.mjs\n  not a key line\n---\n\n# Plan\n',
-  });
-  const r = replay(fx.file);
-  assert.equal(r.ok, true);
-  const [row] = r.rows;
-  assert.equal(row.computed, 'shipped', 'today\'s level, never the discount');
-  assert.equal(row.computed, row.today);
-  assert.equal(row.raised, false);
-  assert.equal(row.plans_found, 1);
-  assert.equal(row.plans_clean, 0);
-  assert.ok(row.reason.some((x) => /withheld/.test(x)), JSON.stringify(row.reason));
-  assert.ok((row.warnings || []).some((w) => /out of grammar/.test(w)), JSON.stringify(row));
-});
-
-test('replay: a planning root with no phase directory is an empty row list, not a refusal', () => {
-  const fx = floorRoot({ ...ANSWERED });
-  const r = replay(fx.file);
-  assert.equal(r.ok, true);
-  assert.deepEqual(r.rows, []);
-  assert.deepEqual(r.regressions, [], 'written whether or not anything matched');
-});
-
-test('replay: a bare --file is REFUSED, exactly as resolve\'s is', () => {
-  const r = replay(null, ['--file']);
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'usage');
-  assert.match(r.detail, /--file/);
-});
-
-test('replay: stakes_set qualifies the today column, and agrees with what resolve reports', () => {
-  // `today` IS `cfg.stakes`, which is the schema default when no layer set the
-  // key, so the column has exactly the two states the resolve envelope does and
-  // a replay without the flag reports a default as a configured level. Both
-  // fixtures answer `shipped` for `today`; only the flag tells them apart. The
-  // cross-check against `resolve` over the SAME file is `levelFor`'s rule held
-  // one field over - a replay may not come to report what no resolve would.
-  const plans = { '3/PLAN-1.md': ['docs/README.md'] };
-  const files = { 'docs/README.md': '# Readme\n' };
-  const unset = floorRoot({ ...ANSWERED }, plans, files);
-  const set = floorRoot({ stakes: 'shipped', ...ANSWERED }, plans, files);
-
-  const ru = replay(unset.file);
-  assert.equal(ru.ok, true);
-  assert.equal(ru.rows.length, 1, 'the fixture produced no row to qualify');
-  assert.equal(ru.stakes, 'shipped');
-  assert.equal(ru.stakes_set, false);
-  assert.equal(resolve('cad-executor', unset.file).stakes_set, false,
-    'resolve and replay report different set-ness off one config');
-
-  const rs = replay(set.file);
-  assert.equal(rs.ok, true);
-  assert.equal(rs.stakes, 'shipped', 'the level the unset fixture reports from silence');
-  assert.equal(rs.stakes_set, true);
-  assert.equal(resolve('cad-executor', set.file).stakes_set, true,
-    'resolve and replay report different set-ness off one config');
 });
 
 // --- lowering below the computed floor takes a named waiver (AC4) ------------
@@ -2255,14 +2105,14 @@ const DESTRUCTIVE_BODY = `${'rm'} -${'rf'} ./build\n`;
 const waiverFx = (config, body = SECRET_BODY) => floorRoot(config,
   { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': body });
 
-test('waiver: a waived surface holds at the CONFIGURED stakes, not the unset discount', () => {
+test('waiver: a waived surface raises neither effect', () => {
   // A scope that matched a surface it waived is not a scope that matched
-  // nothing: the waiver lowers from the computed floor to the level the project
-  // STATED, and no further.
+  // nothing - the reason SAYS which key withheld the raise, because a silent
+  // waiver is the shape every other arm of this seam exists to refuse.
   const fx = waiverFx(waiving(['secrets']));
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped', 'the configured default, never solo');
+  assert.deepEqual(effects(r), ['advisory', 'off']);
   const said = floorReasons(r);
   assert.ok(said.some((x) => x.includes(WAIVER_KEY) && /secrets/.test(x)
     && /src\/load\.mjs/.test(x)), JSON.stringify(r.reason));
@@ -2270,68 +2120,105 @@ test('waiver: a waived surface holds at the CONFIGURED stakes, not the unset dis
     JSON.stringify(r.reason));
 });
 
-test('waiver: with stakes solo and the surface waived, the level IS solo', () => {
-  const fx = waiverFx({ stakes: 'solo', ...waiving(['secrets']) });
-  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'solo');
-  assert.equal(r.model, 'sonnet');
-});
-
-test('waiver: without the key the lowering is REFUSED, and the reason says which key', () => {
-  // The paired arm. Never an ok:false - that drops the caller to the host
-  // session default, below every floor - so "refused" means the lowering did
-  // not take effect and the record says what would have made it.
-  const fx = waiverFx({ stakes: 'solo', ...ANSWERED });
+test('waiver: the same phase without the key raises both, and names the surface', () => {
+  // The paired arm, and AC5's second sentence. Never an ok:false - that drops
+  // the caller to the host session default with no review at all.
+  const fx = waiverFx({ ...ANSWERED });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
-  const refusal = floorReasons(r).find((x) => /refused/.test(x));
-  assert.ok(refusal, JSON.stringify(r.reason));
-  assert.match(refusal, /lowering to the configured "solo" is refused/);
-  assert.ok(refusal.includes(WAIVER_KEY), refusal);
-  assert.match(refusal, /name secrets in/);
+  assert.deepEqual(effects(r), ['blocking', 'on']);
+  assert.ok(floorReasons(r).some((x) => /touches secrets/.test(x)), JSON.stringify(r.reason));
+});
+
+test('waiver: the destructive surface, raised and then withheld by the key (AC5)', () => {
+  // AC5 in its literal shape, on one fixture read twice: the phase's one plan
+  // declares a file whose BODY matches `destructive`, so the raise rests on
+  // content rather than on a path segment.
+  const answered = ['secrets', 'destructive', 'untrusted_input'];
+  const plans = { '3/PLAN-1.md': ['src/clean.sh'] };
+  const files = { 'src/clean.sh': DESTRUCTIVE_BODY };
+  const raised = floorRoot({ review: { triggers: { risk_surface: { surfaces: answered } } } },
+    plans, files);
+  const r = resolve('cad-executor', raised.file, ['--phase', '3']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(effects(r), ['blocking', 'on']);
+  assert.ok(r.reason.some((x) => /destructive/.test(x)), JSON.stringify(r.reason));
+
+  // ...and the SAME role on a clean phase, which is what "model and effort do
+  // not move" is measured against rather than against a literal typed here.
+  const cleanFx = floorRoot({ review: { triggers: { risk_surface: { surfaces: answered } } } },
+    plans, { 'src/clean.sh': '# nothing\n' });
+  const c = resolve('cad-executor', cleanFx.file, ['--phase', '3']);
+  assert.deepEqual(effects(c), ['advisory', 'off']);
+  assert.equal(r.model, c.model);
+  assert.equal(r.effort, c.effort);
+
+  // Naming that surface in the waiver withholds BOTH effects.
+  const waived = floorRoot({ review: { triggers: { risk_surface: {
+    surfaces: answered, waive_routing_floor: ['destructive'] } } } }, plans, files);
+  const w = resolve('cad-executor', waived.file, ['--phase', '3']);
+  assert.equal(w.ok, true);
+  assert.deepEqual(effects(w), ['advisory', 'off']);
+  assert.ok(floorReasons(w).some((x) => x.includes(WAIVER_KEY) && /destructive/.test(x)),
+    JSON.stringify(w.reason));
+});
+
+test('waiver: it withholds the raise and NOT the review - the gate key is untouched', () => {
+  // The key waives a ROUTING floor and never a review, which is why the name
+  // says `routing`: the blocking commit-time risk_surface gate still fires.
+  const fx = waiverFx(waiving(['secrets']));
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.equal(r.review.risk_surface, 'blocking');
 });
 
 test('waiver: naming a DIFFERENT surface than the one matched waives nothing', () => {
-  const fx = waiverFx({ stakes: 'solo', ...waiving(['destructive']) });
+  const fx = waiverFx({ ...waiving(['destructive']) });
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.match(floorReasons(r)[0], /touches secrets/);
 });
 
 test('waiver: when the top match is waived, the next UNWAIVED match still raises', () => {
-  const fx = waiverFx({ stakes: 'solo', ...waiving(['secrets']) },
+  const fx = waiverFx({ ...waiving(['secrets']) },
     SECRET_BODY + DESTRUCTIVE_BODY);
   const r = resolve('cad-executor', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped', 'waiving one surface is not waiving the floor');
+  assert.deepEqual(effects(r), ['blocking', 'on'], 'waiving one surface is not waiving the floor');
   const said = floorReasons(r);
   assert.ok(said.some((x) => /secrets/.test(x) && x.includes(WAIVER_KEY)),
     JSON.stringify(r.reason));
-  assert.ok(said.some((x) => /touches destructive/.test(x) && /level solo -> shipped/.test(x)),
-    JSON.stringify(r.reason));
+  assert.ok(said.some((x) => /touches destructive/.test(x)
+    && /raised to blocking/.test(x)), JSON.stringify(r.reason));
 });
 
 test('waiver: a value outside the eight categories rides warnings and waives nothing', () => {
-  const bad = waiverFx({ stakes: 'solo', ...waiving(['not_a_surface']) });
+  const bad = waiverFx({ ...waiving(['not_a_surface']) });
   const r = resolve('cad-executor', bad.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
   assert.ok((r.warnings || []).some((w) => w.includes(WAIVER_KEY) && /not_a_surface/.test(w)),
     JSON.stringify(r.warnings));
   // ...and a value that is not a list at all takes the same arm.
-  const scalar = waiverFx({ stakes: 'solo', ...waiving('secrets') });
-  const s = resolve('cad-executor', scalar.file, ['--phase', '3']);
-  assert.equal(s.stakes, 'shipped');
-  assert.ok((s.warnings || []).some((w) => w.includes(WAIVER_KEY) && /is not a list/.test(w)),
-    JSON.stringify(s.warnings));
+  const scalar = waiverFx({ ...waiving('secrets') });
+  const sc = resolve('cad-executor', scalar.file, ['--phase', '3']);
+  assert.deepEqual(effects(sc), ['blocking', 'on']);
+  assert.ok((sc.warnings || []).some((w) => w.includes(WAIVER_KEY) && /is not a list/.test(w)),
+    JSON.stringify(sc.warnings));
 });
 
-// --- a detected surface floors the configured rung too (D-08) ---------------
+test('waiver: a waived scope that ALSO failed to read still raises - the fail-closed arm wins', () => {
+  // The waiver speaks about a surface that was PROVED. A scope nobody could
+  // read proved nothing, so there is nothing for the key to waive.
+  const fx = floorRoot(waiving(['secrets']), { '3/PLAN-1.md': [] }, {});
+  const r = resolve('cad-executor', fx.file, ['--phase', '3']);
+  assert.deepEqual(effects(r), ['blocking', 'on']);
+});
+
+// --- the floor moves NO rung and NO model (D-03) -----------------------------
 //
-// `model.effort.<role>` still wins over the cell, but a DETECTED surface floors
-// it, for post-plan roles only. Until this landed the configured rung won
-// unconditionally, so a project that pinned a cheap rung kept it on the one
-// phase the floor had just raised - and `references/config-reach.md` has claimed
-// the clamp exists since the v2.7.0 deletion.
+// The clamp this section used to hold - a raised level flooring a configured
+// rung up to the raised cell's - retires with the level. There is no raised ROW
+// for a rung to be clamped against, so the arm became unreachable rather than
+// merely unused, and these rows are the paired assertion that it is gone: a
+// user's dial survives a detected surface.
 
 /** A repo whose phase 3 declares a secrets-carrying file, plus a pinned rung. */
 const clampFx = (extra, plan = ['src/load.mjs']) => floorRoot(
@@ -2339,73 +2226,58 @@ const clampFx = (extra, plan = ['src/load.mjs']) => floorRoot(
   { '3/PLAN-1.md': plan },
   { 'src/load.mjs': SECRET_BODY, 'docs/README.md': '# Readme\n' });
 
-test('clamp: a raised level floors the configured rung, and the reason names the surface', () => {
+test('no clamp: a raised floor leaves the configured rung exactly where it was', () => {
   const fx = clampFx({});
   const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped');
-  assert.equal(r.effort, 'medium', 'the shipped/cad-plan-checker cell\'s rung, not the pinned low');
-  const held = r.reason.find((x) => /does not apply/.test(x));
-  assert.ok(held, JSON.stringify(r.reason));
-  assert.match(held, /model\.effort\.cad-plan-checker="low"/);
-  assert.match(held, /touches secrets/);
-  assert.match(held, /"medium" rung is the floor/);
-});
-
-test('clamp: a surfaceless phase took a DISCOUNT, so the configured rung stands', () => {
-  // Clamping against a discounted cell would take the dial away in exactly the
-  // cheap case CER-01 buys.
-  const fx = clampFx({}, ['docs/README.md']);
-  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'solo');
-  assert.equal(r.effort, 'low');
+  assert.deepEqual(effects(r), ['blocking', 'on']);
+  assert.equal(r.effort, 'low', 'the configured rung, not the cell\'s');
+  assert.equal(r.agent, 'cad-plan-checker');
   assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
 });
 
-test('clamp: a WAIVED surface raised nothing, so it clamps nothing', () => {
-  const fx = clampFx(waiving(['secrets']));
-  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'shipped', 'the waiver holds at the configured level');
-  assert.equal(r.effort, 'low', 'and the rung dial is untouched');
-  assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
+test('no clamp: the same rung on a surfaceless phase - the two are indistinguishable', () => {
+  // The paired negative: if the row above passed because the rung happened to
+  // match, this one would disagree with it.
+  const raised = resolve('cad-plan-checker', clampFx({}).file, ['--phase', '3']);
+  const clean = resolve('cad-plan-checker', clampFx({}, ['docs/README.md']).file, ['--phase', '3']);
+  assert.deepEqual(effects(clean), ['advisory', 'off']);
+  assert.equal(raised.effort, clean.effort);
+  assert.equal(raised.agent, clean.agent);
+  assert.equal(raised.model, clean.model);
 });
 
-test('clamp: a pre-plan role is exempt for free - no floor is computed for it', () => {
+test('no clamp: a ROLES-block rung survives a raised floor too', () => {
   const fx = floorRoot(
-    { stakes: 'critical', model: { effort: { 'cad-planner': 'high' } }, ...ANSWERED },
+    { roles: { 'cad-plan-checker': { effort: 'low' } }, ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] },
+    { 'src/load.mjs': SECRET_BODY, 'docs/README.md': '# Readme\n' });
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
+  assert.deepEqual(effects(r), ['blocking', 'on']);
+  assert.equal(r.effort, 'low');
+  assert.match(r.reason.join(' '), /roles\.cad-plan-checker\.effort="low" \(config/);
+});
+
+test('no clamp: a pre-plan role is untouched, floor or no floor', () => {
+  const fx = floorRoot(
+    { model: { effort: { 'cad-planner': 'high' } }, ...ANSWERED },
     { '3/PLAN-1.md': ['src/load.mjs'] }, { 'src/load.mjs': SECRET_BODY });
   const r = resolve('cad-planner', fx.file, ['--phase', '3']);
-  assert.equal(r.stakes, 'critical');
-  // The critical/cad-planner cell names xhigh and the config names the rung
-  // below it; nothing raised, so nothing clamps.
   assert.equal(r.effort, 'high');
-  assert.deepEqual(r.reason.filter((x) => /does not apply/.test(x)), []);
+  assert.deepEqual(effects(r), ['advisory', 'off']);
 });
 
-test('clamp: a rung_order that cannot place the two rungs keeps the configured one and warns', () => {
-  // The precedent is the retry block, which holds a configured start rung for
-  // exactly this reason: clamping on a comparison nothing made would take a
-  // user's dial away on the strength of a torn table.
-  const t = join(dir, 'torn-rung-order.json');
-  const shipped = JSON.parse(readFileSync(join(dirname(ROUTE), '..', 'route-table.json'), 'utf8'));
-  shipped.rung_order = ['first', 'second'];
-  writeFileSync(t, JSON.stringify(shipped));
-  const fx = clampFx({});
-  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3'], { table: t });
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');
-  assert.equal(r.effort, 'low', 'the configured rung stands');
-  assert.ok((r.warnings || []).some((w) => /rung_order cannot compare/.test(w)),
-    JSON.stringify(r.warnings));
-});
+// --- `replay` is gone --------------------------------------------------------
 
-test('waiver: the replay honours it too - one implementation, both faces', () => {
-  // The whole reason the scope-to-level half is one helper: a rule added on the
-  // resolve side that did not reach the replay would print raises this project
-  // has already declined to route on.
-  const fx = waiverFx(waiving(['secrets']));
-  const r = replay(fx.file);
-  assert.equal(r.rows.length, 1);
-  assert.equal(r.rows[0].raised, false);
-  assert.equal(r.rows[0].computed, 'shipped');
-  assert.deepEqual(r.regressions, []);
+test('replay: the subcommand is refused as usage, and the synopsis names it no more', () => {
+  // D-14: it had no prose caller and orphaned no shared helper. The refusal is
+  // the ordinary unknown-subcommand one, so a caller still holding the spelling
+  // is told what the tool does take rather than crashing.
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const r = (() => {
+    try { return JSON.parse(execFileSync('node', [ROUTE, 'replay'], { encoding: 'utf8', env })); }
+    catch (e) { return JSON.parse(e.stdout); }
+  })();
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'usage');
+  assert.equal(/replay/.test(r.detail), false, r.detail);
 });

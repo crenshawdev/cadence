@@ -39,18 +39,22 @@ cross-model half's model tier and reasoning effort from that line's
 `reviewer_tiers` and `reviewer_efforts` maps, keyed the same way again (step
 4). If
 the gate is `off`, return immediately (no-op). Else it is one of
-`advisory | deferred | blocking | adjudicated` (step 6). The stakes level sets it, so the
-same trigger gates differently on a solo project and a critical one.
+`advisory | deferred | blocking | adjudicated` (step 6). The gate is whatever
+`review.triggers.<trigger>.gate` says, and this key's own schema default where
+no layer set it - `advisory` for `plan`, `blocking` for `risk_surface`, `off`
+for `diff` and `phase_diff`. ONE thing moves it after that: the plan-time risk
+floor raises the PLAN review to `blocking` when the phase's plans touch an
+answered risk surface. Nothing raises the other three.
 
 The seam has ALREADY applied config-wins precedence: a
-`review.triggers.<trigger>.gate` the user set beats the level's gate, and the
-disagreement arrives as a `warnings[]` entry - relay it (seam-spawn-agent.md)
+`review.triggers.<trigger>.gate` the user set is what fires, floor or no floor,
+and where the floor found it already configured the `reason` says so rather
+than moving it silently - relay any `warnings[]` entry (seam-spawn-agent.md)
 rather than resolving it again here. The same precedence has applied to the
 tier and the effort since RVW-03, so those two maps are answers, not defaults:
 a layer that
 set `review.triggers.<trigger>.tier` or `.effort` is already folded in, and
-where no layer did, the STAKES LEVEL's row answered - raising `stakes` moves the
-cross-model half of the panel exactly as it moves the subagent half. A degraded
+where no layer did, that key's own schema default answered. A degraded
 resolve (`ok:false`) means no bundle: fall back to the config gate, tier and
 effort, and say so.
 
@@ -95,7 +99,7 @@ What the seam decided, stated so the set is readable rather than mysterious:
 - any cross-model provider named in `review.reviewers` (`openai`, `gemini`,
   `deepseek`, ...) is kept iff `review.providers.<name>.tiers[<tier>]` is a
   non-null model id, where `<tier>` is the layer's `review.triggers.<t>.tier`
-  when a layer set one and `route-table.json`'s `tiers` row otherwise. The rule
+  when a layer set one and that key's schema default otherwise. The rule
   is by provider `<name>`, not a fixed list: any provider with an adapter in
   `review-provider.mjs` and a config `review.providers.<name>` block resolves
   the same way. A key is resolved lazily at CALL time, so a `no-key` result
@@ -180,21 +184,19 @@ reviewer set never does. Per backend:
   durability of findings over pricing fidelity, and the overlapped fire was
   already losing both.
 
-  That agent is the reviewer rung the LEVEL names -
-  `cad-reviewer-medium` at solo, the unsuffixed `cad-reviewer` (this role's
-  `high` rung) at shipped and on a solo retry, `cad-reviewer-xhigh` at
-  critical and on a shipped retry, and `cad-reviewer-max` when a critical-level
-  fire is re-dispatched with `--attempt 2`. That
-  enumeration is the DEFAULT table's: a configured `model.effort.cad-reviewer`
-  start rung replaces the level's rung, so the resolve's own `agent` field,
-  never this list, is what dispatches and what any mismatch line names. The per-trigger
+  That agent is the reviewer rung `roles.cad-reviewer.effort` names -
+  `cad-reviewer-medium` on the schema default, whichever of the five rungs a
+  config layer wrote instead, and one rung higher on an `--attempt 2` fire when
+  `model.escalate_on_failure` is on. The resolve's own `agent` field,
+  never a list here, is what dispatches and what any mismatch line names. The per-trigger
   `effort` is NOT
   passed and cannot be - the seam's surface is `(agent_name, prompt, model?)` -
   so the reviewer runs at the `effort:` its own rung file pins.
   **When the RESOLVED per-trigger effort differs from the rung actually
   dispatched, say so in one line before dispatching**, e.g. "`diff` resolves at
-  effort `low`; the shipped level dispatches `cad-reviewer`, pinned at `high`, so
-  it runs `high` - per-trigger effort reaches cross-model reviewers only". One line
+  effort `low`; `roles.cad-reviewer.effort` dispatches `cad-reviewer`, pinned at
+  `high`, so it runs `high` - per-trigger effort reaches cross-model reviewers
+  only". One line
   per fire, not per reviewer, and nothing when the two agree. A resolved value
   the backend cannot deliver is a degradation like any other: name it. Do not
   "fix" it by editing the config or by pretending the effort applied.
@@ -251,8 +253,9 @@ uses: reviewers critique, the main model grounds and owns the verdict.
 Once the survivor list is settled, record the outcome. The trace append and the
 reported line under it are the ADJUDICATED arm's alone: advisory and blocking
 fires keep writing exactly what they write today, and the stated cost is that
-at `solo`, where `plan` stays advisory, `trace suggest` gets no rows about the
-gate that fires most often there. The ADJUDICATION RECORD is NOT scoped that
+on a project that leaves `plan` at its advisory default, `trace suggest` gets
+no rows about the gate that fires most often there. The ADJUDICATION RECORD is
+NOT scoped that
 way: it is written on the BLOCKING arm as well, at the settle point
 `references/triage-gate.md` names. The ADVISORY arm writes neither, and the
 reason is not tidiness - its reviewer writes the findings file and closes its
@@ -278,8 +281,8 @@ a re-arm is REFUSED - never merged and never overwritten - because round one's
 record is what an auditor reads to see the finding a fix was claimed to close.
 
 **A `risk_surface` fire PERSISTS its settled survivors, at every gate.** Unlike
-the trace append, this is not the adjudicated ARM's alone: `risk_surface` is
-`blocking` at every level, and the default `review.mode` still settles a
+the trace append, this is not the adjudicated ARM's alone: `risk_surface`
+defaults to `blocking`, and the default `review.mode` still settles a
 survivor list here. `/cad-land`'s unattended close is the ONLY consumer that
 halt has - it fires no review of its own - so skipping the write lets an
 autonomous close merge over a blocker nobody halted on. Where it is written is
@@ -306,29 +309,33 @@ as an adjudicated-only errand is exactly how an uncapped re-arm gets back in.
 
 ## Wiring (which skill fires what)
 
-The gate column is per LEVEL: solo / shipped / critical, in that order.
+The gate column is each key's own schema default. A config layer writing
+`review.triggers.<t>.gate` replaces it; the plan-time risk floor reaches the
+`plan` row alone.
 
-| Trigger | Fired by | When | Payload artifact | Gate (solo/shipped/critical) |
+| Trigger | Fired by | When | Payload artifact | Default gate |
 |---|---|---|---|---|
-| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST | advisory / blocking / adjudicated |
-| `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / off / blocking |
-| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking / blocking / blocking |
-| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / off / adjudicated |
+| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST | advisory |
+| `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off |
+| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking |
+| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off |
 
-`risk_surface` is `blocking` at every level on purpose: it fires only on a
-detection match, and there is no level at which a matched risk surface is worth
-waving through.
+`risk_surface` defaults to `blocking` on purpose: it fires only on a
+detection match, and there is no project for which a matched risk surface is
+worth waving through.
 
-`phase_diff` is `off` at `shipped` because an advisory gate blocks nothing and
+`phase_diff` is `off` because an advisory gate blocks nothing and
 its findings files were referenced by no SUMMARY and no CONTEXT - the dispatch
 bought findings that changed nothing. A user who reads them sets
-`review.triggers.<t>.gate` back on and wins over the level; that is the existing
+`review.triggers.<t>.gate` back on and that is what fires; that is the existing
 config-wins precedence in step 1, not new code.
 
-`plan` is `blocking` at `shipped` on that same measurement: it condemned the
-ADVISORY gate, not the review, so the choice was a gate that changes an outcome
-or no review at all. A plan is the cheapest artifact to halt on - no code exists
-yet - and `blocking` adds no user-triage turn, which is what `critical` buys.
+`plan` is `advisory` on that same measurement, which condemned the advisory gate
+rather than the review, so the choice was a gate that changes an outcome or no
+review at all. The answer is the plan-time risk floor: it makes this gate
+`blocking` on a phase whose own declared files touch an answered surface, which
+is where a halt is earned. A plan is the cheapest artifact to halt on - no code
+exists yet - and `blocking` adds no user-triage turn.
 
 It fires on a COMPLETED range, never on a staged index mid-plan. Halting an
 executor at each risky commit bought nothing the range-level fire does not:

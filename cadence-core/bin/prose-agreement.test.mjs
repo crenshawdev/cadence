@@ -26,6 +26,7 @@ import { activeVersion } from './lib/branch-decision.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { DEFERRED_READS, regionLabels } from './lib/deferred-reads.mjs';
 import { CATEGORIES, scanTree, interviewOptions } from './lib/surface-scan.mjs';
+import { RUNG_ORDER } from './lib/rung-agent.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -96,122 +97,42 @@ test('cad-plan-checker-contract states one dimension count in all three places',
     `<success_criteria> says ${claimedCount} but <dimensions> enumerates ${enumerated}`);
 });
 
-// --- RNG-04: the README's adaptive-routing claim, held against a real resolve -
+// --- DFC-02: the phase_diff purpose matches what the RESOLVER answers --------
 //
-// "leaving `stakes` unset is what lets a phase touching none of them route
-// below the old default" was FALSE of every project Cadence initialised until
-// the template stopped writing the key: the resolver's discount shipped in
-// v3.5.7, but no new project could ever reach it. So the sentence is held
-// against a resolve over a repo built from the SHIPPED TEMPLATE, not against a
-// hand-written config - a check that only grepped the README for the sentence
-// would pass on exactly the broken tree this closes.
+// The defect: the reference and docs/WORKFLOW.md both read `off / off /
+// adjudicated` while the resolver returned `advisory` at shipped - one wrong row
+// was the single source of four wrong claims across two documents. The three
+// levels are gone and the gate is a schema default now, so the pair that can
+// drift is the schema's own `purpose` (the prose a user reads while setting the
+// key) and what `route.mjs resolve` actually returns for an unset gate. Held
+// against a REAL resolve, never against the schema `default` twice: a check that
+// read the same field on both sides would pass on a resolver that ignored it.
 
-/** The README sentence the arm below measures, located by a stable substring. */
-const UNSET_CLAIM = 'leaving `stakes` unset is what lets a phase touching none '
-  + 'of them route below the old default';
+/** The `defaults to <value>` clause a purpose has to carry, per lib/gate-agreement.mjs. */
+const DEFAULT_CLAUSE = /\bdefaults?\s+to\s+[`"']?([a-z_]+)[`"']?/i;
 
-/**
- * `route.mjs resolve` over a repo INITIALISED FROM THE SHIPPED TEMPLATE: the
- * template copied to `.planning/config.json` exactly as both init workflows
- * copy it, one phase holding one plan, and the one repo file that plan declares
- * touching no risk surface. Beside `resolvedReview` rather than folded into it
- * - that helper writes a bare config carrying one `stakes` value and asserts
- * the resolve came back AT it, which is the opposite of the case here, and it
- * builds no repo tree, no phase directory and no declared file.
- *
- * The global layer is pointed at a path that does not exist, so a dev machine
- * whose user-global config pins `stakes` cannot answer for the template.
- */
-function resolvedFromTemplate(phase = 3) {
-  const repo = mkdtempSync(join(tmpdir(), 'cad-prose-template-'));
-  const planning = join(repo, '.planning');
-  mkdirSync(join(planning, 'phases', String(phase)), { recursive: true });
-  writeFileSync(join(planning, 'config.json'),
-    doc('cadence-core', 'templates', 'config.json'));
-  writeFileSync(join(planning, 'phases', String(phase), 'PLAN-1.md'),
-    `---\nphase: ${phase}\nplan: 1\nfiles:\n  - docs/README.md\n---\n\n# Plan\n`);
-  mkdirSync(join(repo, 'docs'), { recursive: true });
-  writeFileSync(join(repo, 'docs', 'README.md'), '# Readme\n');
-  const line = execFileSync('node',
-    [ROUTE, 'resolve', '--role', 'cad-executor', '--phase', String(phase),
-      '--file', join(planning, 'config.json')],
-    { encoding: 'utf8', env: { ...process.env,
-      CADENCE_GLOBAL_CONFIG: join(repo, 'no-global.json') } });
+test('phase_diff: the schema purpose names the gate a no-gate resolve really answers', () => {
+  const key = 'review.triggers.phase_diff.gate';
+  const spec = JSON.parse(doc('cadence-core', 'config.schema.json')).keys[key];
+  const claimed = DEFAULT_CLAUSE.exec(spec.purpose);
+  assert.ok(claimed, `${key}: the purpose states no default: ${spec.purpose}`);
+  assert.ok(spec.values.includes(claimed[1]),
+    `${key}: the purpose names "${claimed[1]}", which is not one of ${JSON.stringify(spec.values)}`);
+
+  // A config setting no gate at all, resolved through the per-repo `--file`
+  // layer with the global layer pointed at a path that does not exist, so a dev
+  // machine's own config cannot answer for the shipped default.
+  const dir = mkdtempSync(join(tmpdir(), 'cad-prose-gate-'));
+  const cfg = join(dir, 'config.json');
+  writeFileSync(cfg, '{}\n');
+  const line = execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-reviewer', '--file', cfg],
+    { encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(dir, 'no-global.json') } });
   const r = JSON.parse(line);
   assert.equal(r.ok, true, line);
-  return r;
-}
-
-test('README: a template-initialised phase touching no surface really does route BELOW the default', () => {
-  const readme = doc('README.md');
-  assert.ok(readme.includes(UNSET_CLAIM),
-    `README no longer makes the claim this arm measures: ${UNSET_CLAIM}`);
-
-  // "below" and "the old default" both come off the artifacts, never off this
-  // file: the order is route-table.json's own `stakes_order` and the default is
-  // config.schema.json's `keys.stakes.default`, so a change to either is read
-  // here rather than silently disagreed with.
-  const order = JSON.parse(doc('cadence-core', 'route-table.json')).stakes_order;
-  const dflt = JSON.parse(doc('cadence-core', 'config.schema.json')).keys.stakes.default;
-  const r = resolvedFromTemplate();
-  assert.ok(order.indexOf(r.stakes) > -1 && order.indexOf(dflt) > -1,
-    `stakes_order ${JSON.stringify(order)} does not place ${r.stakes} and ${dflt}`);
-  // FIRST, and deliberately: on a tree whose template pins a level again this
-  // is the assertion that must speak, because its message carries the two
-  // figures a reader needs - what the resolve returned and what it is measured
-  // against. The `stakes_set` pin below is the same fact said upstream, and
-  // asserting it first would answer a level question with a set-ness message.
-  assert.ok(order.indexOf(r.stakes) < order.indexOf(dflt),
-    `the README says a surfaceless phase routes below the default, but a `
-    + `template-initialised repo resolved ${r.stakes} against the default ${dflt}`);
-  assert.equal(r.stakes_set, false, 'the shipped template pins a stakes level');
-});
-
-// --- DFC-02: both statements of phase_diff's gates match the RESOLVER --------
-
-const LEVELS = ['solo', 'shipped', 'critical'];
-
-/**
- * `review` as `route.mjs resolve` returns it for `cad-reviewer` at each stakes
- * level, keyed by level. Driven through the per-repo `--file` layer because
- * `resolve` takes no level flag, and read off the RESOLVER rather than off
- * route-table.json: the prose copies what a run actually gets, so level
- * mapping, schema defaults and role selection have to be inside the check or
- * they stay free to diverge from the two documents that quote them.
- */
-function resolvedReview() {
-  const dir = mkdtempSync(join(tmpdir(), 'cad-prose-'));
-  /** @type {Record<string, Record<string, string>>} */
-  const out = {};
-  for (const level of LEVELS) {
-    const cfg = join(dir, `${level}.json`);
-    writeFileSync(cfg, JSON.stringify({ stakes: level }));
-    const line = execFileSync('node',
-      [ROUTE, 'resolve', '--role', 'cad-reviewer', '--file', cfg], { encoding: 'utf8' });
-    const r = JSON.parse(line);
-    assert.equal(r.ok, true, line);
-    assert.equal(r.stakes, level, `--file did not drive stakes to ${level}: ${line}`);
-    out[level] = r.review;
-  }
-  return out;
-}
-
-test('phase_diff gates: the wiring table and docs/WORKFLOW.md both match the resolver', () => {
-  // The defect: both read `off / off / adjudicated` while the resolver returns
-  // `advisory` at shipped. One wrong row in the reference was the single source
-  // of four separate wrong claims across two documents.
-  const resolved = resolvedReview();
-  const want = LEVELS.map((l) => resolved[l].phase_diff);
-
-  const wiring = tableRow(doc('cadence-core', 'references', 'review-triggers.md'), 'phase_diff');
-  const cell = wiring[wiring.length - 1].split('/').map((s) => s.trim());
-  assert.deepEqual(cell, want,
-    `review-triggers.md states ${cell.join(' / ')}, the resolver returns ${want.join(' / ')}`);
-
-  // WORKFLOW.md spells the same three values as three separate columns.
-  const workflow = tableRow(doc('docs', 'WORKFLOW.md'), 'phase_diff');
-  assert.deepEqual(workflow.slice(-3), want,
-    `docs/WORKFLOW.md states ${workflow.slice(-3).join(' / ')}, the resolver returns ${want.join(' / ')}`);
+  assert.equal(r.review.phase_diff, claimed[1],
+    `the purpose says the phase_diff gate defaults to "${claimed[1]}", the resolver answers `
+    + `"${r.review.phase_diff}"`);
 });
 
 // --- DFC-04: the risk_surface row admits the artifact /cad-task produces -----
@@ -249,24 +170,26 @@ test('risk_surface row: its shape (c) clause names no producer, and task.md stil
 
 // --- CST-02: the eight risk-surface categories, stated in three places -------
 
-test('risk-surface categories: the schema enum, the route table and the detection list are one list', () => {
-  // route.mjs may not read config.schema.json - a schema default read there
-  // becomes a user assertion - so route-table.json carries a hand-maintained
-  // copy of this vocabulary, and the reference names the same tokens beside the
-  // prose category each one stands for. Three statements of one list, and
-  // nothing but this check keeps them one list.
+test('risk-surface categories: the schema enum, the detector and the detection list are one list', () => {
+  // The third leg used to be route-table.json's hand-maintained
+  // `risk_surface_categories`, which existed because route.mjs may not read
+  // config.schema.json. That file is gone and the resolver reads the schema
+  // enum directly, so the leg that is still a SEPARATE statement of this list is
+  // lib/surface-scan.mjs's CATEGORIES - what `planning.mjs detect-surfaces` and
+  // `risk-check` judge an answer against - and the reference names the same
+  // tokens beside the prose category each one stands for. Three statements of
+  // one list, and nothing but this check keeps them one list.
   const spec = JSON.parse(doc('cadence-core', 'config.schema.json'))
     .keys['review.triggers.risk_surface.surfaces'];
   assert.ok(spec, 'config.schema.json defines no review.triggers.risk_surface.surfaces');
-  const table = JSON.parse(doc('cadence-core', 'route-table.json')).risk_surface_categories;
 
   const after = doc('cadence-core', 'references', 'risk-surface.md')
     .split('## risk_surface detection')[1];
   assert.ok(after, 'risk-surface.md has no risk_surface detection section');
   const prose = [...after.split(/\n## /)[0].matchAll(/^- `([a-z_]+)` - /gm)].map((m) => m[1]);
 
-  assert.deepEqual(table, spec.values,
-    `route-table.json states [${table}], config.schema.json states [${spec.values}]`);
+  assert.deepEqual([...CATEGORIES], spec.values,
+    `lib/surface-scan.mjs states [${[...CATEGORIES]}], config.schema.json states [${spec.values}]`);
   assert.deepEqual(prose, spec.values,
     `risk-surface.md's detection list states [${prose}], config.schema.json states [${spec.values}]`);
 
@@ -643,7 +566,7 @@ test('the turn bound: every rung file and the spawn-agent seam name one maxTurns
   const wrong = [...new Set(stated.filter((v) => v !== bound))];
   assert.deepEqual(wrong, [],
     `references/seam-spawn-agent.md's spawn-agent bullet states maxTurns ${wrong.join('/')}, `
-    + `which no rung file carries - the 19 rung files carry ${bound}`);
+    + `which no rung file carries - the 30 rung files carry ${bound}`);
 });
 
 // --- WIR-01: the recovery arm's producers, and the default reviewer's bound --
@@ -1024,15 +947,16 @@ test('README\'s "Today it is N skills and M agent roles across K rung files" mat
 
   // Rung files: every `.md` directly under agents/. Roles: those filenames with
   // the rung suffix stripped. The suffix VOCABULARY is read off
-  // route-table.json's `rung_order` rather than typed, so a new rung renames
+  // lib/rung-agent.mjs's RUNG_ORDER rather than typed, so a new rung renames
   // agent files and this keeps deriving the same six roles instead of counting
-  // the new spelling as a seventh.
+  // the new spelling as a seventh. It used to be read off route-table.json's
+  // `rung_order`; the ladder is now stated beside the map it orders.
   const rungs = readdirSync(join(REPO, 'agents')).filter((f) => f.endsWith('.md'));
   assert.ok(rungs.length, 'no agent files under agents/');
-  const order = JSON.parse(doc('cadence-core', 'route-table.json')).rung_order;
-  assert.ok(Array.isArray(order) && order.length, 'route-table.json states no rung_order');
+  const order = RUNG_ORDER;
+  assert.ok(Array.isArray(order) && order.length, 'lib/rung-agent.mjs states no RUNG_ORDER');
   const suffix = new RegExp(`-(?:${order.join('|')})$`);
-  // The analyzer's UNSUFFIXED file is its xhigh rung (route-table.json:4), so a
+  // The analyzer's UNSUFFIXED file is its xhigh rung (lib/rung-agent.mjs), so a
   // name carrying no suffix is already the role.
   const roles = new Set(rungs.map((f) => f.replace(/\.md$/, '').replace(suffix, '')));
 
@@ -1186,7 +1110,7 @@ test('both fire sites invoke the risk-check seam rather than reading a prose lis
     + 'outside the phase spine and 0 is the one number no roadmap phase carries, '
     + "so any other value files the task's range against a real phase's records");
   // An unjudged range is not a cleared one, and widening is the only safe
-  // direction on the one gate that is `blocking` at every stakes level.
+  // direction on the one gate whose schema default is `blocking`.
   assert.match(execute, /inconclusive/,
     'execute.md dropped the rule that an inconclusive range fires the trigger');
 });
@@ -1703,7 +1627,7 @@ test('RSK-11, task.md: the surfaces-unanswered refusal is answered in the run, n
   // `--surfaces` - which is EVERY fresh user, and on a treeless repository
   // there is no repo layer to have answered it in. A coordinator that reads
   // that refusal as a verdict or as a skip stops there, and the one trigger
-  // that blocks at every stakes level never runs for exactly the audience the
+  // that defaults to `blocking` never runs for exactly the audience the
   // inline path exists for. So the arm is prose or it is nothing: the seam has
   // no way to ask.
   const risk = stepBody(doc(...TASK_WF), 'risk_check', 'task.md');
@@ -1809,7 +1733,7 @@ test('ENFORCEMENT, execute.md: the guardrail still forbids a coordinator Edit/Wr
 // Watched FAILING at e4f95a3, this plan's unpatched baseline: `grep -c
 // risk-check cadence-core/references/execute-parallel.md` returned 0 there,
 // against 2 for `cadence-core/workflows/execute.md`. The one gate that is
-// `blocking` at every stakes level fired on the sequential path and nowhere
+// `blocking` by schema default fired on the sequential path and nowhere
 // else, so all three checks below go red against that SHA - the first two on
 // the two absent command names, the third on the invocation it cannot find.
 //
@@ -3837,7 +3761,7 @@ test('RSK-10: every risk-check run invocation names --base and exactly one scope
 // `--base {pre-plan HEAD} --head HEAD`, so a plan that landed no commits asks
 // the seam about a range whose ends are the same commit. The seam answers
 // `checked: true, empty: true` - the correct answer for a zero-byte diff, and a
-// COMPLETED clean check on the one gate that is blocking at every stakes level,
+// COMPLETED clean check on the one gate that defaults to blocking,
 // standing in the record as if a range had been judged. `lib/risk-diff.mjs`
 // decides `empty` from the diff BODY and never from equal ids on purpose (a
 // revert pair has differing ids and an empty net diff), so the fix is the

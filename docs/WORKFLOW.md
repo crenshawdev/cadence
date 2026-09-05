@@ -78,7 +78,7 @@ after it asks how you want to publish rather than choosing for you.*
 
 Model is overridable at dispatch time. Reasoning effort is not; it is frozen in
 the agent file's own frontmatter. That single constraint is why the ladder
-exists as **nineteen files across six roles** rather than a parameter:
+exists as **thirty files across six roles** rather than a parameter:
 dispatching a role harder means dispatching a different file.
 
 | Rung | Where it sits |
@@ -89,34 +89,36 @@ dispatching a role harder means dispatching a different file.
 | `xhigh` | critical work, and most retries |
 | `max` | a failed attempt on critical work |
 
-![Escalation: a plan check on a shipped project starts at the medium rung, which dispatches the cad-plan-checker-medium file; on failure attempt two climbs to the high rung, which is a different file, cad-plan-checker-high.](figures/effort-ladder.svg)
+![Escalation: a plan check starts at the medium rung, which dispatches the cad-plan-checker-medium file; on failure attempt two climbs to the high rung, which is a different file, cad-plan-checker-high.](figures/effort-ladder.svg)
 
 *Escalation is opt-in: `model.escalate_on_failure` is `false` by default,
 because a retry is usually a narrower job than the pass that failed it. Turned
-on it applies at every stakes level, fires whenever `attempt > 1`, and can only
-climb. CI refuses any table that would demote a
-rung, and refuses any rung file whose declared effort disagrees with the slot it
-is filed under.*
+on it fires whenever `attempt > 1`, climbs exactly one rung, and holds at the
+top rung. CI refuses any rung file whose declared effort disagrees with the slot
+it is filed under.*
 
-### Where each role starts, and where a retry lands
+### Where each role starts
 
-Eighteen cells, keyed on `(stakes, role)`. Each names a model and two rungs:
-where the first attempt starts, and the floor a second attempt climbs to.
+Twelve keys, two per role: `roles.<role>.model` and `roles.<role>.effort`. The
+thirteen-question interview behind `/cad-config --roles` is where a project
+answers them, and nothing derives one role's answer from another's.
 
-| Role | solo | shipped (default) | critical |
-|---|---|---|---|
-| `cad-planner` | sonnet · high → xhigh | opus · high → xhigh | opus · xhigh → max |
-| `cad-assumptions-analyzer` | sonnet · high → xhigh | opus · high → xhigh | opus · xhigh → xhigh |
-| `cad-plan-checker` | sonnet · low → high | sonnet · medium → high | opus · xhigh → xhigh |
-| `cad-executor` | sonnet · high → xhigh | opus · high → xhigh | opus · xhigh → xhigh |
-| `cad-reviewer` | sonnet · medium → high | opus · high → xhigh | opus · xhigh → max |
-| `cad-verifier` | sonnet · high → xhigh | opus · medium → high | opus · xhigh → max |
+| Role | Model when the key is unset | Starting rung, by default |
+|---|---|---|
+| `cad-planner` | your own session's model | `high` |
+| `cad-assumptions-analyzer` | your own session's model | `high` |
+| `cad-plan-checker` | your own session's model | `low` |
+| `cad-executor` | your own session's model | `high` |
+| `cad-reviewer` | your own session's model | `medium` |
+| `cad-verifier` | your own session's model | `high` |
 
-The routed vocabulary is only `sonnet` and `opus`. Haiku and Fable are reachable
-by explicit pin, never by routing. A stakes level missing any part of its row is
-treated as a torn table: routing returns not-ok and the caller falls back to the
-base agent at the session default rather than dispatching a half-resolved
-bundle.
+An unset model key sends no model parameter at all, which is not the same as
+naming a default. Any of the five rungs is reachable for any of the six roles.
+The model key is a free string, so a name this host does not accept still
+resolves: the parameter is dropped and the string comes back in `warnings[]`,
+never a silent redirect of spend. A bundle the resolver cannot assemble at all
+returns not-ok, and the caller falls back to the base agent at the session
+default rather than dispatching a half-resolved one.
 
 ## 5. Who spawns what
 
@@ -126,7 +128,7 @@ narrow: one planner, not a committee.
 
 ![Command to agent map: cad-context spawns one assumptions analyzer, cad-plan spawns one planner and one plan checker, cad-execute spawns one executor per plan, cad-verify spawns one verifier, and the review seam fire spawns one subagent plus any cross-model reviewers.](figures/spawn-map.svg)
 
-*Nineteen agent files, six roles, one contract per role. The rung files are
+*Thirty agent files, six roles, one contract per role. The rung files are
 pointer-only stubs so the behaviour is written down exactly once.*
 
 ---
@@ -145,24 +147,27 @@ not a convenience.*
 
 ### Which trigger fires where, and what it can do to you
 
-| Trigger | Fired by | What gets reviewed | solo | shipped | critical |
-|---|---|---|---|---|---|
-| `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | blocking | adjudicated |
-| `diff` | `/cad-execute` | the diff for one completed plan | off | off | blocking |
-| `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff - once per plan on the committed range in `/cad-execute`, once per run elsewhere | blocking | blocking | blocking |
-| `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | off | adjudicated |
+| Trigger | Fired by | What gets reviewed | Default gate |
+|---|---|---|---|
+| `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory |
+| `diff` | `/cad-execute` | the diff for one completed plan | off |
+| `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff - once per plan on the committed range in `/cad-execute`, once per run elsewhere | blocking |
+| `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off |
 
 > **Two risk detectors, reading different things**
 >
 > **At plan time**, before any code is written, a floor reads the phase's own
 > declared `files:` - their paths and their current bodies, scanned for the
-> same anchored constructs the commit-time gate below fires on - and moves the
-> resolved LEVEL a dispatch runs at. **At plan completion**, the model reads
+> same anchored constructs the commit-time gate below fires on - and does
+> exactly two things on a match: an advisory `plan` review becomes blocking,
+> and the deep-verify pass turns on. It moves no role's model and no role's
+> rung. **At plan completion**, the model reads
 > the plan's whole committed range and fires `risk_surface` on what it sees -
 > once, never per commit mid-plan - deciding whether the blocking review runs.
-> One moves what a dispatch buys, the other decides whether a review runs, and
-> neither substitutes for the other. A dispatch-time path match that judged a
-> file by its NAME - one token floored a whole phase to `critical` - was cut in
+> One decides how hard a plan is reviewed, the other decides whether a review
+> runs at all, and neither substitutes for the other. A dispatch-time path
+> match that judged a file by its NAME - one token put a whole phase on its top
+> rung - was cut in
 > v2.7.0; what reads the declared files now is a different detector matching
 > constructs in their current bodies, with a document contributing its path
 > alone.
@@ -188,6 +193,6 @@ There is no local-subagent consult. A second Claude is not a second opinion.
 
 ---
 
-Drawn from Cadence's own `METHOD.md`, `INTERNALS.md`, `cadence-core/route-table.json`
+Drawn from Cadence's own `METHOD.md`, `INTERNALS.md`, `cadence-core/config.schema.json`
 and the workflow definitions. Gates and rungs shown as configured by default;
 every one of them is a config key.

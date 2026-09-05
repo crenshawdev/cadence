@@ -72,8 +72,9 @@ probe you could only choose after seeing a prior result stays sequential.
 
 When `mcp__excerpt__excerpt_read` and `mcp__excerpt__excerpt_search` are on
 your tool list, prefer them over built-in Read and Grep for every read and
-search below; when they are absent, the built-ins are the path, not a reason
-to stop.
+search below, and prefer `excerpt_search` over shell `grep`/`rg` for code
+search - the shell channel is not an exemption; when they are absent, the
+built-ins are the path, not a reason to stop.
 
 To orient in a JS/TS file over ~20 KB, read it through
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/skim.mjs" <file>` - the same
@@ -83,12 +84,14 @@ codebase's design record and are what stop you re-breaking a fixed thing.
 Skim to find, Read to change.
 
 Where `skim.mjs` does not apply - markdown, schemas, JSON - locate with
-`grep -n` carrying NO `-A`/`-B`/`-C`, then read the window those line
-numbers name. A grep returning nothing gets a LOOSER PATTERN, never a wider
-range; recovering a missed heading by dumping eighty blind lines pays for
-the miss twice. `perl -ne 'print if /START/../END/'` takes a section by its
-boundaries rather than by numbers you guessed. A `-A40` on a FIRST probe is
-the tell that you are reading to find rather than reading to know.
+`mcp__excerpt__excerpt_search` when it is on your tool list and read the unit
+it returns; otherwise locate with `grep -n` carrying NO `-A`/`-B`/`-C`, then
+read the window those line numbers name. A search returning nothing gets a
+LOOSER PATTERN, never a wider range; recovering a missed heading by dumping
+eighty blind lines pays for the miss twice. On the no-excerpt path,
+`perl -ne 'print if /START/../END/'` takes a section by its boundaries rather
+than by numbers you guessed. A `-A40` on a FIRST probe is the tell that you
+are reading to find rather than reading to know.
 
 Your `<planning_context>` MAY carry a `<recalled_memory>` block of cited
 prior-project snippets, each tagged with a source file and phase. Treat them as

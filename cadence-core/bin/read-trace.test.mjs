@@ -20,7 +20,7 @@ import {
   recordFromHook, appendRead, programOf, readsPath, filesOf,
   RECORDED_TOOLS, MAX_READS_BYTES, MAX_FILES_PER_CALL,
   rotatedReadsPath, readsClaimPath, isReadsRotationMarker, rotateReads,
-  READS_MARKER_BYTES,
+  READS_MARKER_BYTES, MAX_ERROR_TEXT, errorFlagOf, errorTextOf, redactCause,
 } from './lib/read-trace.mjs';
 
 const TS = '2026-08-14T00:00:00.000Z';
@@ -89,6 +89,74 @@ test('an inline env assignment is stripped, so an inline secret is never the tok
   assert.equal(programOf('/usr/local/bin/rg --files'), 'rg');
   assert.equal(programOf('   '), null);
   assert.equal(programOf(undefined), null);
+});
+
+test('excerpt_read is billed like Read, with its path as the target', () => {
+  const r = recordFromHook({
+    tool_name: 'mcp__excerpt__excerpt_read',
+    tool_input: { path: 'cadence-core/bin/route.mjs', offset: 40, limit: 20 },
+  }, TS);
+  assert.equal(r.tool, 'mcp__excerpt__excerpt_read');
+  assert.equal(r.target, 'cadence-core/bin/route.mjs');
+  assert.equal(r.offset, 40);
+  assert.equal(r.limit, 20);
+});
+
+test('excerpt_search records its SCOPE and never its pattern', () => {
+  const r = recordFromHook({
+    tool_name: 'mcp__excerpt__excerpt_search',
+    tool_input: { pattern: 'JWT_SECRET=(\\S+)', path: 'cadence-core' },
+  }, TS);
+  assert.equal(r.target, 'cadence-core');
+  assert.equal(JSON.stringify(r).includes('JWT_SECRET'), false);
+});
+
+test('a failed call records is_error and the first line of its cause', () => {
+  const r = recordFromHook({
+    tool_name: 'mcp__excerpt__excerpt_read',
+    tool_input: { path: '/proc/self/environ' },
+    tool_response: { isError: true, content: [{ text: '/proc/self/environ: declined\nsecond line' }] },
+  }, TS);
+  assert.equal(r.is_error, true);
+  assert.equal(r.error, '/proc/self/environ: declined');
+});
+
+test('a successful call records is_error false and no cause', () => {
+  const r = recordFromHook({
+    tool_name: 'Read',
+    tool_input: { file_path: '/a' },
+    tool_response: { is_error: false, text: 'hello' },
+  }, TS);
+  assert.equal(r.is_error, false);
+  assert.equal('error' in r, false);
+});
+
+test('a response that says nothing about failure records no is_error at all', () => {
+  const r = recordFromHook({
+    tool_name: 'Read', tool_input: { file_path: '/a' }, tool_response: 'plain text',
+  }, TS);
+  assert.equal('is_error' in r, false);
+});
+
+test('a cause line masks a credential VALUE and keeps its name', () => {
+  const r = recordFromHook({
+    tool_name: 'mcp__excerpt__excerpt_read',
+    tool_input: { path: '/a' },
+    tool_response: { isError: true, error: 'auth failed: api_key=sk-live-ABC123 rejected' },
+  }, TS);
+  assert.equal(r.error.includes('sk-live-ABC123'), false);
+  assert.equal(r.error.includes('api_key'), true);
+  assert.equal(redactCause('sent Bearer sk-live-XYZ'), 'sent Bearer <redacted>');
+  assert.equal(redactCause('/etc/hosts: declined'), '/etc/hosts: declined');
+});
+
+test('an error line is capped rather than storing a payload', () => {
+  const r = recordFromHook({
+    tool_name: 'mcp__excerpt__excerpt_read',
+    tool_input: { path: '/a' },
+    tool_response: { isError: true, error: 'x'.repeat(500) },
+  }, TS);
+  assert.equal(r.error.length, MAX_ERROR_TEXT);
 });
 
 test('Grep records its SCOPE and never its pattern', () => {
@@ -961,7 +1029,7 @@ test('the rung mapping and RUNG_FILES cannot drift apart', () => {
       checked += 1;
     }
   }
-  assert.equal(checked, 19, 'the rung table stopped naming 19 files');
+  assert.equal(checked, 30, 'the rung table stopped naming 30 files');
 });
 
 test('join: a record with no agent field names the field absent rather than defaulting', () => {

@@ -7,18 +7,9 @@
           "destructive",
           "untrusted_input"
         ]
-      }
-    },
-    "reviewers": [
-      "openai"
-    ],
-    "providers": {
-      "openai": {
-        "tiers": {
-          "flagship": "gpt-5.6-sol",
-          "balanced": "gpt-5.6-terra",
-          "cheap": "gpt-5.6-luna"
-        }
+      },
+      "diff": {
+        "tier": "flagship"
       }
     }
   },
@@ -40,5 +31,30 @@
     "forge_repo": "crenshawdev/cadence",
     "forge_host": null
   },
-  "stakes": "critical"
+  "roles": {
+    "cad-planner": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-assumptions-analyzer": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-verifier": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-reviewer": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-executor": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "cad-plan-checker": {
+      "model": "opus",
+      "effort": "high"
+    }
+  }
 }

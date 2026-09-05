@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, writeFileSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -29,32 +30,32 @@ function run(args, globalPath) {
 test('set --global auto-creates the global file (and parent dir) from empty', () => {
   const gpath = join(dir, 'nested', 'cadence', 'config.json'); // parent dirs absent
   assert.equal(existsSync(gpath), false);
-  const r = run(['set', '--global', 'stakes=critical'], gpath);
+  const r = run(['set', '--global', 'granularity=fine'], gpath);
   assert.equal(r.ok, true);
   assert.equal(r.file, gpath);
-  assert.deepEqual(r.changed, [{ key: 'stakes', value: 'critical' }]); // the receipt
+  assert.deepEqual(r.changed, [{ key: 'granularity', value: 'fine' }]); // the receipt
   const written = JSON.parse(readFileSync(gpath, 'utf8'));
-  assert.equal(written.stakes, 'critical');
+  assert.equal(written.granularity, 'fine');
 });
 
 test('set --global merges into an existing global file, not clobber', () => {
   const gpath = join(dir, 'existing.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'solo', granularity: 'coarse' }));
+  writeFileSync(gpath, JSON.stringify({ granularity: 'coarse', workflow: { research: true } }));
   // a DOTTED key, so the row still covers writing through a parent container
   const r = run(['set', '--global', 'model.escalate_on_failure=false'], gpath);
   assert.equal(r.ok, true);
   const written = JSON.parse(readFileSync(gpath, 'utf8'));
-  assert.equal(written.stakes, 'solo');            // preserved
   assert.equal(written.granularity, 'coarse');     // preserved
+  assert.equal(written.workflow.research, true);   // preserved, container and all
   assert.equal(written.model.escalate_on_failure, false); // added
 });
 
 test('set --global still validates: a bad value is rejected, nothing written', () => {
   const gpath = join(dir, 'reject.json');
-  const r = run(['set', '--global', 'stakes=nonsense'], gpath);
+  const r = run(['set', '--global', 'granularity=nonsense'], gpath);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
-  assert.equal(r.detail[0].key, 'stakes'); // detail names the offender
+  assert.equal(r.detail[0].key, 'granularity'); // detail names the offender
   assert.match(r.detail[0].error, /must be one of/);
   assert.equal(existsSync(gpath), false); // atomic: no partial write
 });
@@ -97,7 +98,7 @@ test('the refusal follows the resolved target FILE, not the --global flag', () =
   // wrote straight through a flag-only rule; the /./ spelling is what forced the
   // realpath hardening the first time (8063832d).
   const gpath = join(dir, 'scope-by-file.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'solo' }));
+  writeFileSync(gpath, JSON.stringify({ granularity: 'coarse' }));
   const before = readFileSync(gpath, 'utf8');
   assertScopeRefusal(run(['set', '--file', gpath, 'git.auto_close=true'], gpath), '--file <global>');
   assertScopeRefusal(
@@ -110,7 +111,7 @@ test('the same repo-layer-only pair aimed at a REPO config is written', () => {
   // The rule is about the LAYER, never about the key being unsettable.
   const gpath = join(dir, 'scope-repo-global.json');
   const repo = join(dir, 'scope-repo-target.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  writeFileSync(repo, JSON.stringify({ granularity: 'coarse' }));
   const r = run(['set', '--file', repo, 'git.auto_close=true'], gpath);
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(JSON.parse(readFileSync(repo, 'utf8')).git.auto_close, true);
@@ -120,9 +121,9 @@ test('a multi-pair global set carrying one marked key leaves the file byte-ident
   // The scope check runs inside checkPairs, ahead of every read and every write
   // in set(), so the acceptable pair beside it is not written either.
   const gpath = join(dir, 'scope-atomic.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'solo' }, null, 2) + '\n');
+  writeFileSync(gpath, JSON.stringify({ granularity: 'coarse' }, null, 2) + '\n');
   const before = readFileSync(gpath, 'utf8');
-  const r = run(['set', '--global', 'git.auto_close=true', 'stakes=critical'], gpath);
+  const r = run(['set', '--global', 'git.auto_close=true', 'granularity=fine'], gpath);
   assertScopeRefusal(r, 'multi-pair');
   assert.equal(readFileSync(gpath, 'utf8'), before);
 });
@@ -137,20 +138,20 @@ test('a marked key that is ALSO type-invalid reports the type, not the layer (D-
 });
 
 test('no "src": "repo" key is refused at the user-global layer', () => {
-  // The marker is repo_only, not src. 33 keys carry src:"repo" - stakes and
-  // granularity among them - and workflows/config.md tells the user to set those
-  // globally, so a rule keyed on src would refuse exactly the wrong set.
+  // The marker is repo_only, not src. 32 keys carry src:"repo" - granularity and
+  // review.mode among them - and those are keys a user legitimately pins
+  // machine-wide, so a rule keyed on src would refuse exactly the wrong set.
   const gpath = join(dir, 'scope-src-repo-allowed.json');
-  const r = run(['set', '--global', 'stakes=critical', 'granularity=coarse'], gpath);
+  const r = run(['set', '--global', 'granularity=coarse', 'review.mode=panel'], gpath);
   assert.equal(r.ok, true, JSON.stringify(r));
   const written = JSON.parse(readFileSync(gpath, 'utf8'));
-  assert.equal(written.stakes, 'critical');
   assert.equal(written.granularity, 'coarse');
+  assert.equal(written.review.mode, 'panel');
 });
 
 test('validate --global reads the global file and reports the payload', () => {
   const gpath = join(dir, 'valid.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped', granularity: 'fine' }));
+  writeFileSync(gpath, JSON.stringify({ granularity: 'fine', workflow: { research: true } }));
   const r = run(['validate', '--global'], gpath);
   assert.equal(r.ok, true);
   assert.equal(r.file, gpath);
@@ -300,19 +301,36 @@ test('check: a retired KEY names its replacement, not the generic unknown key', 
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail[0].key, 'model.profile');
   assert.doesNotMatch(r.detail[0].error, /^unknown key$/);
-  assert.match(r.detail[0].error, /stakes/);
-  for (const value of ['solo', 'shipped', 'critical']) {
-    assert.match(r.detail[0].error, new RegExp(value)); // the remediation needs no lookup
-  }
+  // D-07: it used to name `stakes`, which this same map now refuses too - a
+  // pointer at a second retirement costs the user a whole round trip.
+  assert.doesNotMatch(r.detail[0].error, /use "stakes"/);
+  assert.match(r.detail[0].error, /roles\.<role>\.model/);
+  assert.match(r.detail[0].error, /roles\.<role>\.effort/);
+  assert.match(r.detail[0].error, /\/cad-config --roles/); // remediation, no lookup
 });
 
-test('check: a retired VALUE on the LIVE key still reads as a value error', () => {
+test('check: a bad VALUE on a LIVE key still reads as a value error', () => {
   // The two failures must stay distinguishable: a bad value names the enum,
-  // a retired key names its replacement.
-  const r = run(['check', 'stakes=quality']);
+  // a retired key names its replacement. The sample moved off `stakes` when
+  // v3.7.12 retired it - a retired key can no longer reach the value arm at all.
+  const r = run(['check', 'granularity=quality']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
-  assert.match(r.detail[0].error, /must be one of: solo, shipped, critical/);
+  assert.match(r.detail[0].error, /must be one of: fine, standard, coarse/);
+});
+
+test('check: the retired stakes key names the roles block and the interview', () => {
+  // D-06's write-face half. `stakes` left config.schema.json in v3.7.12, so
+  // without the retirement entry this would answer the bare `unknown key` and
+  // send a user with a v3 config nowhere.
+  const r = run(['check', 'stakes=shipped']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, 'stakes');
+  assert.match(r.detail[0].error, /retired in v3\.7\.12/);
+  assert.match(r.detail[0].error, /roles\./);
+  assert.match(r.detail[0].error, /\/cad-config --roles/);
+  assert.notEqual(r.detail[0].error, 'unknown key');
 });
 
 test('set: a removed key is refused before anything is written', () => {
@@ -330,31 +348,51 @@ test('get: a repo config still holding a retired key warns instead of resolving 
   const gpath = join(dir, 'no-global-for-retired.json');
   const repo = join(dir, 'retired-repo.json');
   writeFileSync(repo, JSON.stringify({ model: { profile: 'balanced' } }));
-  const r = run(['get', '--file', repo, 'stakes'], gpath);
-  assert.equal(r.ok, true);                  // never blocks a workflow's read
-  assert.equal(r.values['stakes'], 'shipped'); // the schema default
-  // Counted by FAMILY, not in total: this read asks for `stakes` on purpose -
-  // it is `model.profile`'s replacement, and the point is that `balanced` does
-  // not leak into it - and an explicit `stakes` read no layer set also carries
-  // the RNG-04 unset warning. One retired-key entry is what this test pins.
+  const r = run(['get', '--file', repo, 'granularity'], gpath);
+  assert.equal(r.ok, true);                       // never blocks a workflow's read
+  assert.equal(r.values['granularity'], 'standard'); // the schema default
+  // Counted by FAMILY, not in total, so an unrelated layer diagnostic cannot
+  // make this row pass or fail. One retired-key entry is what it pins, and the
+  // pointer it carries is D-07's: `model.profile` used to name `stakes`, which
+  // is itself retired now.
   const retired = r.warnings.filter((w) => /model\.profile/.test(w));
   assert.equal(retired.length, 1, JSON.stringify(r.warnings));
-  assert.match(retired[0], /stakes/);
+  assert.match(retired[0], /roles\.<role>\.model/);
+  assert.match(retired[0], /\/cad-config --roles/);
+});
+
+test('get: a repo config still carrying stakes warns with the migration pointer', () => {
+  // AC2's diagnostic half at the `get` face. The key is gone from the schema, so
+  // the value contributes nothing; what a user must see is the sentence naming
+  // /cad-config --roles, on whatever key they happened to ask about.
+  const gpath = join(dir, 'no-global-for-stakes.json');
+  const repo = join(dir, 'stakes-carrying-repo.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'critical', granularity: 'coarse' }));
+  const r = run(['get', '--file', repo, 'granularity'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['granularity'], 'coarse');
+  const named = r.warnings.filter((w) => /"stakes"/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /retired in v3\.7\.12/);
+  assert.match(named[0], /\/cad-config --roles/);
 });
 
 test('keys: dumps the live schema - pruned keys are really gone', () => {
   const r = run(['keys']);
   assert.equal(r.ok, true);
-  // The routing axis asks what a break costs, and the ladder is unconditional:
-  // the spend vocabulary (and the `auto` mode that gated it) is gone, not aliased.
-  assert.deepEqual(r.keys['stakes'].values, ['solo', 'shipped', 'critical']);
-  assert.equal(r.keys['stakes'].default, 'shipped');
+  // Each role names its own model and effort, and the ladder is unconditional:
+  // the spend vocabulary, the `auto` mode that gated it, and the single level
+  // that replaced the profile are all gone, not aliased.
+  assert.deepEqual(r.keys['granularity'].values, ['fine', 'standard', 'coarse']);
+  assert.equal(r.keys['granularity'].default, 'standard');
+  assert.equal(r.keys['roles.cad-executor.effort'].default, 'high');
+  assert.equal(r.keys['roles.cad-executor.model'].default, null);
   assert.equal(r.keys['model.escalate_on_failure'].default, false);
   assert.ok(r.keys['review.consult.attempt_threshold']);   // added this cycle
   assert.ok(r.keys['review.triggers.phase_diff.gate']);    // added this cycle
   assert.deepEqual(r.keys['git.integration_branch'].values, ['milestone', 'trunk']); // added this round
   assert.deepEqual(r.keys['git.auto_branch'].values, ['ask', 'auto', 'off']);        // added this round
-  for (const gone of ['mode', 'context_window', 'workflow.auto_advance',
+  for (const gone of ['stakes', 'mode', 'context_window', 'workflow.auto_advance',
     'workflow.discuss_mode', 'workflow.human_verify_mode', 'workflow.build_command',
     'git.auto_push', 'model.profile', 'model.auto.ceiling',
     'model.auto.escalate_on_failure', 'model.auto.max_escalations']) {
@@ -367,12 +405,12 @@ test('keys: dumps the live schema - pruned keys are really gone', () => {
 
 test('get: repo > global > schema defaults, with source named', () => {
   const gpath = join(dir, 'get-global.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'critical', workflow: { research: true } }));
+  writeFileSync(gpath, JSON.stringify({ granularity: 'fine', workflow: { research: true } }));
   const repo = join(dir, 'get-repo.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
-  const r = run(['get', '--file', repo, 'stakes', 'workflow.research', 'workflow.plan_check'], gpath);
+  writeFileSync(repo, JSON.stringify({ granularity: 'coarse' }));
+  const r = run(['get', '--file', repo, 'granularity', 'workflow.research', 'workflow.plan_check'], gpath);
   assert.equal(r.ok, true);
-  assert.equal(r.values['stakes'], 'solo');               // repo wins
+  assert.equal(r.values['granularity'], 'coarse');        // repo wins
   assert.equal(r.values['workflow.research'], true);      // global fills
   assert.equal(r.values['workflow.plan_check'], false);   // schema default
   assert.equal(r.source, 'global+repo');
@@ -437,10 +475,10 @@ test('get: a corrupt global layer is skipped (repo still wins) AND warns naming 
   const gpath = join(dir, 'corrupt-global.json');
   writeFileSync(gpath, '{ torn mid-write');
   const repo = join(dir, 'fine-repo.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
-  const r = run(['get', '--file', repo, 'stakes'], gpath);
+  writeFileSync(repo, JSON.stringify({ granularity: 'coarse' }));
+  const r = run(['get', '--file', repo, 'granularity'], gpath);
   assert.equal(r.ok, true);
-  assert.equal(r.values['stakes'], 'solo');
+  assert.equal(r.values['granularity'], 'coarse');
   assert.equal(r.source, 'repo'); // the broken global layer contributed nothing
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /corrupt-global\.json/);
@@ -480,11 +518,11 @@ test('get: a falsy non-object global layer warns too', () => {
   const gpath = join(dir, 'falsy-global.json');
   writeFileSync(gpath, '0');
   const repo = join(dir, 'fine-repo-for-falsy-global.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
-  const r = run(['get', '--file', repo, 'stakes'], gpath);
+  writeFileSync(repo, JSON.stringify({ granularity: 'coarse' }));
+  const r = run(['get', '--file', repo, 'granularity'], gpath);
   assert.equal(r.ok, true);
   assert.equal(r.source, 'repo'); // repo value still wins
-  assert.equal(r.values['stakes'], 'solo');
+  assert.equal(r.values['granularity'], 'coarse');
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /falsy-global\.json/);
 });
@@ -574,30 +612,30 @@ test('get: a SYMLINKED global layer is the same file, so one layer is reported',
   // case and nothing else: an alias renders a different string, so the same
   // file was read twice and `source` named a repo layer the user never had.
   const shared = join(dir, 'alias-shared.json');
-  writeFileSync(shared, JSON.stringify({ stakes: 'solo' }));
+  writeFileSync(shared, JSON.stringify({ granularity: 'coarse' }));
   const link = join(dir, 'alias-shared-link.json');
   symlinkSync(shared, link);
-  const r = run(['get', '--file', shared, 'stakes'], link);
+  const r = run(['get', '--file', shared, 'granularity'], link);
   assert.equal(r.ok, true);
-  assert.equal(r.values['stakes'], 'solo'); // the merge is unchanged
-  assert.equal(r.source, 'repo');           // ONE layer, not 'global+repo'
+  assert.equal(r.values['granularity'], 'coarse'); // the merge is unchanged
+  assert.equal(r.source, 'repo');                  // ONE layer, not 'global+repo'
   assert.equal(r.warnings, undefined);
 
   // the control that proves this is not a blanket collapse: a genuinely
   // different global file still layers under the repo one.
   const other = join(dir, 'alias-control-global.json');
-  writeFileSync(other, JSON.stringify({ granularity: 'coarse' }));
-  const r2 = run(['get', '--file', shared, 'stakes', 'granularity'], other);
+  writeFileSync(other, JSON.stringify({ workflow: { research: true } }));
+  const r2 = run(['get', '--file', shared, 'granularity', 'workflow.research'], other);
   assert.equal(r2.source, 'global+repo');
-  assert.equal(r2.values['granularity'], 'coarse');
+  assert.equal(r2.values['workflow.research'], true);
 });
 
 test('get: a RELATIVE spelling of the repo file is the same file too', () => {
   const shared = join(dir, 'rel-shared.json');
-  writeFileSync(shared, JSON.stringify({ stakes: 'solo' }));
-  const r = run(['get', '--file', shared, 'stakes'], relative(process.cwd(), shared));
+  writeFileSync(shared, JSON.stringify({ granularity: 'coarse' }));
+  const r = run(['get', '--file', shared, 'granularity'], relative(process.cwd(), shared));
   assert.equal(r.ok, true);
-  assert.equal(r.values['stakes'], 'solo');
+  assert.equal(r.values['granularity'], 'coarse');
   assert.equal(r.source, 'repo');
 });
 
@@ -632,16 +670,18 @@ test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it o
   // answering `source: "global"` - watched failing.
   const declared = { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' };
   // `check` joined the list when it learned the flag (SCP-01): the inspect face
-  // has to be able to ASK about the layer the write face refuses at.
-  for (const cmd of ['validate', 'set', 'get', 'check']) {
+  // has to be able to ASK about the layer the write face refuses at. `unset`
+  // joined it as the migration's write path (D-06) - it edits ONE layer, so
+  // which layer has to be sayable the same way its siblings say it.
+  for (const cmd of ['validate', 'set', 'get', 'check', 'unset']) {
     assert.deepEqual(CONTRACTS['config.mjs'][cmd]['--global'], declared,
       `${cmd} takes --global, so ${cmd} must declare it - with the same grammar its siblings carry`);
   }
   const gpath = join(dir, 'global-declared.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'critical' }));
-  const r = run(['get', '--global', 'stakes'], gpath);
+  writeFileSync(gpath, JSON.stringify({ granularity: 'fine' }));
+  const r = run(['get', '--global', 'granularity'], gpath);
   assert.equal(r.source, 'global');
-  assert.equal(r.values['stakes'], 'critical');
+  assert.equal(r.values['granularity'], 'fine');
 });
 
 test('check --global reports the scope refusal the write face gives', () => {
@@ -658,7 +698,7 @@ test('check --global reports the scope refusal the write face gives', () => {
   assert.equal(existsSync(gpath), false); // check never writes, and neither did the refused set
 
   // A src:"repo" key is accepted at that same layer...
-  assert.deepEqual(run(['check', '--global', 'stakes=critical'], gpath), { ok: true });
+  assert.deepEqual(run(['check', '--global', 'granularity=fine'], gpath), { ok: true });
   // ...and with no --global the marked key is the ordinary repo-layer question.
   assert.deepEqual(run(['check', 'git.auto_close=true'], gpath), { ok: true });
   // ...and the flag is consumed, never read as a pair.
@@ -670,10 +710,10 @@ test('get --global: the one file it reads by construction is the GLOBAL layer', 
   // one file both layers on every invocation - it reported `global+repo`, i.e.
   // a repo layer that cannot exist on this path (CAPTURE.md:46 (b)).
   const gpath = join(dir, 'get-global-single.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'critical' }));
-  const r = run(['get', '--global', 'stakes'], gpath);
+  writeFileSync(gpath, JSON.stringify({ granularity: 'fine' }));
+  const r = run(['get', '--global', 'granularity'], gpath);
   assert.equal(r.ok, true);
-  assert.equal(r.values['stakes'], 'critical');
+  assert.equal(r.values['granularity'], 'fine');
   assert.equal(r.source, 'global'); // the literal string, pinned
 
   // ...and the same file addressed as a REPO config is labelled `repo`, even
@@ -681,9 +721,9 @@ test('get --global: the one file it reads by construction is the GLOBAL layer', 
   // file, so the label follows what the caller addressed; deciding it by
   // string equality would report `global` here and `repo` for a symlinked
   // spelling of the identical situation.
-  const asRepo = run(['get', '--file', gpath, 'stakes'], gpath);
+  const asRepo = run(['get', '--file', gpath, 'granularity'], gpath);
   assert.equal(asRepo.source, 'repo');
-  assert.equal(asRepo.values['stakes'], 'critical');
+  assert.equal(asRepo.values['granularity'], 'fine');
 });
 
 // --- a flag whose value is missing (.planning/CAPTURE.md:168) -----------------
@@ -694,7 +734,7 @@ test('a valueless --file is a named usage failure on every subcommand', () => {
   // `validate` said "cannot read/parse undefined",
   // and `get` answered ok:true - the user-global layer read back as if it were
   // the file the caller named.
-  for (const args of [['set', 'stakes=solo', '--file'], ['get', '--file'],
+  for (const args of [['set', 'granularity=coarse', '--file'], ['get', '--file'],
     ['validate', '--file']]) {
     const r = run(args, join(dir, 'no-global-usage.json'));
     assert.equal(r.ok, false, args.join(' '));
@@ -713,8 +753,8 @@ test('a QUOTED empty --file is refused too, not answered about the global layer'
   // about a file the caller never named. Silent, unlike the loud
   // reason:"internal" the unquoted spelling used to give.
   const gpath = join(dir, 'empty-file-global.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped' }));
-  for (const args of [['set', 'stakes=solo', '--file', ''], ['get', '--file', '', 'stakes'],
+  writeFileSync(gpath, JSON.stringify({ granularity: 'standard' }));
+  for (const args of [['set', 'granularity=coarse', '--file', ''], ['get', '--file', '', 'granularity'],
     ['validate', '--file', '']]) {
     const r = run(args, gpath);
     assert.equal(r.ok, false, args.join(' '));
@@ -733,8 +773,8 @@ test('ARG-06: a FLAG-SHAPED --file value is refused too, not read as a path', ()
   // `--file` reads through its declared row in lib/arg-contract.mjs now, so all
   // three are one rule, and the reason stays this bin's own `usage` (D-07).
   const gpath = join(dir, 'flagshaped-file-global.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped' }));
-  for (const args of [['set', 'stakes=solo', '--file', '--nonsense'], ['get', '--file', '--nonsense', 'stakes'],
+  writeFileSync(gpath, JSON.stringify({ granularity: 'standard' }));
+  for (const args of [['set', 'granularity=coarse', '--file', '--nonsense'], ['get', '--file', '--nonsense', 'granularity'],
     ['validate', '--file', '--nonsense']]) {
     const r = run(args, gpath);
     assert.equal(r.ok, false, args.join(' '));
@@ -744,12 +784,12 @@ test('ARG-06: a FLAG-SHAPED --file value is refused too, not read as a path', ()
   }
   // The two mechanics that must not move: `--global` is tested FIRST and
   // short-circuits before `--file` is looked at...
-  assert.equal(run(['get', '--global', 'stakes'], gpath).values.stakes, 'shipped');
+  assert.equal(run(['get', '--global', 'granularity'], gpath).values.granularity, 'standard');
   // ...and a real path still resolves, with the consumed flag and its value
   // filtered out of the key list `get` reads.
   const repo = join(dir, 'flagshaped-file-repo.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
-  assert.equal(run(['get', '--file', repo, 'stakes'], gpath).values.stakes, 'solo');
+  writeFileSync(repo, JSON.stringify({ granularity: 'coarse' }));
+  assert.equal(run(['get', '--file', repo, 'granularity'], gpath).values.granularity, 'coarse');
 });
 
 test('a path under a missing directory is a read failure naming it, never internal', () => {
@@ -757,15 +797,15 @@ test('a path under a missing directory is a read failure naming it, never intern
   // TypeError thrown outside its try. A diagnosable input must stay
   // diagnosable.
   const gpath = join(dir, 'total-identity-global.json');
-  writeFileSync(gpath, JSON.stringify({ stakes: 'solo' }));
+  writeFileSync(gpath, JSON.stringify({ granularity: 'coarse' }));
   const repo = join(dir, 'total-identity-repo.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  writeFileSync(repo, JSON.stringify({ granularity: 'coarse' }));
   // a real repo file still takes the write...
-  assert.equal(run(['set', '--file', repo, 'stakes=shipped'], gpath).ok, true);
+  assert.equal(run(['set', '--file', repo, 'granularity=standard'], gpath).ok, true);
   // ...and a path under a directory that does not exist reads as a read
   // failure naming the file, never reason:internal.
   const nested = join(dir, 'no-such-dir', 'deep', 'config.json');
-  const r = run(['set', '--file', nested, 'stakes=shipped'], gpath);
+  const r = run(['set', '--file', nested, 'granularity=standard'], gpath);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'read');
   assert.match(r.detail, /no-such-dir/);
@@ -847,7 +887,7 @@ test('SCP-01: a fixture schema marking a DIFFERENT key refuses that key', () => 
     _meta: { note: 'fixture: exactly one key carries the marker' },
     keys: {
       'granularity': { type: 'bool', default: false, repo_only: true, purpose: 'the marked one' },
-      'stakes': { type: 'bool', default: false, purpose: 'the unmarked sibling' },
+      'workflow.research': { type: 'bool', default: false, purpose: 'the unmarked sibling' },
     },
   });
   assert.doesNotMatch(body, /auto_close/); // the assertion is about the MARKER, never the name
@@ -866,7 +906,7 @@ test('SCP-01: a fixture schema marking a DIFFERENT key refuses that key', () => 
   // same call, so an accepted fixture pair leaves no file behind for the next
   // test to inherit.
   assert.deepEqual(
-    JSON.parse(runWithSchema(['check', '--global', 'stakes=true'], fixture).stdout), { ok: true });
+    JSON.parse(runWithSchema(['check', '--global', 'workflow.research=true'], fixture).stdout), { ok: true });
   // ...and the marked one refuses through that face with the same entry.
   const inspected = JSON.parse(runWithSchema(['check', '--global', 'granularity=true'], fixture).stdout);
   assert.deepEqual(inspected.detail[0], refused.detail[0]);
@@ -899,11 +939,12 @@ test('SCP-01: the SHIPPED keys carrying the marker are the ones that authorize, 
     assert.equal(shipped[k].repo_only, undefined, `${k} carries no repo_only marker`);
   }
 
-  // `src: "repo"` means "settable in either layer" and 33 keys carry it -
-  // `stakes` and `granularity` among them, which workflows/config.md tells the
-  // user to set globally - so no key may inherit the refusal from it.
+  // `src: "repo"` means "settable in either layer" and 32 keys carry it -
+  // `granularity` and `review.mode` among them, keys a user legitimately pins
+  // machine-wide - so no key may inherit the refusal from it.
   const srcRepo = Object.keys(shipped).filter((k) => shipped[k].src === 'repo');
-  for (const k of ['stakes', 'granularity', 'git.auto_close']) {
+  assert.equal(srcRepo.length, 32, JSON.stringify(srcRepo));
+  for (const k of ['granularity', 'review.mode', 'git.auto_close']) {
     assert.ok(srcRepo.includes(k), `${k} carries src:"repo"`);
   }
   assert.deepEqual(srcRepo.filter((k) => shipped[k].repo_only !== undefined), ['git.auto_close']);
@@ -912,29 +953,30 @@ test('SCP-01: the SHIPPED keys carrying the marker are the ones that authorize, 
 // --- model.effort.<role>: the per-role start rung, refused by key (RNG-02) ---
 
 test('check: a rung the role HAS is accepted', () => {
-  // `cad-verifier` carries medium/high/xhigh/max in lib/rung-agent.mjs.
+  // Every role carries every rung of the ladder in lib/rung-agent.mjs (RNG-06),
+  // so the accepted set is the same five for all six keys.
   assert.deepEqual(run(['check', 'model.effort.cad-verifier=xhigh']), { ok: true });
 });
 
 test('check: a rung the role LACKS is refused by key, naming that role\'s set', () => {
-  // `max` is a real rung of the ladder and a real value of OTHER roles' enums -
-  // which is why one uniform rung_order enum would have accepted it here and
-  // sent an unmapped rung down the dispatch path. cad-executor has two rungs.
-  const r = run(['check', 'model.effort.cad-executor=max']);
+  // Refused BY KEY, and the message names the set that key accepts. `ultra` is
+  // outside rung_order entirely: with the ladder complete no role LACKS a real
+  // rung any more, so the value that reaches this arm is one no role can file.
+  const r = run(['check', 'model.effort.cad-executor=ultra']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail.length, 1);
   assert.equal(r.detail[0].key, 'model.effort.cad-executor'); // BY KEY
-  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, null');
+  assert.equal(r.detail[0].error, 'must be one of: low, medium, high, xhigh, max, null');
 });
 
 test('check: null renders as the literal, not as a dangling separator', () => {
   // Every `default: null` enum ends its accepted set with null; Array#join
   // rendered it as '' and the message read "…: high, xhigh, " - a truncated
   // sentence rather than a settable value.
-  const r = run(['check', 'model.effort.cad-planner=medium']);
+  const r = run(['check', 'model.effort.cad-planner=ultra']);
   assert.equal(r.ok, false);
-  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, max, null');
+  assert.equal(r.detail[0].error, 'must be one of: low, medium, high, xhigh, max, null');
   assert.ok(!/,\s*$/.test(r.detail[0].error));
   // and the literal IS accepted, so the message is not advertising a fiction
   assert.deepEqual(run(['check', 'model.effort.cad-planner=null']), { ok: true });
@@ -945,36 +987,36 @@ test('set: the WRITE face refuses the same value and writes nothing', () => {
   // before the read-modify-write, which is the atomicity contract checkPairs
   // already holds for retired and surface keys.
   const repo = join(dir, 'effort-write.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'shipped' }, null, 2) + '\n');
+  writeFileSync(repo, JSON.stringify({ granularity: 'standard' }, null, 2) + '\n');
   const before = readFileSync(repo, 'utf8');
-  const r = run(['set', '--file', repo, 'model.effort.cad-executor=max'],
+  const r = run(['set', '--file', repo, 'model.effort.cad-executor=ultra'],
     join(dir, 'effort-no-global.json'));
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail[0].key, 'model.effort.cad-executor');
-  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, null');
+  assert.equal(r.detail[0].error, 'must be one of: low, medium, high, xhigh, max, null');
   assert.equal(readFileSync(repo, 'utf8'), before); // byte-identical
 });
 
 test('set: an accepted rung is written into the config layer, not the plugin', () => {
   const repo = join(dir, 'effort-write-ok.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'shipped' }, null, 2) + '\n');
+  writeFileSync(repo, JSON.stringify({ granularity: 'standard' }, null, 2) + '\n');
   const r = run(['set', '--file', repo, 'model.effort.cad-verifier=xhigh'],
     join(dir, 'effort-no-global.json'));
   assert.equal(r.ok, true);
   assert.deepEqual(JSON.parse(readFileSync(repo, 'utf8')),
-    { stakes: 'shipped', model: { effort: { 'cad-verifier': 'xhigh' } } });
+    { granularity: 'standard', model: { effort: { 'cad-verifier': 'xhigh' } } });
 });
 
 test('validate: a whole config carrying a bad start rung names the key', () => {
   const repo = join(dir, 'effort-validate.json');
-  writeFileSync(repo, JSON.stringify({ model: { effort: { 'cad-plan-checker': 'max' } } }));
+  writeFileSync(repo, JSON.stringify({ model: { effort: { 'cad-plan-checker': 'ultra' } } }));
   const r = run(['validate', '--file', repo], join(dir, 'effort-no-global.json'));
   assert.equal(r.ok, false);
   assert.deepEqual(r.errors, [{
     key: 'model.effort.cad-plan-checker',
-    error: 'must be one of: low, medium, high, xhigh, null',
-    value: 'max',
+    error: 'must be one of: low, medium, high, xhigh, max, null',
+    value: 'ultra',
   }]);
 });
 
@@ -1065,7 +1107,7 @@ test('a grammar marker the registry does not hold is an ERROR, never a silent pa
     _meta: { note: 'fixture: one key names a grammar the registry does not hold' },
     keys: {
       'granularity': { type: 'string_or_null', default: null, grammar: 'no_such_grammar', purpose: 'the marked one' },
-      'stakes': { type: 'string_or_null', default: null, purpose: 'the unmarked sibling' },
+      'workflow.research': { type: 'string_or_null', default: null, purpose: 'the unmarked sibling' },
     },
   }));
   const refused = JSON.parse(runWithSchema(['check', 'granularity=anything-at-all'], fixture).stdout);
@@ -1075,14 +1117,21 @@ test('a grammar marker the registry does not hold is an ERROR, never a silent pa
   assert.match(refused.detail[0].error, /unknown schema grammar no_such_grammar/);
   // The unmarked sibling with the same type accepts the same value, so what
   // refused is the marker and not the type.
-  assert.deepEqual(JSON.parse(runWithSchema(['check', 'stakes=anything-at-all'], fixture).stdout), { ok: true });
+  assert.deepEqual(JSON.parse(runWithSchema(['check', 'workflow.research=anything-at-all'], fixture).stdout), { ok: true });
 });
 
 test('validate: this repository own config layer passes the new grammars', () => {
+  // AC2's live fixture, and the reason this row asserts a SET of errors rather
+  // than none: this repository has not run the roles migration yet, so its own
+  // .planning/config.json still carries `stakes` and `validate` names it. Every
+  // OTHER key in that file must still pass, which is what the grammar half of
+  // this row was always for - a second entry here is a real regression.
   const repoRoot = join(dirname(CONFIG), '..', '..');
   const r = run(['validate', '--file', join(repoRoot, '.planning', 'config.json')]);
-  assert.equal(r.ok, true);
-  assert.deepEqual(r.errors, []);
+  const own = JSON.parse(readFileSync(join(repoRoot, '.planning', 'config.json'), 'utf8'));
+  const carriesStakes = Object.hasOwn(own, 'stakes');
+  assert.deepEqual(r.errors.map((e) => e.key), carriesStakes ? ['stakes'] : []);
+  assert.equal(r.ok, !carriesStakes);
 });
 
 // --- workflow.lint_command (QW-01) -------------------------------------------
@@ -1401,38 +1450,44 @@ test('get: an unrelated repo key still merges - the strip is exactly three keys'
   assert.equal(r.values['workflow.max_plan_tasks'], 4);
 });
 
-// --- get: an unset gate reads as unset, not as a gate (GAT-02) ---------------
-// The defect: `config.mjs get` answered a `review.triggers.<t>.gate` out of the
-// schema default when no layer had set one, so a reader was told a gate routing
-// fires at no level, and `workflows/execute.md` had to carry a paragraph
-// telling callers not to pre-fetch a gate through this seam. The schema's
-// sentinel does the VALUE half (`null` for every unset gate); these arms pin
-// the REPORTING half - which of the two states the seam says it is in.
+// --- get: an unset gate answers the schema DEFAULT, unwarned (GAT-02) --------
+// The defect this section was written for: `config.mjs get` answered a
+// `review.triggers.<t>.gate` out of the schema default when no layer had set
+// one, while the gate that actually fired came from a level-keyed grid - so a
+// reader was told a gate routing fires at no level, and `workflows/execute.md`
+// had to carry a paragraph telling callers not to pre-fetch a gate through this
+// seam. The fix then was a `null` sentinel plus a warning naming where the level
+// was resolved. The level is gone: these rows carry real defaults now (D-01),
+// the default IS what fires, and the warning has to go with the sentinel,
+// because a line saying something else decides beside a value that is the answer
+// is a contradiction. These arms pin BOTH halves - the value and the silence.
+
+/** The shipped schema, for the defaults these arms are held against. */
+const GATE_SCHEMA = JSON.parse(readFileSync(
+  join(dirname(CONFIG), '..', 'config.schema.json'), 'utf8')).keys;
 
 /** The four gate keys, walked rather than spelled per test. */
 const GATE_KEYS = ['plan', 'diff', 'risk_surface', 'phase_diff']
   .map((t) => `review.triggers.${t}.gate`);
 
-/** Gate-unset warnings in an envelope, by the seam they must point a reader at. */
+/** Warnings in an envelope that point a reader at the resolver, of which there are now none. */
 const gateWarnings = (r) => (r.warnings || []).filter((w) => /route\.mjs resolve/.test(w));
 
-test('get: every unset gate answers null plus exactly one warning naming route.mjs resolve', () => {
+test('get: every unset gate answers its schema default, with no warning at all', () => {
   const gpath = join(dir, 'gates-no-global.json');
   const repo = join(dir, 'gates-absent.json');
   for (const key of GATE_KEYS) {
     const r = run(['get', '--file', repo, key], gpath);
     assert.equal(r.ok, true);
-    assert.equal(r.values[key], null, key);
-    const named = gateWarnings(r);
-    assert.equal(named.length, 1, `${key}: ${JSON.stringify(r.warnings)}`);
-    assert.match(named[0], new RegExp(key.replace(/\./g, '\\.')));
-    // D-07: the seam does not know the stakes level, so it must not answer for
-    // one. A warning naming a gate would be the same defect pointed the other way.
-    assert.ok(!/\b(off|advisory|deferred|blocking|adjudicated)\b/.test(named[0]), named[0]);
+    // Read off the schema, never spelled here: the defaults are the schema's to
+    // move, and an arm restating them would disagree with it silently.
+    assert.equal(r.values[key], GATE_SCHEMA[key].default, key);
+    assert.notEqual(r.values[key], null, `${key}: the null sentinel is gone`);
+    assert.deepEqual(gateWarnings(r), [], `${key}: ${JSON.stringify(r.warnings)}`);
   }
 });
 
-test('get: a gate a layer PINNED reads back byte-identical, with no unset warning', () => {
+test('get: a gate a layer PINNED reads back byte-identical, and still unwarned', () => {
   const gpath = join(dir, 'gates-pinned-global.json');
   const repo = join(dir, 'gates-pinned-repo.json');
   const pinned = { plan: 'off', diff: 'blocking', risk_surface: 'adjudicated', phase_diff: 'advisory' };
@@ -1447,56 +1502,52 @@ test('get: a gate a layer PINNED reads back byte-identical, with no unset warnin
 });
 
 test('get: the round trip through `set` - blocking answers blocking, unwarned', () => {
-  // AC3 in its literal shape: the write face, then the read face.
+  // AC3 in its literal shape: the write face, then the read face. The read
+  // BEFORE the write is what discriminates a configured gate from a defaulted
+  // one now that both answer a real value: only the write changes it.
   const gpath = join(dir, 'gates-set-global.json');
   const repo = join(dir, 'gates-set-repo.json');
   writeFileSync(repo, '{}\n');
-  const before = run(['get', '--file', repo, 'review.triggers.diff.gate'], gpath);
-  assert.equal(before.values['review.triggers.diff.gate'], null);
-  assert.equal(gateWarnings(before).length, 1);
-  assert.equal(run(['set', '--file', repo, 'review.triggers.diff.gate=blocking'], gpath).ok, true);
-  const after = run(['get', '--file', repo, 'review.triggers.diff.gate'], gpath);
-  assert.equal(after.values['review.triggers.diff.gate'], 'blocking');
+  const key = 'review.triggers.diff.gate';
+  const before = run(['get', '--file', repo, key], gpath);
+  assert.equal(before.values[key], GATE_SCHEMA[key].default);
+  assert.deepEqual(gateWarnings(before), []);
+  assert.equal(run(['set', '--file', repo, `${key}=blocking`], gpath).ok, true);
+  const after = run(['get', '--file', repo, key], gpath);
+  assert.equal(after.values[key], 'blocking');
   assert.deepEqual(gateWarnings(after), []);
 });
 
-test('get: the KEYLESS full read carries no gate warning at all', () => {
-  // D-02. A full read walks every schema key, so warning there would append one
-  // line per gate to prose workflows/milestone.md and verify.md relay to the
-  // user - for a caller that asked about no gate in particular.
+test('get: the KEYLESS full read answers the same defaults, and warns about none', () => {
+  // D-02. A full read walks every schema key, so a per-key line here would
+  // append one to prose workflows/milestone.md and verify.md relay to the user.
   const r = run(['get', '--file', join(dir, 'gates-absent.json')],
     join(dir, 'gates-no-global.json'));
   assert.equal(r.ok, true);
-  for (const key of GATE_KEYS) assert.equal(r.values[key], null, key);
+  for (const key of GATE_KEYS) assert.equal(r.values[key], GATE_SCHEMA[key].default, key);
   assert.deepEqual(gateWarnings(r), [], JSON.stringify(r.warnings));
 });
 
-// --- get: an unset tier / effort reads as unset too (RVW-03) ------------------
+// --- get: an unset tier / effort answers its default too (RVW-03) -------------
 //
-// WATCHED FAILING AT 478b1ff, the tip of this plan's unpatched tree. Observed
-// there: `review.triggers.plan.tier` answered `flagship` and `.effort` answered
-// `high` on a repository where no layer sets either, so the read face reported
-// a value nothing resolves - the same defect GAT-02 closed for `.gate`, on the
-// two fields that actually reach a cross-model reviewer.
+// The two fields that actually reach a cross-model reviewer, on the same terms
+// as the gate above: a real schema default and no warning. The `null` these arms
+// used to assert was the sentinel, not an answer - it is gone from every one of
+// the twelve rows.
 
 /** The eight cross-model panel keys, walked rather than spelled per test. */
 const PANEL_KEYS = ['plan', 'diff', 'risk_surface', 'phase_diff']
   .flatMap((t) => [`review.triggers.${t}.tier`, `review.triggers.${t}.effort`]);
 
-test('get: every unset tier and effort answers null plus one warning naming route.mjs resolve', () => {
+test('get: every unset tier and effort answers its schema default, unwarned', () => {
   const gpath = join(dir, 'panel-no-global.json');
   const repo = join(dir, 'panel-absent.json');
   for (const key of PANEL_KEYS) {
     const r = run(['get', '--file', repo, key], gpath);
     assert.equal(r.ok, true);
-    assert.equal(r.values[key], null, key);
-    const named = gateWarnings(r);
-    assert.equal(named.length, 1, `${key}: ${JSON.stringify(r.warnings)}`);
-    assert.match(named[0], new RegExp(key.replace(/\./g, '\\.')));
-    // D-07 again: this seam does not know the stakes level, so it must not
-    // answer for one. A warning naming a tier or an effort would be the same
-    // defect pointed the other way.
-    assert.ok(!/\b(flagship|balanced|cheap|minimal|low|medium|high)\b/.test(named[0]), named[0]);
+    assert.equal(r.values[key], GATE_SCHEMA[key].default, key);
+    assert.notEqual(r.values[key], null, `${key}: the null sentinel is gone`);
+    assert.deepEqual(gateWarnings(r), [], `${key}: ${JSON.stringify(r.warnings)}`);
   }
 });
 
@@ -1517,18 +1568,16 @@ test('get: a tier or effort a layer PINNED reads back byte-identical, unwarned',
 });
 
 test('get: the KEYLESS full read carries no panel warning either', () => {
-  // D-02. RVW-03 tripled this family: warning on a full read would append
-  // twelve lines to prose workflows relay straight to the user.
   const r = run(['get', '--file', join(dir, 'panel-absent.json')],
     join(dir, 'panel-no-global.json'));
   assert.equal(r.ok, true);
-  for (const key of PANEL_KEYS) assert.equal(r.values[key], null, key);
+  for (const key of PANEL_KEYS) assert.equal(r.values[key], GATE_SCHEMA[key].default, key);
   assert.deepEqual(gateWarnings(r), [], JSON.stringify(r.warnings));
 });
 
 test('check: null is still refused at the write face for a tier and an effort', () => {
-  // The sentinel is the schema's way of saying "nobody set one", never
-  // something a user writes - the `values` arrays did not move.
+  // The `values` arrays did not move when the defaults did, so `null` is still
+  // not something a user may write into one of these rows.
   for (const [key, names] of [['review.triggers.plan.tier', /flagship, balanced, cheap/],
     ['review.triggers.plan.effort', /minimal, low, medium, high/]]) {
     const r = run(['check', `${key}=null`]);
@@ -1539,10 +1588,8 @@ test('check: null is still refused at the write face for a tier and an effort', 
   }
 });
 
-test('check: null is still refused at the write face - the sentinel is not a value', () => {
-  // D-05: the `values` arrays are a closed enum, so `set` and `check` behave
-  // byte-identically to before the default moved. `null` is the schema's way of
-  // saying "nobody set one", never something a user writes.
+test('check: null is still refused at the write face - a gate is a closed enum', () => {
+  // D-05: `set` and `check` behave byte-identically to before the default moved.
   const r = run(['check', 'review.triggers.diff.gate=null']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
@@ -1550,51 +1597,70 @@ test('check: null is still refused at the write face - the sentinel is not a val
   assert.match(r.detail[0].error, /must be one of: off, advisory, deferred, blocking, adjudicated/);
 });
 
-// --- get: an unset stakes reads as unset, not as a configured level (RNG-04) --
+// --- stakes is a key this seam no longer holds (D-06) -------------------------
 //
-// The same defect one key over, and the one the init workflows now depend on:
-// the template stopped writing `stakes`, so `get stakes` answered `shipped` out
-// of the schema default on a project that chose nothing - identically to a
-// project that chose `shipped`. A workflow saying "stakes is unset" and the very
-// next read saying it is `shipped` from the repo layer cannot both be relayed to
-// the same user. The VALUE line is unchanged (the schema default still reports);
-// these arms pin the REPORTING half.
+// RNG-04 used to live here: `get stakes` answered `shipped` out of the schema
+// default on a project that had chosen nothing, so this face carried a two-state
+// read of its own to say "no layer set it". v3.7.12 deleted the key, and with it
+// both states - each role names its own model and effort now, and there is no
+// level for a workflow to report as set or unset. What replaces those arms is
+// the shape a v3 config actually meets: a read face that refuses the name, a
+// write face that names the migration, and a file the seam can still repair.
 
-/** A repo layer that exists and sets other keys, but never `stakes`. */
-const stakesAbsent = join(dir, 'stakes-absent.json');
-writeFileSync(stakesAbsent, JSON.stringify({ granularity: 'standard' }));
+/** A repo layer that has NOT run the roles migration - it still carries the key. */
+const stakesCarrying = join(dir, 'stakes-carrying.json');
+writeFileSync(stakesCarrying, JSON.stringify({ stakes: 'critical', granularity: 'standard' }));
 
-test('get: an unset stakes answers the default AND one warning naming route.mjs resolve', () => {
-  const r = run(['get', '--file', stakesAbsent, 'stakes'], join(dir, 'stakes-no-global.json'));
+test('get: stakes is an unknown key at exit 1, not a value read out of the layer', () => {
+  const { status, json } = runStatus(['get', '--file', stakesCarrying, 'stakes'],
+    join(dir, 'stakes-no-global.json'));
+  assert.equal(json.ok, false, JSON.stringify(json));
+  assert.equal(json.reason, 'unknown-key');
+  assert.deepEqual(json.detail, ['stakes']);
+  assert.equal(status, 1);
+  // The file HOLDS `critical`. Answering with it would be the worse failure:
+  // routing reads nothing from the key, so a value reported here would describe
+  // a dispatch that cannot happen.
+  assert.equal(json.values, undefined);
+});
+
+test('get: the KEYLESS full read answers no stakes value, and warns about the key once', () => {
+  // A full read walks every schema key, and workflows relay its warnings
+  // straight to the user - so this is the arm a project meets on its next
+  // command without asking about the key at all.
+  const r = run(['get', '--file', stakesCarrying], join(dir, 'stakes-no-global.json'));
   assert.equal(r.ok, true);
-  assert.equal(r.values.stakes, 'shipped', 'the schema default still reports (D-06)');
-  const named = gateWarnings(r);
+  assert.equal('stakes' in r.values, false, 'the schema no longer holds the key');
+  assert.equal(r.values.granularity, 'standard'); // its live sibling still reads
+  const named = (r.warnings || []).filter((w) => /"stakes"/.test(w));
   assert.equal(named.length, 1, JSON.stringify(r.warnings));
-  assert.match(named[0], /stakes/);
-  // The same rail the gate and panel arms hold: this seam does not know what
-  // the level fires, so a warning naming a gate or a model would be the defect
-  // pointed the other way.
-  assert.ok(!/\b(off|advisory|deferred|blocking|adjudicated|opus|sonnet|haiku)\b/.test(named[0]),
-    named[0]);
+  assert.match(named[0], /retired in v3\.7\.12/);
+  assert.match(named[0], /\/cad-config --roles/);
 });
 
-test('get: a stakes a layer SET reads back with no warnings key at all', () => {
-  const repo = join(dir, 'stakes-pinned.json');
-  writeFileSync(repo, JSON.stringify({ stakes: 'critical' }));
-  const r = run(['get', '--file', repo, 'stakes'], join(dir, 'stakes-no-global.json'));
-  assert.equal(r.ok, true);
-  assert.equal(r.values.stakes, 'critical');
-  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+test('set: stakes is refused before anything is written, naming the migration', () => {
+  const gpath = join(dir, 'stakes-set-refused.json');
+  const r = run(['set', '--global', 'stakes=critical'], gpath);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, 'stakes');
+  assert.match(r.detail[0].error, /retired in v3\.7\.12/);
+  assert.match(r.detail[0].error, /\/cad-config --roles/);
+  // --global auto-creates, so an unrefused pair would have left a file here.
+  assert.equal(existsSync(gpath), false);
 });
 
-test('get: the KEYLESS full read carries no stakes warning either', () => {
-  // D-02, the same gate as the two families above: a full read walks every
-  // schema key, and workflows relay its warnings straight to the user.
-  const r = run(['get', '--file', stakesAbsent], join(dir, 'stakes-no-global.json'));
-  assert.equal(r.ok, true);
-  assert.equal(r.values.stakes, 'shipped');
-  assert.deepEqual((r.warnings || []).filter((w) => /stakes/.test(w)), [],
-    JSON.stringify(r.warnings));
+test('unset is the seam that finishes the migration the refusals point at', () => {
+  // The three rows above all say "this key is dead" and none of them can remove
+  // it; workflows/config.md forbids the hand edit. This is the arm that closes
+  // AC3 against a file shaped exactly like a real v3 config.
+  const f = join(dir, 'stakes-migrated.json');
+  writeFileSync(f, readFileSync(stakesCarrying, 'utf8'));
+  const r = run(['unset', '--file', f, 'stakes']);
+  assert.deepEqual(r.removed, ['stakes']);
+  assert.deepEqual(run(['validate', '--file', f], join(dir, 'stakes-no-global.json')).errors, []);
+  const after = run(['get', '--file', f], join(dir, 'stakes-no-global.json'));
+  assert.equal('warnings' in after, false, JSON.stringify(after.warnings));
 });
 
 // --- ARG-05: a prototype member is an unknown key at the READ face ------------
@@ -1645,22 +1711,22 @@ test('get: every Object.prototype member is refused as an unknown key at exit 1'
 test('get: a mix of a real key and a prototype member refuses, never answers for one', () => {
   const gpath = join(dir, 'proto-mixed-no-global.json');
   const { status, json } = runStatus(
-    ['get', '--file', join(dir, 'proto-mixed-absent.json'), 'stakes', '__proto__'], gpath);
+    ['get', '--file', join(dir, 'proto-mixed-absent.json'), 'granularity', '__proto__'], gpath);
   assert.equal(json.ok, false, JSON.stringify(json));
   assert.equal(json.reason, 'unknown-key');
   assert.deepEqual(json.detail, ['__proto__']);   // names the offender, not the pair
   assert.equal(status, 1);
-  // Measured before the repair: {"ok":true,"values":{"stakes":"shipped"}} at
-  // exit 0 - one key of the two asked for, with nothing saying the other was
+  // Measured before the repair: {"ok":true,"values":{"granularity":"standard"}}
+  // at exit 0 - one key of the two asked for, with nothing saying the other was
   // dropped.
   assert.equal(json.values, undefined);
 });
 
 test('get: the repair costs a live key nothing - one named and the keyless read both answer', () => {
   const gpath = join(dir, 'proto-live-no-global.json');
-  const one = runStatus(['get', '--file', join(dir, 'proto-live-absent.json'), 'stakes'], gpath);
+  const one = runStatus(['get', '--file', join(dir, 'proto-live-absent.json'), 'granularity'], gpath);
   assert.equal(one.json.ok, true, JSON.stringify(one.json));
-  assert.equal(one.json.values['stakes'], 'shipped');
+  assert.equal(one.json.values['granularity'], 'standard');
   assert.equal(one.status, 0);
 
   // The keyless arm walks Object.keys(SCHEMA), which yields own keys only, so
@@ -1669,7 +1735,7 @@ test('get: the repair costs a live key nothing - one named and the keyless read 
   assert.equal(all.json.ok, true, JSON.stringify(all.json).slice(0, 200));
   const schemaKeys = Object.keys(run(['keys']).keys);
   assert.deepEqual(Object.keys(all.json.values), schemaKeys);
-  assert.equal(all.json.values['stakes'], 'shipped');
+  assert.equal(all.json.values['granularity'], 'standard');
   assert.equal(all.status, 0);
 });
 
@@ -1716,4 +1782,164 @@ test('set: a prototype member is refused and nothing is written', () => {
     // --global auto-creates, so an unrefused pair would have left a file here.
     assert.equal(existsSync(gpath), false, key);
   }
+});
+
+// --- unset: removing a key from ONE layer (AC3) -------------------------------
+
+// The migration's write path (D-06). `validate` refuses a whole file over a key
+// the schema dropped, `set` refuses to write one, and workflows/config.md
+// forbids the alternative ("Never write config JSON by hand; go through the
+// seam") - so before this subcommand there was no way to make "the key is gone
+// from the file afterwards" true. Every arm below therefore asserts what
+// happened to a FILE, never what the merged view now reads.
+
+/** The bytes on disk, so "wrote nothing" can be told from "rewrote it the same". */
+const sha256 = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
+
+test('unset removes the named key from the file and leaves its siblings alone', () => {
+  // `stakes` is the AC3 subject and stays the sample here even once the schema
+  // drops it: `unset` is schema-blind by design, so this row asserts the same
+  // thing before and after the key is retired.
+  const f = join(dir, 'unset-basic.json');
+  writeFileSync(f, JSON.stringify({ stakes: 'critical', granularity: 'fine' }, null, 2) + '\n');
+  const r = run(['unset', '--file', f, 'stakes']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.file, f);
+  assert.deepEqual(r.removed, ['stakes']);
+  const after = JSON.parse(readFileSync(f, 'utf8'));
+  assert.equal(Object.hasOwn(after, 'stakes'), false, 'the key is still in the file');
+  assert.equal(after.granularity, 'fine', 'a sibling key was taken with it');
+});
+
+test('unset on a key the file does not hold writes NO bytes at all (AC3)', () => {
+  // Byte identity, not "the same values": the file is written here in a
+  // deliberately non-canonical shape (no indent, no trailing newline), so a
+  // no-op that still called atomicWrite would reformat it and move the digest
+  // while truthfully reporting `removed: []`.
+  const f = join(dir, 'unset-noop.json');
+  writeFileSync(f, '{"granularity":"coarse"}');
+  const before = sha256(f);
+  const r = run(['unset', '--file', f, 'stakes']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, []);
+  assert.equal(sha256(f), before, 'a no-op unset rewrote the file');
+});
+
+test('unset --global edits the user-global file and nothing else', () => {
+  const gpath = join(dir, 'unset-global.json');
+  const other = join(dir, 'unset-global-bystander.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped', granularity: 'fine' }, null, 2) + '\n');
+  // The same key in a second file, so "edits the global layer" is proved
+  // against a file that would also have matched the key had the selection gone
+  // to the wrong layer.
+  writeFileSync(other, JSON.stringify({ stakes: 'solo' }, null, 2) + '\n');
+  const untouched = sha256(other);
+  const r = run(['unset', '--global', 'stakes'], gpath);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.file, gpath, 'the answer names the layer it edited');
+  assert.deepEqual(r.removed, ['stakes']);
+  assert.equal(Object.hasOwn(JSON.parse(readFileSync(gpath, 'utf8')), 'stakes'), false);
+  assert.equal(sha256(other), untouched, 'a second file carrying the same key moved');
+});
+
+test('unset --file at a path that does not exist creates nothing', () => {
+  // Only `set --global` auto-creates, because only a set has a value that has
+  // to land somewhere. A removal on an absent layer has already achieved what
+  // it was asked for.
+  const f = join(dir, 'unset-absent-layer.json');
+  assert.equal(existsSync(f), false);
+  const r = run(['unset', '--file', f, 'stakes']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, []);
+  assert.equal(existsSync(f), false, 'unset created a config file');
+});
+
+test('unset refuses a file it cannot parse, and one whose top level is not an object', () => {
+  // The same two envelopes `set` speaks, so a caller reads one failure contract
+  // across the write faces. An unparseable file is NOT the absent-file arm: the
+  // keys may well be in there, and answering ok:true would report a removal
+  // that never happened.
+  const bad = join(dir, 'unset-malformed.json');
+  writeFileSync(bad, '{ not json at all');
+  const beforeBad = sha256(bad);
+  const malformed = runStatus(['unset', '--file', bad, 'stakes']);
+  assert.equal(malformed.json.ok, false, JSON.stringify(malformed.json));
+  assert.equal(malformed.json.reason, 'read');
+  assert.match(malformed.json.detail, /cannot read\/parse/);
+  assert.equal(typeof malformed.json.hint, 'string');
+  assert.equal(malformed.status, 1);
+  assert.equal(sha256(bad), beforeBad, 'a refused unset still wrote');
+
+  const arr = join(dir, 'unset-array.json');
+  writeFileSync(arr, '[1, 2]\n');
+  const beforeArr = sha256(arr);
+  const notObject = runStatus(['unset', '--file', arr, 'stakes']);
+  assert.equal(notObject.json.ok, false, JSON.stringify(notObject.json));
+  assert.equal(notObject.json.reason, 'invalid');
+  assert.equal(notObject.json.detail[0].key, '(root)');
+  assert.equal(typeof notObject.json.hint, 'string');
+  assert.equal(notObject.status, 1);
+  assert.equal(sha256(arr), beforeArr);
+});
+
+test('unset removes a key the schema does not carry - the whole reason it exists', () => {
+  // `risk.override.auth` is retired and `made_up_key` was never a key: `set`
+  // refuses both and `validate` fails the whole file over either. If `unset`
+  // validated too, the migration D-06 designs would have no seam at all.
+  const f = join(dir, 'unset-unknown.json');
+  writeFileSync(f, JSON.stringify(
+    { granularity: 'fine', risk: { override: { auth: true } }, made_up_key: 1 }, null, 2) + '\n');
+  const before = run(['validate', '--file', f]);
+  assert.equal(before.ok, false, 'the fixture was supposed to be a file validate refuses');
+
+  const r = run(['unset', '--file', f, 'risk.override.auth', 'made_up_key']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, ['risk.override.auth', 'made_up_key']);
+  const after = JSON.parse(readFileSync(f, 'utf8'));
+  assert.equal(after.granularity, 'fine');
+  assert.equal(Object.hasOwn(after, 'made_up_key'), false);
+  // The emptied container is left where it is, and that is the whole reason
+  // this arm ends on a validate: `flatten` skips an object with no entries, so
+  // it contributes no leaf and the file passes anyway.
+  assert.deepEqual(after.risk, { override: {} });
+  const v = run(['validate', '--file', f]);
+  assert.equal(v.ok, true, JSON.stringify(v));
+});
+
+test('unset reports only the keys that were actually there', () => {
+  const f = join(dir, 'unset-partial.json');
+  writeFileSync(f, JSON.stringify(
+    { granularity: 'coarse', model: { escalate_on_failure: true } }, null, 2) + '\n');
+  const r = run(['unset', '--file', f,
+    'model.escalate_on_failure', 'model.nothing_here', 'granularity']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, ['model.escalate_on_failure', 'granularity'],
+    'removed[] is the receipt for what was there, not an echo of what was asked');
+  assert.deepEqual(JSON.parse(readFileSync(f, 'utf8')), { model: {} });
+});
+
+test('unset walks OWN properties only, and still reaches a literal __proto__ key', () => {
+  // The negative arm: every Object.prototype member names something a bare
+  // `node[part]` walk would have found - `toString` a function to delete,
+  // `constructor.name` a path into Object itself.
+  const clean = join(dir, 'unset-proto-none.json');
+  writeFileSync(clean, '{"granularity":"coarse"}');
+  const before = sha256(clean);
+  for (const key of [...PROTO_MEMBERS, 'constructor.name']) {
+    const r = run(['unset', '--file', clean, key]);
+    assert.equal(r.ok, true, `${key}: ${JSON.stringify(r)}`);
+    assert.deepEqual(r.removed, [], key);
+  }
+  assert.equal(sha256(clean), before, 'a prototype member reached the file');
+
+  // The paired POSITIVE control, without which the arm above would pass just as
+  // loudly if `unset` removed nothing ever: JSON.parse DEFINES a literal
+  // `"__proto__"` key as an own data property, so that one spelling really can
+  // sit in a config file and really must be removable.
+  const held = join(dir, 'unset-proto-own.json');
+  writeFileSync(held, '{"__proto__":1,"granularity":"coarse"}');
+  const r = run(['unset', '--file', held, '__proto__']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, ['__proto__']);
+  assert.equal(readFileSync(held, 'utf8').includes('__proto__'), false);
 });

@@ -58,9 +58,10 @@ dispatching the planner. `--max-reqs 12` is a fixed rail, not a config key.
 is unmeasured, and it is never compared.
 
 The `plan` gate is NOT in that batch: fire(trigger) takes every gate from the
-routing bundle (`route.mjs resolve`), so the stakes level reaches the fire site.
-`config.mjs get` is not a source for a gate either way - unset, it answers
-`null` and names `route.mjs resolve` as where the level's gate is resolved.
+routing bundle (`route.mjs resolve`), which is the only reader that sees the
+risk floor raise this gate to `blocking`. `config.mjs get` is not a source for a
+gate either way - it answers the configured value or the schema default and
+knows nothing about the floor.
 
 `memory.backend` rides this same batch. It gates recall in spawn_planner and
 inline_plan below.
@@ -452,12 +453,13 @@ in the payload, as `check_gate` does. Its absence is not a resolve failure and
 must not come back as the `blocker` an unresolvable reference earns.
 
 The gate comes from the routing bundle; act on it.
-At the `shipped` default the gate is `blocking`: fire and WAIT. `solo` resolves
-`advisory`, `critical` resolves `adjudicated`. A gate resolved `off` by config
+The schema default is `advisory`, raised to `blocking` by the plan-time risk
+floor and beaten by any `review.triggers.plan.gate` a layer sets. A
+gate resolved `off` by config
 fires nothing and returns immediately (review-triggers.md step 1) - `done`'s
 Review line then reports the gate as off rather than as a pass:
 
-- **advisory** (the `solo` gate) -> fire in the SAME message as the
+- **advisory** (the default) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The dispatch carries the
   advisory persistence tail (review-triggers.md step 4): the reviewer writes its
   findings to `.planning/phases/<N>/REVIEW-plan.md` and closes its own bracket,
@@ -466,7 +468,7 @@ Review line then reports the gate as off rather than as a pass:
   as in flight - never a clean pass.
 - **blocking** -> fire and WAIT; halt on FAIL until findings are fixed or the
   user overrides.
-- **adjudicated** (the `critical` gate) -> fire and WAIT - triage precedes the
+- **adjudicated** -> fire and WAIT - triage precedes the
   commit because an applied survivor EDITS the plan files the commit stages.
   Triage the survivors, then apply ONLY the ones the user picked to the plan
   file(s) and leave the rest recorded in this step's report. The survivors are

@@ -77,10 +77,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 ```
 
 Then dispatch `cad-reviewer` through the spawn-agent seam with the payload above
-as its prompt. No routing cell resolves a model for this arm - it is the base
-`cad-reviewer` at the session default, at every stakes level - and this pass
-reads no config key of its own, so there is no tier/effort pair to look for and
-none to report. There is no cross-model arm either: a provider call needs a
+as its prompt. This arm resolves no routing at all - it is the base
+`cad-reviewer` at the session default, whatever `roles.cad-reviewer.model` says
+- and this pass reads no config key of its own, so there is no tier/effort pair
+to look for and none to report. There is no cross-model arm either: a provider call needs a
 resolved tier and this pass owns no tier key.
 
 Parse the returned `{findings:[...]}` and close the bracket the moment you have
@@ -131,7 +131,7 @@ user picks what to delete and deletes it, or parks it (`/cad-capture`).
   interchangeability the schema exists for and the adjudication path that
   already parses these findings.
 - Reviewer resolution is not re-derived here: ONE `cad-reviewer` dispatch at the
-  session default, whatever the stakes level. This pass resolves no routing cell
+  session default, whatever the roles block says. This pass resolves no routing
   and reads no config key, so it has no tier, no effort and no reviewer set.
 - Never runs on a target it could not resolve. Stopping is the correct outcome
   there; a list produced over the wrong bytes is indistinguishable from a real

@@ -104,7 +104,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
 gate from the routing bundle (`route.mjs resolve`). A `config.mjs get` of a gate
 is not a source for one either way - unset, it answers `null` and names
-`route.mjs resolve` as where the level's gate is resolved.
+`route.mjs resolve` as where the gate is resolved.
 </step>
 
 <step name="git_guard">
@@ -361,7 +361,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phas
 
 A non-empty `matches` OR `inconclusive: true` fires the trigger. An unjudged
 range is not a cleared one, and widening is the only safe direction on the one
-gate that is `blocking` at every stakes level. Each match names the category and
+gate the schema defaults to `blocking`. Each match names the category and
 the signal that found it, so the fire states a reason rather than a verdict.
 
 On a fire, write `git diff {pre-plan HEAD}..HEAD` to
@@ -412,9 +412,8 @@ mid-plan.
 Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
-reviewer runs the diff itself. Default is `off` at `solo` and `shipped`. The
-arms below are what a user who sets `review.triggers.diff.gate` gets, and what
-`critical` resolves on its own.
+reviewer runs the diff itself. The schema default is `off`. The
+arms below are what a user who sets `review.triggers.diff.gate` gets.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
@@ -636,7 +635,7 @@ verification runs in a fresh subagent.
 - [ ] Guard applied before the first executor dispatch
 - [ ] One cad-executor per plan; sequential unless every parallel condition held
 - [ ] Each task is one conventional commit of specific files
-- [ ] `diff` trigger per plan - `off` at solo/shipped, overlapped at
+- [ ] `diff` trigger per plan - `off` by default, overlapped at
       `advisory`, blocking at `adjudicated`; `risk_surface` fired ONCE per plan
       on the committed range, never mid-plan
 - [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check

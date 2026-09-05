@@ -502,6 +502,30 @@ lever is trigger frequency (gating), never a weak reviewer.
   `lib/route-cells.mjs`'s `surfaceIssues` narrowed to `vocabularyIssues` - the two drift checks it
   carried are about `stakes_order` and `gates`, which outlive the surfaces block.
 
+- ⚠️ **SUPERSEDED (2026-09-05):** the stakes axis, the 18-cell grid keyed on it, `model_aliases`
+  and `route-table.json` itself are all deleted. What a project answers now is what each ROLE is
+  worth to it: twelve keys, `roles.<role>.model` and `roles.<role>.effort`, written by a
+  thirteen-question interview (`/cad-config --roles`, run in full by `/cad-new-project` and
+  `/cad-adopt`) whose questions each carry what that role does in the phase loop and what the
+  answer buys there - the documentation IS the prompt, which is what the one-word level was
+  standing in for. The grids the level answered for that were not cells - `review`, `verify`,
+  `tiers`/`efforts` - become real defaults on their own keys in `config.schema.json`, and that
+  leaves `route-table.json` holding nothing but `rung_order`, now stated beside `RUNG_FILES` in
+  `lib/rung-agent.mjs`. `model_aliases` and the six `model.overrides.*` enums go because
+  `roles.<role>.model` is a free string: an unset key sends NO model parameter, so the session's
+  own model runs, and a name this host rejects is named in `warnings[]` with the parameter dropped
+  - the last hand-copied list of model names leaves the repository, and a typo can never redirect
+  spend. `model_source` replaces the `cell` token and joins the `routing.resolve` trace event,
+  because with the cell gone nothing on the record said what decided a dispatch. The plan-time risk
+  floor survives with its reach re-pointed: it makes the `plan` review blocking and turns the
+  deep-verify pass on, and it moves no role's model and no role's rung, so "is this phase risky"
+  and "what is this role worth" stop being one number. `stakes` is retired in `retired-keys.mjs`
+  rather than merely dropped from the schema, `config.mjs` grows `unset` so the migration can take
+  the key off disk, and `review.triggers.risk_surface.waive_routing_floor` keeps its name with its
+  meaning re-pointed at exactly those two effects. Breaking, no alias: a config still carrying
+  `stakes` meets the migration on its next command. Ships in v3.7.12, the last release on the 3.x
+  line.
+
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
   notice, README lead line crediting GSD, NOTICE/CREDITS + lineage note.

@@ -9,7 +9,7 @@
 // lib/trace.mjs describes it as "a plan number on either execute path, a role
 // name for a role-dispatched worker". A coordinator that bracketed a fix pass
 // as `1-fix` therefore had `status` demand a record for `1-fix` that `run`
-// answered `bad-args` for - a blocking gate, at every stakes level, that no
+// answered `bad-args` for - a gate the schema defaults to `blocking`, that no
 // argv could satisfy and whose only exit was an `override`.
 //
 // So the grammar WIDENS to the worker key, and `status` does not narrow

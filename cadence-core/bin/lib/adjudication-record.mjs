@@ -63,7 +63,7 @@
  * Carried here as this module's own frozen list rather than imported from
  * review-provider.mjs, and PINNED against that file's `FINDING_SCHEMA` enum by
  * adjudication-record.test.mjs - the same hand-maintained-then-compared shape
- * route-table.json states its reason for on `risk_surface_categories`. The
+ * `lib/surface-scan.mjs` states its reason for on `CATEGORIES`. The
  * import would drag a 1300-line provider module, its network client included,
  * into a pure classifier; the test is what stops the two lists drifting.
  */

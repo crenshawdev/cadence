@@ -31,8 +31,8 @@
 // commit id where the code would be - is `inconclusive: true`, never collapsed into
 // `matches: []`, and `inconclusive` is INDEPENDENT of `matches` so a partly
 // unreadable range that also matched reports both. The caller fires on either,
-// because widening is the only safe direction on the one gate that is
-// `blocking` at every stakes level.
+// because widening is the only safe direction on the one gate whose schema
+// default is `blocking`.
 //
 // AND WHAT IT MAY NOT READ. Never a category-NAME keyword grep. That pass was
 // measured on this repo on 2026-08-13 and false-positived `auth` on sixteen
@@ -110,7 +110,7 @@ const EXT_SIGNALS = Object.freeze({
  * written plainly matches its own source. Ten lines here did until v3.5.5 - a
  * whole-file add of this file evidenced six of the eight categories, every one
  * of them from the table below rather than from anything the file does - and
- * that gate is `blocking` at every stakes level, so a phase editing the
+ * that gate defaults to `blocking`, so a phase editing the
  * detector spent its one re-arm on a self-match. `[x]yz` matches the same
  * language as `xyz` while the source text no longer carries the literal, and
  * `'ab' + 'cd'` is the same label bytes: REACH is unchanged and no emitted

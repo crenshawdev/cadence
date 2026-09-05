@@ -59,9 +59,9 @@ the trigger asked for.
 
 Then WRITE THE ADJUDICATION RECORD: the rulings themselves, not a count of them.
 An adjudicated-only rule would record nothing at all on most projects -
-`route.mjs resolve` returns `plan: blocking` and `risk_surface: blocking` at
-`shipped` stakes - and would exclude the sharpest case there is, a gate that
-passed with everything killed.
+`route.mjs resolve` returns `risk_surface: blocking` on the shipped default,
+and `plan: blocking` on any phase the risk floor raised - and would exclude the
+sharpest case there is, a gate that passed with everything killed.
 
 YOU compose the payload, because you are the only actor holding both the raised
 finding bodies and the ruling: `review-provider.mjs` returns `findings` on
@@ -127,7 +127,7 @@ not exist. Without it `--phase 0` is refused outright, and the hand-append that
 refusal used to force is a receipt no guard can see. A phase fire passes nothing.
 `deferred record` does NOT take it: the queue enumeration reads the two phase
 homes only, so a member under a slug would be created and never found - and a
-task's only gate is `risk_surface`, which blocks at every level and never
+task's only gate is `risk_surface`, whose `blocking` schema default never
 resolves `deferred`.
 
 It lands at `.planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json`,

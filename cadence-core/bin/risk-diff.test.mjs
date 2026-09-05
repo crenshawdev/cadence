@@ -412,7 +412,7 @@ test('risk-check run: a diff DRIVER cannot turn a risky range into a completed E
   // prints nothing and exits 0 makes `git diff <base> <head> --` emit zero
   // bytes for a file whose changed line is a recursive delete. scanDiff then
   // answers `checked: true, empty: true, matches: []` - a COMPLETED clear on
-  // the one gate that is blocking at every stakes level, and the code before
+  // the one gate that is blocking by default, and the code before
   // the empty arm existed fail-closed on exactly this shape. No attacker is
   // required: a `textconv` for pdf or docx in a developer's own ~/.gitconfig
   // does it by accident. `--no-ext-diff --no-textconv` on the seam's read is
@@ -1665,7 +1665,7 @@ test('risk-check status: an earlier fire\'s receipt does not clear a LATER match
 test('risk-check status: a non-empty matches nothing can name still reads as FIRED', () => {
   // Filtering the array to the strings it could name turned a matched range
   // into a clean one. Widening is the only safe direction on a gate that is
-  // blocking at every stakes level.
+  // blocking by default.
   const dir = traceFixture([...FROZEN_PHASE_1,
     recordLine('1', 'ae5ca09', 'HEAD', { matches: [null] })]);
   const r = riskStatus(dir, ['--phase', '1']);
@@ -1850,16 +1850,20 @@ test('risk-check run: a TORN config layer is refused even when --surfaces was na
   assert.deepEqual(traceLines(dir), [], 'a torn layer recorded a detection anyway');
 });
 
-test('risk-check run: the answer is judged against route-table.json\'s vocabulary, not a local list', () => {
+test('risk-check run: the answer is judged against the schema enum, not a local list', () => {
   // The divergence the shared predicate exists to prevent, at its one remaining
-  // seam: route.mjs judges the configured list against route-table.json's
-  // `risk_surface_categories`, so a token outside THAT list is unanswered to
-  // the resolve. Reading the module's own CATEGORIES here instead would let
-  // this seam accept the same value and narrow a blocking gate to a scope the
-  // routing authority rejected.
-  const table = parseJson(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
-  assert.deepEqual(table.risk_surface_categories, ALL,
-    'route-table.json and lib/surface-scan.mjs disagree on the eight categories');
+  // seam: route.mjs judges the configured list against config.schema.json's
+  // `review.triggers.risk_surface.surfaces` values, so a token outside THAT
+  // list is unanswered to the resolve. Reading the module's own CATEGORIES here
+  // instead would let this seam accept the same value and narrow a blocking
+  // gate to a scope the routing authority rejected. The leg used to be
+  // route-table.json's `risk_surface_categories`; that file is gone, and the
+  // schema enum route.mjs now reads is the same statement in the surviving one.
+  const schema = parseJson(readFileSync(join(HERE, '..', 'config.schema.json'), 'utf8'));
+  const spec = schema.keys['review.triggers.risk_surface.surfaces'];
+  assert.ok(spec, 'config.schema.json defines no review.triggers.risk_surface.surfaces');
+  assert.deepEqual(spec.values, ALL,
+    'config.schema.json and lib/surface-scan.mjs disagree on the eight categories');
 });
 
 // --- the census: neither file matches the detector ----------------------------
@@ -1871,7 +1875,7 @@ test('risk-check run: the answer is judged against route-table.json\'s vocabular
  * of this file evidenced FOUR - auth, migrations, destructive and
  * untrusted_input. Every one came from a pattern's own source text or from a
  * fixture that has to carry the construct it tests, never from anything either
- * file DOES. The gate fed by that answer is `blocking` at every stakes level,
+ * file DOES. The gate fed by that answer is `blocking` by default,
  * so the cost was a phase editing the detector spending its one re-arm on a
  * self-match, on a range where nothing risky happened.
  *

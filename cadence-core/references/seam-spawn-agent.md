@@ -13,9 +13,9 @@ How a workflow dispatches work to a fresh-context subagent.
   (`cad-plan-checker` at `medium` -> `cad-plan-checker-medium`); the map is
   stated per role rather than derived, because the unsuffixed `agents/<role>.md`
   is one rung among the others rather than the lowest. Self-verify fails in both
-  directions: a rung with no file, and a rung file no cell reaches.
+  directions: a rung with no file, and a rung file no role maps.
 - A turn bound, but no timeout and no cancel. Every `agents/*.md` carries
-  `maxTurns: 200` in its frontmatter, one uniform value across all 19 rung
+  `maxTurns: 200` in its frontmatter, one uniform value across all 30 rung
   files, so that is the bound a dispatch runs under - and it is the only one
   this seam has: no wall-clock kill, and no way to cancel a dispatch already
   running. A config key claimed a wall-clock kill until v2.7.0, when it was
@@ -120,8 +120,10 @@ reconciling a stale worktree is the orchestrator's serialized call, never the
 executor's own merge/rebase/fetch.
 
 **Routing (the quality bundle).** Before every dispatch, resolve the role
-through the routing seam - never hardcode a model, never dispatch a role at
-the session default when the project has stated its stakes:
+through the routing seam - never hardcode a model. The seam decides whether a
+model parameter is sent AT ALL: `model: null` on the envelope means send none,
+and the dispatch runs at the session's model, which is a resolved answer and
+not a fallback (D-04):
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_name> \
@@ -218,56 +220,56 @@ paragraph is the ONE statement of that rule; dispatch sites point here rather
 than restating it.
 
 One resolve returns FOUR knobs, not a model: `model` and `effort` for this
-dispatch, `review` (the whole trigger -> gate map for the level, which
+dispatch, `review` (the whole trigger -> gate map, which
 `references/review-triggers.md` step 1 reads), and `verify` (whether the
 deep-verify pass runs, which `workflows/verify.md` reads). Quality is not one
 dial, and effort alone cannot express "fire a blocking cross-model review".
 
-**The stakes level a config layer set is the FLOOR, not the level.** A dispatch
-resolves at or above it, never below, and the phase's own declared PLAN `files:`
-- read at resolve time, scanned against the surfaces the project answered - are
-what raise it. A phase touching no risk surface resolves BELOW the project
-default; a phase touching one never resolves lower than it did. An unset
-`stakes` floors at `solo`. `reason` names every move: the phase, the surface,
-the file that evidenced it, and the level it came from.
+**The plan-time risk floor does exactly TWO things, and names no level.** It
+makes the plan review blocking, and it turns the deep-verify pass on. That is
+the whole list: it moves no role's model and no role's start rung, and there is
+no third effect to look for. What raises it is the phase's own declared PLAN
+`files:`, read at resolve time and scanned against the surfaces the project
+answered. `reason` names every move - the phase, the surface, the file that
+evidenced it, and the key it moved.
 
-It fails CLOSED and never `ok:false`. The discount below the configured level is
-earned only by a scope every plan of which was found and read clean, so one
-unreadable plan holds the whole scope at the configured level, named in
-`warnings[]`.
+It fails CLOSED and never `ok:false`. A scope it could not read RAISES: a plan
+file that would not parse, a declared file it could not stat, a scope naming no
+readable plan at all. Only a scope every plan of which was found and read clean
+can stand the floor down, and `reason` says which of the two happened, because
+"nothing touched a surface" and "nothing could be read" want different fixes.
 
-Lowering below the computed floor takes a named waiver:
-`review.triggers.risk_surface.waive_routing_floor` lists the surfaces whose
-raise this project waives, and without it the raise stands with `reason` naming
-the key and the surface to name in it. It lowers to the configured `stakes` and
-no further, a surface it does not name still raises, and every waiver applied is
-named in `reason`. It waives the ROUTING floor alone - the blocking
-`risk_surface` review still fires on the diff.
+Withholding the raise takes a named waiver:
+`review.triggers.risk_surface.waive_routing_floor` lists the surfaces this
+project waives, and a surface named there withholds BOTH effects for that
+surface - the plan review keeps its configured gate and the deep pass stays off.
+A surface it does not name still raises, and every waiver applied is named in
+`reason`. It waives neither review: the blocking `risk_surface` review still
+fires on the actual diff, and this key cannot reach it.
 
-A raise floors the RUNG too: a configured `model.effort` rung below the floored
-cell's rung does not apply and `reason` says so, for post-plan roles only. A
-scope that took the discount keeps its configured rung.
-
-`route.mjs replay` answers what the floor does to this project's own phases -
-one row per phase directory, live and archived, today's level against the
-computed one and the evidence behind any raise, regression list always present.
+A gate a config layer validly SET is what fires, raised or not: when the floor
+raises a plan gate the user configured, `reason` says the gate was configured
+and the floor moved nothing rather than moving it silently.
 
 `--phase <N>` decides which phase the floor reads, the `.planning/STATE.md`
 cursor decides it when the flag is absent, and a MALFORMED `--phase` is refused
 - the alternative is a floor off another phase's files. `--plan <k>` narrows the
 scope to ONE plan, which is what an executor floors on, so a clean plan in a
-mixed phase routes below its risky sibling; a key naming no plan file holds the
-configured level rather than widening back to the union. `cad-planner` and
-`cad-assumptions-analyzer` are exempt - dispatched before a plan exists, they
-would be floored off the previous phase's files.
+mixed phase is not raised by its risky sibling; a key naming no plan file takes
+the fail-closed arm rather than widening back to the union. `cad-planner` and
+`cad-assumptions-analyzer` are exempt and always have been - dispatched before a
+plan exists, they read none, so the floor computes nothing for them and says
+so.
 
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
   run failed: with `model.escalate_on_failure: true` (an opt-in - the default
   holds the rung, because a retry is usually a narrower job than the pass that
-  failed it) the re-dispatch climbs to the retry rung the SAME cell names, and
-  swaps to that rung's file. Where the retry rung
-  equals the starting rung, `reason` says the rung was held and `escalated`
-  stays false - a held retry is never reported as an escalation.
+  failed it) the re-dispatch climbs ONE rung on the `low, medium, high, xhigh,
+  max` ladder from wherever this dispatch started, and swaps to that rung's
+  file. One step, never a jump, and a rung this role files no agent for is
+  stepped over rather than dispatched. At the top rung there is nowhere to
+  climb: `reason` says the rung was held and `escalated` stays false - a held
+  retry is never reported as an escalation.
 - Use the returned `agent` and `model` in the dispatch. `escalated`/`reason` are
   for logging why.
 - `{ok:false}` (unknown role, no table) → dispatch the **base** `agent_name` with
@@ -279,33 +281,51 @@ would be floored off the previous phase's files.
   rule turns one deliberate config gate into a notice on every planner,
   executor, verifier and checker dispatch for the life of the project, and
   warning fatigue degrades the same channel the torn-layer and retired-key
-  warnings depend on.
-- The stakes level picks the row and the role picks the cell in it; the level
-  never reacts to `--attempt` by itself - a retry climbs the rung, not the level.
-- **Per-role pin.** `model.overrides` maps one role to one model alias
-  (`opus`/`sonnet`/`haiku`/`fable`) and wins over the cell's model.
-  The resolver reports `pinned: true` and names
-  the swap in `reason`; effort is untouched, so a pinned role still climbs to
-  its retry rung file. `haiku` and `fable` are reachable this way ONLY - the
-  routed vocabulary is `sonnet` and `opus`. An unrecognized alias adds a
-  `warnings` entry and the routed model stands - a typo must not silently
-  redirect the spend. For `fable` pin-only rests on no ranking claim: it
-  requires 30-day data
+  warnings depend on. ONE warning is not relayed and moved past: an
+  entry saying a RETIRED routing key was ignored means a config layer still
+  carries the single level that used to decide every role's model and effort,
+  so the workflow opens `workflows/config.md`'s **Stakes migration** arm before
+  dispatching and re-resolves after it.
+- **The roles block answers first.** `roles.<role>.model` names the model this
+  role is dispatched on and `roles.<role>.effort` names the rung it STARTS at.
+  Nothing sits above them: there is no grid, no level and no table behind the
+  answer, so what the user typed IS the routing. Unset means unset -
+  `roles.<role>.model` with no value sends NO model parameter, and
+  `roles.<role>.effort` with no value takes its own schema default, which is
+  `high` for the planner, the analyzer, the verifier and the executor, `medium`
+  for the reviewer and `low` for the plan checker.
+- **The two older families are the narrower fallbacks UNDER them.**
+  `model.overrides.<role>` answers the model when `roles.<role>.model` names
+  none, and `model.effort.<role>` answers the rung when `roles.<role>.effort`
+  names none. Silence falls back per KEY rather than per role, so a global layer
+  naming only the model composes with a repo layer naming only the rung.
+  Setting a roles key and its older sibling for one role adds a `warnings[]`
+  entry naming which key won; the roles key wins. A rung the role has no file
+  for is refused by the write face, naming the set that role does have, and at
+  resolve time the next source down answers with the loser named in
+  `warnings[]`.
+- **An unaccepted model omits the parameter.** The model names the host takes
+  are `opus`, `sonnet`, `haiku` and `fable`, and `roles.<role>.model` is a free
+  string, so anything else can be written into it. A string the host does not
+  accept resolves `ok:true`, dispatches with NO model parameter - the session's
+  model runs - and names the rejected string in `warnings[]`. A typo must never
+  silently redirect the spend, and it never falls through to
+  `model.overrides.<role>` either: a roles key that is SET owns the answer for
+  that role whether or not its value is accepted, and falling through would hand
+  the role back to an older key on the typo alone. `fable` is accepted but
+  deliberately never offered by the interview: it requires 30-day data
   retention, so a zero-data-retention org gets a hard `400` on every request;
   its safety classifiers refuse cyber-adjacent content, and Cadence reviews its
-  own git rails and secrets handling; and its multi-minute
-  turns press against `review.request_timeout_ms` inside the host's Bash
-  ceiling. Pinning it is the user's assertion to make about their own org, not
-  the table's.
-- **Per-role start rung.** The `model.effort` family names the rung a role
-  STARTS at, replacing the one its cell holds. One key per role
-  (`model.effort.cad-verifier` and so on, six in all), and the accepted values
-  are exactly that role's own rungs - the write face refuses any other by key,
-  naming the set that role does have. The value lives in the config layers,
-  never in the shipped table. It raises and lowers freely, and it always wins
-  over the cell. A retry never resolves below it: `--attempt 2` takes whichever
-  of the cell's retry rung and the configured start rung sits higher, and says
-  which one it out-ranked.
+  own git rails and secrets handling; and its multi-minute turns press against
+  `review.request_timeout_ms` inside the host's Bash ceiling. Choosing it is the
+  user's assertion about their own org.
+- **`model_source` says which key decided.** It is always present and carries
+  the dotted key that chose the model - `roles.<role>.model` or
+  `model.overrides.<role>` - or the string `session` when no key did, a set key
+  whose value the host rejected included. It rides the `routing.resolve` trace
+  event too. `pinned` stays FALSE when the roles block chose the model: it means
+  `model.overrides` chose it, which is what the announcement rule below is keyed
+  on, so read `model_source` and not `pinned` to learn what decided.
 - **Tell the user when a pin fires.** A dispatch is approved through a UI that
   generally shows the agent name and not the model, so a pinned dispatch looks
   identical to a routed one at the moment of approval. When `pinned` is true,
@@ -323,8 +343,10 @@ one consumes another's returned artifact.
 
 The EXECUTOR is the stated exception, and not because payloads differ: the plan
 scope is a routing INPUT once the risk floor reads it, so the per-plan executors
-of a parallel phase can resolve DIFFERENT levels off one (role, attempt). Each
-resolves its own, carrying its `--plan <k>`; every other role keeps the rule.
+of a parallel phase can resolve DIFFERENT bundles off one (role, attempt) - a
+risky plan gets the blocking plan review and the deep pass, its clean sibling
+does not. Each resolves its own, carrying its `--plan <k>`; every other role
+keeps the rule.
 
 **Prompt shape (cache discipline).** Order every dispatch prompt stable-first:
 context that repeats across dispatches of the same role (phase/goal, shared

@@ -191,7 +191,7 @@ append answered the absent-root reason there is no repo layer to persist into,
 because `config.mjs set` writes `.planning/config.json` and creating it is the
 scaffolding this workflow's success criterion forbids - so the answer rides
 `--surfaces` for this run alone and the question is asked once per run. Stopping
-at the refusal instead is how the one gate that blocks at every stakes level
+at the refusal instead is how the one gate the schema defaults to `blocking`
 never runs at all for the fresh user this inline path exists for.
 
 A non-empty `matches` OR `inconclusive: true` fires the `risk_surface` review
@@ -235,7 +235,7 @@ by the INLINE path - `planned_path` step 1 is the only writer of
 is absent, because a task plan does not justify project scaffolding. So derive
 the slug here when the inline path did not (kebab-case of the task description).
 A redirect into a directory nothing created fails `No such file or directory`,
-and this trigger is `blocking` at every level, so that failure is a blocking
+and this trigger defaults to `blocking`, so that failure is a blocking
 gate that cannot fire rather than a gate that passes.
 
 Which directory depends on whether this task already owns one, and the INLINE
@@ -253,8 +253,8 @@ path never does:
   the diff to `$D/cadence-risk-task-{slug}.diff`, and fire with THAT path -
   still shape (c), which since `v2.6.1` admits a flagged-diff file however it
   was produced. A fixed shared name collides between two inline runs of the
-  same-slugged task, and what collides is the artifact of a trigger that BLOCKS
-  at every stakes level - the shape `v2.3.0` already closed once as a stale diff
+  same-slugged task, and what collides is the artifact of the trigger the schema
+  defaults to BLOCKING - the shape `v2.3.0` already closed once as a stale diff
   reaching a blocking gate. The `.diff` is still deleted once the trigger
   returns and the run directory is left for the operating system to reap;
   neither is a `.planning/` artifact, so the success criterion holds. The same
@@ -267,7 +267,7 @@ in a `phases/0/` that does not exist (`references/review-record.md`). The INLINE
 path owns no directory, so it owns no home for a record either: its FAIL stays
 with the user, the same absence the `<guardrails>` line below already states.
 
-This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
+This trigger defaults to `blocking`, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a
 FAIL, since this workflow does not preload it and the cap lives only there.

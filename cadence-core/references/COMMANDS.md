@@ -46,7 +46,7 @@ are the on-demand and standalone gates.
 | Command | What it does |
 |---|---|
 | `/cad-capture [todo\|seed\|note] <text> [--cadence]` | Park a phase-linked todo, a backlog seed, or a note without derailing. `--cadence` sends it to Cadence's own queue instead, for friction with Cadence noticed on another project. |
-| `/cad-config [--review \| --surfaces \| key=value]` | Configure the config; interactive cross-model review-provider setup + model detection. `--surfaces` re-opens the one-time risk-surface question with the current answer beside what the structure evidences today. |
+| `/cad-config [--review \| --surfaces \| --roles [--global] \| key=value]` | Configure the config; interactive cross-model review-provider setup + model detection. `--surfaces` re-opens the one-time risk-surface question with the current answer beside what the structure evidences today. `--roles` asks the thirteen questions that say what each role costs - a model and a start rung per role, then the risk floor - writing repo diffs, or the user-global layer with `--global`. |
 | `/cad-help [command]` | This reference (a command name shows just that entry). |
 | `/cad-pause [note]` | Pause cleanly - WIP commit + cursor set to paused with a resume pointer. Resume via `/cad-progress`. |
 | `/cad-spike <question>` | Time-boxed risk-first experiment with falsifiable criteria and a verdict. Throwaway code, one SPIKE.md. |

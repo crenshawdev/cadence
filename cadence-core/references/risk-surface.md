@@ -59,8 +59,9 @@ every time a plan or a task completes, and it can and does return nothing.
 A match in one of eight categories fires the `risk_surface` trigger, and so does
 an `inconclusive: true` the seam could not judge: an unjudged range is not a
 cleared one. The token beside each is the name that category carries
-everywhere it is named by machine - in `review.triggers.risk_surface.surfaces`
-and in route-table.json's `risk_surface_categories`:
+everywhere it is named by machine - in `review.triggers.risk_surface.surfaces`,
+in its `waive_routing_floor` sibling, and in `lib/surface-scan.mjs`'s
+`CATEGORIES`:
 
 - `auth` - auth/authz/sessions
 - `migrations` - DB schema/migrations
@@ -71,9 +72,10 @@ and in route-table.json's `risk_surface_categories`:
 - `api_contract` - public API/wire contracts
 - `untrusted_input` - untrusted-input parsing
 
-This list is also the operative definition of the `critical` stakes value: a
-diff touching one of these surfaces is a break that does not come back as a bug
-report.
+This list is also the operative definition of code that is worth stopping for:
+a diff touching one of these surfaces is a break that does not come back as a
+bug report, which is why a phase whose plans declare one gets a blocking plan
+review and the deep-verify pass.
 
 **The set is chosen ONCE, at the first fire that needs it.** A `risk_surface`
 fire whose step-1 resolve reports `surfaces_answered: false` does not proceed to

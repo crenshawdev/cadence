@@ -1,15 +1,15 @@
 // @ts-check
 // test-seam.mjs - the ONE sentinel that admits this tree's hermetic path
-// overrides. `CADENCE_ROUTE_TABLE`, `CADENCE_CONFIG_SCHEMA` and
-// `CADENCE_PLUGIN_MANIFEST` each redirect a file the seams read as GROUND TRUTH
-// - the route table sets every review trigger's gate, the schema decides which
-// keys are known and which carry the `src: "global"` marker, and the manifest is
-// what every version-skew answer is computed from. A fourth,
+// overrides. `CADENCE_CONFIG_SCHEMA` and `CADENCE_PLUGIN_MANIFEST` each
+// redirect a file the seams read as GROUND TRUTH - the schema sets every review
+// trigger's gate, decides which keys are known and which carry the
+// `src: "global"` marker, and the manifest is what every version-skew answer is
+// computed from. A third,
 // `CADENCE_DETECT_REACHABLE`, redirects a READING rather than a file:
 // `detect-commands` takes it as the set of binaries that resolve on PATH, in
 // place of its own probe, so the seam's 23 fixture assertions stop depending on
 // which tools the machine running them happens to have installed (RCH-01,
-// phase 3 D-11). It is gated for the same reason as the three above rather than
+// phase 3 D-11). It is gated for the same reason as the two above rather than
 // as a courtesy: the value decides which static-analysis command an executor is
 // told to run before every commit, which is an enforcement answer. Read by
 // PRESENCE, never through `||` - an empty value legitimately means "nothing is
@@ -24,7 +24,7 @@
 // comment and the behaviour agree, and a repo-supplied `.envrc` or devcontainer
 // env block no longer changes an enforcement answer by setting one variable.
 //
-// It is NOT a privilege boundary. Anything that can set `CADENCE_ROUTE_TABLE`
+// It is NOT a privilege boundary. Anything that can set `CADENCE_CONFIG_SCHEMA`
 // can set `CADENCE_TEST_SEAM` beside it; what the sentinel buys is a STATED
 // production surface, not isolation from an attacker who already controls the
 // environment. Where a redirect would carry a credential rather than a file

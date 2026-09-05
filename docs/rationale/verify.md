@@ -13,8 +13,10 @@ Read it before EDITING that workflow. Anchors match the step names.
 
 `workflow.verifier: false` is the off switch and always wins. Beyond it, two
 terms: the FIRST-session term is what keeps the pass to once per phase, so
-dropping it re-dispatches cad-verifier on every later UAT session; the stakes
-term is what lets `solo` decline the pass entirely.
+dropping it re-dispatches cad-verifier on every later UAT session; the resolved
+`verify` term is what lets a phase touching no risk surface decline the pass
+entirely. `verify` has no config key - it is `on` exactly when the plan-time
+floor raised, and `--deep` is the manual override beside it.
 
 ## walk - the defect the two-pass split exists to prevent
 

@@ -281,40 +281,39 @@ rather than scattered across twenty workflows.
 
 ### Four triggers, four consequences, three combination modes
 
-| Trigger | Fired by | On | Gate at `shipped` |
+| Trigger | Fired by | On | Default gate |
 |---|---|---|---|
-| `plan` | `/cad-plan` | after PLAN.md is written | blocking |
+| `plan` | `/cad-plan` | after PLAN.md is written | advisory |
 | `diff` | `/cad-execute` | at plan completion | off |
 | `risk_surface` | execute, debug, task, verify | on detection match, once per plan on the committed range | blocking |
 | `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | off |
 
-Two of the four fire at the default `shipped` level: the plan review, on every
-plan, and `risk_surface`, on a detection match. `diff` is off there and at `solo`,
+Two of the four run out of the box: the plan review, on every plan, and
+`risk_surface`, on a detection match. `diff` is off,
 because an advisory review gates nothing and the last plan of a phase has no next
 dispatch to overlap it with, so it is a wait bought for findings that stop
-nothing - `risk_surface` already blocked on that same range. `phase_diff` is off at `shipped` for the other half of the same
+nothing - `risk_surface` already blocked on that same range. `phase_diff` is off for the other half of the same
 argument: its findings files were read by nobody, referenced by no SUMMARY and
 no CONTEXT, so the dispatch bought findings that changed nothing. `plan` was cut
-to `off` on that same evidence and is now `blocking`, because the measurement
-condemned the ADVISORY gate rather than the review: a plan is the cheapest thing
+to `off` on that same evidence and came back, because the measurement
+condemned the gate it had rather than the review: a plan is the cheapest thing
 in the pipeline to halt on, no code exists yet, and a gate that stops something
-cannot be a findings file nobody reads. Setting
-`review.triggers.<t>.gate` puts any of them back on and beats the level.
-`phase_diff` only ever
+cannot be a findings file nobody reads. It is advisory until a detected risk
+surface makes it blocking. Setting
+`review.triggers.<t>.gate` writes any of them to any of the five values, and
+that is then what fires. `phase_diff` only ever
 fires on the parallel path, which most projects never run. The gate (`off`, `advisory`, `deferred`, `blocking`,
 `adjudicated`) decides the consequence - at `deferred` the reviewer still runs, what it found is queued and the
 run finishes, so the LAND is what stops - `review.mode` (`single`, `panel`, `adjudicated`) decides how multiple
 reviewers combine, and where they disagree the gate wins, because it is the stronger signal.
 
-That gate column is the `shipped` level, not a fixed default. Every gate is
-resolved from the project's `stakes` level, so the same trigger fires differently
-depending on what a break costs you: a `plan` review is advisory at `solo`, blocking at
-`shipped` and adjudicated at `critical`, an ordinary `diff` is off at `solo` and
-`shipped`, and blocking at `critical`. `risk_surface` is the one that
-does not move, blocking at all three levels. An explicit gate you set in config
-beats the level's, as long as it is one of the five values above; a typo loses to
-the level's gate and is named in the warnings rather than silently disabling a
-review.
+That column is each key's own default in `config.schema.json`, not a row of a
+table keyed on something else. There is no project-wide level: a gate is that
+default until a config layer writes one, and what a layer writes is what fires,
+as long as it is one of the five values above; a typo loses to the default and is
+named in the warnings rather than silently disabling a review. One thing moves a
+gate after the config is read, and it moves exactly one gate - the plan-time risk
+floor below, which makes an advisory `plan` review blocking.
 
 The defaults encode an opinion about where scrutiny pays: heavy before code
 exists, heavy before publishing, blocking on risk, merely advisory on an ordinary
@@ -370,12 +369,13 @@ in this system for paying for more voices.
 What survives is not a work order. The survivors are presented as a numbered
 list and the session asks which of them to act on, with none as the default, so
 the model that just spent four voices on the artifact does not also get to
-decide what happens next. One gate ends this way at every level: the fix list in
-`/cad-verify`, which has no resolved gate and is always triaged. Three more end
-this way wherever their gate resolves adjudicated: the plan review in
-`/cad-plan`, blocking at `shipped` and adjudicated at `critical`;
-`/cad-execute`'s per-plan diff review, `off` below `critical`; and its
-`phase_diff` review, adjudicated at `critical`. The one exception is the
+decide what happens next. One gate ends this way whatever is configured: the fix
+list in `/cad-verify`, which has no resolved gate and is always triaged. Three
+more end this way wherever their gate resolves adjudicated: the plan review in
+`/cad-plan`, advisory by default and blocking under a detected risk surface;
+`/cad-execute`'s per-plan diff review, `off` by default; and its
+`phase_diff` review, `off` by default. Each of the three is that value until a
+config layer writes another. The one exception is the
 opt-in unattended close in `/cad-land`, where nothing is acted on at all - it
 fires no review of its own, reads only the `risk_surface` findings this branch
 already settled, and a surviving blocker or high finding halts the merge
@@ -420,25 +420,30 @@ half-built change and cost a fresh-context re-dispatch per match, whose only job
 was writing code no plan task authorized - itself new risk surface, and the next
 halt. Blocking on the finished range keeps the gate and drops the loop.
 
-The `stakes` you set is a MINIMUM, not a fixed price. A plan-time floor reads
+The plan-time floor moves two things and nothing else. It reads
 the phase's own declared `files:` before any code is written - the same
 anchored construct patterns and whole-path segments the commit-time
 `risk_surface` gate fires on, scanned over each declared file's current body
 and scoped to the surfaces the project answered, with a document contributing
-its path alone and never its prose. A matched phase routes at `shipped`, not
-at the top row: raising every match to `critical` is the tax the old floor
+its path alone and never its prose. A matched phase gets a blocking plan
+review and the deep-verify pass, and every role's model and every role's rung
+stay exactly where you set them. What a phase is worth reviewing and what a
+role is worth dispatching are two questions, and the answer to one no longer
+edits the other: moving the spend too is the tax the old floor
 died of. This is a different detector reading a different input from the one
 that came before it. The dispatch-time detector that read a phase's declared
 paths by NAME - one path token in one declared file was enough to put six
 roles on their top rung for the rest of the phase - and the eight
 `risk.override.<surface>` waivers that existed to lower what it raised, were
 both cut in v2.7.0 and stay cut: the eight keys are still retired. It fails
-CLOSED - a plan Cadence cannot read holds the configured level and never
-drops below it - and lowering below a computed raise takes the waiver key
-inside `review.triggers.risk_surface` naming the surface, which lowers the
-routing level alone and can never disable the blocking review. What these
+CLOSED - a plan Cadence cannot read raises the floor rather than refusing,
+because a scope nobody could read has proved nothing - and withholding the
+raise for one surface takes the waiver key inside
+`review.triggers.risk_surface` naming that surface, which withholds those two
+effects alone and can never disable the blocking review. What these
 surfaces also drive, unconditionally, is that same `risk_surface` review:
-blocking at every level, fired once on the completed commit range.
+fired once on the completed commit range, blocking unless that trigger's own
+gate key says otherwise, and out of the waiver's reach either way.
 
 A blocking panel on every `rm -rf dist/` would train you to ignore the gate, so
 there is a narrow, evidence-based pre-filter. A destructive op drops only when

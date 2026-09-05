@@ -8,8 +8,8 @@ is where that bound is enforced.
 1. Plans came from cad-planner: re-dispatch it FRESH in revision mode with
    the issues (see `plan.md`'s `spawn_planner`) - a new spawn, never a resume of the prior
    run; the plan on disk preserves its grounding - with `--attempt 2` so the
-   routing seam climbs the re-dispatch to the retry rung this level's
-   cad-planner cell names, and dispatches that rung's file. Plans were
+   routing seam climbs the re-dispatch one rung above cad-planner's
+   configured effort, and dispatches that rung's file. Plans were
    written inline: apply the fixes in the main context.
    This re-dispatch is a paid dispatch like any other, so it carries its OWN
    bracket - on the `--attempt 2` resolve, the same read-set spawn_planner uses:

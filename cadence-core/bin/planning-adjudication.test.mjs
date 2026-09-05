@@ -290,7 +290,7 @@ test('adjudication: --task lands the record in the task\'s own home (GH-227)', (
   // is no phases/0/ and there never will be. Before --task the two halves
   // disagreed by construction: the sibling REVIEW file landed under
   // tasks/<slug>/ and the record beside it was refused no-phase-dir, which left
-  // a hand-append as the only way to settle a gate that BLOCKS at every level.
+  // a hand-append as the only way to settle a gate that BLOCKS by default.
   const { repo, dir, base } = adjRepo();
   mkdirSync(join(dir, 'tasks', 'a-task-slug'), { recursive: true });
   const payload = adjPayloadFile(repo, adjPayload());

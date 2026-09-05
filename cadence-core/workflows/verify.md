@@ -107,7 +107,7 @@ Continue to `deep_check`.
 Run the goal-backward cad-verifier pass when `--deep` was passed or the user
 asks for it. `workflow.verifier: false` (`config.mjs get workflow.verifier`)
 always skips it - it is the off switch. Otherwise run it when this is the FIRST
-UAT session for the phase AND the stakes level says to:
+UAT session for the phase AND the resolve says to:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verifier
@@ -122,9 +122,13 @@ refuses a resolve without one, so it resolves as `cad-verifier` - the role it is
 deciding whether to dispatch. Both terms are load-bearing: keep the
 first-session term, which is what holds the pass to once per phase.
 
-When `verify` is `off`, say so in one line - "stakes level solo: the deep verify
-pass is off; run `/cad-verify --deep` to force it" - rather than skipping
-silently.
+`verify` is `on` exactly when the plan-time risk floor raised - the phase's
+plans declare a file touching an answered risk surface, or a declared scope
+could not be read - and `off` otherwise. No config key sets it directly.
+
+When `verify` is `off`, say so in one line - "no risk surface in this phase's
+plans, so the deep verify pass is off; run `/cad-verify --deep` to force it" -
+rather than skipping silently.
 
 To run it: Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/verify-deep.md`
 and follow it. Otherwise skip to `walk`.

@@ -41,8 +41,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * @type {Readonly<Record<string, string[]>>}
  */
 const GROUPS = Object.freeze({
-  // The resolver, its data table, and the config layers that feed it.
-  routing: ['route', 'route-cells', 'route-relay', 'rung-agent', 'retired-keys',
+  // The resolver, the rung ladder it dispatches through, and the config layers
+  // that feed it.
+  routing: ['route', 'route-relay', 'rung-agent', 'retired-keys',
     'config', 'config-seams', 'dispatch-phrasing', 'phase-plans'],
   // Everything that touches a real repository.
   git: ['git-guard', 'git-publish', 'git-branch', 'git-segments', 'worktree-base',

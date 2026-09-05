@@ -9,6 +9,9 @@
 //   validate [--file <path>|--global]        validate a whole config file
 //   check <key=value> ...                     validate one or more dotted key=value pairs
 //   set [--file <path>|--global] <key=value>  validate pairs, then write them into the file
+//   unset [--file <path>|--global] <key> ...  remove those keys from that ONE file (never the
+//                                             merged view). Accepts any dotted path, schema key
+//                                             or not; a key the file does not hold writes nothing
 //   get [--file <path>] [key ...]             EFFECTIVE values (repo > global > schema
 //                                             defaults); no keys = all. The only correct
 //                                             way for a workflow to read config.
@@ -265,9 +268,9 @@ function checkPairs(tokens, targetsGlobal) {
     // one (D-11).
     //
     // The marker is `repo_only`, never `src`. `src: "repo"` means "settable in
-    // either layer" and 33 keys carry it, `stakes` and `granularity` among them
-    // - the keys workflows/config.md tells the user to set globally - so keying
-    // a layer refusal on `src` would refuse exactly the wrong set. `repo_only`
+    // either layer" and 32 keys carry it, `granularity` and `review.mode` among
+    // them - the keys a user legitimately pins machine-wide - so keying a layer
+    // refusal on `src` would refuse exactly the wrong set. `repo_only`
     // asks the narrower question config.schema.json's _meta.note states: would a
     // user-global value AUTHORIZE a change to a repository that never opted in.
     // Read off the SCHEMA object the dispatch loaded, through the same
@@ -371,18 +374,69 @@ function set(file, tokens, create) {
   out({ ok: true, file, changed: pairs });
 }
 
-// The per-trigger keys whose schema default is the `null` sentinel rather than
-// a value: route-table.json answers them and the level decides - the `review`
-// grid for `.gate` (GAT-02), the `tiers` and `efforts` grids for the two
-// fields that reach a cross-model reviewer (RVW-03). Matched by shape rather
-// than a hand-kept list, so a fifth trigger is covered the day its keys land.
-const LEVEL_KEY = /^review\.triggers\.[^.]+\.(gate|tier|effort)$/;
-
-// What each of them is CALLED in the warning below. Written out rather than
-// interpolated from the key's last segment so `tier` and `effort` read as the
-// quantities a user recognises, and so `effort` cannot be mistaken for the
-// agent rung of the same name.
-const LEVEL_KEY_NOUN = { gate: 'gate', tier: 'model tier', effort: 'reasoning effort' };
+// Remove dotted paths from exactly ONE layer file - never the merged view. "The
+// key is gone from the file afterwards" is a claim about a file, and the merged
+// view is not one.
+//
+// IT VALIDATES NOTHING, on purpose. Every other write path here runs checkPairs
+// first; this one accepts any dotted path - a schema key, a retired key, an
+// unknown one - because removing what `validate` refuses is its entire job, and
+// `workflows/config.md` closes the only other route ("Never write config JSON by
+// hand; go through the seam"). A write face that refused a retired key here
+// would leave a migration with no seam at all (D-06).
+//
+// NOTHING REMOVED MEANS NOTHING WRITTEN, not a rewrite that happens to match.
+// atomicWrite re-serializes at two-space indent with a trailing newline, so a
+// no-op that still wrote would reformat a hand-spaced layer and move its sha256
+// while reporting `removed: []`. An ABSENT file is the same answer for the same
+// reason and creates nothing - only `set --global` auto-creates, because only a
+// set has a value that has to land somewhere.
+//
+// An emptied container is NOT pruned. `flatten` above skips an object with no
+// entries, so `{"risk":{"override":{}}}` contributes no leaf and `validate`
+// passes over it; a second walk to delete it would earn nothing.
+function unset(file, keys) {
+  let cfg;
+  try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
+  catch (e) {
+    // ENOENT is the "nothing to remove" arm rather than a failure: a layer that
+    // does not exist already holds none of these keys, and reporting `read`
+    // would fail a migration step on every project that never wrote a repo
+    // config. A file that exists and cannot be PARSED is still refused - the
+    // keys may well be in there.
+    if (e.code === 'ENOENT') return out({ ok: true, file, removed: [] });
+    return fail('read', `cannot read/parse ${file}: ${e.message}`,
+      'repair the JSON in the file the detail names and re-run - unset will not overwrite a layer it could not read');
+  }
+  if (!isPlainObject(cfg)) fail('invalid', [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }],
+    `make the top level of ${file} a JSON object of key/value pairs - an empty {} is a valid layer - then re-run`);
+  const removed = [];
+  for (const key of keys) {
+    const parts = key.split('.');
+    let node = cfg;
+    let depth = 0;
+    // hasOwn at every hop, for the reason `validate` and `get` each state on
+    // their own face: a bare `node[part]` walks the prototype chain, so
+    // `unset toString` would find a function to delete and `unset
+    // constructor.prototype.x` would reach into Object itself. An own-property
+    // walk can only ever touch data this file actually holds - and JSON.parse
+    // DEFINES a literal `"__proto__"` key as an own property, so the one
+    // spelling that really can sit in a config file is still reachable.
+    for (; depth < parts.length - 1; depth++) {
+      const next = Object.hasOwn(node, parts[depth]) ? node[parts[depth]] : undefined;
+      if (!isPlainObject(next)) break;
+      node = next;
+    }
+    // Fell out of the walk early, so the path runs through something this file
+    // does not hold (or through a scalar) - absent, not an error.
+    if (depth !== parts.length - 1) continue;
+    if (!Object.hasOwn(node, parts[depth])) continue;
+    delete node[parts[depth]];
+    removed.push(key);
+  }
+  if (removed.length) atomicWrite(file, JSON.stringify(cfg, null, 2) + '\n');
+  out({ ok: true, file, removed });
+}
 
 // The effective value set: schema defaults, overlaid by the global then the
 // repo layer (shared merge lib - identical semantics to route.mjs). Output is
@@ -415,7 +469,7 @@ function get(file, keys, asGlobal) {
   // that (undefined), and assigning it into `values` at the name `__proto__`
   // ran the object's own setter and stored NOTHING - which is how
   // `get __proto__` answered {"ok":true,"values":{}} at exit 0, and
-  // `get stakes __proto__` answered about one key of the two asked for with
+  // `get granularity __proto__` answered about one key of the two asked for with
   // nothing saying the other had gone missing. `fail('unknown-key', ...)` was
   // always the right answer; the whole fix is that a prototype member now
   // reaches it.
@@ -430,45 +484,20 @@ function get(file, keys, asGlobal) {
     // would inherit the hole, and this is the read the hole is spent through.
     const spec = Object.hasOwn(SCHEMA, k) ? SCHEMA[k] : undefined;
     values[k] = layered[k] !== undefined ? layered[k] : spec && spec.default;
-    // The read face says WHICH of the two states one of these keys is in. The
-    // value line above is unchanged (D-06) - the schema sentinel does that work
-    // - but a bare `null` cannot tell a reader "no layer set one, the level
-    // decides" apart from a layer that wrote null, which is what GAT-02 asks
-    // for. So the answer carries a warning naming where the level IS resolved.
+    // The twelve `review.triggers.<t>.{gate,tier,effort}` keys used to answer
+    // with a warning here saying "no layer pins this, so the stakes level
+    // decides it". That sentence went with the level: those rows carry real
+    // schema defaults now (D-01), so an unset one is answered the way every
+    // other defaulted key is answered, and a warning saying something else
+    // decides - beside a value that IS the answer - would be a contradiction.
     //
-    // Only on an EXPLICIT read (D-02). A keyless `get` walks every schema
-    // key, so warning there appends a line per key to every full read - prose
-    // that workflows/milestone.md and verify.md relay straight to the user -
-    // for a caller that asked about none of them in particular. That is why
-    // this arm mattered more once RVW-03 tripled the family it covers.
-    //
-    // It never states what the level fires and never reads route-table.json
-    // (D-07): this seam does not know the stakes level, and answering as if
-    // it did is the same defect pointed the other way.
-    const levelKey = keys.length && layered[k] === undefined ? LEVEL_KEY.exec(k) : null;
-    if (levelKey) {
-      allWarnings.push(`${k} is unset: no config layer pins this `
-        + `${LEVEL_KEY_NOUN[levelKey[1]]}, so the `
-        + 'stakes level decides it - `route.mjs resolve` answers it for a level');
-    }
-
-    // `stakes` is the same two-state read one key over, and it gets its OWN arm
-    // rather than a widened LEVEL_KEY: that regex matches
-    // `review.triggers.<t>.{gate,tier,effort}`, whose sentence ends "so the
-    // stakes level decides it" - which is the one thing that cannot be said of
-    // `stakes` itself - and LEVEL_KEY_NOUN maps a last segment this key does
-    // not have. Same two gates for the same two reasons (explicit read, no
-    // layer supplied a value), and the same refusal to say what the level
-    // fires. Without it this face answers `{"stakes":"shipped"}` identically
-    // for a config that chose that level and one that set nothing, so the init
-    // workflows' "stakes is unset" and the very next `/cad-config` read
-    // contradict each other - "a default reported as a configured value", one
-    // seam over from where route.mjs prevents it.
-    if (keys.length && layered[k] === undefined && k === 'stakes') {
-      allWarnings.push('stakes is unset: no config layer sets it, so the level '
-        + 'is decided per phase from the plans in scope - `route.mjs resolve` '
-        + 'answers it for a dispatch');
-    }
+    // `stakes` used to keep a two-state read of its own here - the one key on
+    // this face whose unset state no schema default could answer, because the
+    // level was computed per phase rather than read. The key is retired
+    // (v3.7.12), so there is no two-state read left: every key this face answers
+    // now either carries a layered value or carries a schema default, and a
+    // config that still holds `stakes` is named by the retired-key warnings
+    // folded in above rather than by a special case here.
   }
   out({ ok: true, values, source, ...(allWarnings.length ? { warnings: allWarnings } : {}) });
 }
@@ -554,9 +583,13 @@ try {
     else out({ ok: true });
   }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
+  // No `global` argument: which layer is answered by the FILE alone here, and
+  // `unset` never creates one, so the flag has nothing left to say once optFile
+  // has resolved it to a path.
+  else if (cmd === 'unset') { const { file, tokens } = optFile(rest); unset(file, tokens); }
   else if (cmd === 'get') { const { file, tokens, global } = optFile(rest); get(file, tokens, global); }
   else if (cmd === 'keys') { out({ ok: true, keys: SCHEMA }); }
-  else fail('usage', 'subcommand: validate | check | set | get | keys');
+  else fail('usage', 'subcommand: validate | check | set | unset | get | keys');
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

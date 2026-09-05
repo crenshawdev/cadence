@@ -1,6 +1,7 @@
-// Grammar tests for lib/gate-agreement.mjs - what makes a
-// `review.triggers.<t>.gate` row in config.schema.json agree with the gate
-// cadence-core/route-table.json's `review` grid fires.
+// Grammar tests for lib/gate-agreement.mjs - what makes one of the twelve
+// `review.triggers.<t>.{gate,tier,effort}` rows in config.schema.json a usable
+// answer, now that the schema `default` IS the answer and no level-keyed grid
+// decides it.
 // Run: node --test cadence-core/bin/gate-agreement.test.mjs
 //
 // ONE test() per row, deliberately: a table asserted inside a single test()
@@ -8,36 +9,28 @@
 // never ran still looks green (prior-project finding, CAPTURE.md).
 // Only node: builtins, no subprocess, no disk - the lib is pure.
 //
-// PRE_PATCH and SHIPPED_REVIEW below are FROZEN LITERALS, not reads of the live
-// files, and that is the point of them. The first is what the four schema rows
-// held on 2026-08-15, before this phase moved them onto the grid; the second is
-// the `review` grid they were measured against. Reading either from disk would
-// make the evidence arm - "this rule reports the drift that was actually
-// there" - evaporate the moment the drift is fixed, and would re-red the whole
-// file the day the grid legitimately moves, which it is the authority to do.
-// The LIVE agreement is asserted from the CLI in self-verify.test.mjs instead.
+// PRE_PATCH below is a FROZEN LITERAL, not a read of the live file, and that is
+// the point of it: it is what the gate rows held on 2026-08-15, before the
+// agreement rule existed at all, so the evidence arm - "this rule reports the
+// drift that was actually there" - does not evaporate the day the shipped
+// schema is fixed. The LIVE agreement is asserted from the CLI in
+// self-verify.test.mjs instead.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gateAgreementIssues, gateTriggers } from './lib/gate-agreement.mjs';
 
-const LEVELS = ['solo', 'shipped', 'critical'];
 const GATES = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
-const VOCAB = { levels: LEVELS, gates: GATES };
+const TIERS = ['flagship', 'balanced', 'cheap'];
+const EFFORTS = ['minimal', 'low', 'medium', 'high'];
 
-/** The `review` grid as cadence-core/route-table.json shipped it on 2026-08-15. */
-const SHIPPED_REVIEW = {
-  solo: { plan: 'advisory', diff: 'off', risk_surface: 'blocking', phase_diff: 'off' },
-  shipped: { plan: 'blocking', diff: 'off', risk_surface: 'blocking', phase_diff: 'off' },
-  critical: { plan: 'adjudicated', diff: 'blocking', risk_surface: 'blocking', phase_diff: 'adjudicated' },
-};
-
-/** A table carrying that grid, deep-cloned per row so a mutation stays local. */
-const shippedTable = () => ({ review: JSON.parse(JSON.stringify(SHIPPED_REVIEW)) });
+/** The enum each field is judged against - the row's OWN `values`, per the lib. */
+const VALUES = { gate: GATES, tier: TIERS, effort: EFFORTS };
 
 /**
- * The four gate rows EXACTLY as config.schema.json held them before this phase:
- * three scalar defaults the grid fires at no level between them, and three
- * purposes that state no level at all. This is the AC1 fixture.
+ * The four gate rows EXACTLY as config.schema.json held them on 2026-08-15:
+ * scalar defaults nothing checked, and purposes that state no default at all.
+ * The AC1 fixture. Only `.gate` rows, which is what the file carried then, so
+ * the tier and effort rows below are absent and read as malformed.
  */
 const PRE_PATCH = {
   'review.triggers.plan.gate': {
@@ -55,35 +48,43 @@ const PRE_PATCH = {
   'review.triggers.phase_diff.gate': {
     type: 'enum', values: GATES, default: 'advisory', src: 'repo',
     purpose: 'Aggregate review of the merged phase diff after parallel execution '
-      + '(per-plan reviews never see cross-plan interactions). Leave it UNSET and the '
-      + 'stakes level decides - off at solo, advisory at shipped, adjudicated at '
-      + 'critical; writing any value pins it at every level and warns',
+      + '(per-plan reviews never see cross-plan interactions)',
   },
 };
 
-/** The four rows in agreement with SHIPPED_REVIEW: null defaults, complete prose. */
+/** The defaults the shipped rows carry, keyed the way `clean` walks them. */
+const SHIPPED_DEFAULTS = {
+  plan: { gate: 'advisory', tier: 'cheap', effort: 'low' },
+  diff: { gate: 'off', tier: 'cheap', effort: 'minimal' },
+  risk_surface: { gate: 'blocking', tier: 'cheap', effort: 'low' },
+  phase_diff: { gate: 'off', tier: 'cheap', effort: 'low' },
+};
+
+/**
+ * All twelve rows in agreement: a real default that is a member of the row's
+ * own `values`, and a purpose carrying the `defaults to <value>` clause naming
+ * it. `overrides` is keyed `"<trigger>.<field>"`, so one row is disturbed at a
+ * time and every other row stays clean.
+ * @param {Record<string, any>} [overrides]
+ */
 function clean(overrides = {}) {
-  const rows = {
-    plan: 'advisory at solo, blocking at shipped, adjudicated at critical',
-    diff: 'off at solo, off at shipped, blocking at critical',
-    risk_surface: 'blocking at solo, blocking at shipped, blocking at critical',
-    phase_diff: 'off at solo, off at shipped, adjudicated at critical',
-  };
   /** @type {Record<string, any>} */
   const keys = {};
-  for (const [trigger, clauses] of Object.entries(rows)) {
-    keys[`review.triggers.${trigger}.gate`] = {
-      type: 'enum', values: GATES, default: null, src: 'repo',
-      purpose: `How the ${trigger} review gates. Leave it UNSET and the stakes level `
-        + `decides - ${clauses}; writing any value pins it at every level and warns`,
-      ...(overrides[trigger] || {}),
-    };
+  for (const [trigger, fields] of Object.entries(SHIPPED_DEFAULTS)) {
+    for (const [field, dflt] of Object.entries(fields)) {
+      keys[`review.triggers.${trigger}.${field}`] = {
+        type: 'enum', values: VALUES[field], default: dflt, src: 'repo',
+        purpose: `How the ${trigger} review's ${field} answers. Defaults to \`${dflt}\`; `
+          + 'write any value here and that is what fires',
+        ...(overrides[`${trigger}.${field}`] || {}),
+      };
+    }
   }
   return keys;
 }
 
-const issues = (keys, table = shippedTable()) => gateAgreementIssues(keys, table, VOCAB);
-const codes = (keys, table = shippedTable()) => issues(keys, table).map((i) => i.code);
+/** @param {Record<string, any>} keys */
+const codes = (keys) => gateAgreementIssues(keys).map((i) => i.code);
 
 // --- the trigger list is DERIVED (D-09) --------------------------------------
 
@@ -105,217 +106,193 @@ test('gateTriggers ignores tier/effort/surfaces keys and any non-gate leaf', () 
 test('a fifth trigger is walked the day its key lands, with no edit here', () => {
   const keys = clean();
   keys['review.triggers.spike.gate'] = {
-    type: 'enum', values: GATES, default: 'blocking', purpose: 'How the spike review gates',
+    type: 'enum', values: GATES, default: 'nonesuch', purpose: 'How the spike review gates',
   };
-  const t = shippedTable();
-  for (const level of LEVELS) t.review[level].spike = 'off';
-  const found = issues(keys, t);
-  assert.ok(found.some((i) => i.code === 'gate-default-drift' && /spike/.test(i.detail)),
+  const found = gateAgreementIssues(keys);
+  assert.ok(found.some((i) => i.code === 'gate-default-invalid' && /spike/.test(i.detail)),
     JSON.stringify(found));
 });
 
 test('a schema with no gate rows at all yields nothing', () => {
-  assert.deepEqual(gateAgreementIssues({ 'review.reviewers': {} }, shippedTable(), VOCAB), []);
+  assert.deepEqual(gateAgreementIssues({ 'review.reviewers': {} }), []);
 });
 
-// --- AC1: the pre-patch schema against the grid it shipped beside -------------
+test('all THREE fields of a trigger are walked, not the gate alone', () => {
+  // The tier and effort rows carry real defaults now too, so the check that
+  // used to see four rows sees twelve.
+  const keys = clean();
+  delete keys['review.triggers.plan.tier'];
+  delete keys['review.triggers.plan.effort'];
+  const found = gateAgreementIssues(keys);
+  assert.deepEqual(found.map((i) => i.code), ['gate-row-malformed', 'gate-row-malformed']);
+  assert.match(found[0].detail, /review\.triggers\.plan\.tier/);
+  assert.match(found[1].detail, /review\.triggers\.plan\.effort/);
+});
 
-test('AC1: the pre-patch rows report plan, diff and phase_diff as disagreeing', () => {
-  const found = issues(PRE_PATCH);
-  const drift = found.filter((i) => i.code === 'gate-default-drift');
-  for (const trigger of ['plan', 'diff', 'phase_diff']) {
-    assert.ok(drift.some((i) => i.detail.includes(`review.triggers.${trigger}.gate`)),
-      `${trigger}: ${JSON.stringify(found)}`);
+// --- AC1: the pre-patch schema, held to the rule that did not exist yet -------
+
+test('AC1: every pre-patch purpose states no default, so each is reported', () => {
+  const missing = gateAgreementIssues(PRE_PATCH).filter((i) => i.code === 'gate-prose-missing');
+  for (const trigger of ['plan', 'diff', 'risk_surface', 'phase_diff']) {
+    assert.ok(missing.some((i) => i.detail.includes(`review.triggers.${trigger}.gate`)),
+      `${trigger}: ${JSON.stringify(missing)}`);
   }
 });
 
-test('AC1: at least one pre-patch detail names phase_diff AND shipped', () => {
-  // The #134 cell by name: v3.2.0 moved shipped/phase_diff advisory -> off and
-  // left the schema saying advisory, in the default AND in the prose.
-  const found = issues(PRE_PATCH);
-  assert.ok(found.some((i) => /phase_diff/.test(i.detail) && /shipped/.test(i.detail)),
-    JSON.stringify(found));
-  assert.ok(found.some((i) => i.code === 'gate-prose-drift'
-    && /phase_diff/.test(i.detail) && /"advisory at shipped"/.test(i.detail)),
-  JSON.stringify(found));
-});
-
-test('AC1: risk_surface, whose default agrees at every level, files no default drift', () => {
-  const drift = issues(PRE_PATCH).filter((i) => i.code === 'gate-default-drift');
-  assert.equal(drift.filter((i) => /risk_surface/.test(i.detail)).length, 0,
-    JSON.stringify(drift));
-});
-
-test('AC1: the three level-less purposes are held anyway - the prose half is mandatory', () => {
-  // D-03. risk_surface is the row that proves it: its default agrees at every
-  // level, so an opt-in prose rule would report nothing at all about it.
-  const missing = issues(PRE_PATCH).filter((i) => i.code === 'gate-prose-missing');
-  for (const trigger of ['plan', 'diff', 'risk_surface']) {
-    for (const level of LEVELS) {
-      assert.ok(missing.some((i) => i.detail.includes(`review.triggers.${trigger}.gate`)
-        && i.detail.includes(level)), `${trigger}/${level}: ${JSON.stringify(missing)}`);
-    }
-  }
+test('AC1: the pre-patch defaults are all real gates, so none is invalid', () => {
+  const bad = gateAgreementIssues(PRE_PATCH).filter((i) => i.code === 'gate-default-invalid');
+  assert.deepEqual(bad, []);
 });
 
 // --- the reconciled rows are clean -------------------------------------------
 
-test('a null default with complete, correct prose yields no problem at all', () => {
-  assert.deepEqual(gateAgreementIssues(clean(), shippedTable(), VOCAB), []);
+test('a real default with a purpose naming it yields no problem at all', () => {
+  assert.deepEqual(gateAgreementIssues(clean()), []);
 });
 
 // --- the prose half ----------------------------------------------------------
 
-test('deleting ONE level clause from ONE purpose is exactly one problem, naming both', () => {
-  const keys = clean();
-  const key = 'review.triggers.plan.gate';
-  keys[key].purpose = keys[key].purpose.replace('blocking at shipped, ', '');
-  const found = issues(keys);
+test('a purpose naming NO member is gate-prose-missing, naming the key', () => {
+  const keys = clean({ 'plan.gate': { purpose: 'How the plan review gates' } });
+  const found = gateAgreementIssues(keys);
   assert.equal(found.length, 1, JSON.stringify(found));
   assert.equal(found[0].code, 'gate-prose-missing');
   assert.match(found[0].detail, /review\.triggers\.plan\.gate/);
-  assert.match(found[0].detail, /shipped/);
 });
 
-test('a purpose naming the wrong gate at a level is gate-prose-drift naming both gates', () => {
-  const keys = clean({ diff: { purpose: 'How the diff review gates - off at solo, '
-    + 'advisory at shipped, blocking at critical' } });
-  const found = issues(keys);
+test('a purpose naming a DIFFERENT member is gate-prose-drift, naming both values', () => {
+  const keys = clean({ 'diff.gate': {
+    purpose: 'How the diff review gates. Defaults to `blocking`',
+  } });
+  const found = gateAgreementIssues(keys);
   assert.equal(found.length, 1, JSON.stringify(found));
   assert.equal(found[0].code, 'gate-prose-drift');
-  assert.match(found[0].detail, /"advisory at shipped"/);
-  assert.match(found[0].detail, /"off" at shipped/);
+  assert.match(found[0].detail, /"blocking"/);
+  assert.match(found[0].detail, /"off"/);
 });
 
-test('a purpose that is not a string reports per level, and says that is why', () => {
-  const keys = clean({ diff: { purpose: 42 } });
-  const found = issues(keys);
-  assert.equal(found.length, 3, JSON.stringify(found));
-  assert.ok(found.every((i) => i.code === 'gate-prose-missing'));
+test('the prose half is MANDATORY - a correct default does not excuse silent prose', () => {
+  // The opt-in version of this rule is silenced by deleting one sentence, which
+  // is the hole check 14 closes for CONTRACTS rows.
+  const keys = clean({ 'risk_surface.gate': {
+    purpose: 'How the risk-surface review gates - it fires only on a detection match',
+  } });
+  assert.deepEqual(codes(keys), ['gate-prose-missing']);
+});
+
+test('a purpose that is not a string is gate-prose-missing, and says that is why', () => {
+  const found = gateAgreementIssues(clean({ 'diff.tier': { purpose: 42 } }));
+  assert.equal(found.length, 1, JSON.stringify(found));
+  assert.equal(found[0].code, 'gate-prose-missing');
   assert.match(found[0].detail, /not a string/);
 });
 
-test('the clause grammar is case-insensitive, so a sentence-opening clause counts', () => {
-  const keys = clean({ diff: { purpose: 'Off at solo. OFF AT SHIPPED. Blocking at critical.' } });
-  assert.deepEqual(issues(keys), []);
+test('the clause grammar is case-insensitive and takes an unwrapped value', () => {
+  const keys = clean({ 'diff.gate': { purpose: 'DEFAULTS TO off, and it fires nothing' } });
+  assert.deepEqual(gateAgreementIssues(keys), []);
 });
 
-test('"blocking at every level" is not a level clause - the grammar names levels', () => {
-  const keys = clean({ risk_surface: { purpose: 'It is blocking at every level' } });
-  const found = issues(keys);
-  assert.equal(found.length, 3, JSON.stringify(found));
-  assert.ok(found.every((i) => i.code === 'gate-prose-missing'));
+test('the clause grammar takes "default to" and a quoted value too', () => {
+  const keys = clean({ 'plan.effort': { purpose: 'Reasoning effort. Default to "low".' } });
+  assert.deepEqual(gateAgreementIssues(keys), []);
+});
+
+test('naming a member OUTSIDE the clause is free prose, not a claim', () => {
+  // A purpose is allowed to list the other members and say what they do; only a
+  // `defaults to <value>` clause states what the row answers.
+  const keys = clean({ 'plan.gate': {
+    purpose: 'How the plan review gates. Defaults to `advisory`; set `blocking` to stop '
+      + 'execution, `off` to skip it, `adjudicated` to demand a panel',
+  } });
+  assert.deepEqual(gateAgreementIssues(keys), []);
+});
+
+test('a member that only PREFIXES a word in the purpose does not count as a clause', () => {
+  // `off` inside `offset`: the value has to end where the clause does, or the
+  // rule reports agreement it never read.
+  const keys = clean({ 'diff.gate': { purpose: 'How the diff review defaults to offsets' } });
+  assert.deepEqual(codes(keys), ['gate-prose-missing']);
 });
 
 // --- the default half --------------------------------------------------------
 
-test('a non-gate NON-null default is its own code, naming the trigger and the value', () => {
-  // The typo class no other check in the tree can see: nothing validates a
+test('a NULL default is gate-default-invalid - the sentinel is gone', () => {
+  // It used to be exempt, meaning "the stakes level decides". With no level, a
+  // null default is a value the resolver cannot answer.
+  const found = gateAgreementIssues(clean({ 'plan.gate': { default: null } }));
+  assert.ok(found.some((i) => i.code === 'gate-default-invalid'), JSON.stringify(found));
+  assert.match(found[0].detail, /review\.triggers\.plan\.gate/);
+  assert.match(found[0].detail, /null/);
+});
+
+test('a default OUTSIDE its own values is gate-default-invalid, naming the value', () => {
+  // The typo class no other check in the tree can see: nothing else validates a
   // schema `default` against its own key's `values` enum, and config.mjs get
   // answers whatever is written there.
-  const keys = clean({ diff: { default: 'adivsory' } });
-  const found = issues(keys);
-  assert.equal(found.length, 1, JSON.stringify(found));
-  assert.equal(found[0].code, 'gate-default-invalid');
+  const found = gateAgreementIssues(clean({ 'diff.gate': { default: 'adivsory' } }));
+  assert.ok(found.some((i) => i.code === 'gate-default-invalid'), JSON.stringify(found));
   assert.match(found[0].detail, /review\.triggers\.diff\.gate/);
   assert.match(found[0].detail, /"adivsory"/);
 });
 
 test('a boolean default is gate-default-invalid too, not a silent pass', () => {
-  const found = issues(clean({ plan: { default: false } }));
-  assert.equal(found.length, 1, JSON.stringify(found));
-  assert.equal(found[0].code, 'gate-default-invalid');
+  const found = gateAgreementIssues(clean({ 'plan.tier': { default: false } }));
+  assert.ok(found.some((i) => i.code === 'gate-default-invalid'), JSON.stringify(found));
   assert.match(found[0].detail, /false/);
 });
 
-test('an absent default reads as invalid, never as the null sentinel', () => {
+test('an absent default reads as absent, never as null', () => {
   const keys = clean();
   delete keys['review.triggers.plan.gate'].default;
-  const found = issues(keys);
-  assert.equal(found.length, 1, JSON.stringify(found));
-  assert.equal(found[0].code, 'gate-default-invalid');
+  const found = gateAgreementIssues(keys);
+  assert.ok(found.some((i) => i.code === 'gate-default-invalid'), JSON.stringify(found));
+  assert.match(found[0].detail, /\(absent\)/);
 });
 
-test('a scalar default that agrees at EVERY level still passes - only drift is reported', () => {
-  // risk_surface today. It is legal, and D-01 moves it to null anyway: the
-  // agreement is an accident of the grid, and goes quiet the day a cell moves.
-  const found = issues(clean({ risk_surface: { default: 'blocking' } }));
-  assert.deepEqual(found, []);
+test('a default valid for ANOTHER field is still invalid here - each row has its own enum', () => {
+  // `low` is an effort, not a tier: the vocabulary is the ROW's `values`, so a
+  // value borrowed from a sibling row is refused.
+  const found = gateAgreementIssues(clean({ 'plan.tier': { default: 'low' } }));
+  assert.ok(found.some((i) => i.code === 'gate-default-invalid'), JSON.stringify(found));
+  assert.match(found[0].detail, /flagship, balanced, cheap/);
 });
 
-test('one gate-default-drift per trigger, naming every level it disagrees at', () => {
-  const found = issues(clean({ diff: { default: 'advisory' } }));
-  assert.equal(found.length, 1, JSON.stringify(found));
-  assert.equal(found[0].code, 'gate-default-drift');
-  for (const level of LEVELS) assert.match(found[0].detail, new RegExp(level));
-});
+// --- two faults, two problems -------------------------------------------------
 
 test('a row with two faults reports both, rather than short-circuiting', () => {
-  const keys = clean({ diff: { default: 'advisory',
-    purpose: 'How the diff review gates - off at solo, off at shipped' } });
-  assert.deepEqual(codes(keys).sort(), ['gate-default-drift', 'gate-prose-missing']);
+  // A wrong default AND prose that names nothing: two edits, so two problems.
+  const keys = clean({ 'diff.gate': {
+    default: 'adivsory', purpose: 'How the diff review gates',
+  } });
+  assert.deepEqual(codes(keys).sort(), ['gate-default-invalid', 'gate-prose-missing']);
 });
 
-// --- an unvalidated table ----------------------------------------------------
-
-test('no review grid is ONE problem naming the triggers, never a throw', () => {
-  const found = gateAgreementIssues(clean(), { cells: {} }, VOCAB);
-  assert.equal(found.length, 1, JSON.stringify(found));
-  assert.equal(found[0].code, 'gate-grid-missing');
-  assert.match(found[0].detail, /plan, diff, risk_surface, phase_diff/);
+test('an invalid default whose prose names a real member reports invalid AND drift', () => {
+  // The prose half never stands down because the default half spoke: the
+  // purpose really does disagree with the row, and fixing one leaves the other.
+  const keys = clean({ 'plan.gate': { default: null } });
+  assert.deepEqual(codes(keys).sort(), ['gate-default-invalid', 'gate-prose-drift']);
 });
 
-test('a level with no row is ONE problem naming the level, not one per trigger', () => {
-  const t = shippedTable();
-  delete t.review.shipped;
-  const found = gateAgreementIssues(clean(), t, VOCAB);
-  assert.equal(found.length, 1, JSON.stringify(found));
-  assert.equal(found[0].code, 'gate-grid-missing');
-  assert.match(found[0].detail, /^shipped: /);
-});
-
-test('a cell that is not a gate is gate-grid-missing naming the trigger and level', () => {
-  const t = shippedTable();
-  t.review.critical.diff = 'blockign';
-  const found = gateAgreementIssues(clean(), t, VOCAB);
-  assert.equal(found.length, 1, JSON.stringify(found));
-  assert.equal(found[0].code, 'gate-grid-missing');
-  assert.match(found[0].detail, /review\.triggers\.diff\.gate/);
-  assert.match(found[0].detail, /critical/);
-});
-
-test('an unusable cell is reported ONCE - the halves do not re-file it', () => {
-  const t = shippedTable();
-  delete t.review.critical.diff;
-  const keys = clean({ diff: { purpose: 'off at solo, off at shipped' } });
-  const found = gateAgreementIssues(keys, t, VOCAB);
-  assert.deepEqual(found.map((i) => i.code), ['gate-grid-missing']);
-});
-
-test('a table that is not an object is gate-grid-missing, never a throw', () => {
-  for (const bad of [null, undefined, 'x', 7, []]) {
-    const found = gateAgreementIssues(clean(), bad, VOCAB);
-    assert.deepEqual(found.map((i) => i.code), ['gate-grid-missing'], JSON.stringify(bad));
-  }
-});
+// --- malformed input ----------------------------------------------------------
 
 test('a schema row that is not an object is gate-row-malformed, never a throw', () => {
   const keys = clean();
   keys['review.triggers.diff.gate'] = 'advisory';
-  const found = issues(keys);
+  const found = gateAgreementIssues(keys);
   assert.equal(found.length, 1, JSON.stringify(found));
   assert.equal(found[0].code, 'gate-row-malformed');
   assert.match(found[0].detail, /review\.triggers\.diff\.gate/);
 });
 
-test('a caller with no vocabulary yields nothing - the names come from the schema', () => {
-  assert.deepEqual(gateAgreementIssues(PRE_PATCH, shippedTable(), {}), []);
-  assert.deepEqual(gateAgreementIssues(PRE_PATCH, shippedTable(), { levels: LEVELS }), []);
-  assert.deepEqual(gateAgreementIssues(PRE_PATCH, shippedTable(), { gates: GATES }), []);
-});
-
 test('a non-object schema map yields nothing, never a throw', () => {
   for (const bad of [null, undefined, 'x', 7, []]) {
-    assert.deepEqual(gateAgreementIssues(bad, shippedTable(), VOCAB), [], JSON.stringify(bad));
+    assert.deepEqual(gateAgreementIssues(bad), [], JSON.stringify(bad));
   }
+});
+
+test('a row with no values enum reports rather than passing green', () => {
+  const keys = clean();
+  delete keys['review.triggers.plan.gate'].values;
+  assert.ok(codes(keys).includes('gate-default-invalid'), JSON.stringify(codes(keys)));
 });

@@ -204,7 +204,41 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**No cycle open.** `/cad-phase add` opens the next one.
+**No cycle open.** `/cad-phase add` is what opens the next one.
+
+**`v3.7.12 - what each role runs at`, opened 2026-09-04, closed 2026-09-05.**
+Three phases, 61 commits off `main` (17 feat and 4 fix against 28 docs, 7
+chore, 2 test and 1 refactor). Three requirement ids - `RNG-06`, `ROL-01`,
+`ROL-02` - all Complete, and `/cad-audit` passed clean: 3 of 3 traced, 0
+broken, and 20 of 20 acceptance criteria covered by a UAT item. Manifest is at
+3.7.12. `stakes` is deleted along with the 18-cell routing grid,
+`route-table.json` and `model_aliases`; a role's model and rung are now its own
+two keys, a model is a string the user typed, and `/cad-config --roles` asks
+thirteen questions that say what each role costs. The plan-time risk floor
+moves two things and nothing else - a blocking plan review and the deep-verify
+pass - and leaves every role's model and rung where the user set them. This is
+the LAST release on the 3.x line: 4.0.0 is a full Rust rewrite, and the tag is
+what makes this tree the frozen reference it will be specified against.
+
+**Where it lives.** The shipped ids are `## Shipped` rows in `REQUIREMENTS.md`;
+the phase narrative, its UAT items and its CONTEXT decisions are 68 residue rows
+under `## v3.7.12` in `.planning/ARCHIVE.md`; the three phase directories left
+the live tree and git history holds them. `.planning/risk-carry/` holds six
+carried `risk_surface` records the land gate reads and is transient - the
+`/cad-land` that merges deletes it.
+
+**Outstanding, carried out of the close.** The merge and the release tag are
+`/cad-land`'s: nothing is on `main` and `v3.7.12` is not cut. Three things the
+cycle did not finish. `docs/figures/effort-ladder.svg` still renders "shipped
+project starts at the medium rung" inside the image and could not be re-rendered
+here. The `/cad-config --roles` first-run arm that writes the user-global layer
+is still unexercised - this repo's own migration took the repo-layer arm by
+design, so the global file has no `roles` key. And `model.effort.*` and
+`model.overrides.*` survive as the narrower fallbacks they became, so a migrated
+config carries both and every resolve reports the shadow. The eleven items in
+`.planning/CAPTURE.md` and the remainder of the Forge cluster are the material a
+next cycle would triage; no theme is named, and `/cad-phase add` is what opens
+one.
 
 **`v3.7.11 - unresolved inputs`, opened 2026-09-02, closed 2026-09-03.** Three
 phases, 43 commits off `main` (9 feat and 10 fix against 21 docs, 2 chore and
