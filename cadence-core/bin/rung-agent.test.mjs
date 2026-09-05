@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   rungBody, rungBodyIssue, rungEffortIssue, rungPrefixIssues, RUNG_FILES, rungFile,
-  rungFiles, effortEnumIssues, EFFORT_PREFIX,
+  rungFiles, effortEnumIssues, EFFORT_PREFIX, ROLES_PREFIX, ROLES_EFFORT_SUFFIX,
 } from './lib/rung-agent.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -25,6 +25,12 @@ const SHIPPED_ORDER = JSON.parse(
 /** The shipped schema with one `model.effort.<role>` enum replaced. */
 function withEnum(role, values) {
   const key = `${EFFORT_PREFIX}${role}`;
+  return { ...SHIPPED, [key]: { ...SHIPPED[key], values } };
+}
+
+/** The same, one key over: the roles-block spelling of that role's start rung. */
+function withRolesEnum(role, values) {
+  const key = `${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`;
   return { ...SHIPPED, [key]: { ...SHIPPED[key], values } };
 }
 
@@ -332,12 +338,17 @@ test('effort-enum-drift: a rung route-table.json\'s rung_order does not carry', 
   // The vocabulary arm. Both halves have to hold: the map may file a rung the
   // table's ladder never names, and then no cell can ever produce it.
   const issues = effortEnumIssues(SHIPPED, ['low', 'medium', 'high']);
-  // A truncated ladder strands a rung for EVERY role that files one, so the
-  // executor's entry is picked out rather than asserted as the only one.
+  // A truncated ladder strands a rung for EVERY role that files one AND for
+  // both spellings of every role's key, so the executor's two entries are
+  // picked out rather than asserted as the only ones.
   const executor = issues.filter((i) => /cad-executor/.test(i.detail));
   assert.deepEqual(executor, [{
     code: 'effort-enum-drift',
     detail: 'model.effort.cad-executor offers ["xhigh","max"], which route-table.json\'s '
+      + 'rung_order (low, medium, high) does not carry',
+  }, {
+    code: 'effort-enum-drift',
+    detail: 'roles.cad-executor.effort offers ["xhigh","max"], which route-table.json\'s '
       + 'rung_order (low, medium, high) does not carry',
   }]);
   assert.ok(issues.every((i) => i.code === 'effort-enum-drift'), JSON.stringify(issues));
@@ -373,9 +384,64 @@ test('unknown-effort-role: a schema key naming a role the map does not hold', ()
 
 test('a non-object schema yields every role as missing, never a throw', () => {
   // Pure lib, total on its inputs: self-verify hands it whatever the tree holds.
+  // TWO per role: both spellings of a role's start rung are absent from it.
   for (const bad of [null, undefined, 'nope', 42, []]) {
     const issues = effortEnumIssues(bad, SHIPPED_ORDER);
-    assert.equal(issues.length, Object.keys(RUNG_FILES).length, JSON.stringify(bad));
+    assert.equal(issues.length, 2 * Object.keys(RUNG_FILES).length, JSON.stringify(bad));
     assert.ok(issues.every((i) => i.code === 'missing-effort-key'));
   }
+});
+
+// --- the same rules, one key over: roles.<role>.effort (D-10) -----------------
+//
+// The roles-block spelling WINS over `model.effort.<role>`, so a guard that
+// held only the older prefix would leave the deciding key unguarded.
+
+test('roles.<role>.effort: a rung dropped from its enum, naming the key', () => {
+  const issues = effortEnumIssues(withRolesEnum('cad-planner', ['high', 'xhigh', null]),
+    SHIPPED_ORDER);
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'effort-enum-drift');
+  assert.match(issues[0].detail, /roles\.cad-planner\.effort/);   // BY KEY
+  assert.match(issues[0].detail, /"max"/);                        // ...and what is missing
+});
+
+test('roles.<role>.effort: a non-enum TYPE with a correct values list', () => {
+  // Same reason as its `model.effort.` sibling: checkValue enforces `values`
+  // only when type IS "enum", so a drifted type silently accepts any rung.
+  const mutated = JSON.parse(JSON.stringify(SHIPPED));
+  mutated['roles.cad-planner.effort'] = {
+    ...mutated['roles.cad-planner.effort'], type: 'string',
+  };
+  const issues = effortEnumIssues(mutated, SHIPPED_ORDER);
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'effort-enum-drift');
+  assert.match(issues[0].detail, /roles\.cad-planner\.effort/);
+  assert.match(issues[0].detail, /must be "enum"/);
+});
+
+test('roles.<role>.effort: missing-effort-key when the key is absent entirely', () => {
+  const { 'roles.cad-verifier.effort': _gone, ...rest } = SHIPPED;
+  const issues = effortEnumIssues(rest, SHIPPED_ORDER);
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'missing-effort-key');
+  assert.match(issues[0].detail, /roles\.cad-verifier\.effort/);
+});
+
+test('roles.<role>.effort: unknown-effort-role for a role the map does not hold', () => {
+  const issues = effortEnumIssues(
+    { ...SHIPPED, 'roles.cad-nobody.effort': { type: 'enum', values: ['high', null] } },
+    SHIPPED_ORDER);
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'unknown-effort-role');
+  assert.match(issues[0].detail, /roles\.cad-nobody\.effort/);
+  assert.match(issues[0].detail, /cad-planner/);   // names what the map does hold
+});
+
+test('roles.<role>.model is not held to the effort rules - it has no enum', () => {
+  // D-10 types it string_or_null with nothing to drift against, so the reverse
+  // walk must not classify it as a start-rung key and file drift about it.
+  assert.deepEqual(effortEnumIssues(
+    { ...SHIPPED, 'roles.cad-nobody.model': { type: 'string_or_null', default: null } },
+    SHIPPED_ORDER), []);
 });

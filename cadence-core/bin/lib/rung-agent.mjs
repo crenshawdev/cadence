@@ -261,13 +261,57 @@ export function rungBodyIssue(body, skills) {
 export const EFFORT_PREFIX = 'model.effort.';
 
 /**
- * Whether the shipped `model.effort.<role>` schema enums still say what
- * RUNG_FILES says. It belongs beside the map because the map is the statement
- * it checks against, and because the refusal it protects is one a USER meets:
+ * The roles-block spelling of the same quantity, as its two fixed halves:
+ * `roles.<role>.effort`. It is a SECOND key naming one role's start rung, not a
+ * rename - the older prefix above stays live as the narrower fallback - so both
+ * spellings are held to the rules below rather than one of them being trusted.
+ */
+export const ROLES_PREFIX = 'roles.';
+/** The last segment that makes a `roles.<role>.*` key a start rung. */
+export const ROLES_EFFORT_SUFFIX = '.effort';
+
+/**
+ * The two keys one role's start rung can be written under, older spelling
+ * first - which is also the order the issues below come out in, so a drift in
+ * the older key still reports before its roles-block sibling.
+ * @param {string} role
+ * @returns {string[]}
+ */
+function effortKeyNames(role) {
+  return [`${EFFORT_PREFIX}${role}`, `${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`];
+}
+
+/**
+ * The role a start-rung key names, or null when the key is neither spelling.
+ *
+ * `roles.<role>.model` is deliberately NOT one: D-10 types it `string_or_null`
+ * with nothing to drift against, so classifying it here would file a drift
+ * issue about a key that has no enum to drift.
+ * @param {string} key
+ * @returns {string|null}
+ */
+function effortKeyRole(key) {
+  if (key.startsWith(EFFORT_PREFIX)) return key.slice(EFFORT_PREFIX.length);
+  if (key.startsWith(ROLES_PREFIX) && key.endsWith(ROLES_EFFORT_SUFFIX)) {
+    return key.slice(ROLES_PREFIX.length, key.length - ROLES_EFFORT_SUFFIX.length);
+  }
+  return null;
+}
+
+/**
+ * Whether the shipped `model.effort.<role>` and `roles.<role>.effort` schema
+ * enums still say what RUNG_FILES says. It belongs beside the map because the
+ * map is the statement it checks against, and because the refusal it protects
+ * is one a USER meets:
  * `config.mjs` refuses a start rung by key off these enums, so an enum that
  * drifts from the map starts refusing the wrong values - accepting a rung with
  * no file (which route.mjs then has to warn its way out of) or refusing one
  * this role really has.
+ *
+ * BOTH spellings, to the same rules and with no shared-enum shortcut: the two
+ * keys are separate schema rows and `checkValue` reads whichever one the user
+ * typed, so a guard that checked only the older prefix would leave the winning
+ * key - the roles block beats `model.effort.<role>` - the unguarded one.
  *
  * self-verify never reads a user's config and so cannot refuse a user's value;
  * this is its half of that criterion (D-08), which is why every detail NAMES
@@ -291,47 +335,48 @@ export function effortEnumIssues(schema, rungOrder) {
   const order = Array.isArray(rungOrder) ? rungOrder.filter((r) => typeof r === 'string') : [];
 
   for (const role of Object.keys(RUNG_FILES)) {
-    const key = `${EFFORT_PREFIX}${role}`;
-    const spec = keys[key];
-    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
-      out.push({ code: 'missing-effort-key',
-        detail: `${key} is absent, but lib/rung-agent.mjs files ${
-          Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
-      continue;
-    }
-    // Type BEFORE values: `checkValue` enforces an enum's `values` only when
-    // `type` IS "enum", so a key whose type drifted to "string" keeps a correct
-    // values list while the write face silently accepts any rung - the exact
-    // accepting-a-rung-with-no-file drift this function exists to refuse.
-    if (spec.type !== 'enum') {
-      out.push({ code: 'effort-enum-drift',
-        detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
-          + 'a non-enum type disables the write-face refusal' });
-      continue;
-    }
-    // The map's rungs in DECLARED order, then null - the exact shape D-03 ships,
-    // so a reordered enum reads as drift too: the order is what a reader of the
-    // refusal message sees, and it is meant to be the ladder's own order.
-    const want = [...Object.keys(RUNG_FILES[role]), null];
-    const got = Array.isArray(spec.values) ? spec.values : null;
-    if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
-      out.push({ code: 'effort-enum-drift',
-        detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
-          role} at ${JSON.stringify(want)}` });
-      continue;
-    }
-    if (!order.length) continue;
-    const strays = want.filter((v) => v !== null && !order.includes(v));
-    if (strays.length) {
-      out.push({ code: 'effort-enum-drift',
-        detail: `${key} offers ${JSON.stringify(strays)}, which route-table.json's `
-          + `rung_order (${order.join(', ')}) does not carry` });
+    for (const key of effortKeyNames(role)) {
+      const spec = keys[key];
+      if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+        out.push({ code: 'missing-effort-key',
+          detail: `${key} is absent, but lib/rung-agent.mjs files ${
+            Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
+        continue;
+      }
+      // Type BEFORE values: `checkValue` enforces an enum's `values` only when
+      // `type` IS "enum", so a key whose type drifted to "string" keeps a correct
+      // values list while the write face silently accepts any rung - the exact
+      // accepting-a-rung-with-no-file drift this function exists to refuse.
+      if (spec.type !== 'enum') {
+        out.push({ code: 'effort-enum-drift',
+          detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
+            + 'a non-enum type disables the write-face refusal' });
+        continue;
+      }
+      // The map's rungs in DECLARED order, then null - the exact shape D-03 ships,
+      // so a reordered enum reads as drift too: the order is what a reader of the
+      // refusal message sees, and it is meant to be the ladder's own order.
+      const want = [...Object.keys(RUNG_FILES[role]), null];
+      const got = Array.isArray(spec.values) ? spec.values : null;
+      if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
+        out.push({ code: 'effort-enum-drift',
+          detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
+            role} at ${JSON.stringify(want)}` });
+        continue;
+      }
+      if (!order.length) continue;
+      const strays = want.filter((v) => v !== null && !order.includes(v));
+      if (strays.length) {
+        out.push({ code: 'effort-enum-drift',
+          detail: `${key} offers ${JSON.stringify(strays)}, which route-table.json's `
+            + `rung_order (${order.join(', ')}) does not carry` });
+      }
     }
   }
 
   for (const key of Object.keys(keys)) {
-    if (!key.startsWith(EFFORT_PREFIX)) continue;
-    const role = key.slice(EFFORT_PREFIX.length);
+    const role = effortKeyRole(key);
+    if (role === null) continue;
     if (Object.prototype.hasOwnProperty.call(RUNG_FILES, role)) continue;
     out.push({ code: 'unknown-effort-role',
       detail: `${key} names "${role}", which lib/rung-agent.mjs files no rungs for `
