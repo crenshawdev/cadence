@@ -14,6 +14,8 @@ ids from earlier cycles are rows under `## Shipped` below, and the ids under
 `## Deferred` keep their own reasons - none is promoted here to fill this
 section.
 
+- **ROL-01**: Config names each role's model and effort directly, and routing resolves from that block while the `stakes` key still answers where it is silent. Twelve flat keys - `roles.<role>.model` and `roles.<role>.effort` for the six roles - land in `cadence-core/config.schema.json` beside the `model.overrides.*` and `model.effort.*` families they supersede, and `cadence-core/bin/route.mjs`'s `resolve` applies them AFTER the cell lookup so the torn-table guard, the cross-model review wiring and the `unresolved` arm all keep firing. The roles block wins over both older families and says which key won, because this repository's own `.planning/config.json` sets `stakes: critical`, four `model.effort.*` values and `model.overrides.cad-planner: "fable"` at once, and a live resolve on 2026-09-04 returns `model: "fable"`, `effort: "xhigh"`, `pinned: true` for `cad-planner` - silent winning would change what Cadence-on-Cadence runs at with no notice. The 18-cell `stakes`-only fallback keeps resolving exactly as it does at HEAD, which is what stops any commit in this phase stranding a config that exists today. A model string the host does not accept resolves `ok: true` with the routed cell's model and a `warnings[]` entry naming it, byte-for-byte what `route.mjs:1324-1338` already does for an unknown alias: the host's agent-dispatch `model` parameter is an enum of exactly `sonnet`, `opus`, `haiku`, `fable` (verified 2026-09-04 against the live tool schema), and refusing with `ok: false` would dispatch the base agent at the session default, below every risk floor. The block carries `model` and `effort` and never a third `retry` field - 30 of 904 `routing.resolve` events on `.planning/trace.jsonl` carry `attempt: 2` and 12 carry `escalated: true`, all dated on or before 2026-08-17, and no `lifecycle.dispatch` or `lifecycle.return` event carries an `attempt` field to join a climb to an outcome. `GH-249` Phase 2.
+
 - **RNG-06**: Every role offers every rung, so a user's effort choice is one uniform question per role rather than a per-role subset. The ladder is 19 of 30 files at HEAD, measured 2026-09-04 by reading the `effort:` line of every file in `agents/`: `cad-planner`, `cad-assumptions-analyzer` and `cad-executor` have no `low` and no `medium`; `cad-verifier` and `cad-reviewer` have no `low`; `cad-assumptions-analyzer`, `cad-executor` and `cad-plan-checker` have no `max`. Each missing cell becomes the same two-line pointer body its siblings carry, with its own `effort:` line and its role's contract skill preloaded, and `weight-budgets.json` gains a row per file in the same commit. The interview phase 3 introduces asks one question per role only if no role has to be explained as an exception. `GH-249` Phase 1.
 
 `v3.7.11 - unresolved inputs` opened 2026-09-02 and closed 2026-09-03. Three
@@ -514,6 +516,7 @@ section only, bounded at the next `## ` heading.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | RNG-06 | Phase 1 | Complete |
+| ROL-01 | Phase 2 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
