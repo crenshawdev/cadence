@@ -90,7 +90,7 @@ from the 2026-09-03 run record were declined on 2026-09-04 and are not filed.
 
 - [x] **Phase 1: Every role has every rung** - the eleven missing rung files exist, so a role's effort is a uniform choice rather than a per-role subset
 - [x] **Phase 2: Routing resolves from the roles block** - config names each role's model and effort directly, and routing reads it while the stakes key still answers as the fallback
-- [ ] **Phase 3: The stakes key is gone and an interview replaces it** - the level, the cells grid and the alias list are deleted, and the thirteen questions that teach what each role costs are what a user meets instead
+- [x] **Phase 3: The stakes key is gone and an interview replaces it** - the level, the cells grid and the alias list are deleted, and the thirteen questions that teach what each role costs are what a user meets instead
 
 ## Phase Details
 

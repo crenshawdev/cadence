@@ -519,7 +519,7 @@ section only, bounded at the next `## ` heading.
 |-------------|-------|--------|
 | RNG-06 | Phase 1 | Complete |
 | ROL-01 | Phase 2 | Complete |
-| ROL-02 | Phase 3 | Pending |
+| ROL-02 | Phase 3 | Complete |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
