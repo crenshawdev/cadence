@@ -9,6 +9,9 @@
 //   validate [--file <path>|--global]        validate a whole config file
 //   check <key=value> ...                     validate one or more dotted key=value pairs
 //   set [--file <path>|--global] <key=value>  validate pairs, then write them into the file
+//   unset [--file <path>|--global] <key> ...  remove those keys from that ONE file (never the
+//                                             merged view). Accepts any dotted path, schema key
+//                                             or not; a key the file does not hold writes nothing
 //   get [--file <path>] [key ...]             EFFECTIVE values (repo > global > schema
 //                                             defaults); no keys = all. The only correct
 //                                             way for a workflow to read config.
@@ -371,6 +374,70 @@ function set(file, tokens, create) {
   out({ ok: true, file, changed: pairs });
 }
 
+// Remove dotted paths from exactly ONE layer file - never the merged view. "The
+// key is gone from the file afterwards" is a claim about a file, and the merged
+// view is not one.
+//
+// IT VALIDATES NOTHING, on purpose. Every other write path here runs checkPairs
+// first; this one accepts any dotted path - a schema key, a retired key, an
+// unknown one - because removing what `validate` refuses is its entire job, and
+// `workflows/config.md` closes the only other route ("Never write config JSON by
+// hand; go through the seam"). A write face that refused a retired key here
+// would leave a migration with no seam at all (D-06).
+//
+// NOTHING REMOVED MEANS NOTHING WRITTEN, not a rewrite that happens to match.
+// atomicWrite re-serializes at two-space indent with a trailing newline, so a
+// no-op that still wrote would reformat a hand-spaced layer and move its sha256
+// while reporting `removed: []`. An ABSENT file is the same answer for the same
+// reason and creates nothing - only `set --global` auto-creates, because only a
+// set has a value that has to land somewhere.
+//
+// An emptied container is NOT pruned. `flatten` above skips an object with no
+// entries, so `{"risk":{"override":{}}}` contributes no leaf and `validate`
+// passes over it; a second walk to delete it would earn nothing.
+function unset(file, keys) {
+  let cfg;
+  try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
+  catch (e) {
+    // ENOENT is the "nothing to remove" arm rather than a failure: a layer that
+    // does not exist already holds none of these keys, and reporting `read`
+    // would fail a migration step on every project that never wrote a repo
+    // config. A file that exists and cannot be PARSED is still refused - the
+    // keys may well be in there.
+    if (e.code === 'ENOENT') return out({ ok: true, file, removed: [] });
+    return fail('read', `cannot read/parse ${file}: ${e.message}`,
+      'repair the JSON in the file the detail names and re-run - unset will not overwrite a layer it could not read');
+  }
+  if (!isPlainObject(cfg)) fail('invalid', [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }],
+    `make the top level of ${file} a JSON object of key/value pairs - an empty {} is a valid layer - then re-run`);
+  const removed = [];
+  for (const key of keys) {
+    const parts = key.split('.');
+    let node = cfg;
+    let depth = 0;
+    // hasOwn at every hop, for the reason `validate` and `get` each state on
+    // their own face: a bare `node[part]` walks the prototype chain, so
+    // `unset toString` would find a function to delete and `unset
+    // constructor.prototype.x` would reach into Object itself. An own-property
+    // walk can only ever touch data this file actually holds - and JSON.parse
+    // DEFINES a literal `"__proto__"` key as an own property, so the one
+    // spelling that really can sit in a config file is still reachable.
+    for (; depth < parts.length - 1; depth++) {
+      const next = Object.hasOwn(node, parts[depth]) ? node[parts[depth]] : undefined;
+      if (!isPlainObject(next)) break;
+      node = next;
+    }
+    // Fell out of the walk early, so the path runs through something this file
+    // does not hold (or through a scalar) - absent, not an error.
+    if (depth !== parts.length - 1) continue;
+    if (!Object.hasOwn(node, parts[depth])) continue;
+    delete node[parts[depth]];
+    removed.push(key);
+  }
+  if (removed.length) atomicWrite(file, JSON.stringify(cfg, null, 2) + '\n');
+  out({ ok: true, file, removed });
+}
+
 // The effective value set: schema defaults, overlaid by the global then the
 // repo layer (shared merge lib - identical semantics to route.mjs). Output is
 // a flat dotted-key map, so callers read values without re-flattening.
@@ -524,9 +591,13 @@ try {
     else out({ ok: true });
   }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
+  // No `global` argument: which layer is answered by the FILE alone here, and
+  // `unset` never creates one, so the flag has nothing left to say once optFile
+  // has resolved it to a path.
+  else if (cmd === 'unset') { const { file, tokens } = optFile(rest); unset(file, tokens); }
   else if (cmd === 'get') { const { file, tokens, global } = optFile(rest); get(file, tokens, global); }
   else if (cmd === 'keys') { out({ ok: true, keys: SCHEMA }); }
-  else fail('usage', 'subcommand: validate | check | set | get | keys');
+  else fail('usage', 'subcommand: validate | check | set | unset | get | keys');
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

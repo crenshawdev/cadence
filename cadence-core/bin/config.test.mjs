@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, writeFileSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -632,8 +633,10 @@ test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it o
   // answering `source: "global"` - watched failing.
   const declared = { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' };
   // `check` joined the list when it learned the flag (SCP-01): the inspect face
-  // has to be able to ASK about the layer the write face refuses at.
-  for (const cmd of ['validate', 'set', 'get', 'check']) {
+  // has to be able to ASK about the layer the write face refuses at. `unset`
+  // joined it as the migration's write path (D-06) - it edits ONE layer, so
+  // which layer has to be sayable the same way its siblings say it.
+  for (const cmd of ['validate', 'set', 'get', 'check', 'unset']) {
     assert.deepEqual(CONTRACTS['config.mjs'][cmd]['--global'], declared,
       `${cmd} takes --global, so ${cmd} must declare it - with the same grammar its siblings carry`);
   }
@@ -1715,4 +1718,164 @@ test('set: a prototype member is refused and nothing is written', () => {
     // --global auto-creates, so an unrefused pair would have left a file here.
     assert.equal(existsSync(gpath), false, key);
   }
+});
+
+// --- unset: removing a key from ONE layer (AC3) -------------------------------
+
+// The migration's write path (D-06). `validate` refuses a whole file over a key
+// the schema dropped, `set` refuses to write one, and workflows/config.md
+// forbids the alternative ("Never write config JSON by hand; go through the
+// seam") - so before this subcommand there was no way to make "the key is gone
+// from the file afterwards" true. Every arm below therefore asserts what
+// happened to a FILE, never what the merged view now reads.
+
+/** The bytes on disk, so "wrote nothing" can be told from "rewrote it the same". */
+const sha256 = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
+
+test('unset removes the named key from the file and leaves its siblings alone', () => {
+  // `stakes` is the AC3 subject and stays the sample here even once the schema
+  // drops it: `unset` is schema-blind by design, so this row asserts the same
+  // thing before and after the key is retired.
+  const f = join(dir, 'unset-basic.json');
+  writeFileSync(f, JSON.stringify({ stakes: 'critical', granularity: 'fine' }, null, 2) + '\n');
+  const r = run(['unset', '--file', f, 'stakes']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.file, f);
+  assert.deepEqual(r.removed, ['stakes']);
+  const after = JSON.parse(readFileSync(f, 'utf8'));
+  assert.equal(Object.hasOwn(after, 'stakes'), false, 'the key is still in the file');
+  assert.equal(after.granularity, 'fine', 'a sibling key was taken with it');
+});
+
+test('unset on a key the file does not hold writes NO bytes at all (AC3)', () => {
+  // Byte identity, not "the same values": the file is written here in a
+  // deliberately non-canonical shape (no indent, no trailing newline), so a
+  // no-op that still called atomicWrite would reformat it and move the digest
+  // while truthfully reporting `removed: []`.
+  const f = join(dir, 'unset-noop.json');
+  writeFileSync(f, '{"granularity":"coarse"}');
+  const before = sha256(f);
+  const r = run(['unset', '--file', f, 'stakes']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, []);
+  assert.equal(sha256(f), before, 'a no-op unset rewrote the file');
+});
+
+test('unset --global edits the user-global file and nothing else', () => {
+  const gpath = join(dir, 'unset-global.json');
+  const other = join(dir, 'unset-global-bystander.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped', granularity: 'fine' }, null, 2) + '\n');
+  // The same key in a second file, so "edits the global layer" is proved
+  // against a file that would also have matched the key had the selection gone
+  // to the wrong layer.
+  writeFileSync(other, JSON.stringify({ stakes: 'solo' }, null, 2) + '\n');
+  const untouched = sha256(other);
+  const r = run(['unset', '--global', 'stakes'], gpath);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.file, gpath, 'the answer names the layer it edited');
+  assert.deepEqual(r.removed, ['stakes']);
+  assert.equal(Object.hasOwn(JSON.parse(readFileSync(gpath, 'utf8')), 'stakes'), false);
+  assert.equal(sha256(other), untouched, 'a second file carrying the same key moved');
+});
+
+test('unset --file at a path that does not exist creates nothing', () => {
+  // Only `set --global` auto-creates, because only a set has a value that has
+  // to land somewhere. A removal on an absent layer has already achieved what
+  // it was asked for.
+  const f = join(dir, 'unset-absent-layer.json');
+  assert.equal(existsSync(f), false);
+  const r = run(['unset', '--file', f, 'stakes']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, []);
+  assert.equal(existsSync(f), false, 'unset created a config file');
+});
+
+test('unset refuses a file it cannot parse, and one whose top level is not an object', () => {
+  // The same two envelopes `set` speaks, so a caller reads one failure contract
+  // across the write faces. An unparseable file is NOT the absent-file arm: the
+  // keys may well be in there, and answering ok:true would report a removal
+  // that never happened.
+  const bad = join(dir, 'unset-malformed.json');
+  writeFileSync(bad, '{ not json at all');
+  const beforeBad = sha256(bad);
+  const malformed = runStatus(['unset', '--file', bad, 'stakes']);
+  assert.equal(malformed.json.ok, false, JSON.stringify(malformed.json));
+  assert.equal(malformed.json.reason, 'read');
+  assert.match(malformed.json.detail, /cannot read\/parse/);
+  assert.equal(typeof malformed.json.hint, 'string');
+  assert.equal(malformed.status, 1);
+  assert.equal(sha256(bad), beforeBad, 'a refused unset still wrote');
+
+  const arr = join(dir, 'unset-array.json');
+  writeFileSync(arr, '[1, 2]\n');
+  const beforeArr = sha256(arr);
+  const notObject = runStatus(['unset', '--file', arr, 'stakes']);
+  assert.equal(notObject.json.ok, false, JSON.stringify(notObject.json));
+  assert.equal(notObject.json.reason, 'invalid');
+  assert.equal(notObject.json.detail[0].key, '(root)');
+  assert.equal(typeof notObject.json.hint, 'string');
+  assert.equal(notObject.status, 1);
+  assert.equal(sha256(arr), beforeArr);
+});
+
+test('unset removes a key the schema does not carry - the whole reason it exists', () => {
+  // `risk.override.auth` is retired and `made_up_key` was never a key: `set`
+  // refuses both and `validate` fails the whole file over either. If `unset`
+  // validated too, the migration D-06 designs would have no seam at all.
+  const f = join(dir, 'unset-unknown.json');
+  writeFileSync(f, JSON.stringify(
+    { granularity: 'fine', risk: { override: { auth: true } }, made_up_key: 1 }, null, 2) + '\n');
+  const before = run(['validate', '--file', f]);
+  assert.equal(before.ok, false, 'the fixture was supposed to be a file validate refuses');
+
+  const r = run(['unset', '--file', f, 'risk.override.auth', 'made_up_key']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, ['risk.override.auth', 'made_up_key']);
+  const after = JSON.parse(readFileSync(f, 'utf8'));
+  assert.equal(after.granularity, 'fine');
+  assert.equal(Object.hasOwn(after, 'made_up_key'), false);
+  // The emptied container is left where it is, and that is the whole reason
+  // this arm ends on a validate: `flatten` skips an object with no entries, so
+  // it contributes no leaf and the file passes anyway.
+  assert.deepEqual(after.risk, { override: {} });
+  const v = run(['validate', '--file', f]);
+  assert.equal(v.ok, true, JSON.stringify(v));
+});
+
+test('unset reports only the keys that were actually there', () => {
+  const f = join(dir, 'unset-partial.json');
+  writeFileSync(f, JSON.stringify(
+    { granularity: 'coarse', model: { escalate_on_failure: true } }, null, 2) + '\n');
+  const r = run(['unset', '--file', f,
+    'model.escalate_on_failure', 'model.nothing_here', 'granularity']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, ['model.escalate_on_failure', 'granularity'],
+    'removed[] is the receipt for what was there, not an echo of what was asked');
+  assert.deepEqual(JSON.parse(readFileSync(f, 'utf8')), { model: {} });
+});
+
+test('unset walks OWN properties only, and still reaches a literal __proto__ key', () => {
+  // The negative arm: every Object.prototype member names something a bare
+  // `node[part]` walk would have found - `toString` a function to delete,
+  // `constructor.name` a path into Object itself.
+  const clean = join(dir, 'unset-proto-none.json');
+  writeFileSync(clean, '{"granularity":"coarse"}');
+  const before = sha256(clean);
+  for (const key of [...PROTO_MEMBERS, 'constructor.name']) {
+    const r = run(['unset', '--file', clean, key]);
+    assert.equal(r.ok, true, `${key}: ${JSON.stringify(r)}`);
+    assert.deepEqual(r.removed, [], key);
+  }
+  assert.equal(sha256(clean), before, 'a prototype member reached the file');
+
+  // The paired POSITIVE control, without which the arm above would pass just as
+  // loudly if `unset` removed nothing ever: JSON.parse DEFINES a literal
+  // `"__proto__"` key as an own data property, so that one spelling really can
+  // sit in a config file and really must be removable.
+  const held = join(dir, 'unset-proto-own.json');
+  writeFileSync(held, '{"__proto__":1,"granularity":"coarse"}');
+  const r = run(['unset', '--file', held, '__proto__']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.removed, ['__proto__']);
+  assert.equal(readFileSync(held, 'utf8').includes('__proto__'), false);
 });

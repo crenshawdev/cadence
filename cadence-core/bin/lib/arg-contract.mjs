@@ -1144,11 +1144,20 @@ export const CONTRACTS = {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
     },
-    // `--global` sits on all three faces that take a file, with the same
-    // grammar on each. It was live on `get` and declared only on its two
-    // siblings, and self-verify was green solely because no workflow prose
-    // spelled the pair - so correct prose naming it would have been reported
-    // `unknown-flag` against a flag the seam accepts.
+    // `unset` selects its layer exactly as `set` does, and the row has to exist
+    // rather than merely be accepted: `optFile` READS the declaration, so a
+    // subcommand taking these flags without declaring them is not expressible
+    // here (see the `get` note below for the class). The keys it removes are
+    // positional words, so there is no third row.
+    unset: {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    // `--global` sits on every face that takes a file, with the same grammar on
+    // each. It was live on `get` and declared only on its siblings, and
+    // self-verify was green solely because no workflow prose spelled the pair -
+    // so correct prose naming it would have been reported `unknown-flag`
+    // against a flag the seam accepts.
     get: {
       '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
