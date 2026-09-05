@@ -1850,16 +1850,20 @@ test('risk-check run: a TORN config layer is refused even when --surfaces was na
   assert.deepEqual(traceLines(dir), [], 'a torn layer recorded a detection anyway');
 });
 
-test('risk-check run: the answer is judged against route-table.json\'s vocabulary, not a local list', () => {
+test('risk-check run: the answer is judged against the schema enum, not a local list', () => {
   // The divergence the shared predicate exists to prevent, at its one remaining
-  // seam: route.mjs judges the configured list against route-table.json's
-  // `risk_surface_categories`, so a token outside THAT list is unanswered to
-  // the resolve. Reading the module's own CATEGORIES here instead would let
-  // this seam accept the same value and narrow a blocking gate to a scope the
-  // routing authority rejected.
-  const table = parseJson(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
-  assert.deepEqual(table.risk_surface_categories, ALL,
-    'route-table.json and lib/surface-scan.mjs disagree on the eight categories');
+  // seam: route.mjs judges the configured list against config.schema.json's
+  // `review.triggers.risk_surface.surfaces` values, so a token outside THAT
+  // list is unanswered to the resolve. Reading the module's own CATEGORIES here
+  // instead would let this seam accept the same value and narrow a blocking
+  // gate to a scope the routing authority rejected. The leg used to be
+  // route-table.json's `risk_surface_categories`; that file is gone, and the
+  // schema enum route.mjs now reads is the same statement in the surviving one.
+  const schema = parseJson(readFileSync(join(HERE, '..', 'config.schema.json'), 'utf8'));
+  const spec = schema.keys['review.triggers.risk_surface.surfaces'];
+  assert.ok(spec, 'config.schema.json defines no review.triggers.risk_surface.surfaces');
+  assert.deepEqual(spec.values, ALL,
+    'config.schema.json and lib/surface-scan.mjs disagree on the eight categories');
 });
 
 // --- the census: neither file matches the detector ----------------------------

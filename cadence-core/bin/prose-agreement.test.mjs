@@ -26,6 +26,7 @@ import { activeVersion } from './lib/branch-decision.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { DEFERRED_READS, regionLabels } from './lib/deferred-reads.mjs';
 import { CATEGORIES, scanTree, interviewOptions } from './lib/surface-scan.mjs';
+import { RUNG_ORDER } from './lib/rung-agent.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -169,24 +170,26 @@ test('risk_surface row: its shape (c) clause names no producer, and task.md stil
 
 // --- CST-02: the eight risk-surface categories, stated in three places -------
 
-test('risk-surface categories: the schema enum, the route table and the detection list are one list', () => {
-  // route.mjs may not read config.schema.json - a schema default read there
-  // becomes a user assertion - so route-table.json carries a hand-maintained
-  // copy of this vocabulary, and the reference names the same tokens beside the
-  // prose category each one stands for. Three statements of one list, and
-  // nothing but this check keeps them one list.
+test('risk-surface categories: the schema enum, the detector and the detection list are one list', () => {
+  // The third leg used to be route-table.json's hand-maintained
+  // `risk_surface_categories`, which existed because route.mjs may not read
+  // config.schema.json. That file is gone and the resolver reads the schema
+  // enum directly, so the leg that is still a SEPARATE statement of this list is
+  // lib/surface-scan.mjs's CATEGORIES - what `planning.mjs detect-surfaces` and
+  // `risk-check` judge an answer against - and the reference names the same
+  // tokens beside the prose category each one stands for. Three statements of
+  // one list, and nothing but this check keeps them one list.
   const spec = JSON.parse(doc('cadence-core', 'config.schema.json'))
     .keys['review.triggers.risk_surface.surfaces'];
   assert.ok(spec, 'config.schema.json defines no review.triggers.risk_surface.surfaces');
-  const table = JSON.parse(doc('cadence-core', 'route-table.json')).risk_surface_categories;
 
   const after = doc('cadence-core', 'references', 'risk-surface.md')
     .split('## risk_surface detection')[1];
   assert.ok(after, 'risk-surface.md has no risk_surface detection section');
   const prose = [...after.split(/\n## /)[0].matchAll(/^- `([a-z_]+)` - /gm)].map((m) => m[1]);
 
-  assert.deepEqual(table, spec.values,
-    `route-table.json states [${table}], config.schema.json states [${spec.values}]`);
+  assert.deepEqual([...CATEGORIES], spec.values,
+    `lib/surface-scan.mjs states [${[...CATEGORIES]}], config.schema.json states [${spec.values}]`);
   assert.deepEqual(prose, spec.values,
     `risk-surface.md's detection list states [${prose}], config.schema.json states [${spec.values}]`);
 
@@ -944,15 +947,16 @@ test('README\'s "Today it is N skills and M agent roles across K rung files" mat
 
   // Rung files: every `.md` directly under agents/. Roles: those filenames with
   // the rung suffix stripped. The suffix VOCABULARY is read off
-  // route-table.json's `rung_order` rather than typed, so a new rung renames
+  // lib/rung-agent.mjs's RUNG_ORDER rather than typed, so a new rung renames
   // agent files and this keeps deriving the same six roles instead of counting
-  // the new spelling as a seventh.
+  // the new spelling as a seventh. It used to be read off route-table.json's
+  // `rung_order`; the ladder is now stated beside the map it orders.
   const rungs = readdirSync(join(REPO, 'agents')).filter((f) => f.endsWith('.md'));
   assert.ok(rungs.length, 'no agent files under agents/');
-  const order = JSON.parse(doc('cadence-core', 'route-table.json')).rung_order;
-  assert.ok(Array.isArray(order) && order.length, 'route-table.json states no rung_order');
+  const order = RUNG_ORDER;
+  assert.ok(Array.isArray(order) && order.length, 'lib/rung-agent.mjs states no RUNG_ORDER');
   const suffix = new RegExp(`-(?:${order.join('|')})$`);
-  // The analyzer's UNSUFFIXED file is its xhigh rung (route-table.json:4), so a
+  // The analyzer's UNSUFFIXED file is its xhigh rung (lib/rung-agent.mjs), so a
   // name carrying no suffix is already the role.
   const roles = new Set(rungs.map((f) => f.replace(/\.md$/, '').replace(suffix, '')));
 

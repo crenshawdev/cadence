@@ -376,8 +376,9 @@ test('effort-enum-drift: the rungs are right but the ORDER is not', () => {
 });
 
 test('effort-enum-drift: null missing from the end is drift, not a detail', () => {
-  // Without null there is no way to say "route normally off the cell" once the
-  // key has been written, and `config.mjs set <key>=null` starts being refused.
+  // Without null there is no way to say "un-pin this and take the default" once
+  // the key has been written, and `config.mjs set <key>=null` starts being
+  // refused.
   const issues = effortEnumIssues(withEnum('cad-executor', ['high', 'xhigh']), SHIPPED_ORDER);
   assert.equal(issues.length, 1);
   assert.equal(issues[0].code, 'effort-enum-drift');

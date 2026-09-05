@@ -14,7 +14,7 @@ If you don't want to think about any of that, there is one key, `stakes`, holdin
 
 One thing people miss: routing governs the subagents Cadence dispatches, not your main session. Cadence cannot set your orchestrator's model or effort, that stays yours to set in Claude Code. Run it on the strongest model at high effort. The context discipline is what makes that affordable, the orchestrator stays lean and reads its own prefix from cache while the expensive file reading happens out in the routed subagents.
 
-Read the code: `cadence-core/bin/route.mjs` (the resolver), `cadence-core/route-table.json` (the five grids - the 18 cells, the review gates, the cross-model reviewer's tiers and efforts, the verify switch - all editable data, no code change to retune), `cadence-core/bin/lib/rung-agent.mjs` (which file carries which rung), `cadence-core/bin/route.test.mjs`. Design record: `DESIGN.md`, "Model routing."
+Read the code: `cadence-core/bin/route.mjs` (the resolver), `cadence-core/config.schema.json` (where the review gates and the cross-model reviewer's tiers and efforts take their defaults - editable data, no code change to retune), `cadence-core/bin/lib/rung-agent.mjs` (which file carries which rung), `cadence-core/bin/route.test.mjs`. Design record: `DESIGN.md`, "Model routing."
 
 ## The push guard: the parser I deleted, and the tokenizer I wrote
 
