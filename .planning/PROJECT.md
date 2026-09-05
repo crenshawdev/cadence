@@ -210,7 +210,7 @@ session-resident server, one process per session shared by the main thread and
 every subagent. The binary owns truth about process, the model owns engineering
 judgment, the skill orchestrates and holds no hidden state machine. Four phases
 on `cadence/binary-owns-process`. The design is
-`/projects/cadence-v4-architecture.md`; `ROADMAP.md` carries the execution
+`docs/rationale/architecture-v4.md`; `ROADMAP.md` carries the execution
 order and three open questions.
 
 **The frozen reference is the tag `v3.7.12`** at commit `c39bbd8c`, and the

@@ -7,7 +7,7 @@ port.** `cadence-core` becomes a session-resident server in Rust: one
 long-running process per session that the main thread and every subagent share.
 The binary owns truth about process, the model owns engineering judgment, and
 the skill orchestrates between them with no hidden state machine. The design is
-`/projects/cadence-v4-architecture.md`, written 2026-09-05; this roadmap is the
+`docs/rationale/architecture-v4.md`, written 2026-09-05; this roadmap is the
 execution order, not a second copy of it.
 
 **The frozen reference is the tag `v3.7.12`**, an annotated tag whose commit is

@@ -10,7 +10,7 @@ files:
   - .planning/spikes/toolsearch-conditional-skip/SPIKE.md
   - .planning/spikes/tools-survive-compaction/SPIKE.md
   - .planning/ROADMAP.md
-  - /projects/cadence-v4-architecture.md
+  - docs/rationale/architecture-v4.md
 ---
 
 # Phase 1: The baseline and the two probes - Plan
@@ -49,7 +49,7 @@ outcome: two of its three questions are unanswered.
   spike-record path for each of OQ-1, OQ-2 and OQ-3, and the phrases "across one
   real phase" and "on a real phase" no longer appear in the file, including
   across a line wrap.
-- `/projects/cadence-v4-architecture.md` carries the per-role and coordinator
+- `docs/rationale/architecture-v4.md` carries the per-role and coordinator
   figures beside the go/no-go language in its section 7, with a citation to the
   spike record they came from.
 
@@ -247,7 +247,7 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
 - **Action:** JOHN is the operator: he runs the probe in a live Claude Code CLI
   session and supplies the figures. A subagent cannot run it - a subagent whose
   definition names its tools has them at call #1
-  (`/projects/cadence-v4-architecture.md` section 4), so it never sees a deferred
+  (`docs/rationale/architecture-v4.md` section 4), so it never sees a deferred
   first load and has no view of its own `cache_creation` turn accounting. The
   executor's job is to write the record's `## Observation` section by
   transcribing John's supplied figures VERBATIM, and to write nothing into the
@@ -259,7 +259,7 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
   If neither carries one, take the inconclusive path below - do not go looking
   for the figures anywhere else, and do not read silence as an absent run.
   Record the CLI version string the probe ran on -
-  section 4 of `/projects/cadence-v4-architecture.md` pins its measured facts to
+  section 4 of `docs/rationale/architecture-v4.md` pins its measured facts to
   CLI 2.1.261 and a probe that cannot name its host cannot be compared to them.
   Two numbers are required: the token cost of a FIRST `ToolSearch` load of a
   deferred schema, and the cost of a SECOND `ToolSearch` for that same
@@ -291,7 +291,7 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
   returns 1, and every token figure and every stated skip/no-skip outcome in the
   file carries its provenance beside it, in one of exactly two forms -
   "observed <date>, CLI <version>" or
-  "cited from `/projects/cadence-v4-architecture.md` section 4" - so a
+  "cited from `docs/rationale/architecture-v4.md` section 4" - so a
   transcribed design-doc figure cannot be read as an observed one. If the verdict
   is not `inconclusive`, the file carries two distinct integer token figures
   explicitly labeled first-load and repeat-load and both carry the observed form,
@@ -308,7 +308,7 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
 - **Action:** JOHN is the operator: he observes ONE compaction in a live Claude
   Code CLI session and supplies what he saw. A subagent cannot do this - it
   cannot force a compaction and, per section 4 of
-  `/projects/cadence-v4-architecture.md`, never has a deferred tool to lose. The
+  `docs/rationale/architecture-v4.md`, never has a deferred tool to lose. The
   executor writes the record's `## Observation` section by transcribing John's
   account VERBATIM and writes nothing into the post-boundary result field from
   any other source. A supplied observation reaches the executor exactly one of
@@ -325,7 +325,7 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
   tool with no intervening `ToolSearch`. Record the CLI version, the tool used,
   and the post-boundary call's actual result - specifically whether it succeeded
   or returned the `InputValidationError` naming `ToolSearch` that section 4 of
-  `/projects/cadence-v4-architecture.md` records as the soft failure mode for
+  `docs/rationale/architecture-v4.md` records as the soft failure mode for
   calling a deferred tool unloaded; that failure mode is the design doc's
   prediction and goes in the prior section, so the result field carries only what
   John reports coming back. State whether the CLI's
@@ -343,7 +343,7 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
   returns 1, and the post-boundary result and every survival claim in the file
   carry their provenance beside them, in
   one of exactly two forms - "observed <date>, CLI <version>" or "cited from
-  `/projects/cadence-v4-architecture.md` section 4" - so a transcribed prediction
+  `docs/rationale/architecture-v4.md` section 4" - so a transcribed prediction
   cannot be read as an observation. If the verdict is not `inconclusive`, the
   file carries a CLI version string plus one sentence stating
   survived or did not survive with the post-boundary call's result quoted, both
@@ -387,11 +387,10 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
 
 ### Task 8: Carry the baseline figures into the architecture doc beside the go/no-go
 
-- **Files:** `/projects/cadence-v4-architecture.md`
-- **Action:** First copy `/projects/cadence-v4-architecture.md` to a scratch path
-  outside the repository and keep it for the length of this task: it is the
-  architecture of record, `/projects` is not a git repository, and there is no
-  other way back from a bad edit. Then add the task 2 and task 3 figures to
+- **Files:** `docs/rationale/architecture-v4.md`
+- **Action:** The doc is tracked in git as of the move on 2026-09-05, so a bad
+  edit is recoverable with `git checkout -- docs/rationale/architecture-v4.md`
+  and no scratch copy is needed. Add the task 2 and task 3 figures to
   section 7, "Expectations (no
   data; tagged)", which is where the go/no-go language they are judged against
   lives. Pin the insertion point: immediately after the paragraph ending "Do not
@@ -418,15 +417,15 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
   is what the tagging exists to prevent. Do not edit section 9's "Open and
   untested" bullets and do not retitle section 7; both are outside what this
   phase's decisions authorize.
-- **Verify:** `grep -n 'v3-baseline-dispatch-cost' /projects/cadence-v4-architecture.md`
+- **Verify:** `grep -n 'v3-baseline-dispatch-cost' docs/rationale/architecture-v4.md`
   prints at least one line inside section 7 (between the `## 7.` and `## 8.`
-  headings), and `sed -n '/^## 7\./,/^## 8\./p' /projects/cadence-v4-architecture.md`
+  headings), and `sed -n '/^## 7\./,/^## 8\./p' docs/rationale/architecture-v4.md`
   shows the six per-role rows and both coordinator population figures with their
   n values, with the measured block sitting between the "determinism and
   turn-count win." line and the "External evidence for the same shape" paragraph.
   For tag preservation use the absolute counts, not a before-and-after
   comparison there is no version control to make:
-  `sed -n '/^## 7\./,/^## 8\./p' /projects/cadence-v4-architecture.md | grep -c '\[guess\]'`
+  `sed -n '/^## 7\./,/^## 8\./p' docs/rationale/architecture-v4.md | grep -c '\[guess\]'`
   returns 2 and the same pipeline with `grep -c '\[estimate'` returns 1.
 
 ## Notes
@@ -441,11 +440,11 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
   All three are
   live in `.planning/REQUIREMENTS.md`'s `## Active` section under the 4.0.0
   cycle. Do not strip the frontmatter list.
-- `/projects/cadence-v4-architecture.md` is OUTSIDE this repository. Task 8's
-  change will therefore not appear in any commit this phase makes, and cannot be
-  confirmed by a diff - it is verified by reading the file. It is also outside
-  `lease-check`'s reach, so nothing will refuse a stray edit there; keep the edit
-  to what task 8 states.
+- `docs/rationale/architecture-v4.md` moved into this repository on 2026-09-05,
+  from `/projects/cadence-v4-architecture.md`. Task 8's change therefore DOES
+  land in a commit and IS confirmable by a diff, and the file is inside
+  `lease-check`'s reach - it is declared in this plan's `files:`, so a stray
+  edit is refused rather than silent. Keep the edit to what task 8 states.
 - CONTEXT's D-07 cites 3,823 coordinator rows with 96% attribution. Measured
   during planning, that is the LIVE `reads.jsonl` alone; `reads.1.jsonl` holds
   16,131 more, for 19,954 across the two files D-07 requires parsing. Task 3
@@ -456,7 +455,7 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
   (1) `.planning/ROADMAP.md`'s Phase 1 detail says "Its output is a spike record
   with three verdicts", which D-09's three one-verdict records makes false, but
   D-04 licenses exactly two sentence corrections and this is not one of them;
-  (2) `/projects/cadence-v4-architecture.md`'s section 7 heading reads "(no data;
+  (2) `docs/rationale/architecture-v4.md`'s section 7 heading reads "(no data;
   tagged)" and will contain measured data after task 8; (3) that document's
   section 9 carries the OQ-1 and OQ-2 questions as "(design) ... not observed",
   which tasks 5 and 6 answer, but D-10 covers only the AC3 and AC4 figures.

@@ -9,7 +9,7 @@ In: OQ-1, OQ-2 and OQ-3 answered with observations. OQ-3 is answered by MINING
 the trace and reads records already on disk - no live measurement run. OQ-1 and
 OQ-2 are answered by two probes against the running Claude Code CLI. Output is
 three spike records plus in-place edits to `.planning/ROADMAP.md` and
-`/projects/cadence-v4-architecture.md`.
+`docs/rationale/architecture-v4.md`.
 Out: any Rust. Any behavior change to the 3.7.12 tree. Any instrumentation
 added to record what the existing record does not already carry. Writing the
 ToolSearch preamble itself into any skill file - OQ-1's verdict decides whether
@@ -86,7 +86,7 @@ Plan shape: one plan.
   `cadence-core/workflows/spike.md:12-21`, `:36-51`,
   `.planning/spikes/host-effort-downgrade/SPIKE.md:81`, `:86`.
 - D-10 (Landing): The AC3 and AC4 figures also go into
-  `/projects/cadence-v4-architecture.md`, beside the go/no-go threshold they
+  `docs/rationale/architecture-v4.md`, beside the go/no-go threshold they
   are judged against, with a citation to the spike-record path. Evidence:
   `.planning/ROADMAP.md` overview (design doc named as the architecture of
   record, written 2026-09-05).
@@ -113,7 +113,7 @@ Plan shape: one plan.
 - [ ] AC4: The OQ-3 record states a per-phase-run coordinator byte figure for
       two populations, serial-only and all-phases, each with its n, and names
       the date range the reads corpus covers.
-- [ ] AC5: `/projects/cadence-v4-architecture.md` contains the AC3 and AC4
+- [ ] AC5: `docs/rationale/architecture-v4.md` contains the AC3 and AC4
       figures with a citation to the spike-record path.
 - [ ] AC6: The OQ-1 record states, from an observed run, the token cost of a
       first `ToolSearch` load and of a second `ToolSearch` for an

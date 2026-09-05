@@ -7,7 +7,7 @@
 
 **`v4.0.0 - excerpt folds in, the binary owns process` opened 2026-09-05 on
 `cadence/binary-owns-process`.** Four phases, sourced from
-`/projects/cadence-v4-architecture.md` written the same day. It is a rewrite and
+`docs/rationale/architecture-v4.md` written the same day. It is a rewrite and
 not a port: `cadence-core` becomes a session-resident Rust server, the frozen
 reference is the annotated tag `v3.7.12` at commit `c39bbd8c`, and the
 maintenance line is the branch `3.x` cut from that same commit. The theme is one
