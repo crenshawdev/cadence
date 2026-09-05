@@ -74,6 +74,9 @@ test('a resolve returns the whole bundle off one cell, and no tier', () => {
   // `tier` is gone: the model comes from the role's own cell, not from a
   // column named after something else (D-03).
   assert.equal('tier' in planner, false);
+  // ...and the envelope SAYS the cell is where it came from, always present so
+  // a caller never has to infer it from `pinned` plus an absence.
+  assert.equal(planner.model_source, 'cell');
 });
 
 // --- the 18 cells, pinned literally (D-11) -----------------------------------
@@ -787,12 +790,14 @@ test('an override pins one role and leaves the others routed', () => {
   assert.equal(planner.ok, true);
   assert.equal(planner.model, 'fable');   // pinned, not the cell's opus
   assert.equal(planner.pinned, true);
+  assert.equal(planner.model_source, 'model.overrides.cad-planner');
   assert.equal(planner.effort, 'high');   // effort is frontmatter, untouched
   assert.match(planner.reason.join(' '), /override cad-planner: opus -> fable/);
   // a sibling role is unaffected
   const exec = resolve('cad-executor', c);
   assert.equal(exec.model, 'opus');       // the shipped/cad-executor cell
   assert.equal(exec.pinned, false);
+  assert.equal(exec.model_source, 'cell');
 });
 
 test('a pin beats the routed model but keeps the rung swap', () => {
@@ -809,6 +814,7 @@ test('an unknown alias warns and leaves the routed model standing', () => {
   assert.equal(r.ok, true);      // never blocks the spawn
   assert.equal(r.model, 'opus'); // typo does not silently redirect the spend
   assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'cell');   // the cell decided, not the typo
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /not a known alias/);
 });
@@ -819,6 +825,66 @@ test('a pin matching the routed model is a no-op, still marked pinned', () => {
   assert.equal(r.model, 'opus');
   assert.equal(r.pinned, true);
   assert.match(r.reason.join(' '), /already the routed model/);
+});
+
+// --- the model named outright: roles.<role>.model (ROL-01) -------------------
+
+test('a roles-block model and rung resolve together, and pinned stays FALSE', () => {
+  // AC1's row: the two keys of one role's entry, and nothing else in the file.
+  // `haiku` is unreachable from any cell and `max` is above the shipped
+  // cad-planner cell's `high`, so neither can be the cell's answer by accident.
+  const c = rawCfg({ roles: { 'cad-planner': { model: 'haiku', effort: 'max' } } },
+    'roles-model-planner.json');
+  const r = resolve('cad-planner', c);
+  assert.equal(r.ok, true);
+  assert.equal(r.model, 'haiku');
+  assert.equal(r.effort, 'max');
+  assert.equal(r.agent, 'cad-planner-max');
+  // `pinned` means model.overrides chose it, and it did not (D-11) - so the
+  // announcement rule stays keyed on a pin while the source stays readable.
+  assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'roles.cad-planner.model');
+});
+
+test('a roles model outside the aliases warns, and the routed cell model stands', () => {
+  const c = rawCfg({ stakes: 'shipped', roles: { 'cad-planner': { model: 'gpt-5' } } },
+    'roles-model-bogus.json');
+  const r = resolve('cad-planner', c);
+  assert.equal(r.ok, true);                 // never blocks the spawn
+  assert.equal(r.model, 'opus');            // the shipped/cad-planner cell
+  assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'cell');
+  const named = (r.warnings || []).filter((w) => /roles\.cad-planner\.model/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /"gpt-5"/);        // the string the user wrote
+});
+
+test('a rejected roles model does NOT fall through to the pin', () => {
+  // The arm D-02 and ROL-01 both fix at the routed cell's model: a roles key
+  // that is SET owns this role's answer, so a typo cannot silently hand the
+  // role back to an older pin the user has already replaced.
+  const c = rawCfg({ stakes: 'shipped',
+    model: { overrides: { 'cad-verifier': 'haiku' } },
+    roles: { 'cad-verifier': { model: 'gpt-5' } } }, 'roles-model-vs-pin-bad.json');
+  const r = resolve('cad-verifier', c);
+  assert.equal(r.ok, true);
+  assert.equal(r.model, 'opus');            // the cell's, and never the pin's haiku
+  assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'cell');
+  assert.ok((r.warnings || []).some((w) => /"gpt-5"/.test(w)), JSON.stringify(r.warnings));
+});
+
+test('a roles model WINS over the pin, and a warning names the winner', () => {
+  const c = rawCfg({ stakes: 'shipped',
+    model: { overrides: { 'cad-executor': 'sonnet' } },
+    roles: { 'cad-executor': { model: 'haiku' } } }, 'roles-model-vs-pin.json');
+  const r = resolve('cad-executor', c);
+  assert.equal(r.model, 'haiku');
+  assert.equal(r.pinned, false);
+  assert.equal(r.model_source, 'roles.cad-executor.model');
+  const named = (r.warnings || []).filter((w) => /roles\.cad-executor\.model/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /model\.overrides\.cad-executor/);   // ...and the loser
 });
 
 test('overrides layer: repo pin wins over a global pin', () => {

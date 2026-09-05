@@ -1378,16 +1378,57 @@ function resolve(opts) {
     }
   }
 
-  // A per-role pin is an explicit user assertion, so it wins over the cell's
-  // model. What it does NOT touch is effort: that is fixed per agent file in
-  // frontmatter, so a pinned role keeps its rung and its rung escalation (same
-  // reasoning depth, user's model). An unknown alias is reported as a warning
-  // and the routed model stands - a typo must not silently redirect the spend,
-  // nor block the spawn.
+  // A per-role MODEL, from either of two keys. `roles.<role>.model` names it
+  // outright and wins over both `model.overrides.<role>` and the cell; the pin
+  // stays live as the narrower fallback for every role whose roles key is
+  // absent. Either is an explicit user assertion, so it wins over the cell's
+  // model. What neither touches is effort: that is fixed per agent file in
+  // frontmatter, so a role whose model was chosen keeps its rung and its rung
+  // escalation (same reasoning depth, user's model). An unknown alias is
+  // reported as a warning and the routed model stands - a typo must not
+  // silently redirect the spend, nor block the spawn.
+  //
+  // NEVER `ok:false` and never a pass-through on an unknown string. The caller
+  // contract turns a refusal into a base-agent dispatch at the session default
+  // (:14-15, :86-93), which is below every risk floor, so a typo would drop a
+  // secrets-touching phase off its floor; and the host's dispatch `model`
+  // parameter is an enum of exactly the aliases `TABLE.model_aliases` mirrors,
+  // so an unknown string fails input validation on every dispatch rather than
+  // erroring gracefully.
+  //
+  // `pinned` keeps its meaning - `model.overrides` chose this model - because
+  // references/seam-spawn-agent.md keys a per-dispatch ANNOUNCEMENT on it, and a
+  // flag that fired for every roles-block dispatch would be exactly the warning
+  // fatigue that file legislates against (D-11). `model_source` below is what a
+  // caller reads instead: the dotted key that chose the model, or `cell`.
   let model = cell.model;
   let pinned = false;
+  let modelSource = 'cell';
+  const rolesModel = roleEntry.model;
+  const rolesModelKey = `roles.${opts.role}.model`;
   const pin = cfg.overrides[opts.role];
-  if (pin != null) {
+  if (rolesModel !== null && rolesModel !== undefined) {
+    // A roles key, once SET, owns the answer for this role whether or not the
+    // host accepts its value. Falling through to the pin on a rejected string
+    // would hand the role back to an older key the user has already replaced -
+    // silently, and only on the typo, which is the one case a user cannot see.
+    if (pin != null) {
+      warnings.push(`${rolesModelKey}=${JSON.stringify(rolesModel)} (config) decides this `
+        + `role's model; model.overrides.${opts.role}=${JSON.stringify(pin)} does not apply`);
+    }
+    if (TABLE.model_aliases.includes(rolesModel)) {
+      if (rolesModel === model) {
+        reason.push(`${rolesModelKey}=${rolesModel} (already the routed model)`);
+      } else {
+        reason.push(`${rolesModelKey}: ${model} -> ${rolesModel} (config, wins over the ${stakes}/${opts.role} cell)`);
+        model = rolesModel;
+      }
+      modelSource = rolesModelKey;
+    } else {
+      warnings.push(`${rolesModelKey}=${JSON.stringify(rolesModel)} is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`);
+      reason.push(`${rolesModelKey} ignored (unknown alias); the ${stakes}/${opts.role} cell's model stands`);
+    }
+  } else if (pin != null) {
     if (TABLE.model_aliases.includes(pin)) {
       if (pin === model) {
         reason.push(`override ${opts.role}=${pin} (already the routed model)`);
@@ -1396,6 +1437,7 @@ function resolve(opts) {
         model = pin;
       }
       pinned = true;
+      modelSource = `model.overrides.${opts.role}`;
     } else {
       warnings.push(`model.overrides.${opts.role}="${pin}" is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`);
       reason.push('override ignored (unknown alias)');
@@ -1448,7 +1490,15 @@ function resolve(opts) {
   // floor's discount predicate reads that same field, and a second derivation
   // is how the reported set-ness and the routing it qualifies would come to
   // disagree. Free text in `reason` says it too, and is not machine-checkable.
-  out({ ok: true, role: opts.role, agent, model, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, stakes_set: cfg.stakesSet, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  //
+  // `model_source` is the third pairing of the same kind, and it rides beside
+  // `pinned` rather than replacing it (D-11): `pinned` answers "must this
+  // dispatch be announced", `model_source` answers "which key chose this model"
+  // - `roles.<role>.model`, `model.overrides.<role>`, or the string `cell` when
+  // the routed cell's model stands, including when a roles model was rejected.
+  // ALWAYS present and never a dropped key, for the reason the reviewer maps
+  // above state: a missing entry and an unresolved one must not be one shape.
+  out({ ok: true, role: opts.role, agent, model, model_source: modelSource, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, stakes_set: cfg.stakesSet, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 /**
