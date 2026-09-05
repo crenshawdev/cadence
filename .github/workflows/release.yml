@@ -6,6 +6,12 @@ name: release
 on:
   push:
     tags: ['v*']
+  # Runnable by hand as well, because the release checksums are PINNED in a
+  # committed file and a pin has to exist before the tag it describes. A
+  # dispatch build produces the archives and their sha256 lines; the tag build
+  # then has to reproduce them byte for byte, which is the only reason the pin
+  # is worth anything.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,6 +37,11 @@ jobs:
           fetch-depth: 0
 
       - name: The tagged commit is reachable from main
+        # A dispatch has no tag, so there is nothing to place on main and this
+        # step has no question to ask. The two steps below it run on BOTH
+        # events on purpose: a dispatch build is still a tested build, and it
+        # is the build whose checksums get committed.
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           SHA="$(git rev-parse "${GITHUB_SHA}^{commit}")"
@@ -51,6 +62,107 @@ jobs:
       # and so is the one arm of test.yml this gate does not reproduce.
       - run: node cadence-core/bin/test.mjs
       - run: node cadence-core/bin/self-verify.mjs
+
+  build:
+    # In this workflow and behind the guard, not a second workflow watching the
+    # same tag: the guard exists because releases once published from commits
+    # no CI had seen, and a sibling workflow would walk straight past it.
+    needs: guard
+    strategy:
+      # One target's failure must not cancel the other three. A deprecated
+      # runner label or a target-specific build break is a one-row fix, and
+      # seeing only the row that broke is what makes it one.
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            linux: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            linux: true
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            linux: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            linux: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The same pinned channel test.yml builds against, installed by name for
+      # the same reason: rustup 1.28 stopped auto-installing the toolchain a
+      # rust-toolchain.toml names. A release built by a different compiler than
+      # the one CI tested is a release nothing verified.
+      - name: Install the toolchain rust-toolchain.toml pins
+        run: |
+          set -euo pipefail
+          CHANNEL="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          if [ -z "$CHANNEL" ]; then
+            echo "::error::rust-toolchain.toml names no channel"
+            exit 1
+          fi
+          rustup toolchain install "$CHANNEL" --profile minimal
+          rustup default "$CHANNEL"
+          rustup target add '${{ matrix.target }}'
+          rustc --version
+
+      - name: Install musl-tools
+        if: matrix.linux
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Point the cc crate at musl-gcc
+        if: matrix.linux
+        run: |
+          set -euo pipefail
+          var="CC_$(echo '${{ matrix.target }}' | tr - _)"
+          echo "$var=musl-gcc" >> "$GITHUB_ENV"
+
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # x86_64-unknown-linux-musl links static-pie by default and aarch64 does
+      # not, so `file` reports one of two strings depending on the row; glibc's
+      # `ldd` on a static-pie binary prints "statically linked" rather than
+      # "not a dynamic executable". Both strings are accepted in both checks so
+      # neither Linux row fails a gate the other passes.
+      - name: The binary is statically linked
+        if: matrix.linux
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.target }}/release/cadence"
+          file "$bin"
+          file "$bin" | grep -Eq 'statically linked|static-pie linked'
+          ldd "$bin" 2>&1 || true
+          ldd "$bin" 2>&1 | grep -Eq 'not a dynamic executable|statically linked'
+
+      # The sha256 line goes in the run summary because that is where a human
+      # copies it from into the committed pin file. On a tag push the archive
+      # is named for the tag; on a dispatch there is no tag, so it is named for
+      # the crate version the tag will have to match anyway.
+      - name: Package the archive and report its sha256
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          fi
+          NAME="cadence-${TAG}-${{ matrix.target }}"
+          LINE="$(.github/scripts/package.sh \
+            "target/${{ matrix.target }}/release/cadence" "$NAME" dist)"
+          echo "$LINE"
+          {
+            echo '### ${{ matrix.target }}'
+            echo '```'
+            echo "$LINE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.target }}
+          path: dist/cadence-*.tar.gz
 
   publish:
     needs: guard
