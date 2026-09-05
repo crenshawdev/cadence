@@ -1,7 +1,7 @@
 ---
 name: cad-config
-description: "Configure Cadence's config.json - workflow toggles, routing stakes, and interactive cross-model review provider setup"
-argument-hint: "[--review [redetect] | --surfaces | <key>=<value> ...]"
+description: "Configure Cadence's config.json - workflow toggles, the per-role model and effort interview, and interactive cross-model review provider setup"
+argument-hint: "[--review [redetect] | --surfaces | --roles [--global] | <key>=<value> ...]"
 allowed-tools:
   - Read
   - Write
@@ -22,6 +22,10 @@ Routing:
   cheap tiers.
 - **--surfaces**: re-open the one-time risk-surface question - the answered set
   beside what the structure evidences now, re-answerable or declinable.
+- **--roles [--global]**: the thirteen questions that say what each of the six
+  roles costs - a model and a start rung per role, then the risk floor. Writes
+  repo-layer diffs by default; `--global` re-enters the full thirteen against
+  the user-global layer.
 - **`<key>=<value>` ...**: set config keys directly (validated against the config schema).
 - **default** (no args): walk every knob as a selectable list (batched pages),
   each preselected to its current value.
