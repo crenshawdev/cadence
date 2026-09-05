@@ -61,3 +61,32 @@ jobs:
           node-version: '22'
       - run: npm install --no-save --no-package-lock typescript @types/node
       - run: npx tsc -p tsconfig.ci.json
+
+  cargo-test:
+    # The Rust binary the 4.0.0 rewrite is moving into, built and tested beside
+    # the Node matrix rather than instead of it: both halves ship for now.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Installed by name, not left to rustup's auto-install: rustup 1.28
+      # stopped installing the toolchain a rust-toolchain.toml names on first
+      # use, so a job that only ran `cargo` would fail on the runner image
+      # rather than build against the pinned compiler.
+      - name: Install the toolchain rust-toolchain.toml pins
+        run: |
+          set -euo pipefail
+          CHANNEL="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          if [ -z "$CHANNEL" ]; then
+            echo "::error::rust-toolchain.toml names no channel"
+            exit 1
+          fi
+          rustup toolchain install "$CHANNEL" --profile minimal
+          rustup default "$CHANNEL"
+          rustc --version
+
+      # --locked on both, because a committed Cargo.lock is the whole of what
+      # "builds offline" means here and an unlocked resolve would quietly test
+      # a dependency graph no commit records.
+      - run: cargo build --locked
+      - run: cargo test --locked
