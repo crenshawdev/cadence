@@ -216,9 +216,20 @@ is nothing to enforce.
 
 1. The tool schema IS the patch schema. `cadence_report` (or whatever the
    report op is named) takes a JSON object shaped as the role's patch: task
-   ids, commits, deviations, blockers, lifecycle as an enum. The MCP layer
-   rejects a malformed argument before the binary sees it. Prose is not a
-   valid argument, so prose cannot become state.
+   ids, commits, deviations, blockers, lifecycle as an enum. The BINARY
+   validates it, not the MCP layer. The schema's job is to DESCRIBE the call
+   so the model knows how to make it; the binary is the only authority on
+   whether an argument is valid. A malformed argument comes back as a
+   `refused` envelope naming what was wrong, in the same vocabulary as every
+   other answer and reaching `trace.jsonl` like every other answer. An
+   MCP-layer rejection would be neither: an `InputValidationError` in a shape
+   the envelope does not cover, thrown by a layer the binary never sees, so
+   the one failure the type system exists to handle would be the one failure
+   that escapes it. Validation also moves inward as the tool count falls -
+   section 4 forces three or four tools over many ops, and a union schema
+   validates less the more it covers. Prose is still not a valid argument and
+   still cannot become state; that is enforced one layer in. Decided
+   2026-09-05, revising this item's original claim that the MCP layer rejects.
 2. The validator checks scope. A patch from plan 2's dispatch touching plan
    1's subtree returns `refused` with the reason. The skill loop re-asks
    `next`; the retry is informed.
