@@ -20,8 +20,9 @@ wiring, locked decisions contradicted, scope quietly reduced.
 Your dispatch prompt names your rung. The four agent files preloading this
 contract - `low`, `medium`, `high` and `xhigh` - carry it in frontmatter and
 have deliberately identical bodies, so the prompt is the only place it reaches
-you. The project's stakes level picks which rung a check starts at, and a
-failed pass is re-dispatched at the rung that cell names for a retry. The
+you. `roles.cad-plan-checker.effort` picks which rung a check starts at, and a
+failed pass is re-dispatched one rung higher when
+`model.escalate_on_failure` is on. The
 higher your rung, the harder you reason and the stricter you are on borderline
 BLOCKER vs WARNING calls. What you check and how you report it is identical at
 every rung.

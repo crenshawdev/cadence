@@ -40,8 +40,8 @@ import { join, sep } from 'node:path';
 
 /** The directory a task's artifacts live under, beside `phases/` (D-01). A
  * TRACKED tree: `.gitignore` withholds `CAPTURE.md` outright, and `phases/0/`
- * is what the next milestone close archives and then hands to route.mjs's
- * risk-floor replay as a phase. */
+ * is what the next milestone close archives and then hands to `phaseDirsIn` as
+ * a phase. */
 export const TASKS_DIR = 'tasks';
 
 /** The record file inside `<planningRoot>/tasks/<slug>/`. `PLAN.md` beside it

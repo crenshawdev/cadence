@@ -38,7 +38,16 @@ const RETIRED_KEYS_FILE = fileURLToPath(new URL('./lib/retired-keys.mjs', import
 // partway through, with 4.0.0 reserved for a later rewrite, so the `stakes`
 // row's `since` said a version that will never ship. That edit is a version
 // string, not a decision about which keys are retired - D-03 is untouched by it.
-const RETIRED_KEYS_SHA256 = 'ee1ac81cb37342b114a71ffc3d98d9a6cd37b2ad96bcbab35b6926e33d58ac72';
+//
+// And a THIRD time, off
+// `ee1ac81cb37342b114a71ffc3d98d9a6cd37b2ad96bcbab35b6926e33d58ac72`, for a
+// reason that is not a decision either: the same phase's prose sweep reworded
+// ONE header COMMENT in lib/retired-keys.mjs - the line citing a routing data
+// table that phase 3 deleted - and a comment is bytes like any other. No row,
+// no `replacement`, no `since` and no `detail` moved with it. This is what the
+// pin costs and what it is worth: a comment edit has to be declared here in the
+// same commit, and in exchange nothing can edit a ROW without being seen.
+const RETIRED_KEYS_SHA256 = '0b64617d291fa189e91c8249a46cef8b89af73adb5c9fda525c15fb2e8fffff9';
 
 test('lib/retired-keys.mjs is byte-identical - the eight risk.override.* keys stay retired', () => {
   // WHAT THIS PROTECTS. D-03 keeps the retired family retired because a key

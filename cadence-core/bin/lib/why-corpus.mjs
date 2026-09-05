@@ -209,7 +209,7 @@ export function buildCommitIndex(planningRoot) {
  * NOT `phaseDirsIn`, DELIBERATELY. That enumerator admits a directory only when
  * it holds a conforming `PLAN.md`/`PLAN-<k>.md`, and `/cad-task`'s inline arm
  * writes no plan file at all. Widening it would also hand every task directory
- * to `route.mjs`'s risk-floor replay and make `describe()` render
+ * to every other `phaseDirsIn` caller and make `describe()` render
  * `tasks phase <slug>` - a WRONG join rather than a missing one, which is the
  * failure `/cad-why` exists to prevent.
  *

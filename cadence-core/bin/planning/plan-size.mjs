@@ -143,8 +143,8 @@ function cmdPlanSize(dir, opts) {
   const pdir = join(dir, 'phases', parsedPhase.raw);
   const { plans: planFiles } = listPlanFiles(pdir);
   // Declared paths are repo-relative and the repo root is the planning root's
-  // PARENT - the derivation `route.mjs`'s `replay` states for its own
-  // `repoRoot`, so the two faces resolve a declared path identically.
+  // PARENT - the same derivation `route.mjs`'s risk floor makes for the paths
+  // it scans, so the two faces resolve a declared path identically.
   const repoRoot = dirname(dir);
   // ONE read per plan, feeding both facts: `planTaskTitles` and the byte
   // measurement below take the SAME text, so adding a second question about a

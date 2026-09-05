@@ -58,9 +58,10 @@ dispatching the planner. `--max-reqs 12` is a fixed rail, not a config key.
 is unmeasured, and it is never compared.
 
 The `plan` gate is NOT in that batch: fire(trigger) takes every gate from the
-routing bundle (`route.mjs resolve`), so the stakes level reaches the fire site.
-`config.mjs get` is not a source for a gate either way - unset, it answers
-`null` and names `route.mjs resolve` as where the level's gate is resolved.
+routing bundle (`route.mjs resolve`), which is the only reader that sees the
+risk floor raise this gate to `blocking`. `config.mjs get` is not a source for a
+gate either way - it answers the configured value or the schema default and
+knows nothing about the floor.
 
 `memory.backend` rides this same batch. It gates recall in spawn_planner and
 inline_plan below.

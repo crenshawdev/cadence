@@ -19,7 +19,7 @@
 // A keyed suggestion also names WHICH WAY to move the key and what it holds now
 // (SGT-01), and that is why `suggestFromRender` takes a second argument. The
 // values behind those keys live on disk - the merged config layers, the gate
-// ladder in `route-table.json`, the resolved task ceiling - and reading them
+// ladder in `config.schema.json`, the resolved task ceiling - and reading them
 // here would end the purity above. So the CALLER resolves them and passes them
 // in: `planning.mjs`'s `suggest` arm owns every read, this file owns every
 // rule, and the argument is optional so a test can still call
@@ -225,7 +225,7 @@ function raiseTarget(resolution, key, rung) {
 }
 
 /**
- * One step DOWN the gate ladder `route-table.json` states, or `undefined` when
+ * One step DOWN the gate ladder `config.schema.json` states, or `undefined` when
  * there is no ladder, the value is not on it, or it is already the bottom rung.
  * The ladder is the caller's: an absent one omits `proposed`, and that omission
  * IS the report - no ladder is substituted from memory here.

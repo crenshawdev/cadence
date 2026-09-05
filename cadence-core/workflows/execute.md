@@ -361,7 +361,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phas
 
 A non-empty `matches` OR `inconclusive: true` fires the trigger. An unjudged
 range is not a cleared one, and widening is the only safe direction on the one
-gate that is `blocking` at every stakes level. Each match names the category and
+gate the schema defaults to `blocking`. Each match names the category and
 the signal that found it, so the fire states a reason rather than a verdict.
 
 On a fire, write `git diff {pre-plan HEAD}..HEAD` to

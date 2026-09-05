@@ -9,7 +9,7 @@
 // A retired key is precisely one the schema NO LONGER holds, so this map cannot
 // be derived from config.schema.json - a schema-derived list would name nothing.
 // It is a hand-maintained record of a rename, and it reads nothing off disk:
-// crossWarnings' route-table.json read across a file boundary is exactly how a
+// crossWarnings' cross-file read of a routing data table is exactly how a
 // cross-key check came to fire unconditionally (D-12).
 //
 // Pure lib: no fs, no emit, no process, no Date, no randomness. It returns

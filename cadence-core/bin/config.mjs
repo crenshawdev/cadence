@@ -469,7 +469,7 @@ function get(file, keys, asGlobal) {
   // that (undefined), and assigning it into `values` at the name `__proto__`
   // ran the object's own setter and stored NOTHING - which is how
   // `get __proto__` answered {"ok":true,"values":{}} at exit 0, and
-  // `get stakes __proto__` answered about one key of the two asked for with
+  // `get granularity __proto__` answered about one key of the two asked for with
   // nothing saying the other had gone missing. `fail('unknown-key', ...)` was
   // always the right answer; the whole fix is that a prototype member now
   // reaches it.

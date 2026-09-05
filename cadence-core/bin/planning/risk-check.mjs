@@ -32,7 +32,7 @@ import { CATEGORIES, answeredSurfaces } from '../lib/surface-scan.mjs';
 import { appendEvent, renderTrace } from '../lib/trace.mjs';
 
 /**
- * The risk-surface vocabulary `route-table.json` states - the SAME list
+ * The risk-surface vocabulary `config.schema.json` states - the SAME list
  * `route.mjs` hands `answeredSurfaces`, read here so the seam that REFUSES on
  * the one-time surface question and the resolve that REPORTS it cannot
  * disagree about which tokens are a valid answer. A table naming a proper
@@ -165,7 +165,7 @@ function cmdRiskCheckRun(dir, opts) {
   const staged = 'staged' in opts;
   // TWO SPELLINGS OF ONE SCOPE is a malformed call, never a precedence
   // question. Picking one would hand the caller a verdict over a scope it did
-  // not ask about, on the one gate that is blocking at every stakes level. The
+  // not ask about, on the one gate the schema defaults to blocking. The
   // test is `'head' in opts` and not the VALIDATED head, so a flag-shaped
   // `--head` beside `--staged` is refused here rather than silently dropped.
   if ('head' in opts && staged) {
@@ -299,7 +299,7 @@ function cmdRiskCheckRun(dir, opts) {
    * by accident. `git diff <base> <head> --` then emits zero bytes for a file
    * whose changed line is a recursive delete, and scanDiff answers
    * `checked: true, empty: true, matches: []`: a COMPLETED clear on the one gate
-   * that is blocking at every stakes level. Both flags are diff-generation
+   * the schema defaults to blocking. Both flags are diff-generation
    * switches only - they change no id, no range and no exit status, so the
    * empty/unreadable split is untouched.
    * @type {string[] | null}
@@ -744,7 +744,7 @@ function cmdRiskCheckStatus(dir, opts) {
    * opposite of the exclusion arm that decision rejected. A key `lib/plan-key.mjs`
    * refuses is not a legal worker key at all, so `risk-check run --plan <it>`
    * can never write the record this gate would demand: requiring one leaves a
-   * gate that is blocking at every stakes level permanently unsatisfiable, with
+   * gate the schema defaults to blocking permanently unsatisfiable, with
    * no exit but an `override`. So it is REPORTED, on its own `malformed` list,
    * rather than silently dropped - which is exactly what made the excluded-key
    * arm fail-open. A key the predicate ACCEPTS is never dropped.
@@ -860,7 +860,7 @@ function cmdRiskCheckStatus(dir, opts) {
       // silently turned a fired range into a clean one, so the two cases are
       // separated: `matches` stays the tokens that can be reported, and this
       // flag carries "something matched" independently. Widening is the only
-      // safe direction on the one gate that is blocking at every stakes level,
+      // safe direction on the one gate the schema defaults to blocking,
       // which is the same rule `inconclusive` already encodes.
       matched_unnamed: Array.isArray(e.matches) && e.matches.length > 0
         && e.matches.filter((m) => typeof m === 'string').length === 0,
@@ -878,8 +878,8 @@ function cmdRiskCheckStatus(dir, opts) {
    * empty:true` row over nothing. This reader has to know the event, or the row
    * those sites wrote it for stays `missing`: every executor return bracket in
    * the cycle is a row here, so on a multi-plan phase one skipped plan refused
-   * every LATER plan's own `status` call - a gate that is blocking at every
-   * stakes level with no exit but an `override`.
+   * every LATER plan's own `status` call - a gate the schema defaults to
+   * blocking, with no exit but an `override`.
    *
    * A skip carrying NO sha satisfies nothing, the rule fire receipts already
    * follow: a skip that cannot name the commit it stood at cannot say which

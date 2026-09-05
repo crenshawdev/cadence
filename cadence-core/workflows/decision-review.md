@@ -66,10 +66,10 @@ does, from `review.reviewers[]`:
   A dispatch that failed or returned nothing parseable writes what failed to a
   scratch file and adds `--detail-file <path>` to that same line
   (caller-derived text - references/conventions.md), closing as a checkpoint, so
-  the burned budget still reaches the record. No routing cell resolves a model for this arm - it is the
-  base `cad-reviewer` at the session default, at every stakes level - and
-  `review.decision_review.tier` and `.effort` reach the cross-model arm below
-  only, whatever the stakes level is (D-04).
+  the burned budget still reaches the record. This arm resolves no routing at all - it is the
+  base `cad-reviewer` at the session default, whatever `roles.cad-reviewer.model`
+  says - and `review.decision_review.tier` and `.effort` reach the cross-model
+  arm below only (D-04).
 - **cross-model** (any provider in `review.reviewers` - `openai`, `gemini`,
   `deepseek`, ...), only when `review.reviewers` names it
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a

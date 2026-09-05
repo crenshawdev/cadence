@@ -39,9 +39,10 @@
 
 /**
  * The eight categories, in the order every other statement of them uses
- * (config.schema.json's `values`, route-table.json's `risk_surface_categories`,
- * references/review-triggers.md's detection list). Order is load-bearing only
- * for reading: nothing here compares by index.
+ * (config.schema.json's `values` on the two `risk_surface` list keys,
+ * references/review-triggers.md's detection list). This list is the ONE
+ * in-code statement of the vocabulary now that no data table holds a second.
+ * Order is load-bearing only for reading: nothing here compares by index.
  */
 export const CATEGORIES = Object.freeze(['auth', 'migrations', 'billing',
   'concurrency', 'destructive', 'secrets', 'api_contract', 'untrusted_input']);
@@ -72,8 +73,8 @@ export const CATEGORIES = Object.freeze(['auth', 'migrations', 'billing',
  * @param {unknown} wrote the value `review.triggers.risk_surface.surfaces`
  *   merged to, or `undefined` when no layer wrote the key at all
  * @param {readonly string[]} [vocabulary] the recognised categories, defaulting
- *   to CATEGORIES - `route.mjs` passes route-table.json's own list so a table
- *   that names fewer is honoured
+ *   to CATEGORIES - a caller holding a narrower vocabulary passes its own so a
+ *   list that names fewer is honoured
  * @returns {{answered: boolean, surfaces: string[], kept: string[], bad: unknown[], written: boolean, list: boolean}}
  */
 export function answeredSurfaces(wrote, vocabulary = CATEGORIES) {

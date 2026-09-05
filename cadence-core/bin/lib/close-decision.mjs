@@ -108,7 +108,7 @@ function nameSome(reviews) {
  * NON-EMPTY halting list halts.
  *
  * `risk_surface` is the PRODUCER because it is the only review left that runs
- * on this branch's work and is `blocking` at every stakes level; `/cad-land`
+ * on this branch's work and carries `blocking` as its schema default; `/cad-land`
  * fires nothing of its own, so the seam reads the rulings those fires
  * persisted. When auto_close is off the chain is not running unattended, so
  * every arm below proceeds (the manual publish ask owns the decision).

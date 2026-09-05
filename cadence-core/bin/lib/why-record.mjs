@@ -465,7 +465,7 @@ export function parseDeviations(text) {
  * ordered survived, downgraded, refuted, and its first element is the ruling
  * that means the finding was kept. The literal is pinned in
  * `why-record.test.mjs` instead, the hand-maintained-then-compared shape
- * `route-table.json` states its reason for on `risk_surface_categories`: a
+ * `lib/surface-scan.mjs` states its reason for on `CATEGORIES`: a
  * reorder of that list turns the test red rather than silently changing which
  * findings this command prints.
  */

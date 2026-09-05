@@ -879,9 +879,9 @@ export const CONTRACTS = {
       // homes only, so a member written under a task slug would be created
       // successfully and then never found - a deferred fire that reports queued
       // and is permanently unadjudicated. A task's only gate is `risk_surface`,
-      // which is `blocking` at every stakes level and never resolves
-      // `deferred`, so nothing is lost by refusing the shape outright rather
-      // than widening a reader this change does not touch.
+      // whose schema default is `blocking` and never `deferred`, so nothing is
+      // lost by refusing the shape outright rather than widening a reader this
+      // change does not touch.
     },
     // THE QUEUE AS A WHOLE: every member with no `ADJUDICATION` sibling, across
     // both homes. `--phase` is OPTIONAL here and required on every sibling row

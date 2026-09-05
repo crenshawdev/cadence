@@ -72,10 +72,10 @@ states five things, in this order:
 
 - What it is about: its `subject`, the role, trigger or marker the rule counted.
 - The config key it concerns: its `action`, spelled exactly as returned.
-- Its `current` value - and where that came back as the unset form, that form
-  and the stakes level it names, AS GIVEN. Never resolved here to the value the
-  level would fire: a user who sets a key to move it off a printed effective
-  value has just pinned that gate at every stakes level.
+- Its `current` value - the key and the value in force, AS GIVEN. Never
+  re-resolved here into what would actually fire: a user who sets a key to move
+  it off a printed effective value has just pinned that gate, and a printed
+  value they did not choose is what makes them do it.
 - Its `direction`, with the `proposed` target beside it where the seam returned
   one - `current` to `proposed`, both spelled as returned. Where the entry
   carries NO `proposed`, state that absence in words rather than leaving a

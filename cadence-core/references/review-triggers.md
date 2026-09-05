@@ -39,18 +39,22 @@ cross-model half's model tier and reasoning effort from that line's
 `reviewer_tiers` and `reviewer_efforts` maps, keyed the same way again (step
 4). If
 the gate is `off`, return immediately (no-op). Else it is one of
-`advisory | deferred | blocking | adjudicated` (step 6). The stakes level sets it, so the
-same trigger gates differently on a solo project and a critical one.
+`advisory | deferred | blocking | adjudicated` (step 6). The gate is whatever
+`review.triggers.<trigger>.gate` says, and this key's own schema default where
+no layer set it - `advisory` for `plan`, `blocking` for `risk_surface`, `off`
+for `diff` and `phase_diff`. ONE thing moves it after that: the plan-time risk
+floor raises the PLAN review to `blocking` when the phase's plans touch an
+answered risk surface. Nothing raises the other three.
 
 The seam has ALREADY applied config-wins precedence: a
-`review.triggers.<trigger>.gate` the user set beats the level's gate, and the
-disagreement arrives as a `warnings[]` entry - relay it (seam-spawn-agent.md)
+`review.triggers.<trigger>.gate` the user set is what fires, floor or no floor,
+and where the floor found it already configured the `reason` says so rather
+than moving it silently - relay any `warnings[]` entry (seam-spawn-agent.md)
 rather than resolving it again here. The same precedence has applied to the
 tier and the effort since RVW-03, so those two maps are answers, not defaults:
 a layer that
 set `review.triggers.<trigger>.tier` or `.effort` is already folded in, and
-where no layer did, the STAKES LEVEL's row answered - raising `stakes` moves the
-cross-model half of the panel exactly as it moves the subagent half. A degraded
+where no layer did, that key's own schema default answered. A degraded
 resolve (`ok:false`) means no bundle: fall back to the config gate, tier and
 effort, and say so.
 
@@ -95,7 +99,7 @@ What the seam decided, stated so the set is readable rather than mysterious:
 - any cross-model provider named in `review.reviewers` (`openai`, `gemini`,
   `deepseek`, ...) is kept iff `review.providers.<name>.tiers[<tier>]` is a
   non-null model id, where `<tier>` is the layer's `review.triggers.<t>.tier`
-  when a layer set one and `route-table.json`'s `tiers` row otherwise. The rule
+  when a layer set one and that key's schema default otherwise. The rule
   is by provider `<name>`, not a fixed list: any provider with an adapter in
   `review-provider.mjs` and a config `review.providers.<name>` block resolves
   the same way. A key is resolved lazily at CALL time, so a `no-key` result

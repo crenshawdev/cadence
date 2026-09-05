@@ -16,17 +16,17 @@
 // `PLAN.md` reading as plan 1 spelled bare. That set is also the LOCATOR's test
 // for what a phase directory is (`phaseDirsIn`), which is what reaches the
 // phases a milestone close archived: locating and reading are separate here, so
-// `route.mjs replay` can ask the same reader about `_archive-<label>/<N>/` that
-// a resolve asks about `phases/<N>/`.
+// a caller can ask the same reader about `_archive-<label>/<N>/` that a resolve
+// asks about `phases/<N>/`.
 //
 // Every path here fails OPEN, and the caller closes: nothing throws, an
 // unreadable input yields no paths plus one warning, and the COUNTS (`found`,
 // `clean`) travel beside the union so route.mjs can apply D-04's aggregation
-// rule - the discount below the configured stakes is earned only by a scope
-// every member of which was found and read clean - without re-reading a byte.
-// A hard refusal here would be worse than useless: route.mjs answers `ok:false`
-// by dispatching the base agent at the host session default with no model
-// override (references/seams.md), which is BELOW every floor.
+// rule - only a scope every member of which was found and read clean can stand
+// the risk floor down - without re-reading a byte. A hard refusal here would be
+// worse than useless: route.mjs answers `ok:false` by dispatching the base agent
+// at the host session default with no model override (references/seams.md),
+// which withholds the blocking plan review and the deep pass entirely.
 'use strict';
 
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
@@ -107,10 +107,10 @@ function readOnePlan(file, acc, seen) {
   // the entry IS. A plan path that is a symlink to a character device or a FIFO
   // reports size 0 through a following stat, passes any byte bound, and is then
   // read to an EOF that never arrives - so the resolve hangs where its whole
-  // contract is to fail closed at the configured stakes. `lstatSync` does not
-  // follow, and a non-regular entry is an unread plan rather than a clean one:
-  // it takes the SAME arm an unreadable plan takes, which withholds the discount
-  // instead of earning it. This reader is the floor's first input, so leaving it
+  // contract is to fail closed and RAISE. `lstatSync` does not follow, and a
+  // non-regular entry is an unread plan rather than a clean one: it takes the
+  // SAME arm an unreadable plan takes, which raises the floor instead of
+  // standing it down. This reader is the floor's first input, so leaving it
   // unguarded while the bodies one level down are guarded is the asymmetry the
   // `risk_surface` review named.
   try {
@@ -207,8 +207,8 @@ const phaseDir = (planningRoot, phase) => join(planningRoot, 'phases', String(ph
 export function phaseDirsIn(planningRoot) {
   // CONTAINED, on route.mjs's `declaredBodies` reasoning and by the same test:
   // `readdirSync` follows a symlinked directory, so an archive group or a phase
-  // entry that is a link lands this walk in another tree and the replay then
-  // reads and scans PLAN files that are not this project's. Judged on what the
+  // entry that is a link lands this walk in another tree and the caller then
+  // reads PLAN files that are not this project's. Judged on what the
   // path RESOLVES to rather than on how it is spelled, which is what keeps a
   // legitimately symlinked archive inside the root working while an escape is
   // skipped. Fails OPEN like every other arm here: a path that cannot be
@@ -241,7 +241,7 @@ export function phaseDirsIn(planningRoot) {
     }
   }
   // Label order, not directory order: `readdirSync` makes no ordering promise
-  // and a replay row list that reshuffles between runs is unreadable as a diff.
+  // and a row list that reshuffles between runs is unreadable as a diff.
   return found.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
 }
 
@@ -252,8 +252,8 @@ export function phaseDirsIn(planningRoot) {
  * could not read cleanly and the two counts the caller's aggregation needs.
  *
  * BY PATH, so the same rules reach a phase wherever the project keeps it - a
- * live `phases/<N>/` and an archived `_archive-<label>/<N>/` alike, which is what
- * lets the replay measure the 27 phases this repository has already closed. The
+ * live `phases/<N>/` and an archived `_archive-<label>/<N>/` alike, so a reader
+ * asking about a closed phase needs no second set of rules. The
  * two phase-keyed faces below are this function with the path joined for them,
  * so there is exactly ONE reader and one set of failure rules.
  *
@@ -262,8 +262,8 @@ export function phaseDirsIn(planningRoot) {
  * the file, and `PLAN.md` is plan 1 spelled bare (the equivalence `listPlanFiles`
  * and planning.mjs's own plan-file lookup already carry), preferring `PLAN-1.md`
  * when a directory somehow holds both. A key that names NO plan file returns
- * `found: 0`, which is the caller's fail-closed arm verbatim: the resolve holds
- * the configured stakes rather than discounting a plan it never read. It is
+ * `found: 0`, which is the caller's fail-closed arm verbatim: the resolve
+ * RAISES rather than standing down over a plan it never read. It is
  * deliberately not a warning-free silence like an absent directory - a caller
  * that NAMED a plan and got nothing is a wrong dispatch, not a pre-plan state -
  * so it says so, and an unreadable directory says so too for the same reason.

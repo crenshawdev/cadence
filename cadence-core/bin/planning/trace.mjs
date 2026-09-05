@@ -10,8 +10,9 @@
 //
 // Everything else here is single-use for one of those two (D-05): the ignore
 // line and its comment with the four .gitignore readers, the unset-layer
-// fallback map and the two route-table ladders the `suggest` arm reports
-// against, the checkpoint plan-task count, the resolver, the string-flag
+// fallback map and the two ladders the `suggest` arm reports against - the
+// gate ladder off the schema and the rung ladder off `lib/rung-agent.mjs` -
+// the checkpoint plan-task count, the resolver, the string-flag
 // grammar, and the receipt recount `close` cross-checks a fire with.
 //
 // The two `mergeLayers(` callsites below both destructure `warnings` and carry
