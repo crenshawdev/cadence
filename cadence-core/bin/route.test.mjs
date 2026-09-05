@@ -930,8 +930,16 @@ test('CADENCE_CONFIG_SCHEMA without the sentinel is ignored, and silently', () =
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
     CADENCE_CONFIG_SCHEMA: hostile };
   delete env.CADENCE_TEST_SEAM; // hermetic: never inherit an open seam
+  // Hermetic about the REPO layer too, and for the same reason. With no
+  // `--file` the resolve reads THIS repository's own `.planning/config.json`,
+  // which still carries the retired `stakes` key, so the retirement notice
+  // lands in `warnings[]` and the assertion below flips true for a cause that
+  // has nothing to do with the sentinel. An absent path is a silent absence at
+  // the config-merge seam, so this is an empty repo layer, not a fixture.
+  const noRepoLayer = join(dir, 'no-repo-layer.json');
   const run = (e2) => JSON.parse(execFileSync('node',
-    [ROUTE, 'resolve', '--role', 'cad-planner'], { encoding: 'utf8', env: e2 }));
+    [ROUTE, 'resolve', '--role', 'cad-planner', '--file', noRepoLayer],
+    { encoding: 'utf8', env: e2 }));
   const r = run(env);
   assert.equal(r.ok, true);
   assert.equal(r.review.risk_surface, 'blocking', 'the shipped default stood');
