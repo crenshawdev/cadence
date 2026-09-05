@@ -1,0 +1,52 @@
+{
+  "phase": "2",
+  "trigger": "diff",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "e4ec3976",
+  "head": "b9b4ca82",
+  "base_id": "e4ec39762d269b2629030ea99db4afbdbcc3d969",
+  "head_id": "b9b4ca825c47ea99f293844a39b71cef34e71f68",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/config.schema.json",
+      "line": 33,
+      "severity": "high",
+      "claim": "The new `roles.cad-planner.effort` enum advertises `low` and `medium`, although the planner only has `high`, `xhigh`, and `max` rung files.",
+      "failure_scenario": "A user can successfully write `roles.cad-planner.effort: low` through the schema-validated config surface, but `route.mjs` then finds no planner agent file for that rung and ignores the configured value. The added `effortEnumIssues` check will also report the shipped schema itself as drift, causing self-verification and tests expecting an otherwise clean `SHIPPED` schema to fail.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/rung-agent.mjs",
+        "line": 38,
+        "note": "RUNG_FILES maps cad-planner to all five rungs - low: cad-planner-low, medium: cad-planner-medium, high: cad-planner, xhigh: cad-planner-xhigh, max: cad-planner-max - and all five files exist on disk (ls agents/ returns cad-planner-low.md, cad-planner-medium.md, cad-planner.md, cad-planner-xhigh.md, cad-planner-max.md). Phase 1 of this milestone, 'Every role has every rung', is what created them; the reviewer saw only this phase's diff and could not see files an earlier phase added. The second half of the scenario is directly falsified by running the check it names: node cadence-core/bin/self-verify.mjs returns ok:true with an empty problems array, and effort-enums is in its checked list."
+      },
+      "base_id": "e4ec39762d269b2629030ea99db4afbdbcc3d969",
+      "head_id": "b9b4ca825c47ea99f293844a39b71cef34e71f68"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/route.mjs",
+      "line": 1401,
+      "severity": "low",
+      "claim": "The pin-conflict warning says `roles.<role>.model` “decides this role's model” before validating that model alias, so it can name a key that did not decide the resulting model.",
+      "failure_scenario": "With `roles.cad-verifier.model=\"gpt-5\"` and `model.overrides.cad-verifier=\"haiku\"`, the first warning says the roles key decides the model, but the alias is rejected and the routed cell model stands with `model_source: \"cell\"`. The resulting diagnostics contradict both the dispatch result and the machine-readable source.",
+      "ruling": "survived",
+      "convergent": false,
+      "base_id": "e4ec39762d269b2629030ea99db4afbdbcc3d969",
+      "head_id": "b9b4ca825c47ea99f293844a39b71cef34e71f68"
+    }
+  ]
+}
