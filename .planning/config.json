@@ -11,18 +11,6 @@
       "diff": {
         "tier": "flagship"
       }
-    },
-    "reviewers": [
-      "openai"
-    ],
-    "providers": {
-      "openai": {
-        "tiers": {
-          "flagship": "gpt-5.6-sol",
-          "balanced": "gpt-5.6-terra",
-          "cheap": "gpt-5.6-luna"
-        }
-      }
     }
   },
   "model": {
