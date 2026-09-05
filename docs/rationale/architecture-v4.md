@@ -1,8 +1,8 @@
 # Cadence 4.0.0: excerpt folds in, the binary owns process
 
 Working notes from 2026-09-05. Pick this up with cadence after the current
-milestone closes (relabeled v3.7.12 on 2026-09-05; last tag v3.7.11). The data behind every number here is in
-`/projects/excerpt-usage-2026-09-05.md` (rounds 1-7).
+milestone closes (relabeled v3.7.12 on 2026-09-05; last tag v3.7.11). The data behind every number here is in the excerpt usage report of the same
+date (rounds 1-7), kept in private working notes.
 
 ## 1. What was decided today
 
@@ -37,7 +37,7 @@ Full tables in the usage report. The numbers that drive the design:
   74 -> 64 tool calls with excerpt, tokens 162,866 -> 180,526 (+11% total,
   +28% per call). Built-in Read 19 -> 5. Shell read verbs 81 -> 52.
 - The deny works where it reaches. Built-in Read fell to 0 in every
-  weathervane-desktop session post-0.0.6. The nudge does not: it fires after
+  weathervane session post-0.0.6. The nudge does not: it fires after
   the call is composed, and roughly 25 of 33 main-thread shell calls it fired
   on were things excerpt cannot serve (node orchestration, heredocs, multi-range
   sed, grep with -A/-B).
@@ -256,7 +256,7 @@ Measured facts (CLI 2.1.261):
   the CLI: default is `tst` (deferred). `standard` (no deferral) is reached
   only by the `ENABLE_TOOL_SEARCH` env var (`false` or `auto:100`), which is
   all-or-nothing across every MCP server. Cost measured: 29,859 -> 87,818
-  tokens per session with John's server set; 28,088 -> 46,100 with excerpt
+  tokens per session with a full MCP server set; 28,088 -> 46,100 with excerpt
   alone. ~42K of the delta is other servers. Not a shippable instruction.
 - `non_deferrable_builtins` is read from a GrowthBook flag and from
   server-delivered client data. Nothing a user writes reaches it.
@@ -377,8 +377,7 @@ Do not sell the architecture as a token win until trace proves one. It is a
 determinism and turn-count win.
 
 External evidence for the same shape (read 2026-09-05): arXiv 2608.26263,
-"SKILL.state" (Badhe, Tiwari, Chung; Google/Purdue). Local copy:
-/projects/ref-skill-state-arxiv-2608.26263.md. The model receives only
+"SKILL.state" (Badhe, Tiwari, Chung; Google/Purdue). The model receives only
 (immutable spec, structured state, latest observation) each step; reasoning is
 discarded after it yields a validated state patch plus an action; a
 deterministic runtime owns the schema, validates and merges the patch, and
@@ -424,8 +423,9 @@ below no longer decides anything. The findings stand as design input for
 rewrite is a cadence decision at milestone close.
 
 
-Held by cadence-6b until phase 3 and the milestone close. It has notes
-including "one correction that would change what you build" - get those first.
+Held by a parallel working session until phase 3 and the milestone close. It
+has notes including "one correction that would change what you build" - get
+those first.
 
 - `workflows/execute.md`, step `execute_sequential`, the "Shared files to
   read first" list in the stable-first head. One line naming excerpt_read
@@ -442,8 +442,8 @@ including "one correction that would change what you build" - get those first.
 - Verified: cad-plan-checker dispatches cleanly with zero MCP servers on CLI
   2.1.261, so the absent path holds for at least that agent.
 
-Sequencing agreed with John and recorded in weathervane-desktop
-`.planning/CAPTURE.md` (b60f428, later corrected): preload experiment
+Sequencing agreed and recorded in that project's own `.planning/CAPTURE.md`
+(later corrected): preload experiment
 (ENABLE_TOOL_SEARCH=false + trimmed servers) alone after weathervane phase 3
 execution; read phase 4 against it; excerpt nudge-text change after phase 4;
 read phase 5 against that. Never two interventions in one phase.
@@ -465,8 +465,9 @@ and are moot.
 
 ## 10. Files
 
-- `/projects/excerpt-usage-2026-09-05.md` - all measurements, rounds 1-7.
-- `/projects/excerpt-toolmix.py`
-  - the transcript counter (usage: `python3 excerpt-toolmix.py label=path ...`).
+- The excerpt usage report, 2026-09-05 - all measurements, rounds 1-7. Private
+  working notes, not in this repository.
+- `excerpt-toolmix.py` - the transcript counter
+  (usage: `python3 excerpt-toolmix.py label=path ...`). Same.
 - excerpt `NOTES.md:74` - deferral was already observed 2026-09-03 and filed
   as a reason to keep the tool count at two, not as the adoption barrier.
