@@ -310,7 +310,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`review.request_timeout_ms` `review.max_prompt_tokens`\n' +
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
     '`review.consult.attempt_threshold` `review.decision_review.tier`\n' +
-    '`review.decision_review.effort` `stakes` `model.escalate_on_failure`\n' +
+    '`review.decision_review.effort` `model.escalate_on_failure`\n' +
     '`granularity`\n' +
     // Two-segment FAMILY tokens, one each for the six per-role pins and the six
     // per-role start rungs: 1b counts a >=2-segment prefix as a reader, so the

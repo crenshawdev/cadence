@@ -322,7 +322,7 @@ function planFiles(fx, phase, files) {
 /** The `risk floor:` entries of a route bundle's reason list. */
 const floorReasons = (r) => (r.reason || []).filter((x) => String(x).startsWith('risk floor: '));
 
-// --- route.mjs: the stakes level a layer set --------------------------------
+// --- route.mjs: the per-role values a layer set -----------------------------
 
 test('route: the rung it routes on is what config.mjs get reports (global layer)', () => {
   // The global layer alone carries `roles.cad-executor.effort`, so the merge is
@@ -651,7 +651,7 @@ test('route: a retired risk.override is named by both faces, and routes nothing'
   // The eight `risk.override.*` keys were retired with the dispatch-time floor
   // in v2.7.0. CER-01 gives the floor back WITHOUT giving them back: an existing
   // config carrying one must WARN, not break, and must not move a single knob.
-  const spec = { stakes: 'solo', risk: { override: { auth: true } } };
+  const spec = { granularity: 'coarse', risk: { override: { auth: true } } };
   const fx = layers({ global: {}, repo: spec });
   planFiles(fx, 9, ['README.md', 'src/auth/session.rs']);
   const r = seam('route.mjs',
@@ -663,7 +663,7 @@ test('route: a retired risk.override is named by both faces, and routes nothing'
   // things it moves.
   assert.equal(r.review.plan, 'blocking');
   assert.equal(r.verify, 'on');
-  const clear = layers({ global: {}, repo: { stakes: 'solo' } });
+  const clear = layers({ global: {}, repo: { granularity: 'coarse' } });
   planFiles(clear, 9, ['README.md']);
   const q = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', clear.repoFile, '--phase', '9'], clear);

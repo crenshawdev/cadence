@@ -35,15 +35,34 @@
  * @type {Readonly<Record<string, RetiredKey>>}
  */
 export const RETIRED_KEYS = Object.freeze({
+  // `replacement` is deliberately null for both of the next two rows even though
+  // something DID take their place: the field renders as `use "<key>" instead`,
+  // so it may only ever name a key `config.mjs set` will accept. Nothing
+  // one-to-one replaces a level that answered for six roles at once, and
+  // `roles.<role>.model` is a placeholder rather than a settable key - naming it
+  // there would send a user to a write the seam then refuses as unknown, which
+  // is precisely the defect this milestone fixed in `model.profile`'s own entry.
+  // The pointer rides `detail`, which both faces render verbatim.
+  'stakes': Object.freeze({
+    replacement: null,
+    since: 'v4.0.0',
+    detail: 'the single level that decided every role\'s model and effort is '
+      + 'gone - each role now carries its own `roles.<role>.model` and '
+      + '`roles.<role>.effort`, and routing reads nothing from this key. Run '
+      + '`/cad-config --roles` to be asked what each role should cost and have '
+      + 'those keys written, then `config.mjs unset stakes` to drop this one',
+  }),
   'model.profile': Object.freeze({
-    replacement: 'stakes',
-    detail: 'the routing axis now asks what a break costs, not what a dispatch '
-      + 'costs: solo, shipped, critical',
+    replacement: null,
+    detail: 'the spend profile went with the `auto` mode, and the level that '
+      + 'replaced it is retired too - name the model and the reasoning effort '
+      + 'per role instead, as `roles.<role>.model` and `roles.<role>.effort`, '
+      + 'which `/cad-config --roles` asks for and writes',
   }),
   'model.auto.escalate_on_failure': Object.freeze({
     replacement: 'model.escalate_on_failure',
     detail: 'escalation is no longer gated behind the retired `auto` mode; it is '
-      + 'honoured at every stakes level',
+      + 'honoured on every dispatch, for every role',
   }),
   'model.auto.ceiling': Object.freeze({
     replacement: null,
@@ -163,7 +182,7 @@ export function retiredKeyError(key) {
   //
   // The guard lives HERE rather than at the caller so every caller inherits it,
   // and it is `hasOwn` rather than a check on the spec's shape: a spec whose
-  // `replacement` is null is a legitimate row - 14 of the 16 ship that way - so
+  // `replacement` is null is a legitimate row - 16 of the 17 ship that way - so
   // filtering by value would delete most of the vocabulary. A genuinely retired
   // key is an own property of the frozen literal above, so this changes nothing
   // for it.

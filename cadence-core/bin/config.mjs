@@ -268,9 +268,9 @@ function checkPairs(tokens, targetsGlobal) {
     // one (D-11).
     //
     // The marker is `repo_only`, never `src`. `src: "repo"` means "settable in
-    // either layer" and 33 keys carry it, `stakes` and `granularity` among them
-    // - the keys workflows/config.md tells the user to set globally - so keying
-    // a layer refusal on `src` would refuse exactly the wrong set. `repo_only`
+    // either layer" and 32 keys carry it, `granularity` and `review.mode` among
+    // them - the keys a user legitimately pins machine-wide - so keying a layer
+    // refusal on `src` would refuse exactly the wrong set. `repo_only`
     // asks the narrower question config.schema.json's _meta.note states: would a
     // user-global value AUTHORIZE a change to a repository that never opted in.
     // Read off the SCHEMA object the dispatch loaded, through the same
@@ -490,22 +490,14 @@ function get(file, keys, asGlobal) {
     // schema defaults now (D-01), so an unset one is answered the way every
     // other defaulted key is answered, and a warning saying something else
     // decides - beside a value that IS the answer - would be a contradiction.
-
-    // `stakes` keeps a two-state read of its own. It is the last key on this
-    // face whose unset state is not answered by a schema default: no value it
-    // could report tells a reader that the level is computed per phase from the
-    // plans in scope. Two gates for two reasons (explicit read, no layer
-    // supplied a value), and a deliberate refusal to say what the level
-    // fires. Without it this face answers `{"stakes":"shipped"}` identically
-    // for a config that chose that level and one that set nothing, so the init
-    // workflows' "stakes is unset" and the very next `/cad-config` read
-    // contradict each other - "a default reported as a configured value", one
-    // seam over from where route.mjs prevents it.
-    if (keys.length && layered[k] === undefined && k === 'stakes') {
-      allWarnings.push('stakes is unset: no config layer sets it, so the level '
-        + 'is decided per phase from the plans in scope - `route.mjs resolve` '
-        + 'answers it for a dispatch');
-    }
+    //
+    // `stakes` used to keep a two-state read of its own here - the one key on
+    // this face whose unset state no schema default could answer, because the
+    // level was computed per phase rather than read. The key is retired
+    // (v4.0.0), so there is no two-state read left: every key this face answers
+    // now either carries a layered value or carries a schema default, and a
+    // config that still holds `stakes` is named by the retired-key warnings
+    // folded in above rather than by a special case here.
   }
   out({ ok: true, values, source, ...(allWarnings.length ? { warnings: allWarnings } : {}) });
 }

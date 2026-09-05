@@ -5,7 +5,6 @@
   },
   "keys": {
     "granularity":                          { "type": "enum", "values": ["fine", "standard", "coarse"], "default": "standard", "src": "repo", "purpose": "How many phases the roadmap gets - new-project roadmap step only (coarse 3-5 / standard 5-8 / fine 8-12 phases); it splits no phase into tasks" },
-    "stakes":                               { "type": "enum", "values": ["solo", "shipped", "critical"], "default": "shipped", "src": "repo", "purpose": "What a break in this project costs - the question routing asks, rather than what a dispatch costs. solo = nobody else runs this, a break costs only my time; shipped = other people run this, a break comes back as a bug report; critical = a break is not a bug report. It is a FLOOR and not the level every phase pays: a dispatch resolves at or above it, never below, and the phase's own declared PLAN `files:` read at resolve time are what raise it. UNSET floors at `solo` when every plan in scope was read clean, and at the `shipped` default when any of them could not be - a plan Cadence cannot read holds the configured level rather than dropping under it" },
 
     "model.escalate_on_failure":            { "type": "bool", "default": false, "purpose": "Re-dispatch a failed attempt one rung above the rung it started at, holding at the top rung; off by default - a retry is usually a narrower job than the pass that failed it" },
 

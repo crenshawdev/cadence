@@ -103,7 +103,6 @@ purpose test runs against the reach the author just replaced.
 | Key | Reach | Honoured by |
 |---|---|---|
 | `granularity` | new-project roadmap step only | `workflows/new-project.md` step 2 of the roadmap draft, as a phase count |
-| `stakes` | universal | `bin/route.mjs` - picks the row of every cell grid |
 | `model.escalate_on_failure` | universal | `bin/route.mjs` - whether a failed attempt climbs to the cell's retry rung |
 | `model.overrides.cad-planner` | universal | `bin/route.mjs` - pins this role to a model alias, bypassing the cell |
 | `model.overrides.cad-assumptions-analyzer` | universal | `bin/route.mjs` - pins this role to a model alias, bypassing the cell |
