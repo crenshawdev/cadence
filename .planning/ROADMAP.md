@@ -1,13 +1,19 @@
-# Roadmap: v4.0.0 - what each role runs at
+# Roadmap: v3.7.12 - what each role runs at
 
 ## Overview
 
-**`v4.0.0`, opened 2026-09-04. This cycle does not tag and does not publish a
-release.** Cadence runs from this repository - `settings.json` points the
-marketplace at `/code/cadence` - so the work lands by merge and is in force at
-the next restart. The version is a label for the branch and the roadmap, not a
-release plan. `/cad-milestone` closes it without a tag and without a manifest
-bump.
+**`v3.7.12`, opened 2026-09-04. This cycle TAGS and PUBLISHES, and it is the
+LAST release on the 3.x line.** Decided 2026-09-05, reversing the no-release
+plan this milestone opened under: 4.0.0 is a full Rust rewrite, so 3.7.12 is
+where the JavaScript implementation stops. Cadence also runs from this
+repository - `settings.json` points the marketplace at `/code/cadence` - so the
+work is in force at the next restart whether or not it is tagged; the tag is
+what makes this tree citable as the frozen reference the rewrite is specified
+against. `/cad-milestone` closes it WITH a tag and WITH the manifest bump
+(`.claude-plugin/plugin.json` moves 3.7.11 -> 3.7.12; there is no
+`package.json` in this repo). After the tag is pushed, `settings.json` stops
+pointing the marketplace at `/code/cadence` and installs the published plugin
+instead, so the repo becomes a codebase rather than the running tool.
 
 **The source is `GH-249`**, filed 2026-09-02 and sized there as a milestone.
 It reads two symptoms as one cause.

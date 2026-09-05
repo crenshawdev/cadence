@@ -29,6 +29,8 @@ files:
   - cadence-core/bin/weight-budgets.json
   - cadence-core/bin/planning-lease-check.test.mjs
   - cadence-core/bin/phase-spelling.test.mjs
+  - cadence-core/references/seam-spawn-agent.md
+  - cadence-core/bin/reason-census.test.mjs
 ---
 
 # Phase 3: The stakes key is gone and an interview replaces it - Plan 1 of 3

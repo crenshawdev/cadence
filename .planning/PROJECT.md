@@ -204,10 +204,12 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v4.0.0 - what each role runs at`, opened 2026-09-04. This cycle does not tag
-and does not publish a release.** Cadence runs from this repository, so the work
-lands by merge and is in force at the next restart; the version labels the
-branch and the roadmap, nothing more. Three phases on `cadence/v4.0.0`. The
+**`v3.7.12 - what each role runs at`, opened 2026-09-04. This cycle TAGS and
+PUBLISHES, and it is the LAST release on the 3.x line.** Decided 2026-09-05:
+4.0.0 is a full Rust rewrite, so this is where the JavaScript implementation
+stops and becomes the frozen reference it is specified against. Cadence runs
+from this repository, so the work is in force at the next restart either way;
+the tag is what makes the tree citable. Three phases on `cadence/v3.7.12`. The
 source is `GH-249`, filed 2026-09-02 and sized there as a milestone. One claim
 holds all three phases: config says what each role runs at, in words the user
 chose, with nothing between them and the model but a string they typed. Twelve

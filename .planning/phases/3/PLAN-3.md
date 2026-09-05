@@ -96,11 +96,21 @@ Cadence does.
 - `/cad-config` offers no stakes level anywhere - not in the menu, the
   catalog, the SKILL description or the COMMANDS row - and the twelve
   `roles.*` keys have catalog rows.
-- `git grep -nw stakes -- cadence-core skills ':!*.test.mjs' ':!cadence-core/bin/lib/retired-keys.mjs' ':!cadence-core/bin/fixtures'`
-  prints exactly the three "table stakes" lines of
-  `cadence-core/workflows/new-project.md` (ordinary English, not the key) and
-  nothing else; `git grep -ln "route-table" -- cadence-core skills ':!*.test.mjs'`
-  prints nothing.
+- No line in `cadence-core` or `skills` describes the stakes level or
+  `route-table.json` as something Cadence DOES. Ruled 2026-09-05, replacing a
+  count-based assertion that expected 3 stakes lines and 0 route-table lines:
+  the sweeps now return 14 and 3 because PLAN-1 and PLAN-2 wrote comments in
+  this same phase RECORDING the removal, and those are the design record, not
+  residue. Every remaining hit is one of three kinds, each correct as written:
+  the three "table stakes" lines in `cadence-core/workflows/new-project.md`
+  (ordinary English, not the key); eleven comments naming the level in the past
+  tense (`cadence-core/bin/route.mjs:12,416,567,888,1374,1396`,
+  `cadence-core/bin/config.mjs:488,494,499`,
+  `cadence-core/bin/lib/gate-agreement.mjs:17`,
+  `cadence-core/bin/lib/rung-agent.mjs:24`); and three naming the deleted table
+  the same way (`cadence-core/bin/lib/gate-agreement.mjs:19`,
+  `cadence-core/bin/self-verify.mjs:1095,1159`). A hit in any OTHER file, or
+  any hit stating either as current behaviour, fails this line.
 - Every `.planning/DOCS-CLAIMS.md` row that stated the level as HEAD's
   behaviour now states HEAD's behaviour; `README.md`, `METHOD.md`,
   `INTERNALS.md` and `docs/WORKFLOW.md` describe the roles block, the

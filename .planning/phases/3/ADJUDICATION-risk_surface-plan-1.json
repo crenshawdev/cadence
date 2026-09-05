@@ -1,0 +1,48 @@
+{
+  "phase": "3",
+  "trigger": "risk_surface",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "6fcaba7a",
+  "head": "76e2b20f",
+  "base_id": "6fcaba7a38e5d449ef34a27dd0861484a06900c0",
+  "head_id": "76e2b20fe2db4ef4ea98a5007a41cca1ec9a7e87",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/config.schema.json",
+      "line": 8,
+      "severity": "high",
+      "claim": "The schema still exposes `stakes` as a live routing control and promises that an explicit value is a floor, while the resolver now ignores it completely.",
+      "failure_scenario": "An existing critical project—or a user following `config.mjs get/check/set`—sets `stakes=critical`. Schema validation accepts it and the purpose says dispatches never resolve below it, but `route.mjs resolve` now returns the weaker schema defaults: an advisory plan gate, an off diff gate, no model override, and role defaults such as medium reviewer effort. The only diagnostic is, at best, a retired-key warning; routing succeeds with `ok:true`, so a formerly critical secrets/destructive/untrusted-input path silently loses the critical row's adjudicated/blocking gates and opus/xhigh routing.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "Confirmed as a true statement about this range: config.schema.json:8 still carries the stakes row with its floor promise, and route.mjs no longer reads it (the resolve envelope dropped the stakes and stakes_set fields between the first and third dispatch of this plan). The HIGH severity is what is overstated. The state is reachable only between plan 1 and plan 2 of one phase on the unmerged cadence/v4.0.0 branch: PLAN-2.md task 4 is titled \"stakes is a retired key, and the retirement rail is re-pinned\" and its Action deletes the stakes row from config.schema.json, explicitly sequenced as \"after PLAN-1 nothing reads it\". That plan is the next dispatch of this same phase. If PLAN-2 task 4 does not land, this returns at its raised severity.",
+      "base_id": "6fcaba7a38e5d449ef34a27dd0861484a06900c0",
+      "head_id": "76e2b20fe2db4ef4ea98a5007a41cca1ec9a7e87"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/route.mjs",
+      "line": 960,
+      "severity": "medium",
+      "claim": "Explicit `null` for `roles.<role>.effort` is treated as absence and allows the legacy `model.effort.<role>` key to win, contradicting the new schema contract that null unpins to the role schema default.",
+      "failure_scenario": "Set a global `model.effort.cad-executor` to `low`, then set repo `roles.cad-executor.effort` to `null` to unpin global routing. After merge, `rolesEffortSet` is false, so the resolver selects the legacy global `low` value before consulting the role default `high`. The schema explicitly says null leaves the role default as the answer, but this input silently resolves to the weaker legacy rung instead.",
+      "ruling": "survived",
+      "convergent": false,
+      "base_id": "6fcaba7a38e5d449ef34a27dd0861484a06900c0",
+      "head_id": "76e2b20fe2db4ef4ea98a5007a41cca1ec9a7e87"
+    }
+  ]
+}

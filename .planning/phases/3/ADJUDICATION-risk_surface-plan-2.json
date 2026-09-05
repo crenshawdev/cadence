@@ -1,0 +1,49 @@
+{
+  "phase": "3",
+  "trigger": "risk_surface",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "76e2b20f",
+  "head": "3e34b842",
+  "base_id": "76e2b20fe2db4ef4ea98a5007a41cca1ec9a7e87",
+  "head_id": "3e34b842b1553e7814d689e3f5b0277feb48121e",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/config.mjs",
+      "line": 404,
+      "severity": "high",
+      "claim": "The dotted-path walker cannot distinguish a literal property containing a dot from a nested path, so `unset` can delete a different key than the caller requested.",
+      "failure_scenario": "Given `{\"a.b\":\"retired\",\"a\":{\"b\":\"live\"}}`, running `config.mjs unset --file <file> a.b` splits the argument into `[\"a\",\"b\"]`, deletes the live nested `a.b`, and leaves the literal top-level `\"a.b\"` untouched. Because this command intentionally accepts arbitrary unknown keys, literal dotted properties are valid migration inputs; this path removes more than requested while reporting `removed:[\"a.b\"]`.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "The ambiguity is real but the failing shape is unreachable through any supported path, and the split is not divergent behaviour introduced here. Cadence config layers store NESTED objects: .planning/config.json top-level keys are review, model, git, stakes and it holds no literal dotted key. `setInto(obj, dotted, value)` at config.mjs:321 predates this range (present at 76e2b20f) and splits a dotted argument exactly the same way, as do get and validate, so a literal \"a.b\" property is unreachable by every read and write face in the file, not only by unset. A config holding one could not be read by `get` or written by `set` either. HIGH overstates it: unset is consistent with its siblings rather than removing more than the rest of the seam would.",
+      "base_id": "76e2b20fe2db4ef4ea98a5007a41cca1ec9a7e87",
+      "head_id": "3e34b842b1553e7814d689e3f5b0277feb48121e"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-sol",
+      "file": "cadence-core/bin/config.mjs",
+      "line": 384,
+      "severity": "high",
+      "claim": "Parsing the entire schema-blind layer into JavaScript numbers and serializing it after a removal can corrupt unrelated values that were not requested for deletion.",
+      "failure_scenario": "Given `{\"stakes\":\"critical\",\"extension\":{\"id\":9007199254740993}}`, unsetting only `stakes` parses the unrelated integer as the rounded Number `9007199254740992`; line 430 then writes that changed value back. The command promises to remove named paths while leaving siblings alone and explicitly accepts unknown data, but an untrusted or extension-owned integer outside the safe range is silently modified.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": "Confirmed as a real round-trip hazard, and NOT a regression from this range. At 76e2b20f, before unset existed, config.mjs already did JSON.parse at line 355 and atomicWrite(file, JSON.stringify(cfg, null, 2)) at line 370 in `set` - so every config write in this codebase has always re-serialized the whole layer, and unset inherits that rather than introducing it. The range under review therefore did not create the defect the finding names. Reachability is also narrow: every schema value is an enum, bool, string, array or a small int (the largest is review.request_timeout_ms at 540000), so an unsafe integer requires a hand-written or extension-owned key with no producer in the tree. Recorded as a standing config-write defect rather than a blocker on this range.",
+      "base_id": "76e2b20fe2db4ef4ea98a5007a41cca1ec9a7e87",
+      "head_id": "3e34b842b1553e7814d689e3f5b0277feb48121e"
+    }
+  ]
+}

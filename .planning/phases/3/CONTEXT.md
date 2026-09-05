@@ -200,7 +200,10 @@ landed as one plan of seven tasks and this is visibly larger.
   `route.mjs:1534-1594`, and comments in `lib/phase-plans.mjs:19,256`,
   `lib/why-corpus.mjs:212` and `lib/task-record.mjs:44`. `phaseDirsIn` keeps a
   live consumer at `lib/why-corpus.mjs:173` and `declaredFilesIn` is still
-  called at `lib/phase-plans.mjs:336,350`.
+  called at `lib/phase-plans.mjs:336,350`. [corrected by plan-1 deviation: `route.mjs
+  replay` DID have a prose caller - `references/seam-spawn-agent.md:251` named
+  the subcommand, which the evidence missed by searching only for a workflow or
+  SKILL invocation and never covering `references/`]
 - D-15 (test rewrite): Three test files are rewritten in-phase, and one of them
   throws before any assertion if the schema key goes first. Evidence:
   `prose-agreement.test.mjs:109-168` asserts the README literally contains

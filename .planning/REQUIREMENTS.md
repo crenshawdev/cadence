@@ -5,8 +5,8 @@
 
 ## Active
 
-**`v4.0.0 - what each role runs at` opened 2026-09-04 and does not tag or
-publish a release.** Three phases on `cadence/v4.0.0`, sourced from `GH-249`.
+**`v3.7.12 - what each role runs at` opened 2026-09-04 and TAGS and PUBLISHES
+as the LAST 3.x release** (decided 2026-09-05; 4.0.0 is a Rust rewrite). Three phases on `cadence/v3.7.12`, sourced from `GH-249`.
 `/cad-plan` seeds each `## Traceability` row as its phase is planned, so this
 cycle's ids are assigned there rather than reserved here. The theme is one
 claim: config says what each role runs at, in words the user chose. The shipped

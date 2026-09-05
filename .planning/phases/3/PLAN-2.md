@@ -23,6 +23,9 @@ files:
   - cadence-core/bin/retired-keys.test.mjs
   - cadence-core/bin/arg-contract.test.mjs
   - cadence-core/bin/test-groups.test.mjs
+  - INTERNALS.md
+  - cadence-core/references/config-reach.md
+  - cadence-core/bin/route.test.mjs
 ---
 
 # Phase 3: The stakes key is gone and an interview replaces it - Plan 2 of 3
