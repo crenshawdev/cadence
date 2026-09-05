@@ -21,6 +21,14 @@ Plan shape: multiple plans, same phase - the crate and its CI, the release
 plus bootstrap plus checksum pinning, and the two live observations, which
 cannot start until the tool surface serves.
 
+SUPERSEDED 2026-09-05, after planning. Phase 1 is ONE plan: the crate and its
+CI. The two live observations were already closed (see `Out` above). The
+release, bootstrap and checksum slice became PHASE 4 - nothing is downloadable
+until `4.0.0` is tagged, so its verifications would all have been no-ops at
+phase close. Its plan is `.planning/phases/4/PLAN.md`, unchanged apart from its
+phase number. The `In` scope above still describes both, and phase 4 owns the
+second half of it.
+
 ## Durable decisions
 
 - D-01 (Layout): The Rust code is a Cargo WORKSPACE at `/code/cadence` - a

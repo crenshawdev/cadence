@@ -39,6 +39,32 @@ model to load is unnecessary, and a line telling it to SKIP the load would save
 a compaction; with calls not blocked either way, the answer no longer changes
 what gets written.
 
+Phase 1, the crate skeleton, planned 2026-09-05 as two sequential plans:
+
+- **BIN-01**: A Cargo workspace at the repo root with one member, `crates/cadence`,
+  builds a binary named `cadence` with `cargo build --locked` from a committed
+  `Cargo.lock`, `cargo test --locked` passes, and the test workflow runs both
+  beside the existing Node matrix.
+- **BIN-02**: `cadence serve` answers MCP over stdio with at least one declared
+  tool, and every tool answer is a typed envelope whose tag is one of `ok`,
+  `refused`, `unknown` or `not-applicable`, carried as structured content on a
+  successful call - a refusal is never `isError`.
+- **REL-01**: The existing release workflow, behind its guard job, cross-compiles
+  `cadence` for the four targets into byte-reproducible archives from a tag push
+  or a manual dispatch, and reports each archive's sha256.
+- **REL-02**: The publish job attaches the four archives to the tag's release only
+  when each archive's sha256 equals the value in the committed pin file and the
+  tag, the plugin manifest, the crate and the MCP manifest agree on one version;
+  otherwise the release is refused.
+- **BOT-01**: A POSIX shell SessionStart hook fetches the platform's pinned
+  archive, verifies its sha256 against the committed pin, and installs the binary
+  at a versioned path outside `${CLAUDE_PLUGIN_ROOT}`; any failure leaves the
+  session working, prints nothing on stdout, and records its reason in a log.
+- **BOT-02**: The plugin's committed manifests point the `cadence` MCP server at
+  the installed binary, `SessionStart` is registered with a matching hook-events
+  row so self-verify stays clean, and the install path and the install-then-restart
+  step are documented.
+
 `v3.7.12 - what each role runs at` opened 2026-09-04 and closed 2026-09-05, the
 LAST 3.x release (4.0.0 is a Rust rewrite, decided 2026-09-05). Three phases,
 three ids - `RNG-06` in phase 1, `ROL-01` in phase 2, `ROL-02` in phase 3 - are
@@ -570,6 +596,12 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| BIN-01 | Phase 1 | Pending |
+| BIN-02 | Phase 1 | Pending |
+| REL-01 | Phase 1 | Pending |
+| REL-02 | Phase 4 | Pending |
+| BOT-01 | Phase 4 | Pending |
+| BOT-02 | Phase 4 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its

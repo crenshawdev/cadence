@@ -83,26 +83,33 @@ triaged by hand and are not carried into these phases.
 
 ## Phases
 
-- [ ] **Phase 1: The crate skeleton** - a named binary that builds, cross-compiles, serves an empty tool surface, installs itself, and settles OQ-1 and OQ-2 against that surface
+- [ ] **Phase 1: The crate skeleton** - a named binary that builds, cross-compiles to four targets from one CI job, and serves a minimal MCP tool surface
 - [ ] **Phase 2: The golden harness** - fixtures at the frozen tag and a Rust test that diffs the binary against recorded JavaScript output
 - [ ] **Phase 3: One vertical slice** - `/cad-execute` end to end, the shape every other command follows
+- [ ] **Phase 4: The release path** - a tagged release that publishes four checksum-verified archives, and a SessionStart hook that fetches and installs the pinned binary
 
 ## Phase Details
 
 ### Phase 1: The crate skeleton
 
-**Goal.** A `cadence` binary builds, cross-compiles from one CI job, serves an
-empty MCP tool surface, and installs itself from a release.
+**Goal.** A `cadence` binary builds, cross-compiles from one CI job, and serves
+a minimal MCP tool surface.
 
 Seeded from excerpt, which already carries the dependency set and the CI. Adds
-the binary's name, the typed envelope vocabulary from section 3a of the design
-doc, and the POSIX shell SessionStart bootstrap that fetches the platform
-release and verifies its checksum. No domain modules yet.
+the binary's name and the typed envelope vocabulary from section 3a of the
+design doc. No domain modules yet.
 
 OQ-1 and OQ-2 were dropped from this phase on 2026-09-05: a direct probe against
 a throwaway two-tool MCP server answered OQ-1 the same day and reduced OQ-2 to a
-question whose answer changes nothing. Phase 1 is the crate skeleton and nothing
-else.
+question whose answer changes nothing.
+
+**The release path was moved out on 2026-09-05, after the plans were written.**
+The original phase 1 carried a second plan for the release workflow, the
+checksum pin and the SessionStart bootstrap. Nothing is downloadable until
+`4.0.0` is tagged, so that plan's own honest outcome was a bootstrap that
+no-ops on every machine and three acceptance criteria that could not be
+observed at phase close. It is now phase 4, where a release actually exists.
+Phase 1 is the crate skeleton and nothing else.
 
 ### Phase 2: The golden harness
 
@@ -120,6 +127,27 @@ the template every other command follows.
 
 The five-step loop from section 3c: ask for the next dispatch, refuse with a
 reason or hand back a prompt, invoke the executor, return a typed state patch,
-repeat. The tool schema is the patch schema, so a malformed argument is
-rejected by the MCP layer before the binary sees it. Proves the boundary works
+repeat. The tool schema is the patch schema, and the BINARY validates
+against it: a malformed argument comes back as a `refused` envelope naming
+what was wrong, not an MCP-layer rejection (design doc 3e, revised
+2026-09-05). Proves the boundary works
 before the remaining modules are built against it.
+
+### Phase 4: The release path
+
+**Goal.** A tagged release publishes four checksum-verified archives, and a
+machine that starts a session gets the right binary installed without being
+asked.
+
+The `publish` job verifies each archive's sha256 against a pin file committed
+in the plugin and refuses the release on any mismatch. A POSIX shell
+SessionStart hook reads that pin, fetches the platform's archive, verifies it
+and installs the binary at a versioned path. The plugin's `.mcp.json` points at
+that path.
+
+Scheduled last on purpose. It depends on phase 1's crate, packaging script and
+cross-compile matrix, and the pin cannot be filled until the version being
+released is the one that will carry the archives - which is the `4.0.0`
+landing, not any tag that exists today. Its plan was written as phase 1's
+second plan on 2026-09-05 and moved here the same day; it is on disk at
+`.planning/phases/4/PLAN.md`.
