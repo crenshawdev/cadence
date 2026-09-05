@@ -1140,6 +1140,51 @@ test('a hand-edited rung the role has no FILE for is refused, never fail-open di
   assert.match(named[0], /high, xhigh/);    // ...and the rungs this role does have
 });
 
+// --- the same start rung, one key out: roles.<role>.effort (ROL-01) ----------
+
+test('a roles-block start rung replaces the cell\'s, and picks that rung\'s file', () => {
+  // shipped/cad-verifier is medium/cad-verifier-medium, so an xhigh row FAILS
+  // the moment the roles entry stops being read.
+  const file = rawCfg({ stakes: 'shipped', roles: { 'cad-verifier': { effort: 'xhigh' } } },
+    'roles-eff-verifier.json');
+  const r = resolve('cad-verifier', file);
+  assert.equal(r.ok, true);
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.agent, 'cad-verifier-xhigh');
+  assert.equal(r.model, 'opus');      // the cell still supplies the model
+  assert.match(r.reason.join(' '), /roles\.cad-verifier\.effort: medium -> xhigh/);
+  assert.equal(r.warnings, undefined, JSON.stringify(r.warnings));
+});
+
+test('the roles block WINS over model.effort, and a warning names the winner', () => {
+  // Two keys, one quantity. Different rungs on purpose: a value equal to the
+  // older key's could not tell "the roles block decided" from "nothing changed".
+  const file = rawCfg({ stakes: 'shipped',
+    model: { effort: { 'cad-verifier': 'low' } },
+    roles: { 'cad-verifier': { effort: 'xhigh' } } }, 'roles-eff-both.json');
+  const r = resolve('cad-verifier', file);
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.agent, 'cad-verifier-xhigh');
+  const named = (r.warnings || []).filter((w) => /roles\.cad-verifier\.effort/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /model\.effort\.cad-verifier/);   // ...and the loser
+  // The reason names the key that DECIDED and never the one that did not.
+  assert.match(r.reason.join(' '), /roles\.cad-verifier\.effort: medium -> xhigh/);
+  assert.doesNotMatch(r.reason.join(' '), /model\.effort\.cad-verifier: /);
+});
+
+test('a roles entry that is not a map contributes nothing, and the older key answers', () => {
+  // The defensive arm: a config layer arrives with a clone, so a scalar where
+  // the block belongs must fall back rather than throw.
+  const file = rawCfg({ stakes: 'shipped',
+    model: { effort: { 'cad-verifier': 'xhigh' } },
+    roles: { 'cad-verifier': 'xhigh' } }, 'roles-eff-scalar.json');
+  const r = resolve('cad-verifier', file);
+  assert.equal(r.ok, true);
+  assert.equal(r.effort, 'xhigh');
+  assert.match(r.reason.join(' '), /model\.effort\.cad-verifier: medium -> xhigh/);
+});
+
 // --- a retry never resolves below the rung that failed (D-02) -----------------
 
 test('a configured start above the cell\'s retry HOLDS, and says what it out-ranked', () => {
@@ -2392,6 +2437,24 @@ test('clamp: a rung_order that cannot place the two rungs keeps the configured o
   assert.equal(r.effort, 'low', 'the configured rung stands');
   assert.ok((r.warnings || []).some((w) => /rung_order cannot compare/.test(w)),
     JSON.stringify(r.warnings));
+});
+
+test('clamp: a raised level floors a ROLES-block rung too, and names THAT key', () => {
+  // D-04: the roles block is clamped on exactly the terms its older sibling is,
+  // and the held-rung reason has to name the key that pinned the rung - naming
+  // `model.effort.cad-plan-checker` here would cite a key this config never set.
+  const fx = floorRoot(
+    { roles: { 'cad-plan-checker': { effort: 'low' } }, ...ANSWERED },
+    { '3/PLAN-1.md': ['src/load.mjs'] },
+    { 'src/load.mjs': SECRET_BODY, 'docs/README.md': '# Readme\n' });
+  const r = resolve('cad-plan-checker', fx.file, ['--phase', '3']);
+  assert.equal(r.stakes, 'shipped');
+  assert.equal(r.effort, 'medium', 'the shipped/cad-plan-checker cell\'s rung, not the pinned low');
+  const held = r.reason.find((x) => /does not apply/.test(x));
+  assert.ok(held, JSON.stringify(r.reason));
+  assert.match(held, /roles\.cad-plan-checker\.effort="low"/);
+  assert.match(held, /touches secrets/);
+  assert.match(held, /"medium" rung is the floor/);
 });
 
 test('waiver: the replay honours it too - one implementation, both faces', () => {

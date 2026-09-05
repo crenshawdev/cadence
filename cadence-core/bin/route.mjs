@@ -39,6 +39,14 @@
 //   model.effort.<role>        the rung one role STARTS at, replacing the one
 //                              its cell names - never below a computed risk
 //                              floor, and never demoted by a retry
+//   roles.<role>.model         one role's model, named outright; wins over the
+//                              pin above and over the cell. A value the host
+//                              does not accept warns and the cell's model
+//                              stands, the same arm an unknown pin alias takes
+//   roles.<role>.effort        the same start rung one key out; wins over
+//                              model.effort.<role>, which stays live as the
+//                              narrower fallback. Setting both for one role
+//                              warns and names the winner
 //   review.triggers.*.gate     a gate a LAYER set, which must be one of the
 //                              table's `gates` and then wins over the level's
 //                              gate, reporting the disagreement (D-04); a value
@@ -258,6 +266,18 @@ function readConfig(file) {
     // one entry - and a start rung read as a model alias would be reported as an
     // unknown alias rather than honoured.
     effort: m.effort ?? {},
+    // The ROLES BLOCK - `roles.<role>.{model, effort}`, one entry per role
+    // naming that role's dispatch outright. Its own map for the same reason
+    // `effort` above got one: folding it into either of the two maps beside it
+    // gives one entry two writers, and this block carries BOTH quantities, so
+    // it would have to be folded into both.
+    //
+    // No per-role merge of its own, deliberately (D-09): lib/config-merge.mjs
+    // recurses nested objects key by key, so a global layer naming only
+    // `roles.<role>.model` already composes with a repo layer naming only
+    // `roles.<role>.effort`. Silence falls back per KEY, and a merge written
+    // here would replace that with a per-role one.
+    roles: rolesIn(c),
     triggerGates: triggerFieldIn(c, 'gate'),
     // The per-trigger model TIER, read the same way and for the same reason:
     // it is the input to the reviewer-availability test below, and a schema
@@ -336,6 +356,25 @@ function reviewersIn(c) {
 function providersIn(c) {
   const p = (c && typeof c === 'object' ? (c.review || {}) : {}).providers;
   return p && typeof p === 'object' && !Array.isArray(p) ? p : {};
+}
+
+// The `roles` block, read in exactly the shape above and for the same reason:
+// this runs on whatever a user's config happens to hold, and a scalar or a list
+// where a map belongs contributes nothing rather than throwing.
+function rolesIn(c) {
+  const r = c && typeof c === 'object' ? c.roles : undefined;
+  return r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+}
+
+// ONE role's entry in that block, guarded the same way one level down - a
+// `roles.<role>` that is not a plain object names neither a model nor a rung,
+// so it contributes nothing and the older keys still answer. `hasOwn` rather
+// than a bare index: the map is user data, and a bare read of a prototype
+// member would answer with an object carrying neither field but reading as an
+// entry.
+function roleEntryIn(rolesBlock, role) {
+  const e = Object.prototype.hasOwnProperty.call(rolesBlock, role) ? rolesBlock[role] : undefined;
+  return e && typeof e === 'object' && !Array.isArray(e) ? e : {};
 }
 
 // The model id one provider is configured with at one tier, or '' for none.
@@ -986,15 +1025,41 @@ function resolve(opts) {
 
   let effort = cell.effort;
 
-  // The configured START rung (RNG-02). `model.effort.<role>` selects the rung
-  // this role begins at, replacing the cell's - the dial the ladder was missing,
-  // living in the config LAYERS so a plugin update cannot take it away. Exactly
-  // one of four arms fires, and each one SAYS what it did: a rung that silently
-  // did not apply is the resolved-then-dropped shape this milestone closes.
-  const wanted = cfg.effort[opts.role];
+  // This role's entry in the roles block, read once for both halves - the rung
+  // here and the model further down.
+  const roleEntry = roleEntryIn(cfg.roles, opts.role);
+
+  // The configured START rung (RNG-02). Two keys can name it now:
+  // `roles.<role>.effort` and the older `model.effort.<role>`, which stays live
+  // as the narrower fallback. Either selects the rung this role begins at,
+  // replacing the cell's - the dial the ladder was missing, living in the config
+  // LAYERS so a plugin update cannot take it away. Exactly one of four arms
+  // fires, and each one SAYS what it did: a rung that silently did not apply is
+  // the resolved-then-dropped shape this milestone closes.
+  //
+  // WHICH KEY DECIDED travels with the rung and is interpolated into all four
+  // arms, never a fixed spelling: a `reason` naming a key that did not decide is
+  // the same resolved-then-dropped shape one level up, wearing the diagnostic's
+  // clothes. Setting both for one role is a config a user should resolve, so it
+  // WARNS whether or not the two agree - unlike the gate check above, where the
+  // config value and the level's value are two different quantities that happen
+  // to share a vocabulary, these two are one quantity spelled twice.
+  const rolesEffort = roleEntry.effort;
+  const legacyEffort = cfg.effort[opts.role];
+  const rolesEffortSet = rolesEffort !== null && rolesEffort !== undefined;
+  const legacyEffortSet = legacyEffort !== null && legacyEffort !== undefined;
+  const wanted = rolesEffortSet ? rolesEffort : legacyEffort;
+  const effortKey = rolesEffortSet
+    ? `roles.${opts.role}.effort`
+    : `model.effort.${opts.role}`;
+  if (rolesEffortSet && legacyEffortSet) {
+    warnings.push(`${effortKey}=${JSON.stringify(rolesEffort)} (config) wins over `
+      + `model.effort.${opts.role}=${JSON.stringify(legacyEffort)}, which names the same rung `
+      + 'one key out; the roles block decides');
+  }
   let startFromConfig = false;
   if (wanted !== null && wanted !== undefined) {
-    const key = `model.effort.${opts.role}`;
+    const key = effortKey;
     const has = Object.keys(RUNG_FILES[opts.role] || {});
     if (!rungFile(opts.role, wanted)) {
       // (a) A rung this role has no FILE for - only a hand-edited config gets
@@ -1093,7 +1158,7 @@ function resolve(opts) {
         // "retry rung is the same rung" would misattribute the hold to cell
         // design (the conflation route.test.mjs pins the messages apart for).
         if (startFromConfig && cell.effort !== effort) {
-          reason.push(`rung held at ${effort}: model.effort.${opts.role}="${effort}" `
+          reason.push(`rung held at ${effort}: ${effortKey}="${effort}" `
             + `already sits at the ${stakes}/${opts.role} retry rung`);
         } else {
           reason.push(`rung held at ${effort} (retry rung is the same rung)`);
@@ -1103,7 +1168,7 @@ function resolve(opts) {
         // WHICH rung it out-ranked, so a held retry stays diagnosable rather
         // than reading like the equal-rungs case above.
         const source = effort === wanted
-          ? `model.effort.${opts.role}="${effort}"`
+          ? `${effortKey}="${effort}"`
           : `the "${effort}" start rung`;
         // On a torn table the out-ranking is exactly what could NOT be proven -
         // the warning above already names rung_order, so the reason must not
