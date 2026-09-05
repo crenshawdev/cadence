@@ -5,9 +5,23 @@
 
 ## Active
 
-**No cycle open.** The shipped ids are rows under `## Shipped` below; the ids
-under `## Deferred` keep their own reasons and none is promoted here to fill
-this section. `/cad-phase add` is what opens the next cycle.
+**`v4.0.0 - excerpt folds in, the binary owns process` opened 2026-09-05 on
+`cadence/binary-owns-process`.** Four phases, sourced from
+`/projects/cadence-v4-architecture.md` written the same day. It is a rewrite and
+not a port: `cadence-core` becomes a session-resident Rust server, the frozen
+reference is the annotated tag `v3.7.12` at commit `c39bbd8c`, and the
+maintenance line is the branch `3.x` cut from that same commit. The theme is one
+claim: the binary owns truth about process, the model owns engineering judgment,
+and nothing hidden sits between them. `/cad-plan` seeds each `## Traceability`
+row as its phase is planned, and the ids below are added the same way - phase by
+phase, as each is planned, rather than reserved here up front. The shipped ids
+from earlier cycles are rows under `## Shipped` below, and the ids under
+`## Deferred` keep their own reasons - none is promoted here to fill this
+section.
+
+- **BAS-01**: The 3.x baseline that 4.0.0's go/no-go is judged against exists as a figure on disk rather than a memory. Prompt size per dispatch and main-thread context growth per phase, mined from the frozen record at `/projects/cadence-archive-v3.7.12/.planning/` - 3,619 lines / 933,844 bytes, 574 brackets over 118 `corr` values, spanning 2026-08-07 to 2026-09-05 - with every figure publishing its denominator and `unrecorded` never collapsing to zero. This is the one question that expires: once 3.x stops being what runs, it cannot be answered. `OQ-3` Phase 1.
+- **TSL-01**: Whether a conditional ToolSearch preamble is actually SKIPPED when the schema is already loaded is an observation, not an assumption, before that preamble is written into 28 skill files. Unconditional costs ~900 tokens per skill invocation and a context-to-plan-to-execute-to-verify run would pay ~3,600 for one useful load; measured on CLI 2.1.261, a repeat ToolSearch is not a no-op, costing 905 tokens against a first load of 914. The verdict decides the preamble's shape; writing the preamble itself is out of this phase. `OQ-1` Phase 1.
+- **TSL-02**: Whether loaded tool schemas survive a compaction is observed against one real compaction rather than inferred from the CLI carrying `preCompactDiscoveredTools` and a "carried from compact boundary" string. If they do not survive, a long phase pays the load again mid-run and the preamble must be reachable rather than one-shot. `OQ-2` Phase 1.
 
 `v3.7.12 - what each role runs at` opened 2026-09-04 and closed 2026-09-05, the
 LAST 3.x release (4.0.0 is a Rust rewrite, decided 2026-09-05). Three phases,
@@ -521,6 +535,9 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| BAS-01 | Phase 1 | Pending |
+| TSL-01 | Phase 1 | Pending |
+| TSL-02 | Phase 1 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
