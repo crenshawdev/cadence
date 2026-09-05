@@ -18,6 +18,8 @@ section.
 
 - **RNG-06**: Every role offers every rung, so a user's effort choice is one uniform question per role rather than a per-role subset. The ladder is 19 of 30 files at HEAD, measured 2026-09-04 by reading the `effort:` line of every file in `agents/`: `cad-planner`, `cad-assumptions-analyzer` and `cad-executor` have no `low` and no `medium`; `cad-verifier` and `cad-reviewer` have no `low`; `cad-assumptions-analyzer`, `cad-executor` and `cad-plan-checker` have no `max`. Each missing cell becomes the same two-line pointer body its siblings carry, with its own `effort:` line and its role's contract skill preloaded, and `weight-budgets.json` gains a row per file in the same commit. The interview phase 3 introduces asks one question per role only if no role has to be explained as an exception. `GH-249` Phase 1.
 
+- **ROL-02**: The `stakes` key and every grid keyed on it are gone: `route.mjs resolve` answers model and effort from the roles block and the schema's per-role defaults, gates, tiers, efforts and the deep-verify pass from real schema defaults plus a two-effect risk floor (the plan review becomes blocking and the deep-verify pass runs; models and rungs stay where the user set them), and a thirteen-question `/cad-config --roles` interview writes those keys - in full to the global layer on a first run, as a per-project confirmation to the repo layer after that, and as the migration that expands a lingering `stakes` level into per-role values and removes the key. Deleted with the level: the cells grid, `RAISE_TARGET`, `route.mjs replay`, `route-table.json`, `model_aliases` and the six `model.overrides.*` enums. `GH-249` Phase 3.
+
 `v3.7.11 - unresolved inputs` opened 2026-09-02 and closed 2026-09-03. Three
 phases, four ids - `RNG-05` and `RSK-10` in phase 1, `RSK-11` in phase 2,
 `TRK-02` in phase 3 - are rows under the `Shipped` heading below, all four
@@ -517,6 +519,7 @@ section only, bounded at the next `## ` heading.
 |-------------|-------|--------|
 | RNG-06 | Phase 1 | Complete |
 | ROL-01 | Phase 2 | Complete |
+| ROL-02 | Phase 3 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
