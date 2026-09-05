@@ -5,14 +5,18 @@
 
 ## Active
 
-**`v3.7.12 - what each role runs at` opened 2026-09-04 and TAGS and PUBLISHES
-as the LAST 3.x release** (decided 2026-09-05; 4.0.0 is a Rust rewrite). Three phases on `cadence/v3.7.12`, sourced from `GH-249`.
-`/cad-plan` seeds each `## Traceability` row as its phase is planned, so this
-cycle's ids are assigned there rather than reserved here. The theme is one
-claim: config says what each role runs at, in words the user chose. The shipped
-ids from earlier cycles are rows under `## Shipped` below, and the ids under
-`## Deferred` keep their own reasons - none is promoted here to fill this
-section.
+**No cycle open.** The shipped ids are rows under `## Shipped` below; the ids
+under `## Deferred` keep their own reasons and none is promoted here to fill
+this section. `/cad-phase add` is what opens the next cycle.
+
+`v3.7.12 - what each role runs at` opened 2026-09-04 and closed 2026-09-05, the
+LAST 3.x release (4.0.0 is a Rust rewrite, decided 2026-09-05). Three phases,
+three ids - `RNG-06` in phase 1, `ROL-01` in phase 2, `ROL-02` in phase 3 - are
+rows under the `Shipped` heading below, all three Complete. They came off
+`GH-249`, filed 2026-09-02 and sized there as a milestone. The theme was one
+claim: config says what each role runs at, in words the user chose, with nothing
+between them and the model but a string they typed. The audit passed 3/3 traced
+with 20/20 acceptance criteria covered and nothing deferred.
 
 
 
