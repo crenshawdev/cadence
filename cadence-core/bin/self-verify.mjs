@@ -482,18 +482,27 @@ function* binFiles(root, opts = {}) {
 }
 
 /**
- * Expand <t>/<trigger>/<name>-style placeholders into every concrete key
+ * Expand <t>/<trigger>/<name>/<role>-style placeholders into every concrete key
  * they stand for (cartesian across placeholders). A single representative
  * would under-cover the reverse check: prose that says
  * `review.triggers.<t>.tier` covers ALL triggers' tier keys, not just plan's.
+ *
+ * `<role>` is the third placeholder and the one with no literal alternative:
+ * the tokenizer's segment class is [a-z_0-9<>], so a role name written out in
+ * full stops at its hyphen and `roles.cad-planner.model` reduces to
+ * `roles.cad` - a token 1b's prefix rule accepts for no key. The other two
+ * families are spellable either way; this one is reachable only through the
+ * placeholder, which is why it is here rather than in a prose convention.
  * @param {string} token @param {string[]} triggers @param {string[]} providers
+ * @param {string[]} [roles]
  */
-function expand(token, triggers, providers) {
+function expand(token, triggers, providers, roles) {
   let out = [token];
   const subst = (list, re, values) =>
     list.flatMap((t) => re.test(t) ? values.map((v) => t.replace(re, v)) : [t]);
   out = subst(out, /<t(?:rigger)?>?/g, triggers);
   out = subst(out, /<(?:name|provider)>?/g, providers);
+  out = subst(out, /<role>?/g, Array.isArray(roles) ? roles : []);
   return out;
 }
 
@@ -516,6 +525,11 @@ function run(root) {
     .filter((k) => k.startsWith('review.triggers.')).map((k) => k.split('.')[2]))];
   const PROVIDERS = [...new Set(schemaKeys
     .filter((k) => k.startsWith('review.providers.')).map((k) => k.split('.')[2]))];
+  // The roles the `roles.<role>.*` family is named per, read off the schema for
+  // the same reason the two lists above are: a seventh role is a schema edit and
+  // no line of the placeholder rule moves.
+  const ROLES = [...new Set(schemaKeys
+    .filter((k) => k.startsWith('roles.')).map((k) => k.split('.')[1]))];
   // Keys with no dot can never match the dotted-token regex; they are covered
   // by a bare-word mention instead.
   const BARE_KEYS = schemaKeys.filter((k) => !k.includes('.'));
@@ -580,8 +594,8 @@ function run(root) {
       const family = raw.split('.')[0];
       if (!FAMILIES.has(family)) continue;
       if (raw.split('.').some((seg) => NON_KEY_SEGMENT.has(seg))) continue;
-      const expansions = expand(raw, TRIGGERS, PROVIDERS);
-      // The reach table (check 9) names all 72 keys by construction, so
+      const expansions = expand(raw, TRIGGERS, PROVIDERS, ROLES);
+      // The reach table (check 9) names every key by construction, so
       // letting it feed seenTokens would make 1b's inert-config-key
       // unreachable forever - a key nothing but the table mentions would
       // read as referenced. It still feeds the FORWARD scan below: class 2
@@ -1214,7 +1228,7 @@ function run(root) {
           problems.push({ kind: code, file: REACH_DOC, detail });
         }
         // `rows === null` means the section heading is absent, already one
-        // problem above - reporting all 72 keys missing on top of it would
+        // problem above - reporting every key missing on top of it would
         // bury the one fault under copies of another.
         if (rows) {
           for (const { code, detail } of reachIssues(schema, rows)) {

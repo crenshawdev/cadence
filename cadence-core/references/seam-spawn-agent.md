@@ -306,6 +306,13 @@ would be floored off the previous phase's files.
   over the cell. A retry never resolves below it: `--attempt 2` takes whichever
   of the cell's retry rung and the configured start rung sits higher, and says
   which one it out-ranked.
+- **The roles block.** `roles.<role>.effort` names that same start rung one key
+  further out and WINS over `model.effort.<role>`, which stays live as the
+  narrower fallback; `roles.<role>.model` is its other half. Silence falls back
+  per KEY rather than per role, so a global layer naming only the model composes
+  with a repo layer naming only the rung. Setting a roles key and its older
+  sibling for one role adds a `warnings[]` entry naming which key won, and a
+  raised risk floor clamps the rung whichever of the two supplied it.
 - **Tell the user when a pin fires.** A dispatch is approved through a UI that
   generally shows the agent name and not the model, so a pinned dispatch looks
   identical to a routed one at the moment of approval. When `pinned` is true,

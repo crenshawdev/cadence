@@ -325,10 +325,13 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`review.decision_review.effort` `stakes` `model.escalate_on_failure`\n' +
     '`granularity`\n' +
     // Two-segment FAMILY tokens, one each for the six per-role pins and the six
-    // per-role start rungs: 1b counts a >=2-segment prefix as a reader, and
-    // `model.effort.<role>` would report unknown-config-key (expand() carries no
-    // <role> placeholder).
+    // per-role start rungs: 1b counts a >=2-segment prefix as a reader, so the
+    // bare family covers all six without naming a role.
     '`model.overrides` `model.effort`\n' +
+    // The roles family cannot be covered that way: `roles` alone is one segment
+    // and 1b refuses a bare family name as a reader, so these two go through the
+    // <role> placeholder expand() carries.
+    '`roles.<role>.model` `roles.<role>.effort`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks` `workflow.max_plan_bytes`\n' +
@@ -1458,6 +1461,27 @@ test('check 1 (reverse): `risk.override.<surface>` prose covers every surface ke
   const inert = run(['--root', root]).problems
     .filter((p) => p.kind === 'inert-config-key' && p.detail.startsWith('risk.override.'));
   assert.deepEqual(inert, []);
+});
+
+test('check 1: `roles.<role>.effort` prose covers every role, and its absence is inert', () => {
+  // The <t> row's shape again, scoped to the third placeholder - and this one
+  // has no literal alternative: the tokenizer's segment class stops at the
+  // hyphen, so `roles.cad-planner.effort` written out reduces to `roles.cad`,
+  // which 1b's prefix rule accepts for no key. Both arms, because an expansion
+  // that quietly produced nothing would pass the first on its own.
+  const covered = run(['--root', fixture('The rung a role starts at is `roles.<role>.effort`.\n')]).problems;
+  assert.deepEqual(covered.filter((x) => x.kind === 'unknown-config-key'
+    && x.detail.startsWith('roles.')), [], JSON.stringify(covered));
+  assert.deepEqual(covered.filter((x) => x.kind === 'inert-config-key'
+    && x.detail.endsWith('.effort') && x.detail.startsWith('roles.')), [],
+  JSON.stringify(covered));
+
+  // The negative control: the same fixture with the token gone reports the key
+  // inert, so the arm above is passing on the placeholder rather than on a
+  // check that never fires.
+  const bare = run(['--root', fixture('Nothing here names a rung.\n')]).problems;
+  assert.ok(bare.some((x) => x.kind === 'inert-config-key'
+    && x.detail === 'roles.cad-planner.effort'), JSON.stringify(bare));
 });
 
 test('check 10: a loop-shaped concurrent dispatch under workflows is unbatched-dispatch', () => {

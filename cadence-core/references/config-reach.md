@@ -117,6 +117,18 @@ purpose test runs against the reach the author just replaced.
 | `model.effort.cad-reviewer` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's, floored by any detected risk surface |
 | `model.effort.cad-executor` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's, floored by any detected risk surface |
 | `model.effort.cad-plan-checker` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's, floored by any detected risk surface |
+| `roles.cad-planner.model` | universal | `bin/route.mjs` - names this role's model outright, winning over `model.overrides.cad-planner` and over the cell; a string the host does not accept warns and the cell's model stands |
+| `roles.cad-assumptions-analyzer.model` | universal | `bin/route.mjs` - names this role's model outright, winning over `model.overrides.cad-assumptions-analyzer` and over the cell; a string the host does not accept warns and the cell's model stands |
+| `roles.cad-verifier.model` | universal | `bin/route.mjs` - names this role's model outright, winning over `model.overrides.cad-verifier` and over the cell; a string the host does not accept warns and the cell's model stands |
+| `roles.cad-reviewer.model` | universal | `bin/route.mjs` - names this role's model outright, winning over `model.overrides.cad-reviewer` and over the cell; a string the host does not accept warns and the cell's model stands |
+| `roles.cad-executor.model` | universal | `bin/route.mjs` - names this role's model outright, winning over `model.overrides.cad-executor` and over the cell; a string the host does not accept warns and the cell's model stands |
+| `roles.cad-plan-checker.model` | universal | `bin/route.mjs` - names this role's model outright, winning over `model.overrides.cad-plan-checker` and over the cell; a string the host does not accept warns and the cell's model stands |
+| `roles.cad-planner.effort` | universal | `bin/route.mjs` - names the rung this role starts at, winning over `model.effort.cad-planner` and over the cell; no floor reaches it (pre-plan role, dispatched before the PLAN the floor reads) |
+| `roles.cad-assumptions-analyzer.effort` | universal | `bin/route.mjs` - names the rung this role starts at, winning over `model.effort.cad-assumptions-analyzer` and over the cell; no floor reaches it (pre-plan role, dispatched before the PLAN the floor reads) |
+| `roles.cad-verifier.effort` | universal | `bin/route.mjs` - names the rung this role starts at, winning over `model.effort.cad-verifier` and over the cell, floored by any detected risk surface |
+| `roles.cad-reviewer.effort` | universal | `bin/route.mjs` - names the rung this role starts at, winning over `model.effort.cad-reviewer` and over the cell, floored by any detected risk surface |
+| `roles.cad-executor.effort` | universal | `bin/route.mjs` - names the rung this role starts at, winning over `model.effort.cad-executor` and over the cell, floored by any detected risk surface |
+| `roles.cad-plan-checker.effort` | universal | `bin/route.mjs` - names the rung this role starts at, winning over `model.effort.cad-plan-checker` and over the cell, floored by any detected risk surface |
 | `workflow.research` | new-project research step only | `workflows/new-project.md`'s research pass; no other workflow reads it |
 | `workflow.plan_check` | universal | `workflows/plan.md` - whether the plan checker runs before code |
 | `workflow.verifier` | universal | `workflows/verify.md` - off switch for the goal-backward pass |
