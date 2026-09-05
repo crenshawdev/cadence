@@ -39,12 +39,16 @@ answers are written where phase 2 onward can read them.
   before the boundary was still callable after it with no reload. CONTEXT's AC7
   admits no substitute, on the same terms as AC6.
 
-A `not yet observed` record is a PLACEHOLDER, never a completion. Tasks 5 and 6
-write one when John has supplied nothing, so the executor has a defined action
-and never invents a figure - but the task is then reported BLOCKED ON JOHN
-rather than done, and the two truths above stay false until the observation
-lands. The phase does not verify in that state, and that is the correct
-outcome: two of its three questions are unanswered.
+A record that answers nothing is a PLACEHOLDER, never a completion, and the two
+tasks reach that state by different routes. Task 5 DISPATCHES its probe, so it
+is never blocked on a person: it writes `inconclusive` only when a step it ran
+could not answer - a preloaded wildcard subagent, say - with that reason and
+what would decide it. Task 6 needs a compaction nobody can force, so it stays
+blocked on John when none was observed, writing `inconclusive` with "not yet
+observed" so the executor has a defined action and never invents a result.
+Either way the truth above stays false until the observation lands, the task is
+reported BLOCKED rather than done, and the phase does not verify. That is the
+correct outcome: the question is unanswered.
 - `.planning/ROADMAP.md`'s Open Questions section shows a verdict and a
   spike-record path for each of OQ-1, OQ-2 and OQ-3, and the phrases "across one
   real phase" and "on a real phase" no longer appear in the file, including
@@ -244,61 +248,85 @@ any skill file - OQ-1's verdict decides whether and how, in a later phase.
 ### Task 5: Probe whether a conditional ToolSearch preamble gets skipped, and record OQ-1
 
 - **Files:** `.planning/spikes/toolsearch-conditional-skip/SPIKE.md`
-- **Action:** JOHN is the operator: he runs the probe in a live Claude Code CLI
-  session and supplies the figures. A subagent cannot run it - a subagent whose
-  definition names its tools has them at call #1
-  (`docs/rationale/architecture-v4.md` section 4), so it never sees a deferred
-  first load and has no view of its own `cache_creation` turn accounting. The
-  executor's job is to write the record's `## Observation` section by
-  transcribing John's supplied figures VERBATIM, and to write nothing into the
-  two token fields or the skip/no-skip field from any other source - not from
-  this plan, not from the design doc, not from `.planning/REQUIREMENTS.md`.
-  A supplied observation reaches the executor exactly one of two ways: a block
-  John has appended to this record under an `## Observation` heading before the
-  dispatch, or observation text carried in the executor's own dispatch prompt.
-  If neither carries one, take the inconclusive path below - do not go looking
-  for the figures anywhere else, and do not read silence as an absent run.
-  Record the CLI version string the probe ran on -
-  section 4 of `docs/rationale/architecture-v4.md` pins its measured facts to
-  CLI 2.1.261 and a probe that cannot name its host cannot be compared to them.
-  Two numbers are required: the token cost of a FIRST `ToolSearch` load of a
-  deferred schema, and the cost of a SECOND `ToolSearch` for that same
-  already-loaded schema, read the way the design doc's figures were read
-  (`cache_creation` on the following turn). That doc's section 4 records 914 and
-  905 for those two loads: those are the PRIOR this probe tests, not a result,
-  and they belong only in a section headed as prior - never in the observation's
-  token fields. If no observation is supplied in this run, the `VERDICT:` is
-  `inconclusive` with "not yet observed" as its reason, the observation fields
-  stay empty, and the prior section cites the design doc's 914/905 as the
-  untested expectation. Then
-  answer the question those numbers do not answer: whether the model SKIPS the
-  search when the preamble is phrased conditionally - the wording the design doc
-  proposes is "if excerpt_read is not in your loaded tools, ToolSearch `select:`
-  it" - so the observation is whether a second search is issued at all under
-  conditional phrasing, not only what it costs when issued. Write one observed
-  result per criterion from task 1 and one `VERDICT:` line. Record the standing
-  constraint the verdict has to be actionable against: an unconditional preamble
-  in all 28 command skills would cross 28 pinned ceilings in
-  `cadence-core/bin/weight-budgets.json` at once, enforced by
+- **Action:** The probe is DISPATCHED, not handed to a person. It runs in three
+  steps and each one is observed from OUTSIDE the agent under test, by reading
+  its transcript under `/claude/.claude/projects/-code-cadence/`, never by asking
+  an agent to report on its own behaviour. A model cannot observe its own
+  skipping: it is the thing deciding, so its account of why it did not search is
+  a rationalization, not evidence.
+
+  STEP 1, preflight. Dispatch a `general-purpose` subagent and instruct it to
+  call one deferred MCP tool DIRECTLY, with no `ToolSearch` first. Read its
+  transcript: a `ToolSearch` it had to issue, or an `InputValidationError` naming
+  `ToolSearch`, means wildcard-tools subagents get their MCP tools DEFERRED and
+  steps 2 and 3 can run there. A clean first call means they get them PRELOADED,
+  the subagent route is dead for this question, and the verdict is `inconclusive`
+  with that as the reason and "a main-thread run under controlled surrounding
+  content" as what would decide it. Either answer also settles one of the design
+  doc's own section 9 open items; record it as such.
+
+  STEP 2, the two costs, only if step 1 said deferred. Dispatch a probe subagent
+  whose entire prompt is: call `ToolSearch` for tool X, then call `ToolSearch`
+  for tool X again, then return the single word `done`. Nothing else, no prose
+  between the calls. Read `cache_creation_input_tokens` on the turn FOLLOWING
+  each of the two calls in its transcript. The control is what makes the figures
+  comparable: `cache_creation` covers everything appended since the last cache
+  breakpoint, so any prose, tool result or system-reminder attachment riding one
+  turn and not the other lands in the figure as if it were schema cost.
+
+  Measured in this planning session on CLI 2.1.261, exactly that contamination
+  showed up: two `ToolSearch select:WebFetch` calls returned the full schema both
+  times, byte-identical and with no already-loaded notice, and the following-turn
+  `cache_creation` was 1,759 and 560 - a gap that is the paragraph of prose
+  riding the first call, not a schema saving. Record those two figures as a
+  CONTAMINATED PRIOR beside the design doc's 914/905, never as this probe's
+  result, and state that the design doc's pair was read by the same
+  uncontrolled method and inherits the same doubt.
+
+  What that session DID settle, and the record states it as observed on
+  2026-09-05 / CLI 2.1.261: a repeat `ToolSearch` for an already-loaded schema is
+  not a no-op - the full schema comes back again with no already-loaded notice.
+  That is the design doc's qualitative claim, now observed.
+
+  STEP 3, the skip. Dispatch TWO subagents with prompts identical in every byte
+  except the preamble: one unconditional ("ToolSearch `select:` excerpt_read,
+  then ..."), one conditional ("if `excerpt_read` is not in your loaded tools,
+  ToolSearch `select:` it, then ..."), both given the same task that needs the
+  tool, and both run twice so the tool is already loaded on the second run.
+  Count `ToolSearch` tool_use rows in each transcript. A skip is the conditional
+  arm issuing FEWER searches on its second run than the unconditional arm; equal
+  counts mean no skip. That count is the observation - not any agent's statement
+  about what it did.
+
+  Record the CLI version every step ran on: section 4 of
+  `docs/rationale/architecture-v4.md` pins its measured facts to CLI 2.1.261 and
+  a probe that cannot name its host cannot be compared to them. The doc's 914 and
+  905 are the PRIOR this probe tests, never a result, and they belong only in a
+  section headed as prior.
+
+  A step that could not run is `inconclusive` for that step, with the reason and
+  what would decide it - never a verdict borrowed from the design doc's strings.
+  Write one observed result per criterion from task 1 and one `VERDICT:` line.
+  Record the standing constraint the verdict has to be actionable against: an
+  unconditional preamble in all 28 command skills would cross 28 pinned ceilings
+  in `cadence-core/bin/weight-budgets.json` at once, enforced by
   `cadence-core/bin/self-verify.mjs`. Do NOT add the preamble to any skill file,
-  to `weight-budgets.json`, or to any workflow - this phase decides the shape,
-  a later phase writes it.
-- **Verify:** human-verify - needs a live Claude Code CLI session, since a
-  ToolSearch load cost is only observable from a real session's turn accounting.
-  John should confirm the record names the CLI version he ran, and that the two
-  token figures in it are the ones he observed for the first and the repeat load.
-  Mechanically: `grep -c '^VERDICT:' .planning/spikes/toolsearch-conditional-skip/SPIKE.md`
-  returns 1, and every token figure and every stated skip/no-skip outcome in the
-  file carries its provenance beside it, in one of exactly two forms -
-  "observed <date>, CLI <version>" or
-  "cited from `docs/rationale/architecture-v4.md` section 4" - so a
-  transcribed design-doc figure cannot be read as an observed one. If the verdict
+  to `weight-budgets.json`, or to any workflow - this phase decides the shape, a
+  later phase writes it.
+- **Verify:** `grep -c '^VERDICT:' .planning/spikes/toolsearch-conditional-skip/SPIKE.md`
+  returns 1. Every token figure and every stated skip/no-skip outcome carries its
+  provenance beside it, in one of exactly three forms - "observed <date>, CLI
+  <version>", "cited from `docs/rationale/architecture-v4.md` section 4", or
+  "contaminated prior, uncontrolled surrounding content" - so a transcribed
+  design-doc figure cannot be read as an observed one and the 1,759/560 pair
+  cannot be read as a clean first-vs-repeat delta. The record names, per step,
+  the agent type dispatched and the transcript path the count or figure was read
+  from, so every claim is re-checkable from disk without re-running the probe.
+  The step 1 answer - deferred or preloaded for a wildcard-tools subagent -
+  appears explicitly, since it also settles a section 9 open item. If the verdict
   is not `inconclusive`, the file carries two distinct integer token figures
-  explicitly labeled first-load and repeat-load and both carry the observed form,
-  plus a CLI version string and one sentence
-  stating whether the conditional phrasing produced a skip; if it is
-  `inconclusive`, its reason reads "not yet observed" and no figure carries the
-  observed form. And
+  labeled first-load and repeat-load in the observed form, plus the two
+  `ToolSearch` counts step 3 compared. And
   `git grep -l 'ToolSearch' -- skills/ cadence-core/workflows/` returns nothing,
   proving no preamble leaked into the shipped surface.
 
