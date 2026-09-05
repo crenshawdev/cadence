@@ -312,7 +312,7 @@ test('check: a retired KEY names its replacement, not the generic unknown key', 
 test('check: a bad VALUE on a LIVE key still reads as a value error', () => {
   // The two failures must stay distinguishable: a bad value names the enum,
   // a retired key names its replacement. The sample moved off `stakes` when
-  // v4.0.0 retired it - a retired key can no longer reach the value arm at all.
+  // v3.7.12 retired it - a retired key can no longer reach the value arm at all.
   const r = run(['check', 'granularity=quality']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
@@ -320,14 +320,14 @@ test('check: a bad VALUE on a LIVE key still reads as a value error', () => {
 });
 
 test('check: the retired stakes key names the roles block and the interview', () => {
-  // D-06's write-face half. `stakes` left config.schema.json in v4.0.0, so
+  // D-06's write-face half. `stakes` left config.schema.json in v3.7.12, so
   // without the retirement entry this would answer the bare `unknown key` and
   // send a user with a v3 config nowhere.
   const r = run(['check', 'stakes=shipped']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail[0].key, 'stakes');
-  assert.match(r.detail[0].error, /retired in v4\.0\.0/);
+  assert.match(r.detail[0].error, /retired in v3\.7\.12/);
   assert.match(r.detail[0].error, /roles\./);
   assert.match(r.detail[0].error, /\/cad-config --roles/);
   assert.notEqual(r.detail[0].error, 'unknown key');
@@ -373,7 +373,7 @@ test('get: a repo config still carrying stakes warns with the migration pointer'
   assert.equal(r.values['granularity'], 'coarse');
   const named = r.warnings.filter((w) => /"stakes"/.test(w));
   assert.equal(named.length, 1, JSON.stringify(r.warnings));
-  assert.match(named[0], /retired in v4\.0\.0/);
+  assert.match(named[0], /retired in v3\.7\.12/);
   assert.match(named[0], /\/cad-config --roles/);
 });
 
@@ -1601,7 +1601,7 @@ test('check: null is still refused at the write face - a gate is a closed enum',
 //
 // RNG-04 used to live here: `get stakes` answered `shipped` out of the schema
 // default on a project that had chosen nothing, so this face carried a two-state
-// read of its own to say "no layer set it". v4.0.0 deleted the key, and with it
+// read of its own to say "no layer set it". v3.7.12 deleted the key, and with it
 // both states - each role names its own model and effort now, and there is no
 // level for a workflow to report as set or unset. What replaces those arms is
 // the shape a v3 config actually meets: a read face that refuses the name, a
@@ -1634,7 +1634,7 @@ test('get: the KEYLESS full read answers no stakes value, and warns about the ke
   assert.equal(r.values.granularity, 'standard'); // its live sibling still reads
   const named = (r.warnings || []).filter((w) => /"stakes"/.test(w));
   assert.equal(named.length, 1, JSON.stringify(r.warnings));
-  assert.match(named[0], /retired in v4\.0\.0/);
+  assert.match(named[0], /retired in v3\.7\.12/);
   assert.match(named[0], /\/cad-config --roles/);
 });
 
@@ -1644,7 +1644,7 @@ test('set: stakes is refused before anything is written, naming the migration', 
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail[0].key, 'stakes');
-  assert.match(r.detail[0].error, /retired in v4\.0\.0/);
+  assert.match(r.detail[0].error, /retired in v3\.7\.12/);
   assert.match(r.detail[0].error, /\/cad-config --roles/);
   // --global auto-creates, so an unrefused pair would have left a file here.
   assert.equal(existsSync(gpath), false);

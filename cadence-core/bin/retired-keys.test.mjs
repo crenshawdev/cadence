@@ -15,14 +15,14 @@ import { RETIRED_KEYS, retiredKeyError, retiredKeysIn } from './lib/retired-keys
 // --- the retired rail, pinned byte for byte (CER-01 AC4, D-03) ---------------
 
 const RETIRED_KEYS_FILE = fileURLToPath(new URL('./lib/retired-keys.mjs', import.meta.url));
-// sha256 of lib/retired-keys.mjs, re-cut by the v4.0.0 milestone's phase 3 under
+// sha256 of lib/retired-keys.mjs, re-cut by the v3.7.12 milestone's phase 3 under
 // its D-06 and D-07. Every assertion in this file reads message CONTENT, so the
 // eight `risk.override.*` rows could be edited, reworded or un-retired with the
 // whole suite still green - which is exactly what CER-01 AC4's "that rail is
 // byte-identical" claims nothing checks.
 //
 // THE DECISION BEHIND THIS PIN'S CURRENT VALUE, so a reader knows what the last
-// deliberate edit was and does not mistake it for a drift: phase 3 of v4.0.0
+// deliberate edit was and does not mistake it for a drift: phase 3 of v3.7.12
 // deleted `stakes` from config.schema.json, and D-06 pairs that deletion with a
 // `stakes` row HERE - a config that skipped the migration has to meet a message
 // naming the roles block, not the generic `unknown key` a silent schema gives.
@@ -31,7 +31,14 @@ const RETIRED_KEYS_FILE = fileURLToPath(new URL('./lib/retired-keys.mjs', import
 // map then refuses. Both rows, and the `model.auto.escalate_on_failure` detail
 // that named the deleted level, are what moved the digest off
 // `a9b330531fb0ce70a51879c0ca39a582de9616c9004ffa4085d8efeb49429c8a`.
-const RETIRED_KEYS_SHA256 = 'fdfe6df6a5bf82d151f3e74829c5dd95b8a02143b0729e485b1f6c84a1aec317';
+//
+// The digest then moved a SECOND time inside the same phase, off
+// `fdfe6df6a5bf82d151f3e74829c5dd95b8a02143b0729e485b1f6c84a1aec317`, for one
+// reason and no other: the milestone was relabelled from v4.0.0 to v3.7.12
+// partway through, with 4.0.0 reserved for a later rewrite, so the `stakes`
+// row's `since` said a version that will never ship. That edit is a version
+// string, not a decision about which keys are retired - D-03 is untouched by it.
+const RETIRED_KEYS_SHA256 = 'ee1ac81cb37342b114a71ffc3d98d9a6cd37b2ad96bcbab35b6926e33d58ac72';
 
 test('lib/retired-keys.mjs is byte-identical - the eight risk.override.* keys stay retired', () => {
   // WHAT THIS PROTECTS. D-03 keeps the retired family retired because a key
@@ -40,7 +47,7 @@ test('lib/retired-keys.mjs is byte-identical - the eight risk.override.* keys st
   // `review.triggers.risk_surface` - rather than by reviving these. Un-retiring
   // one would put the same name in both places and make the write face refuse a
   // key the schema advertises. `stakes` is the same rule running the other way:
-  // it left the schema in v4.0.0 and joined this map in the same commit, and it
+  // it left the schema in v3.7.12 and joined this map in the same commit, and it
   // may not be in both.
   //
   // WHAT TO DO WHEN THIS GOES RED: re-read D-03 before re-pinning. A deliberate
@@ -67,7 +74,7 @@ test('lib/retired-keys.mjs is byte-identical - the eight risk.override.* keys st
 
 test('model.profile points at the roles block, not at a key the write face refuses', () => {
   // D-07. It used to render `use "stakes" instead`, and `stakes` is retired as
-  // of v4.0.0 - so the message sent a user to `config.mjs set stakes=...`, which
+  // of v3.7.12 - so the message sent a user to `config.mjs set stakes=...`, which
   // this same map then refuses. A retirement pointer that lands on another
   // retirement is worse than no pointer: it costs the user a second round trip
   // to learn the first answer was dead.
@@ -79,12 +86,12 @@ test('model.profile points at the roles block, not at a key the write face refus
   assert.match(e, /\/cad-config --roles/);    // the migration that writes them
 });
 
-test('stakes reads as a v4.0.0 retirement naming the roles block and the interview', () => {
+test('stakes reads as a v3.7.12 retirement naming the roles block and the interview', () => {
   // D-06. The whole point of the entry: a config that skipped the migration
   // meets a message naming its replacement instead of the generic `unknown key`
   // the schema's silence would otherwise produce.
   const e = retiredKeyError('stakes');
-  assert.match(e, /^retired in v4\.0\.0: /);
+  assert.match(e, /^retired in v3\.7\.12: /);
   assert.match(e, /roles\.<role>\.model/);
   assert.match(e, /roles\.<role>\.effort/);
   assert.match(e, /\/cad-config --roles/);
@@ -114,7 +121,7 @@ test('model.auto.max_escalations reads as a removal, naming no replacement key',
 });
 
 test('a live key is not retired: granularity and workflow.research both return null', () => {
-  // `stakes` was this row's first sample until v4.0.0 retired it; the row still
+  // `stakes` was this row's first sample until v3.7.12 retired it; the row still
   // needs a key the schema DOES hold, or it stops distinguishing anything.
   assert.equal(retiredKeyError('granularity'), null);
   assert.equal(retiredKeyError('workflow.research'), null);
@@ -170,7 +177,7 @@ test('a config still carrying stakes warns on the read face with the same pointe
   // told what to do on its next command rather than at some later failure.
   const w = retiredKeysIn({ stakes: 'critical' });
   assert.equal(w.length, 1, JSON.stringify(w));
-  assert.match(w[0], /^config key "stakes" was retired in v4\.0\.0 and is ignored: /);
+  assert.match(w[0], /^config key "stakes" was retired in v3\.7\.12 and is ignored: /);
   assert.match(w[0], /roles\.<role>\.model/);
   assert.match(w[0], /roles\.<role>\.effort/);
   assert.match(w[0], /\/cad-config --roles/);
@@ -193,7 +200,7 @@ test('two retired auto keys yield two warnings, one each', () => {
 });
 
 test('a live config warns about nothing', () => {
-  // The sample moved off `stakes` when v4.0.0 retired it: a config carrying it
+  // The sample moved off `stakes` when v3.7.12 retired it: a config carrying it
   // is now the warning case two rows up, so leaving it here would have asserted
   // the opposite of what this row is for.
   assert.deepEqual(retiredKeysIn({

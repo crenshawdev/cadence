@@ -45,7 +45,7 @@ export const RETIRED_KEYS = Object.freeze({
   // The pointer rides `detail`, which both faces render verbatim.
   'stakes': Object.freeze({
     replacement: null,
-    since: 'v4.0.0',
+    since: 'v3.7.12',
     detail: 'the single level that decided every role\'s model and effort is '
       + 'gone - each role now carries its own `roles.<role>.model` and '
       + '`roles.<role>.effort`, and routing reads nothing from this key. Run '

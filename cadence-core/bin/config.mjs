@@ -494,7 +494,7 @@ function get(file, keys, asGlobal) {
     // `stakes` used to keep a two-state read of its own here - the one key on
     // this face whose unset state no schema default could answer, because the
     // level was computed per phase rather than read. The key is retired
-    // (v4.0.0), so there is no two-state read left: every key this face answers
+    // (v3.7.12), so there is no two-state read left: every key this face answers
     // now either carries a layered value or carries a schema default, and a
     // config that still holds `stakes` is named by the retired-key warnings
     // folded in above rather than by a special case here.
