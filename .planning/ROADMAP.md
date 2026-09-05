@@ -63,14 +63,15 @@ triaged by hand and are not carried into these phases.
   2026-09-05. The original question assumed the preamble was required and only
   asked what it costs: unconditional, about 900 tokens per skill invocation
   across `/cad-context`, `/cad-task`, `/cad-debug` and `/cad-adopt`, so roughly
-  3,600 tokens per run for one useful load. A session-scoped check was later
-  cited as finding deferred tools callable with no `ToolSearch` at all; that
-  check has no transcript in the session archive and contradicts the deferral
-  observed on the same CLI on 2026-09-05, so it is not carried. Deferral is
-  what is recorded, so a preamble is needed and the shape was decided on
-  2026-09-05: one unconditional `ToolSearch` at skill entry. Phase 1's skeleton
-  binary serves a real tool surface, which CONFIRMS that against a real
-  surface instead of by proxy.
+  3,600 tokens per run for one useful load. A direct probe on 2026-09-05
+  settled it against a purpose-built two-tool MCP server with settings
+  isolated: a tool never loaded through `ToolSearch` was called directly and
+  returned normally, so deferral is NOT enforced at call time on CLI 2.1.261.
+  A paired run showed the agent volunteering a `ToolSearch` anyway, saying it
+  had to load the schema first, so the ~900-token load is a convention the
+  model follows and not a requirement. The question that remains is whether a
+  preamble should exist at all, and if so whether it should tell the model to
+  SKIP the load. Phase 1's skeleton binary is no longer needed to answer OQ-1.
 - **OQ-2 - do loaded tools survive compaction.** Moved to phase 2 on 2026-09-05.
   The CLI carries `preCompactDiscoveredTools` and a "carried from compact
   boundary" string, which is suggestive and not an observation. A compaction was
@@ -98,10 +99,10 @@ the binary's name, the typed envelope vocabulary from section 3a of the design
 doc, and the POSIX shell SessionStart bootstrap that fetches the platform
 release and verifies its checksum. No domain modules yet.
 
-The tool surface it serves is also what settles OQ-1 and OQ-2. Once the binary
-publishes real tools, whether they arrive deferred in a main thread is watched
-directly, with a never-loaded tool as the paired control, rather than inferred
-from a built-in standing in for them.
+OQ-1 and OQ-2 were dropped from this phase on 2026-09-05: a direct probe against
+a throwaway two-tool MCP server answered OQ-1 the same day and reduced OQ-2 to a
+question whose answer changes nothing. Phase 1 is the crate skeleton and nothing
+else.
 
 ### Phase 2: The golden harness
 

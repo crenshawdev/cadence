@@ -19,8 +19,25 @@ from earlier cycles are rows under `## Shipped` below, and the ids under
 `## Deferred` keep their own reasons - none is promoted here to fill this
 section.
 
-- **TSL-01**: Whether a ToolSearch preamble is needed at all, and only then whether a conditional one is SKIPPED when the schema is already loaded, is an observation before that preamble is written into 28 skill files. Unconditional costs ~900 tokens per skill invocation and a context-to-plan-to-execute-to-verify run would pay ~3,600 for one useful load. On CLI 2.1.261 MCP tools were observed arriving deferred on the main thread (2026-09-05), so a preamble IS needed and the shape decided the same day is one unconditional ToolSearch at skill entry with its ~900-token cost accepted. A later claim that deferred tools were callable with no ToolSearch at all has no transcript in the session archive and is not carried. Answered against the phase 1 binary's own tool surface, not by proxy. `OQ-1` Phase 1.
-- **TSL-02**: Whether loaded tool schemas survive a compaction is observed against a real compaction WITH a paired never-loaded control, rather than inferred from the CLI carrying `preCompactDiscoveredTools` and a "carried from compact boundary" string. The 2026-09-05 attempt saw a pre-boundary tool stay callable, but its control stayed callable too, so it separates nothing. Answered against the phase 1 binary. `OQ-2` Phase 1.
+Both deferral ids this cycle opened with, `TSL-01` and `TSL-02`, were closed
+on 2026-09-05 OUTSIDE the phase structure and neither is a phase 1 requirement.
+A direct probe answered them in one sitting: a throwaway two-tool MCP server run
+under `claude -p --strict-mcp-config --setting-sources ""`, with the never-loaded
+tool as the paired control the earlier attempt lacked.
+
+`TSL-01` is ANSWERED. Deferral is NOT enforced at call time on CLI 2.1.261.
+`probe_bravo`, never loaded through `ToolSearch`, was called directly as the
+agent's first action; the server logged the call and it returned normally with
+no `InputValidationError`. A paired run showed the agent volunteering a
+`ToolSearch` first and stating it had to load the schema, so the ~900-token load
+is a convention the model follows rather than a requirement the harness imposes.
+The actionable finding inverts the original question: a preamble telling the
+model to load is unnecessary, and a line telling it to SKIP the load would save
+~900 tokens per skill invocation. Writing that line is not scheduled here.
+
+`TSL-02` moves to `## Deferred` below. It asked whether a loaded schema survives
+a compaction; with calls not blocked either way, the answer no longer changes
+what gets written.
 
 `v3.7.12 - what each role runs at` opened 2026-09-04 and closed 2026-09-05, the
 LAST 3.x release (4.0.0 is a Rust rewrite, decided 2026-09-05). Three phases,
@@ -442,6 +459,13 @@ failed. Phases 2-4 are all on that same surface, so the rate would have carried.
 
 Promote as a group when the identity join has a test that fails on the class the
 UAT missed, or individually on the conditions below.
+
+- **TSL-02**: Whether a tool schema loaded before a compaction is still in
+  context after it, observed WITH a paired never-loaded control. Deferred
+  2026-09-05, not dropped: `TSL-01` showed calls are not blocked on an unloaded
+  tool (CLI 2.1.261), so the answer no longer decides whether anything is
+  written into a skill file. Promote if a future CLI starts enforcing deferral
+  at call time, which would make the post-compaction state load-bearing again.
 
 - **BAS-01**: The 3.x baseline for prompt size per dispatch and main-thread
   context growth per phase, minable from the frozen archive at

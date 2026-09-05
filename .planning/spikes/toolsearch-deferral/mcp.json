@@ -1,0 +1,1 @@
+{"mcpServers":{"probe":{"command":"node","args":["/tmp/claude-1000/-code-cadence/bb6f9c91-2df6-4608-b049-3f605bb55662/scratchpad/probe/server.mjs"],"env":{"PROBE_CALLS_LOG":"/tmp/claude-1000/-code-cadence/bb6f9c91-2df6-4608-b049-3f605bb55662/scratchpad/probe/calls.jsonl"}}}}

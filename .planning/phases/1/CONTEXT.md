@@ -10,9 +10,9 @@ builds, cross-compiles to four targets from the existing release workflow,
 serves a minimal MCP tool surface over rmcp stdio, and is fetched onto a
 machine by a POSIX shell SessionStart hook that verifies a pinned checksum.
 The typed envelope vocabulary from section 3a of
-`docs/rationale/architecture-v4.md`. Two observations against that surface,
-recorded as `TSL-01` and `TSL-02`.
-Out: Any domain module - project state, planning, dispatch, git, routing,
+`docs/rationale/architecture-v4.md`.
+Out: The two deferral observations - `TSL-01` was answered by direct probe on
+2026-09-05 and `TSL-02` was deferred the same day. Any domain module - project state, planning, dispatch, git, routing,
 trace, forge, retrieval. Vendoring excerpt's read/search layer. Removing or
 altering any of `cadence-core/`. Writing a ToolSearch preamble into any skill
 file. Publishing to crates.io. Any Windows target.
@@ -68,11 +68,10 @@ cannot start until the tool surface serves.
   `/code/excerpt/src/server.rs:157-173`, `:164-171`, `:230-245`;
   `rmcp-3.2.0/src/model/content.rs:210`;
   `docs/rationale/architecture-v4.md:111-122`, `:217-221`.
-- D-08 (Tool surface): "Empty tool surface" means TWO declared tools, not zero.
-  `TSL-02` needs a paired never-loaded control, so the surface must carry one
-  tool the probe loads and calls and one it never loads. A one-tool surface
-  reproduces the 2026-09-05 failure exactly. Evidence:
-  `.planning/REQUIREMENTS.md:23`; `docs/rationale/architecture-v4.md:290-291`.
+- D-08 (Tool surface): "Empty tool surface" means at least ONE declared tool,
+  not zero, so that AC4 can observe a real call returning a typed envelope. The
+  paired-control reason for a second tool is gone with `TSL-02`. Evidence:
+  `.planning/ROADMAP.md` phase 1 goal; D-19.
 - D-09 (Naming): The binary, the CLI, the `crates/` directory and the MCP
   server key are all `cadence`, giving wire names `mcp__cadence__<tool>`. Those
   names are hard-coded by every later subagent definition, `allowed-tools`
@@ -132,27 +131,23 @@ cannot start until the tool surface serves.
   JavaScript is still doing all the work, so a missing binary costs the user
   nothing. Evidence: `/code/excerpt/README.md:284-301`,
   `/code/excerpt/src/main.rs:177-181`; D-02.
-- D-19 (TSL-01 shape): The preamble question is settled by decision, not by
-  this phase's measurement: deferral was observed on CLI 2.1.261 on
-  2026-09-05, so a preamble IS needed, and the shape is ONE unconditional
-  `ToolSearch` at skill entry with its ~900-token cost accepted. Phase 1
-  CONFIRMS that against the binary's own surface rather than re-deciding it,
-  and writes the preamble into no skill file. Evidence:
-  `docs/rationale/architecture-v4.md:253-261`, `:264-266`; user decision
-  2026-09-05.
-- D-20 (Record): `.planning/REQUIREMENTS.md:22` and `.planning/ROADMAP.md:66-68`
-  both assert that deferred tools were callable with no `ToolSearch` at all. No
-  transcript of that check exists in the session archive across four searches,
-  and the claim contradicts the deferral observation recorded the same day.
-  Both are corrected to state what is actually recorded. Evidence: verbatim
-  searches 2026-09-05; `docs/rationale/architecture-v4.md:253-256`.
-- D-21 (Probe method): The two observations are taken from OUTSIDE the agent
-  under test, by reading its transcript, and any probe run isolates settings
-  (`--setting-sources ""`) with a canary proving the isolation took effect. A
-  model cannot observe its own skipping. `tools/list` over stdio proves only
-  that the server DECLARES a tool, which is not what either question asks.
-  Evidence: `/code/excerpt/tests/mcp.rs:792`;
-  `/code/excerpt/scripts/grep-deny-check.sh`.
+- D-19 (TSL-01, ANSWERED): Deferral is NOT enforced at call time. Observed
+  2026-09-05 on CLI 2.1.261 against a purpose-built two-tool MCP server run
+  under `--strict-mcp-config --setting-sources ""`: `probe_bravo`, never loaded
+  through `ToolSearch`, was called directly as the agent's first action, the
+  server logged the call, and it returned normally with no
+  `InputValidationError`. A paired run showed the agent volunteering a
+  `ToolSearch` first and saying it had to load the schema, so the ~900-token
+  load is a convention the model follows rather than a requirement the harness
+  imposes. Both tools appeared by name in the session's 28-tool init list.
+  Evidence: `.planning/spikes/toolsearch-deferral/SPIKE.md` and the
+  transcripts beside it; sessions `651b984a` and `6534785f`.
+- D-20 (Record): `.planning/REQUIREMENTS.md:22` and
+  `.planning/ROADMAP.md:66-68` claimed deferred tools were callable with no
+  `ToolSearch`. That claim had no transcript in the session archive and was
+  briefly corrected out on 2026-09-05; the probe in D-19 then confirmed it, so
+  both lines were restored and now carry the observation and its method.
+  Evidence: D-19.
 
 ## Acceptance criteria
 
@@ -165,21 +160,11 @@ cannot start until the tool surface serves.
       SessionStart hook, the binary lands at the documented path outside
       `${CLAUDE_PLUGIN_ROOT}`, and the session finishes with no error shown to
       the user. (human-verify: needs a live Claude Code session)
-- [ ] AC4: In a session with the plugin installed, at least two tools named
-      `mcp__cadence__*` are servable, and calling one returns a response whose
+- [ ] AC4: In a session with the plugin installed, at least one tool named
+      `mcp__cadence__*` is servable, and calling it returns a response whose
       structured content carries an envelope tag of `ok`, `refused`, `unknown`
       or `not-applicable`. (human-verify: needs a live Claude Code session)
-- [ ] AC5: A transcript read from outside the agent under test shows, for the
-      `mcp__cadence__*` control tool never loaded via `ToolSearch`, either a
-      `ToolSearch` the agent had to issue or an `InputValidationError` naming
-      `ToolSearch`; and shows the loaded tool called successfully in the same
-      run. (human-verify: needs a live Claude Code session)
-- [ ] AC6: A transcript covering one compaction shows whether the
-      `mcp__cadence__*` tool loaded before the boundary was callable after it
-      with no reload, and states the control tool's outcome in the same
-      post-boundary window. (human-verify: needs a live Claude Code session
-      that compacts)
-- [ ] AC7: `node cadence-core/bin/self-verify.mjs` reports no issues with the
+- [ ] AC5: `node cadence-core/bin/self-verify.mjs` reports no issues with the
       `SessionStart` row added to `hooks/hooks.json`, and
       `git grep -l 'ToolSearch' -- skills/ cadence-core/workflows/` returns
       nothing.
@@ -191,8 +176,8 @@ cannot start until the tool surface serves.
   burnrate, obsidian, claude-hud, codex, rust-analyzer-lsp, typescript-lsp),
   and every local example is an external plugin that does not fetch its own
   binary. If wrong, the binary's tool surface is unreachable to plugin users
-  and AC4-AC6 have to run against a hand-written `--mcp-config`, which is not
-  the shipping path.
+  and AC4 has to run against a hand-written `--mcp-config`, which is not the
+  shipping path.
 - The CLI surfaces MCP `structured_content` to the model rather than only text
   blocks - Unclear; rmcp 3.2.0 emits the field
   (`rmcp-3.2.0/src/model/content.rs:210`) and nothing in either repo observes

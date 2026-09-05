@@ -1,0 +1,6 @@
+{"ts":"2026-09-05T21:36:50.247Z","event":"rpc","method":"initialize","id":0}
+{"ts":"2026-09-05T21:36:50.264Z","event":"rpc","method":"notifications/initialized","id":null}
+{"ts":"2026-09-05T21:36:50.264Z","event":"rpc","method":"tools/list","id":1}
+{"ts":"2026-09-05T21:36:50.264Z","event":"tools_list_served","names":["probe_alpha","probe_bravo"]}
+{"ts":"2026-09-05T21:36:54.133Z","event":"rpc","method":"tools/call","id":2}
+{"ts":"2026-09-05T21:36:54.133Z","event":"tool_called","name":"probe_bravo","text":"bravo-nosearch"}
