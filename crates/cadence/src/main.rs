@@ -1,3 +1,4 @@
+mod envelope;
 mod server;
 
 use clap::{Parser, Subcommand};
