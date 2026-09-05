@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import {
   rungBody, rungBodyIssue, rungEffortIssue, rungPrefixIssues, RUNG_FILES, rungFile,
   rungFiles, effortEnumIssues, EFFORT_PREFIX, ROLES_PREFIX, ROLES_EFFORT_SUFFIX,
+  RUNG_ORDER, rungOrderIssues,
 } from './lib/rung-agent.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -19,8 +20,7 @@ import { fileURLToPath } from 'node:url';
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SHIPPED = JSON.parse(
   readFileSync(join(REPO, 'cadence-core', 'config.schema.json'), 'utf8')).keys;
-const SHIPPED_ORDER = JSON.parse(
-  readFileSync(join(REPO, 'cadence-core', 'route-table.json'), 'utf8')).rung_order;
+const SHIPPED_ORDER = RUNG_ORDER;
 
 /** The shipped schema with one `model.effort.<role>` enum replaced. */
 function withEnum(role, values) {
@@ -55,7 +55,7 @@ test('rungFile is not a naming convention - the analyzer inverts it', () => {
 });
 
 test('a rung the role does not carry is null, never a guessed filename', () => {
-  // A rung token outside route-table.json's rung_order, so it stays unfiled
+  // A rung token outside RUNG_ORDER, so it stays unfiled
   // however far the ladder fills in - `cad-executor-ultra` is the filename the
   // guess would produce and the file that does not exist.
   assert.equal(rungFile('cad-executor', 'ultra'), null);
@@ -92,6 +92,56 @@ test('RUNG_FILES names 30 files across the six roles, and is frozen', () => {
   assert.equal(new Set(stems).size, 30); // no file serves two rungs
   assert.equal(Object.isFrozen(RUNG_FILES), true);
   assert.equal(Object.isFrozen(RUNG_FILES['cad-planner']), true);
+});
+
+// --- RUNG_ORDER and the guard that holds it to the map ------------------------
+
+test('RUNG_ORDER is exactly the five rungs, weakest first, and is frozen', () => {
+  assert.deepEqual([...RUNG_ORDER], ['low', 'medium', 'high', 'xhigh', 'max']);
+  assert.equal(Object.isFrozen(RUNG_ORDER), true);
+});
+
+test('the SHIPPED map and RUNG_ORDER agree - no issue at all', () => {
+  assert.deepEqual(rungOrderIssues(), []);
+  assert.deepEqual(rungOrderIssues(RUNG_FILES, RUNG_ORDER), []);
+});
+
+test('rung-order-drift: a role whose map DROPS a rung', () => {
+  // `rungFile` would answer null for the dropped rung and route.mjs fails open,
+  // so nothing downstream ever says the rung is missing.
+  const { xhigh: _gone, ...rest } = RUNG_FILES['cad-executor'];
+  const issues = rungOrderIssues({ ...RUNG_FILES, 'cad-executor': rest });
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'rung-order-drift');
+  assert.equal(issues[0].role, 'cad-executor');
+  assert.match(issues[0].detail, /cad-executor/);
+});
+
+test('rung-order-drift: a role whose map REORDERS its rungs', () => {
+  // The order is what `rungFiles` returns and what `rungPrefixIssues` breaks
+  // ties on, so a reordered map is wrong while holding every rung.
+  const exec = RUNG_FILES['cad-executor'];
+  const swapped = {
+    low: exec.low, medium: exec.medium, high: exec.high, max: exec.max, xhigh: exec.xhigh,
+  };
+  const issues = rungOrderIssues({ ...RUNG_FILES, 'cad-executor': swapped });
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'rung-order-drift');
+  assert.equal(issues[0].role, 'cad-executor');
+});
+
+test('rung-order-drift: a role carrying an EXTRA rung the ladder does not name', () => {
+  const issues = rungOrderIssues(
+    { ...RUNG_FILES, 'cad-executor': { ...RUNG_FILES['cad-executor'], ultra: 'cad-executor-ultra' } });
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'rung-order-drift');
+});
+
+test('rungOrderIssues is total on its inputs - a junk map never throws', () => {
+  for (const bad of [null, 'nope', 42, []]) assert.deepEqual(rungOrderIssues(bad), []);
+  const issues = rungOrderIssues({ 'cad-executor': 'nope' });
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].code, 'rung-order-drift');
 });
 
 // --- rungBody / rungBodyIssue ------------------------------------------------
@@ -195,7 +245,7 @@ test('rungPrefixIssues: a role contributing ONE body yields nothing', () => {
 });
 
 test('rungPrefixIssues: a stem the map does not name is not this rule\'s business', () => {
-  // `ultra` is outside rung_order, so this stem stays unmapped whatever rungs
+  // `ultra` is outside RUNG_ORDER, so this stem stays unmapped whatever rungs
   // the map grows - the point is the SCOPE, not which rung happens to be free.
   assert.deepEqual(rungPrefixIssues({ [EXEC.high]: EXEC_BODY, [EXEC.xhigh]: EXEC_BODY,
     'cad-executor-ultra': 'something else entirely\n', 'not-an-agent': 'x' }), []);
@@ -273,7 +323,7 @@ test('rungEffortIssue ignores a stem the map does not name', () => {
 
 // --- effortEnumIssues: the shipped enums against the map ----------------------
 
-test('the SHIPPED schema and route table agree - no issue at all', () => {
+test('the SHIPPED schema and the rung ladder agree - no issue at all', () => {
   // The load-bearing row: every row below mutates a copy of this, so if this
   // one ever passed vacuously the mutations would prove nothing.
   assert.deepEqual(effortEnumIssues(SHIPPED, SHIPPED_ORDER), []);
@@ -334,9 +384,9 @@ test('effort-enum-drift: null missing from the end is drift, not a detail', () =
   assert.match(issues[0].detail, /model\.effort\.cad-executor/);
 });
 
-test('effort-enum-drift: a rung route-table.json\'s rung_order does not carry', () => {
+test('effort-enum-drift: a rung the rung ladder does not carry', () => {
   // The vocabulary arm. Both halves have to hold: the map may file a rung the
-  // table's ladder never names, and then no cell can ever produce it.
+  // ladder never names, and then nothing can ever produce it.
   const issues = effortEnumIssues(SHIPPED, ['low', 'medium', 'high']);
   // A truncated ladder strands a rung for EVERY role that files one AND for
   // both spellings of every role's key, so the executor's two entries are
@@ -344,19 +394,19 @@ test('effort-enum-drift: a rung route-table.json\'s rung_order does not carry', 
   const executor = issues.filter((i) => /cad-executor/.test(i.detail));
   assert.deepEqual(executor, [{
     code: 'effort-enum-drift',
-    detail: 'model.effort.cad-executor offers ["xhigh","max"], which route-table.json\'s '
-      + 'rung_order (low, medium, high) does not carry',
+    detail: 'model.effort.cad-executor offers ["xhigh","max"], which the rung ladder '
+      + '(low, medium, high) does not carry',
   }, {
     code: 'effort-enum-drift',
-    detail: 'roles.cad-executor.effort offers ["xhigh","max"], which route-table.json\'s '
-      + 'rung_order (low, medium, high) does not carry',
+    detail: 'roles.cad-executor.effort offers ["xhigh","max"], which the rung ladder '
+      + '(low, medium, high) does not carry',
   }]);
   assert.ok(issues.every((i) => i.code === 'effort-enum-drift'), JSON.stringify(issues));
 });
 
-test('an absent rung_order skips ONLY the vocabulary arm', () => {
-  // The check must still run on a tree with no route-table.json - the tree where
-  // a drifted enum is likeliest and least noticed.
+test('an absent rung ladder skips ONLY the vocabulary arm', () => {
+  // The check must still run when the caller hands no ladder at all - the case
+  // where a drifted enum is likeliest and least noticed.
   assert.deepEqual(effortEnumIssues(SHIPPED, []), []);
   assert.deepEqual(effortEnumIssues(SHIPPED, undefined), []);
   const drifted = effortEnumIssues(withEnum('cad-planner', ['high', 'xhigh', null]), null);

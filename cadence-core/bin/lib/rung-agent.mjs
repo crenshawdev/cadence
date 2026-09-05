@@ -19,6 +19,18 @@
 'use strict';
 
 /**
+ * The rung ladder, weakest first - the whole vocabulary of rung names, and the
+ * order `rungFiles` returns a role's files in. It lived in the routing data
+ * table until the stakes level was deleted and that table with it; it now
+ * belongs beside RUNG_FILES because the two are the two halves of ONE
+ * statement - the ladder names the rungs, the map says which file carries each -
+ * and `rungOrderIssues` below is what holds them together now that no data file
+ * does.
+ * @type {readonly string[]}
+ */
+export const RUNG_ORDER = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']);
+
+/**
  * The rung -> agent-file map, stated per role rather than derived (D-05). The
  * unsuffixed `agents/<role>.md` is one rung among the others, and nothing about
  * a rung's NAME says which file carries it:
@@ -28,7 +40,7 @@
  * invalidates every one of their exact-fit weight budgets and buys nothing a
  * reader of this table cannot already see.
  *
- * Each role's rungs are listed in rung_order (low -> max), which is the order
+ * Each role's rungs are listed in RUNG_ORDER (low -> max), which is the order
  * `rungFiles` returns them in. Frozen: this is a statement of what is on disk,
  * and a caller mutating it would make route.mjs and self-verify disagree about
  * the same question.
@@ -78,6 +90,44 @@ export const RUNG_FILES = Object.freeze({
     max: 'cad-plan-checker-max',
   }),
 });
+
+/**
+ * Whether the map and the ladder still say the same thing: every role's rung
+ * keys are exactly RUNG_ORDER, in that order.
+ *
+ * The routing data table used to hold the ladder and self-verify held the cells
+ * against it, so a rung the map dropped could not be named by any cell. With
+ * that table gone the two exports above are the only statement left, and nothing
+ * else compares them: a role missing `xhigh` would resolve `rungFile` to null
+ * and route.mjs would fail open, while a role whose keys were REORDERED would
+ * hand `rungFiles` and `rungPrefixIssues` a tie-break order that is not the
+ * ladder's - both silent.
+ *
+ * Takes the map so a caller can hold a drifted one against the ladder; defaults
+ * to the shipped map, which is the only one that exists today.
+ *
+ * @param {any} [files] the rung map to check, stem values unread
+ * @param {any} [order] the ladder to check it against, weakest first
+ * @returns {{code: string, role: string, detail: string}[]}
+ */
+export function rungOrderIssues(files, order) {
+  const map = files !== undefined && files !== null ? files : RUNG_FILES;
+  const ladder = Array.isArray(order) ? order : RUNG_ORDER;
+  /** @type {{code: string, role: string, detail: string}[]} */
+  const out = [];
+  const read = map !== null && typeof map === 'object' && !Array.isArray(map) ? map : {};
+  for (const role of Object.keys(read)) {
+    const rungs = read[role];
+    const got = rungs !== null && typeof rungs === 'object' && !Array.isArray(rungs)
+      ? Object.keys(rungs) : [];
+    if (got.length === ladder.length && ladder.every((r, i) => got[i] === r)) continue;
+    out.push({ code: 'rung-order-drift', role,
+      detail: `${role} files rungs ${JSON.stringify(got)}, but the rung ladder is ${
+        JSON.stringify([...ladder])} - the map and RUNG_ORDER are one statement `
+        + 'and nothing else holds them together' });
+  }
+  return out;
+}
 
 /**
  * The agent-file stem for one rung of one role, or null when the pair is not
@@ -317,11 +367,12 @@ function effortKeyRole(key) {
  * this is its half of that criterion (D-08), which is why every detail NAMES
  * THE KEY a maintainer would edit.
  *
- * `rungOrder` is the caller's rung vocabulary (route-table.json's `rung_order`).
- * An empty or absent one skips the vocabulary arm ALONE, the way `cellIssues`
- * tolerates an absent vocabulary - the schema-vs-map proof must still run on a
- * tree with no table, which is where a drifted enum is likeliest and least
- * noticed.
+ * `rungOrder` is the caller's rung vocabulary - RUNG_ORDER above, handed in
+ * rather than read here so a caller can hold a drifted ladder against these
+ * enums. An empty or absent one skips the vocabulary arm ALONE, the way
+ * `cellIssues` tolerates an absent vocabulary - the schema-vs-map proof must
+ * still run when the ladder is unavailable, which is where a drifted enum is
+ * likeliest and least noticed.
  *
  * @param {any} schema the `keys` map of config.schema.json, trusted for nothing
  * @param {any} [rungOrder] the declared rung vocabulary, lowest first
@@ -368,8 +419,8 @@ export function effortEnumIssues(schema, rungOrder) {
       const strays = want.filter((v) => v !== null && !order.includes(v));
       if (strays.length) {
         out.push({ code: 'effort-enum-drift',
-          detail: `${key} offers ${JSON.stringify(strays)}, which route-table.json's `
-            + `rung_order (${order.join(', ')}) does not carry` });
+          detail: `${key} offers ${JSON.stringify(strays)}, which the rung ladder `
+            + `(${order.join(', ')}) does not carry` });
       }
     }
   }
@@ -397,7 +448,7 @@ export function effortEnumIssues(schema, rungOrder) {
  * file, and `rungBodyIssue` held a file's body against its OWN frontmatter, so
  * a file that was internally consistent and externally wrong passed it
  * anyway - which is why losing that arm loses no coverage this one has, and
- * why this one may not be weakened. Leave the gap and `route-table.json` can
+ * why this one may not be weakened. Leave the gap and a config layer can
  * name `xhigh`, this map
  * can resolve it to a file carrying `effort: high`, and the resolver's JSON,
  * the transcript's `subagent_type` and the escalation `reason` all report
