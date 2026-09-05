@@ -363,6 +363,12 @@ function effortKeyRole(key) {
  * typed, so a guard that checked only the older prefix would leave the winning
  * key - the roles block beats `model.effort.<role>` - the unguarded one.
  *
+ * The DEFAULT is checked on the roles spelling ALONE. Since the cells grid went,
+ * `roles.<role>.effort`'s default is the rung a project with no config resolves
+ * at, so a default naming no rung of this role leaves nothing to dispatch;
+ * `model.effort.<role>` defaults to null on purpose, meaning "this key does not
+ * answer", and refusing that would refuse the fall-through itself.
+ *
  * self-verify never reads a user's config and so cannot refuse a user's value;
  * this is its half of that criterion (D-08), which is why every detail NAMES
  * THE KEY a maintainer would edit.
@@ -415,6 +421,28 @@ export function effortEnumIssues(schema, rungOrder) {
             role} at ${JSON.stringify(want)}` });
         continue;
       }
+      // The DEFAULT half, and only for the roles spelling. `roles.<role>.effort`
+      // is what answers when no layer names a rung, so its default has to name a
+      // rung this role has a FILE for: a null or stray default hands `agentFor`
+      // nothing, and the dispatch falls open to the unsuffixed file while the
+      // resolve still reports a rung - the report-a-rung-nothing-ran-at shape
+      // `rungEffortIssue` exists to close, reached one door out.
+      //
+      // `model.effort.<role>` is EXEMPT and its null default is correct: null
+      // there means the key does not answer, and the roles row's own default
+      // decides. Checking both would refuse the very fall-through the two-key
+      // precedence is built on.
+      if (key.startsWith(ROLES_PREFIX)) {
+        const def = spec.default;
+        if (typeof def !== 'string'
+          || !Object.prototype.hasOwnProperty.call(RUNG_FILES[role], def)) {
+          out.push({ code: 'effort-default-invalid',
+            detail: `${key} defaults to ${def === undefined ? '(absent)' : JSON.stringify(def)}, `
+              + `which is not one of ${role}'s rungs (${Object.keys(RUNG_FILES[role]).join(', ')}) `
+              + '- this default IS the rung route.mjs resolves when no layer sets one' });
+        }
+      }
+
       if (!order.length) continue;
       const strays = want.filter((v) => v !== null && !order.includes(v));
       if (strays.length) {

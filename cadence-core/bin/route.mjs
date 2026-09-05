@@ -2,14 +2,19 @@
 // @ts-check
 // route.mjs - zero-dep routing resolver. Given an agent role and an attempt
 // number, resolve the whole quality bundle the spawn-agent seam and the review
-// subsystem need: {model, effort, review, verify}. The route-table.json beside
-// ../route-table.json is editable data (five grids); this file is the logic.
-// DESIGN "model routing" (§ model routing).
+// subsystem need: {model, effort, review, verify}. Every one of those answers
+// comes from the config LAYERS where a user set one and from
+// ../config.schema.json's own defaults where they did not; this file is the
+// logic. DESIGN "model routing" (§ model routing).
 //
-// The question the table asks is what a break COSTS, not what a dispatch costs:
-// the project's stakes level picks the row, and the role picks the cell in it.
-// One question in, four knobs out - because quality is not one dial, and effort
-// alone cannot express "fire a blocking cross-model review".
+// The question a project answers is what each ROLE is worth to it - one model
+// key and one rung key per role, and a per-trigger gate beside them. There is no
+// stakes level and no cells grid: nothing derives one role's answer from
+// another's, and the only thing that moves an answer after the config is read is
+// the plan-time risk floor, which does exactly two things (the plan review
+// becomes blocking, the deep-verify pass turns on) and moves no role's model and
+// no role's rung. Still four knobs out, because quality is not one dial and
+// effort alone cannot express "fire a blocking cross-model review".
 //
 // Never blocks the spine: on any problem it returns {ok:false,...} and the
 // caller dispatches the base agent at the session-default model (no override).
@@ -27,46 +32,40 @@
 // the per-repo --file (default .planning/config.json) overrides it, and the
 // built-in DEFAULTS backstop both. Precedence: repo > global > defaults.
 // Config keys read:
-//   stakes                     solo | shipped | critical - the FLOOR a dispatch
-//                              resolves at or above, never the level every
-//                              phase pays. Unset floors at "solo" when the
-//                              phase's plans were all read clean, and at the
-//                              schema default "shipped" when any of them could
-//                              not be
-//   model.escalate_on_failure  re-dispatch a failed attempt at the retry rung
-//                              its own cell names (bool, every stakes level)
-//   model.overrides.<role>     pin one role to a model alias, bypassing the cell
-//   model.effort.<role>        the rung one role STARTS at, replacing the one
-//                              its cell names - never below a computed risk
-//                              floor, and never demoted by a retry
+//   model.escalate_on_failure  re-dispatch a failed attempt one rung above the
+//                              rung it started at, holding at the top rung
+//                              (bool)
+//   model.overrides.<role>     the narrower fallback under roles.<role>.model,
+//                              answering for one role whose roles key is absent
+//   model.effort.<role>        the narrower fallback under roles.<role>.effort,
+//                              on the same terms
 //   roles.<role>.model         one role's model, named outright; wins over the
-//                              pin above and over the cell. A value the host
-//                              does not accept warns and the cell's model
-//                              stands, the same arm an unknown pin alias takes
-//   roles.<role>.effort        the same start rung one key out; wins over
-//                              model.effort.<role>, which stays live as the
-//                              narrower fallback. Setting both for one role
-//                              warns and names the winner
-//   review.triggers.*.gate     a gate a LAYER set, which must be one of the
-//                              table's `gates` and then wins over the level's
-//                              gate, reporting the disagreement (D-04); a value
-//                              outside that vocabulary loses to the level's gate
-//                              and is named in `warnings`
+//                              key above. A value the host does not accept warns
+//                              and the dispatch sends NO model parameter, so it
+//                              runs at the session's own model
+//   roles.<role>.effort        the rung one role STARTS at; wins over
+//                              model.effort.<role>, and this key's own schema
+//                              default answers when neither layer set either.
+//                              Setting both for one role warns and names the
+//                              winner
+//   review.triggers.*.gate     a gate a LAYER set, which must be one of that
+//                              key's own `values` and then wins over the key's
+//                              schema default, reporting the disagreement
+//                              (D-04); a value outside that vocabulary loses to
+//                              the default and is named in `warnings`
 //   review.reviewers           the reviewer backends the fire may go to, which
 //                              `resolve` filters per trigger by availability
 //                              into the `reviewers` map beside `review`
 //   review.triggers.*.tier     the model tier that trigger's cross-model half
 //                              runs at, which is also what its availability
-//                              test reads, falling back to the LEVEL's row of
-//                              the table's `tiers` grid (never to the schema
-//                              default, D-04); returned as `reviewer_tiers`
+//                              test reads, falling back to that key's own schema
+//                              default; returned as `reviewer_tiers`
 //   review.triggers.*.effort   the reasoning effort that trigger's cross-model
-//                              half runs at, falling back to the level's row of
-//                              the table's `efforts` grid on the same terms;
-//                              returned as `reviewer_efforts`. Both fields are
-//                              level-dependent (RVW-03), so raising `stakes`
-//                              moves the cross-model half of a panel and not
-//                              the subagent half alone
+//                              half runs at, falling back to its own schema
+//                              default on the same terms; returned as
+//                              `reviewer_efforts`. Neither moves for anything
+//                              else: the panel's cross-model half is configured
+//                              per trigger and by nothing above it (RVW-03)
 //   review.providers.*.tiers.* the model id a provider is configured with per
 //                              tier - a provider with none at the resolved tier
 //                              is unavailable, is dropped, and says so in
@@ -76,29 +75,28 @@
 //                              to, returned as `surfaces` - and the same set
 //                              the plan-time floor below is scoped by, so a
 //                              project that narrowed the surface question
-//                              narrowed what can raise its level too. Absent
+//                              narrowed what can raise its review too. Absent
 //                              from both layers means ALL of the table's
 //                              `risk_surface_categories`, and
 //                              `surfaces_answered` says which of the two it is,
 //                              so "chose everything" and "never answered" stay
 //                              apart (D-12)
 //
-// THE CONFIGURED LEVEL IS A FLOOR, NOT THE ANSWER (CER-01). `stakes` states the
-// MINIMUM a project will accept; the phase's own declared `files:`, read here at
-// resolve time, are what raise it. So a phase touching nothing on a risk surface
-// resolves BELOW what the project default produces today, and a phase touching
-// one never resolves lower than it does now. An unset `stakes` floors at `solo`
-// and the raise does the work; an EXPLICIT `stakes` is never resolved below, at
-// any level.
+// THE FLOOR RAISES TWO THINGS AND NOTHING ELSE (CER-01, D-02). The phase's own
+// declared `files:`, read here at resolve time, decide whether it is raised. A
+// raise makes the plan review `blocking` where no valid configured gate already
+// answered that key, and turns the deep-verify pass `on`. It moves no role's
+// model, no role's rung, and no other trigger's gate - so the two questions
+// "what is this role worth" and "is this phase risky" stay separable, and a user
+// reading their own config can predict every field of a resolve from it.
 //
-// AND IT FAILS CLOSED, which is the direction that matters. A plan this cannot
-// read holds the CONFIGURED stakes and never `ok:false`: an `ok:false` drops the
-// caller to the base agent at the host session default with no model override
-// (references/seams.md), which is below every floor, so a hard refusal here
-// would route a risky phase LOWER than its own baseline. The discount below the
-// configured level is earned only by a scope every conforming plan of which was
-// found, read clean and declared something to scan, so one member that was not
-// read holds the whole scope up.
+// AND IT FAILS CLOSED, which is the direction that matters. A scope this cannot
+// read RAISES rather than refusing: an `ok:false` drops the caller to the base
+// agent at the host session default with no model override
+// (references/seams.md), so a hard refusal here would leave a risky phase on an
+// advisory plan review and a skipped deep pass. Not raising is earned only by a
+// scope every conforming plan of which was found, read clean and declared
+// something to scan, so one member that was not read holds the whole scope up.
 //
 // THIS IS NOT THE DELETED NAME-KEYED FLOOR RETURNING. That one judged a file by
 // its NAME and raised a whole phase on one path token - `tests/ingest_concurrency.rs`
@@ -107,26 +105,26 @@
 // lib/retired-keys.mjs. What runs here is lib/risk-diff.mjs's `scanDeclared`:
 // the same anchored construct patterns and whole-path segments the commit-time
 // `risk_surface` gate fires on, over the same signal ordering, scoped to the
-// categories the project ANSWERED. And the raise target is `shipped`, never
-// `critical` - the criterion is that a matched phase resolve no lower than
-// today's default, and a `critical` target would put most of a repo's plans on
-// the top row and rebuild exactly that raise-tax.
+// categories the project ANSWERED. And what a match buys is two review effects,
+// never a rung: the raise-tax that floor levied was a whole phase's six roles
+// climbing on one path token, and there is no longer any mechanism by which a
+// matched file can move a model or a rung at all.
 //
 // WHICH PHASE, AND WHICH PLAN. `--phase` decides the floor when it is passed and
 // the STATE cursor decides it otherwise, so a malformed `--phase` is REFUSED
 // rather than answered about another phase's plans. `--plan` narrows the scope
 // from the phase's union to ONE plan, which is what an executor dispatch floors
-// on: a clean plan in a mixed phase routes below its risky sibling. The two
-// roles dispatched BEFORE a plan exists - `cad-planner` and
-// `cad-assumptions-analyzer` - are exempt and resolve at the configured stakes,
-// because the cursor lags at both their call sites and a floor computed for them
-// would be computed off a DIFFERENT phase's file list.
+// on: a clean plan in a mixed phase keeps its advisory plan review while its
+// risky sibling does not. The two roles dispatched BEFORE a plan exists -
+// `cad-planner` and `cad-assumptions-analyzer` - are exempt and have no floor
+// computed at all, because the cursor lags at both their call sites and a floor
+// computed for them would be computed off a DIFFERENT phase's file list.
 
 import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, isAbsolute, sep } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
+import { rungFile, RUNG_FILES, RUNG_ORDER } from './lib/rung-agent.mjs';
 import { gateTriggers } from './lib/gate-agreement.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
@@ -176,8 +174,22 @@ const fail = (reason, detail, hint) => {
 };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
-const DEFAULTS = { stakes: 'shipped', escalate_on_failure: false,
-  reviewers: ['claude-subagent'] };
+const DEFAULTS = { escalate_on_failure: false, reviewers: ['claude-subagent'] };
+
+// The four names the HOST's agent-dispatch `model` parameter accepts, verified
+// against the live tool schema on 2026-09-04. This is the host's enum and not a
+// routing default: it names no fallback, it decides only whether a string a user
+// typed can be sent at all, and a string outside it resolves `model: null` -
+// the dispatch runs with no model parameter and the resolve says so in
+// `warnings[]` (D-04).
+//
+// It is the ONE in-repo copy of that list now that `model_aliases` is going: the
+// table mirrored it, the six `model.overrides.*` enums mirrored it, and both are
+// deleted this phase. Nothing under this repo can re-derive it, so a host
+// release that widens the parameter is re-verified HERE and nowhere else, and
+// until it is, a newly-accepted name reads as unaccepted rather than as a
+// silently-dropped dispatch.
+const HOST_MODELS = Object.freeze(['opus', 'sonnet', 'haiku', 'fable']);
 
 // One schema row, or an empty object when the schema does not carry the key.
 // Every read of a `review.triggers.*` answer goes through this pair rather than
@@ -224,13 +236,13 @@ const riskCategories = () => (Array.isArray(TABLE.risk_surface_categories)
 // floor is given back through a NEW key rather than by reviving those.
 const WAIVER_KEY = 'review.triggers.risk_surface.waive_routing_floor';
 
-// The roles dispatched BEFORE a plan exists, exempt from the floor. Both read no
-// plan and resolve at the configured stakes: `workflows/context.md` dispatches
-// the analyzer while the cursor still names the PREVIOUS phase, and `plan.md`
-// dispatches the planner to write the plan the floor would read. A floor
-// computed for either is computed off a different phase's file list, which is
-// not a safe-direction superset and which no reason string would reveal as
-// wrong - a silently-wrong level being strictly worse than no level at all.
+// The roles dispatched BEFORE a plan exists, exempt from the floor. Neither has
+// a plan to read, so neither has a floor computed at all: `workflows/context.md`
+// dispatches the analyzer while the cursor still names the PREVIOUS phase, and
+// `plan.md` dispatches the planner to write the plan the floor would read. A
+// floor computed for either is computed off a different phase's file list, which
+// is not a safe-direction superset and which no reason string would reveal as
+// wrong - a silently-wrong raise being strictly worse than no raise at all.
 const PRE_PLAN_ROLES = Object.freeze(['cad-planner', 'cad-assumptions-analyzer']);
 
 // The bytes the content pass will read from ONE declared file. A `files:` list
@@ -253,16 +265,13 @@ const MAX_BODY_BYTES = 512 * 1024;
 
 // Resolve the effective config from global + repo layers (repo wins, via the
 // shared merge lib), falling back to DEFAULTS for anything unset. _source
-// names the layers that applied, `stakesSet` says whether any layer actually
-// carried the key (a default must never be reported as a configured value),
-// and _warnings carries what the read found wrong but did not block on: a
-// layer that failed to parse, and any key v2.0.0 retired.
+// names the layers that applied, and _warnings carries what the read found wrong
+// but did not block on: a layer that failed to parse, and any key v2.0.0
+// retired.
 function readConfig(file) {
   const { config: c, source, warnings } = mergeLayers(file);
   const m = c.model || {};
   return {
-    stakes: c.stakes ?? DEFAULTS.stakes,
-    stakesSet: c.stakes !== undefined && c.stakes !== null,
     escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     overrides: m.overrides ?? {},
     // Its own map, not folded into `overrides` above: that one is
@@ -868,10 +877,11 @@ function resolve(opts) {
   // unread in JSON while a stale config routes.
   const cfg = readConfig(opts.file);
 
-  // The declared role list, not a lookup in a spec object: a role IS routable
-  // or it is not, and after this phase the table carries no per-role block for
-  // the question to be asked of.
-  const roles = Array.isArray(TABLE.roles) ? TABLE.roles : [];
+  // The routable roles are the roles lib/rung-agent.mjs FILES rungs for, which
+  // is the same statement `agentFor` below dispatches through. A second list -
+  // the table's `roles` array, which this read - could name a role with no
+  // agent file and answer `ok:true` about a dispatch that cannot happen.
+  const roles = Object.keys(RUNG_FILES);
   if (!roles.includes(opts.role)) {
     const degraded = [...cfg._warnings];
     out({ ok: false, reason: 'unknown-role', role: opts.role,
@@ -881,13 +891,14 @@ function resolve(opts) {
     return;
   }
 
-  // An honest first reason: `config:<layers>` is a claim that a layer supplied
-  // the value, so a default that no layer carried says so instead. Reporting
-  // `config:repo` for a value the repo file never held is how a retired key
-  // reads as a configured one.
-  const reason = [cfg.stakesSet
-    ? `config:${cfg._source}`
-    : `stakes default "${cfg.stakes}" (unset in layers: ${cfg._source})`];
+  // An honest first reason: which config LAYERS were read, and nothing about
+  // what they said. It used to open on the stakes level's source, and that
+  // claim died with the level - there is no single value a layer either
+  // supplied or did not any more, there are a dozen keys each of which says its
+  // own source in its own `reason` entry below. Naming the layers is still
+  // worth a line: it is the only place a resolve says whether the global file
+  // was found at all.
+  const reason = [`config layers: ${cfg._source}`];
 
   // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
   // retired key, an unreadable PLAN, a gate disagreement and an unknown pin
@@ -897,7 +908,8 @@ function resolve(opts) {
 
   // THE ANSWERED SURFACE SET, decided here rather than at its warning block
   // below, because the plan-time floor is scoped by it (D-10) and the floor runs
-  // before the cell lookup. The DECISION is hoisted and the DIAGNOSTICS are not:
+  // before the rung and model resolve. The DECISION is hoisted and the
+  // DIAGNOSTICS are not:
   // `answeredSurfaces` is pure, so reading it twice would be free and reading it
   // once is honest, while moving the warning block would reorder `warnings[]`
   // for every caller that reads it positionally. `resolve` narrows the floor to
@@ -919,29 +931,6 @@ function resolve(opts) {
     cfg, surfaces, waived: waivedSurfaces(cfg, warnings), reason, warnings,
   });
 
-  // The configured level, which now selects a cells row and NOTHING else - the
-  // floor does not move it and the review, verify, tier and effort grids no
-  // longer key on it. The key and this last reader leave together in the next
-  // task.
-  const stakes = cfg.stakes;
-
-  // The one grid a torn LEVEL is still fatal in: `model`, `effort` and `retry`
-  // come from ONE cell keyed on (level, role). A level with no cell for this
-  // role degrades the same way a bad stakes value already does rather than
-  // emitting a partial bundle - half a bundle read as a whole one is worse than
-  // no bundle at all.
-  const level = TABLE.cells && TABLE.cells[stakes];
-  const cell = level && typeof level === 'object' && !Array.isArray(level) ? level[opts.role] : null;
-  if (!cell || typeof cell !== 'object' || Array.isArray(cell)) {
-    // The live array, not `cfg._warnings`: by here it also carries the floor's
-    // own diagnostics (an unreadable PLAN, a malformed waiver, a `--phase` out
-    // of shape). Dropping them made a torn table answer with the ONE thing the
-    // caller cannot act on and none of the things it can.
-    out({ ok: false, reason: 'unresolved', role: opts.role, stakes,
-      hint: 'route-table.json carries no cell for this role at this stakes level - restore the shipped table, a hand-edited or partial `cells` block being the usual cause, then re-run',
-      ...(warnings.length ? { warnings } : {}) }); return;
-  }
-
   // The agent FILE is what carries the effort (route.mjs reports effort, it
   // cannot set it - seams.md), and the unsuffixed file is one rung among the
   // others, so the file comes from the explicit map in lib/rung-agent.mjs
@@ -955,133 +944,112 @@ function resolve(opts) {
     return opts.role;
   };
 
-  let effort = cell.effort;
-
   // This role's entry in the roles block, read once for both halves - the rung
   // here and the model further down.
   const roleEntry = roleEntryIn(cfg.roles, opts.role);
 
-  // The configured START rung (RNG-02). Two keys can name it now:
-  // `roles.<role>.effort` and the older `model.effort.<role>`, which stays live
-  // as the narrower fallback. Either selects the rung this role begins at,
-  // replacing the cell's - the dial the ladder was missing, living in the config
-  // LAYERS so a plugin update cannot take it away. Exactly one of four arms
-  // fires, and each one SAYS what it did: a rung that silently did not apply is
-  // the resolved-then-dropped shape this milestone closes.
+  // THE START RUNG (RNG-02), from the first of three sources that names a rung
+  // this role has an agent FILE for: `roles.<role>.effort`, then the older
+  // `model.effort.<role>`, then this role's own `roles.<role>.effort` DEFAULT in
+  // config.schema.json. The cells grid used to sit where that default now does;
+  // moving it into the schema is what leaves the rung in one place a user can
+  // read and one place a maintainer can edit.
   //
-  // WHICH KEY DECIDED travels with the rung and is interpolated into all four
-  // arms, never a fixed spelling: a `reason` naming a key that did not decide is
-  // the same resolved-then-dropped shape one level up, wearing the diagnostic's
-  // clothes. Setting both for one role is a config a user should resolve, so it
-  // WARNS whether or not the two agree - unlike the gate check above, where the
-  // config value and the level's value are two different quantities that happen
-  // to share a vocabulary, these two are one quantity spelled twice.
+  // A source that names no rung this role HAS does not stop the resolve, it
+  // loses its turn: it warns and the next source answers. Only a hand-edited
+  // config or schema reaches that arm - the write face refuses these values off
+  // the same enums - and holding a whole dispatch on one bad string would drop
+  // the caller to the base agent at the session default, which is strictly
+  // further from what the user asked for than the next source down is.
+  //
+  // Never hand an unfiled rung to `agentFor`: it fails open to the unsuffixed
+  // file while `effort` still reports the rung that was asked for, which is the
+  // report-a-rung-nothing-ran-at shape `rungEffortIssue` exists to close.
+  //
+  // WHICH KEY DECIDED travels with the rung and is interpolated into every arm,
+  // never a fixed spelling: a `reason` naming a key that did not decide is the
+  // resolved-then-dropped shape one level up, wearing the diagnostic's clothes.
+  // Setting BOTH config keys for one role is a config a user should resolve, so
+  // it warns whether or not the two agree - they are one quantity spelled twice.
+  const rolesEffortKey = `roles.${opts.role}.effort`;
+  const legacyEffortKey = `model.effort.${opts.role}`;
   const rolesEffort = roleEntry.effort;
   const legacyEffort = cfg.effort[opts.role];
   const rolesEffortSet = rolesEffort !== null && rolesEffort !== undefined;
   const legacyEffortSet = legacyEffort !== null && legacyEffort !== undefined;
-  const wanted = rolesEffortSet ? rolesEffort : legacyEffort;
-  const effortKey = rolesEffortSet
-    ? `roles.${opts.role}.effort`
-    : `model.effort.${opts.role}`;
   if (rolesEffortSet && legacyEffortSet) {
-    warnings.push(`${effortKey}=${JSON.stringify(rolesEffort)} (config) wins over `
-      + `model.effort.${opts.role}=${JSON.stringify(legacyEffort)}, which names the same rung `
+    warnings.push(`${rolesEffortKey}=${JSON.stringify(rolesEffort)} (config) wins over `
+      + `${legacyEffortKey}=${JSON.stringify(legacyEffort)}, which names the same rung `
       + 'one key out; the roles block decides');
   }
-  let startFromConfig = false;
-  if (wanted !== null && wanted !== undefined) {
-    const key = effortKey;
-    const has = Object.keys(RUNG_FILES[opts.role] || {});
-    if (!rungFile(opts.role, wanted)) {
-      // (a) A rung this role has no FILE for - only a hand-edited config gets
-      // past the schema enum. Never hand it to agentFor: that fails open to the
-      // base file while `effort` still reports the requested rung, which is the
-      // report-a-rung-nothing-ran-at shape `rungEffortIssue` exists to close.
-      warnings.push(`${key}=${JSON.stringify(wanted)} names no rung this role has `
-        + `(${has.join(', ')}); the ${stakes}/${opts.role} cell's "${effort}" rung stands`);
-    } else if (wanted === effort) {
-      reason.push(`${key}="${wanted}" (already the routed rung)`);
-    } else {
-      // (d) The configured rung wins, full stop. It used to be clamped up by a
-      // raised floor (D-08 of the previous phase); D-03 retires that arm rather
-      // than leaving it unused, because the floor no longer moves a level, so
-      // there is no raised ROW for a rung to be clamped against and the arm
-      // became unreachable. What the floor does now is stated in one place, at
-      // the two effects below, and a user's rung is not one of them.
-      reason.push(`${key}: ${effort} -> ${wanted} (config, wins over the `
-        + `${stakes}/${opts.role} cell)`);
-      effort = wanted;
-      startFromConfig = true;
+  const hasRungs = Object.keys(RUNG_FILES[opts.role] || {});
+  const schemaEffort = schemaRow(rolesEffortKey).default;
+  const rungSources = [
+    ...(rolesEffortSet ? [{ key: rolesEffortKey, value: rolesEffort, set: true }] : []),
+    ...(legacyEffortSet ? [{ key: legacyEffortKey, value: legacyEffort, set: true }] : []),
+    { key: `config.schema.json's ${rolesEffortKey}`, value: schemaEffort, set: false },
+  ];
+  /** @type {string|null} */
+  let effort = null;
+  for (const src of rungSources) {
+    if (typeof src.value === 'string' && rungFile(opts.role, src.value)) {
+      effort = src.value;
+      reason.push(src.set
+        ? `${src.key}="${src.value}" (config${src.value === schemaEffort
+          ? ', already the schema default rung' : `, over the schema default "${schemaEffort}"`})`
+        : `${src.key} default "${src.value}" (unset in layers)`);
+      break;
     }
+    warnings.push(`${src.key}=${JSON.stringify(src.value)} names no rung this role has `
+      + `(${hasRungs.join(', ')}); the next source down answers`);
+  }
+  if (effort === null) {
+    // Nothing named a rung this role can be dispatched at, which after the three
+    // sources above means the SCHEMA's own default is broken. Degrading rather
+    // than dispatching: half a bundle read as a whole one is worse than no
+    // bundle at all, and `effort` is the field the agent file is chosen by.
+    // self-verify's `effort-default-invalid` is what stops this reaching a user.
+    // The live warnings array, not `cfg._warnings`: by here it also carries the
+    // floor's own diagnostics and the losing sources named just above.
+    out({ ok: false, reason: 'unresolved', role: opts.role,
+      hint: `config.schema.json's ${rolesEffortKey} default names no rung this role has `
+        + `(${hasRungs.join(', ')}) - restore the shipped schema, a hand-edited default being `
+        + 'the usual cause, then re-run',
+      ...(warnings.length ? { warnings } : {}) }); return;
   }
 
   let agent = agentFor(effort);
   let escalated = false;
 
-  // Escalation is unconditional: a failed attempt climbs to the rung its OWN
-  // cell names, at EVERY stakes level. Gating it behind a routing mode is what
-  // left the rung ladder unreachable on a default install; a fixed per-role
-  // target beside a cell that also sets effort is what let five of six roles
-  // resolve their escalation to a no-op (D-02).
+  // Escalation is ONE RUNG UP from wherever this dispatch started, on the
+  // `RUNG_ORDER` ladder beside the map. A retry never thinks less than the
+  // attempt that just failed, and it never skips: the cells grid was the only
+  // source of a per-cell retry TARGET, and fourteen of its eighteen cells
+  // encoded exactly one step, so one step is what survives the grid rather than
+  // a new behaviour. At the top rung there is nowhere to climb and it holds,
+  // saying so - a report of an escalation that moved nothing is the
+  // resolved-then-dropped shape this milestone closes.
+  //
+  // The ladder is `RUNG_ORDER`, never a rung list read from data: it is the one
+  // statement of the order, `rungOrderIssues` holds the file map against it, and
+  // a rung this role has no FILE for is stepped over rather than dispatched -
+  // `cad-plan-checker` files every rung today, but the map is per-role and a
+  // role that ever files a partial ladder must climb to its next REAL rung.
   if ((opts.attempt || 1) > 1) {
     if (cfg.escalate_on_failure) {
-      // max(cell.retry, the rung this attempt actually STARTED at) in
-      // `rung_order` (D-02): a retry never thinks LESS than the attempt that
-      // just failed. lib/route-cells.mjs refuses that inversion inside the
-      // TABLE (`rung-demotion`); a configured start rung is the second door onto
-      // it, and an xhigh start stepping down to a `high` retry while reporting
-      // an escalation is the same defect wearing the config layer's clothes.
-      // A rung either index cannot place falls back to `cell.retry` VERBATIM
-      // when the start rung is the CELL's own - the pre-phase behavior, where a
-      // demotion needs an in-table `rung-demotion` CI catches. A start rung the
-      // CONFIG raised is different: swapping it for an incomparable `cell.retry`
-      // could demote the retry below the rung that just failed while reporting
-      // an escalation, so an unprovable comparison holds the configured start
-      // and says why.
-      const rungOrder = Array.isArray(TABLE.rung_order) ? TABLE.rung_order : [];
-      const ri = rungOrder.indexOf(cell.retry);
-      const si = rungOrder.indexOf(effort);
-      const torn = ri < 0 || si < 0;
-      if (torn && startFromConfig && cell.retry !== effort) {
-        warnings.push(`rung_order cannot compare the configured "${effort}" start with `
-          + `the ${stakes}/${opts.role} retry rung "${cell.retry}"; the configured start stands`);
+      const at = RUNG_ORDER.indexOf(effort);
+      let target = null;
+      for (let i = at + 1; at >= 0 && i < RUNG_ORDER.length; i += 1) {
+        if (rungFile(opts.role, RUNG_ORDER[i])) { target = RUNG_ORDER[i]; break; }
       }
-      const target = torn
-        ? (startFromConfig ? effort : cell.retry)
-        : (si > ri ? effort : cell.retry);
-      if (target && target !== effort) {
+      if (target) {
         escalated = true;
         agent = agentFor(target);
         reason.push(`rung ${effort}->${target} (${agent})`);
         effort = target;
-      } else if (cell.retry === effort) {
-        // Honest no-op, two causes told apart: a cell whose retry IS its
-        // starting rung has nothing to climb to - but when the CONFIG raised
-        // the start onto the retry rung, the cell's own start was lower and
-        // "retry rung is the same rung" would misattribute the hold to cell
-        // design (the conflation route.test.mjs pins the messages apart for).
-        if (startFromConfig && cell.effort !== effort) {
-          reason.push(`rung held at ${effort}: ${effortKey}="${effort}" `
-            + `already sits at the ${stakes}/${opts.role} retry rung`);
-        } else {
-          reason.push(`rung held at ${effort} (retry rung is the same rung)`);
-        }
       } else {
-        // Held because the START rung out-ranks the cell's retry rung. Says
-        // WHICH rung it out-ranked, so a held retry stays diagnosable rather
-        // than reading like the equal-rungs case above.
-        const source = effort === wanted
-          ? `${effortKey}="${effort}"`
-          : `the "${effort}" start rung`;
-        // On a torn table the out-ranking is exactly what could NOT be proven -
-        // the warning above already names rung_order, so the reason must not
-        // assert a comparison nothing performed.
-        reason.push(torn
-          ? `rung held at ${effort}: ${source} stands - rung_order cannot place the `
-            + `${stakes}/${opts.role} retry rung "${cell.retry}"`
-          : `rung held at ${effort}: ${source} out-ranks the `
-            + `${stakes}/${opts.role} retry rung "${cell.retry}"`);
+        reason.push(`rung held at ${effort} (the top rung this role files - `
+          + 'a retry cannot climb past it)');
       }
     } else {
       reason.push(`rung held at ${effort} (model.escalate_on_failure: false)`);
@@ -1325,32 +1293,35 @@ function resolve(opts) {
     }
   }
 
-  // A per-role MODEL, from either of two keys. `roles.<role>.model` names it
-  // outright and wins over both `model.overrides.<role>` and the cell; the pin
+  // A per-role MODEL, from either of two keys and otherwise from nothing.
+  // `roles.<role>.model` names it outright and wins; `model.overrides.<role>`
   // stays live as the narrower fallback for every role whose roles key is
-  // absent. Either is an explicit user assertion, so it wins over the cell's
-  // model. What neither touches is effort: that is fixed per agent file in
-  // frontmatter, so a role whose model was chosen keeps its rung and its rung
-  // escalation (same reasoning depth, user's model). An unknown alias is
-  // reported as a warning and the routed model stands - a typo must not
-  // silently redirect the spend, nor block the spawn.
+  // absent. With no cells grid there is no third source and no default model
+  // name: unset resolves `model: null`, which means NO model parameter is sent
+  // and the dispatch runs at the host session's own model (D-04, and no agent
+  // file under `agents/` carries a `model:` line, so that session model is
+  // exactly what runs). What neither key touches is effort: that is fixed per
+  // agent file in frontmatter, so a role whose model was chosen keeps its rung
+  // and its rung escalation - same reasoning depth, user's model.
   //
-  // NEVER `ok:false` and never a pass-through on an unknown string. The caller
-  // contract turns a refusal into a base-agent dispatch at the session default
-  // (:14-15, :86-93), which is below every risk floor, so a typo would drop a
-  // secrets-touching phase off its floor; and the host's dispatch `model`
-  // parameter is an enum of exactly the aliases `TABLE.model_aliases` mirrors,
-  // so an unknown string fails input validation on every dispatch rather than
-  // erroring gracefully.
+  // NEVER `ok:false` on a string the host does not accept, and never a
+  // pass-through either. A refusal drops the caller to the base agent
+  // (references/seams.md), which loses the RUNG as well as the model; a
+  // pass-through fails the host's own input validation on every dispatch rather
+  // than erroring gracefully. So the string is dropped, the parameter is
+  // omitted, and `warnings[]` names the key and the value - the one arm that
+  // costs the user nothing but the model they mistyped.
   //
   // `pinned` keeps its meaning - `model.overrides` chose this model - because
   // references/seam-spawn-agent.md keys a per-dispatch ANNOUNCEMENT on it, and a
   // flag that fired for every roles-block dispatch would be exactly the warning
   // fatigue that file legislates against (D-11). `model_source` below is what a
-  // caller reads instead: the dotted key that chose the model, or `cell`.
-  let model = cell.model;
+  // caller reads instead: the dotted key that chose the model, or `session`
+  // when nothing did - including when a key was set and its value was rejected.
+  /** @type {string|null} */
+  let model = null;
   let pinned = false;
-  let modelSource = 'cell';
+  let modelSource = 'session';
   const rolesModel = roleEntry.model;
   const rolesModelKey = `roles.${opts.role}.model`;
   const pin = cfg.overrides[opts.role];
@@ -1363,32 +1334,30 @@ function resolve(opts) {
       warnings.push(`${rolesModelKey}=${JSON.stringify(rolesModel)} (config) decides this `
         + `role's model; model.overrides.${opts.role}=${JSON.stringify(pin)} does not apply`);
     }
-    if (TABLE.model_aliases.includes(rolesModel)) {
-      if (rolesModel === model) {
-        reason.push(`${rolesModelKey}=${rolesModel} (already the routed model)`);
-      } else {
-        reason.push(`${rolesModelKey}: ${model} -> ${rolesModel} (config, wins over the ${stakes}/${opts.role} cell)`);
-        model = rolesModel;
-      }
+    if (HOST_MODELS.includes(rolesModel)) {
+      reason.push(`${rolesModelKey}=${rolesModel} (config)`);
+      model = rolesModel;
       modelSource = rolesModelKey;
     } else {
-      warnings.push(`${rolesModelKey}=${JSON.stringify(rolesModel)} is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`);
-      reason.push(`${rolesModelKey} ignored (unknown alias); the ${stakes}/${opts.role} cell's model stands`);
+      warnings.push(`${rolesModelKey}=${JSON.stringify(rolesModel)} is not a model the host `
+        + `accepts (${HOST_MODELS.join(', ')}); no model parameter is sent and the dispatch `
+        + "runs at the session's model");
+      reason.push(`${rolesModelKey} ignored (the host does not accept it); no model parameter`);
     }
   } else if (pin != null) {
-    if (TABLE.model_aliases.includes(pin)) {
-      if (pin === model) {
-        reason.push(`override ${opts.role}=${pin} (already the routed model)`);
-      } else {
-        reason.push(`override ${opts.role}: ${model} -> ${pin} (config, wins over the ${stakes}/${opts.role} cell)`);
-        model = pin;
-      }
+    if (HOST_MODELS.includes(pin)) {
+      reason.push(`override ${opts.role}=${pin} (config)`);
+      model = pin;
       pinned = true;
       modelSource = `model.overrides.${opts.role}`;
     } else {
-      warnings.push(`model.overrides.${opts.role}="${pin}" is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`);
-      reason.push('override ignored (unknown alias)');
+      warnings.push(`model.overrides.${opts.role}=${JSON.stringify(pin)} is not a model the host `
+        + `accepts (${HOST_MODELS.join(', ')}); no model parameter is sent and the dispatch `
+        + "runs at the session's model");
+      reason.push('override ignored (the host does not accept it); no model parameter');
     }
+  } else {
+    reason.push('no model key set; no model parameter, the session\'s model runs');
   }
 
   // The routing family of the joined run record, one line per resolve. It
@@ -1407,9 +1376,13 @@ function resolve(opts) {
         family: 'routing',
         event: 'resolve',
         role: opts.role,
-        stakes,
         agent,
         model,
+        // `model_source` takes the place `stakes` held (D-05). The level was
+        // the field that named what decided a dispatch, and every historical
+        // row carries one; with it gone, a record with no such field could not
+        // tell a `null` model the user asked for from one nothing was set for.
+        model_source: modelSource,
         effort,
         escalated,
         pinned,
@@ -1420,32 +1393,27 @@ function resolve(opts) {
   } catch { /* a record of a decision may never change the decision */ }
 
   // The bundle: four knobs, not a bare model. `review` is the whole
-  // trigger->gate map for this level (no --trigger flag: the map rides on one
-  // resolve, and a flag would change the CONTRACTS entry for no reader),
-  // `reviewers` is the trigger->reviewer-set map beside it, `surfaces` +
-  // `surfaces_answered` are the risk_surface fire's scope and whether anyone
-  // chose it, and `verify` is the level's two-state deep-verify switch. All
-  // three halves of a fire ride on ONE resolve.
+  // trigger->gate map (no --trigger flag: the map rides on one resolve, and a
+  // flag would change the CONTRACTS entry for no reader), `reviewers` is the
+  // trigger->reviewer-set map beside it, `surfaces` + `surfaces_answered` are
+  // the risk_surface fire's scope and whether anyone chose it, and `verify` is
+  // the deep-verify switch the floor turns on. All three halves of a fire ride
+  // on ONE resolve.
   //
-  // `stakes` + `stakes_set` is the same pairing as `surfaces` +
-  // `surfaces_answered`, for the same reason: `stakes` is always a level, so on
-  // its own it cannot tell a caller whether a config layer chose that level or
-  // whether it is DEFAULTS standing in the layers' silence - and a default
-  // reported as a configured value is the defect `readConfig`'s comment and the
-  // first `reason` entry above already exist to prevent. The flag is
-  // `readConfig`'s own `stakesSet` carried outward, never re-derived here: the
-  // floor's discount predicate reads that same field, and a second derivation
-  // is how the reported set-ness and the routing it qualifies would come to
-  // disagree. Free text in `reason` says it too, and is not machine-checkable.
+  // `stakes` and `stakes_set` are GONE from this envelope with the key itself.
+  // What they answered - which decision produced this dispatch - is
+  // `model_source`'s job now, and `reason` says the rest per key.
   //
-  // `model_source` is the third pairing of the same kind, and it rides beside
-  // `pinned` rather than replacing it (D-11): `pinned` answers "must this
-  // dispatch be announced", `model_source` answers "which key chose this model"
-  // - `roles.<role>.model`, `model.overrides.<role>`, or the string `cell` when
-  // the routed cell's model stands, including when a roles model was rejected.
-  // ALWAYS present and never a dropped key, for the reason the reviewer maps
-  // above state: a missing entry and an unresolved one must not be one shape.
-  out({ ok: true, role: opts.role, agent, model, model_source: modelSource, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, stakes_set: cfg.stakesSet, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  // `model_source` rides beside `pinned` rather than replacing it (D-11):
+  // `pinned` answers "must this dispatch be announced", `model_source` answers
+  // "which key chose this model" - `roles.<role>.model`,
+  // `model.overrides.<role>`, or the string `session` when no key did, which
+  // includes a key whose value the host does not accept. ALWAYS present and
+  // never a dropped key, for the reason the reviewer maps above state: a
+  // missing entry and an unresolved one must not be one shape. It is what makes
+  // `model: null` readable, since null is both the unset answer and the
+  // rejected-value answer, and only this field tells them apart.
+  out({ ok: true, role: opts.role, agent, model, model_source: modelSource, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------

@@ -324,11 +324,11 @@ const floorReasons = (r) => (r.reason || []).filter((x) => String(x).startsWith(
 
 // --- route.mjs: the stakes level a layer set --------------------------------
 
-test('route: the stakes it routes on is what config.mjs get reports (global layer)', () => {
-  // The global layer alone carries `stakes`, so the merge is doing real work:
-  // route.mjs must inherit it exactly as `get` reports it.
+test('route: the rung it routes on is what config.mjs get reports (global layer)', () => {
+  // The global layer alone carries `roles.cad-executor.effort`, so the merge is
+  // doing real work: route.mjs must inherit it exactly as `get` reports it.
   const fx = layers({
-    global: { stakes: 'critical' },
+    global: { roles: { 'cad-executor': { effort: 'max' } } },
     repo: { model: { escalate_on_failure: true } },
   });
   // `--phase 9` names a phase with no PLAN (no phases/ dir at all), so the
@@ -337,20 +337,23 @@ test('route: the stakes it routes on is what config.mjs get reports (global laye
   const r = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', fx.repoFile, '--phase', '9'], fx);
   assert.equal(r.ok, true);
-  assert.equal(r.stakes, getValue('stakes', fx));
+  assert.equal(r.effort, getValue('roles.cad-executor.effort', fx));
   // ...and the value came from the global layer, not from the schema default:
-  // `shipped` is what an unset `stakes` resolves to.
-  assert.equal(r.stakes, 'critical');
+  // `high` is what an unset rung resolves to for this role.
+  assert.equal(r.effort, 'max');
 
-  // The contrasting value, so a hardcoded `critical` fails this arm: the same
-  // read over a different global-layer value has to land somewhere else. `solo`
-  // is not the default either, so neither constant satisfies both halves.
-  const low = layers({ global: { stakes: 'solo' }, repo: { model: { escalate_on_failure: true } } });
+  // The contrasting value, so a hardcoded `max` fails this arm: the same read
+  // over a different global-layer value has to land somewhere else. `low` is
+  // not the default either, so neither constant satisfies both halves.
+  const low = layers({
+    global: { roles: { 'cad-executor': { effort: 'low' } } },
+    repo: { model: { escalate_on_failure: true } },
+  });
   const r2 = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', low.repoFile, '--phase', '9'], low);
   assert.equal(r2.ok, true);
-  assert.equal(r2.stakes, getValue('stakes', low));
-  assert.equal(r2.stakes, 'solo');
+  assert.equal(r2.effort, getValue('roles.cad-executor.effort', low));
+  assert.equal(r2.effort, 'low');
 });
 
 // --- the three --dir git seams ----------------------------------------------
@@ -793,16 +796,16 @@ test('review-provider: a GLOBAL-layer prompt cap is the one it refuses on', () =
 
 test('merge precedence: the repo layer wins the same key, on both read faces', () => {
   const fx = layers({
-    global: { stakes: 'critical' },
-    repo: { stakes: 'solo' },
+    global: { roles: { 'cad-executor': { effort: 'max' } } },
+    repo: { roles: { 'cad-executor': { effort: 'low' } } },
   });
-  // `--phase 9` names a phase with no PLAN, so no computed risk floor can raise
-  // `solo` back to `critical` and make an inverted merge look right.
+  // `--phase 9` names a phase with no PLAN, so no computed risk floor exists to
+  // make an inverted merge look right.
   const r = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', fx.repoFile, '--phase', '9'], fx);
   assert.equal(r.ok, true);
-  assert.equal(getValue('stakes', fx), 'solo', 'get: the repo layer wins');
-  assert.equal(r.stakes, 'solo', 'route: the repo layer wins, on the same fixture');
+  assert.equal(getValue('roles.cad-executor.effort', fx), 'low', 'get: the repo layer wins');
+  assert.equal(r.effort, 'low', 'route: the repo layer wins, on the same fixture');
 });
 
 test('review-provider: the prompt cap it refuses on is what get reports (cwd-relative)', () => {

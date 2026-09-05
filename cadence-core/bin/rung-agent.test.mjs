@@ -488,6 +488,42 @@ test('roles.<role>.effort: unknown-effort-role for a role the map does not hold'
   assert.match(issues[0].detail, /cad-planner/);   // names what the map does hold
 });
 
+// --- the DEFAULT half, on the roles spelling alone ----------------------------
+
+/** The shipped schema with one `roles.<role>.effort` DEFAULT replaced. */
+function withRolesDefault(role, def) {
+  const key = `${ROLES_PREFIX}${role}${ROLES_EFFORT_SUFFIX}`;
+  return { ...SHIPPED, [key]: { ...SHIPPED[key], default: def } };
+}
+
+test('effort-default-invalid: a roles rung default of null, naming the key', () => {
+  // The default IS the answer since the cells grid went: null there hands
+  // `agentFor` no rung at all, and the dispatch falls open to the unsuffixed
+  // file while the resolve still reports a rung nothing ran at.
+  const issues = effortEnumIssues(withRolesDefault('cad-planner', null), SHIPPED_ORDER);
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'effort-default-invalid');
+  assert.match(issues[0].detail, /roles\.cad-planner\.effort/);   // BY KEY
+  assert.match(issues[0].detail, /null/);
+});
+
+test('effort-default-invalid: a default naming a rung this role has no file for', () => {
+  const issues = effortEnumIssues(withRolesDefault('cad-executor', 'ultra'), SHIPPED_ORDER);
+  assert.equal(issues.length, 1, JSON.stringify(issues));
+  assert.equal(issues[0].code, 'effort-default-invalid');
+  assert.match(issues[0].detail, /"ultra"/);
+  assert.match(issues[0].detail, /low, medium, high, xhigh, max/); // ...and what it has
+});
+
+test('model.effort.<role> keeps its null default - the fall-through is not drift', () => {
+  // The paired NEGATIVE control for the row above: the same null on the OLDER
+  // key files nothing, because null there means "this key does not answer" and
+  // the roles row's own default decides. A default check written across both
+  // spellings would refuse the precedence the two keys are built on.
+  assert.equal(SHIPPED['model.effort.cad-planner'].default, null, 'the fixture stopped proving it');
+  assert.deepEqual(effortEnumIssues(SHIPPED, SHIPPED_ORDER), []);
+});
+
 test('roles.<role>.model is not held to the effort rules - it has no enum', () => {
   // D-10 types it string_or_null with nothing to drift against, so the reverse
   // walk must not classify it as a start-rung key and file drift about it.
