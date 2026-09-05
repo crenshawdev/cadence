@@ -395,7 +395,7 @@ survivors whatever `auto_close` says.
 
 Adjudicated does not auto-halt like `blocking`, and it is not the auto-replan
 convergence loop (cut in DESIGN §6) - it grounds once and asks. Use it for the
-deep, rare gates - `plan` and `phase_diff` at `critical`.
+deep, rare gates - `plan` and `phase_diff`.
 
 `cad-verify` routes fix requests through fire() (a review producing the fix
 list), not its own fixer loop. That fire names no wiring-table trigger and has

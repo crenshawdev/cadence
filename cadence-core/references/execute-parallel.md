@@ -73,14 +73,14 @@ on this path is a real defect to report, not the fork-point default.
    presenting, since `/cad-execute` does not preload it, and act only on what
    the user names.
 6. Fire the `phase_diff` trigger (references/review-triggers.md) with the refs
-   `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). It is `off` at `solo`
-   and at the default `shipped`, `adjudicated` at `critical` -
+   `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). It is `off` by
+   default, and no risk floor turns it on -
    it exists because the per-plan reviews above each see one plan's diff in
    isolation, so a bug in the INTERACTION of two merged plans is invisible
-   to them. Off at `shipped`, nothing else catches that bug: `risk_surface`
+   to them. Left `off`, nothing else catches that bug: `risk_surface`
    fires per plan on its own range, and no gate reviews the branch again at
    land. A project that runs this path and wants the cover sets
-   `review.triggers.phase_diff.gate`, which beats the level. Parallel path
+   `review.triggers.phase_diff.gate`. Parallel path
    only: on the sequential path each diff review already sees a tree containing
    all prior plans' work. Where it adjudicates, its survivors go through the
    same triage gate, NONE the default:

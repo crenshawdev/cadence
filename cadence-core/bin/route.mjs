@@ -176,7 +176,7 @@ const DEFAULTS = { escalate_on_failure: false, reviewers: ['claude-subagent'] };
 // the dispatch runs with no model parameter and the resolve says so in
 // `warnings[]` (D-04).
 //
-// It is the ONE in-repo copy of that list now that `model_aliases` is going: the
+// It is the ONE in-repo copy of that list now that `model_aliases` is gone: the
 // table mirrored it, the six `model.overrides.*` enums mirrored it, and both are
 // deleted this phase. Nothing under this repo can re-derive it, so a host
 // release that widens the parameter is re-verified HERE and nowhere else, and
