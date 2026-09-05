@@ -133,8 +133,13 @@ jobs:
           bin="target/${{ matrix.target }}/release/cadence"
           file "$bin"
           file "$bin" | grep -Eq 'statically linked|static-pie linked'
-          ldd "$bin" 2>&1 || true
-          ldd "$bin" 2>&1 | grep -Eq 'not a dynamic executable|statically linked'
+          # `ldd` EXITS NON-ZERO on a plain static (non-PIE) binary, which is
+          # what aarch64-musl produces, so under pipefail its status decides
+          # the step and the grep's match is discarded. Capture once, print,
+          # then match the captured text.
+          ldd_out="$(ldd "$bin" 2>&1 || true)"
+          printf '%s\n' "$ldd_out"
+          printf '%s\n' "$ldd_out" | grep -Eq 'not a dynamic executable|statically linked'
 
       # The sha256 line goes in the run summary because that is where a human
       # copies it from into the committed pin file. On a tag push the archive
