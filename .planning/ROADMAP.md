@@ -63,11 +63,14 @@ triaged by hand and are not carried into these phases.
   2026-09-05. The original question assumed the preamble was required and only
   asked what it costs: unconditional, about 900 tokens per skill invocation
   across `/cad-context`, `/cad-task`, `/cad-debug` and `/cad-adopt`, so roughly
-  3,600 tokens per run for one useful load. A session-scoped check on CLI
-  2.1.261 then found deferred tools callable with no `ToolSearch` at all,
-  including one MCP tool reaching its server, so whether the preamble is needed
-  now comes before what it costs. Phase 1's skeleton binary serves a real tool
-  surface, which answers both directly instead of by proxy.
+  3,600 tokens per run for one useful load. A session-scoped check was later
+  cited as finding deferred tools callable with no `ToolSearch` at all; that
+  check has no transcript in the session archive and contradicts the deferral
+  observed on the same CLI on 2026-09-05, so it is not carried. Deferral is
+  what is recorded, so a preamble is needed and the shape was decided on
+  2026-09-05: one unconditional `ToolSearch` at skill entry. Phase 1's skeleton
+  binary serves a real tool surface, which CONFIRMS that against a real
+  surface instead of by proxy.
 - **OQ-2 - do loaded tools survive compaction.** Moved to phase 2 on 2026-09-05.
   The CLI carries `preCompactDiscoveredTools` and a "carried from compact
   boundary" string, which is suggestive and not an observation. A compaction was
