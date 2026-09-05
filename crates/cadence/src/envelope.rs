@@ -37,16 +37,6 @@ use serde::{Deserialize, Serialize};
 /// The three non-`ok` arms carry a `reason` and nothing else. Whether a
 /// refusal also owes the caller a hint, a remedy or a machine-readable code is
 /// a question for the operations that raise them, not for the vocabulary.
-// The vocabulary lands before the first operation that answers in it, so in a
-// non-test build nothing names the type yet. `expect` rather than `allow`
-// because the moment an operation does name it this becomes an unfulfilled
-// expectation and the compiler says so - the only version of this that cannot
-// quietly outlive its reason. Scoped to `not(test)` because the tests below
-// use the type, so under `cfg(test)` there is nothing to expect.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "no operation answers in the vocabulary yet")
-)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub enum Envelope<T> {
