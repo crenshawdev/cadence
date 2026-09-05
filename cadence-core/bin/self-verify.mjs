@@ -30,17 +30,18 @@
 //                    a pointer at one single-sourced contract; the moment one
 //                    grows behaviour, the ladder is N divergent variants
 //                    instead of one contract at N efforts.
-//   8. routing cells the five grids in route-table.json, cell by cell (every
-//                    problem NAMES the cell), the shared vocabulary arrays
-//                    against the schema's own enums,
-//                    plus the grids -> agents/ direction: every rung a cell
-//                    names must have an agent file. route.mjs returns an agent
-//                    name it never checks exists, so an unbuilt rung would
-//                    surface as a failed spawn instead of in CI. Coming back
-//                    the other way, only the STALE half: a rung-suffixed agent
-//                    file lib/rung-agent.mjs maps to nothing is refused, while
-//                    a mapped rung no cell reaches is legal - a rung file
-//                    ships before the cell that names it.
+//   8. rung ladder   lib/rung-agent.mjs's RUNG_FILES against agents/, both
+//                    directions. Map -> disk: every rung is reachable by
+//                    config (`roles.<role>.effort` names any of the five), so
+//                    the reachable set IS the map and every file it names must
+//                    exist. route.mjs returns an agent name it never checks
+//                    exists, so an unbuilt rung would surface as a failed
+//                    spawn instead of in CI. That arm is gated on isFullTree:
+//                    the map lives in CODE, so a --root fixture cannot supply
+//                    its own, and a minimal fixture is not claiming to carry a
+//                    ladder. Disk -> map, ungated: a rung-suffixed agent file
+//                    the map files for NOBODY is refused, while a mapped rung
+//                    is legal whatever config reaches it.
 //   9. config reach  references/config-reach.md must carry one reach row per
 //                    config.schema.json key, name no key the schema lacks, and
 //                    every reach narrower than `universal` must appear in that
@@ -113,7 +114,7 @@
 //  17. global-only   the keys lib/global-only-keys.mjs strips out of the repo
 //      key scope     layer and the config.schema.json keys marked
 //                    `src: "global"`, against each other in BOTH directions -
-//                    the same pair check 8 keeps between the routing cells and
+//                    the same pair check 8 keeps between the rung map and
 //                    agents/. A key the merge enforces without the marker is a
 //                    scope no rendered surface shows the user setting it; a
 //                    marked key the merge does not enforce is a promise nothing
@@ -259,8 +260,8 @@ import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import {
   rungBodyIssue, rungEffortIssue, rungPrefixIssues, rungFile, effortEnumIssues,
+  RUNG_FILES, RUNG_ORDER,
 } from './lib/rung-agent.mjs';
-import { cellIssues, declaredRoles, routableAgents, vocabularyIssues } from './lib/route-cells.mjs';
 import { gateAgreementIssues } from './lib/gate-agreement.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
@@ -1081,136 +1082,94 @@ function run(root) {
       detail: issue.detail });
   }
 
-  // 8. the rung ladder, both directions. This iterates the TABLE, not a
-  // directory, so it cannot live inside the agents/ walk above. Root-relative
-  // like config.schema.json and weight-budgets.json, so a --root fixture can
-  // supply its own; an absent table skips the check (a full tree missing it is
-  // a missing-input, matching the other always-expected inputs). The read and
-  // the parse are guarded the way the budget manifest's are: a malformed table
-  // is ONE problem and the run continues, rather than unwinding run() into
-  // {ok:false,reason:"internal"} and discarding every problem found so far
-  // (the #49.1 collapse).
-  const routeTablePath = join(root, 'cadence-core', 'route-table.json');
-  // Hoisted out of the existsSync arm - the same hoist, for the same reason,
-  // that `agentFiles` already carries above: step 8b below needs the parsed
-  // table's `rung_order` when there is one and must still run when there is not.
-  let table = null;
-  if (existsSync(routeTablePath)) {
-    try {
-      table = JSON.parse(readFileSync(routeTablePath, 'utf8'));
-    } catch (e) {
-      problems.push({ kind: 'unreadable-surface', file: 'cadence-core/route-table.json',
-        detail: e.code || e.message });
-    }
-    if (table && typeof table === 'object' && !Array.isArray(table)) {
-      // The grids' own well-formedness, cell by cell. The vocabulary comes from
-      // config.schema.json - the file that already defines these names (D-10) -
-      // rather than from parsing references/review-triggers.md's Wiring table,
-      // which has no stated grammar.
-      const gateSpec = schema['review.triggers.plan.gate'] || {};
-      const stakesSpec = schema.stakes || {};
-      for (const { code, detail } of cellIssues(table, {
-        levels: Array.isArray(stakesSpec.values) ? stakesSpec.values : [],
-        triggers: TRIGGERS,
-        gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
-      })) {
-        problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
-      }
-
-      // The shared vocabulary arrays against config.schema.json's own enums.
-      // route.mjs compares levels by index in `stakes_order` and refuses a
-      // user-set gate against `gates`, so either list drifting silently
-      // reorders the ladder or refuses a gate `config.mjs set` accepts.
-      const stakesValues = Array.isArray(stakesSpec.values) ? stakesSpec.values : [];
-      for (const { code, detail } of vocabularyIssues(table, {
-        levels: stakesValues,
-        gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
-      })) {
-        problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
-      }
-
-      // table -> disk: every name route.mjs can return must exist. route.mjs
-      // never checks the name it returns, so without this an unbuilt or
-      // renamed rung fails at dispatch time instead of in CI.
-      const routable = routableAgents(table);
-      for (const [stem, cell] of routable) {
+  // 8. the rung ladder, both directions: lib/rung-agent.mjs's RUNG_FILES map
+  // against the agents/ listing the walk above already read. It iterates the
+  // MAP, not a directory, so it cannot live inside that walk.
+  //
+  // map -> disk: every file the map names must exist. Since the level went,
+  // every rung is reachable by config - `roles.<role>.effort` names any of the
+  // five - so the reachable set IS the map, and route.mjs returns an agent
+  // name it never checks exists, so an unbuilt or renamed rung would fail at
+  // dispatch time instead of in CI.
+  //
+  // Gated on isFullTree, which the deleted route-table.json read never needed:
+  // that table was root-relative, so a --root fixture supplied its own and the
+  // check scaled itself to the fixture. RUNG_FILES lives in code, so it cannot
+  // be scaled that way - held against a minimal fixture it would report thirty
+  // absent files about a tree that never claimed to carry a ladder. Same D-03
+  // line every always-expected input sits on: a real install fails loud, a
+  // fixture stays lenient.
+  if (isFullTree) {
+    for (const role of Object.keys(RUNG_FILES)) {
+      for (const [rung, stem] of Object.entries(RUNG_FILES[role])) {
         if (!existsSync(join(root, 'agents', `${stem}.md`))) {
-          problems.push({ kind: 'missing-rung-agent', file: 'cadence-core/route-table.json',
-            detail: `${cell}: agents/${stem}.md absent` });
-        }
-      }
-      // disk -> map: a rung-suffixed agent file lib/rung-agent.mjs files for
-      // NOBODY is stale, and stays green without this while still paying
-      // standing context in every main-session prompt. Matched ONLY on the
-      // rung-suffixed shape: a blanket "not named by the table" rule would
-      // outlaw the one-off agent with inline prose D-04 deliberately keeps
-      // legal.
-      //
-      // This arm used to also file the reverse of the walk above - a file the
-      // map DOES name that no cell reaches - and that half is gone (phase 1,
-      // D-03). The two faults wanted opposite fixes, and the mapped one is the
-      // ordinary state of a ladder that is complete on disk before the routing
-      // cells catch up: every role carries every rung, and a cell names the
-      // subset it needs. Refusing that would make the map's own shape a CI
-      // failure. Reachability is still stated - route-table.json's `_meta`
-      // says the reachable rungs are the ones some cell names - it is just not
-      // a refusal any more.
-      const order = Array.isArray(table.rung_order) ? table.rung_order : [];
-      // Longest role name first, so a role that prefixes another cannot claim
-      // the other's file.
-      const roleNames = declaredRoles(table).sort((a, b) => b.length - a.length);
-      for (const e of agentFiles) {
-        if (!e.endsWith('.md')) continue;
-        const stem = e.slice(0, -3);
-        if (routable.has(stem)) continue;
-        for (const role of roleNames) {
-          if (!stem.startsWith(`${role}-`)) continue;
-          const rung = stem.slice(role.length + 1);
-          if (order.includes(rung) && rungFile(role, rung) !== stem) {
-            // The fix is always the same one: delete the file, or file it in
-            // the map. A file the map DOES name is not this arm's business.
-            problems.push({ kind: 'undeclared-rung-agent', file: `agents/${stem}.md`,
-              detail: `no cell names ${role} at rung ${rung}, and lib/rung-agent.mjs maps no file to it` });
-          }
-          break;
+          problems.push({ kind: 'missing-rung-agent',
+            file: 'cadence-core/bin/lib/rung-agent.mjs',
+            detail: `${role} at rung ${rung}: agents/${stem}.md absent` });
         }
       }
     }
-  } else if (isFullTree) {
-    problems.push({ kind: 'missing-input', file: 'cadence-core/route-table.json',
-      detail: 'always-expected input absent' });
+  }
+  // disk -> map: a rung-suffixed agent file lib/rung-agent.mjs files for
+  // NOBODY is stale, and stays green without this while still paying standing
+  // context in every main-session prompt. Matched ONLY on the rung-suffixed
+  // shape: a blanket "not named by the map" rule would outlaw the one-off
+  // agent with inline prose D-04 deliberately keeps legal. Ungated - it judges
+  // the files a tree DOES carry, so a fixture answers it as well as an install.
+  //
+  // This arm used to also file the reverse of the walk above - a file the map
+  // DOES name that no routing cell reached - and that half is gone (phase 1,
+  // D-03), along with the cells themselves. A mapped rung is legal whatever
+  // config happens to reach it.
+  //
+  // Longest role name first, so a role that prefixes another cannot claim the
+  // other's file.
+  const roleNames = Object.keys(RUNG_FILES).sort((a, b) => b.length - a.length);
+  for (const e of agentFiles) {
+    if (!e.endsWith('.md')) continue;
+    const stem = e.slice(0, -3);
+    for (const role of roleNames) {
+      if (!stem.startsWith(`${role}-`)) continue;
+      const rung = stem.slice(role.length + 1);
+      if (RUNG_ORDER.includes(rung) && rungFile(role, rung) !== stem) {
+        // The fix is always the same one: delete the file, or file it in the
+        // map. A file the map DOES name is not this arm's business.
+        problems.push({ kind: 'undeclared-rung-agent', file: `agents/${stem}.md`,
+          detail: `lib/rung-agent.mjs files ${role}'s ${rung} rung as `
+            + `agents/${rungFile(role, rung)}.md, so it maps no file to this one` });
+      }
+      break;
+    }
   }
 
-  // 8b. the shipped `model.effort.<role>` enums against RUNG_FILES. OUTSIDE both
-  // of check 8's table guards on purpose: nesting it under "the table exists AND
-  // parses" would make a schema-vs-map proof conditional on a file it does not
-  // read, on exactly the two trees where a drifted enum is likeliest and least
-  // noticed - and would contradict effortEnumIssues's own tolerance of an absent
-  // `rungOrder`, which exists so it can run without a table.
+  // 8b. the shipped `model.effort.<role>` enums against RUNG_FILES, at the one
+  // rung vocabulary both halves of check 8 read. It used to be handed the
+  // deleted table's `rung_order` and carried a comment about not nesting under
+  // that table's guards; RUNG_ORDER is now stated beside the map it orders, so
+  // there is no second copy to be conditional on.
   //
-  // Filed against config.schema.json, not the table: that is the file a
+  // Filed against config.schema.json, not the map: that is the file a
   // maintainer edits to fix it.
-  for (const { code, detail } of effortEnumIssues(schema,
-    table && Array.isArray(table.rung_order) ? table.rung_order : [])) {
+  for (const { code, detail } of effortEnumIssues(schema, RUNG_ORDER)) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 
   // 18. the twelve `review.triggers.<t>.{gate,tier,effort}` rows as DEFAULTS:
   // each one's `default` a member of its own `values`, and each one's `purpose`
   // naming that default. It used to compare them against route-table.json's
-  // level-keyed grids and lived inside check 8's table block; the level is gone,
-  // the schema default IS the answer, and the lib reads nothing but the schema -
-  // so this runs OUTSIDE that block, for the same reason 8b does: a
-  // schema-against-itself proof may not be conditional on a data file it does
-  // not read. Filed against config.schema.json, the file a maintainer edits.
+  // level-keyed grids and lived inside check 8's guard on that table parsing;
+  // the level is gone, the schema default IS the answer, and the lib reads
+  // nothing but the schema - so a schema-against-itself proof is conditional on
+  // nothing, which is what moving it out here bought before the file itself
+  // went. Filed against config.schema.json, the file a maintainer edits.
   for (const { code, detail } of gateAgreementIssues(schema)) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 
   // 9. the config-key reach table, against config.schema.json in both
   // directions, plus the narrow-reach-must-be-stated rule. Root-relative like
-  // route-table.json and weight-budgets.json, so a --root fixture can supply
-  // its own schema AND its own table; an absent doc skips the check, and a
+  // config.schema.json and weight-budgets.json, so a --root fixture can supply
+  // its own schema AND its own reach doc; an absent doc skips the check, and a
   // full tree missing it is a missing-input like the other always-expected
   // inputs. The read and the parse are guarded the way those two are: a
   // malformed table is problems ON THE TABLE and the run continues, rather
@@ -1421,7 +1380,7 @@ try {
   if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
   const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, rung-prefix, verifier-write-grant, rung-ladder, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, reference-routers, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path, refusal-hints, capture-writers, hook-events', problems });
 } catch (e) {
   // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
