@@ -33,19 +33,21 @@ prompt Cadence emits with excerpt absent is byte-identical to today. The
 zero-dependency ethos is revoked for the Rust codebase and replaced by a
 Cargo.lock-pinned offline cross-compile from one CI job.
 
-**The order, and why it is this order.** Phase 1 is a spike and it runs first
-because its question expires. The 3.x baseline for prompt size per dispatch and
-main-thread context growth per phase is the go/no-go the rewrite is judged on,
-and it can only be measured while 3.x is still the thing that runs. The two
-deferral questions started here and moved to phase 2 on 2026-09-05: they were
-being answered by proxy, and phase 2's skeleton binary answers them against a
-real tool surface instead. Phase 2
-seeds the crate from excerpt, which already carries rmcp, tree-sitter, the
-ripgrep crates, the PreToolUse hook and the cross-compile CI, so the skeleton
-is a move rather than a greenfield. Phase 3 builds the golden harness before
-any domain code, so parity is measurable from the first module rather than
-asserted at the end. Phase 4 takes one vertical slice end to end, and every
-later module follows its shape.
+**The order, and why it is this order.** Phase 1 seeds the crate from excerpt,
+which already carries rmcp, tree-sitter, the ripgrep crates, the PreToolUse hook
+and the cross-compile CI, so the skeleton is a move rather than a greenfield.
+Phase 2 builds the golden harness before any domain code, so parity is
+measurable from the first module rather than asserted at the end. Phase 3 takes
+one vertical slice end to end, and every later module follows its shape.
+
+**The 3.x baseline spike was cut on 2026-09-05.** It was scheduled first on the
+claim that it expires, but every task mined the frozen archive at
+`/projects/cadence-archive-v3.7.12/.planning/` rather than measuring a running
+3.x, and a frozen archive does not expire. It also measured tokens, the axis
+section 7 of the design doc explicitly declines to sell the architecture on. The
+rewrite decision is already taken, so a before-and-after figure is a scorecard
+that can be produced from that archive whenever one is wanted. `BAS-01` is
+deferred, not dropped.
 
 **Out of scope, deliberately.** The near-term 3.x prose fixes in section 8 of
 the architecture doc are a separate decision and are not scheduled here.
@@ -57,14 +59,14 @@ triaged by hand and are not carried into these phases.
 ## Open Questions
 
 - **OQ-1 - is a ToolSearch preamble needed at all, and if so does a conditional
-  one get skipped when the schema is already loaded.** Moved to phase 2 on
+  one get skipped when the schema is already loaded.** Moved to phase 1 on
   2026-09-05. The original question assumed the preamble was required and only
   asked what it costs: unconditional, about 900 tokens per skill invocation
   across `/cad-context`, `/cad-task`, `/cad-debug` and `/cad-adopt`, so roughly
   3,600 tokens per run for one useful load. A session-scoped check on CLI
   2.1.261 then found deferred tools callable with no `ToolSearch` at all,
   including one MCP tool reaching its server, so whether the preamble is needed
-  now comes before what it costs. Phase 2's skeleton binary serves a real tool
+  now comes before what it costs. Phase 1's skeleton binary serves a real tool
   surface, which answers both directly instead of by proxy.
 - **OQ-2 - do loaded tools survive compaction.** Moved to phase 2 on 2026-09-05.
   The CLI carries `preCompactDiscoveredTools` and a "carried from compact
@@ -72,34 +74,18 @@ triaged by hand and are not carried into these phases.
   observed on 2026-09-05 and a tool loaded before the boundary was callable
   after it, but the paired negative control failed: a tool never loaded was
   callable too, so the observation does not separate survival from the
-  enforcement simply being off. It is answered against the binary in phase 2,
+  enforcement simply being off. It is answered against the binary in phase 1,
   where an unloaded tool has a defined failure to compare against.
-- **OQ-3 - what the 3.x baseline actually is.** Prompt size per invocation and
-  main-thread context growth per phase, measured on the shipped 3.7.12 tree
-  across one real phase. Without it, 4.0.0 has nothing to be judged against and
-  the go/no-go in the design doc is unfalsifiable. This is the one question
-  that expires: once 3.x stops being what runs, it cannot be answered.
 
 ## Phases
 
-- [ ] **Phase 1: The 3.x baseline** - measure 3.x while it still runs, and answer OQ-3
-- [ ] **Phase 2: The crate skeleton** - a named binary that builds, cross-compiles, serves an empty tool surface, installs itself, and settles OQ-1 and OQ-2 against that surface
-- [ ] **Phase 3: The golden harness** - fixtures at the frozen tag and a Rust test that diffs the binary against recorded JavaScript output
-- [ ] **Phase 4: One vertical slice** - `/cad-execute` end to end, the shape every other command follows
+- [ ] **Phase 1: The crate skeleton** - a named binary that builds, cross-compiles, serves an empty tool surface, installs itself, and settles OQ-1 and OQ-2 against that surface
+- [ ] **Phase 2: The golden harness** - fixtures at the frozen tag and a Rust test that diffs the binary against recorded JavaScript output
+- [ ] **Phase 3: One vertical slice** - `/cad-execute` end to end, the shape every other command follows
 
 ## Phase Details
 
-### Phase 1: The 3.x baseline
-
-**Goal.** OQ-3 is answered with observations rather than guesses, and the answer
-is written where phase 2 onward can read it.
-
-A spike, not a code change. It mines the shipped 3.7.12 record for prompt size
-per dispatch and main-thread growth per phase. It writes no Rust and changes no
-behavior. Its output is one spike record carrying one verdict, `validated`,
-`invalidated` or `inconclusive`.
-
-### Phase 2: The crate skeleton
+### Phase 1: The crate skeleton
 
 **Goal.** A `cadence` binary builds, cross-compiles from one CI job, serves an
 empty MCP tool surface, and installs itself from a release.
@@ -114,7 +100,7 @@ publishes real tools, whether they arrive deferred in a main thread is watched
 directly, with a never-loaded tool as the paired control, rather than inferred
 from a built-in standing in for them.
 
-### Phase 3: The golden harness
+### Phase 2: The golden harness
 
 **Goal.** Parity against `v3.7.12` is a test that runs, not a claim.
 
@@ -123,7 +109,7 @@ recorded for the operations phase 4 will implement, and a Rust test that diffs
 the binary's answers against those recordings. Built before domain code so that
 every later module lands against a measurable target.
 
-### Phase 4: One vertical slice
+### Phase 3: One vertical slice
 
 **Goal.** `/cad-execute` runs end to end against the binary, and its shape is
 the template every other command follows.

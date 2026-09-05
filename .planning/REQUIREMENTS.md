@@ -6,7 +6,7 @@
 ## Active
 
 **`v4.0.0 - excerpt folds in, the binary owns process` opened 2026-09-05 on
-`cadence/binary-owns-process`.** Four phases, sourced from
+`cadence/binary-owns-process`.** Three phases, sourced from
 `docs/rationale/architecture-v4.md` written the same day. It is a rewrite and
 not a port: `cadence-core` becomes a session-resident Rust server, the frozen
 reference is the annotated tag `v3.7.12` at commit `c39bbd8c`, and the
@@ -19,9 +19,8 @@ from earlier cycles are rows under `## Shipped` below, and the ids under
 `## Deferred` keep their own reasons - none is promoted here to fill this
 section.
 
-- **BAS-01**: The 3.x baseline that 4.0.0's go/no-go is judged against exists as a figure on disk rather than a memory. Prompt size per dispatch and main-thread context growth per phase, mined from the frozen record at `/projects/cadence-archive-v3.7.12/.planning/` - 3,619 lines / 933,844 bytes, 574 brackets over 118 `corr` values, spanning 2026-08-07 to 2026-09-05 - with every figure publishing its denominator and `unrecorded` never collapsing to zero. This is the one question that expires: once 3.x stops being what runs, it cannot be answered. `OQ-3` Phase 1.
-- **TSL-01**: Whether a ToolSearch preamble is needed at all, and only then whether a conditional one is SKIPPED when the schema is already loaded, is an observation before that preamble is written into 28 skill files. Unconditional costs ~900 tokens per skill invocation and a context-to-plan-to-execute-to-verify run would pay ~3,600 for one useful load. On CLI 2.1.261 deferred tools were callable with no ToolSearch at all, including one MCP tool reaching its server, so necessity precedes cost. Answered against the phase 2 binary's own tool surface, not by proxy. `OQ-1` Phase 2.
-- **TSL-02**: Whether loaded tool schemas survive a compaction is observed against a real compaction WITH a paired never-loaded control, rather than inferred from the CLI carrying `preCompactDiscoveredTools` and a "carried from compact boundary" string. The 2026-09-05 attempt saw a pre-boundary tool stay callable, but its control stayed callable too, so it separates nothing. Answered against the phase 2 binary. `OQ-2` Phase 2.
+- **TSL-01**: Whether a ToolSearch preamble is needed at all, and only then whether a conditional one is SKIPPED when the schema is already loaded, is an observation before that preamble is written into 28 skill files. Unconditional costs ~900 tokens per skill invocation and a context-to-plan-to-execute-to-verify run would pay ~3,600 for one useful load. On CLI 2.1.261 deferred tools were callable with no ToolSearch at all, including one MCP tool reaching its server, so necessity precedes cost. Answered against the phase 1 binary's own tool surface, not by proxy. `OQ-1` Phase 1.
+- **TSL-02**: Whether loaded tool schemas survive a compaction is observed against a real compaction WITH a paired never-loaded control, rather than inferred from the CLI carrying `preCompactDiscoveredTools` and a "carried from compact boundary" string. The 2026-09-05 attempt saw a pre-boundary tool stay callable, but its control stayed callable too, so it separates nothing. Answered against the phase 1 binary. `OQ-2` Phase 1.
 
 `v3.7.12 - what each role runs at` opened 2026-09-04 and closed 2026-09-05, the
 LAST 3.x release (4.0.0 is a Rust rewrite, decided 2026-09-05). Three phases,
@@ -444,6 +443,18 @@ failed. Phases 2-4 are all on that same surface, so the rate would have carried.
 Promote as a group when the identity join has a test that fails on the class the
 UAT missed, or individually on the conditions below.
 
+- **BAS-01**: The 3.x baseline for prompt size per dispatch and main-thread
+  context growth per phase, minable from the frozen archive at
+  `/projects/cadence-archive-v3.7.12/.planning/` - 3,619 lines / 933,844 bytes,
+  574 brackets over 118 `corr` values, spanning 2026-08-07 to 2026-09-05.
+  Deferred out of `v4.0.0` on 2026-09-05, the day it was planned. It was
+  scheduled first as the question that expires, but the plan mined a frozen
+  archive rather than measuring a running 3.x, and a frozen archive does not
+  expire. It also measures tokens, which section 7 of
+  `docs/rationale/architecture-v4.md` declines to sell the architecture on. The
+  rewrite decision is already taken, so this is a scorecard, not an input.
+  Promote when someone wants the before-and-after figure; the corpus keeps.
+
 BUD-03, RSK-05 and RNG-03 were PROMOTED out of this block on 2026-08-26 into
 `v3.7.4`. They were deferred on a reason that did not apply to them: the block
 reason above says the remaining phases sat on the `SubagentStop` identity
@@ -535,7 +546,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BAS-01 | Phase 1 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
