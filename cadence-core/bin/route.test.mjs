@@ -132,6 +132,35 @@ for (const c of CELLS) {
   });
 }
 
+// --- the stakes-only fallback, per cell (ROL-01, D-08) -----------------------
+//
+// The roles block answers where a layer set it; where it is ABSENT every one of
+// the eighteen cells must resolve exactly what it resolved before the block
+// existed. Held against the same hand-written CELLS rows above and never
+// against cadence-core/route-table.json, for the reason stated at :81-85.
+//
+// The no-roles assertion is on the FIXTURE FILE's own parsed contents, not on
+// the helper's intent: a roles block that happened to agree with the cell would
+// satisfy every other assertion here and prove nothing about the fallback.
+//
+// ONE case per cell for the reason the loop above states: node:test aborts a
+// case at its first throwing assertion, so a single case walking all eighteen
+// would report one failure and skip every later row.
+for (const c of CELLS) {
+  test(`stakes-only fallback ${c.stakes}/${c.role}`, () => {
+    const file = cfg({ stakes: c.stakes }, `fallback-${c.stakes}.json`);
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal('roles' in written, false, 'the fallback fixture must carry no roles block');
+
+    const r = resolve(c.role, file);
+    assert.equal(r.ok, true);
+    assert.equal(r.model, c.model, 'model');
+    assert.equal(r.effort, c.effort, 'effort');
+    assert.equal(r.agent, c.agent, 'agent');
+    assert.equal(r.model_source, 'cell', 'the cell decided, and nothing else did');
+  });
+}
+
 test('the three held retries say the rung was held, not that it escalated', () => {
   // A (stakes, role) pair list, not one config: the held cells all sit at
   // critical, where xhigh START rungs leave the retry nothing to climb to.
