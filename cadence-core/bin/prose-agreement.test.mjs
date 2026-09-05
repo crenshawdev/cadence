@@ -1110,7 +1110,7 @@ test('both fire sites invoke the risk-check seam rather than reading a prose lis
     + 'outside the phase spine and 0 is the one number no roadmap phase carries, '
     + "so any other value files the task's range against a real phase's records");
   // An unjudged range is not a cleared one, and widening is the only safe
-  // direction on the one gate that is `blocking` at every stakes level.
+  // direction on the one gate whose schema default is `blocking`.
   assert.match(execute, /inconclusive/,
     'execute.md dropped the rule that an inconclusive range fires the trigger');
 });
@@ -1627,7 +1627,7 @@ test('RSK-11, task.md: the surfaces-unanswered refusal is answered in the run, n
   // `--surfaces` - which is EVERY fresh user, and on a treeless repository
   // there is no repo layer to have answered it in. A coordinator that reads
   // that refusal as a verdict or as a skip stops there, and the one trigger
-  // that blocks at every stakes level never runs for exactly the audience the
+  // that defaults to `blocking` never runs for exactly the audience the
   // inline path exists for. So the arm is prose or it is nothing: the seam has
   // no way to ask.
   const risk = stepBody(doc(...TASK_WF), 'risk_check', 'task.md');
@@ -1733,7 +1733,7 @@ test('ENFORCEMENT, execute.md: the guardrail still forbids a coordinator Edit/Wr
 // Watched FAILING at e4f95a3, this plan's unpatched baseline: `grep -c
 // risk-check cadence-core/references/execute-parallel.md` returned 0 there,
 // against 2 for `cadence-core/workflows/execute.md`. The one gate that is
-// `blocking` at every stakes level fired on the sequential path and nowhere
+// `blocking` by schema default fired on the sequential path and nowhere
 // else, so all three checks below go red against that SHA - the first two on
 // the two absent command names, the third on the invocation it cannot find.
 //
@@ -3761,7 +3761,7 @@ test('RSK-10: every risk-check run invocation names --base and exactly one scope
 // `--base {pre-plan HEAD} --head HEAD`, so a plan that landed no commits asks
 // the seam about a range whose ends are the same commit. The seam answers
 // `checked: true, empty: true` - the correct answer for a zero-byte diff, and a
-// COMPLETED clean check on the one gate that is blocking at every stakes level,
+// COMPLETED clean check on the one gate that defaults to blocking,
 // standing in the record as if a range had been judged. `lib/risk-diff.mjs`
 // decides `empty` from the diff BODY and never from equal ids on purpose (a
 // revert pair has differing ids and an empty net diff), so the fix is the

@@ -6,6 +6,93 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+One word used to decide what all six roles ran at. It is gone, and thirteen
+questions that say what each role costs are what a project meets instead.
+
+### Removed
+
+- **`stakes`, and every table keyed on it.** The single level that set six roles'
+  models and rungs at once is deleted, along with the 18-cell routing grid, the
+  `review` / `verify` / `tiers` / `efforts` grids beside it, and
+  `cadence-core/route-table.json` itself. **Breaking, and there is no alias.** A
+  config still carrying the key meets the migration below on its next command; a
+  config that skips the migration gets the retirement message naming its
+  replacement rather than an `unknown key` refusal.
+
+- **`model_aliases`, and the enum on the six `model.overrides.*` keys.** A model
+  is now a string the user typed. Nothing in this repository holds a list of
+  model names to check it against, because nothing in this repository could keep
+  such a list current: naming a new model used to be seven edits, and the model
+  was unroutable until every one of them landed.
+
+- **`route.mjs replay`.** No workflow or skill invoked it, and it orphaned no
+  shared helper on the way out.
+
+### Added
+
+- **`/cad-config --roles` asks thirteen questions in four prompts.** Six name a
+  role and ask which model it runs on, six ask which effort rung it starts at,
+  and the last asks what a detected risk surface may do. Every question states
+  what that role does in the phase loop and what a stronger or weaker answer buys
+  there, so the interview is the documentation rather than a pointer at one.
+  `/cad-new-project` and `/cad-adopt` run it in full against the user-global
+  layer on a first run; `/cad-config --roles` re-asks it for one project into the
+  repo layer, and `--roles --global` re-opens the machine-wide answers.
+
+- **A migration for a config that still carries `stakes`.** The level is expanded
+  into twelve explicit per-role values, shown with what each one will become,
+  confirmed, written in one validated call, and then the key is taken off disk. A
+  config with no `stakes` key never sees it.
+
+- **`config.mjs unset <key>... [--global]`.** The write face had no way to REMOVE
+  a key, and `validate` refuses a file carrying an unknown one, so retiring
+  `stakes` alone could not make "the key is gone from the file afterwards" true.
+  `unset` on a key the file does not hold returns `ok:true` and changes no bytes.
+
+- **Catalog rows for the twelve `roles.*` keys**, so `/cad-config`'s plain walk
+  reaches them like any other key. The exclusion that kept per-role model and
+  effort keys out of the catalog existed because the routing cells decided them,
+  and the cells are gone.
+
+- **Every role offers every rung.** Eleven new agent files take `agents/` from 19
+  to 30, six per rung, which is what lets the interview ask one uniform question
+  per role instead of six different ones.
+
+### Changed
+
+- **A role's model and rung are its own two keys.** `roles.<role>.model` and
+  `roles.<role>.effort`, with nothing deriving one role's answer from another's.
+  An unset model key sends NO model parameter, so that dispatch runs at the
+  session's own model - which is not the same as naming a default. A name this
+  host does not accept resolves anyway: it is reported in `warnings[]` and the
+  parameter is dropped, so a typo can never redirect spend.
+
+- **The review gates and the reviewer tiers take real schema defaults** instead
+  of a `null` sentinel meaning "the level decides": `plan` advisory, `diff` off,
+  `phase_diff` off, `risk_surface` blocking, and `cheap` for all four reviewer
+  tiers. The start rungs default to `high` for the planner, the assumptions
+  analyzer, the executor and the verifier, `medium` for the reviewer, and `low`
+  for the plan checker.
+
+- **The plan-time risk floor moves two things and nothing else.** A phase whose
+  declared `files:` touch an answered surface gets a blocking `plan` review and
+  the deep-verify pass turned on, and every role's model and every role's rung
+  stay exactly where the user set them.
+  `review.triggers.risk_surface.waive_routing_floor` keeps its name with its
+  meaning re-pointed at those two effects, and it still cannot reach the
+  `risk_surface` review itself. The deep pass has no config key of its own: it is
+  `on` when the floor raised and `off` otherwise, with `--deep` the manual
+  switch.
+
+- **Escalation climbs exactly one rung.** `model.escalate_on_failure` re-dispatches
+  a failed attempt one rung above where it started and holds at the top rung,
+  rather than jumping to a retry rung some cell named.
+
+- **The run record says what decided a dispatch.** `model_source` - a dotted
+  config key, or `session` when no key set one - replaces `stakes` on the
+  `routing.resolve` trace event and on the spawn envelope, which is what keeps
+  the record able to answer why a dispatch cost what it did.
+
 ## [3.7.11] - 2026-09-03
 
 A gate ran, the input it ran on could not be resolved, and the code treated

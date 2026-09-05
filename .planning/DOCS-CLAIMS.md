@@ -533,19 +533,19 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-14 | README.md | 57 | Default reviewer is a fresh-context Claude subagent needing no API key. | accurate | accurate | 2 |
 | README-15 | README.md | 57 | Up to four independent voices on one plan. | accurate | accurate | 2 |
 | README-16 | README.md | 57 | Triage is a multi-select prompt with none as the default. | accurate | accurate | 2 |
-| README-17 | README.md | 80 | `/cad-config stakes=shipped` is the one key. | accurate | accurate | 2 |
-| README-18 | README.md | 83 | `solo` / `shipped` / `critical` are the three answers. | accurate | accurate | 1 |
-| README-19 | README.md | 85 | The grid is 18 cells, one per level+role pair, in `cadence-core/route-table.json`. | accurate | accurate | 2 |
-| README-20 | README.md | 85 | solo planner = Sonnet at `high`; shipped = Opus; critical = Opus `xhigh` with retry `max`. | accurate | accurate | 2 |
+| README-17 | README.md | 80 | `/cad-config --roles` is the one command that sets what each role costs. | accurate | restated - ROL-02 (v3.7.12) - the single `stakes` key it named is deleted; the thirteen-question roles interview replaced it | 2 |
+| README-18 | README.md | 83 | Thirteen questions in four prompts: six models, six start rungs, one risk-floor question. | accurate | restated - ROL-02 (v3.7.12) - the three level answers are gone with the key | 1 |
+| README-19 | README.md | 85 | The answers are twelve keys, `roles.<role>.model` and `roles.<role>.effort`, and nothing derives one role's answer from another's. | accurate | restated - ROL-02 (v3.7.12) - the 18-cell grid and `cadence-core/route-table.json` are deleted | 2 |
+| README-20 | README.md | 85 | An unset `roles.<role>.model` sends NO model parameter, so the dispatch runs at the session's model; a name the host rejects is named in the resolve's warnings and the parameter is dropped. | accurate | restated - ROL-02 (v3.7.12) - the per-level model rows are gone; an unset key, not a routed default, is what a role starts from | 2 |
 | README-21 | README.md | 87 | Rungs are `low`, `medium`, `high`, `xhigh`, `max`. | accurate | accurate | 2 |
-| README-22 | README.md | 87 | Effort is frozen in agent frontmatter; self-verify fails on a cell naming a rung with no file and on a rung file no cell reaches. | accurate | accurate | 2 |
+| README-22 | README.md | 87 | Effort is frozen in agent frontmatter; self-verify fails on a rung the map names with no file and on a rung-suffixed agent file the map files for no role. | accurate | restated - ROL-02 (v3.7.12) - the cell that used to name the rung is deleted; `lib/rung-agent.mjs` is what names it | 2 |
 | README-23 | README.md | 89 | `model.escalate_on_failure`, on by default. | accurate | accurate | 1 |
 | README-24 | README.md | 93-98 | Gates are `off`, `advisory`, `blocking`, `adjudicated`. | accurate | accurate | 2 |
-| README-25 | README.md | 56 | Plan review is advisory at `solo`, adjudicated at `shipped` and `critical`. | stale | corrected - 39583ba - `README.md:56` now reads advisory at `solo`, off at `shipped`, adjudicated at `critical` | 2 |
-| README-26 | README.md | 93-100 | `risk_surface` is blocking at every level including `solo`. | accurate | accurate | 2 |
+| README-25 | README.md | 56 | Plan review is advisory at `solo`, adjudicated at `shipped` and `critical`. | stale | corrected - 39583ba - `README.md:56` now reads advisory at `solo`, off at `shipped`, adjudicated at `critical`; re-corrected - ROL-02 (v3.7.12) - the three-level gate table is gone from `README.md`, which now states each trigger's schema default and names `plan` as `advisory` | 2 |
+| README-26 | README.md | 93-100 | `risk_surface` blocks on a detection match by default. | accurate | restated - ROL-02 (v3.7.12) - there is no level for it to be blocking at; `blocking` is that key's schema default | 2 |
 | README-27 | README.md | 100 | The eight surfaces are auth, billing, secrets, migrations, destructive, concurrency, API contracts, untrusted input. | accurate | accurate | 2 |
 | README-28 | README.md | 58 | `risk.override.<surface>` waives one surface, repo config only; a global waiver is ignored and warned. | stale | divergence - run 2 half A: claim stated nowhere in the file, the `risk.override` family was retired in v2.7.0; line left at run-1 provenance | 1 |
-| README-29 | README.md | 83 | Deep verification off at `solo`, on at `shipped` and `critical`. | accurate | accurate | 2 |
+| README-29 | README.md | 83 | Deep verification has no key of its own: the plan-time risk floor turns it on, and `/cad-verify --deep` is the manual switch. | accurate | restated - ROL-02 (v3.7.12) - the level no longer decides it | 2 |
 | README-30 | README.md | 22 | Commands are namespaced `/cadence:cad-*`. | accurate | accurate | 2 |
 | README-31 | README.md | 24 | The five loop commands exist as named. | accurate | accurate | 2 |
 | README-32 | README.md | 49 | `/cad-progress` finds incomplete or paused work and offers to resume it. | stale | corrected - v3.7.9 phase 1 (DOC-05): the workflow makes one routing suggestion through the ask-user seam and its handoff step invokes nothing unless the user accepts, so the sentence describes that offer rather than a resume the command never performs on its own. Claim text rewritten to the live sentence so the row still joins (the README-44 shape) | 2 |
@@ -611,9 +611,9 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-41 | METHOD.md | 262-265 | A heavy new dependency is flagged; the plan is approved first; a red test is never committed and goes to `/cad-debug`. | accurate | accurate | 1 |
 | METHOD-42 | METHOD.md | 273 | `cadence-core/references/review-triggers.md`. | accurate | accurate | 1 |
 | METHOD-43 | METHOD.md | 277-280 | One `fire(trigger)` procedure, no embedded reviewer loops; that rule lives in `references/conventions.md`. | accurate | accurate | 2 |
-| METHOD-44 | METHOD.md | 286-289 | Trigger table rows for `plan`, `diff`, `risk_surface`, `phase_diff` (fired-by, when, gate at `shipped`). Re-stated v3.2.0: `pre_ship` was deleted and `plan`/`phase_diff` are `off` at `shipped`. | accurate | accurate | 2 |
+| METHOD-44 | METHOD.md | 286-289 | Trigger table rows for `plan`, `diff`, `risk_surface`, `phase_diff` (fired-by, when, default gate): `plan` advisory, `diff` and `phase_diff` off, `risk_surface` blocking. | accurate | restated - ROL-02 (v3.7.12) - the "gate at `shipped`" column is each key's own schema default now | 2 |
 | METHOD-45 | METHOD.md | 301-304 | Gate vocabulary (5) and `review.mode` vocabulary (`single`, `panel`, `adjudicated`). Re-stated v3.5.7: `deferred` added, the arm whose findings stop the LAND rather than the RUN. | accurate | accurate | 2 |
-| METHOD-46 | METHOD.md | 310-313 | Gates resolve from `stakes`; `diff` is off/advisory/blocking across the three levels; `risk_surface` does not move; a typo loses to the level's gate and is named in warnings. | accurate | accurate | 1 |
+| METHOD-46 | METHOD.md | 310-313 | Each gate is that key's schema default until a config layer writes one; a value outside the five loses to the default and is named in warnings; only the plan-time floor moves a gate, and only `plan`. | accurate | restated - ROL-02 (v3.7.12) - gates no longer resolve from a project-wide level | 1 |
 | METHOD-47 | METHOD.md | 322 | The default reviewer is a fresh-context Claude subagent needing no key. | accurate | accurate | 1 |
 | METHOD-48 | METHOD.md | 328-332 | The finding schema `{file, line, severity: blocker\|high\|medium\|low, claim, failure_scenario}`. | accurate | accurate | 2 |
 | METHOD-49 | METHOD.md | 341-354 | `skills/cad-reviewer-contract/SKILL.md`. | accurate | accurate | 2 |
@@ -626,7 +626,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-56 | METHOD.md | 399-401 | A clean pass retargets onto the decision's own load-bearing claims and is never reported as a bare "no findings". | accurate | accurate | 1 |
 | METHOD-57 | METHOD.md | 404 | Cost is reported qualitatively, never as a token or dollar figure. | accurate | accurate | 1 |
 | METHOD-58 | METHOD.md | 409-412 | The eight risk surfaces that fire the blocking trigger. | accurate | accurate | 1 |
-| METHOD-59 | METHOD.md | 421-428 | Detection sets a floor that only ever raises; lowering takes a named `risk.override.<surface>` read from the repo config alone, a global one is ignored and named. | stale | corrected - fa0d4b4 - the paragraph now states detection sets no floor and names the v2.7.0 cut of the detector and the eight `risk.override.*` waivers; re-corrected - CER-01, v3.5.7 - the paragraph now states the plan-time floor that ships: `stakes` is a MINIMUM, the phase's own declared `files:` read at plan time raise it, an unreadable plan holds the configured level and never drops below it, and lowering below a computed raise takes the `review.triggers.risk_surface.waive_routing_floor` waiver, which lowers the routing level alone | 2 |
+| METHOD-59 | METHOD.md | 421-428 | Detection sets a floor that only ever raises; lowering takes a named `risk.override.<surface>` read from the repo config alone, a global one is ignored and named. | stale | corrected - fa0d4b4 - the paragraph now states detection sets no floor and names the v2.7.0 cut of the detector and the eight `risk.override.*` waivers; re-corrected - CER-01, v3.5.7 - the paragraph now states the plan-time floor that ships: `stakes` is a MINIMUM, the phase's own declared `files:` read at plan time raise it, an unreadable plan holds the configured level and never drops below it, and lowering below a computed raise takes the `review.triggers.risk_surface.waive_routing_floor` waiver, which lowers the routing level alone; re-corrected - ROL-02 (v3.7.12) - the paragraph now states a floor that moves exactly two things, a blocking `plan` review and the deep-verify pass, and moves no role's model and no role's rung | 2 |
 | METHOD-60 | METHOD.md | 429-434 | The pre-filter: a destructive op drops only when `git check-ignore` matches **and** `git ls-files` is empty; a secret drops only when template-shaped **and** a stub. | accurate | accurate | 2 |
 | METHOD-61 | METHOD.md | 439-442 | The executor detects, stops and hands up; never reviews itself, never skips the gate. | accurate | accurate | 1 |
 | METHOD-62 | METHOD.md | 447-463 | `references/consult.md` and its five rules, including `review.consult.attempt_threshold` and no local-subagent consult. | accurate | accurate | 2 |
@@ -654,16 +654,16 @@ fixed, which is what makes that link answer the only question it is asked.
 | INTERNALS-02 | INTERNALS.md | 11 | 19 files cover the six roles. | accurate | accurate | 2 |
 | INTERNALS-03 | INTERNALS.md | 11 | `cad-plan-checker-medium` and `cad-plan-checker-high` are the same contract at two depths. | accurate | accurate | 1 |
 | INTERNALS-04 | INTERNALS.md | 11 | `lib/rung-agent.mjs` states the rung->file map per role; the analyzer's unsuffixed file is its `xhigh` rung and `-high` is the lower one. | accurate | accurate | 2 |
-| INTERNALS-05 | INTERNALS.md | 11 | CI refuses a rung a cell names with no file, and a rung file no cell reaches. | accurate | accurate | 2 |
+| INTERNALS-05 | INTERNALS.md | 11 | CI refuses a rung the map names with no file, and a rung-suffixed agent file the map files for no role. | accurate | restated - ROL-02 (v3.7.12) - the routing cell that used to name the rung is deleted | 2 |
 | INTERNALS-06 | INTERNALS.md | 11 | CI refuses a rung file carrying any instruction of its own. | accurate | accurate | 2 |
 | INTERNALS-07 | INTERNALS.md | 11 | CI refuses a rung file whose frontmatter effort is not the rung it is filed under. | accurate | accurate | 2 |
-| INTERNALS-08 | INTERNALS.md | 13 | One key `stakes` with three answers; set with `/cad-config stakes=shipped`. | accurate | accurate | 2 |
-| INTERNALS-09 | INTERNALS.md | 13 | A cell is model + start rung + retry rung + review gates + deep verify. | accurate | accurate | 2 |
-| INTERNALS-10 | INTERNALS.md | 13 | The routed vocabulary is `sonnet` and `opus`; `haiku` and `fable` are reachable only by a `model.overrides` pin. | accurate | accurate | 2 |
-| INTERNALS-11 | INTERNALS.md | 13 | An explicit pick wins; a config gate beats the level's only if it is one of the four values, else it loses and is named. | accurate | accurate | 2 |
+| INTERNALS-08 | INTERNALS.md | 13 | Thirteen questions, asked by `/cad-config --roles` and by the two init commands, set what each role costs. | accurate | restated - ROL-02 (v3.7.12) - the one `stakes` key with three answers is deleted | 2 |
+| INTERNALS-09 | INTERNALS.md | 13 | The twelve `roles.<role>.model` and `roles.<role>.effort` keys are the whole answer, and nothing derives one role's from another's. | accurate | restated - ROL-02 (v3.7.12) - there is no cell bundling model, rungs, gates and the deep pass together | 2 |
+| INTERNALS-10 | INTERNALS.md | 13 | An unset model key sends no model parameter; a name this host does not accept is named in warnings with the parameter dropped. | accurate | restated - ROL-02 (v3.7.12) - there is no routed vocabulary and no alias list - the key is a free string | 2 |
+| INTERNALS-11 | INTERNALS.md | 13 | What a config layer writes wins when it is one of the five gate values; a typo loses to the schema default and is named. | accurate | restated - ROL-02 (v3.7.12) - the level's gate is gone and the value set is five, not four | 2 |
 | INTERNALS-12 | INTERNALS.md | 13 | `model.escalate_on_failure`, on by default; false holds the retry at its start rung. | accurate | accurate | 1 |
-| INTERNALS-13 | INTERNALS.md | 13 | The risk floor only ever raises; lowering takes a named per-surface override; a project at `critical` is unaffected. | stale | corrected - fa0d4b4 - the floor clause inside `:13` rewritten to the v2.7.0 cut, every other clause of the line left standing; re-corrected - CER-01, v3.5.7 - the clause now states the answer is a FLOOR, not the last word: the phase's own declared files raise it, leaving `stakes` unset floors at `solo` only when the scope reads clean, an unreadable plan holds the configured level, and lowering below a raise takes the `review.triggers.risk_surface.waive_routing_floor` waiver | 2 |
-| INTERNALS-14 | INTERNALS.md | 13 | CI refuses a retry rung that sits below the rung it started on. | accurate | accurate | 2 |
+| INTERNALS-13 | INTERNALS.md | 13 | The risk floor only ever raises; lowering takes a named per-surface override; a project at `critical` is unaffected. | stale | corrected - fa0d4b4 - the floor clause inside `:13` rewritten to the v2.7.0 cut, every other clause of the line left standing; re-corrected - CER-01, v3.5.7 - the clause now states the answer is a FLOOR, not the last word: the phase's own declared files raise it, leaving `stakes` unset floors at `solo` only when the scope reads clean, an unreadable plan holds the configured level, and lowering below a raise takes the `review.triggers.risk_surface.waive_routing_floor` waiver; re-corrected - ROL-02 (v3.7.12) - `:13` now states a floor that makes the plan review blocking and turns the deep pass on and moves nothing else, with the waiver withholding exactly those two effects | 2 |
+| INTERNALS-14 | INTERNALS.md | 13 | Escalation climbs exactly one rung and holds at the top, so a retry can never think less while reporting that it thought more. | accurate | restated - ROL-02 (v3.7.12) - there is no configurable retry rung left that could sit below the start rung | 2 |
 | INTERNALS-15 | INTERNALS.md | 15 | Routing governs dispatched subagents, not the main session. | accurate | accurate | 2 |
 | INTERNALS-16 | INTERNALS.md | 17 | The five "read the code" pointers in the routing section. | accurate | accurate | 1 |
 | INTERNALS-17 | INTERNALS.md | 21 | Every `git push` through Bash stops and asks; no exceptions. | accurate | accurate | 2 |
@@ -746,11 +746,11 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-07 | cadence-core/workflows/config.md | 32 | `review.decision_review` has two keys. | accurate | accurate | 1 |
 | CONFIG-08 | cadence-core/workflows/config.md | 27-33 | The four edit-the-file-only sets have no catalog row. | accurate | accurate | 1 |
 | CONFIG-09 | cadence-core/references/config-catalog.md | 20 | `granularity` enum `fine\|standard\|coarse`, default `standard`, split sizes 8-12 / 5-8 / 3-5. | accurate | accurate | 2 |
-| CONFIG-10 | cadence-core/references/config-catalog.md | 22 | `stakes` enum `solo\|shipped\|critical`, default `shipped`. | accurate | accurate | 2 |
+| CONFIG-10 | cadence-core/references/config-catalog.md | 25-36 | The catalog's Model block carries twelve rows, one `roles.<role>.model` and one `roles.<role>.effort` per role. | accurate | restated - ROL-02 (v3.7.12) - the `stakes` row it named is deleted with the key, and these twelve rows are what the block holds | 2 |
 | CONFIG-11 | cadence-core/references/config-catalog.md | 23 | `model.escalate_on_failure` bool, default `true`. | accurate | accurate | 2 |
 | CONFIG-12 | cadence-core/references/config-catalog.md | 25 | `workflow.research` bool, default `false`. | accurate | accurate | 2 |
 | CONFIG-13 | cadence-core/references/config-catalog.md | 26 | `workflow.plan_check` bool, default `true`. | accurate | accurate | 2 |
-| CONFIG-14 | cadence-core/references/config-catalog.md | 27 | `workflow.verifier` bool, default `true`; the stakes level decides and `--deep` forces. | accurate | accurate | 2 |
+| CONFIG-14 | cadence-core/references/config-catalog.md | 27 | `workflow.verifier` bool, default `true`; the deep pass runs when the risk floor raises and `--deep` forces it either way. | accurate | restated - ROL-02 (v3.7.12) - the level no longer decides the deep pass | 2 |
 | CONFIG-15 | cadence-core/references/config-catalog.md | 28 | `workflow.skip_discuss` bool, default `false`. | accurate | accurate | 2 |
 | CONFIG-16 | cadence-core/references/config-catalog.md | 28 | `workflow.subagent_timeout` int, default `300000`. | stale | divergence - run 2 half B invocation 5: `workflow.subagent_timeout` was retired in v2.7.0 and the catalog no longer carries it; line left at run-1 provenance | 1 |
 | CONFIG-17 | cadence-core/references/config-catalog.md | 29 | `workflow.inline_plan_threshold` int, default `3`. | accurate | accurate | 2 |
@@ -833,7 +833,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | DECISION-REVIEW-03 | cadence-core/workflows/decision-review.md | 2-4, 24-26 | The target is a `- D-NN (...)` line under `## Durable decisions` / `## Decisions`, or a PROJECT.md `## Key Decisions` row. | accurate | accurate | 2 |
 | DECISION-REVIEW-04 | cadence-core/workflows/decision-review.md | 10-11, 171-173 | This workflow has no entry in `references/review-triggers.md`'s wiring table. | accurate | accurate | 2 |
 | DECISION-REVIEW-05 | cadence-core/workflows/decision-review.md | 43-44 | The reviewer set resolves from `review.reviewers[]` exactly as review-triggers.md step 3 does. | accurate | accurate | 1 |
-| DECISION-REVIEW-06 | cadence-core/workflows/decision-review.md | 66-68 | No routing cell resolves a model for the `claude-subagent` arm; it is base `cad-reviewer` at the session default. | accurate | accurate | 2 |
+| DECISION-REVIEW-06 | cadence-core/workflows/decision-review.md | 66-68 | This arm resolves no routing at all - it is the base `cad-reviewer` at the session default, whatever `roles.cad-reviewer.model` says. | accurate | restated - ROL-02 (v3.7.12) - there is no routing cell for the sentence to name | 2 |
 | DECISION-REVIEW-07 | cadence-core/workflows/decision-review.md | 77-81 | `review-provider.mjs review --provider <name> --model <id> --effort <level> [--key-file <path>]` with `{instruction, artifact}` on stdin. | accurate | accurate | 2 |
 | DECISION-REVIEW-08 | cadence-core/workflows/decision-review.md | 81-83 | `ok:false` drops that reviewer, same degradation rule as review-triggers.md step 4. | accurate | accurate | 2 |
 | DECISION-REVIEW-09 | cadence-core/workflows/decision-review.md | 68-69, 78 | `review.decision_review.{tier,effort}` reach the cross-model arm only. | accurate | accurate | 2 |
@@ -865,7 +865,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-20 | cadence-core/workflows/execute.md | 216-219 | `--tokens 0` would claim a dispatch that cost nothing, so the flag is omitted when no figure is returned. | accurate | accurate | 1 |
 | EXECUTE-21 | cadence-core/workflows/execute.md | 221-224 | The `phase_start` line takes no `--role`, `--tokens` or `--read`. | accurate | accurate | 2 |
 | EXECUTE-22 | cadence-core/bin/planning/trace.mjs | 245-247 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate | 2 |
-| EXECUTE-23 | cadence-core/workflows/execute.md | 267-270 | The `diff` trigger's artifact is shape (a) refs `{base_ref, head_ref}` and its default at `shipped` is advisory. | accurate | accurate | 1 |
+| EXECUTE-23 | cadence-core/workflows/execute.md | 267-270 | The `diff` trigger's artifact is shape (a) refs `{base_ref, head_ref}` and its schema default is `off`. | accurate | restated - ROL-02 (v3.7.12) - the "at `shipped`" qualifier is gone with the level | 1 |
 | EXECUTE-24 | cadence-core/workflows/execute.md | 255-258 | `references/triage-gate.md` makes NONE the default and caps the blocking re-arm at ONE round. | accurate | accurate | 2 |
 | EXECUTE-25 | cadence-core/workflows/execute.md | 252-254 | The `risk_surface` checkpoint artifact is shape (c), a flagged-diff FILE path. | accurate | accurate | 1 |
 | EXECUTE-26 | cadence-core/workflows/execute.md | 367-369 | `SUMMARY.md` is written from `cadence-core/templates/SUMMARY.md`. | accurate | accurate | 2 |
@@ -902,7 +902,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | NEW-PROJECT-11 | cadence-core/workflows/new-project.md | 173 | The protected-branch guard lives in `references/git-guard.md`. | accurate | accurate | 2 |
 | NEW-PROJECT-12 | cadence-core/workflows/new-project.md | 188 | Dispatch via the spawn-agent seam with timeout `workflow.subagent_timeout`. | accurate | accurate | 1 |
 | NEW-PROJECT-13 | cadence-core/workflows/new-project.md | 206-207 | The research agent is the only Cadence dispatch path with no `maxTurns` bound, and `maxTurns` is per-FILE frontmatter. | accurate | accurate | 2 |
-| NEW-PROJECT-14 | cadence-core/workflows/new-project.md | 207-210 | A 20th rung file would cost a `route-table.json` rung row plus both directions of self-verify's rung checks. | accurate | accurate | 2 |
+| NEW-PROJECT-14 | cadence-core/workflows/new-project.md | 207-210 | One more rung file would cost a `lib/rung-agent.mjs` map row plus both directions of self-verify's rung checks. | accurate | restated - ROL-02 (v3.7.12) - the `route-table.json` rung row it named is deleted, and the map is the only statement of the ladder left | 2 |
 | NEW-PROJECT-15 | cadence-core/workflows/new-project.md | 244-245 | Category questions batch up to 4 per AskUserQuestion call. | accurate | accurate | 1 |
 | NEW-PROJECT-16 | cadence-core/workflows/new-project.md | 268 | `cadence-core/templates/REQUIREMENTS.md` exists. | accurate | accurate | 2 |
 | NEW-PROJECT-17 | cadence-core/workflows/new-project.md | 270-271, 298-300 | Traceability rows are seeded per phase by `/cad-plan`. | accurate | accurate | 2 |
@@ -953,8 +953,8 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-23 | cadence-core/workflows/plan.md | 275 | The Task ceiling feeds the checker's dimension 6. | accurate | accurate | 1 |
 | PLAN-24 | cadence-core/workflows/plan.md | 297-298 | The checker returns `## VERIFICATION PASSED` or `## ISSUES FOUND` with BLOCKER/WARNING findings. | accurate | accurate | 1 |
 | PLAN-25 | cadence-core/workflows/plan.md | 299 | WARNING means quality is degraded but execution can proceed. | accurate | accurate | 1 |
-| PLAN-26 | cadence-core/references/plan-revision.md | 10-12 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate | 2 |
-| PLAN-27 | cadence-core/workflows/plan.md | 331 | The `plan` gate defaults to adjudicated. | stale | corrected - 813f468 - the review step now names the gate each level resolves - `off` at `shipped`, advisory at `solo`, adjudicated at `critical` | 2 |
+| PLAN-26 | cadence-core/references/plan-revision.md | 10-12 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | stale | pending - ROL-02 (v3.7.12) - the routing cell and the retry rung it names are both deleted; escalation climbs one rung above `roles.<role>.effort`. `cadence-core/references/plan-revision.md:11-12` still names the level's cell and is outside phase 3's plan lease | 2 |
+| PLAN-27 | cadence-core/workflows/plan.md | 331 | The `plan` gate defaults to adjudicated. | stale | corrected - 813f468 - the review step now names the gate each level resolves - `off` at `shipped`, advisory at `solo`, adjudicated at `critical`; re-corrected - ROL-02 (v3.7.12) - the review step now names the schema default `advisory` and the risk floor that raises it to `blocking` | 2 |
 | PLAN-28 | cadence-core/workflows/plan.md | 354 | `cadence-core/references/triage-gate.md` exists. | accurate | accurate | 1 |
 | PLAN-29 | cadence-core/workflows/plan.md | 368 | `planning.mjs seed-reqs --phase {N}` exists. | accurate | accurate | 2 |
 | PLAN-30 | cadence-core/workflows/plan.md | 376-377 | seed-reqs inserts `\| <id> \| Phase {N} \| Pending \|` for `## Active`-bounded declared ids, idempotently. | accurate | accurate | 1 |
@@ -992,7 +992,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | TASK-07 | cadence-core/workflows/task.md | 63-64 | cad-executor is dispatched via the spawn-agent seam. | accurate | accurate | 1 |
 | TASK-08 | cadence-core/workflows/task.md | 66-68 | The executor's report is `.planning/tasks/{slug}/reports/plan-1.md` and it returns a digest, not a table. | accurate | accurate | 2 |
 | TASK-09 | cadence-core/workflows/task.md | 69 | `planning.commit_docs` gates the plan-file commit. | accurate | accurate | 2 |
-| TASK-10 | cadence-core/workflows/task.md | 90, 107 | `risk_surface` is blocking at every level. | accurate | accurate | 2 |
+| TASK-10 | cadence-core/workflows/task.md | 90, 107 | `risk_surface` defaults to `blocking`. | accurate | restated - ROL-02 (v3.7.12) - there are no levels for it to be blocking at | 2 |
 | TASK-11 | cadence-core/workflows/task.md | 107-110 | Its re-arm is capped at ONE narrowed round, and that cap lives only in `triage-gate.md`. | accurate | accurate | 2 |
 | UNDO-01 | cadence-core/workflows/undo.md | 4-5 | SUMMARY.md is the manifest - cad-execute writes commits-per-task with hashes there. | accurate | accurate | 2 |
 | UNDO-02 | cadence-core/workflows/undo.md | 10 | The phase's docs commit is `docs(<N>): ...`. | accurate | accurate | 1 |
@@ -1029,11 +1029,11 @@ fixed, which is what makes that link answer the only question it is asked.
 | VERIFY-13 | cadence-core/workflows/verify.md | 80 | CONTEXT criteria may carry a `(human-verify: needs <tool/service>)` tag. | accurate | accurate | 1 |
 | VERIFY-14 | cadence-core/workflows/verify.md | 94-95 | `uat init --phase <N>` takes the item array on stdin. | accurate | accurate | 2 |
 | VERIFY-15 | cadence-core/workflows/verify.md | 103 | `workflow.verifier: false` always skips the deep pass. | accurate | accurate | 2 |
-| VERIFY-16 | cadence-core/workflows/verify.md | 108 | `route.mjs resolve --role cad-verifier` is the stakes probe. | accurate | accurate | 2 |
+| VERIFY-16 | cadence-core/workflows/verify.md | 108 | `route.mjs resolve --role cad-verifier` is what answers whether the deep pass runs. | accurate | restated - ROL-02 (v3.7.12) - it is no longer a probe of a stakes level; `verify` on that line is the answer | 2 |
 | VERIFY-17 | cadence-core/workflows/verify.md | 112 | Every `warnings[]` entry must be relayed. | accurate | accurate | 2 |
 | VERIFY-18 | cadence-core/workflows/verify.md | 114 | `verify` on that line is `on` or `off`. | accurate | accurate | 2 |
 | VERIFY-19 | cadence-core/workflows/verify.md | 115-117 | The seam refuses a resolve with no role. | accurate | accurate | 2 |
-| VERIFY-20 | cadence-core/workflows/verify.md | 120-121 | At stakes solo the deep verify pass is off. | accurate | accurate | 2 |
+| VERIFY-20 | cadence-core/workflows/verify.md | 120-121 | `verify` is `on` exactly when the plan-time risk floor raised, and `off` otherwise. | accurate | restated - ROL-02 (v3.7.12) - the level that used to decline the pass is deleted | 2 |
 | VERIFY-21 | cadence-core/workflows/verify.md | 138-140,155 | A suffix-tagged `(human-verify: ...)` item goes straight to pass 2. | accurate | accurate | 1 |
 | VERIFY-22 | cadence-core/workflows/verify.md | 145-148 | The deep pass writes `why_human` for every UNCERTAIN truth as well as every human-only check. | accurate | accurate | 1 |
 | VERIFY-23 | cadence-core/workflows/verify.md | 156-159 | `blocked` is terminal: `next` offers only `pending`. | accurate | accurate | 2 |
@@ -1152,7 +1152,7 @@ mistake.
 | MINIMALISM-REVIEW-06 | cadence-core/workflows/minimalism-review.md | 63-65 | `skills/cad-reviewer-contract` defaults to correctness and rules approach differences out of scope | accurate | accurate | 2 |
 | MINIMALISM-REVIEW-07 | cadence-core/workflows/minimalism-review.md | 68-70 | `planning.mjs cursor get` supplies `<N>` for a path or directory target | accurate | accurate | 2 |
 | MINIMALISM-REVIEW-08 | cadence-core/workflows/minimalism-review.md | 73 | `trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read "<ref>"` | accurate | accurate | 2 |
-| MINIMALISM-REVIEW-09 | cadence-core/workflows/minimalism-review.md | 77-79 | No routing cell resolves a model for this arm - it is the base `cad-reviewer` at the session default, at every stakes level | accurate | accurate | 2 |
+| MINIMALISM-REVIEW-09 | cadence-core/workflows/minimalism-review.md | 77-79 | This arm resolves no routing at all - it is the base `cad-reviewer` at the session default. | accurate | restated - ROL-02 (v3.7.12) - there is no routing cell and no level for the sentence to name | 2 |
 | MINIMALISM-REVIEW-10 | cadence-core/workflows/minimalism-review.md | 80-81 | There is no cross-model arm: a provider call needs a resolved tier and this pass owns no tier key | accurate | accurate | 2 |
 | MINIMALISM-REVIEW-11 | cadence-core/workflows/minimalism-review.md | 85-89 | `trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <n> --turns <n>`, `--tokens` omitted on a figureless return | accurate | corrected - b118576 - claim re-stated to the live `trace close` flag list | 2 |
 | MINIMALISM-REVIEW-12 | cadence-core/workflows/minimalism-review.md | 90-92 | Adding `--detail "<what failed>"` to that same line closes as a checkpoint | accurate | accurate | 2 |
@@ -1209,9 +1209,9 @@ mistake.
 | README-58 | README.md | 15 | `/plugin install cadence@cadence` names an existing marketplace and plugin | accurate | accurate | 2 |
 | README-59 | README.md | 18 | `/plugin update cadence@cadence` and `/plugin uninstall cadence@cadence` | unverifiable | divergence - run 2 half A inv 1: a host command surface this repo neither defines nor constrains | 2 |
 | README-60 | README.md | 18 | Requires `node` and `git` on PATH | accurate | accurate | 2 |
-| README-61 | README.md | 85 | At `solo` the planner runs Sonnet at `high` | accurate | accurate | 2 |
-| README-62 | README.md | 30 | At `shipped` the planner runs Opus | accurate | accurate | 2 |
-| README-63 | README.md | 85 | The whole thing is `cadence-core/route-table.json` | accurate | accurate | 2 |
+| README-61 | README.md | 85 | The start-rung defaults are `high` for the planner, the assumptions analyzer, the executor and the verifier, `medium` for the reviewer, `low` for the plan checker. | accurate | restated - ROL-02 (v3.7.12) - the per-level rung rows are replaced by these schema defaults | 2 |
+| README-62 | README.md | 30 | Every one of the five rungs is reachable for every one of the six roles. | accurate | restated - ROL-02 (v3.7.12) - the routed model vocabulary is gone and the ladder is square as of phase 1 | 2 |
+| README-63 | README.md | 85 | The review gate defaults are `plan` advisory, `diff` off, `phase_diff` off, `risk_surface` blocking. | accurate | restated - ROL-02 (v3.7.12) - `cadence-core/route-table.json` is deleted; README's gate table is the schema's own defaults | 2 |
 | README-64 | README.md | 89 | `model.escalate_on_failure` is off by default | accurate | accurate | 2 |
 | README-65 | README.md | 102 | `review.triggers.risk_surface.surfaces` narrows the list, and leaving it unset keeps all eight | accurate | accurate | 2 |
 | README-66 | README.md | 102 | The subset is populated from a structural scan of manifests and directories rather than keyword greps | accurate | accurate | 2 |
@@ -1220,7 +1220,7 @@ mistake.
 | README-69 | README.md | 30 | `/cad-adopt` is the second door into step 1 | accurate | accurate | 2 |
 | README-70 | README.md | 32 | `/cad-new-project --brief <file>` | accurate | accurate | 2 |
 | README-71 | README.md | 32 | `docs/DISCOVERY.md` | accurate | accurate | 2 |
-| README-72 | README.md | 36 | `docs/WORKFLOW.md` carries the eighteen-cell stakes grid | accurate | accurate | 2 |
+| README-72 | README.md | 36 | `docs/WORKFLOW.md` is five figures and the four tables behind them. | accurate | restated - ROL-02 (v3.7.12) - the eighteen-cell grid it named is deleted; a per-role defaults table took its place | 2 |
 | README-73 | docs/EXAMPLE.md | 28-30 | `/cad-debug` runs hypotheses that survive a clear; `/cad-capture` parks a todo | accurate | accurate | 2 |
 | README-74 | docs/EXAMPLE.md | 35-40 | `/cad-suggest` turns the milestone's trace into evidence-backed retune suggestions, each with its config key, the value in force, a direction and a target where one can be priced, and ends by offering to route the accepted tweaks to `/cad-config` rather than writing any itself | accurate | accurate | 2 |
 | README-75 | docs/EXAMPLE.md | 32-34 | `/cad-milestone` audits, bumps the version, prunes the completed phases from the live roadmap and evolves the docs for the next cycle | accurate | accurate | 2 |
@@ -1242,13 +1242,13 @@ mistake.
 | METHOD-89 | METHOD.md | 229-231 | Anti-pattern scan covers TODO, FIXME, XXX, HACK, "placeholder", "not implemented", `todo!()` | accurate | accurate | 2 |
 | METHOD-90 | METHOD.md | 233-235 | A `CADENCE-DEBT` marker is exempt because its ceiling and trigger fields ARE the reference | accurate | accurate | 2 |
 | METHOD-91 | METHOD.md | 288 | `risk_surface` is fired by execute, debug, task and verify | accurate | accurate | 2 |
-| METHOD-92 | METHOD.md | 291-292 | Exactly one of the four fires on its own at the default `shipped` level | accurate | accurate | 2 |
-| METHOD-93 | METHOD.md | 309-310 | "a `plan` review is advisory at `solo` and `shipped` and adjudicated at `critical`" | stale | corrected - ffb16a4 - the sentence now names `off` at `shipped`, matching this document's own trigger table | 2 |
-| METHOD-94 | METHOD.md | 309-310 | An ordinary `diff` is off at `solo` and `shipped`, and blocking at `critical` | accurate | accurate | 2 |
-| METHOD-95 | METHOD.md | 310-311 | `risk_surface` is blocking at all three levels | accurate | accurate | 2 |
-| METHOD-96 | METHOD.md | 311-314 | A gate typo loses to the level's gate and is named in the warnings | accurate | accurate | 2 |
-| METHOD-97 | METHOD.md | 373-374 | "the plan review in `/cad-plan`, advisory at `shipped` and adjudicated at `critical`" | stale | corrected - ffb16a4 - the adjudicated-list clause now names `off` at `shipped` | 2 |
-| METHOD-98 | METHOD.md | 374 | `/cad-execute`'s per-plan diff review is `off` below `critical` | accurate | accurate | 2 |
+| METHOD-92 | METHOD.md | 291-292 | Two of the four run out of the box: the plan review on every plan, and `risk_surface` on a detection match. | accurate | restated - ROL-02 (v3.7.12) - "at the default `shipped` level" is gone, and the count is two on the schema defaults | 2 |
+| METHOD-93 | METHOD.md | 309-310 | "a `plan` review is advisory at `solo` and `shipped` and adjudicated at `critical`" | stale | corrected - ffb16a4 - the sentence now names `off` at `shipped`, matching this document's own trigger table; re-corrected - ROL-02 (v3.7.12) - the level clauses are gone; the sentence now names the schema default `advisory` and the risk floor that raises it | 2 |
+| METHOD-94 | METHOD.md | 309-310 | An ordinary `diff` review is `off` by default. | accurate | restated - ROL-02 (v3.7.12) - the per-level row is gone | 2 |
+| METHOD-95 | METHOD.md | 310-311 | `risk_surface` defaults to `blocking`. | accurate | restated - ROL-02 (v3.7.12) - there are no levels for it to be blocking at | 2 |
+| METHOD-96 | METHOD.md | 311-314 | A gate typo loses to the schema default and is named in the warnings. | accurate | restated - ROL-02 (v3.7.12) - the level's gate it used to lose to is gone | 2 |
+| METHOD-97 | METHOD.md | 373-374 | "the plan review in `/cad-plan`, advisory at `shipped` and adjudicated at `critical`" | stale | corrected - ffb16a4 - the adjudicated-list clause now names `off` at `shipped`; re-corrected - ROL-02 (v3.7.12) - the clause now names each gate's default rather than a level | 2 |
+| METHOD-98 | METHOD.md | 374 | `/cad-execute`'s per-plan diff review is `off` by default. | accurate | restated - ROL-02 (v3.7.12) - the per-level row is gone | 2 |
 | METHOD-99 | METHOD.md | 375-379 | `/cad-land`'s unattended close fires no review of its own and halts on a surviving blocker or high | accurate | accurate | 2 |
 | METHOD-100 | METHOD.md | 409-412 | The eight risk-detection categories named in prose | accurate | accurate | 2 |
 | METHOD-101 | METHOD.md | 414-418 | It fires once, against the plan's completed commit range, never against a staged index mid-plan | accurate | accurate | 2 |
@@ -1261,8 +1261,8 @@ mistake.
 | INTERNALS-38 | INTERNALS.md | 9 | Model is overridable at dispatch time; effort is frozen in the agent file's frontmatter | unverifiable | divergence - run 2 half A inv 1: a statement about the Claude Code host's own resolution order | 2 |
 | INTERNALS-39 | INTERNALS.md | 11 | `cad-plan-checker-medium` and `cad-plan-checker-high` are the same contract at two depths | accurate | accurate | 2 |
 | INTERNALS-40 | INTERNALS.md | 11 | `cadence-core/bin/lib/rung-agent.mjs` states the rung-to-file map per role | accurate | accurate | 2 |
-| INTERNALS-41 | INTERNALS.md | 13 | `model.escalate_on_failure` is off by default and climbs a retry to the rung its cell names | accurate | accurate | 2 |
-| INTERNALS-42 | INTERNALS.md | 17 | `route.mjs`, `route-table.json` (three grids, 18 cells), `lib/rung-agent.mjs`, `route.test.mjs` all exist | stale | corrected - RVW-03 (v3.5.4) - the sentence now reads "the five grids - the 18 cells, the review gates, the cross-model reviewer's tiers and efforts, the verify switch"; the four files it names all still exist | 2 |
+| INTERNALS-41 | INTERNALS.md | 13 | `model.escalate_on_failure` is off by default and climbs a retry exactly one rung. | accurate | restated - ROL-02 (v3.7.12) - the retry rung a cell named is gone | 2 |
+| INTERNALS-42 | INTERNALS.md | 17 | `route.mjs`, `route-table.json` (three grids, 18 cells), `lib/rung-agent.mjs`, `route.test.mjs` all exist | stale | corrected - RVW-03 (v3.5.4) - the sentence now reads "the five grids - the 18 cells, the review gates, the cross-model reviewer's tiers and efforts, the verify switch"; the four files it names all still exist; re-corrected - ROL-02 (v3.7.12) - `route-table.json` is deleted and the sentence names `config.schema.json` as where the review gates and the reviewer tiers and efforts take their defaults | 2 |
 | INTERNALS-43 | INTERNALS.md | 23-26 | `isPlainPush` was built and deleted; four adversarial rounds, four bypasses | accurate | accurate | 2 |
 | INTERNALS-44 | INTERNALS.md | 27 | It refuses unless the repo opted into `auto_close` and HEAD is a non-protected branch | accurate | accurate | 2 |
 | INTERNALS-45 | INTERNALS.md | 33 | The tokenizer was 2,251 lines with the tests | accurate | accurate | 2 |
@@ -1354,7 +1354,7 @@ mistake.
 | EXECUTE-37 | cadence-core/workflows/execute.md | 213 | `trace render` reports a worker with no close as unpaired | accurate | accurate | 2 |
 | EXECUTE-38 | cadence-core/workflows/execute.md | 248-254 | `risk_surface` fires ONCE after each plan, on `git diff {pre-plan HEAD}..HEAD`, written to `<plandir>/reports/plan-<k>-risk.diff` as shape (c) | accurate | accurate | 2 |
 | EXECUTE-39 | cadence-core/workflows/execute.md | 253-254 | The risk diff is transient: never staged, deleted once the trigger returns | accurate | accurate | 2 |
-| EXECUTE-40 | cadence-core/workflows/execute.md | 270 | The `diff` trigger's default is `off` at `solo` and `shipped` | accurate | accurate | 2 |
+| EXECUTE-40 | cadence-core/workflows/execute.md | 270 | The `diff` trigger's default is `off`. | accurate | restated - ROL-02 (v3.7.12) - the "at `solo` and `shipped`" qualifier is gone with the levels | 2 |
 | EXECUTE-41 | cadence-core/workflows/execute.md | 277-284 | At `advisory` the fire overlaps the next dispatch and persists findings at `.planning/phases/<N>/REVIEW-diff-plan-<k>.md` | accurate | accurate | 2 |
 | EXECUTE-42 | cadence-core/workflows/execute.md | 305-309 | The structural checkpoint arm runs `offer_consult` per `references/consult.md` before the ask | accurate | accurate | 2 |
 | EXECUTE-43 | cadence-core/workflows/execute.md | 318-321 | `references/worktree-executor.md` forbids `git merge`, `rebase`, `fetch` and `stash` outright | accurate | accurate | 2 |
@@ -1475,8 +1475,8 @@ mistake.
 | CONFIG-CATALOG-06 | cadence-core/references/config-catalog.md | 46 | `git.auto_close` halts on a surviving blocker/high `risk_surface` finding | accurate | accurate | 2 |
 | CONFIG-CATALOG-07 | cadence-core/references/config-catalog.md | 51 | A `**Risk**` knob category exists | stale | corrected - fdb2d69 - the empty `**Risk**` category header deleted, no surviving row moved | 2 |
 | CONFIG-CATALOG-08 | cadence-core/references/config-catalog.md | 61 | `review.triggers.<t>.gate` defaults: `adjudicated` for plan, `advisory` for diff/phase_diff, `blocking` for risk_surface | stale | corrected - v3.4.1 phase 1 | 2 |
-| CONFIG-CATALOG-09 | cadence-core/references/config-catalog.md | 62 | `review.triggers.<t>.tier` default `flagship`, except `balanced` for diff - cross-model only | stale | corrected - RVW-03 (v3.5.4) - the schema default moved to the unset sentinel, and the Default cell now reads "unset→the stakes level decides, per trigger (`route.mjs resolve` answers it)"; the cross-model-only reach is unchanged | 2 |
-| CONFIG-CATALOG-10 | cadence-core/references/config-catalog.md | 63 | `review.triggers.<t>.effort` default `high`, except `medium` for diff - cross-model only | stale | corrected - RVW-03 (v3.5.4) - the schema default moved to the unset sentinel, and the Default cell now reads "unset→the stakes level decides, per trigger (`route.mjs resolve` answers it)"; the cross-model-only reach is unchanged | 2 |
+| CONFIG-CATALOG-09 | cadence-core/references/config-catalog.md | 62 | `review.triggers.<t>.tier` default `flagship`, except `balanced` for diff - cross-model only | stale | corrected - RVW-03 (v3.5.4) - the schema default moved to the unset sentinel, and the Default cell now reads "unset→the stakes level decides, per trigger (`route.mjs resolve` answers it)"; the cross-model-only reach is unchanged; re-corrected - ROL-02 (v3.7.12) - the sentinel is gone: the Default cell states the key's real schema default, `cheap` on all four triggers | 2 |
+| CONFIG-CATALOG-10 | cadence-core/references/config-catalog.md | 63 | `review.triggers.<t>.effort` default `high`, except `medium` for diff - cross-model only | stale | corrected - RVW-03 (v3.5.4) - the schema default moved to the unset sentinel, and the Default cell now reads "unset→the stakes level decides, per trigger (`route.mjs resolve` answers it)"; the cross-model-only reach is unchanged; re-corrected - ROL-02 (v3.7.12) - the sentinel is gone: the Default cell states each trigger's real schema default | 2 |
 | CONFIG-CATALOG-11 | cadence-core/references/config-catalog.md | 64 | `review.triggers.risk_surface.surfaces` list(enum) over the eight surfaces, unset means all eight and the first fire asks once | accurate | accurate | 2 |
 | CONFIG-CATALOG-12 | cadence-core/references/config-catalog.md | 68-69 | Every write goes through the Validation seam; a value outside its set is rejected, never written | accurate | accurate | 2 |
 | RECALL-01 | cadence-core/references/recall.md | 3-6 | Two commands call `planning.mjs recall` - `/cad-context` at `analyze` and `/cad-debug` at Hypothesize - and the contract is stated here once instead of drifting in two workflows | stale | corrected - 75b1d28 - the opening paragraph now names all three callers and the step each calls recall at | 2 |

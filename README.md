@@ -59,7 +59,7 @@ Eight of them, and every one hands its decision to you rather than deciding for 
 | Control | Where it fires | What it does |
 |---|---|---|
 | Plan review | before any code is written | an adversarial reviewer tries to break the plan, findings come back as a numbered list you triage |
-| Risk surface | on each plan's completed commit range | checks the diff against eight named surfaces, blocks on a match at every stakes level |
+| Risk surface | on each plan's completed commit range | checks the diff against eight named surfaces, and blocks on a match by default |
 | Push rail | every `git push` a workflow attempts | a `PreToolUse` hook, `cadence-core/bin/git-guard.mjs`, stops and asks you. No exemption exists |
 | Protected branch | a commit on `main` or `master` | asks, refuses, or allows, per `git.on_protected` |
 | Verification | after a phase is built | conversational UAT plus a goal-backward pass, claims scored verified, failed, or uncertain |
@@ -97,34 +97,32 @@ That shape was expensive to learn, and I paid for it twice. First a predicate ca
 
 [`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier and reviewers do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: routing, the publish seam, and why the decision cores are pure functions. [`docs/WORKFLOW.md`](./docs/WORKFLOW.md) is the same material as a diagram, five figures and the four tables behind them. [`docs/EVIDENCE.md`](./docs/EVIDENCE.md) defines the three weight terms and gives the `weight.mjs` commands that print the current numbers for any tree. [`docs/COST.md`](./docs/COST.md) is what a run costs on my own account. [`docs/EXAMPLE.md`](./docs/EXAMPLE.md) walks one small project through the whole cycle.
 
-## What a break costs
+## What each role costs
 
-Cadence used to ask how much you wanted a dispatch to cost. It now asks what happens if the work is wrong, which is a question you can actually answer about your own project, and that answer routes everything else. One key sets it:
+Cadence used to ask how much you wanted a dispatch to cost, and then it asked what a break in the project would cost. Both were one word standing in for twelve decisions somebody else had already made for you. It asks you the twelve now, one role at a time:
 
 ```
-/cad-config stakes=shipped
+/cad-config --roles
 ```
 
-`solo` means nobody else runs this and a break costs you an afternoon. `shipped` means other people run it and a break comes back as a bug report. `critical` means a break is not a bug report.
+Thirteen questions in four prompts. Six name a role and ask which model it runs on, six ask which effort rung it starts at, and the last asks what a detected risk surface should be allowed to do. Every question says what that role does in the phase loop and what a stronger or weaker answer buys you there, so the interview is the documentation and there is nothing to read first. `/cad-new-project` and `/cad-adopt` ask them once, machine-wide; `/cad-config --roles` re-opens them for one project, and `--roles --global` re-opens the machine-wide answers.
 
-The level you set is a MINIMUM a phase pays, not a fixed price: a phase whose declared files touch a risk surface routes ABOVE it, and leaving `stakes` unset is what lets a phase touching none of them route below the old default. [`INTERNALS.md`](./INTERNALS.md) has the mechanism.
+Your answers are twelve keys, `roles.<role>.model` and `roles.<role>.effort`, and nothing derives one role's answer from another's. A model left unset sends NO model parameter at all, so that dispatch runs on your own session's model, and a model name this host does not accept is named in the resolve's warnings with the parameter dropped, so a typo can never redirect your spend. The effort keys ship with real defaults - `high` for the planner, the assumptions analyzer, the executor and the verifier, `medium` for the reviewer, `low` for the plan checker - and every one of the five rungs is reachable for every one of the six roles.
 
-That one word lands in a grid of 18 cells, one per level and role pair, and the cell hands a dispatch its model, the effort rung it starts on, and the rung a failed attempt climbs to. At `solo` the planner runs Sonnet at `high`. At `shipped` it runs Opus. At `critical` it runs Opus at `xhigh` and a retry goes to `max`. The whole thing is [`cadence-core/route-table.json`](./cadence-core/route-table.json) and you can read it in one screen.
+The rungs are `low`, `medium`, `high`, `xhigh`, `max`. Effort is fixed in an agent file's frontmatter rather than passed per dispatch, which makes a rung a real file on disk, and self-verify refuses a rung the map names with no file, and a rung-suffixed agent file the rung map files for no role.
 
-The rungs are `low`, `medium`, `high`, `xhigh`, `max`. Effort is fixed in an agent file's frontmatter rather than passed per dispatch, which makes a rung a real file on disk, and self-verify refuses a cell naming a rung with no file, and a rung-suffixed agent file the rung map files for no role.
+Escalation is one key, `model.escalate_on_failure`, off by default: a retry holds the rung it started on, because a retry is usually a narrower job than the pass that failed it. Set it true and a failed attempt is re-dispatched one rung higher, holding at the top rung.
 
-Escalation is one key, `model.escalate_on_failure`, off by default: a retry holds the rung it started on, because a retry is usually a narrower job than the pass that failed it. Set it true and a failed attempt gets re-dispatched at the retry rung its own cell names.
+The review gates are keys of their own, each with its own default, and whatever you write into one is what fires:
 
-The review gates resolve off the same level:
+| Trigger | Default gate |
+|---|---|
+| `plan` | advisory |
+| `diff` | off |
+| `phase_diff` | off |
+| `risk_surface` | blocking |
 
-| Trigger | `solo` | `shipped` | `critical` |
-|---|---|---|---|
-| `plan` | advisory | blocking | adjudicated |
-| `diff` | off | off | blocking |
-| `phase_diff` | off | off | adjudicated |
-| `risk_surface` | blocking | blocking | blocking |
-
-A plan review is blocking at `shipped` because a plan is the cheapest artifact in the pipeline to halt on. `risk_surface` is the one row that does not move, and the eight surfaces it watches are auth, billing, secrets, migrations, destructive operations, concurrency, API contracts, and untrusted input. None of those care how casual your project is.
+The `plan` gate ships advisory rather than blocking because a detected risk surface is what raises it, and a plan is the cheapest artifact in the pipeline to halt on when that happens. `risk_surface` is the one that ships blocking, because it only fires on a detection match in the first place, and the eight surfaces it watches are auth, billing, secrets, migrations, destructive operations, concurrency, API contracts, and untrusted input. None of those care how casual your project is.
 
 That list is yours to narrow as of v3.2.0. `review.triggers.risk_surface.surfaces` names the subset your project actually contains, populated from a structural scan of manifests and directories rather than a keyword grep, and leaving it unset keeps all eight so nobody's coverage shrinks on upgrade. A keyword pass was measured on this repo on 2026-08-13 and false-positived `auth` on sixteen hits of the word `session`, every one of them a Claude session.
 
@@ -132,7 +130,7 @@ Cadence checks that list against the diff itself, once per plan, on the complete
 
 It used to check the file NAMES a plan declared, at dispatch time, and raise the whole phase on a match. A test file called `ingest_concurrency.rs` was enough to put six roles on their top rung for the rest of the phase, and that detector is gone as of v2.7.0. What the code does decides, what the file is called does not.
 
-Deep verification follows the level too, off at `solo` and on at `shipped` and `critical`.
+A phase whose declared files touch one of those surfaces, read at plan time before any code exists, does exactly two things: the plan review becomes blocking, and the deep verify pass turns on. No role's model moves and no role's rung moves, so what you set is what dispatches. Deep verification has no key of its own - that floor is what turns it on, and `/cad-verify --deep` is the manual switch. [`INTERNALS.md`](./INTERNALS.md) has the mechanism.
 
 ## Where it came from
 

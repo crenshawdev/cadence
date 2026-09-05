@@ -235,7 +235,7 @@ by the INLINE path - `planned_path` step 1 is the only writer of
 is absent, because a task plan does not justify project scaffolding. So derive
 the slug here when the inline path did not (kebab-case of the task description).
 A redirect into a directory nothing created fails `No such file or directory`,
-and this trigger is `blocking` at every level, so that failure is a blocking
+and this trigger defaults to `blocking`, so that failure is a blocking
 gate that cannot fire rather than a gate that passes.
 
 Which directory depends on whether this task already owns one, and the INLINE
@@ -267,7 +267,7 @@ in a `phases/0/` that does not exist (`references/review-record.md`). The INLINE
 path owns no directory, so it owns no home for a record either: its FAIL stays
 with the user, the same absence the `<guardrails>` line below already states.
 
-This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
+This trigger defaults to `blocking`, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a
 FAIL, since this workflow does not preload it and the cap lives only there.
