@@ -167,51 +167,42 @@ test('README: a template-initialised phase touching no surface really does route
   assert.equal(r.stakes_set, false, 'the shipped template pins a stakes level');
 });
 
-// --- DFC-02: both statements of phase_diff's gates match the RESOLVER --------
+// --- DFC-02: the phase_diff purpose matches what the RESOLVER answers --------
+//
+// The defect: the reference and docs/WORKFLOW.md both read `off / off /
+// adjudicated` while the resolver returned `advisory` at shipped - one wrong row
+// was the single source of four wrong claims across two documents. The three
+// levels are gone and the gate is a schema default now, so the pair that can
+// drift is the schema's own `purpose` (the prose a user reads while setting the
+// key) and what `route.mjs resolve` actually returns for an unset gate. Held
+// against a REAL resolve, never against the schema `default` twice: a check that
+// read the same field on both sides would pass on a resolver that ignored it.
 
-const LEVELS = ['solo', 'shipped', 'critical'];
+/** The `defaults to <value>` clause a purpose has to carry, per lib/gate-agreement.mjs. */
+const DEFAULT_CLAUSE = /\bdefaults?\s+to\s+[`"']?([a-z_]+)[`"']?/i;
 
-/**
- * `review` as `route.mjs resolve` returns it for `cad-reviewer` at each stakes
- * level, keyed by level. Driven through the per-repo `--file` layer because
- * `resolve` takes no level flag, and read off the RESOLVER rather than off
- * route-table.json: the prose copies what a run actually gets, so level
- * mapping, schema defaults and role selection have to be inside the check or
- * they stay free to diverge from the two documents that quote them.
- */
-function resolvedReview() {
-  const dir = mkdtempSync(join(tmpdir(), 'cad-prose-'));
-  /** @type {Record<string, Record<string, string>>} */
-  const out = {};
-  for (const level of LEVELS) {
-    const cfg = join(dir, `${level}.json`);
-    writeFileSync(cfg, JSON.stringify({ stakes: level }));
-    const line = execFileSync('node',
-      [ROUTE, 'resolve', '--role', 'cad-reviewer', '--file', cfg], { encoding: 'utf8' });
-    const r = JSON.parse(line);
-    assert.equal(r.ok, true, line);
-    assert.equal(r.stakes, level, `--file did not drive stakes to ${level}: ${line}`);
-    out[level] = r.review;
-  }
-  return out;
-}
+test('phase_diff: the schema purpose names the gate a no-gate resolve really answers', () => {
+  const key = 'review.triggers.phase_diff.gate';
+  const spec = JSON.parse(doc('cadence-core', 'config.schema.json')).keys[key];
+  const claimed = DEFAULT_CLAUSE.exec(spec.purpose);
+  assert.ok(claimed, `${key}: the purpose states no default: ${spec.purpose}`);
+  assert.ok(spec.values.includes(claimed[1]),
+    `${key}: the purpose names "${claimed[1]}", which is not one of ${JSON.stringify(spec.values)}`);
 
-test('phase_diff gates: the wiring table and docs/WORKFLOW.md both match the resolver', () => {
-  // The defect: both read `off / off / adjudicated` while the resolver returns
-  // `advisory` at shipped. One wrong row in the reference was the single source
-  // of four separate wrong claims across two documents.
-  const resolved = resolvedReview();
-  const want = LEVELS.map((l) => resolved[l].phase_diff);
-
-  const wiring = tableRow(doc('cadence-core', 'references', 'review-triggers.md'), 'phase_diff');
-  const cell = wiring[wiring.length - 1].split('/').map((s) => s.trim());
-  assert.deepEqual(cell, want,
-    `review-triggers.md states ${cell.join(' / ')}, the resolver returns ${want.join(' / ')}`);
-
-  // WORKFLOW.md spells the same three values as three separate columns.
-  const workflow = tableRow(doc('docs', 'WORKFLOW.md'), 'phase_diff');
-  assert.deepEqual(workflow.slice(-3), want,
-    `docs/WORKFLOW.md states ${workflow.slice(-3).join(' / ')}, the resolver returns ${want.join(' / ')}`);
+  // A config setting no gate at all, resolved through the per-repo `--file`
+  // layer with the global layer pointed at a path that does not exist, so a dev
+  // machine's own config cannot answer for the shipped default.
+  const dir = mkdtempSync(join(tmpdir(), 'cad-prose-gate-'));
+  const cfg = join(dir, 'config.json');
+  writeFileSync(cfg, '{}\n');
+  const line = execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-reviewer', '--file', cfg],
+    { encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(dir, 'no-global.json') } });
+  const r = JSON.parse(line);
+  assert.equal(r.ok, true, line);
+  assert.equal(r.review.phase_diff, claimed[1],
+    `the purpose says the phase_diff gate defaults to "${claimed[1]}", the resolver answers `
+    + `"${r.review.phase_diff}"`);
 });
 
 // --- DFC-04: the risk_surface row admits the artifact /cad-task produces -----

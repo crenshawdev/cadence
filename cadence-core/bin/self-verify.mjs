@@ -121,21 +121,24 @@
 //                    runtime read of the schema (CADENCE_CONFIG_SCHEMA would
 //                    otherwise un-mark every protected key), which is what makes
 //                    this cross-check the thing keeping the two honest.
-//  18. gate          every config.schema.json `review.triggers.<t>.gate` row
-//      agreement     against route-table.json's `review` grid, in both of the
-//                    ways that row describes a gate: its `default`, which
-//                    `config.mjs get` answers verbatim for an unset key, and
-//                    its `purpose`, which must state a `<gate> at <level>`
-//                    clause for solo, shipped and critical. Three surfaces
-//                    described these gates and nothing made them agree - a
-//                    `phase_diff` default of `advisory` outlived the v3.2.0
-//                    move of that cell to `off` at `shipped` with every check
-//                    green, and workflows/execute.md carried a paragraph
-//                    telling callers to route around the seam because of it.
-//                    The grid is the AUTHORITY, so every issue is filed against
-//                    config.schema.json, the side that moves. The rule is
-//                    lib/gate-agreement.mjs; it takes no CONTRACTS row, for the
-//                    reason check 14 states about `lib/*.mjs`.
+//  18. gate          all twelve config.schema.json
+//      agreement     `review.triggers.<t>.{gate,tier,effort}` rows as the
+//                    ANSWERS they now are, in both of the ways a row states
+//                    one: its `default`, which must be a member of its own
+//                    `values` because nothing else decides the key and
+//                    `config.mjs get` answers it verbatim, and its `purpose`,
+//                    which must carry a `defaults to <value>` clause naming
+//                    that same default. Three surfaces described these settings
+//                    and nothing made them agree - a `phase_diff` default of
+//                    `advisory` outlived the v3.2.0 move of that gate to `off`
+//                    with every check green, and workflows/execute.md carried a
+//                    paragraph telling callers to route around the seam because
+//                    of it. The rows used to sit on a `null` sentinel with a
+//                    level-keyed grid as the authority; the level is gone, so
+//                    the schema is the only authority and this check no longer
+//                    reads a data file. The rule is lib/gate-agreement.mjs; it
+//                    takes no CONTRACTS row, for the reason check 14 states
+//                    about `lib/*.mjs`.
 //  19. text          a prose site that hands a seam a value derived from agent
 //      transport     output or repository content must hand it a PATH: a
 //                    double-quoted shell word carrying `$(...)` or a backtick
@@ -1126,18 +1129,6 @@ function run(root) {
         problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
       }
 
-      // 18. what the schema SAYS a gate is, against what the grid FIRES. Same
-      // block because it is the one place both files are parsed and in hand.
-      // Filed against config.schema.json rather than the table: the grid is the
-      // authority and does not move, the schema is the side that reconciles to
-      // it, so `file` has to name the file a maintainer edits.
-      for (const { code, detail } of gateAgreementIssues(schema, table, {
-        levels: stakesValues,
-        gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
-      })) {
-        problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
-      }
-
       // table -> disk: every name route.mjs can return must exist. route.mjs
       // never checks the name it returns, so without this an unbuilt or
       // renamed rung fails at dispatch time instead of in CI.
@@ -1201,6 +1192,18 @@ function run(root) {
   // maintainer edits to fix it.
   for (const { code, detail } of effortEnumIssues(schema,
     table && Array.isArray(table.rung_order) ? table.rung_order : [])) {
+    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
+  }
+
+  // 18. the twelve `review.triggers.<t>.{gate,tier,effort}` rows as DEFAULTS:
+  // each one's `default` a member of its own `values`, and each one's `purpose`
+  // naming that default. It used to compare them against route-table.json's
+  // level-keyed grids and lived inside check 8's table block; the level is gone,
+  // the schema default IS the answer, and the lib reads nothing but the schema -
+  // so this runs OUTSIDE that block, for the same reason 8b does: a
+  // schema-against-itself proof may not be conditional on a data file it does
+  // not read. Filed against config.schema.json, the file a maintainer edits.
+  for (const { code, detail } of gateAgreementIssues(schema)) {
     problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
   }
 

@@ -371,19 +371,6 @@ function set(file, tokens, create) {
   out({ ok: true, file, changed: pairs });
 }
 
-// The per-trigger keys whose schema default is the `null` sentinel rather than
-// a value: route-table.json answers them and the level decides - the `review`
-// grid for `.gate` (GAT-02), the `tiers` and `efforts` grids for the two
-// fields that reach a cross-model reviewer (RVW-03). Matched by shape rather
-// than a hand-kept list, so a fifth trigger is covered the day its keys land.
-const LEVEL_KEY = /^review\.triggers\.[^.]+\.(gate|tier|effort)$/;
-
-// What each of them is CALLED in the warning below. Written out rather than
-// interpolated from the key's last segment so `tier` and `effort` read as the
-// quantities a user recognises, and so `effort` cannot be mistaken for the
-// agent rung of the same name.
-const LEVEL_KEY_NOUN = { gate: 'gate', tier: 'model tier', effort: 'reasoning effort' };
-
 // The effective value set: schema defaults, overlaid by the global then the
 // repo layer (shared merge lib - identical semantics to route.mjs). Output is
 // a flat dotted-key map, so callers read values without re-flattening.
@@ -430,35 +417,18 @@ function get(file, keys, asGlobal) {
     // would inherit the hole, and this is the read the hole is spent through.
     const spec = Object.hasOwn(SCHEMA, k) ? SCHEMA[k] : undefined;
     values[k] = layered[k] !== undefined ? layered[k] : spec && spec.default;
-    // The read face says WHICH of the two states one of these keys is in. The
-    // value line above is unchanged (D-06) - the schema sentinel does that work
-    // - but a bare `null` cannot tell a reader "no layer set one, the level
-    // decides" apart from a layer that wrote null, which is what GAT-02 asks
-    // for. So the answer carries a warning naming where the level IS resolved.
-    //
-    // Only on an EXPLICIT read (D-02). A keyless `get` walks every schema
-    // key, so warning there appends a line per key to every full read - prose
-    // that workflows/milestone.md and verify.md relay straight to the user -
-    // for a caller that asked about none of them in particular. That is why
-    // this arm mattered more once RVW-03 tripled the family it covers.
-    //
-    // It never states what the level fires and never reads route-table.json
-    // (D-07): this seam does not know the stakes level, and answering as if
-    // it did is the same defect pointed the other way.
-    const levelKey = keys.length && layered[k] === undefined ? LEVEL_KEY.exec(k) : null;
-    if (levelKey) {
-      allWarnings.push(`${k} is unset: no config layer pins this `
-        + `${LEVEL_KEY_NOUN[levelKey[1]]}, so the `
-        + 'stakes level decides it - `route.mjs resolve` answers it for a level');
-    }
+    // The twelve `review.triggers.<t>.{gate,tier,effort}` keys used to answer
+    // with a warning here saying "no layer pins this, so the stakes level
+    // decides it". That sentence went with the level: those rows carry real
+    // schema defaults now (D-01), so an unset one is answered the way every
+    // other defaulted key is answered, and a warning saying something else
+    // decides - beside a value that IS the answer - would be a contradiction.
 
-    // `stakes` is the same two-state read one key over, and it gets its OWN arm
-    // rather than a widened LEVEL_KEY: that regex matches
-    // `review.triggers.<t>.{gate,tier,effort}`, whose sentence ends "so the
-    // stakes level decides it" - which is the one thing that cannot be said of
-    // `stakes` itself - and LEVEL_KEY_NOUN maps a last segment this key does
-    // not have. Same two gates for the same two reasons (explicit read, no
-    // layer supplied a value), and the same refusal to say what the level
+    // `stakes` keeps a two-state read of its own. It is the last key on this
+    // face whose unset state is not answered by a schema default: no value it
+    // could report tells a reader that the level is computed per phase from the
+    // plans in scope. Two gates for two reasons (explicit read, no layer
+    // supplied a value), and a deliberate refusal to say what the level
     // fires. Without it this face answers `{"stakes":"shipped"}` identically
     // for a config that chose that level and one that set nothing, so the init
     // workflows' "stakes is unset" and the very next `/cad-config` read

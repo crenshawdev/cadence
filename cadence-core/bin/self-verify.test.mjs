@@ -2148,114 +2148,144 @@ test('check 16: the CLI reports the UAT include the day it is re-added', () => {
   assert.match(named[0].detail, /templates\/UAT\.md/);
 });
 
-// --- check 18: the schema's gate rows vs what the review grid fires ---------
+// --- check 18: the schema's twelve trigger rows as DEFAULTS ------------------
 // The rule and every failure class are pinned in gate-agreement.test.mjs. This
 // side pins the WIRING: that the issues reach `problems` filed against
-// config.schema.json (the side that moves - the grid is the authority), that
-// `checked` names the check, and that the prose half is reachable through the
-// CLI and not only through the lib. Every fixture below writes its OWN schema
-// and its OWN route table, and its grid deliberately does NOT match the shipped
-// one, so an expectation here cannot be satisfied by the live files the
-// "the repo itself passes self-verification" test already guards.
+// config.schema.json, that `checked` names the check, that the prose half is
+// reachable through the CLI and not only through the lib, and - since the level
+// went and took route-table.json's grids with it - that the check runs on a
+// tree carrying no route table at all. Every fixture below writes its OWN
+// schema, whose defaults deliberately differ from the shipped ones, so an
+// expectation here cannot be satisfied by the live file the "the repo itself
+// passes self-verification" test already guards.
 
 /** Every code lib/gate-agreement.mjs can file, for "this fixture is clean" arms. */
-const GATE_KINDS = ['gate-default-drift', 'gate-default-invalid', 'gate-prose-missing',
-  'gate-prose-drift', 'gate-grid-missing', 'gate-row-malformed'];
+const GATE_KINDS = ['gate-default-invalid', 'gate-prose-missing',
+  'gate-prose-drift', 'gate-row-malformed'];
 
-/** A synthetic review grid: valid, four triggers, and unlike the shipped one. */
-const FIXTURE_GRID = {
-  solo: { plan: 'off', diff: 'advisory', risk_surface: 'blocking', phase_diff: 'off' },
-  shipped: { plan: 'advisory', diff: 'blocking', risk_surface: 'off', phase_diff: 'adjudicated' },
-  critical: { plan: 'blocking', diff: 'adjudicated', risk_surface: 'advisory', phase_diff: 'blocking' },
+/** The `values` enum each of the three fields is judged against. */
+const GATE_VALUES = {
+  gate: ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'],
+  tier: ['flagship', 'balanced', 'cheap'],
+  effort: ['minimal', 'low', 'medium', 'high'],
 };
 
-/** The purpose FIXTURE_GRID makes true for a trigger, as the mandatory clauses. */
-const fixturePurpose = (t) => `How the ${t} review gates - ${FIXTURE_GRID.solo[t]} at solo, `
-  + `${FIXTURE_GRID.shipped[t]} at shipped, ${FIXTURE_GRID.critical[t]} at critical`;
+/** Synthetic defaults: valid members, and unlike the shipped rows. */
+const FIXTURE_DEFAULTS = {
+  plan: { gate: 'deferred', tier: 'flagship', effort: 'high' },
+  diff: { gate: 'adjudicated', tier: 'balanced', effort: 'medium' },
+  risk_surface: { gate: 'off', tier: 'flagship', effort: 'minimal' },
+  phase_diff: { gate: 'blocking', tier: 'balanced', effort: 'high' },
+};
+
+/** The purpose a default makes true, as the mandatory clause. */
+const fixturePurpose = (t, f, d) => `How the ${t} review's ${f} answers. Defaults to \`${d}\`; `
+  + 'write any value here and that is what fires';
 
 /**
- * A root carrying only the two files this check reads. `triggers` maps a trigger
- * name to `{default?, purpose}`; an omitted `default` is the `null` sentinel.
- * @param {Record<string, {default?: any, purpose?: any}>} triggers
- * @param {any} [review] the grid, defaulting to FIXTURE_GRID
+ * A root carrying only the ONE file this check reads - deliberately no
+ * route-table.json, which is the tree the check has to keep running on.
+ * `overrides` is keyed `"<trigger>.<field>"` and may replace `default`,
+ * `purpose` or the whole row.
+ * @param {Record<string, any>} [overrides]
  */
-function gateRoot(triggers, review = FIXTURE_GRID) {
+function gateRoot(overrides = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-gates-'));
   mkdirSync(join(root, 'cadence-core'), { recursive: true });
-  const keys = {
-    stakes: { type: 'enum', values: ['solo', 'shipped', 'critical'], default: 'shipped',
-      src: 'repo', purpose: 'The synthetic stakes vocabulary this fixture lints against' },
-  };
-  for (const [t, row] of Object.entries(triggers)) {
-    keys[`review.triggers.${t}.gate`] = {
-      type: 'enum', values: ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'],
-      default: 'default' in row ? row.default : null,
-      src: 'repo',
-      purpose: 'purpose' in row ? row.purpose : fixturePurpose(t),
-    };
+  /** @type {Record<string, any>} */
+  const keys = {};
+  for (const [t, fields] of Object.entries(FIXTURE_DEFAULTS)) {
+    for (const [f, d] of Object.entries(fields)) {
+      const name = `${t}.${f}`;
+      if (Object.hasOwn(overrides, name) && overrides[name] === undefined) continue;
+      const row = { type: 'enum', values: GATE_VALUES[f], default: d, src: 'repo',
+        purpose: fixturePurpose(t, f, d) };
+      keys[`review.triggers.${t}.${f}`] = Object.hasOwn(overrides, name)
+        && (overrides[name] === null || typeof overrides[name] !== 'object')
+        ? overrides[name]
+        : { ...row, ...(overrides[name] || {}) };
+    }
   }
   writeFileSync(join(root, 'cadence-core', 'config.schema.json'),
     JSON.stringify({ keys }, null, 2));
-  writeFileSync(join(root, 'cadence-core', 'route-table.json'),
-    JSON.stringify({ review }, null, 2));
   return root;
 }
 
-/** The four triggers, all on the sentinel with prose the grid makes true. */
-const AGREEING = { plan: {}, diff: {}, risk_surface: {}, phase_diff: {} };
-
 test('check 18: `checked` names the gate-agreement check and an agreeing schema is clean', () => {
-  const j = run(['--root', gateRoot(AGREEING)]);
+  const j = run(['--root', gateRoot()]);
   assert.match(j.checked, /gate-agreement/);
   assert.deepEqual(j.problems.filter((p) => GATE_KINDS.includes(p.kind)), [],
     JSON.stringify(j.problems));
 });
 
-test('check 18: a default the grid disagrees with reaches problems, naming the levels', () => {
-  // The defect this phase exists to close, in its schema-default half: a scalar
-  // `config.mjs get` answers verbatim for a gate no level fires.
-  const root = gateRoot({ ...AGREEING, plan: { default: 'adjudicated' } });
-  const p = run(['--root', root]).problems;
-  const hits = p.filter((x) => x.kind === 'gate-default-drift');
+test('check 18: it runs on a tree with NO route-table.json - the grids are gone', () => {
+  // The wiring fact this phase changes. gateRoot writes no table at all, so a
+  // clean run here proves the check is not nested under one.
+  const root = gateRoot();
+  assert.equal(existsSyncSafe(join(root, 'cadence-core', 'route-table.json')), false);
+  const p = run(['--root', gateRoot({ 'plan.gate': { default: null } })]).problems;
+  assert.ok(p.some((x) => x.kind === 'gate-default-invalid'), JSON.stringify(p));
+});
+
+test('check 18: a NULL default reaches problems - the sentinel is not exempt', () => {
+  // The defect this phase creates the risk of: the rows used to sit on `null`
+  // meaning "the level decides", and with no level a null default is a value
+  // the resolver cannot answer.
+  const p = run(['--root', gateRoot({ 'plan.gate': { default: null } })]).problems;
+  const hits = p.filter((x) => x.kind === 'gate-default-invalid');
   assert.equal(hits.length, 1, JSON.stringify(p.filter((x) => GATE_KINDS.includes(x.kind))));
   assert.equal(hits[0].file, 'cadence-core/config.schema.json');
   assert.match(hits[0].detail, /review\.triggers\.plan\.gate/);
-  for (const level of ['solo', 'shipped', 'critical']) {
-    assert.match(hits[0].detail, new RegExp(`at ${level}\\b`));
-  }
-  // The prose half of the SAME row is untouched, so the two halves are
-  // separable at the CLI and not only inside the lib.
-  assert.deepEqual(p.filter((x) => x.kind === 'gate-prose-missing'
-    || x.kind === 'gate-prose-drift'), []);
 });
 
-test('check 18: deleting one level clause from one purpose files exactly one problem', () => {
+test('check 18: a default outside its own values reaches problems, naming the value', () => {
+  const p = run(['--root', gateRoot({ 'diff.tier': { default: 'chaep' } })]).problems;
+  const hits = p.filter((x) => x.kind === 'gate-default-invalid');
+  assert.equal(hits.length, 1, JSON.stringify(p.filter((x) => GATE_KINDS.includes(x.kind))));
+  assert.equal(hits[0].file, 'cadence-core/config.schema.json');
+  assert.match(hits[0].detail, /review\.triggers\.diff\.tier/);
+  assert.match(hits[0].detail, /"chaep"/);
+  // The prose half of the SAME row still speaks: the purpose names `balanced`
+  // and the row no longer defaults to it, so the two halves are separable at
+  // the CLI and not only inside the lib.
+  assert.ok(p.some((x) => x.kind === 'gate-prose-drift'
+    && /review\.triggers\.diff\.tier/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 18: deleting the defaults clause from one purpose files exactly one problem', () => {
   // AC6's falsifier, proved through the CLI. The prose half is MANDATORY, so
   // the sentence cannot be removed to silence the check.
-  const full = fixturePurpose('phase_diff');
-  const cut = full.replace(`, ${FIXTURE_GRID.shipped.phase_diff} at shipped`, '');
-  assert.notEqual(cut, full, 'the fixture purpose must actually lose its shipped clause');
-  const root = gateRoot({ ...AGREEING, phase_diff: { purpose: cut } });
+  const root = gateRoot({ 'phase_diff.gate': {
+    purpose: 'Aggregate review of the merged phase diff after parallel execution',
+  } });
   const p = run(['--root', root]).problems;
   const gate = p.filter((x) => GATE_KINDS.includes(x.kind));
   assert.equal(gate.length, 1, JSON.stringify(gate));
   assert.equal(gate[0].kind, 'gate-prose-missing');
   assert.equal(gate[0].file, 'cadence-core/config.schema.json');
   assert.match(gate[0].detail, /review\.triggers\.phase_diff\.gate/);
-  assert.match(gate[0].detail, /shipped/);
 });
 
-test('check 18: a purpose naming a gate the grid does not fire is reported at that level', () => {
-  // The v3.2.0 regression in miniature: a level's cell moves and the sentence
+test('check 18: a purpose naming a value the row does not default to is reported', () => {
+  // The v3.2.0 regression in miniature: the answer moves and the sentence
   // describing it does not.
-  const root = gateRoot({ ...AGREEING,
-    diff: { purpose: fixturePurpose('diff').replace('advisory at solo', 'off at solo') } });
+  const root = gateRoot({ 'diff.gate': {
+    purpose: 'How the diff review gates. Defaults to `off`',
+  } });
   const p = run(['--root', root]).problems;
   const hits = p.filter((x) => x.kind === 'gate-prose-drift');
   assert.equal(hits.length, 1, JSON.stringify(p.filter((x) => GATE_KINDS.includes(x.kind))));
   assert.equal(hits[0].file, 'cadence-core/config.schema.json');
   assert.match(hits[0].detail, /review\.triggers\.diff\.gate/);
-  assert.match(hits[0].detail, /solo/);
+  assert.match(hits[0].detail, /"off"/);
+});
+
+test('check 18: a row that is not an object reaches problems as gate-row-malformed', () => {
+  const p = run(['--root', gateRoot({ 'risk_surface.effort': 'low' })]).problems;
+  const hits = p.filter((x) => x.kind === 'gate-row-malformed');
+  assert.equal(hits.length, 1, JSON.stringify(p.filter((x) => GATE_KINDS.includes(x.kind))));
+  assert.equal(hits[0].file, 'cadence-core/config.schema.json');
+  assert.match(hits[0].detail, /review\.triggers\.risk_surface\.effort/);
 });
 
 // --- check 14: every shipped seam is contracted -----------------------------

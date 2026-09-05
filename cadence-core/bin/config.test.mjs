@@ -1402,38 +1402,44 @@ test('get: an unrelated repo key still merges - the strip is exactly three keys'
   assert.equal(r.values['workflow.max_plan_tasks'], 4);
 });
 
-// --- get: an unset gate reads as unset, not as a gate (GAT-02) ---------------
-// The defect: `config.mjs get` answered a `review.triggers.<t>.gate` out of the
-// schema default when no layer had set one, so a reader was told a gate routing
-// fires at no level, and `workflows/execute.md` had to carry a paragraph
-// telling callers not to pre-fetch a gate through this seam. The schema's
-// sentinel does the VALUE half (`null` for every unset gate); these arms pin
-// the REPORTING half - which of the two states the seam says it is in.
+// --- get: an unset gate answers the schema DEFAULT, unwarned (GAT-02) --------
+// The defect this section was written for: `config.mjs get` answered a
+// `review.triggers.<t>.gate` out of the schema default when no layer had set
+// one, while the gate that actually fired came from a level-keyed grid - so a
+// reader was told a gate routing fires at no level, and `workflows/execute.md`
+// had to carry a paragraph telling callers not to pre-fetch a gate through this
+// seam. The fix then was a `null` sentinel plus a warning naming where the level
+// was resolved. The level is gone: these rows carry real defaults now (D-01),
+// the default IS what fires, and the warning has to go with the sentinel,
+// because a line saying something else decides beside a value that is the answer
+// is a contradiction. These arms pin BOTH halves - the value and the silence.
+
+/** The shipped schema, for the defaults these arms are held against. */
+const GATE_SCHEMA = JSON.parse(readFileSync(
+  join(dirname(CONFIG), '..', 'config.schema.json'), 'utf8')).keys;
 
 /** The four gate keys, walked rather than spelled per test. */
 const GATE_KEYS = ['plan', 'diff', 'risk_surface', 'phase_diff']
   .map((t) => `review.triggers.${t}.gate`);
 
-/** Gate-unset warnings in an envelope, by the seam they must point a reader at. */
+/** Warnings in an envelope that point a reader at the resolver, of which there are now none. */
 const gateWarnings = (r) => (r.warnings || []).filter((w) => /route\.mjs resolve/.test(w));
 
-test('get: every unset gate answers null plus exactly one warning naming route.mjs resolve', () => {
+test('get: every unset gate answers its schema default, with no warning at all', () => {
   const gpath = join(dir, 'gates-no-global.json');
   const repo = join(dir, 'gates-absent.json');
   for (const key of GATE_KEYS) {
     const r = run(['get', '--file', repo, key], gpath);
     assert.equal(r.ok, true);
-    assert.equal(r.values[key], null, key);
-    const named = gateWarnings(r);
-    assert.equal(named.length, 1, `${key}: ${JSON.stringify(r.warnings)}`);
-    assert.match(named[0], new RegExp(key.replace(/\./g, '\\.')));
-    // D-07: the seam does not know the stakes level, so it must not answer for
-    // one. A warning naming a gate would be the same defect pointed the other way.
-    assert.ok(!/\b(off|advisory|deferred|blocking|adjudicated)\b/.test(named[0]), named[0]);
+    // Read off the schema, never spelled here: the defaults are the schema's to
+    // move, and an arm restating them would disagree with it silently.
+    assert.equal(r.values[key], GATE_SCHEMA[key].default, key);
+    assert.notEqual(r.values[key], null, `${key}: the null sentinel is gone`);
+    assert.deepEqual(gateWarnings(r), [], `${key}: ${JSON.stringify(r.warnings)}`);
   }
 });
 
-test('get: a gate a layer PINNED reads back byte-identical, with no unset warning', () => {
+test('get: a gate a layer PINNED reads back byte-identical, and still unwarned', () => {
   const gpath = join(dir, 'gates-pinned-global.json');
   const repo = join(dir, 'gates-pinned-repo.json');
   const pinned = { plan: 'off', diff: 'blocking', risk_surface: 'adjudicated', phase_diff: 'advisory' };
@@ -1448,56 +1454,52 @@ test('get: a gate a layer PINNED reads back byte-identical, with no unset warnin
 });
 
 test('get: the round trip through `set` - blocking answers blocking, unwarned', () => {
-  // AC3 in its literal shape: the write face, then the read face.
+  // AC3 in its literal shape: the write face, then the read face. The read
+  // BEFORE the write is what discriminates a configured gate from a defaulted
+  // one now that both answer a real value: only the write changes it.
   const gpath = join(dir, 'gates-set-global.json');
   const repo = join(dir, 'gates-set-repo.json');
   writeFileSync(repo, '{}\n');
-  const before = run(['get', '--file', repo, 'review.triggers.diff.gate'], gpath);
-  assert.equal(before.values['review.triggers.diff.gate'], null);
-  assert.equal(gateWarnings(before).length, 1);
-  assert.equal(run(['set', '--file', repo, 'review.triggers.diff.gate=blocking'], gpath).ok, true);
-  const after = run(['get', '--file', repo, 'review.triggers.diff.gate'], gpath);
-  assert.equal(after.values['review.triggers.diff.gate'], 'blocking');
+  const key = 'review.triggers.diff.gate';
+  const before = run(['get', '--file', repo, key], gpath);
+  assert.equal(before.values[key], GATE_SCHEMA[key].default);
+  assert.deepEqual(gateWarnings(before), []);
+  assert.equal(run(['set', '--file', repo, `${key}=blocking`], gpath).ok, true);
+  const after = run(['get', '--file', repo, key], gpath);
+  assert.equal(after.values[key], 'blocking');
   assert.deepEqual(gateWarnings(after), []);
 });
 
-test('get: the KEYLESS full read carries no gate warning at all', () => {
-  // D-02. A full read walks every schema key, so warning there would append one
-  // line per gate to prose workflows/milestone.md and verify.md relay to the
-  // user - for a caller that asked about no gate in particular.
+test('get: the KEYLESS full read answers the same defaults, and warns about none', () => {
+  // D-02. A full read walks every schema key, so a per-key line here would
+  // append one to prose workflows/milestone.md and verify.md relay to the user.
   const r = run(['get', '--file', join(dir, 'gates-absent.json')],
     join(dir, 'gates-no-global.json'));
   assert.equal(r.ok, true);
-  for (const key of GATE_KEYS) assert.equal(r.values[key], null, key);
+  for (const key of GATE_KEYS) assert.equal(r.values[key], GATE_SCHEMA[key].default, key);
   assert.deepEqual(gateWarnings(r), [], JSON.stringify(r.warnings));
 });
 
-// --- get: an unset tier / effort reads as unset too (RVW-03) ------------------
+// --- get: an unset tier / effort answers its default too (RVW-03) -------------
 //
-// WATCHED FAILING AT 478b1ff, the tip of this plan's unpatched tree. Observed
-// there: `review.triggers.plan.tier` answered `flagship` and `.effort` answered
-// `high` on a repository where no layer sets either, so the read face reported
-// a value nothing resolves - the same defect GAT-02 closed for `.gate`, on the
-// two fields that actually reach a cross-model reviewer.
+// The two fields that actually reach a cross-model reviewer, on the same terms
+// as the gate above: a real schema default and no warning. The `null` these arms
+// used to assert was the sentinel, not an answer - it is gone from every one of
+// the twelve rows.
 
 /** The eight cross-model panel keys, walked rather than spelled per test. */
 const PANEL_KEYS = ['plan', 'diff', 'risk_surface', 'phase_diff']
   .flatMap((t) => [`review.triggers.${t}.tier`, `review.triggers.${t}.effort`]);
 
-test('get: every unset tier and effort answers null plus one warning naming route.mjs resolve', () => {
+test('get: every unset tier and effort answers its schema default, unwarned', () => {
   const gpath = join(dir, 'panel-no-global.json');
   const repo = join(dir, 'panel-absent.json');
   for (const key of PANEL_KEYS) {
     const r = run(['get', '--file', repo, key], gpath);
     assert.equal(r.ok, true);
-    assert.equal(r.values[key], null, key);
-    const named = gateWarnings(r);
-    assert.equal(named.length, 1, `${key}: ${JSON.stringify(r.warnings)}`);
-    assert.match(named[0], new RegExp(key.replace(/\./g, '\\.')));
-    // D-07 again: this seam does not know the stakes level, so it must not
-    // answer for one. A warning naming a tier or an effort would be the same
-    // defect pointed the other way.
-    assert.ok(!/\b(flagship|balanced|cheap|minimal|low|medium|high)\b/.test(named[0]), named[0]);
+    assert.equal(r.values[key], GATE_SCHEMA[key].default, key);
+    assert.notEqual(r.values[key], null, `${key}: the null sentinel is gone`);
+    assert.deepEqual(gateWarnings(r), [], `${key}: ${JSON.stringify(r.warnings)}`);
   }
 });
 
@@ -1518,18 +1520,16 @@ test('get: a tier or effort a layer PINNED reads back byte-identical, unwarned',
 });
 
 test('get: the KEYLESS full read carries no panel warning either', () => {
-  // D-02. RVW-03 tripled this family: warning on a full read would append
-  // twelve lines to prose workflows relay straight to the user.
   const r = run(['get', '--file', join(dir, 'panel-absent.json')],
     join(dir, 'panel-no-global.json'));
   assert.equal(r.ok, true);
-  for (const key of PANEL_KEYS) assert.equal(r.values[key], null, key);
+  for (const key of PANEL_KEYS) assert.equal(r.values[key], GATE_SCHEMA[key].default, key);
   assert.deepEqual(gateWarnings(r), [], JSON.stringify(r.warnings));
 });
 
 test('check: null is still refused at the write face for a tier and an effort', () => {
-  // The sentinel is the schema's way of saying "nobody set one", never
-  // something a user writes - the `values` arrays did not move.
+  // The `values` arrays did not move when the defaults did, so `null` is still
+  // not something a user may write into one of these rows.
   for (const [key, names] of [['review.triggers.plan.tier', /flagship, balanced, cheap/],
     ['review.triggers.plan.effort', /minimal, low, medium, high/]]) {
     const r = run(['check', `${key}=null`]);
@@ -1540,10 +1540,8 @@ test('check: null is still refused at the write face for a tier and an effort', 
   }
 });
 
-test('check: null is still refused at the write face - the sentinel is not a value', () => {
-  // D-05: the `values` arrays are a closed enum, so `set` and `check` behave
-  // byte-identically to before the default moved. `null` is the schema's way of
-  // saying "nobody set one", never something a user writes.
+test('check: null is still refused at the write face - a gate is a closed enum', () => {
+  // D-05: `set` and `check` behave byte-identically to before the default moved.
   const r = run(['check', 'review.triggers.diff.gate=null']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
