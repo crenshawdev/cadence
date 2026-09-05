@@ -51,17 +51,28 @@ Two stops first, before anything is written.
    with different remedies. Append-if-absent, so a brownfield `.gitignore` keeps
    every line it had and a re-run adds no second line.
 
-   The config template is copied VERBATIM - ask no configuration questions, with
-   ONE deliberate exception, and it is item 4 below: the forge. A forge is a
-   PRECONDITION rather than an option (FRG-02), and no template can carry a
-   default for it, because which forge hosts a repository is a fact about that
-   repository and not about Cadence. So it is asked, once, and a repository that
-   has answered is never asked again. Every other key keeps the template's
-   value. When the config was written, say so in one line: "Config written with
-   defaults (standard granularity, research and plan check off, verifier on).
-   Stakes is left unset: it floors at solo when every plan in the phase reads
-   clean, and at the shipped default when any of them cannot be read.
-   /cad-config changes any of it."
+   The config template is copied VERBATIM - ask no configuration questions,
+   with TWO deliberate exceptions and no others. The first is item 4 below: the
+   forge. A forge is a PRECONDITION rather than an option (FRG-02), and no
+   template can carry a default for it, because which forge hosts a repository
+   is a fact about that repository and not about Cadence. So it is asked, once,
+   and a repository that has answered is never asked again.
+
+   The second is what each role costs. Follow the **Roles interview** arm of
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
+   this step) right after the copy: the full thirteen questions written to the
+   user-global layer when that layer holds no `roles` key, and the shorter
+   per-project confirmation written to this repository's own file when it
+   already does. Same shape of reason as the forge - a template cannot carry a
+   default for what a model costs the person paying for it, and an adopted
+   repository is exactly where a per-project answer differs from the machine's.
+
+   Every other key keeps the template's value. Say in one line what was written
+   and where: "Config written with defaults (standard granularity, research and
+   plan check off, verifier on) in `.planning/config.json`, and the per-role
+   models and start rungs you just chose in <the file the interview named>.
+   /cad-config changes any of it, and /cad-config --roles re-opens those
+   thirteen questions."
 
 4. **Pick a forge**, from the `forge.mjs detect` line in that same script - it
    rides the existing script rather than taking a turn of its own, because it

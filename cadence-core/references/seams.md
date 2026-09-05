@@ -33,8 +33,9 @@ deliberate no-default decisions.
 **`seam-spawn-agent.md`** - the bracket rule (`The bracket rides the resolve.`),
 which is where the close half's `--tokens` and `--turns` discipline is stated,
 once; the relay rule for the `warnings[]` a `route.mjs resolve` returns;
-Routing (the quality bundle), the stakes FLOOR and its waiver, the per-role pin
-and the per-role start rung; Concurrent dispatch; Prompt shape (cache
+Routing (the quality bundle), the two-effect risk FLOOR and its waiver, the
+roles block and the two older families under it, and the retired-key warning
+that opens the migration instead of being relayed; Concurrent dispatch; Prompt shape (cache
 discipline); Return shape (bounded handoff); Handoff read discipline; File
 round-trip, which is the break-even test every deferred read is judged on;
 Worktree isolation and `worktree.baseRef`; the `maxTurns` turn bound and the

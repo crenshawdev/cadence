@@ -56,16 +56,30 @@ line):
    cp "${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/config.json" .planning/config.json
    ```
 
-   Ask no configuration questions - with ONE deliberate exception, and it is
-   item 6 below: the forge. A forge is a PRECONDITION rather than an option
-   (FRG-02), and no template can carry a default for it, because which forge
-   hosts a repository is a fact about that repository and not about Cadence.
-   So it is asked, once, and a repository that has answered is never asked
-   again. Every other key keeps the template's value. Tell the user in one line:
-   "Config written with defaults (standard granularity, research and plan check
-   off, verifier on). Stakes is left unset: it floors at solo when every plan in
-   the phase reads clean, and at the shipped default when any of them cannot be
-   read. /cad-config changes any of it."
+   Ask no configuration questions - with TWO deliberate exceptions, and no
+   others. The first is item 6 below: the forge. A forge is a PRECONDITION
+   rather than an option (FRG-02), and no template can carry a default for it,
+   because which forge hosts a repository is a fact about that repository and
+   not about Cadence. So it is asked, once, and a repository that has answered
+   is never asked again.
+
+   The second is what each role costs. Follow the **Roles interview** arm of
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md` (one consult site -
+   this step) right here, after the template copy: the full thirteen questions
+   written to the user-global layer when that layer holds no `roles` key, and
+   the shorter per-project confirmation written to this repository's own file
+   when it already does. It is an exception for the same shape of reason the
+   forge is - a template cannot carry a default for what a model costs the
+   person paying for it, and the six roles' models are the largest single
+   decision about what running Cadence costs. A user who accepts every default
+   answers thirteen questions once per machine and none of them again.
+
+   Every other key keeps the template's value. Tell the user in one line what
+   was written and where: "Config written with defaults (standard granularity,
+   research and plan check off, verifier on) in `.planning/config.json`, and
+   the per-role models and start rungs you just chose in <the file the
+   interview named>. /cad-config changes any of it, and /cad-config --roles
+   re-opens those thirteen questions."
 5. Read the keys this workflow needs through the seam (effective values,
    global layer included):
 
