@@ -6,6 +6,8 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.7.12] - 2026-09-05
+
 One word used to decide what all six roles ran at. It is gone, and thirteen
 questions that say what each role costs are what a project meets instead.
 
@@ -4700,6 +4702,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.7.12]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.12
 [3.7.11]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.11
 [3.7.10]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.10
 [3.7.9]: https://github.com/crenshawdev/cadence/releases/tag/v3.7.9
