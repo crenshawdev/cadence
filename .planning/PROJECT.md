@@ -204,7 +204,19 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**No cycle open.** `/cad-phase add` is what opens the next one.
+**`excerpt folds in, the binary owns process`, opened 2026-09-05.** This cycle
+ships as `4.0.0`: `cadence-core` is rewritten whole in Rust as a
+session-resident server, one process per session shared by the main thread and
+every subagent. The binary owns truth about process, the model owns engineering
+judgment, the skill orchestrates and holds no hidden state machine. Four phases
+on `cadence/binary-owns-process`. The design is
+`/projects/cadence-v4-architecture.md`; `ROADMAP.md` carries the execution
+order and three open questions.
+
+**The frozen reference is the tag `v3.7.12`** at commit `c39bbd8c`, and the
+maintenance line is the branch `3.x` cut from it. Phase 1 is a spike and runs
+first because the 3.x baseline it measures cannot be taken once 3.x stops being
+what runs.
 
 **`v3.7.12 - what each role runs at`, opened 2026-09-04, closed 2026-09-05.**
 Three phases, 61 commits off `main` (17 feat and 4 fix against 28 docs, 7
