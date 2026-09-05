@@ -83,7 +83,7 @@ triaged by hand and are not carried into these phases.
 
 ## Phases
 
-- [ ] **Phase 1: The crate skeleton** - a named binary that builds, cross-compiles to four targets from one CI job, and serves a minimal MCP tool surface
+- [x] **Phase 1: The crate skeleton** - a named binary that builds, cross-compiles to four targets from one CI job, and serves a minimal MCP tool surface
 - [ ] **Phase 2: The golden harness** - fixtures at the frozen tag and a Rust test that diffs the binary against recorded JavaScript output
 - [ ] **Phase 3: One vertical slice** - `/cad-execute` end to end, the shape every other command follows
 - [ ] **Phase 4: The release path** - a tagged release that publishes four checksum-verified archives, and a SessionStart hook that fetches and installs the pinned binary

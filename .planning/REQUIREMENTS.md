@@ -596,9 +596,9 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BIN-01 | Phase 1 | Pending |
-| BIN-02 | Phase 1 | Pending |
-| REL-01 | Phase 1 | Pending |
+| BIN-01 | Phase 1 | Complete |
+| BIN-02 | Phase 1 | Complete |
+| REL-01 | Phase 1 | Complete |
 | REL-02 | Phase 4 | Pending |
 | BOT-01 | Phase 4 | Pending |
 | BOT-02 | Phase 4 | Pending |

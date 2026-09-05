@@ -1,6 +1,6 @@
 # State
 
 Phase: 1 of 4 (The crate skeleton)
-Status: executed
-Next: /cad-verify 1
+Status: phase complete
+Next: /cad-context 2
 Updated: 2026-09-05
