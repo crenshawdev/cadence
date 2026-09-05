@@ -26,7 +26,6 @@
 //     event (family lifecycle, event dispatch, plan/role/read) before resolving,
 //     so a dispatch site pays one seam call instead of two. The CLOSE half
 //     (return/checkpoint, --tokens) stays with the caller, which alone sees it.
-//   table                                  dump the routing table
 //
 // Config is layered: a global file (see GLOBAL_CONFIG below) provides defaults,
 // the per-repo --file (default .planning/config.json) overrides it, and the
@@ -137,32 +136,26 @@ import { testSeamOpen } from './lib/test-seam.mjs';
 import { answeredSurfaces } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// TABLE is loaded lazily, inside the dispatch try block below, so a missing
-// or malformed shipped route-table.json degrades to {ok:false} instead of
-// crashing at import time. CADENCE_ROUTE_TABLE overrides the path ONLY when
+// config.schema.json is loaded lazily, inside the dispatch try block below, so
+// a missing or malformed shipped file degrades to {ok:false} instead of
+// crashing at import time. CADENCE_CONFIG_SCHEMA overrides the path ONLY when
 // the `CADENCE_TEST_SEAM` sentinel holds (lib/test-seam.mjs); without it the
 // variable is ignored and the shipped file is read, silently - this constant
 // resolves at module load, before any dispatch exists to carry a warning. The
-// gate is the point: this table sets every review trigger's gate, so an
+// gate is the point: this file now sets every review trigger's gate, so an
 // ungated override turns a blocking gate off.
-let TABLE;
-const TABLE_PATH = (testSeamOpen() && process.env.CADENCE_ROUTE_TABLE)
-  || join(HERE, '..', 'route-table.json');
-
-// config.schema.json, loaded the same way and for the same reasons - lazily,
-// inside the dispatch try block, with CADENCE_CONFIG_SCHEMA honoured ONLY under
-// the `CADENCE_TEST_SEAM` sentinel. The exact shape `config.mjs`'s SCHEMA_PATH
-// already has, deliberately: the two faces read one file and must not disagree
-// about where it is or when an override is allowed to move it.
 //
-// route-table.json's `_meta` used to state that route.mjs never reads the
-// schema, and the reason was real: reading a schema DEFAULT would make "the
-// schema says flagship" indistinguishable from "the user asked for flagship".
-// That reason died with the `null` sentinel. The twelve
-// `review.triggers.<t>.{gate,tier,effort}` rows carry real defaults now and
-// nothing else answers them, so the schema is not a second opinion here - it is
-// the only one, which is why an unreadable schema is fatal rather than
-// fallen back on.
+// The exact shape `config.mjs`'s SCHEMA_PATH already has, deliberately: the two
+// faces read one file and must not disagree about where it is or when an
+// override is allowed to move it.
+//
+// The routing data file this resolver used to read declared, in its own
+// `_meta`, that route.mjs never reads the schema - and the reason was real:
+// reading a schema DEFAULT would make "the schema says flagship"
+// indistinguishable from "the user asked for flagship". That reason died with
+// the `null` sentinel. Every default this resolve answers with lives in the
+// schema and nowhere else, so it is not a second opinion here - it is the only
+// one, which is why an unreadable schema is fatal rather than fallen back on.
 let SCHEMA;
 const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
   || join(HERE, '..', 'config.schema.json');
@@ -221,11 +214,11 @@ const schemaValues = (key) => {
 // asserting a gate nobody declared.
 const FLOOR_GATE = 'blocking';
 
-// The table's own risk-surface vocabulary, which is what `answeredSurfaces`
-// scopes a project's answer against - a table naming fewer categories is
-// honoured.
-const riskCategories = () => (Array.isArray(TABLE.risk_surface_categories)
-  ? TABLE.risk_surface_categories.filter((c) => typeof c === 'string' && c) : []);
+// The risk-surface vocabulary, which is what `answeredSurfaces` scopes a
+// project's answer against. It is the `review.triggers.risk_surface.surfaces`
+// key's own `values` - `schemaValues` already drops non-strings - so a schema
+// naming fewer categories is honoured, exactly as a narrower table was.
+const riskCategories = () => schemaValues('review.triggers.risk_surface.surfaces');
 
 // The ONE key that can route a dispatch below the computed floor, spelled once
 // so the schema, the reader, the reason and the refusal cannot drift apart. It
@@ -853,7 +846,7 @@ function resolve(opts) {
   // The close half stays with the caller: only it sees the return and its token
   // figure. Best effort like the routing event below - `appendEvent` never
   // throws, and a bracket that could not be written changes no envelope byte.
-  // (The one unbracketed arm is a route-table that failed to PARSE: that fails
+  // (The one unbracketed arm is a schema that failed to PARSE: that fails
   // before argument dispatch, so the caller's close then shows as unpaired in
   // `trace render` - which is signal, not noise, on an arm that rare.)
   if (opts.bracketRead && tracePhase !== null) {
@@ -1501,16 +1494,10 @@ function parseArgs(a) {
 }
 
 try {
-  try {
-    TABLE = JSON.parse(readFileSync(TABLE_PATH, 'utf8'));
-  } catch (e) {
-    fail('bad-table', `cannot read/parse ${TABLE_PATH}: ${e.message}`,
-      'restore route-table.json at the path the detail names - a partial or damaged plugin install is the usual cause - then re-run');
-  }
-  // FATAL, like the table beside it: every review gate, tier and effort this
-  // resolve answers is a schema default now, so a schema it cannot read is a
-  // bundle it cannot build. Falling back to a hand-kept copy of the defaults is
-  // exactly the second opinion this phase deleted.
+  // FATAL: every review gate, tier and effort this resolve answers is a schema
+  // default now, and so is every role's start rung, so a schema it cannot read
+  // is a bundle it cannot build. Falling back to a hand-kept copy of the
+  // defaults is exactly the second opinion this phase deleted.
   try {
     SCHEMA = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'));
   } catch (e) {
@@ -1528,10 +1515,8 @@ try {
     const o = parseArgs(argv.slice(1));
     if (o.usage) out({ ok: false, reason: 'usage', detail: o.usage });
     else resolve(o);
-  } else if (cmd === 'table') {
-    out({ ok: true, table: TABLE });
   } else {
-    out({ ok: false, reason: 'usage', detail: 'subcommand: resolve | table' });
+    out({ ok: false, reason: 'usage', detail: 'subcommand: resolve' });
   }
 } catch (e) {
   if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });

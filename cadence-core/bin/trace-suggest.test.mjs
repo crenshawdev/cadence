@@ -373,7 +373,7 @@ test('SGT-01: R3 proposes the rung the escalated resolves actually landed on', (
   assert.ok(s, JSON.stringify(out));
   assert.equal(s.direction, 'raise');
   assert.match(s.current, /unset/);
-  assert.match(s.current, /shipped/);
+  assert.match(s.current, /the schema default decides it/);
   assert.equal(s.proposed, 'xhigh');
 });
 

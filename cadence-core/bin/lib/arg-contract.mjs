@@ -1301,7 +1301,6 @@ export const CONTRACTS = {
       // opposite arms, the union versus fail-closed.
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
     },
-    table: {},
   },
   'worktree-base.mjs': {
     '*': {

@@ -8,7 +8,7 @@ import { writeFileSync, mkdtempSync, mkdirSync, chmodSync, readFileSync, existsS
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rungFile } from './lib/rung-agent.mjs';
+import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
 
 const ROUTE = join(dirname(fileURLToPath(import.meta.url)), 'route.mjs');
@@ -41,16 +41,14 @@ function rawCfg(body, name) {
 }
 
 // resolve() defaults to an isolated (missing) global layer; pass opts.global to
-// point CADENCE_GLOBAL_CONFIG at a real global file for merge tests,
-// opts.table to inject a route table through CADENCE_ROUTE_TABLE, and
-// opts.schema to inject a config schema through CADENCE_CONFIG_SCHEMA. Both
-// injections are gated: route.mjs reads either variable only when
-// CADENCE_TEST_SEAM is exactly `1`, so every fixture that sets a path sets the
-// sentinel beside it (lib/test-seam.mjs).
+// point CADENCE_GLOBAL_CONFIG at a real global file for merge tests, and
+// opts.schema to inject a config schema through CADENCE_CONFIG_SCHEMA. That
+// injection is gated: route.mjs reads the variable only when CADENCE_TEST_SEAM
+// is exactly `1`, so every fixture that sets a path sets the sentinel beside it
+// (lib/test-seam.mjs).
 function resolve(role, file, extra = [], opts = {}) {
   const args = ['resolve', '--role', role, ...(file ? ['--file', file] : []), ...extra];
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
-  if (opts.table) { env.CADENCE_ROUTE_TABLE = opts.table; env.CADENCE_TEST_SEAM = '1'; }
   if (opts.schema) { env.CADENCE_CONFIG_SCHEMA = opts.schema; env.CADENCE_TEST_SEAM = '1'; }
   try {
     return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
@@ -566,25 +564,6 @@ test('ARG-06: a flag-shaped value is refused BY NAME, never swallowed as the val
   assert.equal(good.attempt, 2);
 });
 
-test('table dumps the routing table - the five grids and the declared roles', () => {
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
-  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
-  assert.equal(r.ok, true);
-  assert.ok(Array.isArray(r.table.roles), 'roles is the declared ARRAY');
-  assert.ok(r.table.roles.includes('cad-planner'));
-  assert.ok(r.table.cells.shipped['cad-planner']);
-  assert.ok(r.table.review.shipped.plan);
-  assert.equal(r.table.verify.shipped, 'on');
-  // The whole top-level key set, pinned: the retired blocks are GONE, not
-  // merely unread, and a new one cannot appear without a reader.
-  assert.ok(r.table.tiers.shipped.plan);
-  assert.ok(r.table.efforts.shipped.plan);
-  assert.deepEqual(Object.keys(r.table).sort(),
-    ['_meta', 'cells', 'effort_names', 'efforts', 'gates', 'model_aliases', 'review',
-      'risk_surface_categories', 'roles', 'rung_order', 'stakes_order', 'tier_names',
-      'tiers', 'verify']);
-});
-
 // WATCHED FAILING AT 478b1ff, the tip of RVW-03's unpatched tree. Observed
 // there: `resolve` carried no `reviewer_tiers` and no `reviewer_efforts` at all,
 // so the two fields that reach a cross-model provider call were read at the fire
@@ -863,23 +842,33 @@ test('overrides layer: repo pin wins over a global pin', () => {
   assert.equal(r.model, 'fable');
 });
 
-// --- shipped route-table.json absent/malformed (#40) ------------------------
+// --- shipped config.schema.json absent/malformed (#40) ----------------------
 
-test('CADENCE_ROUTE_TABLE malformed degrades to ok:false, reason bad-table, no stack', () => {
-  const bad = join(dir, 'bad-table.json');
+test('an unreadable schema degrades to ok:false, reason bad-schema, no stack', () => {
+  // Both shapes of unreadable, one arm: a file that does not parse and a path
+  // with no file at all. Neither may reach the caller as a stack trace, and
+  // neither may resolve a bundle off remembered defaults - the schema is the
+  // ONLY statement of them now, so an unreadable one is fatal by design.
+  const bad = join(dir, 'bad-schema.json');
   writeFileSync(bad, '{ not json');
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: bad,
-    CADENCE_TEST_SEAM: '1' };
-  const raw = (() => {
-    try { return execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }); }
-    catch (e) { return e.stdout; }
-  })();
-  const lines = raw.split('\n').filter(Boolean);
-  assert.equal(lines.length, 1); // exactly one JSON line, no raw stack trace
-  const r = JSON.parse(lines[0]);
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'bad-table');
-  assert.match(r.detail, /bad-table\.json/);
+  const missing = join(dir, 'does-not-exist-schema.json');
+  for (const path of [bad, missing]) {
+    const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
+      CADENCE_CONFIG_SCHEMA: path, CADENCE_TEST_SEAM: '1' };
+    const raw = (() => {
+      try {
+        return execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-planner'],
+          { encoding: 'utf8', env });
+      } catch (e) { return e.stdout; }
+    })();
+    const lines = raw.split('\n').filter(Boolean);
+    assert.equal(lines.length, 1, path); // exactly one JSON line, no raw stack trace
+    const r = JSON.parse(lines[0]);
+    assert.equal(r.ok, false, path);
+    assert.equal(r.reason, 'bad-schema', path);
+    assert.match(r.detail, new RegExp(path.split('/').pop()));
+    assert.match(r.hint, /config\.schema\.json/);
+  }
 });
 
 // --- reported effort == the frontmatter that actually runs (#64) ------------
@@ -891,9 +880,6 @@ test('CADENCE_ROUTE_TABLE malformed degrades to ok:false, reason bad-table, no s
 // claude-subagent review actually runs at (`cad-reviewer` = high), so that
 // claim gets a test rather than a promise.
 const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agents');
-const SHIPPED_TABLE = JSON.parse(
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'route-table.json'), 'utf8'),
-);
 
 /** Frontmatter `effort:` of a shipped agent file. */
 function frontmatterEffort(agentName) {
@@ -902,80 +888,59 @@ function frontmatterEffort(agentName) {
   return (fm.match(/^effort:\s*(\S+)\s*$/m) || [])[1];
 }
 
-test('every rung a cell can name has an agent file carrying exactly that effort', () => {
+test('every rung the MAP names has an agent file carrying exactly that effort', () => {
   // The ladder-consistency row, and the one walk in this file that is
-  // legitimate under D-11: it compares two INDEPENDENT sources - the shipped
-  // table and the frontmatter on disk - rather than deriving its expectations
-  // from the thing under test. route.mjs REPORTS a rung's effort; the only
-  // thing that makes the report true is the file for that rung agreeing.
+  // legitimate under D-11: it compares two INDEPENDENT sources - the rung map
+  // and the frontmatter on disk - rather than deriving its expectations from
+  // the thing under test. route.mjs REPORTS a rung's effort; the only thing
+  // that makes the report true is the file for that rung agreeing.
+  //
+  // The whole map, where it used to be the subset the cells grid reached: with
+  // the grid gone, a config layer can name ANY rung of any role, so every one
+  // of them is now a rung a dispatch can land on.
   /** @type {Map<string,string>} agent-file stem -> the rung that produced it */
   const byName = new Map();
-  for (const [level, row] of Object.entries(SHIPPED_TABLE.cells)) {
-    for (const [role, cell] of Object.entries(row)) {
-      for (const rung of [cell.effort, cell.retry]) {
-        const stem = rungFile(role, rung);
-        assert.ok(stem, `${level}/${role} rung ${rung} has no file in RUNG_FILES`);
-        byName.set(stem, rung);
-      }
+  for (const [role, rungs] of Object.entries(RUNG_FILES)) {
+    for (const rung of Object.keys(rungs)) {
+      const stem = rungFile(role, rung);
+      assert.ok(stem, `${role} rung ${rung} has no file in RUNG_FILES`);
+      byName.set(stem, rung);
     }
   }
-  assert.equal(byName.size, 19, `routable agent names: ${[...byName.keys()].join(', ')}`);
+  assert.equal(byName.size, 30, `routable agent names: ${[...byName.keys()].join(', ')}`);
   for (const [name, rung] of byName) {
     assert.ok(existsSync(join(AGENTS, `${name}.md`)), `agents/${name}.md must exist`);
     assert.equal(frontmatterEffort(name), rung, `${name} frontmatter effort`);
   }
-  // The other direction is deliberately NOT asserted (phase 1, D-03): a rung
-  // file RUNG_FILES names that no cell reaches is the ordinary state of a
-  // ladder complete on disk while the cells name the subset they need.
-});
-
-test('table exposes rung_order, the five rungs the host accepts', () => {
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
-  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
-  assert.deepEqual(r.table.rung_order, ['low', 'medium', 'high', 'xhigh', 'max']);
 });
 
 // --- the injection is GATED behind CADENCE_TEST_SEAM (EXP-01) --------------
 
-test('CADENCE_ROUTE_TABLE without the sentinel is ignored; `table` is the shipped one', () => {
+test('CADENCE_CONFIG_SCHEMA without the sentinel is ignored, and silently', () => {
   // The attack the gate exists to refuse: a repo-supplied `.envrc` or
-  // devcontainer env block points the route table at a file whose
-  // `risk_surface` gate reads `off`, and the one trigger this repo blocks on
-  // goes quiet. Unset the sentinel and the variable is not read at all - and
-  // silently, with no warning field, because TABLE_PATH resolves at module
+  // devcontainer env block points the schema at a file whose `risk_surface`
+  // gate default reads `off`, and the one trigger this repo blocks on goes
+  // quiet. Unset the sentinel and the variable is not read at all - and
+  // silently, with no warning field, because SCHEMA_PATH resolves at module
   // load, before any dispatch exists to carry one.
-  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
-  t.review.shipped.risk_surface = 'off';
-  const hostile = join(dir, 'ungated-table.json');
-  writeFileSync(hostile, JSON.stringify(t));
+  const s = shippedSchema();
+  s.keys['review.triggers.risk_surface.gate'].default = 'off';
+  const hostile = writeSchema(s, 'ungated-schema.json');
 
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: hostile };
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
+    CADENCE_CONFIG_SCHEMA: hostile };
   delete env.CADENCE_TEST_SEAM; // hermetic: never inherit an open seam
-  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
+  const run = (e2) => JSON.parse(execFileSync('node',
+    [ROUTE, 'resolve', '--role', 'cad-planner'], { encoding: 'utf8', env: e2 }));
+  const r = run(env);
   assert.equal(r.ok, true);
-  assert.equal(r.table.review.shipped.risk_surface, 'blocking');
-  assert.deepEqual(r.table, SHIPPED_TABLE);
+  assert.equal(r.review.risk_surface, 'blocking', 'the shipped default stood');
+  assert.equal('warnings' in r, false);
 
   // The SAME file with the sentinel set DOES take, so the arm above is proving
   // the gate rather than a fixture path that never worked.
-  const opened = JSON.parse(execFileSync('node', [ROUTE, 'table'],
-    { encoding: 'utf8', env: { ...env, CADENCE_TEST_SEAM: '1' } }));
-  assert.equal(opened.table.review.shipped.risk_surface, 'off');
-});
-
-test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no stack', () => {
-  const missing = join(dir, 'does-not-exist-table.json');
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: missing,
-    CADENCE_TEST_SEAM: '1' };
-  const raw = (() => {
-    try { return execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-planner'], { encoding: 'utf8', env }); }
-    catch (e) { return e.stdout; }
-  })();
-  const lines = raw.split('\n').filter(Boolean);
-  assert.equal(lines.length, 1);
-  const r = JSON.parse(lines[0]);
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'bad-table');
+  const opened = run({ ...env, CADENCE_TEST_SEAM: '1' });
+  assert.equal(opened.review.risk_surface, 'off');
 });
 
 // --- the gate-enum hole (AC6) ------------------------------------------------
