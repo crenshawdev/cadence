@@ -316,9 +316,9 @@ function cmdTraceIgnore(root, opts) {
  * The values the `suggest` arm falls back to for the keys its rules NAME when
  * no config layer holds one - and only for the keys whose schema default is a
  * real value. A key defaulting to `null` is not in here on purpose: `null` is
- * the schema's sentinel for "no layer pins this, the stakes level decides it",
- * and the suggestion reports that state as unset rather than inventing the
- * value the level would fire (D-06).
+ * the schema's sentinel for "no layer pins this", and the suggestion reports
+ * that state as unset rather than inventing the value something else would fire
+ * (D-06).
  *
  * `cadence-core/config.schema.json` IS THE SOURCE OF TRUTH for these values -
  * its rows carry the defaults and the argument behind them. This map is the
@@ -336,13 +336,12 @@ const SUGGEST_KEY_DEFAULTS = Object.freeze({
 });
 
 /**
- * The gate ladder `cadence-core/route-table.json` states, resolved against THIS
- * file's own directory the way `route.mjs` resolves the same file - and without
- * honouring `CADENCE_ROUTE_TABLE`: an env-supplied ladder is the ungated
- * override class EXP-01 closed, and this one decides what a suggestion tells a
+ * The gate ladder `config.schema.json`'s `review.triggers.plan.gate` row
+ * declares, weakest first. `routeLadder` in ./core.mjs owns the read and states
+ * why the env override is not honoured; this decides what a suggestion tells a
  * user to set a review gate to.
  *
- * A table that cannot be read or parsed degrades to NO ladder, which makes the
+ * A schema that cannot be read or parsed degrades to NO ladder, which makes the
  * gate arm omit `proposed`. That omission is the report; no ladder is
  * substituted from memory here.
  * @returns {string[]|undefined}
@@ -352,9 +351,9 @@ function gateLadder() {
 }
 
 /**
- * The rung ladder `route-table.json` states, on the same terms as the gate one:
- * R3 compares its target against the rung a config layer set, and an absent
- * ladder omits the target rather than substituting an order from memory.
+ * The rung ladder `lib/rung-agent.mjs` states, on the same terms as the gate
+ * one: R3 compares its target against the rung a config layer set, and an
+ * absent ladder omits the target rather than substituting an order from memory.
  * @returns {string[]|undefined}
  */
 function rungLadder() {
@@ -400,10 +399,9 @@ function checkpointPlanTasks(dir, event) {
 /**
  * Everything the pure rules in `lib/trace-suggest.mjs` need to name a
  * direction, a current value and - where one can be READ - a target: the
- * resolved config value behind each key the record's own events reach, the gate
- * ladder, and the stakes level the record carries. Resolved HERE because that
- * file is pure and stays that way (D-05); it owns the rules, this owns the
- * reads.
+ * resolved config value behind each key the record's own events reach, and the
+ * two ladders. Resolved HERE because that file is pure and stays that way
+ * (D-05); it owns the rules, this owns the reads.
  *
  * Keyed off the RECORD rather than the schema's key space: a trigger that never
  * fired and a role that never resolved are keys no rule can name, so resolving
@@ -424,10 +422,6 @@ function suggestResolution(dir, render, config) {
   const triggers = config?.review?.triggers || {};
   const effort = config?.model?.effort || {};
   const events = Array.isArray(render?.events) ? render.events : [];
-  // The level the most recent `routing/resolve` event in scope carries, and
-  // nothing when the scope holds none - never a level the record does not
-  // carry.
-  let stakes = null;
   // One entry per counted checkpoint, in record order, so the rule can tell
   // "every one of them was measured" from "some were".
   /** @type {(number|null)[]} */
@@ -439,7 +433,6 @@ function suggestResolution(dir, render, config) {
       if (parsed) set(`review.triggers.${parsed.trigger}.gate`, triggers?.[parsed.trigger]?.gate);
     } else if (e.family === 'routing' && e.event === 'resolve') {
       if (typeof e.role === 'string' && e.role) set(`model.effort.${e.role}`, effort?.[e.role]);
-      if (typeof e.stakes === 'string' && e.stakes.trim()) stakes = e.stakes.trim();
     } else if (e.family === 'lifecycle' && e.event === 'checkpoint' && e.role === 'cad-executor') {
       checkpointTasks.push(checkpointPlanTasks(dir, e));
     }
@@ -449,7 +442,7 @@ function suggestResolution(dir, render, config) {
     config?.workflow?.max_plan_tasks ?? SUGGEST_KEY_DEFAULTS['workflow.max_plan_tasks']);
   const gates = gateLadder();
   const rungs = rungLadder();
-  return { values, ...(gates ? { gates } : {}), ...(rungs ? { rungs } : {}), stakes, checkpointTasks };
+  return { values, ...(gates ? { gates } : {}), ...(rungs ? { rungs } : {}), checkpointTasks };
 }
 
 // The grammar the SHARED `trace append|close` body judges its string flags by,

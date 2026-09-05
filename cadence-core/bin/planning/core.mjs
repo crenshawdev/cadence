@@ -31,6 +31,7 @@ import { parseUat, uatComplete } from '../lib/planning-files.mjs';
 import { READS_FILE, isReadsRotationMarker } from '../lib/read-trace.mjs';
 import { redactUrl } from '../lib/redact-url.mjs';
 import { requirePhaseArg, requireInt } from '../lib/require-int.mjs';
+import { RUNG_ORDER } from '../lib/rung-agent.mjs';
 import { emit } from '../lib/seam-io.mjs';
 import { testSeamOpen } from '../lib/test-seam.mjs';
 
@@ -151,7 +152,7 @@ function phaseSpellingCollision(dir, parsed) {
 // consumers below walk UP from it - `MANIFEST_PATH` with two `'..'` segments,
 // `routeLadder` with one - and both swallow their own read failure, so a `HERE`
 // one directory deeper does not crash: `pluginVersion` returns null and the
-// route ladder reads as "none declared", each under ok:true with a wrong answer
+// gate ladder reads as "none declared", each under ok:true with a wrong answer
 // (D-03). The `'..'` segments at those two consumers are therefore left exactly
 // as they were; compensating there instead would leave two different notions of
 // where the bin directory is. `resolve` rather than `join` so the value stays
@@ -164,9 +165,9 @@ const HERE = resolvePath(dirname(fileURLToPath(import.meta.url)), '..');
 // ONLY when the `CADENCE_TEST_SEAM` sentinel holds (lib/test-seam.mjs); without
 // it the variable is ignored and the shipped manifest is read, silently - this
 // constant resolves at module load, before any dispatch exists to carry a
-// warning. Same gate as CADENCE_CONFIG_SCHEMA and CADENCE_ROUTE_TABLE, and for
-// the same reason: every version-skew answer is computed from this file, which
-// is what QW-04 exists to keep honest.
+// warning. Same gate as CADENCE_CONFIG_SCHEMA, and for the same reason: every
+// version-skew answer is computed from this file, which is what QW-04 exists to
+// keep honest.
 const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
   || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
 
@@ -447,19 +448,49 @@ const DISPATCH_WINDOW_DEFAULTS = Object.freeze({
   'cad-plan-checker': 75000,
 });
 
+// The schema row whose `values` array IS each named ladder, now that the grids
+// keyed on a routing level are gone and every one of these vocabularies has
+// exactly one statement in the repo. An EXPLICIT map rather than a default
+// branch: `routeLadder` answers three different callers, and a key that fell
+// through to whichever row was hardcoded would hand one caller another's
+// vocabulary - measured here as `risk-check` reading the gate ladder as its
+// surface list and refusing every configured answer as unrecognised.
+const LADDER_ROWS = Object.freeze({
+  gates: 'review.triggers.plan.gate',
+  risk_surface_categories: 'review.triggers.risk_surface.surfaces',
+});
+
 /**
- * One ordered ladder off `route-table.json`, or `undefined` when the table is
- * unreadable, malformed, or names that ladder as anything but a non-empty array
- * of non-empty strings.
+ * One ordered ladder, or `undefined` when it cannot be read as a non-empty
+ * array of non-empty strings.
+ *
+ * `gates` and `risk_surface_categories` are the `values` arrays of the rows
+ * `LADDER_ROWS` names, in the order `config.schema.json` declares them - gates
+ * WEAKEST FIRST, which is the same order `route.mjs` reads "sits below
+ * blocking" off. The schema is read the way `route.mjs` reads it - beside
+ * `HERE` - but WITHOUT honouring `CADENCE_CONFIG_SCHEMA`: an env-supplied
+ * ladder is the ungated override class EXP-01 closed, and these decide what a
+ * suggestion tells a user to set a review gate to and which surface tokens a
+ * blocking gate's scope may name.
+ *
+ * `rung_order` is `RUNG_ORDER` from lib/rung-agent.mjs, the one statement of
+ * the rung ladder the agent-file map is held against.
+ *
+ * A schema that cannot be read or parsed degrades to NO ladder, which makes the
+ * gate arm omit `proposed`. That omission is the report; no ladder is
+ * substituted from memory here.
  * @param {string} key
  * @returns {string[]|undefined}
  */
 function routeLadder(key) {
+  const ok = (ladder) => (Array.isArray(ladder) && ladder.length
+    && ladder.every((g) => typeof g === 'string' && g) ? [...ladder] : undefined);
+  if (key === 'rung_order') return ok(RUNG_ORDER);
+  const row = Object.prototype.hasOwnProperty.call(LADDER_ROWS, key) ? LADDER_ROWS[key] : null;
+  if (!row) return undefined;
   try {
-    const table = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
-    const ladder = table[key];
-    if (Array.isArray(ladder) && ladder.length
-      && ladder.every((g) => typeof g === 'string' && g)) return ladder;
+    const schema = JSON.parse(readFileSync(join(HERE, '..', 'config.schema.json'), 'utf8'));
+    return ok(schema?.keys?.[row]?.values);
   } catch { /* unreadable or malformed: no ladder, and the omission says so */ }
   return undefined;
 }

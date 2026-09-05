@@ -201,11 +201,10 @@ test('R1: the live record this repo has been writing for four cycles emits a sug
         + ' - the gate caught work; the reviewer set is what looks miscalibrated',
       action: 'review.reviewers',
       // SGT-01, and read as the ONE-ARGUMENT degradation: this call passes no
-      // resolution, so the reviewer set resolves to nothing and the record
-      // carries no `routing/resolve` event to name a level with. The direction
-      // is the rule's own and is here whatever the caller passed.
+      // resolution, so the reviewer set resolves to nothing. The direction is
+      // the rule's own and is here whatever the caller passed.
       direction: 'raise',
-      current: 'unset: no config layer pins this, so the stakes level decides it',
+      current: 'unset: no config layer pins this, so the schema default decides it',
     },
     {
       kind: 'info',
@@ -300,9 +299,9 @@ test('R4: executor checkpoints at the floor suggest workflow.max_plan_tasks; oth
 //
 // The rules above say WHICH key; these say which way to move it and what it
 // holds now. The resolution is the caller's second argument - `planning.mjs`
-// reads the merged config, the gate ladder and the stakes level, this file
-// stays pure - and every case below passes one by hand, which is what keeps the
-// pure-render discipline intact.
+// reads the merged config and the two ladders, this file stays pure - and every
+// case below passes one by hand, which is what keeps the pure-render discipline
+// intact.
 
 /** The resolution shape `planning.mjs`'s suggest arm passes in. */
 const GATES = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
@@ -316,7 +315,6 @@ test('SGT-01: R1s gate arm moves DOWN, prints the value a layer set, and propose
   const out = suggestFromRender(render(twoEmptyFires('plan')), {
     values: { 'review.triggers.plan.gate': 'blocking' },
     gates: GATES,
-    stakes: 'shipped',
   });
   const s = out.find((x) => x.action === 'review.triggers.plan.gate');
   assert.ok(s, JSON.stringify(out));
@@ -325,33 +323,38 @@ test('SGT-01: R1s gate arm moves DOWN, prints the value a layer set, and propose
   assert.equal(s.proposed, 'deferred', 'the target is one step down the ladder the caller passed');
 });
 
-test('SGT-01: an unset gate names the level that decides it and carries NO proposed', () => {
-  const out = suggestFromRender(render(twoEmptyFires('plan')), { gates: GATES, stakes: 'shipped' });
+test('SGT-01: an unset gate names the DECIDER and carries NO proposed', () => {
+  const out = suggestFromRender(render(twoEmptyFires('plan')), { gates: GATES });
   const s = out.find((x) => x.action === 'review.triggers.plan.gate');
   assert.ok(s, JSON.stringify(out));
   assert.equal(s.direction, 'lower');
   assert.match(s.current, /unset/);
-  assert.match(s.current, /shipped/);
+  assert.match(s.current, /the schema default decides it$/);
   assert.ok(!/advisory|blocking|adjudicated/.test(String(s.current)),
-    'D-06: an unset gate names the DECIDER, never the value that level would fire');
+    'D-06: an unset gate names the DECIDER, never the value that default would fire');
   // Key presence, never a null comparison: `proposed: null` would satisfy an
   // equality check and is exactly what D-12 forbids.
   assert.equal('proposed' in s, false, 'an unset gate has no rung on the ladder to step down from');
 });
 
-test('SGT-01: a record carrying no stakes level says unset without naming one', () => {
-  const out = suggestFromRender(render(twoEmptyFires('plan')), { gates: GATES });
-  const s = out.find((x) => x.action === 'review.triggers.plan.gate');
-  assert.ok(s);
-  assert.match(s.current, /unset/);
-  assert.match(s.current, /the stakes level decides it$/);
+test('SGT-01: the sentence is the same however much the record carries', () => {
+  // It used to interpolate the level the record's own `routing/resolve` events
+  // carried, so a record with none said something different from one with some.
+  // Nothing about the record decides this wording any more (D-05).
+  const bare = suggestFromRender(render(twoEmptyFires('plan')), { gates: GATES })
+    .find((x) => x.action === 'review.triggers.plan.gate');
+  const full = suggestFromRender(render(twoEmptyFires('plan')),
+    { gates: GATES, rungs: RUNGS, values: {} })
+    .find((x) => x.action === 'review.triggers.plan.gate');
+  assert.ok(bare && full);
+  assert.equal(bare.current, full.current);
+  assert.equal(bare.current, 'unset: no config layer pins this, so the schema default decides it');
 });
 
 test('SGT-01: R1s reviewer arm moves UP - strengthen the set - and proposes nothing', () => {
   const out = suggestFromRender(render(twoEmptyFires('diff', { raised: 9 })), {
     values: { 'review.reviewers': ['openai'] },
     gates: GATES,
-    stakes: 'shipped',
   });
   const s = out.find((x) => x.action === 'review.reviewers');
   assert.ok(s, JSON.stringify(out));
@@ -362,10 +365,10 @@ test('SGT-01: R1s reviewer arm moves UP - strengthen the set - and proposes noth
 
 test('SGT-01: R3 proposes the rung the escalated resolves actually landed on', () => {
   const out = suggestFromRender(render([
-    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
-    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
-    resolve('cad-planner', { effort: 'high', stakes: 'shipped' }),
-  ]), { gates: GATES, stakes: 'shipped' });
+    resolve('cad-planner', { escalated: true, effort: 'xhigh' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh' }),
+    resolve('cad-planner', { effort: 'high' }),
+  ]), { gates: GATES });
   const s = out.find((x) => x.action === 'model.effort.cad-planner');
   assert.ok(s, JSON.stringify(out));
   assert.equal(s.direction, 'raise');
@@ -376,14 +379,13 @@ test('SGT-01: R3 proposes the rung the escalated resolves actually landed on', (
 
 test('SGT-01: R3 omits a target that names no raise against the rung in force', () => {
   const climbed = [
-    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
-    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh' }),
   ];
   const at = (rung) => suggestFromRender(render(climbed), {
     values: { 'model.effort.cad-planner': rung },
     gates: GATES,
     rungs: RUNGS,
-    stakes: 'shipped',
   }).find((x) => x.action === 'model.effort.cad-planner');
 
   const same = at('xhigh');
@@ -406,10 +408,10 @@ test('SGT-01: R3 omits a target that names no raise against the rung in force', 
 
 test('SGT-01: R3 keeps the record\'s rung when no layer pins the key, ladder or not', () => {
   const climbed = [
-    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
-    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh' }),
   ];
-  const unset = suggestFromRender(render(climbed), { gates: GATES, rungs: RUNGS, stakes: 'shipped' })
+  const unset = suggestFromRender(render(climbed), { gates: GATES, rungs: RUNGS })
     .find((x) => x.action === 'model.effort.cad-planner');
   assert.equal(unset.proposed, 'xhigh',
     'nothing is in force to compare against, and the rung is still a change from a default nobody stated');
@@ -417,7 +419,6 @@ test('SGT-01: R3 keeps the record\'s rung when no layer pins the key, ladder or 
   const noLadder = suggestFromRender(render(climbed), {
     values: { 'model.effort.cad-planner': 'high' },
     gates: GATES,
-    stakes: 'shipped',
   }).find((x) => x.action === 'model.effort.cad-planner');
   assert.equal('proposed' in noLadder, false,
     'no ladder means no comparison, and the omission IS the report');
@@ -427,7 +428,6 @@ test('SGT-01: R4 moves DOWN, prints the resolved ceiling, and prices nothing', (
   const out = suggestFromRender(render([checkpoint('cad-executor'), checkpoint('cad-executor')]), {
     values: { 'workflow.max_plan_tasks': 8 },
     gates: GATES,
-    stakes: 'shipped',
   });
   const s = out.find((x) => x.action === 'workflow.max_plan_tasks');
   assert.ok(s, JSON.stringify(out));
@@ -438,7 +438,7 @@ test('SGT-01: R4 moves DOWN, prints the resolved ceiling, and prices nothing', (
 
 test('SGT-01: R4 goes silent when every checkpoint it counted maps to a plan under the ceiling', () => {
   const events = [checkpoint('cad-executor'), checkpoint('cad-executor')];
-  const base = { values: { 'workflow.max_plan_tasks': 8 }, gates: GATES, stakes: 'shipped' };
+  const base = { values: { 'workflow.max_plan_tasks': 8 }, gates: GATES };
   const ceilingOf = (out) => out.find((x) => x.action === 'workflow.max_plan_tasks');
 
   assert.equal(ceilingOf(suggestFromRender(render(events), { ...base, checkpointTasks: [4, 3] })),
@@ -456,7 +456,7 @@ test('SGT-01: R4 goes silent when every checkpoint it counted maps to a plan und
   // D-10: the comparison is the RESOLVED ceiling, never a hardcoded 8. These
   // two counts are over 8 and under 12, so a hardcoded comparison speaks here.
   assert.equal(ceilingOf(suggestFromRender(render(events), {
-    values: { 'workflow.max_plan_tasks': 12 }, stakes: 'shipped', checkpointTasks: [9, 10],
+    values: { 'workflow.max_plan_tasks': 12 }, checkpointTasks: [9, 10],
   })), undefined, 'a project that raised the ceiling is told to lower one its plans never touched');
 });
 
@@ -553,7 +553,6 @@ test('D-12: an info receipt gains NONE of the three new keys, under every rule t
       'workflow.max_plan_tasks': 8,
     },
     gates: GATES,
-    stakes: 'shipped',
   };
   const outs = [
     // R2's re-arm receipt, R3's held-rung receipt and R5's spend receipt.
@@ -596,7 +595,6 @@ test('D-12: a suggest entry that cannot be priced omits `proposed` by key, never
   ]), {
     values: { 'review.reviewers': ['openai'], 'workflow.max_plan_tasks': 8 },
     gates: GATES,
-    stakes: 'shipped',
   });
   const priced = out.filter((x) => x.kind === 'suggest');
   assert.equal(priced.length, 2, JSON.stringify(out));
@@ -845,7 +843,7 @@ test('SGT-01: `trace suggest` returns a direction, a current, and a proposed whe
     for (let i = 0; i < MIN_ESCALATIONS_FOR_RUNG_SUGGESTION; i++) {
       appendEvent(planning, {
         phase: '1', family: 'routing', event: 'resolve',
-        role: 'cad-planner', escalated: true, effort: 'xhigh', stakes: 'shipped',
+        role: 'cad-planner', escalated: true, effort: 'xhigh',
       });
     }
 
@@ -867,13 +865,13 @@ test('SGT-01: `trace suggest` returns a direction, a current, and a proposed whe
     assert.ok(gate, JSON.stringify(keyed));
     assert.equal(gate.direction, 'lower');
     assert.equal(gate.current, 'blocking');
-    // `deferred`, not `advisory`: this arm reads the SHIPPED ladder in
-    // route-table.json, so it is the row that reddens if the gate this phase
-    // inserted is moved. Its position is the decision - a `blocking` gate whose
+    // `deferred`, not `advisory`: this arm reads the SHIPPED ladder - the
+    // `values` of config.schema.json's `review.triggers.plan.gate` row - so it
+    // is the row that reddens if the gate this phase inserted is moved. Its position is the decision - a `blocking` gate whose
     // fires keep coming back empty is proposed down to a mode that still stops
     // the LAND, never to `advisory`, which stops nothing.
     assert.equal(gate.proposed, 'deferred',
-      'the gate arm prices its target one step down the ladder route-table.json states');
+      'the gate arm prices its target one step down the ladder the plan-gate row states');
 
     const effort = keyed.find((s) => s.action === 'model.effort.cad-planner');
     assert.ok(effort, JSON.stringify(keyed));
@@ -1036,7 +1034,7 @@ test('R7: a one- and two-argument call return exactly what they returned before'
     checkpoint('cad-executor'), checkpoint('cad-executor'),
   ];
   const r = render(events, { 'cad-executor': { dispatches: 4, tokens: 300000 } });
-  const res = { values: { 'workflow.max_plan_tasks': 8 }, gates: GATES, stakes: 'shipped' };
+  const res = { values: { 'workflow.max_plan_tasks': 8 }, gates: GATES };
   const one = suggestFromRender(r);
   const two = suggestFromRender(r, res);
   // An absent third argument is silent - not an entry saying nothing.
