@@ -281,12 +281,34 @@ still carry the old numbers and have not been updated.**
 | GH-250 | `issue-filing.mjs:727-763` refuses on the local FILED read before forge resolution | 8 |
 | GH-251 | `lib/filing-decision.mjs:730-755` leaves GitLab lookup unmeasured and space-joins fingerprints | 8 |
 | GH-202 | `planning/risk-carry.mjs:119-127` does a source `lstatSync` outside carry error handling; the dispatcher maps it to generic `internal` (`planning.mjs:420-423`) | 13 |
+| GH-230 | No source defect: dispatch cache read grows with the SQUARE of turn count and nothing bounds dispatch length | 5 |
 
-**Three are UNKNOWN and were not guessed.** `GH-230` and `GH-178` have no local
-record naming a `cadence-core/` site, and `GH-140` (a Codex host adapter)
-describes an undecided question with no frozen implementation to point at.
-Assigning them a phase would be invention; they stay unhomed until someone reads
-the issue text on the tracker.
+The last three had no local record naming a source site and were left unhomed by
+the falsification pass rather than guessed. Read off the tracker 2026-09-06 and
+settled:
+
+- **`GH-230` goes to phase 5**, the phase that owns dispatch selection. It is a
+  DECISION, not a defect: cache read grows with the square of a dispatch's turn
+  count (median k of 1,118 to 1,348 across 129 paired workers on three
+  projects), because every turn re-reads the accumulated window, and nothing
+  bounds how long a dispatch runs. The most expensive single worker in the
+  corpus is one 114-turn executor at 22,234,463 cache-read tokens. The lever is
+  dispatch LENGTH for any role, not the executor specifically -
+  `cad-assumptions-analyzer` has the lowest k anywhere. If the binary owns
+  dispatch selection, a bound is expressible there for the first time.
+- **`GH-178` is ELIMINATED, not re-homed.** It reports that
+  `lib/read-trace.mjs:332` stores a Bash call's PROGRAM rather than its shape,
+  so `reads.jsonl` cannot tell a bare suite run from a targeted one. 4.0.0
+  drops the reads log entirely, so the defect has no surface left. This is the
+  third instance of the category that keeps being missed: **ask what 4.0.0 stops
+  doing, not only what Rust makes unrepresentable.** One real consequence
+  survives for phase 12: `lib/trace-suggest.mjs:601` folds `reads.jsonl` for
+  `/cad-suggest`'s R7 in-dispatch re-reading signal, so that signal goes with
+  the log and suggest must not silently report a conflated count as a clean one.
+- **`GH-140` is out of scope for 4.0.0 and stays open.** Whether Cadence grows a
+  Codex host adapter is a keep/cut call, and its own text says the Codex host
+  primitives it rests on are Codex describing itself, unverified against a real
+  install. Deciding it now would adapt a prose surface that is being replaced.
 
 ## Phases
 
