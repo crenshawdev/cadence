@@ -35,12 +35,12 @@
     "ok": true,
     "path": "src/auth.mjs",
     "result": "chain",
-    "text": "commit d13361766710e28b272adcd3fc8b0b220c6f4bc2 (d1336176)\ndate: 2000-01-01T00:00:00Z\nsubject: Golden fixture base\nphase: NOT RESOLVED - no phase directory on disk and no summary recovered from git history names this commit, so the record does not say which phase produced it\n  no close has pruned this commit yet, so no milestone label covers the gap\n  the commit message carries no conventional-commit scope to corroborate with\n  git records 30 path(s) touched by this commit:\n    .planning/ARCHIVE.md\n    .planning/CAPTURE.md\n    .planning/DECLINED.md\n    .planning/DOCS-CLAIMS.md\n    .planning/FILED.md\n    .planning/PROJECT.md\n    .planning/REQUIREMENTS.md\n    .planning/ROADMAP.md\n    .planning/STATE.md\n    .planning/config.json\n    ... and 20 more\nplan task: not yet joined\ndecision: not yet joined\ndeviation: not yet joined\nreview: not yet joined\ndeclared by: not yet joined",
+    "text": "commit 417ab8d8a3283a9a01a4e68b9a059614c953c837 (417ab8d8)\ndate: 2000-01-01T00:00:00Z\nsubject: Golden fixture base\nphase: NOT RESOLVED - no phase directory on disk and no summary recovered from git history names this commit, so the record does not say which phase produced it\n  no close has pruned this commit yet, so no milestone label covers the gap\n  the commit message carries no conventional-commit scope to corroborate with\n  git records 30 path(s) touched by this commit:\n    .planning/ARCHIVE.md\n    .planning/CAPTURE.md\n    .planning/DECLINED.md\n    .planning/DOCS-CLAIMS.md\n    .planning/FILED.md\n    .planning/PROJECT.md\n    .planning/REQUIREMENTS.md\n    .planning/ROADMAP.md\n    .planning/STATE.md\n    .planning/config.json\n    ... and 20 more\nplan task: not yet joined\ndecision: not yet joined\ndeviation: not yet joined\nreview: not yet joined\ndeclared by: not yet joined",
     "shown": 1,
     "total": 1,
     "entries": [
       {
-        "sha": "d13361766710e28b272adcd3fc8b0b220c6f4bc2",
+        "sha": "417ab8d8a3283a9a01a4e68b9a059614c953c837",
         "date": "2000-01-01T00:00:00Z",
         "subject": "Golden fixture base",
         "join": {

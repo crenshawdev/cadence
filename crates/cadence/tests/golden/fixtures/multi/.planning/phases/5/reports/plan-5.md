@@ -12,5 +12,5 @@ Open items:
 
 Verification notes (not findings):
 - `node cadence-core/bin/test.mjs prose` exits 0 at the final commit: 225 pass, 0 fail, no `budget-overrun` (AC7 for this plan's file; `cadence-core/bin/*.test.mjs` carries no `weight-budgets.json` entry, so no re-pin was due).
-- `detect-commands --root /data/code/cadence` returns `lint: null`, so there is no lint command to run - reported once and skipped. `npx tsc -p tsconfig.ci.json` exits 0 (it excludes `*.test.mjs`, so it covers the tree these tests read rather than the tests).
+- `detect-commands --root /data/srv/example-project` returns `lint: null`, so there is no lint command to run - reported once and skipped. `npx tsc -p tsconfig.ci.json` exits 0 (it excludes `*.test.mjs`, so it covers the tree these tests read rather than the tests).
 - The plan's flagged coupling resolves: `.planning/PROJECT.md` is tracked, `.github/workflows/test.yml` uses a plain `actions/checkout@v4` and runs `node cadence-core/bin/test.mjs prose` from the repo root, and the test resolves the repo root from `import.meta.url` rather than cwd. No fixture weakening was needed.

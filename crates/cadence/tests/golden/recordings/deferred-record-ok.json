@@ -13,9 +13,9 @@
     "--discriminator",
     "golden",
     "--base",
-    "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "c1b77b92dd9ce0e496f80c6154207588992a413b",
     "--head",
-    "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "c1b77b92dd9ce0e496f80c6154207588992a413b",
     "--payload",
     "<FIXTURE>/findings.json",
     "--dir",
@@ -51,15 +51,15 @@
     "discriminator": "golden",
     "round": 1,
     "record": "phases/1/DEFERRED-risk_surface-golden.json",
-    "base": "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
-    "head": "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
-    "base_id": "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
-    "head_id": "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "base": "c1b77b92dd9ce0e496f80c6154207588992a413b",
+    "head": "c1b77b92dd9ce0e496f80c6154207588992a413b",
+    "base_id": "c1b77b92dd9ce0e496f80c6154207588992a413b",
+    "head_id": "c1b77b92dd9ce0e496f80c6154207588992a413b",
     "findings": 1
   },
   "stderr": "",
   "files": {
-    ".planning/phases/1/DEFERRED-risk_surface-golden.json": "{\n  \"phase\": \"1\",\n  \"trigger\": \"risk_surface\",\n  \"discriminator\": \"golden\",\n  \"round\": 1,\n  \"base\": \"5191a92e44aaaf6dc22502ed847912e21c4ede7c\",\n  \"head\": \"5191a92e44aaaf6dc22502ed847912e21c4ede7c\",\n  \"base_id\": \"5191a92e44aaaf6dc22502ed847912e21c4ede7c\",\n  \"head_id\": \"5191a92e44aaaf6dc22502ed847912e21c4ede7c\",\n  \"findings\": [\n    {\n      \"file\": \"src/auth.mjs\",\n      \"line\": 2,\n      \"severity\": \"low\",\n      \"claim\": \"The policy is a literal.\",\n      \"failure_scenario\": \"A second policy would need a separate decision.\"\n    }\n  ]\n}\n"
+    ".planning/phases/1/DEFERRED-risk_surface-golden.json": "{\n  \"phase\": \"1\",\n  \"trigger\": \"risk_surface\",\n  \"discriminator\": \"golden\",\n  \"round\": 1,\n  \"base\": \"c1b77b92dd9ce0e496f80c6154207588992a413b\",\n  \"head\": \"c1b77b92dd9ce0e496f80c6154207588992a413b\",\n  \"base_id\": \"c1b77b92dd9ce0e496f80c6154207588992a413b\",\n  \"head_id\": \"c1b77b92dd9ce0e496f80c6154207588992a413b\",\n  \"findings\": [\n    {\n      \"file\": \"src/auth.mjs\",\n      \"line\": 2,\n      \"severity\": \"low\",\n      \"claim\": \"The policy is a literal.\",\n      \"failure_scenario\": \"A second policy would need a separate decision.\"\n    }\n  ]\n}\n"
   },
   "deleted": []
 }

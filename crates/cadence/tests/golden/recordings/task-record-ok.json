@@ -8,9 +8,9 @@
     "--slug",
     "golden-task",
     "--base",
-    "d13361766710e28b272adcd3fc8b0b220c6f4bc2",
+    "417ab8d8a3283a9a01a4e68b9a059614c953c837",
     "--head",
-    "e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a",
+    "84d4f299fedc04313f2764713fb5662bf754703f",
     "--text",
     "Record the source change.",
     "--dir",
@@ -42,10 +42,10 @@
   "stdout": {
     "ok": true,
     "slug": "golden-task",
-    "base": "d13361766710e28b272adcd3fc8b0b220c6f4bc2",
-    "head": "e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a",
-    "base_id": "d13361766710e28b272adcd3fc8b0b220c6f4bc2",
-    "head_id": "e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a",
+    "base": "417ab8d8a3283a9a01a4e68b9a059614c953c837",
+    "head": "84d4f299fedc04313f2764713fb5662bf754703f",
+    "base_id": "417ab8d8a3283a9a01a4e68b9a059614c953c837",
+    "head_id": "84d4f299fedc04313f2764713fb5662bf754703f",
     "record": "<FIXTURE>/.planning/tasks/golden-task/RECORD.md",
     "commits": 1,
     "files": 1,
@@ -56,8 +56,8 @@
   },
   "stderr": "",
   "files": {
-    ".planning/tasks/golden-task/RECORD.md": "# Task: golden-task\n\n## What shipped\n\n- Record the source change.\n\n## Commits\n\n| Task | Commit | Description |\n| --- | --- | --- |\n| 1 | e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a | Record golden source change |\n\n## Files\n\n### Task 1: golden-task\n\n- **Files:** src/auth.mjs\n",
-    ".planning/trace.jsonl": "{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.911Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-planner\",\"agent\":\"cad-planner\",\"model\":\"opus\",\"model_source\":\"roles.cad-planner.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":2}\n{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.936Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-executor\",\"agent\":\"cad-executor\",\"model\":\"opus\",\"model_source\":\"roles.cad-executor.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":1}\n{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.959Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-verifier\",\"agent\":\"cad-verifier\",\"model\":\"opus\",\"model_source\":\"roles.cad-verifier.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":1}\n{\"corr\":\"0\",\"phase\":0,\"ts\":\"<NOW>\",\"family\":\"outcome\",\"event\":\"task_record\",\"slug\":\"golden-task\",\"base\":\"d13361766710e28b272adcd3fc8b0b220c6f4bc2\",\"head\":\"e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a\",\"base_id\":\"d13361766710e28b272adcd3fc8b0b220c6f4bc2\",\"head_id\":\"e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a\",\"commits\":1,\"files\":1,\"written\":true}\n"
+    ".planning/tasks/golden-task/RECORD.md": "# Task: golden-task\n\n## What shipped\n\n- Record the source change.\n\n## Commits\n\n| Task | Commit | Description |\n| --- | --- | --- |\n| 1 | 84d4f299fedc04313f2764713fb5662bf754703f | Record golden source change |\n\n## Files\n\n### Task 1: golden-task\n\n- **Files:** src/auth.mjs\n",
+    ".planning/trace.jsonl": "{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.911Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-planner\",\"agent\":\"cad-planner\",\"model\":\"opus\",\"model_source\":\"roles.cad-planner.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":2}\n{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.936Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-executor\",\"agent\":\"cad-executor\",\"model\":\"opus\",\"model_source\":\"roles.cad-executor.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":1}\n{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.959Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-verifier\",\"agent\":\"cad-verifier\",\"model\":\"opus\",\"model_source\":\"roles.cad-verifier.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":1}\n{\"corr\":\"0\",\"phase\":0,\"ts\":\"<NOW>\",\"family\":\"outcome\",\"event\":\"task_record\",\"slug\":\"golden-task\",\"base\":\"417ab8d8a3283a9a01a4e68b9a059614c953c837\",\"head\":\"84d4f299fedc04313f2764713fb5662bf754703f\",\"base_id\":\"417ab8d8a3283a9a01a4e68b9a059614c953c837\",\"head_id\":\"84d4f299fedc04313f2764713fb5662bf754703f\",\"commits\":1,\"files\":1,\"written\":true}\n"
   },
   "deleted": []
 }

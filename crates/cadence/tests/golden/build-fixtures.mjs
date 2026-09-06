@@ -100,7 +100,15 @@ const provenance = {};
 function git(...args) {
   return execFileSync('git', args, { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024 });
 }
-function tagBytes(path) { return git('show', `${tag}:${path}`); }
+// Neutralize the authoring repository path in frozen tag content. A fixture
+// carrying a live machine's repo root makes recordings that echo it machine-
+// specific: <REPO> substitution fires there, so drift passes only there.
+// Keep every other absolute path, including /tmp prose, intact (D-12 / M02):
+// faithfully echoing fixture input must still pass, not be scrubbed away.
+function sanitizeTagContent(bytes) {
+  return Buffer.from(bytes.toString().replaceAll('/code/cadence', '/srv/example-project'));
+}
+function tagBytes(path) { return sanitizeTagContent(git('show', `${tag}:${path}`)); }
 function tagPaths(prefix) {
   return git('ls-tree', '-r', '--name-only', '-z', tag, '--', prefix)
     .toString().split('\0').filter(Boolean).sort();
@@ -133,7 +141,7 @@ function bundle(name) {
     text(path, text, seeded = false) {
       const copied = provenance[name].tag_paths.find(p => p.to === path);
       if (copied) {
-        // A derived file is no longer a verbatim tag copy. Keep its origin
+        // A derived file is more than a path-sanitized tag copy. Keep its origin
         // beside the synthesis record instead of making that claim twice.
         provenance[name].tag_paths = provenance[name].tag_paths.filter(p => p !== copied);
         (provenance[name].derived_from ??= []).push(copied);

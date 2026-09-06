@@ -9,9 +9,9 @@
     "--phase",
     "1",
     "--base",
-    "d13361766710e28b272adcd3fc8b0b220c6f4bc2",
+    "417ab8d8a3283a9a01a4e68b9a059614c953c837",
     "--head",
-    "e0e0f7c8b6ed7e26f96185aaba2bd891e8b4c70a",
+    "84d4f299fedc04313f2764713fb5662bf754703f",
     "--staged",
     "--dir",
     "<FIXTURE>/.planning"

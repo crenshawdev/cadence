@@ -26,7 +26,7 @@
     "ok": true,
     "results": [
       {
-        "score": 4.3003,
+        "score": 4.3004,
         "source": "v3.6.0/phases/1/CONTEXT.md",
         "phase": 1,
         "snippet": "D-07 (trace.jsonl): `.planning/trace.jsonl` is gitignored, so it cannot be a"
