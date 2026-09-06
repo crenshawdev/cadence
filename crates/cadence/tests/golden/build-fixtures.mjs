@@ -136,18 +136,27 @@ function bundle(name) {
     },
   };
 }
-function live(name, archive, phase) {
+function live(name, archive, phase, incomplete = false) {
   const b = bundle(name);
   const prefix = `.planning/${archive}/${phase}/`;
   const paths = tagPaths(prefix);
   if (!paths.length) throw new Error(`missing frozen archive: ${prefix}`);
-  for (const path of paths) b.copy(path, `.planning/phases/${phase}/${path.slice(prefix.length)}`);
+  for (const path of paths) {
+    const suffix = path.slice(prefix.length);
+    if (incomplete && suffix.startsWith('reports/')) continue;
+    b.copy(path, `.planning/phases/${phase}/${suffix}`);
+  }
+  if (incomplete) provenance[name].omitted = paths.filter(p => p.slice(prefix.length).startsWith('reports/'));
   for (const name of topFiles) b.copy(`.planning/${name}`);
   const ids = new Set();
   for (const path of paths.filter(p => /\/PLAN-\d+\.md$/.test(p))) {
-    const requirements = tagBytes(path).toString().match(/^requirements:\n((?:  - [^\n]+\n)+)/m);
-    if (!requirements) throw new Error(`missing requirements in ${path}`);
-    for (const line of requirements[1].trim().split('\n')) ids.add(line.trim().slice(2));
+    const text = tagBytes(path).toString();
+    const inline = text.match(/^requirements: \[([^\]\n]*)\]$/m);
+    const block = text.match(/^requirements:\n((?:  - [^\n]+\n)+)/m);
+    if (!inline && !block) throw new Error(`missing requirements in ${path}`);
+    const values = inline ? inline[1].split(',').map(s => s.trim())
+      : block[1].trim().split('\n').map(s => s.trim().slice(2));
+    for (const id of values) if (id) ids.add(id);
   }
   const next = phase + 1;
   b.text('.planning/ROADMAP.md', `# Roadmap: Golden ${name}\n\n## Phases\n\n- [x] **Phase ${phase}: Archived phase** - Complete archive\n- [ ] **Phase ${next}: Next phase** - Unplanned continuation\n\n## Phase Details\n\n### Phase ${phase}: Archived phase\n**Goal:** Preserve the archived phase\n**Depends on:** Nothing\n\n### Phase ${next}: Next phase\n**Goal:** Continue the live cycle\n**Depends on:** Phase ${phase}\n`);
@@ -159,4 +168,8 @@ function live(name, archive, phase) {
 }
 
 live('slice', '_archive-v3.7.3', 1);
+live('multi', '_archive-v3.3.0', 5);
+live('incomplete', '_archive-v3.7.3', 1, true);
+const closed = bundle('closed');
+for (const path of tagPaths('.planning').filter(p => p.split('/').length === 2)) closed.copy(path);
 write(join(here, 'fixtures.json'), JSON.stringify(provenance, null, 2) + '\n');

@@ -1,0 +1,11 @@
+PLAN COMPLETE
+Plan: .planning/phases/5/PLAN-1.md
+Tasks: 4 of 4
+| Task | Commit | Note |
+|---|---|---|
+| 1 - Open the run-2 half-A report with its surface and invocations pinned | 7c92cf9 | Header, both invocation strings byte-identical to `.planning/DOCS-CLAIMS.md:28-29`, 14-file surface with byte counts, 14 unticked coverage boxes. Surface listed as a bullet list rather than a table so every `^\| ` line in the report is a claim row for task 4's mechanical count. |
+| 2 - Invocation 1, the four root docs | 09a8d47 | 182 claim rows across four tables (README, METHOD, INTERNALS, CONTRIBUTING); every row carries a verdict and a line-anchored location. 6 stale: README.md:56, METHOD.md:157-158, METHOD.md:309-310, METHOD.md:373-374, METHOD.md:421-428, INTERNALS.md:13. No doc edited. |
+| 3 - Invocation 2, the ten A-M workflow files | a00473a | Ten further tables, one per file in the invocation string. 0 stale in this half. `self-verify.mjs` was run at this sha and returned `problems:[]` over 21 checks, which decides the key-exists / invocation-exists / path-exists class in one pass; every default, returned shape and stated behaviour was checked individually against the code, several by running the seam (`planning.mjs audit`, `criteria-coverage`, `criteria-size`, `plan-overlap`, `status`, `worktree-base.mjs resolve`, `config.mjs check`). No doc under `cadence-core/workflows/` edited. |
+| 4 - State half A's counts and prove the surface was covered | b41821e | Closing line **356 accurate, 6 stale, 9 unverifiable - 371 claims**, stated as the row count with the arithmetic shown (385 `^\| ` lines minus 14 header rows = 371; 356+6+9 = 371). Stale rows listed first with file, line and correct value. All 14 coverage boxes ticked, 0 unticked. `git diff --name-only 4602393..HEAD` names only `.planning/phases/5/docs-verify-run-2-a.md`. |
+Deviations: none
+Open items: `README.md:146`'s "27 skills" is only true under the exclusion of the 6 `*-contract` agent-contract skills - a bare `ls skills/ | wc -l` returns 33. Recorded `accurate` with the derivation stated in the row's fourth cell, since the sentence pairs the count with "6 agent roles" and the 6 contract skills ARE those roles. AC6's derived count assertion (another plan) has to encode that same exclusion or it will redden on an untouched tree.

@@ -101,5 +101,270 @@
       ".planning/reads.jsonl",
       ".planning/CAPTURE.md"
     ]
+  },
+  "multi": {
+    "tag": "v3.7.12",
+    "tag_paths": [
+      {
+        "from": ".planning/_archive-v3.3.0/5/CONTEXT.md",
+        "to": ".planning/phases/5/CONTEXT.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/FINDINGS.json",
+        "to": ".planning/phases/5/FINDINGS.json"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/PLAN-1.md",
+        "to": ".planning/phases/5/PLAN-1.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/PLAN-2.md",
+        "to": ".planning/phases/5/PLAN-2.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/PLAN-3.md",
+        "to": ".planning/phases/5/PLAN-3.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/PLAN-4.md",
+        "to": ".planning/phases/5/PLAN-4.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/PLAN-5.md",
+        "to": ".planning/phases/5/PLAN-5.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/PLAN-6.md",
+        "to": ".planning/phases/5/PLAN-6.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/PLAN-7.md",
+        "to": ".planning/phases/5/PLAN-7.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/SUMMARY.md",
+        "to": ".planning/phases/5/SUMMARY.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/UAT.md",
+        "to": ".planning/phases/5/UAT.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/docs-verify-run-2-a.md",
+        "to": ".planning/phases/5/docs-verify-run-2-a.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/docs-verify-run-2-b.md",
+        "to": ".planning/phases/5/docs-verify-run-2-b.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/reports/plan-1.md",
+        "to": ".planning/phases/5/reports/plan-1.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/reports/plan-2.md",
+        "to": ".planning/phases/5/reports/plan-2.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/reports/plan-3.md",
+        "to": ".planning/phases/5/reports/plan-3.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/reports/plan-4.md",
+        "to": ".planning/phases/5/reports/plan-4.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/reports/plan-5.md",
+        "to": ".planning/phases/5/reports/plan-5.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/reports/plan-6.md",
+        "to": ".planning/phases/5/reports/plan-6.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/reports/plan-7.md",
+        "to": ".planning/phases/5/reports/plan-7.md"
+      },
+      {
+        "from": ".planning/_archive-v3.3.0/5/verifier-findings.json",
+        "to": ".planning/phases/5/verifier-findings.json"
+      },
+      {
+        "from": ".planning/config.json",
+        "to": ".planning/config.json"
+      },
+      {
+        "from": ".planning/PROJECT.md",
+        "to": ".planning/PROJECT.md"
+      },
+      {
+        "from": ".planning/ARCHIVE.md",
+        "to": ".planning/ARCHIVE.md"
+      },
+      {
+        "from": ".planning/DECLINED.md",
+        "to": ".planning/DECLINED.md"
+      },
+      {
+        "from": ".planning/FILED.md",
+        "to": ".planning/FILED.md"
+      },
+      {
+        "from": ".planning/DOCS-CLAIMS.md",
+        "to": ".planning/DOCS-CLAIMS.md"
+      }
+    ],
+    "synthesized": [
+      ".planning/ROADMAP.md",
+      ".planning/STATE.md",
+      ".planning/REQUIREMENTS.md"
+    ],
+    "seeded": [
+      ".planning/trace.jsonl",
+      ".planning/reads.jsonl",
+      ".planning/CAPTURE.md"
+    ]
+  },
+  "incomplete": {
+    "tag": "v3.7.12",
+    "tag_paths": [
+      {
+        "from": ".planning/_archive-v3.7.3/1/ADJUDICATION-plan-cad-plan-2a385615.json",
+        "to": ".planning/phases/1/ADJUDICATION-plan-cad-plan-2a385615.json"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/ADJUDICATION-risk_surface-plan-1-r2.json",
+        "to": ".planning/phases/1/ADJUDICATION-risk_surface-plan-1-r2.json"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/ADJUDICATION-risk_surface-plan-1.json",
+        "to": ".planning/phases/1/ADJUDICATION-risk_surface-plan-1.json"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/ADJUDICATION-risk_surface-plan-2.json",
+        "to": ".planning/phases/1/ADJUDICATION-risk_surface-plan-2.json"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/CONTEXT.md",
+        "to": ".planning/phases/1/CONTEXT.md"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/FINDINGS.json",
+        "to": ".planning/phases/1/FINDINGS.json"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/PLAN-1.md",
+        "to": ".planning/phases/1/PLAN-1.md"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/PLAN-2.md",
+        "to": ".planning/phases/1/PLAN-2.md"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/REVIEW-risk_surface-plan-1-r2.md",
+        "to": ".planning/phases/1/REVIEW-risk_surface-plan-1-r2.md"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/REVIEW-risk_surface-plan-1.md",
+        "to": ".planning/phases/1/REVIEW-risk_surface-plan-1.md"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/REVIEW-risk_surface-plan-2.md",
+        "to": ".planning/phases/1/REVIEW-risk_surface-plan-2.md"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/SUMMARY.md",
+        "to": ".planning/phases/1/SUMMARY.md"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/UAT.md",
+        "to": ".planning/phases/1/UAT.md"
+      },
+      {
+        "from": ".planning/_archive-v3.7.3/1/verifier-findings.json",
+        "to": ".planning/phases/1/verifier-findings.json"
+      },
+      {
+        "from": ".planning/config.json",
+        "to": ".planning/config.json"
+      },
+      {
+        "from": ".planning/PROJECT.md",
+        "to": ".planning/PROJECT.md"
+      },
+      {
+        "from": ".planning/ARCHIVE.md",
+        "to": ".planning/ARCHIVE.md"
+      },
+      {
+        "from": ".planning/DECLINED.md",
+        "to": ".planning/DECLINED.md"
+      },
+      {
+        "from": ".planning/FILED.md",
+        "to": ".planning/FILED.md"
+      },
+      {
+        "from": ".planning/DOCS-CLAIMS.md",
+        "to": ".planning/DOCS-CLAIMS.md"
+      }
+    ],
+    "synthesized": [
+      ".planning/ROADMAP.md",
+      ".planning/STATE.md",
+      ".planning/REQUIREMENTS.md"
+    ],
+    "seeded": [
+      ".planning/trace.jsonl",
+      ".planning/reads.jsonl",
+      ".planning/CAPTURE.md"
+    ],
+    "omitted": [
+      ".planning/_archive-v3.7.3/1/reports/plan-1.md",
+      ".planning/_archive-v3.7.3/1/reports/plan-2.md"
+    ]
+  },
+  "closed": {
+    "tag": "v3.7.12",
+    "tag_paths": [
+      {
+        "from": ".planning/ARCHIVE.md",
+        "to": ".planning/ARCHIVE.md"
+      },
+      {
+        "from": ".planning/DECLINED.md",
+        "to": ".planning/DECLINED.md"
+      },
+      {
+        "from": ".planning/DOCS-CLAIMS.md",
+        "to": ".planning/DOCS-CLAIMS.md"
+      },
+      {
+        "from": ".planning/FILED.md",
+        "to": ".planning/FILED.md"
+      },
+      {
+        "from": ".planning/PROJECT.md",
+        "to": ".planning/PROJECT.md"
+      },
+      {
+        "from": ".planning/REQUIREMENTS.md",
+        "to": ".planning/REQUIREMENTS.md"
+      },
+      {
+        "from": ".planning/ROADMAP.md",
+        "to": ".planning/ROADMAP.md"
+      },
+      {
+        "from": ".planning/STATE.md",
+        "to": ".planning/STATE.md"
+      },
+      {
+        "from": ".planning/config.json",
+        "to": ".planning/config.json"
+      }
+    ],
+    "synthesized": [],
+    "seeded": []
   }
 }
