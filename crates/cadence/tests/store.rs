@@ -165,3 +165,117 @@ fn concurrently_queued_callers_receive_distinct_outcomes() {
         assert_eq!(second.unwrap().items, [item("two")]);
     });
 }
+
+#[test]
+fn declined_identity_is_absent_from_all_recall_outputs_after_restart() {
+    use cadence::store::items::{ItemChange, RecallItems, revise};
+    fn query(projection: RecallItems<'_>, term: &str) -> (usize, Vec<String>) {
+        let snippets: Vec<String> = projection
+            .iter()
+            .filter(|r| r.text.contains(term))
+            .map(|r| r.text.clone())
+            .collect();
+        (snippets.len(), snippets)
+    }
+    let root = tempfile::tempdir().unwrap();
+    runtime().block_on(async {
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        let captured = item("unique-quasar");
+        let view = store
+            .request(Operation::AppendItem(captured.clone()))
+            .await
+            .unwrap();
+        assert_eq!(
+            query(view.recall_items(), "quasar"),
+            (1, vec!["unique-quasar".into()])
+        );
+        let filed = revise(
+            &captured,
+            ItemChange::File {
+                pointer: "GH-1".into(),
+                uncertain: false,
+            },
+        )
+        .unwrap();
+        store
+            .request(Operation::AppendItem(filed.clone()))
+            .await
+            .unwrap();
+        let declined = revise(
+            &filed,
+            ItemChange::Decline {
+                reason: "out of scope".into(),
+            },
+        )
+        .unwrap();
+        let view = store
+            .request(Operation::AppendItem(declined.clone()))
+            .await
+            .unwrap();
+        assert_eq!(query(view.recall_items(), "quasar"), (0, vec![]));
+        assert_eq!(view.lookup_item(&captured.id), Some(&declined));
+        drop(store);
+        let reopened = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        let view = reopened.request(Operation::Read).await.unwrap();
+        assert_eq!(query(view.recall_items(), "quasar"), (0, vec![]));
+        assert_eq!(
+            view.lookup_item(&captured.id).unwrap().disposition,
+            Disposition::Declined {
+                reason: "out of scope".into()
+            }
+        );
+    });
+}
+
+#[test]
+fn equal_prose_completion_and_guarded_uncertainty_preserve_identity() {
+    use cadence::store::items::{ItemChange, mark_filing_uncertain, revise};
+    let root = tempfile::tempdir().unwrap();
+    runtime().block_on(async {
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        let first = item("first");
+        let mut second = first.clone();
+        second.id = "second".into();
+        store
+            .request(Operation::AppendItem(first.clone()))
+            .await
+            .unwrap();
+        store.request(Operation::AppendItem(second)).await.unwrap();
+        let completed = revise(&first, ItemChange::Complete).unwrap();
+        let view = store
+            .request(Operation::AppendItem(completed.clone()))
+            .await
+            .unwrap();
+        assert_eq!(view.recall_items().iter().count(), 2);
+        let filed = revise(
+            &completed,
+            ItemChange::File {
+                pointer: "GH-42".into(),
+                uncertain: false,
+            },
+        )
+        .unwrap();
+        store
+            .request(Operation::AppendItem(filed.clone()))
+            .await
+            .unwrap();
+        assert!(mark_filing_uncertain(&filed, false).unwrap().is_none());
+        let uncertain = mark_filing_uncertain(&filed, true).unwrap().unwrap();
+        assert_eq!(uncertain.id, first.id);
+        assert_eq!(uncertain.disposition, filed.disposition);
+        assert!(uncertain.completed);
+        assert!(mark_filing_uncertain(&uncertain, true).unwrap().is_none());
+        let view = store
+            .request(Operation::AppendItem(uncertain))
+            .await
+            .unwrap();
+        assert_eq!(view.recall_items().iter().count(), 2);
+        assert!(view.lookup_item("first").unwrap().filing_uncertain);
+    });
+}

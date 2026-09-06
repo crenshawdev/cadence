@@ -1,4 +1,5 @@
 pub mod filesystem;
+pub mod items;
 pub mod model;
 pub mod writer;
 
