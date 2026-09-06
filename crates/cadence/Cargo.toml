@@ -20,7 +20,8 @@ publish = false
 # cold build.
 [dependencies]
 rmcp = { version = "3.2.0", features = ["server", "macros", "transport-io"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync"] }
+sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 # `preserve_order` keeps every key a file already had in the order it had them,
 # and `float_roundtrip` keeps a float this crate does not own byte-identical
@@ -57,3 +58,5 @@ globset = "0.4.20"
 # and phase 19 archive checksums are untouched. insta renders comparison
 # failures; tempfile holds writable fixtures and negative-control copies; regex
 # applies shared rules in the same dialect subset as the JavaScript recorder.
+[dev-dependencies]
+tempfile = "3"
