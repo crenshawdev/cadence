@@ -1,5 +1,409 @@
 use super::*;
 
+fn captured(text: &str) -> CapturedInputs {
+    let parsed = parse_roadmap(text).unwrap();
+    let mut phases: Vec<PhaseObservation> = Vec::new();
+    for phase in &parsed.phases {
+        if !phases
+            .iter()
+            .any(|p| p.relative_path == phase.relative_path)
+        {
+            phases.push(PhaseObservation {
+                relative_path: phase.relative_path.clone(),
+                plans: Observation::Absent,
+                summary: Observation::Absent,
+                uat: Observation::Absent,
+            });
+        }
+    }
+    CapturedInputs {
+        root: "/planning".into(),
+        root_probe: Observation::Present(()),
+        roadmap: Observation::Present(text.as_bytes().into()),
+        declarations: Some(Ok(parsed)),
+        phases,
+    }
+}
+
+struct TruthRow {
+    label: &'static str,
+    plans: bool,
+    summary: bool,
+    uat: Option<&'static str>,
+    expected: LifecycleStatus,
+}
+
+fn truth_rows() -> Vec<TruthRow> {
+    use LifecycleStatus::*;
+    [
+        ("no artifacts", false, false, None, Unplanned),
+        ("PLAN only", true, false, None, Planned),
+        ("SUMMARY only", false, true, None, Executed),
+        ("PLAN and SUMMARY", true, true, None, Executed),
+        (
+            "pass without PLAN",
+            false,
+            true,
+            Some("### 1. Check\nstatus: pass"),
+            Complete,
+        ),
+        (
+            "pass with PLAN",
+            true,
+            true,
+            Some("### 1. Check\nstatus: pass"),
+            Complete,
+        ),
+        (
+            "UAT without SUMMARY",
+            false,
+            false,
+            Some("### 1. Check\nstatus: pass"),
+            Unplanned,
+        ),
+        (
+            "PLAN UAT without SUMMARY",
+            true,
+            false,
+            Some("### 1. Check\nstatus: pass"),
+            Planned,
+        ),
+        ("empty UAT", false, true, Some(""), Executed),
+        (
+            "malformed UAT",
+            false,
+            true,
+            Some("not a checklist"),
+            Executed,
+        ),
+        (
+            "frontmatter complete",
+            false,
+            true,
+            Some("---\nstatus: complete\n---"),
+            Executed,
+        ),
+        (
+            "manual numbered prose",
+            false,
+            true,
+            Some("### Manual notes\n1. Check\nstatus: pass"),
+            Executed,
+        ),
+        (
+            "unknown status",
+            false,
+            true,
+            Some("### 1. Check\nstatus: constructor"),
+            Executed,
+        ),
+        (
+            "missing status",
+            false,
+            true,
+            Some("### 1. Check"),
+            Executed,
+        ),
+        (
+            "fail",
+            false,
+            true,
+            Some("### 1. Check\nstatus: fail"),
+            Executed,
+        ),
+        (
+            "pending",
+            false,
+            true,
+            Some("### 1. Check\nstatus: pending"),
+            Executed,
+        ),
+        (
+            "blocked",
+            false,
+            true,
+            Some("### 1. Check\nstatus: blocked"),
+            Executed,
+        ),
+        (
+            "skip reason",
+            false,
+            true,
+            Some("### 1. Check\nstatus: skipped\nreason: deferred"),
+            Complete,
+        ),
+        (
+            "skip no reason",
+            false,
+            true,
+            Some("### 1. Check\nstatus: skipped"),
+            Executed,
+        ),
+        (
+            "skip empty reason",
+            false,
+            true,
+            Some("### 1. Check\nstatus: skipped\nreason:"),
+            Executed,
+        ),
+        (
+            "skip space reason",
+            false,
+            true,
+            Some("### 1. Check\nstatus: skipped\nreason:   "),
+            Complete,
+        ),
+        (
+            "pass and reasoned skip",
+            false,
+            true,
+            Some("### 1. Check\nstatus: pass\n### 2. Skip\nstatus: skipped\nreason: later"),
+            Complete,
+        ),
+    ]
+    .into_iter()
+    .map(|(label, plans, summary, uat, expected)| TruthRow {
+        label,
+        plans,
+        summary,
+        uat,
+        expected,
+    })
+    .collect()
+}
+
+fn table_failures(
+    derive_fn: impl Fn(&CapturedInputs) -> Result<Lifecycle, DerivationError>,
+) -> Vec<&'static str> {
+    truth_rows()
+        .into_iter()
+        .filter_map(|row| {
+            let mut capture = captured("## Phases\n- [ ] **Phase 1: One**");
+            let phase = &mut capture.phases[0];
+            if row.plans {
+                phase.plans = Observation::Present(vec!["PLAN.md".into()]);
+            }
+            if row.summary {
+                phase.summary = Observation::Present(());
+            }
+            phase.uat = row.uat.map_or(Observation::Absent, |s| {
+                Observation::Present(s.as_bytes().into())
+            });
+            let answer = derive_fn(&capture).unwrap();
+            assert_eq!(answer.phases[0].plans.len(), usize::from(row.plans));
+            assert_eq!(
+                answer.phases[0].uat.is_some(),
+                row.uat.is_some_and(|s| !s.is_empty()),
+                "{}",
+                row.label
+            );
+            if let Some(text) = row.uat.filter(|text| !text.is_empty()) {
+                assert_eq!(answer.phases[0].uat.as_ref(), Some(&parse_uat(text).counts));
+            }
+            (answer.phases[0].status != row.expected).then_some(row.label)
+        })
+        .collect()
+}
+
+#[test]
+fn ac1_production_truth_table_and_plan_prerequisite_mutant() {
+    assert!(table_failures(derive).is_empty());
+    let rejected = table_failures(|capture| {
+        let mut answer = derive(capture)?;
+        for phase in &mut answer.phases {
+            if phase.status == LifecycleStatus::Complete && phase.plans.is_empty() {
+                phase.status = LifecycleStatus::Executed;
+            }
+        }
+        Ok(answer)
+    });
+    assert!(rejected.contains(&"pass without PLAN"));
+    assert!(!rejected.contains(&"pass with PLAN"));
+}
+
+#[test]
+fn ac1_removing_final_skip_reason_prevents_completion() {
+    let mut capture = captured("## Phases\n- [ ] **Phase 1: One**");
+    capture.phases[0].summary = Observation::Present(());
+    capture.phases[0].uat = Observation::Present(
+        b"### 1. Pass\nstatus: pass\n### 2. Skip\nstatus: skipped\nreason: later".to_vec(),
+    );
+    assert_eq!(
+        derive(&capture).unwrap().phases[0].status,
+        LifecycleStatus::Complete
+    );
+    capture.phases[0].uat =
+        Observation::Present(b"### 1. Pass\nstatus: pass\n### 2. Skip\nstatus: skipped".to_vec());
+    assert_eq!(
+        derive(&capture).unwrap().phases[0].status,
+        LifecycleStatus::Executed
+    );
+}
+
+#[test]
+fn ac1_empty_and_nonregular_plan_summary_use_existence() {
+    for directories in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join("ROADMAP.md"), "## Phases\n- [ ] **Phase 1: One**").unwrap();
+        let phase = root.join("phases/1");
+        std::fs::create_dir_all(&phase).unwrap();
+        let make = |name| {
+            if directories {
+                std::fs::create_dir(phase.join(name)).unwrap();
+            } else {
+                std::fs::write(phase.join(name), []).unwrap();
+            }
+        };
+        make("PLAN.md");
+        let answer = derive(&capture_inputs(root, &mut ArtifactFiles).unwrap()).unwrap();
+        assert_eq!(answer.phases[0].status, LifecycleStatus::Planned);
+        make("SUMMARY.md");
+        assert_eq!(
+            derive(&capture_inputs(root, &mut ArtifactFiles).unwrap())
+                .unwrap()
+                .phases[0]
+                .status,
+            LifecycleStatus::Executed
+        );
+        std::fs::write(phase.join("UAT.md"), "### 1. Pass\nstatus: pass").unwrap();
+        assert_eq!(
+            derive(&capture_inputs(root, &mut ArtifactFiles).unwrap())
+                .unwrap()
+                .phases[0]
+                .status,
+            LifecycleStatus::Complete
+        );
+    }
+}
+
+#[test]
+fn ac1_failures_cannot_derive_success() {
+    let mut capture = captured("## Phases\n- [ ] **Phase 1: One**");
+    capture.root_probe = Observation::Absent;
+    assert_eq!(
+        derive(&capture).unwrap_err().code(),
+        "missing-planning-root"
+    );
+    capture.root_probe = Observation::Present(());
+    capture.roadmap = Observation::Absent;
+    assert_eq!(derive(&capture).unwrap_err().code(), "missing-roadmap");
+    capture.roadmap = Observation::Present(vec![]);
+    capture.declarations = Some(parse_roadmap(""));
+    assert_eq!(derive(&capture).unwrap_err().code(), "invalid-roadmap");
+    let error = InputFailure {
+        path: "/planning/phases/1/UAT.md".into(),
+        category: InputFailureCategory::PermissionDenied,
+        diagnostic: None,
+    };
+    capture.phases[0].uat = Observation::Failed(error.clone());
+    assert_eq!(
+        derive(&capture).unwrap_err(),
+        DerivationError::InputFailure(error)
+    );
+}
+
+fn complete(phase: &mut PhaseObservation) {
+    phase.summary = Observation::Present(());
+    phase.uat = Observation::Present(b"### 1. Check\nstatus: pass".to_vec());
+}
+
+#[test]
+fn ac2_current_is_numeric_and_invariant_under_unequal_permutation() {
+    for order in [
+        [8, 2, 5],
+        [8, 5, 2],
+        [2, 5, 8],
+        [2, 8, 5],
+        [5, 2, 8],
+        [5, 8, 2],
+    ] {
+        let entries = order
+            .map(|n| format!("- [ ] **Phase {n}: P{n}**"))
+            .join("\n");
+        let mut capture = captured(&format!("## Phases\n{entries}"));
+        complete(&mut capture.phases[0]);
+        let answer = derive(&capture).unwrap();
+        assert_eq!(answer.current, Some(PhaseId(5.0)));
+        assert_eq!(answer.total, 3);
+        assert_eq!(
+            answer
+                .phases
+                .iter()
+                .map(|p| p.id.number())
+                .collect::<Vec<_>>(),
+            [2.0, 5.0, 8.0]
+        );
+        capture.phases[0].uat = Observation::Present(b"### 1. Check\nstatus: pending".to_vec());
+        assert_eq!(derive(&capture).unwrap().current, Some(PhaseId(2.0)));
+    }
+}
+
+#[test]
+fn ac2_numeric_ties_share_evidence_and_preserve_names_and_order() {
+    let mut capture = captured(
+        "## Phases\n- [ ] **Phase 2: Two**\n- [ ] **Phase 1.10: First tie**\n- [ ] **Phase 01: One**\n- [ ] **Phase 1.1: Second tie**",
+    );
+    complete(&mut capture.phases[0]);
+    capture.phases[1].plans = Observation::Present(vec!["PLAN-2.md".into()]);
+    let answer = derive(&capture).unwrap();
+    assert_eq!(capture.phases.len(), 3);
+    assert_eq!(answer.total, 4);
+    assert_eq!(answer.current, Some(PhaseId(1.1)));
+    assert_eq!(
+        answer
+            .phases
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect::<Vec<_>>(),
+        ["One", "First tie", "Second tie", "Two"]
+    );
+    assert_eq!(answer.phases[1].plans, answer.phases[2].plans);
+    assert_eq!(answer.phases[1].status, LifecycleStatus::Planned);
+    assert_eq!(answer.phases[2].status, LifecycleStatus::Planned);
+}
+
+#[test]
+fn ac2_closed_null_zero_differs_from_live_null_all_complete() {
+    let closed = derive(&captured("## Phases\nDone")).unwrap();
+    assert_eq!(
+        (closed.cycle, closed.current, closed.total),
+        (Cycle::Closed, None, 0)
+    );
+    let mut capture = captured("## Phases\n- [ ] **Phase 1: One**");
+    complete(&mut capture.phases[0]);
+    let live = derive(&capture).unwrap();
+    assert_eq!(
+        (live.cycle, live.current, live.total),
+        (Cycle::Live, None, 1)
+    );
+}
+
+#[test]
+fn ac2_checkbox_cannot_complete_and_invalid_lists_refuse() {
+    let unchecked = captured("## Phases\n- [ ] **Phase 1: One**");
+    let checked = captured("## Phases\n- [x] **Phase 1: One**");
+    assert_eq!(derive(&unchecked).unwrap(), derive(&checked).unwrap());
+    assert_eq!(
+        derive(&checked).unwrap().phases[0].status,
+        LifecycleStatus::Unplanned
+    );
+    for text in ["# No section", "## Phases\n- Phase 1: Bad"] {
+        let mut capture = unchecked.clone();
+        capture.roadmap = Observation::Present(text.as_bytes().into());
+        capture.declarations = Some(parse_roadmap(text));
+        assert_eq!(derive(&capture).unwrap_err().code(), "invalid-roadmap");
+    }
+    assert_eq!(
+        derive(&captured(
+            "## Phases\n- Phase 8: Bad\n- [ ] **Phase 1: Good**"
+        ))
+        .unwrap()
+        .total,
+        1
+    );
+}
+
 #[test]
 fn parsers_roadmap_normalization_bounds_and_classification() {
     for text in [
