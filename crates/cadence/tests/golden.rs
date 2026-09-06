@@ -1013,3 +1013,242 @@ fn normalization_preserves_moved_seed_lines_tree_wide() {
         );
     }
 }
+
+// Port phases add operation drivers here. A driver receives the writable bundle
+// and invocation, then collects the binary's serialized answer and mutations.
+type Driver = fn(&Path, &Invocation) -> Result<Answer>;
+type Activations = BTreeMap<String, Driver>;
+
+fn activations() -> Activations {
+    BTreeMap::new()
+}
+
+#[derive(Debug)]
+struct Accounting {
+    compared: Vec<String>,
+    pending: Vec<String>,
+    pending_operations: BTreeSet<String>,
+}
+
+fn walk(root: &Path, table: &Projections, active: &Activations) -> Result<Accounting> {
+    let golden = load(root)?;
+    validate_projections(table)?;
+    let mut expected_names = BTreeSet::new();
+    let mut operations = BTreeSet::new();
+    for invocation in &golden.invocations {
+        if !expected_names.insert(format!("{}.json", invocation.invocation)) {
+            return Err(format!(
+                "operations.json: duplicate invocation {}",
+                invocation.invocation
+            ));
+        }
+        operations.insert(invocation.operation.as_str());
+    }
+    for name in &expected_names {
+        if !golden.recordings.contains_key(name) {
+            return Err(format!(
+                "{}: missing recording",
+                root.join("recordings").join(name).display()
+            ));
+        }
+    }
+    for name in golden.recordings.keys() {
+        if !expected_names.contains(name) {
+            return Err(format!(
+                "{}: extra recording without manifest entry",
+                root.join("recordings").join(name).display()
+            ));
+        }
+    }
+    // Check every binding before any driver runs, including pending operations.
+    // argv is retained as provenance, not compared here: the recorder resolves
+    // manifest <BASE>/<HEAD> placeholders to fixture commit ids.
+    for invocation in &golden.invocations {
+        let name = format!("{}.json", invocation.invocation);
+        let recording = &golden.recordings[&name];
+        if recording.invocation != invocation.invocation
+            || recording.operation != invocation.operation
+            || recording.bundle != invocation.bundle
+            || recording.script != invocation.script
+            || recording.stdin != invocation.stdin
+        {
+            return Err(format!(
+                "{name}: recording metadata disagrees with operations.json"
+            ));
+        }
+    }
+    for operation in active.keys() {
+        if !operations.contains(operation.as_str()) {
+            return Err(format!(
+                "{operation}: activation names an unrecorded operation"
+            ));
+        }
+        if !table.contains_key(operation) {
+            return Err(format!("{operation}: activation has no projection"));
+        }
+    }
+    let mut accounting = Accounting {
+        compared: Vec::new(),
+        pending: Vec::new(),
+        pending_operations: BTreeSet::new(),
+    };
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    for invocation in &golden.invocations {
+        let Some(driver) = active.get(&invocation.operation) else {
+            accounting.pending.push(invocation.invocation.clone());
+            accounting
+                .pending_operations
+                .insert(invocation.operation.clone());
+            continue;
+        };
+        let scratch = materialize(root, &invocation.bundle)?;
+        let before = tree_text(scratch.path())?;
+        let answer = driver(scratch.path(), invocation)
+            .map_err(|e| format!("{}: {e}", invocation.invocation))?;
+        let roots = Roots {
+            fixture: scratch.path().to_str().unwrap(),
+            repo: repo.to_str().unwrap(),
+        };
+        let recording = &golden.recordings[&format!("{}.json", invocation.invocation)];
+        compare(recording, answer, &before, &roots, &golden.rules, table)?
+            .assert_matches(&invocation.invocation);
+        accounting.compared.push(invocation.invocation.clone());
+    }
+    assert_eq!(
+        accounting.compared.len() + accounting.pending.len(),
+        golden.recordings.len()
+    );
+    Ok(accounting)
+}
+
+#[test]
+fn every_recording_is_compared_or_pending() {
+    let accounting = walk(&golden_root(), &projections().unwrap(), &activations()).unwrap();
+    println!(
+        "compared={} pending={}",
+        accounting.compared.len(),
+        accounting.pending.len()
+    );
+    println!(
+        "pending operations: {}",
+        accounting
+            .pending_operations
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+}
+
+#[test]
+fn missing_recording_fails_walk_by_invocation() {
+    let scratch = scratch_goldens();
+    fs::remove_file(scratch.path().join("recordings/replay-check-slice.json")).unwrap();
+    let error = walk(scratch.path(), &projections().unwrap(), &activations()).unwrap_err();
+    assert!(error.contains("replay-check-slice.json"), "{error}");
+}
+
+#[test]
+fn extra_recording_fails_walk_by_file() {
+    let scratch = scratch_goldens();
+    fs::copy(
+        scratch.path().join("recordings/replay-check-slice.json"),
+        scratch.path().join("recordings/extra-recording.json"),
+    )
+    .unwrap();
+    let error = walk(scratch.path(), &projections().unwrap(), &activations()).unwrap_err();
+    assert!(error.contains("extra-recording.json"), "{error}");
+}
+
+// A control driver only: it never enters the real activation table.
+fn recorded_driver(bundle: &Path, invocation: &Invocation) -> Result<Answer> {
+    if tree_bytes(bundle)? != tree_bytes(&golden_root().join("fixtures").join(&invocation.bundle))?
+    {
+        return Err("driver did not receive the intact bundle".into());
+    }
+    let recording = read_json(
+        &golden_root()
+            .join("recordings")
+            .join(format!("{}.json", invocation.invocation)),
+    )?;
+    Ok(recorded_answer(&recording))
+}
+
+#[test]
+fn unrecorded_activation_fails_walk_by_operation() {
+    let mut active = activations();
+    active.insert("unrecorded-operation".into(), recorded_driver);
+    let error = walk(&golden_root(), &projections().unwrap(), &active).unwrap_err();
+    assert!(error.contains("unrecorded-operation"), "{error}");
+}
+
+#[test]
+fn empty_activated_projection_fails_walk_before_driver() {
+    let mut active = activations();
+    active.insert("replay-check".into(), recorded_driver);
+    let mut table = projections().unwrap();
+    table.insert("replay-check".into(), keys(&[]));
+    let error = walk(&golden_root(), &table, &active).unwrap_err();
+    assert!(
+        error.contains("replay-check") && error.contains("empty projection"),
+        "{error}"
+    );
+}
+
+#[test]
+fn absent_activated_projection_fails_walk_by_operation() {
+    let mut active = activations();
+    active.insert("replay-check".into(), recorded_driver);
+    let mut table = projections().unwrap();
+    table.remove("replay-check");
+    let error = walk(&golden_root(), &table, &active).unwrap_err();
+    assert!(
+        error.contains("replay-check") && error.contains("no projection"),
+        "{error}"
+    );
+}
+
+#[test]
+fn control_driver_accounts_for_each_activated_invocation() {
+    let golden = load(&golden_root()).unwrap();
+    let expected: BTreeSet<_> = golden
+        .invocations
+        .iter()
+        .filter(|i| i.operation == "replay-check")
+        .map(|i| i.invocation.clone())
+        .collect();
+    assert!(!expected.is_empty());
+    let mut active = activations();
+    active.insert("replay-check".into(), recorded_driver);
+    let accounting = walk(&golden_root(), &projections().unwrap(), &active).unwrap();
+    assert_eq!(
+        accounting.compared.into_iter().collect::<BTreeSet<_>>(),
+        expected
+    );
+    assert_eq!(
+        accounting.pending.len(),
+        golden.recordings.len() - expected.len()
+    );
+}
+
+fn wrong_replay_driver(bundle: &Path, invocation: &Invocation) -> Result<Answer> {
+    let mut answer = recorded_driver(bundle, invocation)?;
+    if let Some(stdout) = &mut answer.stdout
+        && stdout["status"] == "ok"
+    {
+        let original = stdout["replay"].as_bool().unwrap();
+        stdout["replay"] = Value::Bool(!original);
+    }
+    Ok(answer)
+}
+
+#[test]
+#[should_panic(expected = "golden mismatch: replay")]
+fn wrong_control_driver_fails_the_walk_through_insta() {
+    let mut active = activations();
+    active.insert("replay-check".into(), wrong_replay_driver);
+    walk(&golden_root(), &projections().unwrap(), &active).unwrap();
+}
