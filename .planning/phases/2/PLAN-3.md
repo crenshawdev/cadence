@@ -328,8 +328,11 @@ prevent - and it must not be read as any parity claim.
   ISO-8601 instant passes (the rule maps it back); the same file with one byte
   changed outside the normalized field fails naming
   `files[.planning/trace.jsonl]`; the same file with a SEEDED line's `ts`
-  changed to another valid instant fails naming that path (the line existed
-  pre-run, so no rule touches it); a `cursor set` answer whose
+  changed to another valid instant fails naming that path - and NOT because the
+  rule leaves seeded lines alone: the timestamp rule matches by field, so the
+  changed seeded `ts` is normalized to `<NOW>` too, and `<NOW>` differs from the
+  literal instant the recording committed for that pre-run line. The rejection
+  is expected; the reason is the substitution, not an exemption; a `cursor set` answer whose
   `stdout.cursor.updated` is a real day stamp passes; an answer whose `files`
   keys and whose `stdout` strings carry a live `tempfile::TempDir` absolute path
   where the recording carries `<FIXTURE>` passes once the root substitution runs

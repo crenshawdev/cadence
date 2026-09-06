@@ -36,8 +36,17 @@ here, and nothing under `cadence-core/` changes.
 
 - Running `node crates/cadence/tests/golden/record.mjs` twice in a row produces
   byte-identical files under `recordings/`, including the invocations that run
-  inside a throwaway git repository, and `grep -rlE '(/home/|/tmp/|/code/|/var/folders/|/Users/)'`
-  over `recordings/` finds nothing.
+  inside a throwaway git repository, and every absolute path matched by
+  `grep -rhoE '(/home/|/tmp/|/code/|/var/folders/|/Users/)[^"[:space:]]*'` over
+  `recordings/` also appears verbatim in a committed file under `fixtures/`.
+  The check is for MACHINE-SPECIFIC leakage, not for the character sequence:
+  fixture prose legitimately carries absolute paths - `fixtures/slice/.planning/ARCHIVE.md:1271`
+  reads "Something in the suite creates `/tmp/.git` and does not clean it up",
+  and at least ten fixture files across the `slice`, `multi`, `project`,
+  `closed`, `deferred`, `incomplete` and `malformed` bundles carry one - so an
+  operation that faithfully echoes fixture content MUST still pass. A path with
+  no verbatim fixture source is the failure. Normalizing these away instead
+  would hide the divergence the harness exists to catch (D-12).
 - A `cursor set` recording carries the rewritten `STATE.md` bytes with
   `Updated: <TODAY>` and a `trace append` recording carries the seeded
   `trace.jsonl` lines with their real `ts` values followed by one appended line
@@ -135,9 +144,14 @@ here, and nothing under `cadence-core/` changes.
   `risk-check run` recording's `argv` carries two 40-hex SHAs, and a third run
   under `TMPDIR=<another directory>` reproduces the same two SHAs
   byte-for-byte; the `risk-check run` and `debt-harvest` recordings have
-  `"exit": 0` and `stdout.ok` `true`; the `debt-harvest` recording's `stdout`
-  names the marker the bundle plants; the `forge detect` recording reports
-  `github` from the origin URL with `"exit": 0`; `grep -rl 'gpgsig\|GPG' crates/cadence/tests/golden/recordings`
+  `"exit": 0` and `stdout.ok` `true`; the `debt-harvest` recording's WRITTEN
+  `CAPTURE.md` bytes name the marker the bundle plants, and its `stdout` carries
+  the marker COUNT - `debt-harvest.mjs:132` emits `ok({root, file, markers, files, ...})`,
+  counts and paths only, so the marker text never reaches stdout; the
+  `forge detect` recording reports `github` read from PERSISTED CONFIGURATION
+  with `"exit": 0` - `forge.mjs:270` and `:306` take origin as a default only on
+  the `ask` branch, which a node-and-git-only recorder cannot reach, so the
+  bundle must seed the config the answer comes from; `grep -rl 'gpgsig\|GPG' crates/cadence/tests/golden/recordings`
   prints nothing.
 
 ### Task 2: A write operation's recording carries the bytes it wrote
@@ -330,9 +344,12 @@ here, and nothing under `cadence-core/` changes.
   ambient environment produces identical `recordings/`; a run with
   `CADENCE_GLOBAL_CONFIG`, `CADENCE_MANAGED_SETTINGS` and
   `CADENCE_USER_SETTINGS` each pointed at an empty file created with `mktemp`
-  produces identical `recordings/` (AC7); `grep -rlE '(/home/|/tmp/|/code/|/var/folders/|/Users/)' crates/cadence/tests/golden/recordings`
-  and `grep -rl "$(hostname)" crates/cadence/tests/golden/recordings` both
-  print nothing (AC6); the enumeration - `grep -rhoE '[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z?)?' crates/cadence/tests/golden/recordings | sort -u`
+  produces identical `recordings/` (AC7); every absolute path matched by
+  `grep -rhoE '(/home/|/tmp/|/code/|/var/folders/|/Users/)[^"[:space:]]*' crates/cadence/tests/golden/recordings`
+  also appears verbatim in a committed file under `fixtures/` (the M02 rule -
+  fixture prose carries absolute paths and echoing it faithfully must pass),
+  and `grep -rl "$(hostname)" crates/cadence/tests/golden/recordings`
+  prints nothing (AC6); the enumeration - `grep -rhoE '[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z?)?' crates/cadence/tests/golden/recordings | sort -u`
   compared with `comm -23` against the same extraction over
   `crates/cadence/tests/golden/fixtures`, `operations.json` and `record.mjs`
   together prints nothing (every date-shaped value left in a recording is a
