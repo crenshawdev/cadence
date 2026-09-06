@@ -7,20 +7,40 @@ Feeds: /cad-plan 2
 
 In: Fixture `.planning` trees derived from the frozen tag, a committed
 recorder script that runs the frozen JavaScript and writes its answers to
-recordings, a normalizer for the two clock-derived fields, a drift check that
+recordings, a normalizer for the clock-derived fields, a drift check that
 fails when a recording is stale, and the Rust comparison side - including a
-machine `code` field on the envelope's non-`ok` arms. The recorded operation
-set is the ~13 seam invocations `cadence-core/workflows/execute.md` names,
-scoped to what phase 3's `/cad-execute` vertical slice exercises, and it
-includes the three operations that need a real git repository.
+machine `code` field on the envelope's non-`ok` arms. It includes the three
+operations that need a real git repository.
+
+**The recorded operation set is the WHOLE parity surface, revised 2026-09-05.**
+It was scoped here to the ~13 seam invocations
+`cadence-core/workflows/execute.md` names, bounded by what the vertical slice
+exercises. That bound is removed: 4.0.0 ships at full parity with `v3.7.12`, so
+the harness records **72 runtime operations across 40 fixture bundles** - 43
+planning subcommands and 29 reached through the entry scripts, plus 4 tooling
+selectors, 76 inventoried in total. Recordings are authored here; each one's
+comparison assertion ACTIVATES in the port phase that implements its operation,
+so the set grows per module phase rather than closing at the slice.
+
+Normalization must cover every source of nondeterminism, not two clock fields:
+timestamps, correlation ids, absolute paths, git SHAs, hostname, PID, iteration
+order and locale. Read-side failure outputs carry absolute paths.
 
 Out: Any domain module in the binary - phase 2 builds the measuring
 instrument, not the thing measured, and the binary implements none of the
-recorded operations until phase 3. The other 20-odd modules under
-`cadence-core/bin/planning/` that the slice does not call. Any change to
+recorded operations until phase 3 begins the L0 kernel. Any change to
 `cadence-core/` itself, which stays frozen and byte-identical to `v3.7.12`.
 The release path, checksum pinning and the SessionStart bootstrap, which are
-phase 4. Vendoring excerpt.
+phase 19. Vendoring excerpt.
+
+**No longer Out: the modules the slice does not call.** That exclusion closed
+the recorded operation set at the slice and is withdrawn with the full-parity
+decision. What remains out is IMPLEMENTATION, never coverage - phase 2 records
+an operation's behavior whether or not any phase has ported it yet.
+
+**This phase cannot establish parity and its close must not be read as doing
+so.** Nothing is ported when it ends; it proves the instrument works, and every
+parity claim waits on phase 18.
 
 Deferred: None.
 
@@ -67,7 +87,7 @@ and the envelope change carry AC1, AC3, AC4 and AC5.
   `usage`, `unresolved-range`). Without a code on the Rust side, comparing
   `refused{reason:"the phase has no CONTEXT.md"}` against a recorded
   `{"reason":"no-phase-dir"}` is a diff with no verdict, and the `refused` arm
-  - the whole point of phase 3's validate-and-retry loop - is the arm with no
+  - the whole point of phase 4's validate-and-retry loop - is the arm with no
   golden. Rejected: comparing the arm tag only, which makes any two refusals
   of one operation indistinguishable. Evidence:
   `cadence-core/bin/planning.mjs:9-10`;
@@ -88,7 +108,7 @@ and the envelope change carry AC1, AC3, AC4 and AC5.
   `cursor.agrees`, `drift` - and NOT as a byte-diff of the JavaScript
   envelope, whose shape the design has already discarded. The write-side file
   bytes are the exception and ARE byte-diffed (D-08). Pinning the JSON shape
-  would make phase 3 delete the goldens rather than pass them; pinning nothing
+  would make phase 4 delete the goldens rather than pass them; pinning nothing
   sharp turns parity back into a claim. Evidence:
   `docs/rationale/architecture-v4.md:135-156` (3c), `:157-171` (3d item 1),
   `:212-232` (3e item 1).
@@ -167,7 +187,7 @@ and the envelope change carry AC1, AC3, AC4 and AC5.
   2026-09-05; `cadence-core/bin/planning.test.mjs:192-194` names midnight
   straddle as why it computes the day stamp per assertion.
 - D-15 (Dependencies): `insta` and `tempfile` are added as DEV-dependencies
-  only. They never reach the shipped binary, so phase 4's checksum
+  only. They never reach the shipped binary, so phase 19's checksum
   reproducibility and the `rust-toolchain.toml` pin at 1.98.1 are untouched,
   and the harness gets a real diff renderer instead of a hand-written one.
   Rejected: `serde_json::Value` equality plus a hand-rolled key-path diff,
@@ -197,7 +217,7 @@ and the envelope change carry AC1, AC3, AC4 and AC5.
 
 ## Flagged assumptions
 
-- The binary implements none of the recorded operations until phase 3, so this
+- The binary implements none of the recorded operations until phase 4, so this
   phase cannot literally satisfy the roadmap's "a Rust test that diffs the
   binary against recorded JavaScript output" - Confident; `crates/cadence/`
   holds only `main.rs`, `server.rs`, `envelope.rs` and `tests/mcp.rs`. The
@@ -211,12 +231,11 @@ and the envelope change carry AC1, AC3, AC4 and AC5.
   carries and an archived one drops would go unrecorded. If wrong, the
   fallback is capturing from `76e260ec`, the last commit reachable from the
   tag where `.planning/phases` was live.
-- `ROADMAP.md:119` is STALE and was not corrected by this pass - Confident;
-  it says the harness records "the operations phase 4 will implement", but the
-  2026-09-05 reorder made phase 4 the release path and phase 3 the vertical
-  slice (`ROADMAP.md:123-135`, `:136-153`). The correct reading is recorded in
-  the scope boundary above. Fixing the roadmap line is `/cad-phase edit`'s
-  job, not this workflow's.
+- ~~`ROADMAP.md:119` is STALE and was not corrected by this pass~~ - **FIXED
+  2026-09-05.** It said the harness records "the operations phase 4 will
+  implement", which the 2026-09-05 reorder had already falsified. The roadmap
+  rewrite to nineteen phases corrected it to "the operations phases 3 through
+  16 will implement" and moved the release path to phase 19.
 - The recorder's throwaway git repository reproduces byte-identically across
   machines - Unclear; commit hashes depend on author, committer and timestamp,
   and the three git-dependent operations take `--base`/`--head` as caller

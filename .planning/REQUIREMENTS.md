@@ -599,9 +599,9 @@ section only, bounded at the next `## ` heading.
 | BIN-01 | Phase 1 | Complete |
 | BIN-02 | Phase 1 | Complete |
 | REL-01 | Phase 1 | Complete |
-| REL-02 | Phase 4 | Pending |
-| BOT-01 | Phase 4 | Pending |
-| BOT-02 | Phase 4 | Pending |
+| REL-02 | Phase 19 | Pending |
+| BOT-01 | Phase 19 | Pending |
+| BOT-02 | Phase 19 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
