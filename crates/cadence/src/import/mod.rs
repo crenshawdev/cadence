@@ -415,6 +415,43 @@ impl<I: ConfigIo> Session<I> {
         }
         self.store.request(operation).await
     }
+    pub async fn derivation_view(&self) -> Result<View> {
+        self.config()?;
+        self.store.request(Operation::ReadVerified).await
+    }
+
+    /// Full snapshot data, retaining import ownership and historical evidence.
+    /// The supplied generation is checked again by the writer on its owner thread.
+    pub async fn commit_derivation(&self, expected: &View, data: Value) -> Result<View> {
+        let current = self.derivation_view().await?;
+        if current.snapshot.generation != expected.snapshot.generation
+            || current.snapshot.integrity != expected.snapshot.integrity
+        {
+            return Err(Error::Conflict(
+                cadence::store::writer::STALE_SNAPSHOT.into(),
+            ));
+        }
+        if !data.is_object() || data.get("import") != Some(&serde_json::to_value(&self.manifest)?) {
+            return Err(Error::Invalid(
+                "derivation replacement must preserve import manifest".into(),
+            ));
+        }
+        for field in ["source_evidence", "archive", "cursor"] {
+            if data.get(field) != current.snapshot.data.get(field) {
+                return Err(Error::Invalid(format!(
+                    "derivation replacement changed provenance: {field}"
+                )));
+            }
+        }
+        self.store
+            .request(Operation::CompareRewriteSnapshot {
+                expected_generation: expected.snapshot.generation,
+                expected_integrity: expected.snapshot.integrity.clone(),
+                data,
+            })
+            .await
+    }
+
     pub async fn set_config(&self, layer: Layer, key: &str, value: Value) -> Result<View> {
         write::ConfigWriter {
             root: self.root.clone(),

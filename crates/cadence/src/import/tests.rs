@@ -1150,3 +1150,54 @@ fn same_factory_recovers_interrupted_import_then_uses_active_policy() {
         ));
     });
 }
+
+#[test]
+fn derivation_snapshot_preserves_full_data_and_restart_manifest() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("STATE.md"),
+        "Phase: 3 of 4\nStatus: paused\nNext: Exact next text\n",
+    )
+    .unwrap();
+    let expected = rt.block_on(async {
+        let factory = SessionFactory::new(None, Arc::new(|_, _| Ok(())));
+        let session = factory.first_touch(root.path()).await.unwrap();
+        let before = session.derivation_view().await.unwrap();
+        let mut data = before.snapshot.data.clone();
+        data["unrelated"] = json!({"keep":[1,2]});
+        data["current"] = json!({"legacy":"unchanged"});
+        data["derivation"] = json!({"memo":"fixture"});
+        let written = session
+            .commit_derivation(&before, data.clone())
+            .await
+            .unwrap();
+        assert_eq!(written.snapshot.data, data);
+        for field in ["import", "source_evidence", "archive", "cursor"] {
+            assert_eq!(written.snapshot.data[field], before.snapshot.data[field]);
+            let mut bad = data.clone();
+            bad[field] = Value::Null;
+            assert!(
+                session.commit_derivation(&written, bad).await.is_err(),
+                "{field}"
+            );
+        }
+        assert_eq!(written.snapshot.operations, before.snapshot.operations);
+        let mut next = data.clone();
+        next["derivation"] = json!({"memo":"winner"});
+        let winner = session.commit_derivation(&written, next).await.unwrap();
+        assert!(session.commit_derivation(&written, data).await.is_err());
+        assert_eq!(session.derivation_view().await.unwrap(), winner);
+        winner.snapshot.data
+    });
+    rt.block_on(async {
+        let factory = SessionFactory::new(None, Arc::new(|_, _| Ok(())));
+        let session = factory.first_touch(root.path()).await.unwrap();
+        let reopened = session.derivation_view().await.unwrap();
+        assert_eq!(reopened.snapshot.data, expected);
+        assert_eq!(
+            serde_json::to_value(session.import_manifest()).unwrap(),
+            expected["import"]
+        );
+    });
+}

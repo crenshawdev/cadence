@@ -807,3 +807,99 @@ fn recovery_resync_failures_cannot_open_an_acknowledged_store() {
         });
     }
 }
+
+#[test]
+fn checked_snapshot_verified_read_and_conditional_replacement() {
+    runtime().block_on(async {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        let initial = store.request(Operation::ReadVerified).await.unwrap();
+        let proposal =
+            |view: &cadence::store::writer::View, data| Operation::CompareRewriteSnapshot {
+                expected_generation: view.snapshot.generation,
+                expected_integrity: view.snapshot.integrity.clone(),
+                data,
+            };
+        let first = store
+            .request(proposal(&initial, serde_json::json!({"memo":"first"})))
+            .await
+            .unwrap();
+        assert_eq!(first.snapshot.generation, 1);
+        let appended = store
+            .request(Operation::AppendItem(item("winner")))
+            .await
+            .unwrap();
+        assert!(matches!(
+            store
+                .request(proposal(&first, serde_json::json!({"stale":true})))
+                .await,
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            store.request(Operation::ReadVerified).await.unwrap(),
+            appended
+        );
+        let replaced = store
+            .request(Operation::RewriteSnapshot(
+                serde_json::json!({"winner":true}),
+            ))
+            .await
+            .unwrap();
+        assert!(matches!(
+            store
+                .request(proposal(&appended, serde_json::json!({})))
+                .await,
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            store.request(Operation::ReadVerified).await.unwrap(),
+            replaced
+        );
+        // Both preconditions are required, independently.
+        for (generation, integrity) in [
+            (
+                replaced.snapshot.generation - 1,
+                replaced.snapshot.integrity.clone(),
+            ),
+            (replaced.snapshot.generation, "wrong".into()),
+        ] {
+            assert!(matches!(
+                store
+                    .request(Operation::CompareRewriteSnapshot {
+                        expected_generation: generation,
+                        expected_integrity: integrity,
+                        data: serde_json::json!({})
+                    })
+                    .await,
+                Err(Error::Conflict(_))
+            ));
+        }
+        let mut external = replaced.snapshot.clone();
+        external.data = serde_json::json!({"external":true});
+        let bytes = serde_json::to_vec(&external).unwrap();
+        std::fs::write(root.path().join("state.json"), &bytes).unwrap();
+        assert!(matches!(
+            store.request(Operation::ReadVerified).await,
+            Err(Error::Conflict(_))
+        ));
+        assert!(matches!(
+            store
+                .request(proposal(&replaced, serde_json::json!({})))
+                .await,
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            std::fs::read(root.path().join("state.json")).unwrap(),
+            bytes
+        );
+        assert_eq!(store.request(Operation::Read).await.unwrap(), replaced);
+        assert!(
+            !root
+                .path()
+                .join(cadence::store::transaction::INTENT)
+                .exists()
+        );
+    });
+}

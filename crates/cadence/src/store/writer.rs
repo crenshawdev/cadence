@@ -11,8 +11,17 @@ pub struct View {
     pub snapshot: Snapshot,
 }
 
+/// Owner-serialized precondition; this does not compare-and-swap Markdown files.
+pub const STALE_SNAPSHOT: &str = "conditional snapshot precondition changed";
+
 pub enum Operation {
     Read,
+    ReadVerified,
+    CompareRewriteSnapshot {
+        expected_generation: u64,
+        expected_integrity: String,
+        data: Value,
+    },
     Transact(super::transaction::Transaction),
     AppendItem(ItemRecord),
     AppendDecision(DecisionRecord),
@@ -198,6 +207,24 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let mut operations = next.snapshot.operations.clone();
         let operation_name = match operation {
             Operation::Read => return Ok(next),
+            Operation::ReadVerified => {
+                self.revalidate()?;
+                return Ok(next);
+            }
+            Operation::CompareRewriteSnapshot {
+                expected_generation,
+                expected_integrity,
+                data,
+            } => {
+                self.revalidate()?;
+                if expected_generation != self.view.snapshot.generation
+                    || expected_integrity != self.view.snapshot.integrity
+                {
+                    return Err(Error::Conflict(STALE_SNAPSHOT.into()));
+                }
+                next.snapshot.data = data;
+                "rewrite_snapshot"
+            }
             Operation::Transact(transaction) => {
                 if transaction.id.trim().is_empty() {
                     return Err(Error::Invalid("empty operation identity".into()));
