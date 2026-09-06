@@ -89,7 +89,7 @@ here, and nothing under `cadence-core/` changes.
   `deleted`), `<FIXTURE>`/`<REPO>` substitution, the from-scratch child
   environment, and a `git: true` entry refused by name until Task 1 here.
 - Read 2026-09-05: `cadence-core/bin/planning-debt-harvest.test.mjs:50-52` and
-  `cadence-core/bin/git-head.test.mjs:20-27` (the two `git init` patterns);
+  `cadence-core/bin/git-head.test.mjs:19-28` (the two `git init` patterns);
   the clock sites - `lib/trace.mjs:415,486`, `lib/read-trace.mjs:392,580`,
   `planning/cursor-set.mjs:147` (the envelope echoes `cursor.updated` and
   `STATE.md` gets the `Updated:` line), `planning/uat.mjs:40,121`,
@@ -136,7 +136,15 @@ here, and nothing under `cadence-core/` changes.
   `task-record`, `lease-check`, `git-branch decide`, `git-branch tags`,
   `git-publish authorized` (and the refusal arms of `publish` and `reap`),
   `forge detect`, `land-cleanup cleanup`, `land-cleanup gate`, `why`,
-  `git-guard`, and the offline arms of `issue-check` and `issue-filing`. The
+  `git-guard`, and the offline arms of `issue-check` and `issue-filing`. That
+  prose list is ILLUSTRATIVE: the authority is the `git: true` flag in the
+  committed `operations.json` (47 of the 156 invocations carry it), and the
+  recorder keys off the flag, never off this list. One of the 47 does not
+  actually need a repository - `git-publish authorized` "runs no git and spawns
+  nothing at all - it reads two config layers" (`git-publish.mjs:288`) - and it
+  stays `git: true` anyway, because building the repo around it costs nothing
+  and a per-invocation exception would be a second source of truth. Do NOT
+  narrow the flag to match this paragraph. The
   recorder never runs `push`, `fetch` or `pull`; no remote is reachable on
   the pinned PATH.
 - **Verify:** For every `git: true` invocation, two consecutive runs with
@@ -170,7 +178,13 @@ here, and nothing under `cadence-core/` changes.
   the envelope hides the mutation, and a declared list would hide it the same
   way). Operations this makes meaningful include `cursor set` (`STATE.md`),
   `trace append` and `trace close` (`trace.jsonl`), `cite-count`, `route
-  resolve` and `risk-check run` (each appends a trace event), the `read-trace`
+  resolve` and `risk-check run` (each appends a trace event ONLY when a phase is
+  derivable - `route.mjs:1366` guards the whole block on `tracePhase !== null`,
+  and the `route resolve` invocations run in the `config` bundle, which has no
+  `.planning/STATE.md` and no `.planning/trace.jsonl`, so they append NOTHING
+  and an empty `files` map is the CORRECT recording for them, not a recorder
+  bug; record for each of these three which way it actually went rather than
+  assuming the append), the `read-trace`
   and `subagent-trace` hooks (`reads.jsonl`, `trace.jsonl` - their stdout is
   empty by contract, so the file diff IS their recording), `capture` and
   `debt-harvest` (`CAPTURE.md`), `seed-reqs` (`REQUIREMENTS.md`), the `uat`
@@ -193,8 +207,15 @@ here, and nothing under `cadence-core/` changes.
 - **Action:** Cover each source the ROADMAP names. Locale and sort order: the
   `TZ`, `LC_ALL`, `LANG` pins from plan 1 Task 2. Git SHAs: Task 1.
   Interpreter: the `node` key plan 1 Task 2 records (Task 4 acts on it).
-  Correlation ids: `corr` derives from the caller's `--sha` (D-14), a manifest
-  input, so no rule. Absolute paths: the `<FIXTURE>`/`<REPO>` substitution from
+  Correlation ids: no rule - but NOT for the reason D-14 states. `correlationId`
+  (`lib/trace.mjs:381`) returns `<phase>-<ownSha>` only when the caller passes a
+  sha; with none it scans `trace.jsonl` BACKWARDS for the newest `lifecycle`
+  ANCHOR event of that phase and derives from THAT sha, and returns the bare
+  phase key when no anchor is found. All three inputs are deterministic here - a
+  manifest `--sha`, a SEEDED anchor in a committed fixture, or the phase key -
+  so the conclusion holds; the premise "derives from the caller's `--sha`" does
+  not, and an executor acting on it would look for a `--sha` that the recorded
+  `trace append` invocations do not supply. Absolute paths: the `<FIXTURE>`/`<REPO>` substitution from
   plan 1 Task 2 - and read-side failure outputs carry them too (ROADMAP), so the
   substitution runs over stderr and refusal `detail` strings as well as `ok`
   envelopes. That substitution is the OTHER half of the cross-side contract, and
@@ -262,17 +283,30 @@ here, and nothing under `cadence-core/` changes.
   `cursor.updated`) and as the `Updated:` line of `.planning/STATE.md`
   (`planning/cursor-set.mjs:147`); UAT frontmatter `started` and `updated` in
   `UAT.md` (`planning/uat.mjs:40,121` - read `renderUat` for the exact line
-  shape before writing the pattern); the capture note bullet's leading day
-  stamp in `.planning/CAPTURE.md` (`lib/capture-file.mjs:116`); and
+  shape before writing the pattern); and NOT the capture note bullet's leading day
+  stamp: `lib/capture-file.mjs:116` stamps the date only on the `note` branch of
+  `renderBullet`, and NO manifest invocation selects it - `capture-ok` passes
+  `--kind todo` and `capture-refused` passes `--kind invalid`, so the two
+  reachable branches are the `[ ]` todo line and a refusal. Under D-12 a rule
+  nothing reaches hides a divergence, so write NO capture rule; if the executor
+  finds a `note`-kind invocation in the manifest after all, add the rule with
+  this site and say so. And
   `duration_ms` in the `.planning/trace.jsonl` event `traceProvider` appends
   (`review-provider.mjs:622`, `Date.now() - meta.started`), which varies per run
   WITHOUT being date-shaped - the enumeration in the next task's Verify sweeps
-  for date shapes and cannot see an integer, which is exactly why this one needs
-  a named rule. `traceProvider` is reached from `review-provider.mjs:164` on the
-  refusal path, after `beginProviderCall` at 1371/1411/1450; if the executor
-  finds that every recorded `review-provider` arm returns BEFORE
-  `beginProviderCall`, record THAT as the reason no rule is needed rather than
-  deleting this sentence. The rotation
+  for date shapes and cannot see an integer, which is why it would need a named
+  rule IF it were reachable. It is expected NOT to be, and the gate is not the
+  one earlier drafts named: the recorded arms DO reach `beginProviderCall`, and
+  its trace block returns at the CURSOR check - `review-provider.mjs:602`,
+  `if (phase === null) return;` after `cursorPhase(root)` - so no provider event
+  is written at all. All six recorded `review-provider` invocations run in the
+  `config` bundle, which has no `.planning/STATE.md`, so `cursorPhase` is null
+  for every one. VERIFY this rather than asserting it: if any recording's
+  captured `trace.jsonl` carries a `provider` event, write the `duration_ms`
+  rule with its site; if none does, record `review-provider.mjs:602` and the
+  absent cursor as the reason no rule exists. Do not delete this paragraph
+  either way - the next task's Verify sweeps for `duration_ms` and needs to know
+  which outcome was expected. The rotation
   markers (`lib/trace.mjs:486`, `lib/read-trace.mjs:580`) and `mirrorFiled`'s
   date (`issue-filing.mjs:507`) are reached by no recorded invocation - the
   seeded traces sit under the rotation cap and the issue-filing entries are
@@ -291,7 +325,9 @@ here, and nothing under `cadence-core/` changes.
   control below. This task does NOT run the full manifest - it records only the
   named subset its Verify needs, through the repeatable `--only <invocation>`
   flag plan 1 Task 2 added, so the cross-side contract every later task rests on
-  is proven before an executor spends a full 74-invocation run against it.
+  is proven before an executor spends a full 156-invocation run against it (the
+  committed `operations.json` is a flat array of 156 invocations over 74
+  distinct `operation` values; "74" names the operations, never the run).
   Commit `normalization.json` and the subset recordings.
 - **Verify:** `normalization.json` parses, `mechanism` is `named-fields`, every
   rule carries `id`, `target`, `pattern`, `replace`, `site` and the
@@ -314,10 +350,18 @@ here, and nothing under `cadence-core/` changes.
 ### Task 4: Every remaining source is proven pinned, and the full manifest is recorded
 
 - **Files:** crates/cadence/tests/golden/record.mjs, crates/cadence/tests/golden/recordings/
-- **Action:** Hostname and PID: no frozen script writes either to output
-  (`process.pid` appears only in temp-file names at `lib/trace.mjs:709`,
-  `lib/read-trace.mjs:719`, `lib/capture-file.mjs:267`,
-  `lib/planning-files.mjs:2778`; `os.hostname()` nowhere), so the recorder
+- **Action:** Hostname and PID: `os.hostname()` appears nowhere in the frozen
+  scripts, and `process.pid` appears at exactly four sites, all temp-file names
+  (`lib/trace.mjs:709`, `lib/read-trace.mjs:719`, `lib/capture-file.mjs:267`,
+  `lib/planning-files.mjs:2778`). ONE of those four can reach output: the
+  `atomicWrite` temp path is interpolated into a thrown message at
+  `lib/planning-files.mjs:2785` (`atomicWrite refused: temp path is a symlink`),
+  which a planning script surfaces on stderr. No clean fixture plants a symlink
+  at a temp path, so no recorded invocation should reach it - but "the pid can
+  never appear" is FALSE as a premise, and the assertion below is therefore a
+  live check rather than a formality. A pid firing there is a REAL signal (a
+  fixture is planting a symlink, or a write is being refused) and must be
+  investigated, never narrowed away. So the recorder
   ASSERTS after each run, BEFORE writing, that neither `os.hostname()` nor the
   child's pid as a decimal string appears in the recording, and fails loudly
   naming the invocation and the offending kind if one does. Both tests are
@@ -374,8 +418,11 @@ here, and nothing under `cadence-core/` changes.
   `--taint-stderr` run - exits non-zero naming the first affected invocation
   and the injected kind, and `git status --porcelain crates/cadence/tests/golden/recordings`
   prints nothing afterwards (it failed before writing);
-  `ls crates/cadence/tests/golden/recordings/*.json | wc -l` prints at least
-  74, and the count is written into the SUMMARY beside the bundle count;
+  `ls crates/cadence/tests/golden/recordings/*.json | wc -l` prints exactly
+  156 - one per entry in `operations.json`, which is a flat array of 156
+  invocations over 74 distinct `operation` values, so a "74" here would mean
+  half the manifest never ran - and that count is written into the SUMMARY
+  beside the bundle count and the 74 operations it covers;
   `git diff --quiet v3.7.12 -- cadence-core/` exits 0.
 
 ### Task 5: The drift check names a changed recording, refuses a foreign interpreter, and CI runs it
@@ -477,9 +524,12 @@ here, and nothing under `cadence-core/` changes.
   (re-run, fail on difference) is kept; comparing against scratch instead of
   overwriting is what lets AC3's hand edit be reported rather than repaired.
 - **Fixture provenance is checked locally only.** Rebuilding from the tag
-  needs `v3.7.12` in the checkout, and the CI jobs clone at depth 1 without
-  tags; the drift job checks recordings against the frozen JavaScript, which is
-  the property that matters in CI.
+  needs `v3.7.12` in the checkout. The blanket "the CI jobs clone at depth 1"
+  is false - `node-test` sets `fetch-depth: 0` deliberately
+  (`.github/workflows/test.yml:28,35`) - but the new drift job is not obliged to
+  inherit that, and the choice stands on its own: the drift job checks
+  recordings against the frozen JavaScript, which is the property that matters
+  in CI, and that needs no tag. Add no `fetch-depth` to the new job.
 - **`CADENCE_TEST_SEAM` stays closed (D-13).** `detect-commands`'s
   reachability is pinned by the scratch PATH (node and git only) rather than
   by `CADENCE_DETECT_REACHABLE`, so the recording is the unreachable arm with
