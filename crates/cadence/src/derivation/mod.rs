@@ -3,6 +3,7 @@ mod capture;
 mod compatibility;
 mod consistency;
 mod intake;
+mod memo;
 mod model;
 mod parse;
 mod query;
@@ -10,6 +11,7 @@ pub use capture::{ArtifactFiles, ArtifactIo, capture_inputs};
 pub use compatibility::{normalize_imported_cursor, normalize_legacy_state};
 pub use consistency::{check_consistency, recheck_intake};
 pub use intake::{adopt, select_intake};
+pub use memo::{DOMAIN, ENCODING_VERSION, SEMANTICS_VERSION, encode_inputs, input_key};
 pub use model::*;
 pub use parse::{parse_roadmap, parse_uat};
 pub use query::{

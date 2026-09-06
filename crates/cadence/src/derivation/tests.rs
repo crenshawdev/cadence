@@ -1222,3 +1222,207 @@ fn ac5_adopt_malformed_retirement_cannot_suppress_comparison_or_discard_data() {
         assert_eq!(data, before);
     }
 }
+
+fn key_fixture() -> CapturedInputs {
+    let mut c = captured("## Phases\n- [ ] **Phase 1: One**\n- [ ] **Phase 2: Two**\n");
+    c.phases[0].plans = Observation::Present(vec!["PLAN-1.md".into(), "PLAN.md".into()]);
+    c.phases[0].uat =
+        Observation::Present(b"### 1. Check\nstatus: skipped\nreason: later".to_vec());
+    c
+}
+
+fn key_rows() -> Vec<(&'static str, CapturedInputs, CapturedInputs)> {
+    let base = key_fixture();
+    let mut rows = Vec::new();
+    macro_rules! row {
+        ($name:literal, $c:ident, $change:expr) => {{
+            let mut $c = base.clone();
+            $change;
+            rows.push(($name, base.clone(), $c));
+        }};
+    }
+    row!("root address", c, c.root = "/other".into());
+    row!("root probe", c, c.root_probe = Observation::Absent);
+    row!("roadmap outcome", c, c.roadmap = Observation::Absent);
+    row!(
+        "roadmap bytes",
+        c,
+        c.roadmap = Observation::Present(b"other".to_vec())
+    );
+    row!("phase count", c, {
+        c.declarations
+            .as_mut()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .phases
+            .pop();
+    });
+    row!(
+        "phase order",
+        c,
+        c.declarations
+            .as_mut()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .phases
+            .reverse()
+    );
+    row!(
+        "phase id",
+        c,
+        c.declarations.as_mut().unwrap().as_mut().unwrap().phases[0].id = PhaseId(3.0)
+    );
+    row!("phase path", c, {
+        c.declarations.as_mut().unwrap().as_mut().unwrap().phases[0].relative_path =
+            "phases/other".into();
+        c.phases[0].relative_path = "phases/other".into();
+    });
+    row!(
+        "listing outcome",
+        c,
+        c.phases[0].plans = Observation::Absent
+    );
+    row!(
+        "plan count",
+        c,
+        c.phases[0].plans = Observation::Present(vec!["PLAN.md".into()])
+    );
+    row!(
+        "plan name",
+        c,
+        c.phases[0].plans = Observation::Present(vec!["PLAN-2.md".into(), "PLAN.md".into()])
+    );
+    row!("summary", c, c.phases[0].summary = Observation::Present(()));
+    row!("uat outcome", c, c.phases[0].uat = Observation::Absent);
+    row!(
+        "uat reason",
+        c,
+        c.phases[0].uat =
+            Observation::Present(b"### 1. Check\nstatus: skipped\nreason: never".to_vec())
+    );
+    for target in ["root", "roadmap", "listing", "summary", "uat"] {
+        let variants = (0..7)
+            .map(|n| {
+                let mut c = base.clone();
+                fn variant<T: Default>(n: usize) -> Observation<T> {
+                    match n {
+                        0 => Observation::Absent,
+                        1 => Observation::Present(T::default()),
+                        _ => Observation::Failed(InputFailure {
+                            path: "/ignored".into(),
+                            diagnostic: Some("ignored".into()),
+                            category: [
+                                InputFailureCategory::PermissionDenied,
+                                InputFailureCategory::NotDirectory,
+                                InputFailureCategory::InvalidPath,
+                                InputFailureCategory::SymlinkLoop,
+                                InputFailureCategory::OtherIo,
+                            ][n - 2],
+                        }),
+                    }
+                }
+                match target {
+                    "root" => c.root_probe = variant(n),
+                    "roadmap" => c.roadmap = variant(n),
+                    "listing" => c.phases[0].plans = variant(n),
+                    "summary" => c.phases[0].summary = variant(n),
+                    _ => c.phases[0].uat = variant(n),
+                }
+                c
+            })
+            .collect::<Vec<_>>();
+        for a in 0..variants.len() {
+            for b in a + 1..variants.len() {
+                rows.push((target, variants[a].clone(), variants[b].clone()));
+            }
+        }
+    }
+    rows
+}
+
+fn key_table_failures(encoder: impl Fn(&CapturedInputs) -> String) -> Vec<&'static str> {
+    key_rows()
+        .iter()
+        .filter_map(|(name, a, b)| (encoder(a) == encoder(b)).then_some(*name))
+        .collect()
+}
+
+#[test]
+fn ac3_each_input_outcome_category_and_negative_encoders() {
+    assert!(key_table_failures(|c| input_key(c).unwrap()).is_empty());
+    let omitted_summary = key_table_failures(|c| {
+        let mut c = c.clone();
+        for p in &mut c.phases {
+            p.summary = Observation::Absent;
+        }
+        input_key(&c).unwrap()
+    });
+    assert!(omitted_summary.contains(&"summary"));
+    let omitted_reason = key_table_failures(|c| {
+        let mut c = c.clone();
+        for p in &mut c.phases {
+            if let Observation::Present(bytes) = &mut p.uat {
+                *bytes = String::from_utf8_lossy(bytes)
+                    .lines()
+                    .filter(|line| !line.starts_with("reason:"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .into_bytes();
+            }
+        }
+        input_key(&c).unwrap()
+    });
+    assert!(omitted_reason.contains(&"uat reason"));
+    let c = key_fixture();
+    let original = encode_inputs(&c).unwrap();
+    for (domain, encoding, semantics) in [("other", 1, 1), (DOMAIN, 2, 1), (DOMAIN, 1, 2)] {
+        assert_ne!(
+            crate::store::model::digest(&original),
+            crate::store::model::digest(
+                &memo::encode_versioned(&c, domain, encoding, semantics).unwrap()
+            )
+        );
+    }
+    let mut reversed = c.clone();
+    if let Observation::Present(names) = &mut reversed.phases[0].plans {
+        names.reverse();
+    }
+    assert_eq!(input_key(&c), input_key(&reversed));
+    for (_, a, _) in key_rows() {
+        if let Observation::Failed(_) = a.root_probe {
+            assert!(derive(&a).is_err());
+        }
+    }
+}
+
+#[test]
+fn encoding_boundaries_fixed_v1_and_semantic_order() {
+    let mut c = captured("## Phases\n");
+    c.root = "/p".into();
+    let expected = "0000000000000011636164656e63652e6c6966656379636c650000000000000001000000000000000100000000000000022f700101000000000000000a2323205068617365730a0000000000000000";
+    let bytes = encode_inputs(&c).unwrap();
+    assert_eq!(
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        expected
+    );
+    assert_eq!(
+        input_key(&c).unwrap(),
+        "98cecd75f986e2ee2e1fcc21c469a7b52a6e7e2471a8689cc03e83c6346c7d36"
+    );
+    let mut a = key_fixture();
+    let mut b = a.clone();
+    a.phases[0].plans = Observation::Present(vec!["ab".into(), "c".into()]);
+    b.phases[0].plans = Observation::Present(vec!["a".into(), "bc".into()]);
+    assert_ne!(input_key(&a), input_key(&b));
+    b = a.clone();
+    b.declarations
+        .as_mut()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .phases
+        .reverse();
+    assert_ne!(input_key(&a), input_key(&b));
+}
