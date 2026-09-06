@@ -1,0 +1,35 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "cad-plan-2a385615",
+  "round": 1,
+  "base": "5a62a9bc",
+  "head": "2a385615",
+  "base_id": "5a62a9bcd2489616f71e9d9ddc3e382c89ee6a5b",
+  "head_id": "2a3856159e62376002dd9026a779d862ee4be09f",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN-2.md",
+      "line": 184,
+      "severity": "high",
+      "claim": "Task 6 explicitly makes `/cad-suggest` silent when no bracket has `duration_ms`, so it does not deliver the required `unrecorded` result for a render where every close lacks the worker wall clock.",
+      "failure_scenario": "Run `/cad-suggest` on a phase containing one or more brackets, all without `duration_ms` (the normal pre-v3.7.2 record shape). The task requires no receipt at all, whereas ROADMAP Phase 1 success criterion 4 and CONTEXT AC5 require `/cad-suggest` to say `unrecorded`, rather than `0`, for a bracket whose close carried no wall clock. Thus MSR-05 remains unmet for the all-unrecorded case despite the proposed tests passing.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "2a385615",
+      "base_id": "5a62a9bcd2489616f71e9d9ddc3e382c89ee6a5b",
+      "head_id": "2a3856159e62376002dd9026a779d862ee4be09f"
+    }
+  ]
+}

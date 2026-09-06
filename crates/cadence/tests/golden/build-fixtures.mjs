@@ -131,8 +131,16 @@ function bundle(name) {
       provenance[name].tag_paths.push({ from, to });
     },
     text(path, text, seeded = false) {
+      const copied = provenance[name].tag_paths.find(p => p.to === path);
+      if (copied) {
+        // A derived file is no longer a verbatim tag copy. Keep its origin
+        // beside the synthesis record instead of making that claim twice.
+        provenance[name].tag_paths = provenance[name].tag_paths.filter(p => p !== copied);
+        (provenance[name].derived_from ??= []).push(copied);
+      }
       write(join(here, 'fixtures', name, path), text);
-      provenance[name][seeded ? 'seeded' : 'synthesized'].push(path);
+      const list = provenance[name][seeded ? 'seeded' : 'synthesized'];
+      if (!list.includes(path)) list.push(path);
     },
   };
 }
@@ -165,6 +173,7 @@ function live(name, archive, phase, incomplete = false) {
   b.text('.planning/trace.jsonl', traceSeed.map(row => JSON.stringify({ ...row, corr: String(phase), phase })).join('\n') + '\n', true);
   b.text('.planning/reads.jsonl', readsSeed.map(row => JSON.stringify(row).replaceAll('.planning/phases/1/', `.planning/phases/${phase}/`)).join('\n') + '\n', true);
   b.text('.planning/CAPTURE.md', '# Capture\n\n## Todos\n\n## Seeds\n\n## Notes\n', true);
+  return b;
 }
 
 live('slice', '_archive-v3.7.3', 1);
@@ -172,4 +181,88 @@ live('multi', '_archive-v3.3.0', 5);
 live('incomplete', '_archive-v3.7.3', 1, true);
 const closed = bundle('closed');
 for (const path of tagPaths('.planning').filter(p => p.split('/').length === 2)) closed.copy(path);
+
+const json = (b, path, value, seeded = false) => b.text(path, JSON.stringify(value, null, 2) + '\n', seeded);
+const frozenConfig = JSON.parse(tagBytes('.planning/config.json').toString());
+const frozenId = git('rev-parse', `${tag}^{commit}`).toString().trim();
+const sourceText = '// CADENCE-DEBT: literal policy fixture | ceiling: one local policy | trigger: a second policy\n'
+  + 'export const authorized = true;\n';
+const finding = { file: 'src/auth.mjs', line: 2, severity: 'low',
+  claim: 'The policy is a literal.', failure_scenario: 'A second policy would need a separate decision.' };
+
+const malformed = live('malformed', '_archive-v3.7.3', 1);
+const planSource = '.planning/_archive-v3.7.3/1/PLAN-1.md';
+malformed.text('.planning/phases/1/PLAN-1.md', tagBytes(planSource).toString()
+  .replace(/^(files:\n  - )([^\n]+)/m, '$1`$2`'));
+
+const project = live('project', '_archive-v3.7.3', 1);
+json(project, 'package.json', { name: 'golden-project', private: true, type: 'module',
+  scripts: { lint: 'eslint .', typecheck: 'tsc --noEmit' }, dependencies: { passport: '0.7.0' } });
+project.text('src/auth.mjs', sourceText);
+project.text('.planning/phases/1/PLAN-1.md', '---\nphase: 1\nplan: 1\nrequirements: [TRC-04]\nfiles:\n'
+  + '  - src/auth.mjs\n---\n\n# Source policy\n\n## Tasks\n\n### Task 1: Update the policy\n\n'
+  + '- **Files:** src/auth.mjs\n- **Action:** Extend the literal policy.\n- **Verify:** Inspect the changed policy.\n');
+json(project, '.planning/config.json', { review: frozenConfig.review });
+
+const inputs = live('planning-inputs', '_archive-v3.7.3', 1);
+inputs.text('.planning/phases/2/CONTEXT.md', '# Phase 2\n\n## Acceptance criteria\n\n- AC1: A result is recorded.\n');
+inputs.text('src/auth.mjs', sourceText);
+json(inputs, 'invalid.json', {});
+json(inputs, 'uat-merge.json', { human_checks: [{ name: 'Golden merge item', expected: 'A result is recorded.' }] });
+json(inputs, 'recall.json', { ok: true, results: [{ source: 'phases/1/CONTEXT.md', score: 1, snippet: 'Trace coverage' }] });
+json(inputs, 'findings.json', { findings: [finding] });
+json(inputs, 'adjudication.json', { voices: [{ voice: 'reviewer', model: 'fixture-model',
+  returned: { findings: [finding] }, rulings: [{ finding: 0, ruling: 'survived',
+    claim: finding.claim, failure_scenario: finding.failure_scenario }] }] });
+
+const deferred = live('deferred', '_archive-v3.7.3', 1);
+json(deferred, '.planning/phases/1/DEFERRED-diff-golden.json', { phase: '1', trigger: 'diff',
+  discriminator: 'golden', round: 1, base: tag, head: tag, base_id: frozenId, head_id: frozenId,
+  findings: [finding] }, true);
+deferred.text('.planning/phases/1/REVIEW-diff-golden.md', '# Deferred review\n\nThe literal policy needs a later decision.\n', true);
+
+const unreadable = bundle('unreadable-reads');
+unreadable.text('.planning/reads.jsonl/entry.txt', 'A directory is not a JSONL record.\n');
+
+// Each settings variant states its complete repository layer. No secret,
+// ambient authorization or real remote is inherited by these fixtures.
+function configBundle(name, extra = {}) {
+  const b = bundle(name);
+  provenance[name].derived_from = [{ from: '.planning/config.json', to: '.planning/config.json' },
+    { from: '.planning/config.json', to: 'global-config.json' }];
+  json(b, '.planning/config.json', { memory: { backend: 'builtin' }, review: frozenConfig.review, ...extra });
+  json(b, 'global-config.json', { roles: frozenConfig.roles, review: frozenConfig.review });
+  json(b, 'invalid.json', {});
+  b.text('broken.json', '{\n');
+  return b;
+}
+configBundle('config');
+configBundle('config-unknown', { unknown: { golden: true } });
+configBundle('forge-configured', { git: { forge_provider: 'github', forge_repo: 'golden/fixture', forge_host: null } });
+configBundle('protected', { git: { on_protected: 'refuse', protected_branches: ['main'] } });
+configBundle('publish-authorized', { git: { auto_close: true, protected_branches: [], base_branch: 'main' } });
+
+const hookEvents = [
+  { corr: '1', phase: 1, ts: '2026-09-05T12:00:00.000Z', family: 'lifecycle', event: 'phase_start' },
+  { corr: '1', phase: 1, ts: '2026-09-05T12:00:01.000Z', family: 'lifecycle', event: 'dispatch', role: 'cad-executor', plan: '1' },
+];
+const hooks = bundle('hooks');
+json(hooks, '.planning/config.json', {});
+hooks.text('src/auth.mjs', sourceText);
+hooks.text('.planning/trace.jsonl', hookEvents.map(r => JSON.stringify(r)).join('\n') + '\n', true);
+hooks.text('.planning/reads.jsonl', readsSeed.map(r => JSON.stringify(r)).join('\n') + '\n', true);
+
+const recorded = bundle('risk-recorded');
+json(recorded, '.planning/config.json', { review: frozenConfig.review });
+recorded.text('.planning/trace.jsonl', [...hookEvents,
+  { corr: '1', phase: 1, ts: '2026-09-05T12:00:02.000Z', family: 'lifecycle', event: 'return', role: 'cad-executor', plan: '1' },
+  { corr: '1', phase: 1, ts: '2026-09-05T12:00:03.000Z', family: 'outcome', event: 'risk_check', plan: '1',
+    base: tag, head: tag, base_id: frozenId, head_id: frozenId, checked: true, inconclusive: false, empty: false, matches: [] },
+].map(r => JSON.stringify(r)).join('\n') + '\n', true);
+
+const plugin = bundle('plugin');
+for (const path of ['.claude-plugin/plugin.json', 'agents/cad-executor.md', 'skills/cad-progress/SKILL.md',
+  'cadence-core/workflows/progress.md', 'cadence-core/references/conventions.md', 'cadence-core/templates/STATE.md']) {
+  plugin.copy(path);
+}
 write(join(here, 'fixtures.json'), JSON.stringify(provenance, null, 2) + '\n');

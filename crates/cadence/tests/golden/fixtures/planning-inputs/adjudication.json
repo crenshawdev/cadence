@@ -1,0 +1,27 @@
+{
+  "voices": [
+    {
+      "voice": "reviewer",
+      "model": "fixture-model",
+      "returned": {
+        "findings": [
+          {
+            "file": "src/auth.mjs",
+            "line": 2,
+            "severity": "low",
+            "claim": "The policy is a literal.",
+            "failure_scenario": "A second policy would need a separate decision."
+          }
+        ]
+      },
+      "rulings": [
+        {
+          "finding": 0,
+          "ruling": "survived",
+          "claim": "The policy is a literal.",
+          "failure_scenario": "A second policy would need a separate decision."
+        }
+      ]
+    }
+  ]
+}

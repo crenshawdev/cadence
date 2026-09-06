@@ -1,0 +1,4 @@
+{"corr":"1","phase":1,"ts":"2026-09-05T12:00:00.000Z","family":"lifecycle","event":"phase_start"}
+{"corr":"1","phase":1,"ts":"2026-09-05T12:00:01.000Z","family":"lifecycle","event":"dispatch","role":"cad-executor","plan":"1"}
+{"corr":"1","phase":1,"ts":"2026-09-05T12:00:02.000Z","family":"lifecycle","event":"return","role":"cad-executor","plan":"1"}
+{"corr":"1","phase":1,"ts":"2026-09-05T12:00:03.000Z","family":"outcome","event":"risk_check","plan":"1","base":"v3.7.12","head":"v3.7.12","base_id":"c39bbd8c0c6303121a18161cec5f536b6d31d1f5","head_id":"c39bbd8c0c6303121a18161cec5f536b6d31d1f5","checked":true,"inconclusive":false,"empty":false,"matches":[]}
