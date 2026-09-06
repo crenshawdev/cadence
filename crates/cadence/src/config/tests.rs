@@ -609,3 +609,285 @@ fn malformed_nonobject_and_unreadable_layers_are_unavailable() {
     std::fs::set_permissions(&paths.repo, std::fs::Permissions::from_mode(0o600)).unwrap();
     assert!(reader.refresh().is_ok());
 }
+
+#[test]
+fn config_updates_are_durable_visible_and_leave_legacy_bytes_unchanged() {
+    use cadence::store::writer::{Operation, Store};
+    let dir = tempfile::tempdir().unwrap();
+    let global_dir = dir.path().join("global");
+    std::fs::create_dir(&global_dir).unwrap();
+    let legacy = reload::Paths {
+        repo: dir.path().join("config.json"),
+        global: Some(global_dir.join("config.json")),
+    };
+    write_json(&legacy.repo, json!({"planning":{"max_capture_bullets":40}}));
+    let original = std::fs::read(&legacy.repo).unwrap();
+    let active = write::active_paths(&legacy).unwrap();
+    assert_eq!(active.repo, dir.path().join("config.v4.json"));
+    write_json(
+        &active.repo,
+        json!({"planning":{"max_capture_bullets":40},"unknown_old":{"recover":"me"}}),
+    );
+    write_json(
+        active.global.as_ref().unwrap(),
+        json!({"git":{"forge_repo":"owner/repo"}}),
+    );
+    let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+        active.clone(),
+        reload::FileIo,
+    )));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(
+            write::register(dir.path(), &active).unwrap(),
+            reload::ConfigPolicy {
+                config: config.clone(),
+                evaluate: checked_policy,
+            },
+        )
+        .await
+        .unwrap();
+        let writer = write::ConfigWriter {
+            root: dir.path().into(),
+            active: active.clone(),
+            store: store.clone(),
+            config: config.clone(),
+        };
+        writer
+            .set(Layer::Repo, "planning.max_capture_bullets", json!(2))
+            .await
+            .unwrap();
+        let generation = config.lock().unwrap().refresh().unwrap();
+        assert_eq!(
+            get(&generation.effective.values, "planning.max_capture_bullets"),
+            Some(&json!(2))
+        );
+        assert_eq!(
+            generation.effective.sources["git.forge_repo"],
+            Layer::Global
+        );
+        assert!(
+            generation
+                .effective
+                .diagnostics
+                .scope
+                .iter()
+                .any(|d| d.key == "git.forge_repo")
+        );
+        assert!(get(&generation.effective.values, "unknown_old").is_none());
+        assert_eq!(
+            generation.effective.raw_repo.as_ref().unwrap()["unknown_old"],
+            json!({"recover":"me"})
+        );
+        let stored: Value = serde_json::from_slice(&std::fs::read(&active.repo).unwrap()).unwrap();
+        assert_eq!(stored["planning"]["max_capture_bullets"], json!(2));
+        assert!(stored.get("workflow").is_none());
+        assert_eq!(std::fs::read(&legacy.repo).unwrap(), original);
+        writer
+            .set(Layer::Global, "workflow.test_command", json!("trusted"))
+            .await
+            .unwrap();
+        assert_eq!(
+            get(
+                &config.lock().unwrap().refresh().unwrap().effective.values,
+                "workflow.test_command"
+            ),
+            Some(&json!("trusted"))
+        );
+        // Repeated values after a change back are new writes, not import replays.
+        writer
+            .set(Layer::Repo, "planning.max_capture_bullets", json!(40))
+            .await
+            .unwrap();
+        writer
+            .set(Layer::Repo, "planning.max_capture_bullets", json!(2))
+            .await
+            .unwrap();
+        assert_eq!(
+            get(
+                &config.lock().unwrap().refresh().unwrap().effective.values,
+                "planning.max_capture_bullets"
+            ),
+            Some(&json!(2))
+        );
+        store
+            .request(Operation::RewriteSnapshot(json!("next request")))
+            .await
+            .unwrap();
+    });
+}
+
+#[test]
+fn invalid_config_updates_cannot_change_policy_or_authorize_themselves() {
+    use cadence::store::writer::Store;
+    let dir = tempfile::tempdir().unwrap();
+    let active = config_paths(dir.path());
+    write_json(&active.repo, json!({"workflow":{"verifier":false}}));
+    let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+        active.clone(),
+        reload::FileIo,
+    )));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(
+            write::register(dir.path(), &active).unwrap(),
+            reload::ConfigPolicy {
+                config: config.clone(),
+                evaluate: checked_policy,
+            },
+        )
+        .await
+        .unwrap();
+        let writer = write::ConfigWriter {
+            root: dir.path().into(),
+            active: active.clone(),
+            store,
+            config: config.clone(),
+        };
+        let generation = config.lock().unwrap().refresh().unwrap();
+        let repo = std::fs::read(&active.repo).unwrap();
+        for (layer, key, value) in [
+            (Layer::Global, "git.forge_repo", json!("owner/repo")),
+            (Layer::Repo, "workflow.test_command", json!("bad")),
+            (Layer::Repo, "review.key_file", Value::Null),
+            (Layer::Repo, "git.on_protected", json!("maybe")),
+            (Layer::Repo, "git.auto_close", json!(true)),
+            (Layer::Repo, "unknown_new", json!(1)),
+            (Layer::Repo, "workflow.verifier", json!(true)),
+        ] {
+            assert!(writer.set(layer, key, value).await.is_err(), "{key}");
+        }
+        assert_eq!(config.lock().unwrap().refresh().unwrap(), generation);
+        assert_eq!(std::fs::read(&active.repo).unwrap(), repo);
+        assert!(!active.global.as_ref().unwrap().exists());
+        assert_eq!(store_bytes(dir.path()), vec![None, None, None]);
+    });
+}
+
+#[test]
+fn aliased_config_updates_have_one_destination_and_keep_request_scope() {
+    use cadence::store::writer::Store;
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = config_paths(dir.path());
+    write_json(&legacy.repo, json!({}));
+    symlink(&legacy.repo, legacy.global.as_ref().unwrap()).unwrap();
+    let active = write::active_paths(&legacy).unwrap();
+    assert_eq!(active.global.as_ref(), Some(&active.repo));
+    let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+        active.clone(),
+        reload::FileIo,
+    )));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(
+            write::register(dir.path(), &active).unwrap(),
+            reload::ConfigPolicy {
+                config: config.clone(),
+                evaluate: checked_policy,
+            },
+        )
+        .await
+        .unwrap();
+        let writer = write::ConfigWriter {
+            root: dir.path().into(),
+            active: active.clone(),
+            store,
+            config: config.clone(),
+        };
+        assert!(
+            writer
+                .set(Layer::Global, "git.forge_repo", json!("owner/repo"))
+                .await
+                .is_err()
+        );
+        writer
+            .set(Layer::Repo, "git.forge_repo", json!("owner/repo"))
+            .await
+            .unwrap();
+        writer
+            .set(
+                Layer::Global,
+                "workflow.test_command",
+                json!("trusted intent"),
+            )
+            .await
+            .unwrap();
+        let current = config.lock().unwrap().refresh().unwrap();
+        assert!(current.global.is_none());
+        assert_eq!(current.effective.sources["git.forge_repo"], Layer::Repo);
+        assert_eq!(
+            get(&current.effective.values, "workflow.test_command"),
+            Some(&Value::Null)
+        );
+        let addressed = merge(None, current.effective.raw_repo, true);
+        assert_eq!(
+            get(&addressed.values, "workflow.test_command"),
+            Some(&json!("trusted intent"))
+        );
+        assert_eq!(std::fs::read(&legacy.repo).unwrap(), b"{}");
+        assert_eq!(
+            std::fs::read_dir(dir.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| e.file_name() == "config.v4.json")
+                .count(),
+            1
+        );
+    });
+}
+
+#[test]
+fn explicit_config_writes_validate_frozen_types_and_forge_grammars() {
+    for (key, good, bad) in [
+        (
+            "git.forge_repo",
+            json!("org/group/repo"),
+            json!("org/../repo"),
+        ),
+        (
+            "git.forge_host",
+            json!("Example.com:65535"),
+            json!("example.com:01"),
+        ),
+        ("planning.max_capture_bullets", json!(1), json!(0)),
+        ("review.request_timeout_ms", json!(600000), json!(600001)),
+        ("git.protected_branches", json!(["main"]), json!([1])),
+        (
+            "review.triggers.risk_surface.surfaces",
+            json!([]),
+            Value::Null,
+        ),
+    ] {
+        assert!(
+            write::validate_update(Layer::Repo, key, &good).is_ok(),
+            "{key}"
+        );
+        assert!(
+            write::validate_update(Layer::Repo, key, &bad).is_err(),
+            "{key}"
+        );
+    }
+    for bad in ["x", "-org/repo", "org/re po", "org/", "org/.."] {
+        assert!(write::validate_update(Layer::Repo, "git.forge_repo", &json!(bad)).is_err());
+    }
+    for bad in [
+        "-host",
+        "host-",
+        "host:0",
+        "host:65536",
+        "host:",
+        "host:abc",
+        "a..b",
+    ] {
+        assert!(write::validate_update(Layer::Repo, "git.forge_host", &json!(bad)).is_err());
+    }
+    assert!(
+        write::validate_update(
+            Layer::Repo,
+            "git.forge_repo",
+            &json!(format!("a/{}", "x".repeat(199)))
+        )
+        .is_err()
+    );
+    assert!(
+        write::validate_update(Layer::Repo, "git.forge_host", &json!("a".repeat(254))).is_err()
+    );
+}
