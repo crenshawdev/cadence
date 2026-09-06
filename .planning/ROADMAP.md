@@ -325,7 +325,7 @@ settled:
 
 - [x] **Phase 1: The crate skeleton** - a named binary that builds, cross-compiles to four targets from one CI job, and serves a minimal MCP tool surface
 - [x] **Phase 2: The golden harness** - fixtures at the frozen tag and a recorder that captures the JavaScript surface's behavior deterministically
-- [ ] **Phase 3: The store and its queries** - the item store, the decisions log, the state snapshot, two-layer config, the `v3.7.12` import, and recall
+- [x] **Phase 3: The store and its queries** - the item store, the decisions log, the state snapshot, two-layer config, the `v3.7.12` import, and recall
 - [ ] **Phase 4: Derivation and the internal spine** - phase state derived from disk, the evidence set enumerated, and the binary selecting what comes next
 - [ ] **Phase 5: The boundary and the execute slice** - the typed tool schema, typed refusals, and `/cad-execute` proven end to end through it
 - [ ] **Phase 6: The commit rail and the risk gates** - `git-guard`, the protected-branch decision, the lease and the risk check: what sixteen skills commit through
