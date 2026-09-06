@@ -1,0 +1,49 @@
+{
+  "invocation": "forge-detect-refused",
+  "operation": "forge detect",
+  "bundle": "config",
+  "script": "cadence-core/bin/forge.mjs",
+  "argv": [
+    "detect",
+    "--dir",
+    "<FIXTURE>"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_AUTHOR_NAME": "Golden Fixture",
+    "GIT_AUTHOR_EMAIL": "golden@example.invalid",
+    "GIT_COMMITTER_NAME": "Golden Fixture",
+    "GIT_COMMITTER_EMAIL": "golden@example.invalid",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ALLOW_PROTOCOL": ""
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "action": "refuse",
+    "reason": "no forge CLI is installed: none of tea, gh, glab resolves on PATH, and Cadence needs one to reach an issue tracker",
+    "installed": [],
+    "provider": null,
+    "repo": null,
+    "host": null,
+    "detail": null,
+    "hint": "install the CLI for the forge you use - tea for a Forgejo or Gitea instance, gh for GitHub, glab for GitLab - then re-run this setup step",
+    "warnings": []
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

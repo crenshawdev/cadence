@@ -603,8 +603,16 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE, then a second commit appending a source line to src/auth.mjs as HEAD.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {
+      "commits": [
+        {
+          "path": "src/auth.mjs",
+          "append": "\nexport const goldenChange = true;\n",
+          "message": "Record golden source change"
+        }
+      ]
+    }
   },
   {
     "invocation": "task-record-refused",
@@ -625,8 +633,16 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE, then a second commit appending a source line to src/auth.mjs as HEAD.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {
+      "commits": [
+        {
+          "path": "src/auth.mjs",
+          "append": "\nexport const goldenChange = true;\n",
+          "message": "Record golden source change"
+        }
+      ]
+    }
   },
   {
     "invocation": "lease-check-ok",
@@ -643,8 +659,15 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE and HEAD, then append a source line to src/auth.mjs and stage that path as the staged uncommitted set; the plan leases src/auth.mjs.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {
+      "staged": [
+        {
+          "path": "src/auth.mjs",
+          "append": "\nexport const goldenStaged = true;\n"
+        }
+      ]
+    }
   },
   {
     "invocation": "lease-check-refused",
@@ -661,8 +684,15 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE and HEAD, then append a source line to src/auth.mjs and stage that path as the staged uncommitted set; the plan leases src/auth.mjs.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {
+      "staged": [
+        {
+          "path": "src/auth.mjs",
+          "append": "\nexport const goldenStaged = true;\n"
+        }
+      ]
+    }
   },
   {
     "invocation": "detect-commands-ok",
@@ -783,8 +813,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "trace-close-refused",
@@ -802,8 +832,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "trace-render-ok",
@@ -955,8 +985,16 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE, then a second commit touching the auth risk-surface path src/auth.mjs as HEAD.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {
+      "commits": [
+        {
+          "path": "src/auth.mjs",
+          "append": "\nexport const goldenChange = true;\n",
+          "message": "Record golden source change"
+        }
+      ]
+    }
   },
   {
     "invocation": "risk-check-run-refused",
@@ -977,8 +1015,16 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE, then a second commit touching the auth risk-surface path src/auth.mjs as HEAD.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {
+      "commits": [
+        {
+          "path": "src/auth.mjs",
+          "append": "\nexport const goldenChange = true;\n",
+          "message": "Record golden source change"
+        }
+      ]
+    }
   },
   {
     "invocation": "risk-check-status-ok",
@@ -994,8 +1040,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "risk-check-status-refused",
@@ -1013,8 +1059,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "adjudication-ok",
@@ -1039,8 +1085,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "adjudication-refused",
@@ -1065,8 +1111,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "deferred-record-ok",
@@ -1092,8 +1138,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "deferred-record-refused",
@@ -1119,8 +1165,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "risk-carry-ok",
@@ -1317,8 +1363,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "debt-harvest-refused",
@@ -1333,8 +1379,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "renumber-insert-ok",
@@ -1350,8 +1396,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "renumber-insert-refused",
@@ -1367,8 +1413,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "renumber-remove-ok",
@@ -1384,8 +1430,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "renumber-remove-refused",
@@ -1401,8 +1447,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
-    "refusal_source": "handler"
+    "refusal_source": "handler",
+    "setup": {}
   },
   {
     "invocation": "milestone-prune-ok",
@@ -1740,7 +1786,9 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; add remote origin with URL https://github.com/golden/fixture.git, never contact it."
+    "setup": {
+      "origin": "https://github.com/golden/fixture.git"
+    }
   },
   {
     "invocation": "forge-detect-refused",
@@ -1754,7 +1802,9 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; add remote origin with URL https://github.com/golden/fixture.git, never contact it."
+    "setup": {
+      "origin": "https://github.com/golden/fixture.git"
+    }
   },
   {
     "invocation": "forge-create-no-gh",
@@ -1808,7 +1858,9 @@
     ],
     "git": true,
     "refusal_source": "door",
-    "setup": "Commit the bundle as BASE and HEAD on main; add lightweight tag v1.0.0; no remote."
+    "setup": {
+      "tag": "v1.0.0"
+    }
   },
   {
     "invocation": "git-branch-decide-refused",
@@ -1821,7 +1873,9 @@
     ],
     "git": true,
     "refusal_source": "door",
-    "setup": "Commit the bundle as BASE and HEAD on main; add lightweight tag v1.0.0; no remote."
+    "setup": {
+      "tag": "v1.0.0"
+    }
   },
   {
     "invocation": "git-branch-tags-ok",
@@ -1835,7 +1889,9 @@
     ],
     "git": true,
     "refusal_source": "door",
-    "setup": "Commit the bundle as BASE and HEAD on main; add lightweight tag v1.0.0; no remote."
+    "setup": {
+      "tag": "v1.0.0"
+    }
   },
   {
     "invocation": "git-branch-tags-refused",
@@ -1848,7 +1904,9 @@
     ],
     "git": true,
     "refusal_source": "door",
-    "setup": "Commit the bundle as BASE and HEAD on main; add lightweight tag v1.0.0; no remote."
+    "setup": {
+      "tag": "v1.0.0"
+    }
   },
   {
     "invocation": "git-guard-ok",
@@ -1859,7 +1917,7 @@
     "git": true,
     "refusal_source": "handler",
     "stdin": "{\"cwd\":\"<FIXTURE>\",\"tool_input\":{\"command\":\"git status\"}}",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "git-guard-refused",
@@ -1870,7 +1928,7 @@
     "git": true,
     "refusal_source": "handler",
     "stdin": "{\"cwd\":\"<FIXTURE>\",\"tool_input\":{\"command\":\"git commit -m golden\"}}",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "git-publish-publish-not-authorized",
@@ -1886,8 +1944,8 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "No remote; auto_close false refuses before push"
+    "offline": "No remote; auto_close false refuses before push",
+    "setup": {}
   },
   {
     "invocation": "git-publish-publish-no-remote",
@@ -1903,8 +1961,8 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "No remote; auto_close true and unprotected main reach remote-not-configured before push"
+    "offline": "No remote; auto_close true and unprotected main reach remote-not-configured before push",
+    "setup": {}
   },
   {
     "invocation": "git-publish-reap-ok",
@@ -1920,8 +1978,8 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "No remote; absent target returns already-absent before branch deletion"
+    "offline": "No remote; absent target returns already-absent before branch deletion",
+    "setup": {}
   },
   {
     "invocation": "git-publish-reap-refused",
@@ -1937,8 +1995,8 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "No remote; protected target returns before branch deletion"
+    "offline": "No remote; protected target returns before branch deletion",
+    "setup": {}
   },
   {
     "invocation": "git-publish-authorized-ok",
@@ -1952,7 +2010,7 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "git-publish-authorized-refused",
@@ -1966,7 +2024,7 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "issue-check-check-ok",
@@ -1980,8 +2038,8 @@
     ],
     "git": true,
     "refusal_source": "door",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "gh absent from pinned PATH; check returns skip before query"
+    "offline": "gh absent from pinned PATH; check returns skip before query",
+    "setup": {}
   },
   {
     "invocation": "issue-check-check-refused",
@@ -1994,8 +2052,8 @@
     ],
     "git": true,
     "refusal_source": "door",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "Missing --dir value returns before handler or request"
+    "offline": "Missing --dir value returns before handler or request",
+    "setup": {}
   },
   {
     "invocation": "issue-filing-file-missing-payload",
@@ -2011,8 +2069,8 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "Missing payload file returns before forge resolution"
+    "offline": "Missing payload file returns before forge resolution",
+    "setup": {}
   },
   {
     "invocation": "issue-filing-file-bad-payload",
@@ -2028,8 +2086,8 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "Invalid payload object returns before forge resolution"
+    "offline": "Invalid payload object returns before forge resolution",
+    "setup": {}
   },
   {
     "invocation": "issue-filing-unfixed-missing-payload",
@@ -2045,8 +2103,8 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "Missing payload file returns before forge resolution"
+    "offline": "Missing payload file returns before forge resolution",
+    "setup": {}
   },
   {
     "invocation": "issue-filing-unfixed-bad-payload",
@@ -2062,8 +2120,8 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
-    "offline": "Invalid payload object returns before forge resolution"
+    "offline": "Invalid payload object returns before forge resolution",
+    "setup": {}
   },
   {
     "invocation": "land-cleanup-cleanup-ok",
@@ -2081,7 +2139,9 @@
     ],
     "git": true,
     "refusal_source": "door",
-    "setup": "Commit the bundle as BASE and HEAD on main; add local branch golden-merged at HEAD so git branch --merged main lists it; no checkout or remote."
+    "setup": {
+      "branch": "golden-merged"
+    }
   },
   {
     "invocation": "land-cleanup-cleanup-refused",
@@ -2094,7 +2154,9 @@
     ],
     "git": true,
     "refusal_source": "door",
-    "setup": "Commit the bundle as BASE and HEAD on main; add local branch golden-merged at HEAD so git branch --merged main lists it; no checkout or remote."
+    "setup": {
+      "branch": "golden-merged"
+    }
   },
   {
     "invocation": "land-cleanup-gate-ok",
@@ -2109,7 +2171,7 @@
     "git": true,
     "refusal_source": "door",
     "stdin": "{\"findings\":[]}",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "land-cleanup-gate-refused",
@@ -2123,7 +2185,7 @@
     "git": true,
     "refusal_source": "door",
     "stdin": "{\"findings\":[]}",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "land-cleanup-gate-halt",
@@ -2138,7 +2200,7 @@
     "git": true,
     "refusal_source": "door",
     "stdin": "{}",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "read-trace-ok",
@@ -2373,7 +2435,7 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "why-refused",
@@ -2386,7 +2448,7 @@
     ],
     "git": true,
     "refusal_source": "handler",
-    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+    "setup": {}
   },
   {
     "invocation": "skim-ok",

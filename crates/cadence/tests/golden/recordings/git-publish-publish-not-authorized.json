@@ -1,0 +1,48 @@
+{
+  "invocation": "git-publish-publish-not-authorized",
+  "operation": "git-publish publish",
+  "bundle": "config",
+  "script": "cadence-core/bin/git-publish.mjs",
+  "argv": [
+    "publish",
+    "--dir",
+    "<FIXTURE>",
+    "--remote",
+    "origin"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_AUTHOR_NAME": "Golden Fixture",
+    "GIT_AUTHOR_EMAIL": "golden@example.invalid",
+    "GIT_COMMITTER_NAME": "Golden Fixture",
+    "GIT_COMMITTER_EMAIL": "golden@example.invalid",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ALLOW_PROTOCOL": ""
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "auto-close-off",
+    "branch": "main",
+    "remote": "origin",
+    "detail": "git.auto_close is not true anywhere, so no unattended publish or merge is authorized. A repository opts in by setting \"git\": {\"auto_close\": true} in its own .planning/config.json; a user-global setting cannot opt in on its behalf.",
+    "hint": "this REPOSITORY has not authorized an unattended publish: run `config.mjs set --file <repo>/.planning/config.json git.auto_close=true` in the repo itself, because a user-global true does not speak for it - or push by hand",
+    "warnings": []
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

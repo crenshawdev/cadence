@@ -1,0 +1,47 @@
+{
+  "invocation": "git-publish-publish-no-remote",
+  "operation": "git-publish publish",
+  "bundle": "publish-authorized",
+  "script": "cadence-core/bin/git-publish.mjs",
+  "argv": [
+    "publish",
+    "--dir",
+    "<FIXTURE>",
+    "--remote",
+    "origin"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_AUTHOR_NAME": "Golden Fixture",
+    "GIT_AUTHOR_EMAIL": "golden@example.invalid",
+    "GIT_COMMITTER_NAME": "Golden Fixture",
+    "GIT_COMMITTER_EMAIL": "golden@example.invalid",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ALLOW_PROTOCOL": ""
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "remote-not-configured",
+    "branch": "main",
+    "remote": "origin",
+    "hint": "run `git remote` and pass --remote one of the names it lists",
+    "warnings": []
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

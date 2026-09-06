@@ -1,0 +1,96 @@
+{
+  "invocation": "renumber-insert-ok",
+  "operation": "renumber insert",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "renumber",
+    "insert",
+    "--at",
+    "2",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_AUTHOR_NAME": "Golden Fixture",
+    "GIT_AUTHOR_EMAIL": "golden@example.invalid",
+    "GIT_COMMITTER_NAME": "Golden Fixture",
+    "GIT_COMMITTER_EMAIL": "golden@example.invalid",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ALLOW_PROTOCOL": ""
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "ops": [
+      {
+        "edit": "ROADMAP.md",
+        "changes": 2
+      },
+      {
+        "edit": "REQUIREMENTS.md"
+      }
+    ],
+    "in_text_refs": [
+      {
+        "file": "PROJECT.md",
+        "line": 327,
+        "text": "tag, both `/cad-land`'s. Four `medium` findings from phase 4's own"
+      },
+      {
+        "file": "PROJECT.md",
+        "line": 363,
+        "text": "tag, both `/cad-land`'s. Two `medium` findings from phase 2's own `risk_surface`"
+      },
+      {
+        "file": "PROJECT.md",
+        "line": 449,
+        "text": "`SUMMARY.md` deriving as `planned`, was the target of phase 2 and the replay"
+      },
+      {
+        "file": "PROJECT.md",
+        "line": 451,
+        "text": "carries the original write-dead defect and shares none of phase 4's rotation"
+      },
+      {
+        "file": "PROJECT.md",
+        "line": 535,
+        "text": "phase 2's UAT item 11, whether the `/cad-plan` orchestrator halts on a live"
+      },
+      {
+        "file": "PROJECT.md",
+        "line": 557,
+        "text": "defines `\"src\": \"repo\"` as \"settable in either layer\", so phase 2 shipped a new"
+      },
+      {
+        "file": "PROJECT.md",
+        "line": 568,
+        "text": "base after the merge confirms. One accepted limitation ships with it: phase 2's"
+      },
+      {
+        "file": "PROJECT.md",
+        "line": 633,
+        "text": "| `unseeded` became verdict-breaking, reversing v1.4.0's own earlier shape | A diagnostic that never moves the verdict leaves the ship gate exactly as permeable as it was; the additive form shipped in phase 2 is what phase 5 had to undo | ✓ Shipped v1.4.0 (breaking for `total === rows.length` callers) |"
+      }
+    ],
+    "slot": "add the new \"- [ ] **Phase 2: ...**\" line and its detail section",
+    "total": 2
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

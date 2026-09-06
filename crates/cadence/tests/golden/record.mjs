@@ -24,6 +24,45 @@ function executable(name) {
   throw new Error(`required executable unavailable: ${name}`);
 }
 
+function setupRepository(root, env, setup) {
+  const git = (...args) => {
+    const result = spawnSync('git', args, {
+      cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 60_000,
+    });
+    if (result.error || result.status !== 0) {
+      throw new Error(`git ${args[0]}: ${result.error?.message || result.stderr.trim()}`);
+    }
+    return result.stdout.trim();
+  };
+  git('init', '-q', '-b', 'main', '--object-format=sha1', '--template=');
+  // These are local settings in this disposable repository only.
+  git('config', 'user.name', env.GIT_AUTHOR_NAME);
+  git('config', 'user.email', env.GIT_AUTHOR_EMAIL);
+  // Support files include machine-specific symlink targets and are never git inputs.
+  mkdirSync(join(root, '.git/info'), { recursive: true });
+  writeFileSync(join(root, '.git/info/exclude'), '/.golden-env/\n');
+  git('add', '--all');
+  git('commit', '-q', '-m', 'Golden fixture base');
+  const base = git('rev-parse', 'HEAD');
+  const append = change => {
+    const path = contained(root, resolve(root, change.path));
+    if (typeof change.append !== 'string') throw new Error('invalid git setup append');
+    writeFileSync(path, readFileSync(path, 'utf8') + change.append);
+    git('add', '--', change.path);
+  };
+  for (const change of setup.commits || []) {
+    append(change);
+    git('commit', '-q', '-m', change.message);
+  }
+  const head = git('rev-parse', 'HEAD');
+  for (const change of setup.staged || []) append(change);
+  if (setup.origin) git('remote', 'add', 'origin', setup.origin);
+  if (setup.tag) git('tag', setup.tag);
+  if (setup.branch) git('branch', setup.branch);
+  return { base, head };
+}
+
 function main() {
   const only = new Set();
   const args = process.argv.slice(2);
@@ -49,10 +88,10 @@ function main() {
   }
   for (const id of only) if (!ids.has(id)) throw new Error(`unknown invocation: ${id}`);
   const selected = manifest.filter(entry => !only.size || only.has(entry.invocation));
-  // Preflight the whole selection: unsupported git setup must never leave a
-  // partially updated recording set. Plan 2 replaces this guard with setup.
   for (const entry of selected) {
-    if (entry.git) throw new Error(`${entry.invocation}: git fixture setup requires plan 2`);
+    if (entry.git && (!entry.setup || typeof entry.setup !== 'object' || Array.isArray(entry.setup))) {
+      throw new Error(`${entry.invocation}: missing git setup object`);
+    }
   }
   const git = executable('git');
   const output = join(here, 'recordings');
@@ -83,8 +122,20 @@ function main() {
         CADENCE_GLOBAL_CONFIG: global,
         CADENCE_MANAGED_SETTINGS: empty,
         CADENCE_USER_SETTINGS: empty,
+        ...(entry.git ? {
+          GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+          GIT_AUTHOR_NAME: 'Golden Fixture', GIT_AUTHOR_EMAIL: 'golden@example.invalid',
+          GIT_COMMITTER_NAME: 'Golden Fixture', GIT_COMMITTER_EMAIL: 'golden@example.invalid',
+          GIT_AUTHOR_DATE: '2000-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2000-01-01T00:00:00Z',
+          GIT_TERMINAL_PROMPT: '0', GIT_ALLOW_PROTOCOL: '',
+        } : {}),
       };
-      const substitute = text => text.replaceAll('<FIXTURE>', scratch);
+      const refs = entry.git ? setupRepository(scratch, env, entry.setup) : null;
+      const substitute = text => {
+        let result = text.replaceAll('<FIXTURE>', scratch);
+        if (refs) result = result.replaceAll('<BASE>', refs.base).replaceAll('<HEAD>', refs.head);
+        return result;
+      };
       const restore = text => text.replaceAll(scratch, '<FIXTURE>').replaceAll(repo, '<REPO>');
       const argv = entry.argv.map(substitute);
       const stdin = entry.stdin === undefined ? null : substitute(entry.stdin);
@@ -107,6 +158,12 @@ function main() {
         node: process.versions.node.split('.')[0], exit: child.status,
         stdout, stderr: child.stderr, files: {}, deleted: [],
       };
+      // Task 1 proves the harvested marker in the written artifact. Task 2
+      // replaces this narrow capture with discovery over the entire tree.
+      if (entry.operation === 'debt-harvest' && stdout?.written === true) {
+        const path = contained(scratch, realpathSync(stdout.file));
+        recording.files[relative(scratch, path)] = readFileSync(path, 'utf8');
+      }
       const destination = join(output, `${entry.invocation}.json`);
       // Opening without following symlinks protects an existing recording too.
       writeFileSync(destination, restore(JSON.stringify(recording, null, 2)) + '\n',

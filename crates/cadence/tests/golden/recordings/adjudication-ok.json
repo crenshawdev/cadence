@@ -1,0 +1,72 @@
+{
+  "invocation": "adjudication-ok",
+  "operation": "adjudication",
+  "bundle": "planning-inputs",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "adjudication",
+    "--phase",
+    "1",
+    "--trigger",
+    "risk_surface",
+    "--discriminator",
+    "golden",
+    "--base",
+    "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "--head",
+    "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "--payload",
+    "<FIXTURE>/adjudication.json",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_AUTHOR_NAME": "Golden Fixture",
+    "GIT_AUTHOR_EMAIL": "golden@example.invalid",
+    "GIT_COMMITTER_NAME": "Golden Fixture",
+    "GIT_COMMITTER_EMAIL": "golden@example.invalid",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+    "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ALLOW_PROTOCOL": ""
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "phase": "1",
+    "trigger": "risk_surface",
+    "discriminator": "golden",
+    "round": 1,
+    "record": "phases/1/ADJUDICATION-risk_surface-golden.json",
+    "base": "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "head": "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "base_id": "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "head_id": "5191a92e44aaaf6dc22502ed847912e21c4ede7c",
+    "voices": 1,
+    "counts": {
+      "raised": 1,
+      "survived": 1,
+      "downgraded": 0,
+      "refuted": 0
+    },
+    "citations": {
+      "checked": true,
+      "missing": 0
+    }
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}
