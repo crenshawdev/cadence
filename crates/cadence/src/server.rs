@@ -12,6 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::envelope::Envelope;
 
+// Internal query surface; public MCP registration belongs to phase 5.
+#[allow(dead_code)]
+#[path = "recall/mod.rs"]
+pub mod recall;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
