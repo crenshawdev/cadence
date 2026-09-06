@@ -72,9 +72,21 @@ it stands until corrected.
 ## Decisions
 
 - D-05 (Store integrity): A crash mid-write leaves the complete old value or the
-  complete new one, never a torn one. This is newly testable BECAUSE of
-  write-then-ack; `v3.7.12`'s `atomicWrite` promises only "never torn".
-  Evidence: `.planning/ROADMAP.md` phase 3, "What is genuinely testable here".
+  complete new one, never a torn one - and the acknowledgement is sent only
+  after the bytes are `fsync`ed, the temp file and then its directory.
+  **Corrected 2026-09-06 by the falsification pass.** This decision originally
+  read "newly testable BECAUSE of write-then-ack", which is FALSE: frozen
+  `atomicWrite` is `writeFileSync(tmp)` then `renameSync(tmp, file)`
+  (`cadence-core/bin/lib/planning-files.mjs:2787-2788`), and `rename` is atomic,
+  so old-or-new against a PROCESS KILL already holds at `v3.7.12`. The frozen
+  comment says so itself at `:2749` - "no lock, no `O_EXCL` retry and no `fsync`
+  here - the promise is only that a crash never leaves a torn file."
+  **What write-then-ack actually buys is DURABILITY, a different failure
+  model:** with no `fsync`, a power loss can land the rename with the data not
+  yet on disk, leaving a truncated file. Process kill and machine crash were
+  conflated. Evidence: `.planning/ROADMAP.md` phase 3, "What is genuinely
+  testable here" (which carries the same conflation);
+  `.codex-analysis/plan-3-falsification.md`.
 - D-06 (Import): The eight dead config keys are warn-and-dropped by name at
   import, never carried as inert settings - the four `parallelization.*`, the
   three `review.triggers.phase_diff.*`, and `git.auto_close`. Evidence:
@@ -97,6 +109,18 @@ it stands until corrected.
       bytes are unchanged.
 - [ ] AC4: Killing the binary mid-write leaves the target file holding either
       the complete old value or the complete new value, never a partial one.
+      (Regression guard on the Rust side, not a new property - `v3.7.12`
+      already satisfies this through `rename`. See D-05.)
+- [ ] AC8: The acknowledgement for a write is sent only after that write is
+      `fsync`ed - the temp file before the rename, then the containing
+      directory. Falsifiable by ordering: a trace of the syscalls a single
+      acknowledged write performs shows both `fsync` calls before the reply,
+      and removing either one makes the check fail. This is the property
+      write-then-ack actually adds, and no crash harness is needed to check it.
+      (human-verify: needs strace) - probed 2026-09-06, `strace` is NOT
+      installed on this machine. `ptrace_scope` is 1, which still permits
+      tracing a spawned child, so installing `strace` is sufficient; the gap is
+      the binary, not the policy.
 - [ ] AC5: Running against a pre-4.0 `.planning/` taken from the `v3.7.12` tag
       produces a store with no hand edit, leaves the original files present, and
       names all eight dead config keys in a warning.
