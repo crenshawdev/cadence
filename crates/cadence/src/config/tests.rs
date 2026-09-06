@@ -293,3 +293,319 @@ const DISPOSITIONS: &[(&str, bool)] = &[
     ("review.decision_review.tier", false),
     ("review.decision_review.effort", false),
 ];
+
+fn config_paths(dir: &std::path::Path) -> reload::Paths {
+    reload::Paths {
+        global: Some(dir.join("global.json")),
+        repo: dir.join("repo.json"),
+    }
+}
+fn write_json(path: &std::path::Path, value: Value) {
+    std::fs::write(path, serde_json::to_vec(&value).unwrap()).unwrap();
+}
+fn policy_value(g: &reload::Generation) -> bool {
+    get(&g.effective.values, "workflow.verifier")
+        .unwrap()
+        .as_bool()
+        .unwrap()
+}
+fn checked_policy(
+    _: &cadence::store::MutationContext<'_>,
+    g: &reload::Generation,
+) -> cadence::store::Result<()> {
+    if policy_value(g) {
+        Ok(())
+    } else {
+        Err(cadence::store::Error::Policy(
+            "test operation refused by current config".into(),
+        ))
+    }
+}
+fn store_bytes(dir: &std::path::Path) -> Vec<Option<Vec<u8>>> {
+    ["items.jsonl", "decisions.jsonl", "state.json"]
+        .iter()
+        .map(|name| std::fs::read(dir.join(name)).ok())
+        .collect()
+}
+
+#[test]
+fn writer_rechecks_each_layer_and_recovers_from_admission_refusal() {
+    use cadence::store::{
+        filesystem::Filesystem,
+        writer::{Operation, Store},
+    };
+    for global in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = config_paths(dir.path());
+        let target = if global {
+            paths.global.as_ref().unwrap()
+        } else {
+            &paths.repo
+        };
+        write_json(target, json!({"workflow":{"verifier":true}}));
+        let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+            paths.clone(),
+            reload::FileIo,
+        )));
+        let policy = reload::ConfigPolicy {
+            config: config.clone(),
+            evaluate: checked_policy,
+        };
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let store = Store::open(Filesystem::new(dir.path()).unwrap(), policy)
+                .await
+                .unwrap();
+            store
+                .request(Operation::RewriteSnapshot(json!(1)))
+                .await
+                .unwrap();
+            let before = store_bytes(dir.path());
+            write_json(target, json!({"workflow":{"verifier":false}}));
+            assert!(
+                store
+                    .request(Operation::RewriteSnapshot(json!(2)))
+                    .await
+                    .is_err()
+            );
+            assert_eq!(store_bytes(dir.path()), before);
+            assert!(!policy_value(&config.lock().unwrap().refresh().unwrap()));
+            write_json(target, json!({"workflow":{"verifier":true}}));
+            assert_eq!(
+                store
+                    .request(Operation::RewriteSnapshot(json!(3)))
+                    .await
+                    .unwrap()
+                    .snapshot
+                    .data,
+                json!(3)
+            );
+        });
+    }
+}
+
+#[test]
+fn reload_reads_bytes_despite_unchanged_size_time_and_rename() {
+    use std::fs::{File, FileTimes};
+    let dir = tempfile::tempdir().unwrap();
+    let paths = config_paths(dir.path());
+    std::fs::write(&paths.repo, b"{\"git\":{\"on_protected\":\"allow\"}}").unwrap();
+    let mut reader = reload::Reload::new(paths.clone(), reload::FileIo);
+    let old = reader.refresh().unwrap();
+    let time = std::fs::metadata(&paths.repo).unwrap().modified().unwrap();
+    std::fs::write(&paths.repo, b"{\"git\":{\"on_protected\":\"refuse\"}}").unwrap();
+    // Equal-size change with the exact same mtime, not a coarse sleep-based test.
+    std::fs::write(&paths.repo, b"{\"git\":{\"on_protected\":\"ask\"}}  ").unwrap();
+    File::open(&paths.repo)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(time))
+        .unwrap();
+    let changed = reader.refresh().unwrap();
+    assert_eq!(
+        old.repo.bytes.as_ref().unwrap().len(),
+        changed.repo.bytes.as_ref().unwrap().len()
+    );
+    assert!(changed.number > old.number);
+    assert_eq!(
+        get(&changed.effective.values, "git.on_protected"),
+        Some(&json!("ask"))
+    );
+    let replacement = dir.path().join("checkout");
+    std::fs::write(&replacement, changed.repo.bytes.as_ref().unwrap()).unwrap();
+    std::fs::rename(replacement, &paths.repo).unwrap();
+    let renamed = reader.refresh().unwrap();
+    assert!(renamed.number > changed.number);
+    assert_ne!(renamed.repo.stamp, changed.repo.stamp);
+    std::fs::remove_file(&paths.repo).unwrap();
+    let absent = reader.refresh().unwrap();
+    assert!(absent.repo.bytes.is_none());
+    assert!(absent.number > renamed.number);
+}
+
+#[test]
+fn alias_identity_is_resolved_before_reads_and_rechecked_on_retarget() {
+    use std::os::unix::fs::symlink;
+    struct Count {
+        reads: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl reload::ConfigIo for Count {
+        fn read(&mut self, path: &std::path::Path) -> cadence::store::Result<reload::Input> {
+            self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            reload::ConfigIo::read(&mut reload::FileIo, path)
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let paths = config_paths(dir.path());
+    write_json(
+        &paths.repo,
+        json!({"workflow":{"verifier":false,"test_command":"repo-command"}}),
+    );
+    symlink(&paths.repo, paths.global.as_ref().unwrap()).unwrap();
+    let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut reader = reload::Reload::new(
+        paths.clone(),
+        Count {
+            reads: count.clone(),
+        },
+    );
+    let shared = reader.refresh().unwrap();
+    assert!(shared.global.is_none());
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(shared.effective.sources["workflow.verifier"], Layer::Repo);
+    assert_eq!(
+        get(&shared.effective.values, "workflow.test_command"),
+        Some(&Value::Null)
+    );
+    let other = dir.path().join("other.json");
+    write_json(&other, json!({"workflow":{"test_command":"trusted"}}));
+    std::fs::remove_file(paths.global.as_ref().unwrap()).unwrap();
+    symlink(&other, paths.global.as_ref().unwrap()).unwrap();
+    let separated = reader.refresh().unwrap();
+    assert!(separated.global.is_some());
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    assert_eq!(
+        get(&separated.effective.values, "workflow.test_command"),
+        Some(&json!("trusted"))
+    );
+    assert!(separated.number > shared.number);
+    assert_eq!(
+        reload::identity(&dir.path().join("missing.json")).unwrap(),
+        dir.path().join("missing.json")
+    );
+}
+
+#[test]
+fn failed_io_invalidates_generation_and_never_uses_cached_permission() {
+    struct Denied {
+        deny: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl reload::ConfigIo for Denied {
+        fn read(&mut self, path: &std::path::Path) -> cadence::store::Result<reload::Input> {
+            if self.deny.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied).into());
+            }
+            reload::ConfigIo::read(&mut reload::FileIo, path)
+        }
+    }
+    use cadence::store::{
+        filesystem::Filesystem,
+        writer::{Operation, Store},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let paths = config_paths(dir.path());
+    write_json(&paths.repo, json!({"workflow":{"verifier":true}}));
+    let deny = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+        paths,
+        Denied { deny: deny.clone() },
+    )));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(
+            Filesystem::new(dir.path()).unwrap(),
+            reload::ConfigPolicy {
+                config: config.clone(),
+                evaluate: checked_policy,
+            },
+        )
+        .await
+        .unwrap();
+        store
+            .request(Operation::RewriteSnapshot(json!(1)))
+            .await
+            .unwrap();
+        let first = config.lock().unwrap().refresh().unwrap().number;
+        let before = store_bytes(dir.path());
+        deny.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            store
+                .request(Operation::RewriteSnapshot(json!(2)))
+                .await
+                .is_err()
+        );
+        assert!(config.lock().unwrap().refresh().is_err());
+        assert_eq!(store_bytes(dir.path()), before);
+        deny.store(false, std::sync::atomic::Ordering::SeqCst);
+        store
+            .request(Operation::RewriteSnapshot(json!(3)))
+            .await
+            .unwrap();
+        assert!(config.lock().unwrap().refresh().unwrap().number > first);
+    });
+}
+
+#[test]
+fn final_validation_reevaluates_policy_after_admission() {
+    use cadence::store::{
+        filesystem::{Filesystem, Stage},
+        writer::{Operation, Store},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let paths = config_paths(dir.path());
+    write_json(&paths.repo, json!({"workflow":{"verifier":true}}));
+    let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+        paths.clone(),
+        reload::FileIo,
+    )));
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = seen.clone();
+    let policy = reload::ConfigPolicy {
+        config,
+        evaluate: move |ctx: &cadence::store::MutationContext<'_>, g: &reload::Generation| {
+            observed.lock().unwrap().push(policy_value(g));
+            checked_policy(ctx, g)
+        },
+    };
+    let target = paths.repo.clone();
+    let storage = Filesystem::new(dir.path())
+        .unwrap()
+        .with_probe(move |stage, path| {
+            if stage == Stage::Prepared && path.file_name().unwrap() == "state.json" {
+                write_json(&target, json!({"workflow":{"verifier":false}}));
+            }
+            Ok(())
+        });
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(storage, policy).await.unwrap();
+        let before = store_bytes(dir.path());
+        assert!(
+            store
+                .request(Operation::RewriteSnapshot(json!(1)))
+                .await
+                .is_err()
+        );
+        assert_eq!(store_bytes(dir.path()), before);
+        assert_eq!(*seen.lock().unwrap(), vec![true, false]);
+        assert!(!dir.path().join(".store-intent.json").exists());
+    });
+}
+
+#[test]
+fn malformed_nonobject_and_unreadable_layers_are_unavailable() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let paths = config_paths(dir.path());
+    let mut reader = reload::Reload::new(paths.clone(), reload::FileIo);
+    for bytes in [
+        "{",
+        "null",
+        "false",
+        "[]",
+        "{\"git\":{\"on_protected\":\"nonsense\"}}",
+        "{\"git\":null}",
+    ] {
+        std::fs::write(&paths.repo, bytes).unwrap();
+        assert!(reader.refresh().is_err(), "{bytes}");
+    }
+    write_json(&paths.repo, json!({"workflow":{"verifier":true}}));
+    reader.refresh().unwrap();
+    std::fs::set_permissions(&paths.repo, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let actually_unreadable = std::fs::read(&paths.repo).is_err();
+    if actually_unreadable {
+        assert!(reader.refresh().is_err());
+    } else {
+        eprintln!(
+            "privileged filesystem: mode bits do not establish unreadability; injected I/O boundary test supplies denial evidence"
+        );
+    }
+    std::fs::set_permissions(&paths.repo, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(reader.refresh().is_ok());
+}

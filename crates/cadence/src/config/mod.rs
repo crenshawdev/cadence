@@ -1,5 +1,6 @@
 //! Two persisted layers; defaults and migration evidence are never a layer.
 pub mod merge;
+pub mod reload;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
