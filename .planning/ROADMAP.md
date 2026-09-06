@@ -215,9 +215,20 @@ rotation - refusing past the bound instead.
 
 **Goal.** The 41 lib modules that import no other lib module exist in Rust.
 
-480,634 bytes. Because they are leaves, they carry no ordering constraint among
-themselves and can be split across plans freely once L0 stands. This is the
-largest phase by module count and the least entangled by dependency.
+480,634 bytes across 41 modules, of which **40 are ported and one is not**:
+`lib/repo-auto-close.mjs` (3,088 B) exists solely as "the ONE read of
+`git.auto_close`", and 4.0.0 retires that key (see phase 18), so it is deleted
+rather than ported. 477,546 bytes land here.
+
+Two neighbours shrink without disappearing: `close-decision.mjs` loses
+`decideGateHalt`, the autonomous-close halt, and keeps `resolveReapBranch` and
+`decideCleanup` which serve ordinary land cleanup; `publish-decision.mjs` keeps
+deciding whether a mutating action may run and returning the byte-exact git
+argv, with the authorization arm simplified to "the engineer authorized it".
+
+Because they are leaves, they carry no ordering constraint among themselves and
+can be split across plans freely once L0 stands. This is the largest phase by
+module count and the least entangled by dependency.
 
 ### Phase 6: L2 and the shared planning core
 
@@ -369,10 +380,24 @@ tree - risk carry, then deferred carry, then prune, then land. Individually
 correct modules can still delete the evidence that should have blocked a
 landing.
 
-**Parity is against `v3.7.12` minus what 4.0.0 deliberately retires**: parallel
-execution and everything that serves it. That exclusion is a decision on record,
-not a shortfall, and it removes 14,145 bytes - `planning/plan-overlap.mjs` and
-`worktree-base.mjs` - and zero whole lib modules.
+**Parity is against `v3.7.12` minus what 4.0.0 deliberately retires.** These are
+decisions on record, not shortfalls, and the gate asserts their ABSENCE rather
+than their behavior.
+
+*Parallel execution and everything that serves it* - `planning/plan-overlap.mjs`
+and `worktree-base.mjs`, 14,145 bytes, and zero whole lib modules.
+
+*`git.auto_close`*, decided 2026-09-05. `README.md:14` promises the engineer
+authorizes every push and `:20` says Cadence is deliberately not an autopilot;
+`git.auto_close` is the shipped arm that does the thing `:20` disclaims
+(GH-247). The JavaScript keeps it - `v3.7.12` is the frozen reference and must
+not move - so this is the one place 4.0.0 is deliberately NOT at parity. It
+deletes `lib/repo-auto-close.mjs` outright (3,088 B), removes `decideGateHalt`
+from `close-decision.mjs`, and simplifies the authorization arm of
+`publish-decision.mjs`. The config key joins `stakes` and `parallelization.*`
+as a retired key. The gate must assert that no path publishes or merges without
+an explicit authorization, which is a contract assertion (phase 17), not an
+output diff.
 
 ### Phase 19: The release path
 
