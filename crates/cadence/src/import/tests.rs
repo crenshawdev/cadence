@@ -22,6 +22,7 @@ impl Policy for Allow {
 }
 fn frozen(path: &str) -> Vec<u8> {
     let out = std::process::Command::new("git")
+        .current_dir(repository_root())
         .args(["show", &format!("v3.7.12:{path}")])
         .stdin(std::process::Stdio::null())
         .output()
@@ -344,4 +345,342 @@ fn proven_rotation_copy_coalesces_events_and_retains_both_origins() {
         assert_eq!(origins[0]["path"], json!("trace.jsonl"));
         assert_eq!(origins[1]["path"], json!("trace.1.jsonl"));
     }
+}
+
+fn repository_root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+}
+
+fn external_temp() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository_root();
+    assert!(
+        !dir.path().starts_with(repo),
+        "import fixtures require TMPDIR outside repository"
+    );
+    dir
+}
+fn extraction() -> tempfile::TempDir {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let dir = external_temp();
+    let archive = Command::new("git")
+        .current_dir(repository_root())
+        .args(["archive", "v3.7.12", ".planning"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        archive.status.success(),
+        "{}",
+        String::from_utf8_lossy(&archive.stderr)
+    );
+    let mut tar = Command::new("tar")
+        .args(["-x", "-C"])
+        .arg(dir.path())
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    tar.stdin
+        .take()
+        .unwrap()
+        .write_all(&archive.stdout)
+        .unwrap();
+    assert!(tar.wait().unwrap().success());
+    // These are the frozen inputs that make AC5 meaningful. An empty or
+    // wrong-generation extraction must fail before the importer is invoked.
+    let planning = dir.path().join(".planning");
+    for name in ["config.json", "STATE.md", "FILED.md", "DECLINED.md"] {
+        let path = planning.join(name);
+        assert!(path.is_file(), "frozen fixture lacks {}", path.display());
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            frozen(&format!(".planning/{name}")),
+            "wrong frozen provenance: {name}"
+        );
+    }
+    for name in [ITEMS, DECISIONS, STATE, "config.v4.json"] {
+        assert!(
+            !planning.join(name).exists(),
+            "fixture already contains v4 output: {name}"
+        );
+    }
+    let git = Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["rev-parse", "--show-toplevel"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!git.status.success(), "fixture inherited a git repository");
+    dir
+}
+fn tree_bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn walk(root: &Path, at: &Path, out: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in std::fs::read_dir(at).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if entry.file_type().unwrap().is_dir() {
+                walk(root, &path, out);
+            } else {
+                out.insert(
+                    path.strip_prefix(root).unwrap().into(),
+                    std::fs::read(path).unwrap(),
+                );
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    walk(root, root, &mut out);
+    out
+}
+fn allow_evaluation() -> Evaluate {
+    Arc::new(|_, _| Ok(()))
+}
+fn policy_evaluation() -> Evaluate {
+    Arc::new(|_, g| {
+        if merge::get(&g.effective.values, "workflow.verifier") == Some(&json!(true)) {
+            Ok(())
+        } else {
+            Err(Error::Policy(
+                "test mutation refused by current workflow.verifier".into(),
+            ))
+        }
+    })
+}
+
+#[test]
+fn first_touch_child() {
+    use std::io::{Read, Write};
+    let Some(root) = std::env::var_os("CADENCE_IMPORT_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root);
+    let kill = std::env::var("CADENCE_IMPORT_KILL").unwrap_or_default();
+    let factory =
+        SessionFactory::new(None, policy_evaluation()).with_probe(Arc::new(move |stage, path| {
+            if stage == Stage::Renamed && path.file_name().unwrap() == kill.as_str() {
+                println!("IMPORT_BARRIER");
+                std::io::stdout().flush()?;
+                let _ = std::io::stdin().read(&mut [0u8; 1]);
+            }
+            Ok(())
+        }));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let session=factory.first_touch(&root).await.unwrap();
+        let same=factory.first_touch(&root).await.unwrap();
+        assert!(Arc::ptr_eq(&session,&same));
+        let view=session.request(Operation::Read).await.unwrap();
+        println!("IMPORT_RESULT {}",json!({"manifest":session.import_manifest(),"items":view.items.iter().map(|r|(&r.id,r.revision)).collect::<Vec<_>>(),"generation":view.snapshot.generation}));
+    });
+}
+fn import_child(root: &Path) -> Value {
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "import::tests::first_touch_child", "--nocapture"])
+        .env("CADENCE_IMPORT_ROOT", root)
+        .env_remove("CADENCE_IMPORT_KILL")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    serde_json::from_str(
+        text.lines()
+            .find_map(|line| line.strip_prefix("IMPORT_RESULT "))
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn ac5_frozen_first_touch_creates_stores_names_retirements_and_preserves_every_original() {
+    let fixture = extraction();
+    let root = fixture.path().join(".planning");
+    let originals = tree_bytes(&root);
+    let first = import_child(&root);
+    assert_eq!(first["generation"], json!(1));
+    let created: Vec<PathBuf> =
+        serde_json::from_value(first["manifest"]["created"].clone()).unwrap();
+    assert_eq!(created.len(), 4);
+    for name in [ITEMS, DECISIONS, STATE, "config.v4.json"] {
+        assert!(created.contains(&root.join(name)));
+    }
+    let warnings = first["manifest"]["warnings"].as_array().unwrap();
+    let locked = warnings
+        .iter()
+        .filter_map(Value::as_str)
+        .find(|s| s.starts_with("Retired settings (D-06):"))
+        .unwrap();
+    for key in config::RETIRED {
+        assert!(locked.contains(key), "{key}");
+    }
+    assert_eq!(
+        warnings
+            .iter()
+            .filter_map(Value::as_str)
+            .find(|s| s.starts_with("Repo present and removed:")),
+        Some("Repo present and removed: git.auto_close")
+    );
+    let effective: Value =
+        serde_json::from_slice(&std::fs::read(root.join("config.v4.json")).unwrap()).unwrap();
+    assert!(merge::get(&effective, "git.auto_close").is_none());
+    assert_eq!(import_child(&root), first);
+    for (path, bytes) in originals {
+        assert_eq!(std::fs::read(root.join(path)).unwrap(), bytes);
+    }
+}
+
+#[test]
+fn killed_first_touch_recovers_one_import_with_stable_identities() {
+    use std::io::{BufRead, BufReader};
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{Command, Stdio};
+    for target in ["config.v4.json", ITEMS, DECISIONS, STATE] {
+        let fixture = extraction();
+        let root = fixture.path().join(".planning");
+        let originals = tree_bytes(&root);
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "import::tests::first_touch_child", "--nocapture"])
+            .env("CADENCE_IMPORT_ROOT", &root)
+            .env("CADENCE_IMPORT_KILL", target)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        let mut output = BufReader::new(child.stdout.take().unwrap());
+        let mut saw_barrier = false;
+        loop {
+            let mut line = String::new();
+            if output.read_line(&mut line).unwrap() == 0 {
+                break;
+            }
+            if line.trim() == "IMPORT_BARRIER" {
+                saw_barrier = true;
+                break;
+            }
+        }
+        assert!(saw_barrier, "child exited before {target} barrier");
+        child.kill().unwrap();
+        assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGKILL));
+        assert!(root.join(INTENT).exists());
+        let resumed = import_child(&root);
+        assert_eq!(resumed["generation"], json!(1));
+        assert_eq!(import_child(&root), resumed);
+        assert!(!root.join(INTENT).exists());
+        let store_items: Vec<cadence::store::model::ItemRecord> =
+            cadence::store::model::parse_lines(&std::fs::read(root.join(ITEMS)).unwrap()).unwrap();
+        let expected = items::translate(
+            None,
+            Some(&Source {
+                path: "FILED.md".into(),
+                bytes: originals[Path::new("FILED.md")].clone(),
+            }),
+            Some(&Source {
+                path: "DECLINED.md".into(),
+                bytes: originals[Path::new("DECLINED.md")].clone(),
+            }),
+        )
+        .unwrap();
+        assert_eq!(store_items, expected.records);
+        for (path, bytes) in originals {
+            assert_eq!(std::fs::read(root.join(path)).unwrap(), bytes);
+        }
+    }
+}
+
+#[derive(Clone)]
+struct DenyIo {
+    path: Arc<Mutex<Option<PathBuf>>>,
+}
+impl ConfigIo for DenyIo {
+    fn read(&mut self, path: &Path) -> Result<Input> {
+        if self.path.lock().unwrap().as_deref() == Some(path) {
+            return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied).into());
+        }
+        FileIo.read(path)
+    }
+}
+
+#[test]
+fn first_touch_distinguishes_optional_absence_unreadability_malformed_config_and_foreign_outputs() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let empty = external_temp();
+        let root = empty.path().join(".planning");
+        let factory = SessionFactory::new(
+            Some(empty.path().join("missing-global/config.json")),
+            allow_evaluation(),
+        );
+        let session = factory.first_touch(&root).await.unwrap();
+        assert!(
+            session
+                .request(Operation::Read)
+                .await
+                .unwrap()
+                .items
+                .is_empty()
+        );
+        assert_eq!(session.import_manifest().created.len(), 4);
+        for invalid in ["{", "false", "{\"git\":{\"on_protected\":\"maybe\"}}"] {
+            let fixture = external_temp();
+            std::fs::write(fixture.path().join("config.json"), invalid).unwrap();
+            let before = tree_bytes(fixture.path());
+            assert!(
+                SessionFactory::new(None, allow_evaluation())
+                    .first_touch(fixture.path())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(tree_bytes(fixture.path()), before);
+        }
+        for target in [ITEMS, DECISIONS, STATE, "config.v4.json"] {
+            let fixture = external_temp();
+            std::fs::write(fixture.path().join(target), b"foreign").unwrap();
+            let before = tree_bytes(fixture.path());
+            assert!(
+                SessionFactory::new(None, allow_evaluation())
+                    .first_touch(fixture.path())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(tree_bytes(fixture.path()), before);
+        }
+        let fixture = extraction();
+        let root = fixture.path().join(".planning");
+        let before = tree_bytes(&root);
+        let denied = Arc::new(Mutex::new(Some(root.join("FILED.md"))));
+        let factory = SessionFactory::with_io(None, DenyIo { path: denied }, allow_evaluation());
+        assert!(factory.first_touch(&root).await.is_err());
+        assert_eq!(tree_bytes(&root), before);
+    });
+}
+
+#[test]
+fn first_touch_checks_source_changes_and_normalizes_known_legacy_values() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let fixture=external_temp();let root=fixture.path().to_path_buf();
+        std::fs::write(root.join("config.json"),br#"{"git":{"on_protected":"deny"},"planning":{"max_capture_bullets":"invalid"},"unknown":{"value":5}}"#).unwrap();
+        let session=SessionFactory::new(None,allow_evaluation()).first_touch(&root).await.unwrap();
+        assert_eq!(merge::get(&session.config().unwrap().effective.values,"git.on_protected"),Some(&json!("refuse")));
+        assert_eq!(merge::get(&session.config().unwrap().effective.values,"planning.max_capture_bullets"),Some(&json!(40)));
+        let view=session.request(Operation::Read).await.unwrap();
+        assert!(view.snapshot.data["source_evidence"].to_string().contains("non_effective_original_source"));
+        let fixture=external_temp();let root=fixture.path().to_path_buf();
+        let path=root.join("CAPTURE.md");std::fs::write(&path,b"## Todos\n- [ ] first\n").unwrap();
+        let changed=path.clone();
+        let factory=SessionFactory::new(None,allow_evaluation()).with_probe(Arc::new(move |stage,_| {
+            if stage==Stage::Prepared {std::fs::write(&changed,b"## Todos\n- [ ] changed\n")?;}Ok(())
+        }));
+        assert!(factory.first_touch(&root).await.is_err());
+        for name in [ITEMS,DECISIONS,STATE,"config.v4.json",INTENT] {assert!(!root.join(name).exists());}
+    });
 }

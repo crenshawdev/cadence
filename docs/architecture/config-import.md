@@ -40,3 +40,39 @@ role keys and `roles.*` remain separate; null fallback policy belongs to routing
 
 The original config files remain byte-identical. Rollback must remove the named
 new outputs by hand; `git checkout` does not delete untracked versioned files.
+
+## First-touch service and recovery
+
+`import::SessionFactory` is the binary-root composition seam for PLAN-3. Construct
+it with the global config address and a mandatory policy evaluator, then call
+`first_touch(planning_root)`. It creates no service until first touch and shares
+one owner for each resolved root. Session requests and config changes use the
+store writer; queries report an error when controlling config is unavailable.
+
+First touch reads every consumed legacy input before preparing outputs. It imports
+CAPTURE/FILED/DECLINED, STATE and available trace generations; it records ARCHIVE's
+availability without maintaining a fourth store. Whole source bytes remain labeled
+non-effective evidence. Known `git.on_protected=deny` becomes `refuse`. Invalid
+preferences are excluded with diagnostics and preserved originals; invalid policy
+values fail closed. All eight D-06 names appear in one warning even when absent,
+followed by accurate per-layer presence/removal lists. The six token retirements
+have their own warning. Global forge provenance remains global.
+
+One store transaction installs versioned config participants, item and decision
+logs, then the state snapshot. The snapshot's `import` manifest contains the
+source generation, source identities/digests, active paths, warnings, and an exact
+`created` path list. It becomes complete only with the installed generation.
+Pending intents are recovered before an incomplete root can be treated as empty.
+Unrelated partial outputs are refused. During pending import recovery, legacy
+sources are revalidated against the intent's generation and supply policy until
+all participants are installed; partially installed config cannot authorize its
+own import. Preparation and final validation both check source bytes.
+
+The `created` list is the manual rollback inventory: ordinarily
+`.planning/items.jsonl`, `.planning/decisions.jsonl`, `.planning/state.json`, and
+`.planning/config.v4.json`, plus a global versioned sibling when a distinct global
+source was present. Stop the resident service before removing those outputs.
+Interrupted imports also have `.store-intent.json`; restart to finish recovery
+before rolling back. A killed process can leave disposable `.<target>.<pid>.<n>.tmp` temporary
+files, which do not signify completion and are not adopted as store data. Every
+legacy file is retained; checkout alone removes none of these untracked outputs.

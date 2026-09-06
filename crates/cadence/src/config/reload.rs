@@ -46,12 +46,19 @@ pub trait ConfigIo: Send + 'static {
     fn read(&mut self, resolved: &Path) -> Result<Input>;
 }
 
+#[derive(Clone, Copy)]
 pub struct FileIo;
 impl ConfigIo for FileIo {
     fn read(&mut self, path: &Path) -> Result<Input> {
         let mut file = match fs::File::open(path) {
             Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                if fs::symlink_metadata(path).is_ok() {
+                    return Err(Error::Io(format!(
+                        "existing config/input cannot be read: {}",
+                        path.display()
+                    )));
+                }
                 return Ok(Input {
                     identity: path.into(),
                     bytes: None,
@@ -77,7 +84,7 @@ impl ConfigIo for FileIo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Paths {
     pub global: Option<PathBuf>,
     pub repo: PathBuf,
@@ -198,7 +205,9 @@ pub fn validate_effective(effective: &Effective) -> Result<()> {
         if spec["disposition"] == "dead" {
             continue;
         }
-        if !merge::get(&effective.values, key).is_some_and(|value| valid_type(spec, value, true)) {
+        if !merge::get(&effective.values, key).is_some_and(|value| {
+            valid_type(spec, value, true) && super::write::valid_grammar(spec, value)
+        }) {
             return Err(Error::Policy(format!("config unavailable: unusable {key}")));
         }
     }
