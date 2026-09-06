@@ -1,0 +1,98 @@
+{
+  "trace-append-ok": {
+    "exit": 0,
+    "files": [
+      ".planning/trace.jsonl"
+    ],
+    "deleted": []
+  },
+  "cursor-set-ok": {
+    "exit": 0,
+    "files": [
+      ".planning/STATE.md"
+    ],
+    "deleted": []
+  },
+  "status-slice": {
+    "exit": 0,
+    "files": [],
+    "deleted": []
+  },
+  "cursor-get-slice": {
+    "exit": 1,
+    "files": [],
+    "deleted": []
+  },
+  "read-trace-ok": {
+    "exit": 0,
+    "files": [
+      ".planning/reads.jsonl"
+    ],
+    "deleted": []
+  },
+  "milestone-prune-ok": {
+    "exit": 0,
+    "files": [
+      ".planning/ARCHIVE.md",
+      ".planning/ROADMAP.md",
+      ".planning/_archive-golden/1/ADJUDICATION-plan-cad-plan-2a385615.json",
+      ".planning/_archive-golden/1/ADJUDICATION-risk_surface-plan-1-r2.json",
+      ".planning/_archive-golden/1/ADJUDICATION-risk_surface-plan-1.json",
+      ".planning/_archive-golden/1/ADJUDICATION-risk_surface-plan-2.json",
+      ".planning/_archive-golden/1/CONTEXT.md",
+      ".planning/_archive-golden/1/FINDINGS.json",
+      ".planning/_archive-golden/1/PLAN-1.md",
+      ".planning/_archive-golden/1/PLAN-2.md",
+      ".planning/_archive-golden/1/REVIEW-risk_surface-plan-1-r2.md",
+      ".planning/_archive-golden/1/REVIEW-risk_surface-plan-1.md",
+      ".planning/_archive-golden/1/REVIEW-risk_surface-plan-2.md",
+      ".planning/_archive-golden/1/SUMMARY.md",
+      ".planning/_archive-golden/1/UAT.md",
+      ".planning/_archive-golden/1/reports/plan-1.md",
+      ".planning/_archive-golden/1/reports/plan-2.md",
+      ".planning/_archive-golden/1/verifier-findings.json"
+    ],
+    "deleted": [
+      ".planning/phases/1/ADJUDICATION-plan-cad-plan-2a385615.json",
+      ".planning/phases/1/ADJUDICATION-risk_surface-plan-1-r2.json",
+      ".planning/phases/1/ADJUDICATION-risk_surface-plan-1.json",
+      ".planning/phases/1/ADJUDICATION-risk_surface-plan-2.json",
+      ".planning/phases/1/CONTEXT.md",
+      ".planning/phases/1/FINDINGS.json",
+      ".planning/phases/1/PLAN-1.md",
+      ".planning/phases/1/PLAN-2.md",
+      ".planning/phases/1/REVIEW-risk_surface-plan-1-r2.md",
+      ".planning/phases/1/REVIEW-risk_surface-plan-1.md",
+      ".planning/phases/1/REVIEW-risk_surface-plan-2.md",
+      ".planning/phases/1/SUMMARY.md",
+      ".planning/phases/1/UAT.md",
+      ".planning/phases/1/reports/plan-1.md",
+      ".planning/phases/1/reports/plan-2.md",
+      ".planning/phases/1/verifier-findings.json"
+    ]
+  },
+  "cite-count-ok": {
+    "exit": 0,
+    "files": [
+      ".planning/trace.jsonl"
+    ],
+    "deleted": []
+  },
+  "route-resolve-ok": {
+    "exit": 0,
+    "files": [],
+    "deleted": []
+  },
+  "route-resolve-refused": {
+    "exit": 1,
+    "files": [],
+    "deleted": []
+  },
+  "risk-check-run-ok": {
+    "exit": 0,
+    "files": [
+      ".planning/trace.jsonl"
+    ],
+    "deleted": []
+  }
+}

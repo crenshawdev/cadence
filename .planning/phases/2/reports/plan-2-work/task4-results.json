@@ -1,0 +1,94 @@
+{
+  "taint": {
+    "exit": 1,
+    "output": "status-slice: captured hostname and pid taint\n",
+    "differences": [],
+    "git_status": ""
+  },
+  "first": {
+    "exit": 0,
+    "output": ""
+  },
+  "second": {
+    "exit": 0,
+    "output": ""
+  },
+  "repeat_differences": [],
+  "ambient": {
+    "exit": 0,
+    "output": "",
+    "differences": []
+  },
+  "settings": {
+    "exit": 0,
+    "output": "",
+    "differences": []
+  },
+  "unexplained_paths": [],
+  "path_count": 1,
+  "unexplained_dates": [],
+  "dates": [
+    "2000-01-01T00:00:00Z",
+    "2026-08-08",
+    "2026-08-17",
+    "2026-08-18",
+    "2026-08-19",
+    "2026-08-23",
+    "2026-08-25",
+    "2026-08-26",
+    "2026-08-28",
+    "2026-08-30",
+    "2026-09-02",
+    "2026-09-02T16:31:23Z",
+    "2026-09-03",
+    "2026-09-05",
+    "2026-09-05T12:00:00.000Z",
+    "2026-09-05T12:00:01.000Z",
+    "2026-09-05T19:01:29.911Z",
+    "2026-09-05T19:01:29.936Z",
+    "2026-09-05T19:01:29.959Z",
+    "2026-09-05T20:15:36.830Z",
+    "2026-09-05T20:15:51.891Z",
+    "2026-09-05T20:18:10.819Z",
+    "2026-13-45"
+  ],
+  "hostname_files": [],
+  "duration_files": [],
+  "now_files": [
+    "task-record-ok.json",
+    "trace-close-ok.json",
+    "risk-check-run-ok.json",
+    "cite-count-ok.json",
+    "trace-append-ok.json",
+    "read-trace-ok.json",
+    "subagent-trace-ok.json"
+  ],
+  "today_files": [
+    "cursor-set-ok.json",
+    "uat-init-ok.json",
+    "uat-refresh-ok.json",
+    "uat-record-ok.json",
+    "uat-merge-ok.json",
+    "status-closed.json"
+  ],
+  "count": 156,
+  "negative_clock": {
+    "exit": 0,
+    "output": "",
+    "differences": [
+      "cite-count-ok.json",
+      "cursor-set-ok.json",
+      "read-trace-ok.json",
+      "risk-check-run-ok.json",
+      "status-closed.json",
+      "subagent-trace-ok.json",
+      "task-record-ok.json",
+      "trace-append-ok.json",
+      "trace-close-ok.json",
+      "uat-init-ok.json",
+      "uat-merge-ok.json",
+      "uat-record-ok.json",
+      "uat-refresh-ok.json"
+    ]
+  }
+}

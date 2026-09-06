@@ -1,0 +1,23 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src/main.rs (target/debug/deps/cadence-a73f920cfce2745d)
+
+running 6 tests
+test envelope::tests::every_arm_round_trips_through_serde_json ... ok
+test envelope::tests::not_applicable_keeps_its_hyphen ... ok
+test envelope::tests::ok_puts_the_payload_fields_beside_the_tag ... ok
+test envelope::tests::refused_carries_a_reason_and_nothing_else ... ok
+test envelope::tests::refused_is_a_successful_call_carrying_its_refusal ... ok
+test envelope::tests::unknown_carries_a_reason_and_nothing_else ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mcp.rs (target/debug/deps/mcp-a34d59a78c02e09a)
+
+running 4 tests
+test cadence_version_returns_an_ok_envelope_as_structured_content ... ok
+test tools_list_declares_exactly_cadence_version_with_an_output_schema ... ok
+test closing_stdin_exits_the_server_cleanly ... ok
+test initialize_names_the_server_cadence_at_the_crate_version ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

@@ -1,0 +1,38 @@
+{
+  "clean_check": {
+    "exit": 0,
+    "output": ""
+  },
+  "one_byte": {
+    "exit": 1,
+    "output": "crates/cadence/tests/golden/recordings/status-slice.json: different\n"
+  },
+  "check_major": {
+    "exit": 1,
+    "output": "Node major mismatch: running 26, recordings 24; the CI pin must move with the recordings; explicit re-recording requires --allow-node-change\n"
+  },
+  "default_major": {
+    "exit": 1,
+    "output": "Node major mismatch: running 26, recordings 24; the CI pin must move with the recordings; explicit re-recording requires --allow-node-change\n"
+  },
+  "allow_major": {
+    "exit": 0,
+    "output": ""
+  },
+  "missing_extra": {
+    "exit": 1,
+    "output": "../../tmp/golden-major-im97u8rd/golden/recordings/extra-recording.json: extra\n../../tmp/golden-major-im97u8rd/golden/recordings/status-slice.json: missing\n"
+  },
+  "ci": {
+    "jobs": [
+      "cargo-test",
+      "golden-drift",
+      "node-test",
+      "self-verify",
+      "typecheck"
+    ],
+    "node": "26",
+    "existing_workflow_prefix_unchanged": true,
+    "sha_pinned_uses": 9
+  }
+}

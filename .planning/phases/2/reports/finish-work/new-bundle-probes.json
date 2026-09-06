@@ -1,0 +1,2487 @@
+[
+  {
+    "invocation": "uat-init-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "file": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-qK9tck/.planning/phases/2/UAT.md",
+      "items": 1,
+      "next": {
+        "k": 1,
+        "name": "Golden item",
+        "expected": "A result"
+      }
+    },
+    "stderr": "",
+    "changed": [
+      ".planning/phases/2/UAT.md"
+    ]
+  },
+  {
+    "invocation": "uat-init-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "uat-exists",
+      "detail": "use refresh, or remove the file deliberately",
+      "hint": "run `uat refresh --phase <N>` to append the new items to the checklist already on disk; deleting UAT.md instead throws away every result already recorded in it"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "uat-refresh-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "added": 1,
+      "total": 11,
+      "next": {
+        "k": 11,
+        "name": "Golden item",
+        "expected": "A result"
+      }
+    },
+    "stderr": "",
+    "changed": [
+      ".planning/phases/1/UAT.md"
+    ]
+  },
+  {
+    "invocation": "uat-refresh-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-payload",
+      "detail": "expected a JSON array of {name, expected}",
+      "hint": "send an ARRAY, and give every element both a `name` and an `expected` - fix the step that composed the payload and send it again"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "uat-merge-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "auto_passed": 0,
+      "gaps": 0,
+      "added": 1,
+      "skipped": 0,
+      "rejected": 0,
+      "findings": "phases/1/FINDINGS.json",
+      "next": {
+        "k": 11,
+        "name": "Golden merge item",
+        "expected": "A result is recorded."
+      }
+    },
+    "stderr": "",
+    "changed": [
+      ".planning/phases/1/FINDINGS.json",
+      ".planning/phases/1/UAT.md"
+    ]
+  },
+  {
+    "invocation": "uat-merge-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-payload",
+      "detail": "payload carries none of passes, gaps, human_checks as an array",
+      "hint": "add at least one of those three to the findings payload as an array - an object with none of them would merge nothing while reporting a clean deep pass"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "reads-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "read-failed",
+      "detail": "cannot read /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-Ktodgg/.planning/reads.jsonl",
+      "hint": "make that file readable, or move it aside if it is corrupt - until then this seam has no figures at all, and it is not reporting that the project opened no files"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "cite-count-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "phase": 1,
+      "plans": [
+        "PLAN-1.md",
+        "PLAN-2.md"
+      ],
+      "surfaced": {
+        "count": 0,
+        "ids": []
+      },
+      "cited": {
+        "count": 0,
+        "ids": []
+      },
+      "cited_by_kind": {
+        "decision": {
+          "surfaced": 0,
+          "cited": 0
+        },
+        "capture": {
+          "surfaced": 0,
+          "unjoinable": true
+        },
+        "deviation": {
+          "surfaced": 0,
+          "unjoinable": true
+        },
+        "uat": {
+          "surfaced": 0,
+          "unjoinable": true
+        }
+      },
+      "trace": {
+        "written": true
+      }
+    },
+    "stderr": "",
+    "changed": [
+      ".planning/trace.jsonl"
+    ]
+  },
+  {
+    "invocation": "cite-count-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "bad-args",
+      "detail": "cite-count --point must be one of planned | committed",
+      "hint": "send one of the two points the detail lists, naming which moment in /cad-plan this count was taken at, or drop --point"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "detect-commands-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "root": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-OX1Qoa",
+      "lint": null,
+      "typecheck": null,
+      "source": {
+        "lint": null,
+        "typecheck": null
+      },
+      "warnings": [
+        "lint: npm is not on PATH or in node_modules/.bin, so `npm run lint` (from package.json) was not offered; no lower arm was taken in its place",
+        "typecheck: npm is not on PATH or in node_modules/.bin, so `npm run typecheck` (from package.json) was not offered; no lower arm was taken in its place"
+      ]
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "detect-commands-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-root",
+      "detail": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-OkxRvr/missing cannot be listed (ENOENT)",
+      "hint": "point --root at a directory this process can list - the lint and typecheck commands are read from the project manifests sitting at its top level"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "detect-surfaces-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "root": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-C4UR1w",
+      "manifests": [
+        "package.json"
+      ],
+      "evidenced": [
+        {
+          "category": "auth",
+          "signal": "dependency passport"
+        }
+      ],
+      "silent": [
+        "migrations",
+        "billing",
+        "concurrency",
+        "destructive",
+        "secrets",
+        "api_contract",
+        "untrusted_input"
+      ],
+      "unspeakable": [
+        "destructive"
+      ],
+      "inconclusive": false,
+      "recommended": [
+        "auth",
+        "migrations",
+        "billing",
+        "concurrency",
+        "destructive",
+        "secrets",
+        "api_contract",
+        "untrusted_input"
+      ],
+      "options": [
+        {
+          "surfaces": [
+            "auth",
+            "migrations",
+            "billing",
+            "concurrency",
+            "destructive",
+            "secrets",
+            "api_contract",
+            "untrusted_input"
+          ],
+          "reason": "the structure evidences auth (dependency passport); the rest are silent rather than absent, so every category stays in scope"
+        },
+        {
+          "surfaces": [
+            "auth"
+          ],
+          "reason": "only what the structure evidences: auth (dependency passport)"
+        }
+      ]
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "detect-surfaces-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-root",
+      "detail": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-mu64fC/missing cannot be listed (ENOENT)",
+      "hint": "point --root at a directory this process can list - the surface scan walks the tree down from there"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "deferred-list-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "members": [
+        {
+          "phase": "1",
+          "trigger": "diff",
+          "discriminator": "golden",
+          "round": 1,
+          "path": "phases/1/DEFERRED-diff-golden.json",
+          "findings": 1
+        }
+      ],
+      "findings": 1,
+      "unreadable": []
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "deferred-list-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-planning-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-NsutLK/missing not found",
+      "hint": "/cad-new-project"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "deferred-carry-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "phase": "1",
+      "moved": [
+        {
+          "trigger": "diff",
+          "discriminator": "golden",
+          "round": 1,
+          "from": "phases/1/DEFERRED-diff-golden.json",
+          "to": "deferred/1/DEFERRED-diff-golden.json",
+          "findings": 1
+        }
+      ],
+      "carried": 1,
+      "findings": 1
+    },
+    "stderr": "",
+    "changed": [
+      ".planning/deferred/1/DEFERRED-diff-golden.json"
+    ]
+  },
+  {
+    "invocation": "deferred-carry-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-planning-dir",
+      "detail": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-u2zPjJ/missing not found",
+      "hint": "/cad-new-project"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-validate-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "file": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-8GdCMX/.planning/config.json",
+      "checked": 3,
+      "errors": []
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-validate-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "read",
+      "detail": "cannot read/parse /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-zlIYXY/missing.json: ENOENT: no such file or directory, open '/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-zlIYXY/missing.json'",
+      "hint": "repair the JSON in the file the detail names, or point --file at a config that exists, then re-run"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-check-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-check-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "invalid",
+      "detail": [
+        {
+          "key": "unknown.golden",
+          "error": "unknown key"
+        }
+      ],
+      "hint": "each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-set-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "file": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-LddsWQ/.planning/config.json",
+      "changed": [
+        {
+          "key": "memory.backend",
+          "value": "none"
+        }
+      ]
+    },
+    "stderr": "",
+    "changed": [
+      ".planning/config.json"
+    ]
+  },
+  {
+    "invocation": "config-set-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "invalid",
+      "detail": [
+        {
+          "key": "unknown.golden",
+          "error": "unknown key"
+        }
+      ],
+      "hint": "each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-unset-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "file": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-fbFMBR/.planning/config.json",
+      "removed": [
+        "memory.backend"
+      ]
+    },
+    "stderr": "",
+    "changed": [
+      ".planning/config.json"
+    ]
+  },
+  {
+    "invocation": "config-unset-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "read",
+      "detail": "cannot read/parse /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-WzdOIZ/broken.json: Expected property name or '}' in JSON at position 2 (line 2 column 1)",
+      "hint": "repair the JSON in the file the detail names and re-run - unset will not overwrite a layer it could not read"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-get-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "values": {
+        "roles.cad-executor.model": "opus"
+      },
+      "source": "global+repo"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-get-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "unknown-key",
+      "detail": [
+        "unknown.golden"
+      ],
+      "hint": "run `config.mjs keys` for the keys this schema carries, then ask for one of those"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-keys-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "keys": {
+        "granularity": {
+          "type": "enum",
+          "values": [
+            "fine",
+            "standard",
+            "coarse"
+          ],
+          "default": "standard",
+          "src": "repo",
+          "purpose": "How many phases the roadmap gets - new-project roadmap step only (coarse 3-5 / standard 5-8 / fine 8-12 phases); it splits no phase into tasks"
+        },
+        "model.escalate_on_failure": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Re-dispatch a failed attempt one rung above the rung it started at, holding at the top rung; off by default - a retry is usually a narrower job than the pass that failed it"
+        },
+        "model.overrides.cad-planner": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-planner.model: the model the planner is dispatched on when roles.cad-planner.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-assumptions-analyzer": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-assumptions-analyzer.model: the model the assumptions analyzer is dispatched on when roles.cad-assumptions-analyzer.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-verifier": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-verifier.model: the model the verifier is dispatched on when roles.cad-verifier.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-reviewer": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-reviewer.model: the model the claude-subagent reviewer is dispatched on when roles.cad-reviewer.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-executor": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-executor.model: the model the executor is dispatched on when roles.cad-executor.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-plan-checker": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-plan-checker.model: the model the plan checker is dispatched on when roles.cad-plan-checker.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.effort.cad-planner": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-planner.effort: the rung the planner STARTS at when roles.cad-planner.effort names none (null = this key does not answer, and roles.cad-planner.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-assumptions-analyzer": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-assumptions-analyzer.effort: the rung the assumptions analyzer STARTS at when roles.cad-assumptions-analyzer.effort names none (null = this key does not answer, and roles.cad-assumptions-analyzer.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-verifier": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-verifier.effort: the rung the verifier STARTS at when roles.cad-verifier.effort names none (null = this key does not answer, and roles.cad-verifier.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-reviewer": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-reviewer.effort: the rung the claude-subagent reviewer STARTS at when roles.cad-reviewer.effort names none (null = this key does not answer, and roles.cad-reviewer.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-executor": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-executor.effort: the rung the executor STARTS at when roles.cad-executor.effort names none (null = this key does not answer, and roles.cad-executor.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-plan-checker": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-plan-checker.effort: the rung the plan checker STARTS at when roles.cad-plan-checker.effort names none (null = this key does not answer, and roles.cad-plan-checker.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-planner.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the planner is dispatched on, named directly. It wins over model.overrides.cad-planner, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-assumptions-analyzer.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the assumptions analyzer is dispatched on, named directly. It wins over model.overrides.cad-assumptions-analyzer, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-verifier.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the verifier is dispatched on, named directly. It wins over model.overrides.cad-verifier, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-reviewer.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the claude-subagent reviewer is dispatched on, named directly. It wins over model.overrides.cad-reviewer, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-executor.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the executor is dispatched on, named directly. It wins over model.overrides.cad-executor, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-plan-checker.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the plan checker is dispatched on, named directly. It wins over model.overrides.cad-plan-checker, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-planner.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "high",
+          "purpose": "The rung the planner STARTS at. Defaults to `high`. It wins over model.effort.cad-planner, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-assumptions-analyzer.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "high",
+          "purpose": "The rung the assumptions analyzer STARTS at. Defaults to `high`. It wins over model.effort.cad-assumptions-analyzer, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-verifier.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "high",
+          "purpose": "The rung the verifier STARTS at. Defaults to `high`. It wins over model.effort.cad-verifier, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-reviewer.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "medium",
+          "purpose": "The rung the claude-subagent reviewer STARTS at. Defaults to `medium`. It wins over model.effort.cad-reviewer, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-executor.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "high",
+          "purpose": "The rung the executor STARTS at. Defaults to `high`. It wins over model.effort.cad-executor, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-plan-checker.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "low",
+          "purpose": "The rung the plan checker STARTS at. Defaults to `low`. It wins over model.effort.cad-plan-checker, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "workflow.research": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Run a research pass - new-project research step only; no other workflow reads it"
+        },
+        "workflow.plan_check": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Gate plans through the checker before code - opt-in second pass; the plan review trigger is the default second opinion and is blocking at `shipped`"
+        },
+        "workflow.verifier": {
+          "type": "bool",
+          "default": true,
+          "purpose": "The off switch for goal-backward verification after a phase: false always skips the deep pass. When true the deep pass runs whenever the plan-time risk floor raises - the phase's plans declare a file touching an answered risk surface, or a declared scope could not be read - and --deep forces it either way"
+        },
+        "workflow.skip_discuss": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Select which command /cad-progress suggests for an unplanned phase - progress next-step suggestion only; it skips no step"
+        },
+        "workflow.inline_plan_threshold": {
+          "type": "int",
+          "min": 0,
+          "default": 3,
+          "purpose": "Task count at/below which a plan runs inline vs its own doc"
+        },
+        "workflow.max_plan_tasks": {
+          "type": "int",
+          "min": 1,
+          "default": 8,
+          "purpose": "Task ceiling PER PLAN, not per phase - a phase needing more capacity gets MORE PLANS, sequential where they share files, and `## PHASE TOO BIG` is returned only when no number of plans of that size can deliver the phase, which is a statement about the PHASE's scope and not about task count. The ceiling the planner is given up front, so an oversized plan is split rather than silently built. Re-decided 2026-08-17 against both of its forces and landing on 8, unchanged: cold-prefix cost - `weight.mjs resident` puts the executor's fixed dispatch prefix at 12,488 bytes, about 2% of a measured executor dispatch, so what an extra plan re-buys is the cold pass over the plan and the phase's artifacts rather than the prefix - and context risk - 15 executor checkpoints of 21 on this repo's `.planning/trace.jsonl`, every one of them from a plan already under this ceiling. design-notes/dd-plan-task-ceiling.md carries the dated arithmetic"
+        },
+        "workflow.max_plan_bytes": {
+          "type": "int",
+          "min": 1,
+          "default": 675000,
+          "purpose": "Byte ceiling on what a SINGLE plan's `files:` frontmatter declares, measured as the sum of the on-disk sizes of those declared paths - PER PLAN and not per phase, the same reading workflow.max_plan_tasks carries, so a plan over it is split into MORE PLANS rather than shrunk in place. Those declared paths are what an executor dispatch is handed, and on one measured PLAN-1.md they were about 90% of a 70,554-token dispatch while nothing measured them against anything. A crossing is REPORTED and nothing is refused: plan-size report only (`bin/planning.mjs`), which workflows/plan.md hands the resolved value at its `check_size` step as `plan-size --max-bytes`; no dispatch path, agent frontmatter key or spawn seam consults it, so an over-ceiling plan is still planned and still executed. That is planning.max_capture_bullets's disposition and for its reason - the user may have authorized the full scope one step earlier, and a check that refused what they just authorized would be arguing with them. The default is the 75th percentile of the declared-byte distribution over this repository's 43 archived plans rounded UP to the next 25,000 (p25 207,298, p50 401,107, p75 667,580, p90 933,283, max 1,282,083, measured 2026-08-26; it fires on 10 of the 43), which is the derivation rule the six workflow.max_dispatch_tokens.* keys already state; references/config-reach.md carries the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-planner": {
+          "type": "int",
+          "min": 1,
+          "default": 200000,
+          "purpose": "Token ceiling on ONE the planner dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=28, p75 188,135, max 247,585, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-assumptions-analyzer": {
+          "type": "int",
+          "min": 1,
+          "default": 150000,
+          "purpose": "Token ceiling on ONE the assumptions analyzer dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=25, p75 145,054, max 188,149, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-verifier": {
+          "type": "int",
+          "min": 1,
+          "default": 100000,
+          "purpose": "Token ceiling on ONE the verifier dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=24, p75 82,633, max 131,728, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-reviewer": {
+          "type": "int",
+          "min": 1,
+          "default": 150000,
+          "purpose": "Token ceiling on ONE the claude-subagent reviewer dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=2, p75 125,100, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-executor": {
+          "type": "int",
+          "min": 1,
+          "default": 200000,
+          "purpose": "Token ceiling on ONE the executor dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=72, p75 182,631, max 275,285, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-plan-checker": {
+          "type": "int",
+          "min": 1,
+          "default": 75000,
+          "purpose": "Token ceiling on ONE the plan checker dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=5, p75 64,203, max 88,078, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.test_command": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "global",
+          "purpose": "Command Cadence runs to test (null = none). Honoured from the user-global config layer only: a `.planning/config.json` setting it is stripped at the merge and named in the read face's warnings, so a config that arrived with a clone cannot choose what Cadence runs - set it with `config.mjs set --global`"
+        },
+        "workflow.lint_command": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "global",
+          "purpose": "Command an executor runs for static analysis before it commits (null = none set, so planning.mjs detect-commands reads the project's own manifests instead). LINT ONLY - there is no companion typecheck key; the detected arm covers both. Honoured from the user-global config layer only: a `.planning/config.json` setting it is stripped at the merge and named in the read face's warnings, so a config that arrived with a clone cannot choose what Cadence runs - set it with `config.mjs set --global`"
+        },
+        "parallelization.enabled": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Run independent plans concurrently. On by default; false is the intentional opt-out. Engages only when the plans are provably independent AND the host's worktree.baseRef is \"head\" - choose_path falls back to sequential otherwise, so the default is safe on a host that cannot honour it"
+        },
+        "parallelization.max_concurrent_agents": {
+          "type": "int",
+          "min": 1,
+          "default": 3,
+          "purpose": "Cap on simultaneous agents"
+        },
+        "parallelization.min_plans_for_parallel": {
+          "type": "int",
+          "min": 1,
+          "default": 2,
+          "purpose": "Min plans before going parallel"
+        },
+        "parallelization.use_worktrees": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Isolate parallel writes in git worktrees"
+        },
+        "git.protected_branches": {
+          "type": "array_string",
+          "default": [
+            "main",
+            "master"
+          ],
+          "purpose": "Branches Cadence won't commit to directly"
+        },
+        "git.on_protected": {
+          "type": "enum",
+          "values": [
+            "ask",
+            "refuse",
+            "allow"
+          ],
+          "default": "ask",
+          "src": "repo",
+          "purpose": "What to do on a protected branch (DESIGN §5, git rails)"
+        },
+        "git.integration_branch": {
+          "type": "enum",
+          "values": [
+            "milestone",
+            "trunk"
+          ],
+          "default": "milestone",
+          "src": "repo",
+          "purpose": "Two-tier branch model: 'milestone' creates a per-milestone integration branch as the branch worktrees merge back into (where they fork FROM is the host's worktree.baseRef setting); 'trunk' creates no integration branch and commits land on the base governed by on_protected"
+        },
+        "git.auto_branch": {
+          "type": "enum",
+          "values": [
+            "ask",
+            "auto",
+            "off"
+          ],
+          "default": "ask",
+          "src": "repo",
+          "purpose": "How the integration branch is created at cycle start: 'ask' prompts once, 'auto' creates/switches silently, 'off' stays put"
+        },
+        "git.base_branch": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "Branch new work branches off (null = current)"
+        },
+        "git.create_tag": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Cut the release tag at land - on the pulled base, after the merge confirms (tag-after-merge). It governs that tag cut and nothing else: no other step reads it, and a manifest bump never depends on it"
+        },
+        "git.on_land_cleanup": {
+          "type": "bool",
+          "default": true,
+          "purpose": "After a successful land/merge, return to the base branch, pull, and reap the merged integration branch"
+        },
+        "git.issue_check": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Read-only issue-tracker report at the start of a land: which issues this branch's commits reference and which of them are still open on the forge this repository CONFIGURED - git.forge_provider and git.forge_repo, never a host detected from the origin URL - degrading to one line when it cannot be read, including the line that names which forge keys are unset. It reports only - nothing on this path ever writes to a tracker"
+        },
+        "git.forge_provider": {
+          "type": "enum",
+          "values": [
+            "forgejo",
+            "github",
+            "gitlab",
+            null
+          ],
+          "default": null,
+          "purpose": "Which forge hosts this repository's issue tracker, resolved ONCE at project setup by /cad-new-project or /cad-adopt and read at land time in place of any host detection: bin/issue-check.mjs picks its provider row from this value rather than classifying the origin URL, so a repository that temporarily loses its remote does not silently change behaviour. Spelled with the same vocabulary bin/lib/issue-decision.mjs's HOST_TABLE uses for its rows. null means unasked - the setup step has not run or the user has not picked a provider yet. Settable in either config layer: naming which forge you use is a preference, and it authorizes nothing on a repository that never named ITSELF - binding a call to a repository is git.forge_repo's job, and that key is repo_only."
+        },
+        "git.forge_repo": {
+          "type": "string_or_null",
+          "default": null,
+          "repo_only": true,
+          "grammar": "forge_slug",
+          "purpose": "The owner/name slug this repository's forge calls address, resolved ONCE at project setup - offered as a default read off origin, confirmed by the user - and read at land time in place of any host detection, as bin/issue-check.mjs's --repo selector. null means unasked. repo_only: a user-global slug would point EVERY repository's forge calls at one target, which is exactly the authorization test _meta.note states, so only that repository's own .planning/config.json may set it."
+        },
+        "git.forge_host": {
+          "type": "string_or_null",
+          "default": null,
+          "grammar": "forge_host",
+          "purpose": "The Forgejo instance host the user confirmed at setup, spelled `hostname` or `hostname:port` when the instance is not on its scheme's default port - the port a browser reaches the instance on, never an SSH port - resolved ONCE at project setup and read at land time in place of any host detection, where bin/issue-check.mjs turns it into the tea login NAME the call is made under. NEVER derived from the origin URL: on a split SSH endpoint the origin's host is the SSH hostname, not the instance the user reaches in a browser, which is the shape this repository itself has - so it is ASKED outright and confirmed. null on the github and gitlab providers, whose hosts are fixed, and null anywhere else means unasked. Settable in either config layer, for the same reason git.forge_provider is: naming which instance you work with is a preference and authorizes nothing on a repository that never named itself."
+        },
+        "git.auto_close": {
+          "type": "bool",
+          "default": false,
+          "src": "repo",
+          "repo_only": true,
+          "purpose": "Opt-in end-to-end close: cad-milestone/cad-land run audit -> tag -> PR -> merge -> reset with no per-step prompts, halting on a surviving blocker/high risk_surface finding. ONE key, TWO resolutions, and they are allowed to disagree. AUTHORIZED is honoured repo config layer only for the unattended publish, and for the GitLab MR create that publishes the branch itself: that close mutates ONE repository, so only that repository's own .planning/config.json can authorize it and a user-global value authorizes nothing on any host (D-08; git-publish.mjs publish and authorized, both through lib/repo-auto-close.mjs). REQUESTED is the MERGED value, read on purpose - cad-land skips the publish ask on it and the land gate reads that same merged value, so the gate's blocker/high halt is what replaces the human it switched off, and both must read one value. Setting it globally therefore skips the ask and still refuses, naming which authorization was missing."
+        },
+        "planning.commit_docs": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Commit .planning docs alongside code"
+        },
+        "planning.max_capture_bullets": {
+          "type": "int",
+          "min": 1,
+          "default": 40,
+          "purpose": "Bound on the SUBSTANTIVE walked bullets .planning/CAPTURE.md may hold - the Todos, Seeds and Notes count with the `- None.` placeholder excluded, which is what `planning.mjs capture-check` reports. A crossing is REPORTED and nothing is refused, the same consequence workflow.max_dispatch_tokens.* carries and for the same reason: capture-check report only (`bin/planning.mjs`), no writer consults it, so /cad-capture and /cad-execute's open items keep filing at a queue that is over. The default is this repository's own live figure rounded up - 30 substantive walked bullets measured 2026-08-25 after the hand sweep - so the bound sits ABOVE a healthy tree and fires on GROWTH rather than on arrival, because a bound that reddens the day it ships teaches its reader to ignore it. What it is for: the hand sweep took this queue to zero on 2026-08-08 and it regrew to 276 walked items in sixteen days, because nothing measured it against anything. references/config-reach.md carries the reach row"
+        },
+        "memory.backend": {
+          "type": "enum",
+          "values": [
+            "none",
+            "builtin"
+          ],
+          "default": "builtin",
+          "src": "repo",
+          "purpose": "Where notes/observations route: 'builtin' runs zero-dep BM25 recall over .planning/, 'none' disables recall"
+        },
+        "review.mode": {
+          "type": "enum",
+          "values": [
+            "single",
+            "panel",
+            "adjudicated"
+          ],
+          "default": "adjudicated",
+          "src": "repo",
+          "purpose": "How multiple reviewers combine (review-triggers.md §Combine)"
+        },
+        "review.reviewers": {
+          "type": "array_enum",
+          "values": [
+            "claude-subagent",
+            "openai",
+            "gemini",
+            "deepseek"
+          ],
+          "default": [
+            "claude-subagent"
+          ],
+          "src": "repo",
+          "purpose": "Which reviewer backends fire() resolves (review-triggers.md §Resolve)"
+        },
+        "review.key_file": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "global",
+          "purpose": "Path override for the provider key env file (never a key). Honoured from the user-global config layer only: a `.planning/config.json` setting it is stripped at the merge and named in the read face's warnings, so a config that arrived with a clone cannot choose where a provider key is read from - set it with `config.mjs set --global`"
+        },
+        "review.request_timeout_ms": {
+          "type": "int",
+          "min": 1,
+          "max": 600000,
+          "default": 540000,
+          "purpose": "ms before a review provider HTTPS request is aborted (a high-effort review can take minutes); 600000 is the execution-host ceiling"
+        },
+        "review.max_prompt_tokens": {
+          "type": "int",
+          "min": 1,
+          "default": 120000,
+          "purpose": "Estimated-token ceiling (chars/4) on a review or consult payload; an over-cap payload is refused with ok:false, reason over-cap before any request is issued; cross-model provider calls only - the free claude-subagent reviewer never runs that script"
+        },
+        "review.providers.openai.tiers.flagship": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "OpenAI model id for the flagship tier (set by --review)"
+        },
+        "review.providers.openai.tiers.balanced": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "OpenAI model id for the balanced tier"
+        },
+        "review.providers.openai.tiers.cheap": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "OpenAI model id for the cheap tier"
+        },
+        "review.providers.gemini.tiers.flagship": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "Gemini model id for the flagship tier"
+        },
+        "review.providers.gemini.tiers.balanced": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "Gemini model id for the balanced tier"
+        },
+        "review.providers.gemini.tiers.cheap": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "Gemini model id for the cheap tier"
+        },
+        "review.providers.deepseek.tiers.flagship": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "DeepSeek model id for the flagship tier"
+        },
+        "review.providers.deepseek.tiers.balanced": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "DeepSeek model id for the balanced tier"
+        },
+        "review.providers.deepseek.tiers.cheap": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "DeepSeek model id for the cheap tier"
+        },
+        "review.triggers.plan.gate": {
+          "type": "enum",
+          "values": [
+            "off",
+            "advisory",
+            "deferred",
+            "blocking",
+            "adjudicated"
+          ],
+          "default": "advisory",
+          "src": "repo",
+          "purpose": "How the plan review gates. Defaults to `advisory`; write any value here and that is what fires. A detected risk surface raises an advisory plan review to blocking, unless that surface is named in review.triggers.risk_surface.waive_routing_floor"
+        },
+        "review.triggers.plan.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "cheap",
+          "src": "repo",
+          "purpose": "Model tier for plan review - cross-model reviewers only; the claude-subagent reviewer's model is the one its own role resolves. Defaults to `cheap`; write any value here and that is the tier every plan review asks a provider for"
+        },
+        "review.triggers.plan.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "low",
+          "src": "repo",
+          "purpose": "Reasoning effort for plan review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen. Defaults to `low`; write any value here and that is the effort every plan review asks a provider for"
+        },
+        "review.triggers.diff.gate": {
+          "type": "enum",
+          "values": [
+            "off",
+            "advisory",
+            "deferred",
+            "blocking",
+            "adjudicated"
+          ],
+          "default": "off",
+          "src": "repo",
+          "purpose": "How the diff review gates. Defaults to `off`; write any value here and that is what fires"
+        },
+        "review.triggers.diff.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "cheap",
+          "src": "repo",
+          "purpose": "Model tier for diff review - cross-model reviewers only; the claude-subagent reviewer's model is the one its own role resolves. Defaults to `cheap`; write any value here and that is the tier every diff review asks a provider for"
+        },
+        "review.triggers.diff.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "minimal",
+          "src": "repo",
+          "purpose": "Reasoning effort for diff review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen. Defaults to `minimal`; write any value here and that is the effort every diff review asks a provider for"
+        },
+        "review.triggers.risk_surface.gate": {
+          "type": "enum",
+          "values": [
+            "off",
+            "advisory",
+            "deferred",
+            "blocking",
+            "adjudicated"
+          ],
+          "default": "blocking",
+          "src": "repo",
+          "purpose": "How the risk-surface review gates. Defaults to `blocking`, because the trigger fires only on a detection match and there is no case in which a matched risk surface is worth waving through; write any value here and that is what fires"
+        },
+        "review.triggers.risk_surface.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "cheap",
+          "src": "repo",
+          "purpose": "Model tier for risk-surface review - cross-model reviewers only; the claude-subagent reviewer's model is the one its own role resolves. Defaults to `cheap`; write any value here and that is the tier every risk-surface review asks a provider for"
+        },
+        "review.triggers.risk_surface.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "low",
+          "src": "repo",
+          "purpose": "Reasoning effort for risk-surface review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen. Defaults to `low`; write any value here and that is the effort every risk-surface review asks a provider for"
+        },
+        "review.triggers.risk_surface.surfaces": {
+          "type": "array_enum",
+          "values": [
+            "auth",
+            "migrations",
+            "billing",
+            "concurrency",
+            "destructive",
+            "secrets",
+            "api_contract",
+            "untrusted_input"
+          ],
+          "default": null,
+          "src": "repo",
+          "purpose": "Which of the eight risk surfaces the risk-surface review fires on - a heuristic match in a category outside this list does NOT fire the trigger. Left unset it means all eight, and it is also the UNANSWERED state: the first risk_surface fire on a project that has not answered runs the structural scan and asks once, then writes the answer here. There is deliberately no default array - a default of all eight would make \"the user chose everything\" indistinguishable from \"nobody has answered\""
+        },
+        "review.triggers.risk_surface.waive_routing_floor": {
+          "type": "array_enum",
+          "values": [
+            "auth",
+            "migrations",
+            "billing",
+            "concurrency",
+            "destructive",
+            "secrets",
+            "api_contract",
+            "untrusted_input"
+          ],
+          "default": null,
+          "src": "repo",
+          "purpose": "Which surfaces may NOT raise this project's plan-time risk floor. The floor does exactly two things - it makes the plan review blocking and it turns the deep-verify pass on - and naming a surface here withholds BOTH for that surface. It waives neither review itself: the blocking risk_surface review still fires on the actual diff, and this key cannot turn it off. It moves no role's model and no role's start rung, because the floor does not move those either. Every waiver applied is named in the resolve's `reason` with the surface and the file it would have raised on. A surface that is NOT named still raises: waiving `secrets` on a phase that also touches `destructive` still gets the blocking plan review and the deep pass. Left unset it waives nothing, which is a different state from an empty answer for the same reason its `surfaces` sibling has no default array"
+        },
+        "review.triggers.phase_diff.gate": {
+          "type": "enum",
+          "values": [
+            "off",
+            "advisory",
+            "deferred",
+            "blocking",
+            "adjudicated"
+          ],
+          "default": "off",
+          "src": "repo",
+          "purpose": "Aggregate review of the merged phase diff after parallel execution (per-plan reviews never see cross-plan interactions). Defaults to `off`; write any value here and that is what fires"
+        },
+        "review.triggers.phase_diff.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "cheap",
+          "src": "repo",
+          "purpose": "Model tier for the merged-phase review - cross-model reviewers only; the claude-subagent reviewer's model is the one its own role resolves. Defaults to `cheap`; write any value here and that is the tier every merged-phase review asks a provider for"
+        },
+        "review.triggers.phase_diff.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "low",
+          "src": "repo",
+          "purpose": "Reasoning effort for the merged-phase review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen. Defaults to `low`; write any value here and that is the effort every merged-phase review asks a provider for"
+        },
+        "review.consult.enabled": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Allow a second-model consult at dead-ends"
+        },
+        "review.consult.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "flagship",
+          "src": "repo",
+          "purpose": "Model tier for consults"
+        },
+        "review.consult.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "high",
+          "src": "repo",
+          "purpose": "Reasoning effort for consults"
+        },
+        "review.consult.attempt_threshold": {
+          "type": "int",
+          "min": 1,
+          "default": 3,
+          "purpose": "Failed fix attempts (or red-test iterations) on one bug before cad-debug offers a consult"
+        },
+        "review.decision_review.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "flagship",
+          "src": "repo",
+          "purpose": "Model tier for /cad-decision-review's refute-then-adjudicate pass - cross-model reviewers only; its claude-subagent arm is cad-reviewer at the session default and resolves no model at all"
+        },
+        "review.decision_review.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "high",
+          "src": "repo",
+          "purpose": "Reasoning effort for /cad-decision-review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen"
+        }
+      }
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "config-keys-ignored-argument",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "keys": {
+        "granularity": {
+          "type": "enum",
+          "values": [
+            "fine",
+            "standard",
+            "coarse"
+          ],
+          "default": "standard",
+          "src": "repo",
+          "purpose": "How many phases the roadmap gets - new-project roadmap step only (coarse 3-5 / standard 5-8 / fine 8-12 phases); it splits no phase into tasks"
+        },
+        "model.escalate_on_failure": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Re-dispatch a failed attempt one rung above the rung it started at, holding at the top rung; off by default - a retry is usually a narrower job than the pass that failed it"
+        },
+        "model.overrides.cad-planner": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-planner.model: the model the planner is dispatched on when roles.cad-planner.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-assumptions-analyzer": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-assumptions-analyzer.model: the model the assumptions analyzer is dispatched on when roles.cad-assumptions-analyzer.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-verifier": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-verifier.model: the model the verifier is dispatched on when roles.cad-verifier.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-reviewer": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-reviewer.model: the model the claude-subagent reviewer is dispatched on when roles.cad-reviewer.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-executor": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-executor.model: the model the executor is dispatched on when roles.cad-executor.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.overrides.cad-plan-checker": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "repo",
+          "purpose": "The narrower fallback under roles.cad-plan-checker.model: the model the plan checker is dispatched on when roles.cad-plan-checker.model names none (null = send no model parameter, and the dispatch runs at the session's model). A value the host does not accept is named in warnings[] and the model parameter is omitted, so a typo never redirects the spend."
+        },
+        "model.effort.cad-planner": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-planner.effort: the rung the planner STARTS at when roles.cad-planner.effort names none (null = this key does not answer, and roles.cad-planner.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-assumptions-analyzer": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-assumptions-analyzer.effort: the rung the assumptions analyzer STARTS at when roles.cad-assumptions-analyzer.effort names none (null = this key does not answer, and roles.cad-assumptions-analyzer.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-verifier": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-verifier.effort: the rung the verifier STARTS at when roles.cad-verifier.effort names none (null = this key does not answer, and roles.cad-verifier.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-reviewer": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-reviewer.effort: the rung the claude-subagent reviewer STARTS at when roles.cad-reviewer.effort names none (null = this key does not answer, and roles.cad-reviewer.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-executor": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-executor.effort: the rung the executor STARTS at when roles.cad-executor.effort names none (null = this key does not answer, and roles.cad-executor.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "model.effort.cad-plan-checker": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": null,
+          "purpose": "The narrower fallback under roles.cad-plan-checker.effort: the rung the plan checker STARTS at when roles.cad-plan-checker.effort names none (null = this key does not answer, and roles.cad-plan-checker.effort's own default decides). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-planner.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the planner is dispatched on, named directly. It wins over model.overrides.cad-planner, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-assumptions-analyzer.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the assumptions analyzer is dispatched on, named directly. It wins over model.overrides.cad-assumptions-analyzer, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-verifier.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the verifier is dispatched on, named directly. It wins over model.overrides.cad-verifier, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-reviewer.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the claude-subagent reviewer is dispatched on, named directly. It wins over model.overrides.cad-reviewer, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-executor.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the executor is dispatched on, named directly. It wins over model.overrides.cad-executor, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-plan-checker.model": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "The model the plan checker is dispatched on, named directly. It wins over model.overrides.cad-plan-checker, and setting both for this role resolves this one and names the winner in the resolve's warnings. null means NO model parameter is sent - the dispatch runs at the session's model. A value the host does not accept is named in warnings[] and the parameter is omitted, so a typo never redirects the spend."
+        },
+        "roles.cad-planner.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "high",
+          "purpose": "The rung the planner STARTS at. Defaults to `high`. It wins over model.effort.cad-planner, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-assumptions-analyzer.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "high",
+          "purpose": "The rung the assumptions analyzer STARTS at. Defaults to `high`. It wins over model.effort.cad-assumptions-analyzer, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-verifier.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "high",
+          "purpose": "The rung the verifier STARTS at. Defaults to `high`. It wins over model.effort.cad-verifier, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-reviewer.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "medium",
+          "purpose": "The rung the claude-subagent reviewer STARTS at. Defaults to `medium`. It wins over model.effort.cad-reviewer, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-executor.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "high",
+          "purpose": "The rung the executor STARTS at. Defaults to `high`. It wins over model.effort.cad-executor, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "roles.cad-plan-checker.effort": {
+          "type": "enum",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            null
+          ],
+          "default": "low",
+          "purpose": "The rung the plan checker STARTS at. Defaults to `low`. It wins over model.effort.cad-plan-checker, and null is how a repo layer un-pins a global one, leaving this default the answer. Only a rung this role actually has is accepted; any other value is refused, naming the allowed set."
+        },
+        "workflow.research": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Run a research pass - new-project research step only; no other workflow reads it"
+        },
+        "workflow.plan_check": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Gate plans through the checker before code - opt-in second pass; the plan review trigger is the default second opinion and is blocking at `shipped`"
+        },
+        "workflow.verifier": {
+          "type": "bool",
+          "default": true,
+          "purpose": "The off switch for goal-backward verification after a phase: false always skips the deep pass. When true the deep pass runs whenever the plan-time risk floor raises - the phase's plans declare a file touching an answered risk surface, or a declared scope could not be read - and --deep forces it either way"
+        },
+        "workflow.skip_discuss": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Select which command /cad-progress suggests for an unplanned phase - progress next-step suggestion only; it skips no step"
+        },
+        "workflow.inline_plan_threshold": {
+          "type": "int",
+          "min": 0,
+          "default": 3,
+          "purpose": "Task count at/below which a plan runs inline vs its own doc"
+        },
+        "workflow.max_plan_tasks": {
+          "type": "int",
+          "min": 1,
+          "default": 8,
+          "purpose": "Task ceiling PER PLAN, not per phase - a phase needing more capacity gets MORE PLANS, sequential where they share files, and `## PHASE TOO BIG` is returned only when no number of plans of that size can deliver the phase, which is a statement about the PHASE's scope and not about task count. The ceiling the planner is given up front, so an oversized plan is split rather than silently built. Re-decided 2026-08-17 against both of its forces and landing on 8, unchanged: cold-prefix cost - `weight.mjs resident` puts the executor's fixed dispatch prefix at 12,488 bytes, about 2% of a measured executor dispatch, so what an extra plan re-buys is the cold pass over the plan and the phase's artifacts rather than the prefix - and context risk - 15 executor checkpoints of 21 on this repo's `.planning/trace.jsonl`, every one of them from a plan already under this ceiling. design-notes/dd-plan-task-ceiling.md carries the dated arithmetic"
+        },
+        "workflow.max_plan_bytes": {
+          "type": "int",
+          "min": 1,
+          "default": 675000,
+          "purpose": "Byte ceiling on what a SINGLE plan's `files:` frontmatter declares, measured as the sum of the on-disk sizes of those declared paths - PER PLAN and not per phase, the same reading workflow.max_plan_tasks carries, so a plan over it is split into MORE PLANS rather than shrunk in place. Those declared paths are what an executor dispatch is handed, and on one measured PLAN-1.md they were about 90% of a 70,554-token dispatch while nothing measured them against anything. A crossing is REPORTED and nothing is refused: plan-size report only (`bin/planning.mjs`), which workflows/plan.md hands the resolved value at its `check_size` step as `plan-size --max-bytes`; no dispatch path, agent frontmatter key or spawn seam consults it, so an over-ceiling plan is still planned and still executed. That is planning.max_capture_bullets's disposition and for its reason - the user may have authorized the full scope one step earlier, and a check that refused what they just authorized would be arguing with them. The default is the 75th percentile of the declared-byte distribution over this repository's 43 archived plans rounded UP to the next 25,000 (p25 207,298, p50 401,107, p75 667,580, p90 933,283, max 1,282,083, measured 2026-08-26; it fires on 10 of the 43), which is the derivation rule the six workflow.max_dispatch_tokens.* keys already state; references/config-reach.md carries the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-planner": {
+          "type": "int",
+          "min": 1,
+          "default": 200000,
+          "purpose": "Token ceiling on ONE the planner dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=28, p75 188,135, max 247,585, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-assumptions-analyzer": {
+          "type": "int",
+          "min": 1,
+          "default": 150000,
+          "purpose": "Token ceiling on ONE the assumptions analyzer dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=25, p75 145,054, max 188,149, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-verifier": {
+          "type": "int",
+          "min": 1,
+          "default": 100000,
+          "purpose": "Token ceiling on ONE the verifier dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=24, p75 82,633, max 131,728, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-reviewer": {
+          "type": "int",
+          "min": 1,
+          "default": 150000,
+          "purpose": "Token ceiling on ONE the claude-subagent reviewer dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=2, p75 125,100, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-executor": {
+          "type": "int",
+          "min": 1,
+          "default": 200000,
+          "purpose": "Token ceiling on ONE the executor dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=72, p75 182,631, max 275,285, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.max_dispatch_tokens.cad-plan-checker": {
+          "type": "int",
+          "min": 1,
+          "default": 75000,
+          "purpose": "Token ceiling on ONE the plan checker dispatch's live context window, read off the `tokens` figure that dispatch's terminal lifecycle event left on .planning/trace.jsonl - a FINAL-WINDOW PROXY, not a sum across the dispatch's turns. A crossing is REPORTED and nothing is refused: trace window report only (`bin/planning.mjs`), which reads the record after the dispatch has already returned, and no dispatch path, agent frontmatter key or spawn seam consults it. The default is this role's 75th-percentile terminal figure on this repo's own record rounded UP to the next 25,000 (n=5, p75 64,203, max 88,078, measured 2026-08-17); references/seam-spawn-agent.md carries the argument and references/config-reach.md the reach row"
+        },
+        "workflow.test_command": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "global",
+          "purpose": "Command Cadence runs to test (null = none). Honoured from the user-global config layer only: a `.planning/config.json` setting it is stripped at the merge and named in the read face's warnings, so a config that arrived with a clone cannot choose what Cadence runs - set it with `config.mjs set --global`"
+        },
+        "workflow.lint_command": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "global",
+          "purpose": "Command an executor runs for static analysis before it commits (null = none set, so planning.mjs detect-commands reads the project's own manifests instead). LINT ONLY - there is no companion typecheck key; the detected arm covers both. Honoured from the user-global config layer only: a `.planning/config.json` setting it is stripped at the merge and named in the read face's warnings, so a config that arrived with a clone cannot choose what Cadence runs - set it with `config.mjs set --global`"
+        },
+        "parallelization.enabled": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Run independent plans concurrently. On by default; false is the intentional opt-out. Engages only when the plans are provably independent AND the host's worktree.baseRef is \"head\" - choose_path falls back to sequential otherwise, so the default is safe on a host that cannot honour it"
+        },
+        "parallelization.max_concurrent_agents": {
+          "type": "int",
+          "min": 1,
+          "default": 3,
+          "purpose": "Cap on simultaneous agents"
+        },
+        "parallelization.min_plans_for_parallel": {
+          "type": "int",
+          "min": 1,
+          "default": 2,
+          "purpose": "Min plans before going parallel"
+        },
+        "parallelization.use_worktrees": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Isolate parallel writes in git worktrees"
+        },
+        "git.protected_branches": {
+          "type": "array_string",
+          "default": [
+            "main",
+            "master"
+          ],
+          "purpose": "Branches Cadence won't commit to directly"
+        },
+        "git.on_protected": {
+          "type": "enum",
+          "values": [
+            "ask",
+            "refuse",
+            "allow"
+          ],
+          "default": "ask",
+          "src": "repo",
+          "purpose": "What to do on a protected branch (DESIGN §5, git rails)"
+        },
+        "git.integration_branch": {
+          "type": "enum",
+          "values": [
+            "milestone",
+            "trunk"
+          ],
+          "default": "milestone",
+          "src": "repo",
+          "purpose": "Two-tier branch model: 'milestone' creates a per-milestone integration branch as the branch worktrees merge back into (where they fork FROM is the host's worktree.baseRef setting); 'trunk' creates no integration branch and commits land on the base governed by on_protected"
+        },
+        "git.auto_branch": {
+          "type": "enum",
+          "values": [
+            "ask",
+            "auto",
+            "off"
+          ],
+          "default": "ask",
+          "src": "repo",
+          "purpose": "How the integration branch is created at cycle start: 'ask' prompts once, 'auto' creates/switches silently, 'off' stays put"
+        },
+        "git.base_branch": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "Branch new work branches off (null = current)"
+        },
+        "git.create_tag": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Cut the release tag at land - on the pulled base, after the merge confirms (tag-after-merge). It governs that tag cut and nothing else: no other step reads it, and a manifest bump never depends on it"
+        },
+        "git.on_land_cleanup": {
+          "type": "bool",
+          "default": true,
+          "purpose": "After a successful land/merge, return to the base branch, pull, and reap the merged integration branch"
+        },
+        "git.issue_check": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Read-only issue-tracker report at the start of a land: which issues this branch's commits reference and which of them are still open on the forge this repository CONFIGURED - git.forge_provider and git.forge_repo, never a host detected from the origin URL - degrading to one line when it cannot be read, including the line that names which forge keys are unset. It reports only - nothing on this path ever writes to a tracker"
+        },
+        "git.forge_provider": {
+          "type": "enum",
+          "values": [
+            "forgejo",
+            "github",
+            "gitlab",
+            null
+          ],
+          "default": null,
+          "purpose": "Which forge hosts this repository's issue tracker, resolved ONCE at project setup by /cad-new-project or /cad-adopt and read at land time in place of any host detection: bin/issue-check.mjs picks its provider row from this value rather than classifying the origin URL, so a repository that temporarily loses its remote does not silently change behaviour. Spelled with the same vocabulary bin/lib/issue-decision.mjs's HOST_TABLE uses for its rows. null means unasked - the setup step has not run or the user has not picked a provider yet. Settable in either config layer: naming which forge you use is a preference, and it authorizes nothing on a repository that never named ITSELF - binding a call to a repository is git.forge_repo's job, and that key is repo_only."
+        },
+        "git.forge_repo": {
+          "type": "string_or_null",
+          "default": null,
+          "repo_only": true,
+          "grammar": "forge_slug",
+          "purpose": "The owner/name slug this repository's forge calls address, resolved ONCE at project setup - offered as a default read off origin, confirmed by the user - and read at land time in place of any host detection, as bin/issue-check.mjs's --repo selector. null means unasked. repo_only: a user-global slug would point EVERY repository's forge calls at one target, which is exactly the authorization test _meta.note states, so only that repository's own .planning/config.json may set it."
+        },
+        "git.forge_host": {
+          "type": "string_or_null",
+          "default": null,
+          "grammar": "forge_host",
+          "purpose": "The Forgejo instance host the user confirmed at setup, spelled `hostname` or `hostname:port` when the instance is not on its scheme's default port - the port a browser reaches the instance on, never an SSH port - resolved ONCE at project setup and read at land time in place of any host detection, where bin/issue-check.mjs turns it into the tea login NAME the call is made under. NEVER derived from the origin URL: on a split SSH endpoint the origin's host is the SSH hostname, not the instance the user reaches in a browser, which is the shape this repository itself has - so it is ASKED outright and confirmed. null on the github and gitlab providers, whose hosts are fixed, and null anywhere else means unasked. Settable in either config layer, for the same reason git.forge_provider is: naming which instance you work with is a preference and authorizes nothing on a repository that never named itself."
+        },
+        "git.auto_close": {
+          "type": "bool",
+          "default": false,
+          "src": "repo",
+          "repo_only": true,
+          "purpose": "Opt-in end-to-end close: cad-milestone/cad-land run audit -> tag -> PR -> merge -> reset with no per-step prompts, halting on a surviving blocker/high risk_surface finding. ONE key, TWO resolutions, and they are allowed to disagree. AUTHORIZED is honoured repo config layer only for the unattended publish, and for the GitLab MR create that publishes the branch itself: that close mutates ONE repository, so only that repository's own .planning/config.json can authorize it and a user-global value authorizes nothing on any host (D-08; git-publish.mjs publish and authorized, both through lib/repo-auto-close.mjs). REQUESTED is the MERGED value, read on purpose - cad-land skips the publish ask on it and the land gate reads that same merged value, so the gate's blocker/high halt is what replaces the human it switched off, and both must read one value. Setting it globally therefore skips the ask and still refuses, naming which authorization was missing."
+        },
+        "planning.commit_docs": {
+          "type": "bool",
+          "default": true,
+          "purpose": "Commit .planning docs alongside code"
+        },
+        "planning.max_capture_bullets": {
+          "type": "int",
+          "min": 1,
+          "default": 40,
+          "purpose": "Bound on the SUBSTANTIVE walked bullets .planning/CAPTURE.md may hold - the Todos, Seeds and Notes count with the `- None.` placeholder excluded, which is what `planning.mjs capture-check` reports. A crossing is REPORTED and nothing is refused, the same consequence workflow.max_dispatch_tokens.* carries and for the same reason: capture-check report only (`bin/planning.mjs`), no writer consults it, so /cad-capture and /cad-execute's open items keep filing at a queue that is over. The default is this repository's own live figure rounded up - 30 substantive walked bullets measured 2026-08-25 after the hand sweep - so the bound sits ABOVE a healthy tree and fires on GROWTH rather than on arrival, because a bound that reddens the day it ships teaches its reader to ignore it. What it is for: the hand sweep took this queue to zero on 2026-08-08 and it regrew to 276 walked items in sixteen days, because nothing measured it against anything. references/config-reach.md carries the reach row"
+        },
+        "memory.backend": {
+          "type": "enum",
+          "values": [
+            "none",
+            "builtin"
+          ],
+          "default": "builtin",
+          "src": "repo",
+          "purpose": "Where notes/observations route: 'builtin' runs zero-dep BM25 recall over .planning/, 'none' disables recall"
+        },
+        "review.mode": {
+          "type": "enum",
+          "values": [
+            "single",
+            "panel",
+            "adjudicated"
+          ],
+          "default": "adjudicated",
+          "src": "repo",
+          "purpose": "How multiple reviewers combine (review-triggers.md §Combine)"
+        },
+        "review.reviewers": {
+          "type": "array_enum",
+          "values": [
+            "claude-subagent",
+            "openai",
+            "gemini",
+            "deepseek"
+          ],
+          "default": [
+            "claude-subagent"
+          ],
+          "src": "repo",
+          "purpose": "Which reviewer backends fire() resolves (review-triggers.md §Resolve)"
+        },
+        "review.key_file": {
+          "type": "string_or_null",
+          "default": null,
+          "src": "global",
+          "purpose": "Path override for the provider key env file (never a key). Honoured from the user-global config layer only: a `.planning/config.json` setting it is stripped at the merge and named in the read face's warnings, so a config that arrived with a clone cannot choose where a provider key is read from - set it with `config.mjs set --global`"
+        },
+        "review.request_timeout_ms": {
+          "type": "int",
+          "min": 1,
+          "max": 600000,
+          "default": 540000,
+          "purpose": "ms before a review provider HTTPS request is aborted (a high-effort review can take minutes); 600000 is the execution-host ceiling"
+        },
+        "review.max_prompt_tokens": {
+          "type": "int",
+          "min": 1,
+          "default": 120000,
+          "purpose": "Estimated-token ceiling (chars/4) on a review or consult payload; an over-cap payload is refused with ok:false, reason over-cap before any request is issued; cross-model provider calls only - the free claude-subagent reviewer never runs that script"
+        },
+        "review.providers.openai.tiers.flagship": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "OpenAI model id for the flagship tier (set by --review)"
+        },
+        "review.providers.openai.tiers.balanced": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "OpenAI model id for the balanced tier"
+        },
+        "review.providers.openai.tiers.cheap": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "OpenAI model id for the cheap tier"
+        },
+        "review.providers.gemini.tiers.flagship": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "Gemini model id for the flagship tier"
+        },
+        "review.providers.gemini.tiers.balanced": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "Gemini model id for the balanced tier"
+        },
+        "review.providers.gemini.tiers.cheap": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "Gemini model id for the cheap tier"
+        },
+        "review.providers.deepseek.tiers.flagship": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "DeepSeek model id for the flagship tier"
+        },
+        "review.providers.deepseek.tiers.balanced": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "DeepSeek model id for the balanced tier"
+        },
+        "review.providers.deepseek.tiers.cheap": {
+          "type": "string_or_null",
+          "default": null,
+          "purpose": "DeepSeek model id for the cheap tier"
+        },
+        "review.triggers.plan.gate": {
+          "type": "enum",
+          "values": [
+            "off",
+            "advisory",
+            "deferred",
+            "blocking",
+            "adjudicated"
+          ],
+          "default": "advisory",
+          "src": "repo",
+          "purpose": "How the plan review gates. Defaults to `advisory`; write any value here and that is what fires. A detected risk surface raises an advisory plan review to blocking, unless that surface is named in review.triggers.risk_surface.waive_routing_floor"
+        },
+        "review.triggers.plan.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "cheap",
+          "src": "repo",
+          "purpose": "Model tier for plan review - cross-model reviewers only; the claude-subagent reviewer's model is the one its own role resolves. Defaults to `cheap`; write any value here and that is the tier every plan review asks a provider for"
+        },
+        "review.triggers.plan.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "low",
+          "src": "repo",
+          "purpose": "Reasoning effort for plan review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen. Defaults to `low`; write any value here and that is the effort every plan review asks a provider for"
+        },
+        "review.triggers.diff.gate": {
+          "type": "enum",
+          "values": [
+            "off",
+            "advisory",
+            "deferred",
+            "blocking",
+            "adjudicated"
+          ],
+          "default": "off",
+          "src": "repo",
+          "purpose": "How the diff review gates. Defaults to `off`; write any value here and that is what fires"
+        },
+        "review.triggers.diff.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "cheap",
+          "src": "repo",
+          "purpose": "Model tier for diff review - cross-model reviewers only; the claude-subagent reviewer's model is the one its own role resolves. Defaults to `cheap`; write any value here and that is the tier every diff review asks a provider for"
+        },
+        "review.triggers.diff.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "minimal",
+          "src": "repo",
+          "purpose": "Reasoning effort for diff review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen. Defaults to `minimal`; write any value here and that is the effort every diff review asks a provider for"
+        },
+        "review.triggers.risk_surface.gate": {
+          "type": "enum",
+          "values": [
+            "off",
+            "advisory",
+            "deferred",
+            "blocking",
+            "adjudicated"
+          ],
+          "default": "blocking",
+          "src": "repo",
+          "purpose": "How the risk-surface review gates. Defaults to `blocking`, because the trigger fires only on a detection match and there is no case in which a matched risk surface is worth waving through; write any value here and that is what fires"
+        },
+        "review.triggers.risk_surface.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "cheap",
+          "src": "repo",
+          "purpose": "Model tier for risk-surface review - cross-model reviewers only; the claude-subagent reviewer's model is the one its own role resolves. Defaults to `cheap`; write any value here and that is the tier every risk-surface review asks a provider for"
+        },
+        "review.triggers.risk_surface.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "low",
+          "src": "repo",
+          "purpose": "Reasoning effort for risk-surface review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen. Defaults to `low`; write any value here and that is the effort every risk-surface review asks a provider for"
+        },
+        "review.triggers.risk_surface.surfaces": {
+          "type": "array_enum",
+          "values": [
+            "auth",
+            "migrations",
+            "billing",
+            "concurrency",
+            "destructive",
+            "secrets",
+            "api_contract",
+            "untrusted_input"
+          ],
+          "default": null,
+          "src": "repo",
+          "purpose": "Which of the eight risk surfaces the risk-surface review fires on - a heuristic match in a category outside this list does NOT fire the trigger. Left unset it means all eight, and it is also the UNANSWERED state: the first risk_surface fire on a project that has not answered runs the structural scan and asks once, then writes the answer here. There is deliberately no default array - a default of all eight would make \"the user chose everything\" indistinguishable from \"nobody has answered\""
+        },
+        "review.triggers.risk_surface.waive_routing_floor": {
+          "type": "array_enum",
+          "values": [
+            "auth",
+            "migrations",
+            "billing",
+            "concurrency",
+            "destructive",
+            "secrets",
+            "api_contract",
+            "untrusted_input"
+          ],
+          "default": null,
+          "src": "repo",
+          "purpose": "Which surfaces may NOT raise this project's plan-time risk floor. The floor does exactly two things - it makes the plan review blocking and it turns the deep-verify pass on - and naming a surface here withholds BOTH for that surface. It waives neither review itself: the blocking risk_surface review still fires on the actual diff, and this key cannot turn it off. It moves no role's model and no role's start rung, because the floor does not move those either. Every waiver applied is named in the resolve's `reason` with the surface and the file it would have raised on. A surface that is NOT named still raises: waiving `secrets` on a phase that also touches `destructive` still gets the blocking plan review and the deep pass. Left unset it waives nothing, which is a different state from an empty answer for the same reason its `surfaces` sibling has no default array"
+        },
+        "review.triggers.phase_diff.gate": {
+          "type": "enum",
+          "values": [
+            "off",
+            "advisory",
+            "deferred",
+            "blocking",
+            "adjudicated"
+          ],
+          "default": "off",
+          "src": "repo",
+          "purpose": "Aggregate review of the merged phase diff after parallel execution (per-plan reviews never see cross-plan interactions). Defaults to `off`; write any value here and that is what fires"
+        },
+        "review.triggers.phase_diff.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "cheap",
+          "src": "repo",
+          "purpose": "Model tier for the merged-phase review - cross-model reviewers only; the claude-subagent reviewer's model is the one its own role resolves. Defaults to `cheap`; write any value here and that is the tier every merged-phase review asks a provider for"
+        },
+        "review.triggers.phase_diff.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "low",
+          "src": "repo",
+          "purpose": "Reasoning effort for the merged-phase review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen. Defaults to `low`; write any value here and that is the effort every merged-phase review asks a provider for"
+        },
+        "review.consult.enabled": {
+          "type": "bool",
+          "default": false,
+          "purpose": "Allow a second-model consult at dead-ends"
+        },
+        "review.consult.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "flagship",
+          "src": "repo",
+          "purpose": "Model tier for consults"
+        },
+        "review.consult.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "high",
+          "src": "repo",
+          "purpose": "Reasoning effort for consults"
+        },
+        "review.consult.attempt_threshold": {
+          "type": "int",
+          "min": 1,
+          "default": 3,
+          "purpose": "Failed fix attempts (or red-test iterations) on one bug before cad-debug offers a consult"
+        },
+        "review.decision_review.tier": {
+          "type": "enum",
+          "values": [
+            "flagship",
+            "balanced",
+            "cheap"
+          ],
+          "default": "flagship",
+          "src": "repo",
+          "purpose": "Model tier for /cad-decision-review's refute-then-adjudicate pass - cross-model reviewers only; its claude-subagent arm is cad-reviewer at the session default and resolves no model at all"
+        },
+        "review.decision_review.effort": {
+          "type": "enum",
+          "values": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "high",
+          "src": "repo",
+          "purpose": "Reasoning effort for /cad-decision-review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen"
+        }
+      }
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "route-resolve-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "role": "cad-executor",
+      "agent": "cad-executor",
+      "model": "opus",
+      "model_source": "roles.cad-executor.model",
+      "effort": "high",
+      "review": {
+        "plan": "advisory",
+        "diff": "off",
+        "risk_surface": "blocking",
+        "phase_diff": "off"
+      },
+      "reviewers": {
+        "plan": [
+          "claude-subagent"
+        ],
+        "diff": [
+          "claude-subagent"
+        ],
+        "risk_surface": [
+          "claude-subagent"
+        ],
+        "phase_diff": [
+          "claude-subagent"
+        ]
+      },
+      "reviewer_tiers": {
+        "plan": "cheap",
+        "diff": "flagship",
+        "risk_surface": "cheap",
+        "phase_diff": "cheap"
+      },
+      "reviewer_efforts": {
+        "plan": "low",
+        "diff": "minimal",
+        "risk_surface": "low",
+        "phase_diff": "low"
+      },
+      "surfaces": [
+        "secrets",
+        "destructive",
+        "untrusted_input"
+      ],
+      "surfaces_answered": true,
+      "verify": "off",
+      "escalated": false,
+      "pinned": false,
+      "attempt": 1,
+      "reason": [
+        "config layers: global+repo",
+        "no risk-floor computation: no --phase and no readable cursor, so no plan was named; the plan review and the deep-verify pass stand where the config leaves them",
+        "roles.cad-executor.effort=\"high\" (config, already the schema default rung)",
+        "review.triggers.plan.gate: schema default \"advisory\"",
+        "review.triggers.diff.gate: schema default \"off\"",
+        "review.triggers.risk_surface.gate: schema default \"blocking\"",
+        "review.triggers.phase_diff.gate: schema default \"off\"",
+        "roles.cad-executor.model=opus (config)"
+      ]
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "route-resolve-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "unknown-role",
+      "role": "unknown-golden",
+      "detail": "known roles: cad-planner, cad-assumptions-analyzer, cad-verifier, cad-reviewer, cad-executor, cad-plan-checker",
+      "hint": "pass --role as one of the roles the detail lists, spelled exactly, and re-run"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "forge-create-no-gh",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "github was selected but gh does not resolve on PATH, so there is nothing to create the repository with",
+      "detail": null,
+      "warnings": [],
+      "hint": "install gh and re-run this step, or re-run setup and pick a provider whose CLI is installed"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "forge-create-no-glab",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "gitlab was selected but glab does not resolve on PATH, so there is nothing to create the repository with",
+      "detail": null,
+      "warnings": [],
+      "hint": "install glab and re-run this step, or re-run setup and pick a provider whose CLI is installed"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "read-trace-ok",
+    "exit": 0,
+    "stdout": null,
+    "stderr": "",
+    "changed": [
+      ".planning/reads.jsonl"
+    ]
+  },
+  {
+    "invocation": "read-trace-ignored-tool",
+    "exit": 0,
+    "stdout": null,
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "release-bump-bump-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "action": "bumped",
+      "target": "3.7.13",
+      "reason": "bump",
+      "detail": "bump 3.7.12 -> 3.7.13",
+      "manifest": {
+        "from": "3.7.12",
+        "to": "3.7.13",
+        "bumped": true
+      },
+      "siblings": [],
+      "changelog": {
+        "changed": false,
+        "state": "absent"
+      }
+    },
+    "stderr": "",
+    "changed": [
+      ".claude-plugin/plugin.json"
+    ]
+  },
+  {
+    "invocation": "release-bump-bump-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "action": "refuse",
+      "reason": "no-target-version",
+      "target": null,
+      "manifest": {
+        "from": null,
+        "to": null,
+        "bumped": false
+      },
+      "siblings": [],
+      "changelog": {
+        "changed": false,
+        "state": "not-examined"
+      },
+      "detail": "no-target-version: no target version given, refuse to write",
+      "hint": "pass --version with the version this release ships, then re-run the bump"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "review-provider-review-no-openai-key",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-key",
+      "detail": "set env $OPENAI_API_KEY or /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-TzmN0E/.probe-env/home/.config/cadence/providers.env",
+      "hint": "write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "review-provider-review-no-gemini-key",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-key",
+      "detail": "set env $GEMINI_API_KEY or /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-OqdC5x/.probe-env/home/.config/cadence/providers.env",
+      "hint": "write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "review-provider-consult-no-openai-key",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-key",
+      "detail": "set env $OPENAI_API_KEY or /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-XEZMSi/.probe-env/home/.config/cadence/providers.env",
+      "hint": "write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "review-provider-consult-no-gemini-key",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-key",
+      "detail": "set env $GEMINI_API_KEY or /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-ktgdNU/.probe-env/home/.config/cadence/providers.env",
+      "hint": "write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "review-provider-detect-models-no-openai-key",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-key",
+      "detail": "set env $OPENAI_API_KEY or /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-WHMC91/.probe-env/home/.config/cadence/providers.env",
+      "hint": "write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "review-provider-detect-models-no-gemini-key",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-key",
+      "detail": "set env $GEMINI_API_KEY or /code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-r3SDg0/.probe-env/home/.config/cadence/providers.env",
+      "hint": "write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "subagent-trace-ok",
+    "exit": 0,
+    "stdout": null,
+    "stderr": "",
+    "changed": [
+      ".planning/trace.jsonl"
+    ]
+  },
+  {
+    "invocation": "subagent-trace-ignored-agent",
+    "exit": 0,
+    "stdout": null,
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "weight-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "checked": "surface-weight",
+      "surfaces": [
+        {
+          "surface": "agents/cad-executor.md",
+          "bytes": 459,
+          "estTokens": 115
+        },
+        {
+          "surface": "cadence-core/references/conventions.md",
+          "bytes": 16941,
+          "estTokens": 4236
+        },
+        {
+          "surface": "cadence-core/templates/STATE.md",
+          "bytes": 511,
+          "estTokens": 128
+        },
+        {
+          "surface": "cadence-core/workflows/progress.md",
+          "bytes": 14974,
+          "estTokens": 3744
+        },
+        {
+          "surface": "skills/cad-progress/SKILL.md",
+          "bytes": 1154,
+          "estTokens": 289
+        }
+      ]
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "weight-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--root",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "weight-resident-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "checked": "resident-weight",
+      "commands": [
+        {
+          "command": "cad-progress",
+          "eagerBytes": 16128,
+          "eagerFiles": [
+            {
+              "surface": "cadence-core/workflows/progress.md",
+              "bytes": 14974
+            },
+            {
+              "surface": "skills/cad-progress/SKILL.md",
+              "bytes": 1154
+            }
+          ],
+          "reachableBytes": 33069,
+          "reachableFiles": [
+            {
+              "surface": "cadence-core/references/conventions.md",
+              "bytes": 16941
+            },
+            {
+              "surface": "cadence-core/workflows/progress.md",
+              "bytes": 14974
+            },
+            {
+              "surface": "skills/cad-progress/SKILL.md",
+              "bytes": 1154
+            }
+          ]
+        }
+      ],
+      "roles": [
+        {
+          "role": "cad-executor",
+          "agent": "agents/cad-executor.md",
+          "agentBytes": 459,
+          "contracts": [],
+          "dispatchBytes": 459
+        }
+      ],
+      "zeroResident": [],
+      "zeroResidentBytes": 0
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "weight-resident-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "unknown-command",
+      "detail": "unknown-golden",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "skim-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "file": "/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-1nqSU1/src/auth.mjs",
+      "bytes_in": 127,
+      "bytes_out": 33,
+      "saved": 94,
+      "pct": 74,
+      "lines": 3,
+      "lines_match": true
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "skim-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "no-such-file",
+      "detail": "ENOENT: no such file or directory, open '/code/cadence/.planning/phases/2/reports/finish-work/fixture-probe-ir1ho6/missing.mjs'",
+      "hint": "check the path - skim.mjs takes one file, absolute or relative to the current directory - then re-run"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "worktree-base-resolve-ok",
+    "exit": 0,
+    "stdout": {
+      "ok": true,
+      "baseRef": "head",
+      "source": "/code/cadence/.claude/settings.json",
+      "parallelSafe": true,
+      "reason": "head: worktrees fork from the local HEAD, so this phase's unpushed CONTEXT and PLAN files are in them"
+    },
+    "stderr": "",
+    "changed": []
+  },
+  {
+    "invocation": "worktree-base-resolve-refused",
+    "exit": 1,
+    "stdout": {
+      "ok": false,
+      "reason": "missing-flag-value",
+      "detail": "--dir",
+      "hint": "the detail names the flag that refused - give it a value of the kind that flag takes and re-run the command"
+    },
+    "stderr": "",
+    "changed": []
+  }
+]
