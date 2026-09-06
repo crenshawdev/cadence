@@ -1,0 +1,42 @@
+[
+  {
+    "invocation": "status-slice",
+    "operation": "status",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": ["status", "--dir", "<FIXTURE>/.planning"],
+    "git": false
+  },
+  {
+    "invocation": "replay-check-slice",
+    "operation": "replay-check",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": ["replay-check", "--phase", "1", "--dir", "<FIXTURE>/.planning"],
+    "git": false
+  },
+  {
+    "invocation": "cursor-get-slice",
+    "operation": "cursor get",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": ["cursor", "get", "--dir", "<FIXTURE>/.planning"],
+    "git": false
+  },
+  {
+    "invocation": "plan-overlap-slice",
+    "operation": "plan-overlap",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": ["plan-overlap", "--phase", "1", "--dir", "<FIXTURE>/.planning"],
+    "git": false
+  },
+  {
+    "invocation": "plan-overlap-missing-phase",
+    "operation": "plan-overlap",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": ["plan-overlap", "--phase", "9", "--dir", "<FIXTURE>/.planning"],
+    "git": false
+  }
+]

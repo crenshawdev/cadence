@@ -1,0 +1,58 @@
+{
+  "invocation": "replay-check-slice",
+  "operation": "replay-check",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "replay-check",
+    "--phase",
+    "1",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "phase": 1,
+    "rerun": false,
+    "reports": [
+      {
+        "plan": "PLAN-1.md",
+        "k": 1,
+        "report": "phases/1/reports/plan-1.md",
+        "exists": true,
+        "status": "PLAN COMPLETE",
+        "complete": true
+      },
+      {
+        "plan": "PLAN-2.md",
+        "k": 2,
+        "report": "phases/1/reports/plan-2.md",
+        "exists": true,
+        "status": "PLAN COMPLETE",
+        "complete": true
+      }
+    ],
+    "replay": true,
+    "dispatch_set": [],
+    "reports_read": [
+      "phases/1/reports/plan-1.md",
+      "phases/1/reports/plan-2.md"
+    ]
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}
