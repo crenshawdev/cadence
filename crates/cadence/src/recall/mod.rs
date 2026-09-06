@@ -1,5 +1,6 @@
 //! Recall's domain core consumes eligible records and explicit snippets only.
 mod documents;
+mod history;
 mod rank;
 #[cfg(test)]
 mod tests;
@@ -25,6 +26,14 @@ pub enum Provenance {
         path: String,
         line: usize,
         heading: String,
+        commit: Option<String>,
+    },
+    Residue {
+        path: String,
+        line: usize,
+        label: String,
+        origin: String,
+        phase: String,
         commit: Option<String>,
     },
 }

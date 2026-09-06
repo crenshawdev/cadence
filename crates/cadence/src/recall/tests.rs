@@ -288,3 +288,253 @@ fn unreadable_permitted_source_states_incomplete_coverage() {
     assert!(docs.candidates.is_empty());
     assert!(docs.incomplete[0].contains("PROJECT.md: source unavailable"));
 }
+
+use std::process::{Command, Stdio};
+fn git(root: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(args)
+        .env("GIT_AUTHOR_NAME", "John Crenshaw")
+        .env("GIT_AUTHOR_EMAIL", "john@jcrenshaw.dev")
+        .env("GIT_COMMITTER_NAME", "John Crenshaw")
+        .env("GIT_COMMITTER_EMAIL", "john@jcrenshaw.dev")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap().trim().into()
+}
+fn commit(root: &Path, message: &str) -> String {
+    git(
+        root,
+        &[
+            "-c",
+            "gpg.program=gpg",
+            "commit",
+            "-S693AB15F91734B0C",
+            "-m",
+            message,
+        ],
+    );
+    git(root, &["rev-parse", "HEAD"])
+}
+fn history_answer(
+    root: &Path,
+    view: &View,
+    query: &str,
+    git: &mut impl history::ReadGit,
+) -> Answer {
+    let docs = documents::read(root, &mut documents::Files);
+    let mut candidates = current(view);
+    candidates.extend(docs.candidates);
+    let history = history::read(root, view, &candidates, git);
+    candidates.extend(history.candidates);
+    let mut result = Corpus::new(candidates, &declined(view))
+        .query(query, None, "builtin")
+        .unwrap();
+    result.incomplete = docs
+        .incomplete
+        .into_iter()
+        .chain(history.incomplete)
+        .collect();
+    result
+}
+
+#[test]
+fn removed_authored_memory_has_exact_commit_and_path_without_duplicate_blobs() {
+    let dir = temp();
+    git(dir.path(), &["init", "-q"]);
+    let root = dir.path().join(".planning");
+    put(
+        &root,
+        "phases/1.10/CONTEXT.md",
+        "## Durable decisions\n\n- D-01 amberfalcon stays remembered\n",
+    );
+    put(
+        &root,
+        "_archive-v1/2/SUMMARY.md",
+        "# Summary\n\nretainedfalcon stays readable\n",
+    );
+    git(
+        dir.path(),
+        &[
+            "add",
+            ".planning/phases/1.10/CONTEXT.md",
+            ".planning/_archive-v1/2/SUMMARY.md",
+        ],
+    );
+    commit(dir.path(), "docs: memory is recorded");
+    git(
+        dir.path(),
+        &[
+            "-c",
+            "gpg.program=gpg",
+            "commit",
+            "-S693AB15F91734B0C",
+            "--allow-empty",
+            "-m",
+            "chore: unchanged memory remains reachable",
+        ],
+    );
+    let containing = git(dir.path(), &["rev-parse", "HEAD"]);
+    fs::remove_file(root.join("phases/1.10/CONTEXT.md")).unwrap();
+    git(dir.path(), &["add", ".planning/phases/1.10/CONTEXT.md"]);
+    commit(dir.path(), "docs: phase is pruned");
+    let answer = history_answer(&root, &view(vec![]), "amberfalcon", &mut history::Git);
+    assert!(answer.incomplete.is_empty(), "{:?}", answer.incomplete);
+    assert_eq!(answer.total, 1);
+    assert!(
+        matches!(&answer.results[0].provenance,Provenance::Document {path,line:3,commit:Some(sha),..} if path == "phases/1.10/CONTEXT.md" && sha == &containing)
+    );
+    assert_eq!(
+        history_answer(&root, &view(vec![]), "retainedfalcon", &mut history::Git).total,
+        1
+    );
+    assert_eq!(
+        history_answer(&root, &view(vec![]), "amberfalcon", &mut history::Git),
+        answer
+    );
+}
+
+#[test]
+fn residue_preserves_label_origin_and_absence_of_invented_history() {
+    struct Missing;
+    impl history::ReadGit for Missing {
+        fn run(&mut self, _: &Path, _: &[&str]) -> Result<Vec<u8>, String> {
+            Err("git executable unavailable".into())
+        }
+    }
+    let dir = temp();
+    put(
+        dir.path(),
+        "ARCHIVE.md",
+        "# Archive\n## release/with/slashes\n- `phases/1.10/SUMMARY.md`: residuefalcon is only a snippet\n",
+    );
+    let answer = history_answer(dir.path(), &view(vec![]), "residuefalcon", &mut Missing);
+    assert_eq!(answer.total, 1);
+    assert!(
+        answer
+            .incomplete
+            .iter()
+            .any(|r| r.contains("git executable unavailable"))
+    );
+    assert!(
+        matches!(&answer.results[0].provenance,Provenance::Residue {path,line:3,label,origin,phase,commit:None} if path == "ARCHIVE.md" && label == "release/with/slashes" && origin == "phases/1.10/SUMMARY.md" && phase == "1.10")
+    );
+}
+
+#[test]
+fn unborn_shallow_and_failed_blob_reads_state_incomplete_coverage() {
+    let dir = temp();
+    git(dir.path(), &["init", "-q"]);
+    let root = dir.path().join(".planning");
+    put(&root, "PROJECT.md", "livefalcon evidence");
+    let unborn = history_answer(&root, &view(vec![]), "livefalcon", &mut history::Git);
+    assert_eq!(unborn.total, 1);
+    assert!(
+        unborn
+            .incomplete
+            .iter()
+            .any(|r| r.contains("history incomplete"))
+    );
+    git(dir.path(), &["add", ".planning/PROJECT.md"]);
+    commit(dir.path(), "docs: initial evidence exists");
+    put(
+        &root,
+        "phases/1/SUMMARY.md",
+        "oldfalcon historical evidence",
+    );
+    git(dir.path(), &["add", ".planning/phases/1/SUMMARY.md"]);
+    commit(dir.path(), "docs: historical evidence exists");
+    let clone = temp();
+    git(
+        clone.path(),
+        &[
+            "clone",
+            "--quiet",
+            "--depth=1",
+            &format!("file://{}", dir.path().display()),
+            "shallow",
+        ],
+    );
+    let shallow = history_answer(
+        &clone.path().join("shallow/.planning"),
+        &view(vec![]),
+        "livefalcon",
+        &mut history::Git,
+    );
+    assert_eq!(shallow.total, 1);
+    assert!(
+        shallow
+            .incomplete
+            .iter()
+            .any(|r| r.contains("shallow history"))
+    );
+    struct FailedBlob;
+    impl history::ReadGit for FailedBlob {
+        fn run(&mut self, root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+            if args[0] == "cat-file" {
+                Err("injected missing object".into())
+            } else {
+                history::ReadGit::run(&mut history::Git, root, args)
+            }
+        }
+    }
+    let failed = history_answer(&root, &view(vec![]), "livefalcon", &mut FailedBlob);
+    assert_eq!(failed.total, 1);
+    assert!(
+        failed
+            .incomplete
+            .iter()
+            .any(|r| r.contains("injected missing object"))
+    );
+}
+
+#[tokio::test]
+async fn current_decline_suppresses_git_filed_and_store_identity_but_not_independent_prose() {
+    let dir = temp();
+    git(dir.path(), &["init", "-q"]);
+    let root = dir.path().join(".planning");
+    put(
+        &root,
+        "FILED.md",
+        "# Filed\n- 2026-09-06 github owner/repo abcdef: declinedfalcon formerly filed\n",
+    );
+    git(dir.path(), &["add", ".planning/FILED.md"]);
+    commit(dir.path(), "docs: filed finding is retained");
+    let service = factory().first_touch(&root).await.unwrap();
+    let before = service.request(Operation::Read).await.unwrap();
+    let held = before.recall_items().iter().next().unwrap().clone();
+    git(dir.path(), &["add", ".planning/items.jsonl"]);
+    commit(dir.path(), "feat: structured finding is retained");
+    assert_eq!(
+        history_answer(&root, &before, "declinedfalcon", &mut history::Git).total,
+        1
+    );
+    let dead = cadence::store::items::revise(
+        &held,
+        cadence::store::items::ItemChange::Decline {
+            reason: "out of scope".into(),
+        },
+    )
+    .unwrap();
+    let after = service.request(Operation::AppendItem(dead)).await.unwrap();
+    assert_eq!(
+        history_answer(&root, &after, "declinedfalcon", &mut history::Git).total,
+        0
+    );
+    put(
+        &root,
+        "PROJECT.md",
+        "declinedfalcon appears independently in prose",
+    );
+    let answer = history_answer(&root, &after, "declinedfalcon", &mut history::Git);
+    assert_eq!(answer.total, 1);
+    assert!(
+        matches!(&answer.results[0].provenance,Provenance::Document {path,..} if path == "PROJECT.md")
+    );
+}
