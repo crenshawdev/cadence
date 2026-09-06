@@ -38,6 +38,11 @@ it stands until corrected.
   (OQ-3); `.codex-analysis/storage-model-inventory.md` (other writers do not
   honor the binary's ownership). If wrong: the store silently absorbs
   corruption and OQ-3's guarantee is lost with no error surfaced.
+  **Bounded 2026-09-06, on the phase 3 planning pass:** detection is best-effort
+  AT THE CHECK POINT, not a guarantee across the whole operation. An edit
+  landing between validation and replacement is unsatisfiable to exclude under
+  this filesystem model, and independent session writers share that gap. AC3
+  tests the ordinary case and must not be read as promising the total one.
 - D-02 (Config): Effective configuration is revalidated before every mutating
   request commits, and a failed reload never preserves permission-like settings
   as if current. A resident process merges once at startup, which deletes the
@@ -49,7 +54,11 @@ it stands until corrected.
   already revoked.
 - D-03 (Import): The `v3.7.12` import runs automatically on first touch of a
   pre-4.0 `.planning/`, writes the new store beside the old files, and removes
-  nothing. The user hand-edits nothing and can revert by `git checkout`.
+  nothing. The user hand-edits nothing. **Corrected 2026-09-06:** this
+  originally said the user "can revert by `git checkout`", which is false - the
+  import writes UNTRACKED files and `git checkout` does not remove them.
+  Reverting an import means deleting what it wrote, so the import must state
+  what it created plainly enough that a user can undo it by hand.
   Evidence: `.planning/ROADMAP.md` phase 3 obligation 3. If wrong: a one-way
   migration destroys the original bytes outside git.
 - D-04 (Recall): Recall indexes both the store's structured records and the
@@ -109,6 +118,11 @@ it stands until corrected.
   observed effort string, whitespace included. Unclear whether it is fixed here
   or rides the phase that owns the trace surface; if wrong, the defect ports
   forward into the new store.
+- **Declined precedence changes old recall answers, deliberately.** At the
+  frozen tag an item can appear in both `FILED` and `DECLINED`; ruling
+  declined-wins to satisfy AC2 means items recall used to return now vanish
+  from it. Accepted as the cost of AC2, recorded so it is not later read as a
+  regression. Surfaced by the phase 3 planning pass, 2026-09-06.
 - The analyzer pass was SKIPPED for this phase. The gate's own three arms
   pointed to dispatch (zero seeded requirements, two surfaces named by path,
   priors not covering the store), and it was skipped anyway because
