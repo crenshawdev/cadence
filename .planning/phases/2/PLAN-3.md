@@ -66,22 +66,37 @@ prevent - and it must not be read as any parity claim.
   and goldens compare the code, never the arm tag alone; D-05 the Rust test
   diffs COMMITTED recordings and never shells out to `node` (the `cargo-test`
   CI job has no Node setup step); D-06 parity is asserted field-by-field on the
-  decision-bearing keys - `replay`, `dispatch_set`, `overlaps`, `undeclared`,
-  `frontmatter_issues`, `parallelSafe`, derived phase `status`,
-  `cursor.agrees`, `drift` - never as a byte-diff of the JavaScript envelope,
+  decision-bearing keys - AMENDED 2026-09-06 to the SEVEN that a committed
+  recording actually carries: `replay`, `dispatch_set`, `overlaps`,
+  `frontmatter_issues`, `parallelSafe`, derived phase `status` and
+  `cursor.agrees`. `drift` was struck as never being an envelope field at all,
+  and `undeclared` as real but unreached by any recorded invocation; see the
+  amendment under D-06 in CONTEXT - never as a byte-diff of the JavaScript envelope,
   with write-side file bytes the exception that IS byte-diffed (D-08); D-15
   `insta` and `tempfile` are DEV-dependencies only, so the shipped binary and
   phase 19's checksum reproducibility are untouched.
 - Plans 1 and 2's recording contract, binding here: `crates/cadence/tests/golden/operations.json`
-  is an array of invocations with keys `invocation`, `operation`, `bundle`,
-  `script`, `argv`, optional `stdin`, `git`; each
+  is an array of 156 invocations. **Read the committed file for its schema
+  before writing the struct** - it carries ELEVEN distinct keys, not the seven
+  an earlier draft of this plan listed: `invocation`, `operation`, `bundle`,
+  `script`, `argv`, `git`, and the optional `stdin`, `setup`, `offline`,
+  `global_config` and `refusal_source`. With `deny_unknown_fields` (Task 3) the
+  four that draft omitted would fail the loader on the FIRST entry, so the typed
+  struct must model every key present, marking absent-on-some-entries ones
+  optional. Verify the list against the file rather than trusting this sentence;
+  each
   `crates/cadence/tests/golden/recordings/<invocation>.json` has exactly the
   thirteen top-level keys `invocation`, `operation`, `bundle`, `script`, `argv`,
   `stdin`, `env`, `node` (the interpreter major that recorded it, a decimal
   string), `exit`, `stdout` (parsed envelope object or null), `stderr`, `files`
   (relative path to post-run text, already normalized), `deleted`; bundles live
   under `crates/cadence/tests/golden/fixtures/<bundle>/`. A JavaScript refusal
-  is `stdout.ok == false` with `stdout.reason` the machine code.
+  is USUALLY `stdout.ok == false` with `stdout.reason` the machine code - but
+  NOT always, and Task 5 carries the fourth comparison branch this needs: the
+  hook family answers with no `ok` key at all. `git-guard-refused.json` is
+  `exit: 0` with `stdout.hookSpecificOutput.permissionDecision` equal to
+  `deny`, while `git-guard-ok.json` is `stdout: null`. Check the shape rather
+  than assuming `ok` is present.
 - The normalization contract, fixed by plan 2 Task 3 and binding here:
   `crates/cadence/tests/golden/normalization.json` is
   `{"mechanism":"named-fields","rules":[...]}`; each rule carries `id`,
@@ -128,8 +143,10 @@ prevent - and it must not be read as any parity claim.
   1.48.0 source in the local registry (`Settings::set_snapshot_path`,
   `Settings::bind`, `assert_snapshot!`; `Snapshot::from_file` reads a `---`
   metadata block then content; content match normalizes trailing whitespace and
-  CRLF and ignores metadata; a mismatch fails in every `INSTA_UPDATE` mode
-  unless `INSTA_FORCE_PASS` is set).
+  CRLF and ignores metadata; a mismatch does NOT fail in every `INSTA_UPDATE` mode - the
+  in-place update modes skip the panic with no `INSTA_FORCE_PASS` set
+  (`insta-1.48.0/src/runtime.rs:685`), so the harness must not rely on ambient
+  environment to make a mismatch fatal; pin the setting the test needs).
 - Out of scope: any driver that runs the binary against a fixture (phases 3
   through 16 add those as they port operations); any change under
   `cadence-core/` or `crates/cadence/tests/golden/` (plans 1 and 2's lease); the
@@ -171,12 +188,15 @@ prevent - and it must not be read as any parity claim.
   `NotApplicable` arms of `Envelope<T>`: a machine token in the JavaScript
   seam's spelling - the single-quoted literals at its `fail('<code>', ...)`
   sites, kebab-case, such as `no-phase-dir`, `bad-args`, `usage`,
-  `unknown-key`, `no-roadmap`, `unresolved-range` - serialized under the key
+  `unknown-key` and `no-roadmap` (`unresolved-range` was listed here in an
+  earlier draft as a `fail()` literal and is not one - it comes from a direct
+  emit object, so do not use it as the shape to copy) - serialized under the key
   `code` and placed before `reason` in the struct so it serializes first.
   Whether `code` is a plain `String` or a thin newtype is the executor's call;
   it must not be a closed enum over a list this phase invents, because the
-  vocabulary belongs to the operations later phases port and 40-odd literals
-  exist in the frozen tree today. Keep `reason` as prose for a person. Rewrite
+  vocabulary belongs to the operations later phases port and at least 54
+  distinct literal tokens exist in production `fail()` calls in the frozen tree
+  today (counted 2026-09-06; "40-odd" in an earlier draft was low). Keep `reason` as prose for a person. Rewrite
   the type's doc paragraph that says the non-`ok` arms carry "a `reason` and
   nothing else" to state the two fields and why the code exists (D-04: a
   golden comparing `refused{reason:"the phase has no CONTEXT.md"}` against a
@@ -258,11 +278,15 @@ prevent - and it must not be read as any parity claim.
 - **Files:** crates/cadence/tests/golden.rs
 - **Action:** Add the projection table, the normalizer and the comparison. The
   projection table maps an operation id to its decision-bearing keys as dotted
-  paths into the envelope; seed it from D-06's list - `replay`, `dispatch_set`,
-  `overlaps`, `undeclared`, `frontmatter_issues`, the derived per-phase
-  `status`, `cursor.agrees`, `drift`, `parallelSafe` - assigning each key to
-  the operation whose COMMITTED recording actually carries it (open the
-  recordings and look; `parallelSafe` is `worktree-base resolve`'s). Every
+  paths into the envelope; seed it from D-06's AMENDED list - `replay`, `dispatch_set`,
+  `overlaps`, `frontmatter_issues`, the derived per-phase `status`,
+  `cursor.agrees`, `parallelSafe` - SEVEN keys, assigning each to the operation
+  whose COMMITTED recording actually carries it (open the recordings and look;
+  `parallelSafe` is `worktree-base resolve`'s, and `frontmatter_issues` is
+  carried by `plan-overlap-malformed` and `milestone-prune-ok`). D-06 originally
+  named nine; `drift` and `undeclared` were struck 2026-09-06 because no
+  recording carries either - see the amendment in CONTEXT. Do NOT hunt for them
+  and do NOT invent an operation to hold them. Every
   entry must name at least one key: an empty entry is refused when the table is
   built, with an error naming the operation, because an empty projection
   compares nothing and would report green (Task 6 tests this). An operation
@@ -278,8 +302,16 @@ prevent - and it must not be read as any parity claim.
   The normalizer applies the loaded rules with exactly the semantics in
   Context: a `stdout` rule rewrites the string at `key` in the answer's
   envelope; a `file` rule rewrites each matching `files` entry line by line,
-  skipping every line present verbatim in the PRE-RUN text of that path, which
-  the caller supplies (the driver has it: it materialized the tree; the
+  skipping every line present verbatim ANYWHERE in the pre-run copy of the TREE
+  - the UNION across every path, never the same path alone. This sentence said
+  "the pre-run text of that path" in an earlier draft and that was WRONG: it
+  contradicted this plan's own Context paragraph and, worse, it contradicted the
+  recorder plan 2 actually shipped, whose `record.mjs:132` states "The union is
+  tree-wide: moved UAT lines remain fixture inputs too." A path-local skip would
+  read a `renumber` or `milestone-prune` moved file's `started`/`updated` lines
+  as newly written and normalize them, and a Rust side that wrongly RE-STAMPED
+  them would then produce matching tokens and PASS. Implement the union. The
+  caller supplies the map (the driver has it: it materialized the tree; the
   self-tests below read it from the committed bundle). The comparison takes a
   recording, an ANSWER - the `serde_json::Value` a Rust envelope serializes to,
   plus the answer's post-run files map and deleted list, in the same shape the
@@ -292,15 +324,30 @@ prevent - and it must not be read as any parity claim.
   one of the three non-`ok` tags and its `code` must equal the recording's
   `stdout.reason` (D-04); for a recording whose `stdout` is `null` - the
   `files-only` entry above - no envelope is compared at all and the files decide
-  alone; in both cases, and regardless of what the projection
-  names, `files` and `deleted` must be byte-equal after normalization (D-08).
+  alone; and a FOURTH branch for a recording whose `stdout` is an object with no
+  `ok` key at all, which the earlier three do not cover and which really exists:
+  `git-guard-refused.json` carries `exit: 0` and a Claude Code hook payload,
+  `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",...}}`.
+  A refusal there is `permissionDecision` equal to `deny`, NOT `ok == false`, so
+  the blanket premise "a JavaScript refusal is `stdout.ok == false`" in Context
+  is false for the hook family. Give that family its own reserved projection
+  entry naming the decision key, so it is compared rather than falling through;
+  note that `git-guard` is split - the `ok` arm records `stdout: null` and lands
+  in `files-only`, the refused arm lands here. In every branch, and regardless of
+  what the projection names, `files` and `deleted` must be byte-equal after
+  normalization (D-08).
   The result on mismatch carries the differing key paths by name (`replay`,
   `code`, `files[.planning/STATE.md]`), which is what the self-tests below
   assert on. For the RENDERING, use insta as D-15 intends: serialize the
   expected and actual projections to text with ONE serializer on both sides
-  (`serde_json::to_string_pretty`, with `preserve_order` already on and keys
-  emitted in table order, so equal values produce equal text and formatting can
-  never be the diff), write the expected text as a snapshot file into a
+  (`serde_json::to_string_pretty`). One serializer is NOT sufficient on its own:
+  `preserve_order` makes a map an `IndexMap` that keeps INSERTION order, so two
+  objects that are equal by value can serialize to different text if their keys
+  were inserted in different orders - which would render a diff where there is
+  no disagreement. So BUILD both sides through the same construction path,
+  inserting the projected keys in table order into a fresh map on each side
+  rather than carrying a nested object across unchanged; only then does equal
+  value give equal text and formatting can never be the diff, write the expected text as a snapshot file into a
   `tempfile::TempDir` in the file form insta's `Snapshot::from_file` reads (a
   `---` line, a metadata line or two, a `---` line, then the content), bind
   `insta::Settings` with `set_snapshot_path` at that directory, and call
@@ -333,13 +380,23 @@ prevent - and it must not be read as any parity claim.
   changed seeded `ts` is normalized to `<NOW>` too, and `<NOW>` differs from the
   literal instant the recording committed for that pre-run line. The rejection
   is expected; the reason is the substitution, not an exemption; a `cursor set` answer whose
-  `stdout.cursor.updated` is a real day stamp passes; an answer whose `files`
-  keys and whose `stdout` strings carry a live `tempfile::TempDir` absolute path
-  where the recording carries `<FIXTURE>` passes once the root substitution runs
-  (build it by rewriting a committed recording's `<FIXTURE>` occurrences to that
-  TempDir's path and feeding it back as the answer), and the same answer with
-  the substitution SKIPPED fails - the pair proves the order, not just the
-  presence, of the two passes; and a `#[should_panic]`
+  `stdout.cursor.updated` is a real day stamp passes; an answer whose `stdout`
+  STRINGS carry a live `tempfile::TempDir` absolute path where the recording
+  carries `<FIXTURE>` passes once the root substitution runs (build it by
+  rewriting a committed recording's `<FIXTURE>` occurrences to that TempDir's
+  path and feeding it back as the answer), and the same answer with the
+  substitution SKIPPED fails. Build this from `stdout`, NOT from `files` keys:
+  measured over the committed set, all 50 captured file keys are relative and
+  ZERO contain `<FIXTURE>`, while 50 recordings' `stdout` does carry it - a
+  control keyed on the file paths would be unconstructible. And claim only what
+  it proves: this pair proves the substitution is PRESENT, not that it runs
+  FIRST. The two passes touch disjoint content on every committed recording -
+  the roots are paths, the six rules are timestamps - so reversing them changes
+  no byte anywhere in the set, and no control built from a committed recording
+  can fail on order alone. If the order is to be proven rather than asserted,
+  it needs a CONSTRUCTED case where a root path contains a rule-matching
+  substring; write that or drop the order claim, but do not present the
+  presence control as an order control; and a `#[should_panic]`
   test drives the insta rendering path with the flipped `replay`.
 - **Verify:** `cargo test --locked --test golden` passes; running only the
   `#[should_panic]` rendering test with `-- --nocapture` and capturing both
