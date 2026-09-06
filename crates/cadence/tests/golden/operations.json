@@ -9,7 +9,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "replay-check-slice",
@@ -23,7 +24,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "cursor-get-slice",
@@ -36,7 +38,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "plan-overlap-slice",
@@ -50,7 +53,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "plan-overlap-missing-phase",
@@ -64,7 +68,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "status-refused",
@@ -76,7 +81,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "cursor-get-refused",
@@ -89,7 +95,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "cursor-set-ok",
@@ -102,13 +109,14 @@
       "--phase",
       "1",
       "--status",
-      "executing",
+      "planned",
       "--next",
       "/cad-execute 1",
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "cursor-set-refused",
@@ -121,7 +129,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "phase-done-ok",
@@ -135,7 +144,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "phase-done-refused",
@@ -149,7 +159,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-init-ok",
@@ -165,7 +176,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": false,
-    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]"
+    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]",
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-init-refused",
@@ -181,7 +193,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": false,
-    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]"
+    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]",
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-refresh-ok",
@@ -197,7 +210,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": false,
-    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]"
+    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]",
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-refresh-refused",
@@ -213,7 +227,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": false,
-    "stdin": "{}"
+    "stdin": "{}",
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-record-ok",
@@ -232,7 +247,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-record-refused",
@@ -251,7 +267,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-merge-ok",
@@ -268,7 +285,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-merge-refused",
@@ -285,7 +303,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-status-ok",
@@ -300,7 +319,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "uat-status-refused",
@@ -315,7 +335,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "reads-ok",
@@ -328,7 +349,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "reads-refused",
@@ -340,7 +362,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "audit-ok",
@@ -352,7 +375,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "audit-refused",
@@ -364,7 +388,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "criteria-coverage-ok",
@@ -376,7 +401,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "criteria-coverage-refused",
@@ -388,7 +414,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "criteria-size-ok",
@@ -402,7 +429,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "criteria-size-refused",
@@ -414,7 +442,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "replay-check-refused",
@@ -428,7 +457,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "plan-size-ok",
@@ -444,7 +474,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "plan-size-refused",
@@ -456,7 +487,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "cite-count-ok",
@@ -472,7 +504,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "cite-count-refused",
@@ -488,7 +521,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "seed-reqs-ok",
@@ -502,7 +536,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "seed-reqs-refused",
@@ -516,7 +551,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "recall-ok",
@@ -529,7 +565,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "recall-refused",
@@ -544,7 +581,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "task-record-ok",
@@ -565,7 +603,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE, then a second commit appending a source line to src/auth.mjs as HEAD."
+    "setup": "Commit the bundle as BASE, then a second commit appending a source line to src/auth.mjs as HEAD.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "task-record-refused",
@@ -586,7 +625,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE, then a second commit appending a source line to src/auth.mjs as HEAD."
+    "setup": "Commit the bundle as BASE, then a second commit appending a source line to src/auth.mjs as HEAD.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "lease-check-ok",
@@ -603,7 +643,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE and HEAD, then append a source line to src/auth.mjs and stage that path as the staged uncommitted set; the plan leases src/auth.mjs."
+    "setup": "Commit the bundle as BASE and HEAD, then append a source line to src/auth.mjs and stage that path as the staged uncommitted set; the plan leases src/auth.mjs.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "lease-check-refused",
@@ -620,7 +661,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE and HEAD, then append a source line to src/auth.mjs and stage that path as the staged uncommitted set; the plan leases src/auth.mjs."
+    "setup": "Commit the bundle as BASE and HEAD, then append a source line to src/auth.mjs and stage that path as the staged uncommitted set; the plan leases src/auth.mjs.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "detect-commands-ok",
@@ -634,7 +676,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "detect-commands-refused",
@@ -648,7 +691,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "detect-surfaces-ok",
@@ -662,7 +706,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "detect-surfaces-refused",
@@ -676,7 +721,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "trace-append-ok",
@@ -695,7 +741,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "trace-append-refused",
@@ -714,7 +761,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "trace-close-ok",
@@ -735,7 +783,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "trace-close-refused",
@@ -753,7 +802,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "trace-render-ok",
@@ -768,7 +818,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "door"
   },
   {
     "invocation": "trace-render-refused",
@@ -783,7 +834,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "door"
   },
   {
     "invocation": "trace-window-ok",
@@ -798,7 +850,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "door"
   },
   {
     "invocation": "trace-window-refused",
@@ -813,7 +866,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "door"
   },
   {
     "invocation": "trace-suggest-ok",
@@ -828,7 +882,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "door"
   },
   {
     "invocation": "trace-suggest-refused",
@@ -843,7 +898,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "door"
   },
   {
     "invocation": "trace-ignore-ok",
@@ -858,7 +914,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "trace-ignore-refused",
@@ -873,7 +930,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "risk-check-run-ok",
@@ -897,7 +955,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE, then a second commit touching the auth risk-surface path src/auth.mjs as HEAD."
+    "setup": "Commit the bundle as BASE, then a second commit touching the auth risk-surface path src/auth.mjs as HEAD.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "risk-check-run-refused",
@@ -918,7 +977,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as BASE, then a second commit touching the auth risk-surface path src/auth.mjs as HEAD."
+    "setup": "Commit the bundle as BASE, then a second commit touching the auth risk-surface path src/auth.mjs as HEAD.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "risk-check-status-ok",
@@ -934,7 +994,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "risk-check-status-refused",
@@ -952,7 +1013,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "adjudication-ok",
@@ -977,7 +1039,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "adjudication-refused",
@@ -1002,7 +1065,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "deferred-record-ok",
@@ -1028,7 +1092,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "deferred-record-refused",
@@ -1054,7 +1119,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "risk-carry-ok",
@@ -1068,7 +1134,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "risk-carry-refused",
@@ -1082,7 +1149,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "deferred-list-ok",
@@ -1095,7 +1163,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "deferred-list-refused",
@@ -1108,7 +1177,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "deferred-carry-ok",
@@ -1123,7 +1193,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "deferred-carry-refused",
@@ -1138,7 +1209,8 @@
       "--dir",
       "<FIXTURE>/missing"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "capture-ok",
@@ -1156,7 +1228,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "capture-refused",
@@ -1172,7 +1245,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "capture-sections-ok",
@@ -1184,7 +1258,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "capture-sections-refused",
@@ -1198,7 +1273,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "capture-check-ok",
@@ -1210,7 +1286,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "capture-check-refused",
@@ -1224,7 +1301,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "debt-harvest-ok",
@@ -1239,7 +1317,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "debt-harvest-refused",
@@ -1254,7 +1333,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "renumber-insert-ok",
@@ -1270,7 +1350,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "renumber-insert-refused",
@@ -1286,7 +1367,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "renumber-remove-ok",
@@ -1302,7 +1384,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "renumber-remove-refused",
@@ -1318,7 +1401,8 @@
       "<FIXTURE>/.planning"
     ],
     "git": true,
-    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE.",
+    "refusal_source": "handler"
   },
   {
     "invocation": "milestone-prune-ok",
@@ -1334,7 +1418,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "milestone-prune-refused",
@@ -1350,7 +1435,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "status-closed",
@@ -1362,7 +1448,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "replay-check-multi",
@@ -1376,7 +1463,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "plan-overlap-multi",
@@ -1390,7 +1478,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "audit-multi",
@@ -1402,7 +1491,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "replay-check-incomplete",
@@ -1416,7 +1506,8 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
   },
   {
     "invocation": "plan-overlap-malformed",
@@ -1430,6 +1521,920 @@
       "--dir",
       "<FIXTURE>/.planning"
     ],
-    "git": false
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-validate-ok",
+    "operation": "config validate",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "validate",
+      "--file",
+      "<FIXTURE>/.planning/config.json"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-validate-refused",
+    "operation": "config validate",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "validate",
+      "--file",
+      "<FIXTURE>/missing.json"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-validate-unknown-key",
+    "operation": "config validate",
+    "bundle": "config-unknown",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "validate",
+      "--file",
+      "<FIXTURE>/.planning/config.json"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-check-ok",
+    "operation": "config check",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "check",
+      "memory.backend=builtin"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-check-refused",
+    "operation": "config check",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "check",
+      "unknown.golden=true"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-set-ok",
+    "operation": "config set",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "set",
+      "--file",
+      "<FIXTURE>/.planning/config.json",
+      "memory.backend=none"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-set-refused",
+    "operation": "config set",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "set",
+      "--file",
+      "<FIXTURE>/.planning/config.json",
+      "unknown.golden=true"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-unset-ok",
+    "operation": "config unset",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "unset",
+      "--file",
+      "<FIXTURE>/.planning/config.json",
+      "memory.backend"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-unset-refused",
+    "operation": "config unset",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "unset",
+      "--file",
+      "<FIXTURE>/broken.json",
+      "memory.backend"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "config-get-ok",
+    "operation": "config get",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "get",
+      "--file",
+      "<FIXTURE>/.planning/config.json",
+      "roles.cad-executor.model"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "global_config": "global-config.json"
+  },
+  {
+    "invocation": "config-get-refused",
+    "operation": "config get",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "get",
+      "--file",
+      "<FIXTURE>/.planning/config.json",
+      "unknown.golden"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "global_config": "global-config.json"
+  },
+  {
+    "invocation": "config-keys-ok",
+    "operation": "config keys",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "keys"
+    ],
+    "git": false,
+    "refusal_source": "none"
+  },
+  {
+    "invocation": "config-keys-ignored-argument",
+    "operation": "config keys",
+    "bundle": "config",
+    "script": "cadence-core/bin/config.mjs",
+    "argv": [
+      "keys",
+      "ignored-trailing-argument"
+    ],
+    "git": false,
+    "refusal_source": "none"
+  },
+  {
+    "invocation": "route-resolve-ok",
+    "operation": "route resolve",
+    "bundle": "config",
+    "script": "cadence-core/bin/route.mjs",
+    "argv": [
+      "resolve",
+      "--role",
+      "cad-executor",
+      "--file",
+      "<FIXTURE>/.planning/config.json"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "global_config": "global-config.json"
+  },
+  {
+    "invocation": "route-resolve-refused",
+    "operation": "route resolve",
+    "bundle": "config",
+    "script": "cadence-core/bin/route.mjs",
+    "argv": [
+      "resolve",
+      "--role",
+      "unknown-golden",
+      "--file",
+      "<FIXTURE>/.planning/config.json"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "global_config": "global-config.json"
+  },
+  {
+    "invocation": "forge-detect-ok",
+    "operation": "forge detect",
+    "bundle": "forge-configured",
+    "script": "cadence-core/bin/forge.mjs",
+    "argv": [
+      "detect",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; add remote origin with URL https://github.com/golden/fixture.git, never contact it."
+  },
+  {
+    "invocation": "forge-detect-refused",
+    "operation": "forge detect",
+    "bundle": "config",
+    "script": "cadence-core/bin/forge.mjs",
+    "argv": [
+      "detect",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; add remote origin with URL https://github.com/golden/fixture.git, never contact it."
+  },
+  {
+    "invocation": "forge-create-no-gh",
+    "operation": "forge create",
+    "bundle": "config",
+    "script": "cadence-core/bin/forge.mjs",
+    "argv": [
+      "create",
+      "--dir",
+      "<FIXTURE>",
+      "--confirmed",
+      "--provider",
+      "github",
+      "--repo",
+      "golden/fixture",
+      "--remote-url",
+      "https://github.com/golden/fixture.git"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "offline": "gh absent from pinned PATH; returns before create subprocess"
+  },
+  {
+    "invocation": "forge-create-no-glab",
+    "operation": "forge create",
+    "bundle": "config",
+    "script": "cadence-core/bin/forge.mjs",
+    "argv": [
+      "create",
+      "--dir",
+      "<FIXTURE>",
+      "--confirmed",
+      "--provider",
+      "gitlab",
+      "--repo",
+      "golden/fixture"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "offline": "glab absent from pinned PATH; returns before create subprocess"
+  },
+  {
+    "invocation": "git-branch-decide-ok",
+    "operation": "git-branch decide",
+    "bundle": "project",
+    "script": "cadence-core/bin/git-branch.mjs",
+    "argv": [
+      "decide",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "setup": "Commit the bundle as BASE and HEAD on main; add lightweight tag v1.0.0; no remote."
+  },
+  {
+    "invocation": "git-branch-decide-refused",
+    "operation": "git-branch decide",
+    "bundle": "project",
+    "script": "cadence-core/bin/git-branch.mjs",
+    "argv": [
+      "decide",
+      "--dir"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "setup": "Commit the bundle as BASE and HEAD on main; add lightweight tag v1.0.0; no remote."
+  },
+  {
+    "invocation": "git-branch-tags-ok",
+    "operation": "git-branch tags",
+    "bundle": "project",
+    "script": "cadence-core/bin/git-branch.mjs",
+    "argv": [
+      "tags",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "setup": "Commit the bundle as BASE and HEAD on main; add lightweight tag v1.0.0; no remote."
+  },
+  {
+    "invocation": "git-branch-tags-refused",
+    "operation": "git-branch tags",
+    "bundle": "project",
+    "script": "cadence-core/bin/git-branch.mjs",
+    "argv": [
+      "tags",
+      "--dir"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "setup": "Commit the bundle as BASE and HEAD on main; add lightweight tag v1.0.0; no remote."
+  },
+  {
+    "invocation": "git-guard-ok",
+    "operation": "git-guard",
+    "bundle": "protected",
+    "script": "cadence-core/bin/git-guard.mjs",
+    "argv": [],
+    "git": true,
+    "refusal_source": "handler",
+    "stdin": "{\"cwd\":\"<FIXTURE>\",\"tool_input\":{\"command\":\"git status\"}}",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "git-guard-refused",
+    "operation": "git-guard",
+    "bundle": "protected",
+    "script": "cadence-core/bin/git-guard.mjs",
+    "argv": [],
+    "git": true,
+    "refusal_source": "handler",
+    "stdin": "{\"cwd\":\"<FIXTURE>\",\"tool_input\":{\"command\":\"git commit -m golden\"}}",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "git-publish-publish-not-authorized",
+    "operation": "git-publish publish",
+    "bundle": "config",
+    "script": "cadence-core/bin/git-publish.mjs",
+    "argv": [
+      "publish",
+      "--dir",
+      "<FIXTURE>",
+      "--remote",
+      "origin"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "No remote; auto_close false refuses before push"
+  },
+  {
+    "invocation": "git-publish-publish-no-remote",
+    "operation": "git-publish publish",
+    "bundle": "publish-authorized",
+    "script": "cadence-core/bin/git-publish.mjs",
+    "argv": [
+      "publish",
+      "--dir",
+      "<FIXTURE>",
+      "--remote",
+      "origin"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "No remote; auto_close true and unprotected main reach remote-not-configured before push"
+  },
+  {
+    "invocation": "git-publish-reap-ok",
+    "operation": "git-publish reap",
+    "bundle": "config",
+    "script": "cadence-core/bin/git-publish.mjs",
+    "argv": [
+      "reap",
+      "--dir",
+      "<FIXTURE>",
+      "--branch",
+      "golden-absent"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "No remote; absent target returns already-absent before branch deletion"
+  },
+  {
+    "invocation": "git-publish-reap-refused",
+    "operation": "git-publish reap",
+    "bundle": "config",
+    "script": "cadence-core/bin/git-publish.mjs",
+    "argv": [
+      "reap",
+      "--dir",
+      "<FIXTURE>",
+      "--branch",
+      "main"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "No remote; protected target returns before branch deletion"
+  },
+  {
+    "invocation": "git-publish-authorized-ok",
+    "operation": "git-publish authorized",
+    "bundle": "publish-authorized",
+    "script": "cadence-core/bin/git-publish.mjs",
+    "argv": [
+      "authorized",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "git-publish-authorized-refused",
+    "operation": "git-publish authorized",
+    "bundle": "config",
+    "script": "cadence-core/bin/git-publish.mjs",
+    "argv": [
+      "authorized",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "issue-check-check-ok",
+    "operation": "issue-check check",
+    "bundle": "forge-configured",
+    "script": "cadence-core/bin/issue-check.mjs",
+    "argv": [
+      "check",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "gh absent from pinned PATH; check returns skip before query"
+  },
+  {
+    "invocation": "issue-check-check-refused",
+    "operation": "issue-check check",
+    "bundle": "forge-configured",
+    "script": "cadence-core/bin/issue-check.mjs",
+    "argv": [
+      "check",
+      "--dir"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "Missing --dir value returns before handler or request"
+  },
+  {
+    "invocation": "issue-filing-file-missing-payload",
+    "operation": "issue-filing file",
+    "bundle": "config",
+    "script": "cadence-core/bin/issue-filing.mjs",
+    "argv": [
+      "file",
+      "--dir",
+      "<FIXTURE>",
+      "--payload",
+      "<FIXTURE>/missing.json"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "Missing payload file returns before forge resolution"
+  },
+  {
+    "invocation": "issue-filing-file-bad-payload",
+    "operation": "issue-filing file",
+    "bundle": "config",
+    "script": "cadence-core/bin/issue-filing.mjs",
+    "argv": [
+      "file",
+      "--dir",
+      "<FIXTURE>",
+      "--payload",
+      "<FIXTURE>/invalid.json"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "Invalid payload object returns before forge resolution"
+  },
+  {
+    "invocation": "issue-filing-unfixed-missing-payload",
+    "operation": "issue-filing unfixed",
+    "bundle": "config",
+    "script": "cadence-core/bin/issue-filing.mjs",
+    "argv": [
+      "unfixed",
+      "--dir",
+      "<FIXTURE>",
+      "--payload",
+      "<FIXTURE>/missing.json"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "Missing payload file returns before forge resolution"
+  },
+  {
+    "invocation": "issue-filing-unfixed-bad-payload",
+    "operation": "issue-filing unfixed",
+    "bundle": "config",
+    "script": "cadence-core/bin/issue-filing.mjs",
+    "argv": [
+      "unfixed",
+      "--dir",
+      "<FIXTURE>",
+      "--payload",
+      "<FIXTURE>/invalid.json"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote.",
+    "offline": "Invalid payload object returns before forge resolution"
+  },
+  {
+    "invocation": "land-cleanup-cleanup-ok",
+    "operation": "land-cleanup cleanup",
+    "bundle": "project",
+    "script": "cadence-core/bin/land-cleanup.mjs",
+    "argv": [
+      "cleanup",
+      "--dir",
+      "<FIXTURE>",
+      "--branch",
+      "golden-merged",
+      "--base",
+      "main"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "setup": "Commit the bundle as BASE and HEAD on main; add local branch golden-merged at HEAD so git branch --merged main lists it; no checkout or remote."
+  },
+  {
+    "invocation": "land-cleanup-cleanup-refused",
+    "operation": "land-cleanup cleanup",
+    "bundle": "project",
+    "script": "cadence-core/bin/land-cleanup.mjs",
+    "argv": [
+      "cleanup",
+      "--dir"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "setup": "Commit the bundle as BASE and HEAD on main; add local branch golden-merged at HEAD so git branch --merged main lists it; no checkout or remote."
+  },
+  {
+    "invocation": "land-cleanup-gate-ok",
+    "operation": "land-cleanup gate",
+    "bundle": "publish-authorized",
+    "script": "cadence-core/bin/land-cleanup.mjs",
+    "argv": [
+      "gate",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "stdin": "{\"findings\":[]}",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "land-cleanup-gate-refused",
+    "operation": "land-cleanup gate",
+    "bundle": "publish-authorized",
+    "script": "cadence-core/bin/land-cleanup.mjs",
+    "argv": [
+      "gate",
+      "--dir"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "stdin": "{\"findings\":[]}",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "land-cleanup-gate-halt",
+    "operation": "land-cleanup gate",
+    "bundle": "publish-authorized",
+    "script": "cadence-core/bin/land-cleanup.mjs",
+    "argv": [
+      "gate",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "door",
+    "stdin": "{}",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "read-trace-ok",
+    "operation": "read-trace",
+    "bundle": "hooks",
+    "script": "cadence-core/bin/read-trace.mjs",
+    "argv": [],
+    "git": false,
+    "refusal_source": "none",
+    "stdin": "{\"cwd\":\"<FIXTURE>\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"<FIXTURE>/src/auth.mjs\"}}"
+  },
+  {
+    "invocation": "read-trace-ignored-tool",
+    "operation": "read-trace",
+    "bundle": "hooks",
+    "script": "cadence-core/bin/read-trace.mjs",
+    "argv": [],
+    "git": false,
+    "refusal_source": "none",
+    "stdin": "{\"cwd\":\"<FIXTURE>\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"<FIXTURE>/src/auth.mjs\"}}"
+  },
+  {
+    "invocation": "release-bump-bump-ok",
+    "operation": "release-bump bump",
+    "bundle": "plugin",
+    "script": "cadence-core/bin/release-bump.mjs",
+    "argv": [
+      "bump",
+      "--dir",
+      "<FIXTURE>",
+      "--version",
+      "3.7.13",
+      "--date",
+      "2026-09-05"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "release-bump-bump-refused",
+    "operation": "release-bump bump",
+    "bundle": "plugin",
+    "script": "cadence-core/bin/release-bump.mjs",
+    "argv": [
+      "bump",
+      "--dir",
+      "<FIXTURE>",
+      "--date",
+      "2026-09-05"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "review-provider-review-no-openai-key",
+    "operation": "review-provider review",
+    "bundle": "config",
+    "script": "cadence-core/bin/review-provider.mjs",
+    "argv": [
+      "review",
+      "--provider",
+      "openai",
+      "--model",
+      "golden-model"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "stdin": "{\"instruction\":\"Check the artifact.\",\"artifact\":\"export const value = 1;\"}",
+    "offline": "No provider key in empty HOME or child environment; returns before request"
+  },
+  {
+    "invocation": "review-provider-review-no-gemini-key",
+    "operation": "review-provider review",
+    "bundle": "config",
+    "script": "cadence-core/bin/review-provider.mjs",
+    "argv": [
+      "review",
+      "--provider",
+      "gemini",
+      "--model",
+      "golden-model"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "stdin": "{\"instruction\":\"Check the artifact.\",\"artifact\":\"export const value = 1;\"}",
+    "offline": "No provider key in empty HOME or child environment; returns before request"
+  },
+  {
+    "invocation": "review-provider-consult-no-openai-key",
+    "operation": "review-provider consult",
+    "bundle": "config",
+    "script": "cadence-core/bin/review-provider.mjs",
+    "argv": [
+      "consult",
+      "--provider",
+      "openai",
+      "--model",
+      "golden-model"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "stdin": "{\"situation\":\"A bounded offline probe.\"}",
+    "offline": "No provider key in empty HOME or child environment; returns before request"
+  },
+  {
+    "invocation": "review-provider-consult-no-gemini-key",
+    "operation": "review-provider consult",
+    "bundle": "config",
+    "script": "cadence-core/bin/review-provider.mjs",
+    "argv": [
+      "consult",
+      "--provider",
+      "gemini",
+      "--model",
+      "golden-model"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "stdin": "{\"situation\":\"A bounded offline probe.\"}",
+    "offline": "No provider key in empty HOME or child environment; returns before request"
+  },
+  {
+    "invocation": "review-provider-detect-models-no-openai-key",
+    "operation": "review-provider detect-models",
+    "bundle": "config",
+    "script": "cadence-core/bin/review-provider.mjs",
+    "argv": [
+      "detect-models",
+      "--provider",
+      "openai"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "stdin": "{}",
+    "offline": "No provider key in empty HOME or child environment; returns before request"
+  },
+  {
+    "invocation": "review-provider-detect-models-no-gemini-key",
+    "operation": "review-provider detect-models",
+    "bundle": "config",
+    "script": "cadence-core/bin/review-provider.mjs",
+    "argv": [
+      "detect-models",
+      "--provider",
+      "gemini"
+    ],
+    "git": false,
+    "refusal_source": "handler",
+    "stdin": "{}",
+    "offline": "No provider key in empty HOME or child environment; returns before request"
+  },
+  {
+    "invocation": "subagent-trace-ok",
+    "operation": "subagent-trace",
+    "bundle": "hooks",
+    "script": "cadence-core/bin/subagent-trace.mjs",
+    "argv": [],
+    "git": false,
+    "refusal_source": "none",
+    "stdin": "{\"cwd\":\"<FIXTURE>\",\"agent_type\":\"cad-executor\",\"agent_id\":\"golden-worker\"}"
+  },
+  {
+    "invocation": "subagent-trace-ignored-agent",
+    "operation": "subagent-trace",
+    "bundle": "hooks",
+    "script": "cadence-core/bin/subagent-trace.mjs",
+    "argv": [],
+    "git": false,
+    "refusal_source": "none",
+    "stdin": "{\"cwd\":\"<FIXTURE>\",\"agent_type\":\"general-purpose\",\"agent_id\":\"golden-worker\"}"
+  },
+  {
+    "invocation": "weight-ok",
+    "operation": "weight",
+    "bundle": "plugin",
+    "script": "cadence-core/bin/weight.mjs",
+    "argv": [
+      "--root",
+      "<FIXTURE>"
+    ],
+    "git": false,
+    "refusal_source": "door"
+  },
+  {
+    "invocation": "weight-refused",
+    "operation": "weight",
+    "bundle": "plugin",
+    "script": "cadence-core/bin/weight.mjs",
+    "argv": [
+      "--root"
+    ],
+    "git": false,
+    "refusal_source": "door"
+  },
+  {
+    "invocation": "weight-resident-ok",
+    "operation": "weight resident",
+    "bundle": "plugin",
+    "script": "cadence-core/bin/weight.mjs",
+    "argv": [
+      "resident",
+      "--root",
+      "<FIXTURE>"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "weight-resident-refused",
+    "operation": "weight resident",
+    "bundle": "plugin",
+    "script": "cadence-core/bin/weight.mjs",
+    "argv": [
+      "resident",
+      "--root",
+      "<FIXTURE>",
+      "--command",
+      "unknown-golden"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "why-ok",
+    "operation": "why",
+    "bundle": "project",
+    "script": "cadence-core/bin/why.mjs",
+    "argv": [
+      "src/auth.mjs",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "why-refused",
+    "operation": "why",
+    "bundle": "project",
+    "script": "cadence-core/bin/why.mjs",
+    "argv": [
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": true,
+    "refusal_source": "handler",
+    "setup": "Commit the bundle as BASE and HEAD on main; no remote."
+  },
+  {
+    "invocation": "skim-ok",
+    "operation": "skim",
+    "bundle": "project",
+    "script": "cadence-core/bin/skim.mjs",
+    "argv": [
+      "<FIXTURE>/src/auth.mjs",
+      "--stats"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "skim-refused",
+    "operation": "skim",
+    "bundle": "project",
+    "script": "cadence-core/bin/skim.mjs",
+    "argv": [
+      "<FIXTURE>/missing.mjs",
+      "--stats"
+    ],
+    "git": false,
+    "refusal_source": "handler"
+  },
+  {
+    "invocation": "worktree-base-resolve-ok",
+    "operation": "worktree-base resolve",
+    "bundle": "config",
+    "script": "cadence-core/bin/worktree-base.mjs",
+    "argv": [
+      "resolve",
+      "--dir",
+      "<FIXTURE>"
+    ],
+    "git": false,
+    "refusal_source": "door"
+  },
+  {
+    "invocation": "worktree-base-resolve-refused",
+    "operation": "worktree-base resolve",
+    "bundle": "config",
+    "script": "cadence-core/bin/worktree-base.mjs",
+    "argv": [
+      "resolve",
+      "--dir"
+    ],
+    "git": false,
+    "refusal_source": "door"
   }
 ]
