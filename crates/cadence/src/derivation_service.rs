@@ -10,6 +10,12 @@ pub type ArtifactFactory = Arc<dyn Fn() -> Box<dyn ArtifactIo + Send> + Send + S
 
 #[derive(Clone)]
 pub struct Driver {
+    #[cfg(test)]
+    pub compare: fn(
+        Option<&serde_json::Value>,
+        &str,
+        &Lifecycle,
+    ) -> Result<MemoDisposition, DerivationError>,
     pub artifacts: ArtifactFactory,
     #[cfg(test)]
     pub event: Arc<dyn Fn(Event) + Send + Sync>,
@@ -23,6 +29,8 @@ pub enum Event {
 impl Default for Driver {
     fn default() -> Self {
         Self {
+            #[cfg(test)]
+            compare: check_memo,
             artifacts: Arc::new(|| Box::new(ArtifactFiles)),
             #[cfg(test)]
             event: Arc::new(|_| {}),
@@ -85,6 +93,9 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
     let selected = select_intake(&view.snapshot.data)?;
     let pending = selected.pending(&view.snapshot.data)?;
     let prepared = prepared.with_intake(&selected)?;
+    #[cfg(test)]
+    let disposition = (driver.compare)(raw, &key, prepared.answer())?;
+    #[cfg(not(test))]
     let disposition = check_memo(raw, &key, prepared.answer())?;
     let memo = LifecycleMemo::fresh(key, prepared.answer().clone());
     let rechecked = tokio::task::spawn_blocking(move || {
