@@ -92,3 +92,23 @@ lock guarantee, and digests do not defend against a hostile rewrite of both data
 and integrity metadata. Renames provide process-kill old-or-new atomicity; they do
 not prove durability against power loss. AC8 requires syscall-order verification
 of successful file and directory synchronization before acknowledgement.
+
+## Process-kill regression guard (AC4)
+
+`cargo test -p cadence --test store_crash` drives the production writer in child
+processes. Test-driver callbacks park at partial temporary writing, completed
+file synchronization, rename before directory synchronization, and completed
+directory synchronization before reply. The parent observes a barrier and sends
+SIGKILL, then compares every semantic target with independently recorded complete
+old/new byte strings. Initial creation uses absence as the old candidate. Replay
+is also killed at deterministic production stages. Acknowledged operations
+survive a normal child restart; stable operation retries do not duplicate records.
+The callbacks that block or kill are confined to the integration-test driver;
+normal filesystem construction has a no-op observer and no process barriers.
+
+This guards the old-or-new property already provided by frozen `atomicWrite`'s
+write-then-rename implementation (`v3.7.12`, planning-files.mjs:2787-2788), whose
+comment explicitly declines fsync while promising no torn file. Process kill
+leaves the kernel and its caches alive. Power loss can persist a rename without
+its file data and is a different failure model. These tests do not simulate power
+failure and do not prove AC8's successful-fsync-before-acknowledgement ordering.

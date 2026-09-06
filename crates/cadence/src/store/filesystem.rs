@@ -8,9 +8,13 @@ use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
+    Writing,
     TemporarySync,
+    TemporarySynced,
     Prepared,
+    Renamed,
     DirectorySync,
+    DirectorySynced,
     Confirmation,
     RecoverySync,
 }
@@ -164,9 +168,13 @@ impl Storage for Filesystem {
             }
         };
         let result = (|| {
-            file.write_all(bytes)?;
+            let middle = bytes.len() / 2;
+            file.write_all(&bytes[..middle])?;
+            (self.probe)(Stage::Writing, &target)?;
+            file.write_all(&bytes[middle..])?;
             (self.probe)(Stage::TemporarySync, &temporary)?;
             file.sync_all()?;
+            (self.probe)(Stage::TemporarySynced, &target)?;
             (self.probe)(Stage::Prepared, &target)?;
             Ok(())
         })();
@@ -179,9 +187,11 @@ impl Storage for Filesystem {
 
     fn install(&mut self, prepared: &Prepared) -> Result<()> {
         fs::rename(&prepared.temporary, &prepared.target)?;
+        (self.probe)(Stage::Renamed, &prepared.target)?;
         let parent = prepared.target.parent().unwrap();
         (self.probe)(Stage::DirectorySync, parent)?;
         File::open(parent)?.sync_all()?;
+        (self.probe)(Stage::DirectorySynced, &prepared.target)?;
         Ok(())
     }
 
