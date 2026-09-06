@@ -248,3 +248,79 @@ fn malformed_rule_names_file_and_rule() {
         "{error}"
     );
 }
+
+fn materialize(root: &Path, bundle: &str) -> Result<TempDir> {
+    let source = root.join("fixtures").join(bundle);
+    if Path::new(bundle).components().count() != 1
+        || !matches!(
+            Path::new(bundle).components().next(),
+            Some(std::path::Component::Normal(_))
+        )
+        || !source.is_dir()
+    {
+        return Err(format!("bundle {bundle}: no fixture directory"));
+    }
+    let scratch = tempfile::tempdir().map_err(|e| format!("bundle {bundle}: {e}"))?;
+    copy_tree(&source, scratch.path())?;
+    Ok(scratch)
+}
+
+fn tree_bytes(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    fn walk(root: &Path, directory: &Path, files: &mut BTreeMap<String, Vec<u8>>) -> Result<()> {
+        for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let kind = entry.file_type().map_err(|e| e.to_string())?;
+            if kind.is_dir() {
+                walk(root, &path, files)?;
+            } else if kind.is_file() {
+                let name = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                files.insert(
+                    name,
+                    fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?,
+                );
+            } else {
+                return Err(format!(
+                    "{}: expected regular file or directory",
+                    path.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+    let mut files = BTreeMap::new();
+    walk(root, root, &mut files)?;
+    Ok(files)
+}
+
+#[test]
+fn every_manifest_bundle_materializes_intact() {
+    let root = golden_root();
+    let golden = load(&root).unwrap();
+    let bundles: std::collections::BTreeSet<_> =
+        golden.invocations.iter().map(|i| &i.bundle).collect();
+    for bundle in &bundles {
+        let scratch = materialize(&root, bundle).unwrap();
+        let expected = tree_bytes(&root.join("fixtures").join(bundle)).unwrap();
+        let actual = tree_bytes(scratch.path()).unwrap();
+        assert_eq!(
+            actual.keys().collect::<Vec<_>>(),
+            expected.keys().collect::<Vec<_>>(),
+            "bundle {bundle}"
+        );
+        for (path, bytes) in expected {
+            assert_eq!(actual[&path], bytes, "bundle {bundle}: {path}");
+        }
+    }
+    println!("bundles_materialized={}", bundles.len());
+}
+
+#[test]
+fn nonexistent_bundle_names_the_bundle() {
+    let error = materialize(&golden_root(), "missing-bundle").unwrap_err();
+    assert!(error.contains("missing-bundle"), "{error}");
+}
