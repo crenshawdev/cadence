@@ -1,0 +1,70 @@
+{
+  "invocation": "cite-count-ok",
+  "operation": "cite-count",
+  "bundle": "planning-inputs",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "cite-count",
+    "--phase",
+    "1",
+    "--payload",
+    "<FIXTURE>/recall.json",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "phase": 1,
+    "plans": [
+      "PLAN-1.md",
+      "PLAN-2.md"
+    ],
+    "surfaced": {
+      "count": 0,
+      "ids": []
+    },
+    "cited": {
+      "count": 0,
+      "ids": []
+    },
+    "cited_by_kind": {
+      "decision": {
+        "surfaced": 0,
+        "cited": 0
+      },
+      "capture": {
+        "surfaced": 0,
+        "unjoinable": true
+      },
+      "deviation": {
+        "surfaced": 0,
+        "unjoinable": true
+      },
+      "uat": {
+        "surfaced": 0,
+        "unjoinable": true
+      }
+    },
+    "trace": {
+      "written": true
+    }
+  },
+  "stderr": "",
+  "files": {
+    ".planning/trace.jsonl": "{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.911Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-planner\",\"agent\":\"cad-planner\",\"model\":\"opus\",\"model_source\":\"roles.cad-planner.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":2}\n{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.936Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-executor\",\"agent\":\"cad-executor\",\"model\":\"opus\",\"model_source\":\"roles.cad-executor.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":1}\n{\"corr\":\"1\",\"phase\":1,\"ts\":\"2026-09-05T19:01:29.959Z\",\"family\":\"routing\",\"event\":\"resolve\",\"role\":\"cad-verifier\",\"agent\":\"cad-verifier\",\"model\":\"opus\",\"model_source\":\"roles.cad-verifier.model\",\"effort\":\"high\",\"escalated\":false,\"pinned\":false,\"attempt\":1,\"warning_count\":1}\n{\"corr\":\"1\",\"phase\":\"1\",\"ts\":\"2026-09-06T13:34:14.577Z\",\"family\":\"outcome\",\"event\":\"cite_count\",\"surfaced\":{\"count\":0,\"ids\":[]},\"cited\":{\"count\":0,\"ids\":[]},\"cited_by_kind\":{\"decision\":{\"surfaced\":0,\"cited\":0},\"capture\":{\"surfaced\":0,\"unjoinable\":true},\"deviation\":{\"surfaced\":0,\"unjoinable\":true},\"uat\":{\"surfaced\":0,\"unjoinable\":true}}}\n"
+  },
+  "deleted": []
+}

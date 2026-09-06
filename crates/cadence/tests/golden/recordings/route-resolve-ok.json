@@ -1,0 +1,89 @@
+{
+  "invocation": "route-resolve-ok",
+  "operation": "route resolve",
+  "bundle": "config",
+  "script": "cadence-core/bin/route.mjs",
+  "argv": [
+    "resolve",
+    "--role",
+    "cad-executor",
+    "--file",
+    "<FIXTURE>/.planning/config.json"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/global-config.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "role": "cad-executor",
+    "agent": "cad-executor",
+    "model": "opus",
+    "model_source": "roles.cad-executor.model",
+    "effort": "high",
+    "review": {
+      "plan": "advisory",
+      "diff": "off",
+      "risk_surface": "blocking",
+      "phase_diff": "off"
+    },
+    "reviewers": {
+      "plan": [
+        "claude-subagent"
+      ],
+      "diff": [
+        "claude-subagent"
+      ],
+      "risk_surface": [
+        "claude-subagent"
+      ],
+      "phase_diff": [
+        "claude-subagent"
+      ]
+    },
+    "reviewer_tiers": {
+      "plan": "cheap",
+      "diff": "flagship",
+      "risk_surface": "cheap",
+      "phase_diff": "cheap"
+    },
+    "reviewer_efforts": {
+      "plan": "low",
+      "diff": "minimal",
+      "risk_surface": "low",
+      "phase_diff": "low"
+    },
+    "surfaces": [
+      "secrets",
+      "destructive",
+      "untrusted_input"
+    ],
+    "surfaces_answered": true,
+    "verify": "off",
+    "escalated": false,
+    "pinned": false,
+    "attempt": 1,
+    "reason": [
+      "config layers: global+repo",
+      "no risk-floor computation: no --phase and no readable cursor, so no plan was named; the plan review and the deep-verify pass stand where the config leaves them",
+      "roles.cad-executor.effort=\"high\" (config, already the schema default rung)",
+      "review.triggers.plan.gate: schema default \"advisory\"",
+      "review.triggers.diff.gate: schema default \"off\"",
+      "review.triggers.risk_surface.gate: schema default \"blocking\"",
+      "review.triggers.phase_diff.gate: schema default \"off\"",
+      "roles.cad-executor.model=opus (config)"
+    ]
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

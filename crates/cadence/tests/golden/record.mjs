@@ -1,7 +1,7 @@
 // Record the frozen reference in isolated fixture copies. No runtime imports
 // from cadence-core: the subprocess boundary is the behavior being measured.
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,6 +61,25 @@ function setupRepository(root, env, setup) {
   if (setup.tag) git('tag', setup.tag);
   if (setup.branch) git('branch', setup.branch);
   return { base, head };
+}
+
+function snapshot(root) {
+  const files = new Map();
+  function walk(dir) {
+    for (const name of readdirSync(dir).sort()) {
+      if (name === '.git') continue;
+      const path = join(dir, name);
+      const stat = lstatSync(path);
+      // The support directory contains our node/git symlinks, not fixture files.
+      if (path === join(root, '.golden-env')) continue;
+      if (stat.isSymbolicLink()) throw new Error(`symlink in captured tree: ${path}`);
+      if (stat.isDirectory()) walk(path);
+      else if (stat.isFile()) files.set(relative(root, path), readFileSync(path));
+      else throw new Error(`non-file in captured tree: ${path}`);
+    }
+  }
+  walk(root);
+  return files;
 }
 
 function main() {
@@ -139,6 +158,7 @@ function main() {
       const restore = text => text.replaceAll(scratch, '<FIXTURE>').replaceAll(repo, '<REPO>');
       const argv = entry.argv.map(substitute);
       const stdin = entry.stdin === undefined ? null : substitute(entry.stdin);
+      const before = snapshot(scratch);
       const child = spawnSync(process.execPath, [resolve(repo, entry.script), ...argv], {
         cwd: scratch, env, encoding: 'utf8', timeout: 60_000,
         maxBuffer: 32 * 1024 * 1024,
@@ -158,12 +178,11 @@ function main() {
         node: process.versions.node.split('.')[0], exit: child.status,
         stdout, stderr: child.stderr, files: {}, deleted: [],
       };
-      // Task 1 proves the harvested marker in the written artifact. Task 2
-      // replaces this narrow capture with discovery over the entire tree.
-      if (entry.operation === 'debt-harvest' && stdout?.written === true) {
-        const path = contained(scratch, realpathSync(stdout.file));
-        recording.files[relative(scratch, path)] = readFileSync(path, 'utf8');
+      const after = snapshot(scratch);
+      for (const [path, bytes] of after) {
+        if (!before.get(path)?.equals(bytes)) recording.files[path] = bytes.toString('utf8');
       }
+      recording.deleted = [...before.keys()].filter(path => !after.has(path));
       const destination = join(output, `${entry.invocation}.json`);
       // Opening without following symlinks protects an existing recording too.
       writeFileSync(destination, restore(JSON.stringify(recording, null, 2)) + '\n',
