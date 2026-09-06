@@ -142,3 +142,24 @@ pub fn query_with_intake(
     let prepared = prepare_query_with_intake(selected, io, cursor, observation)?;
     recheck_query_with_intake(&prepared, io, intake_io)
 }
+
+impl PreparedLifecycle {
+    /// Add snapshot intake to the already derived request-entry capture.
+    pub fn with_intake(mut self, selected: &SelectedIntake) -> Result<Self, DerivationError> {
+        if selected.cursor.provenance().original_cursor
+            != selected.observation.cursor.clone().unwrap_or_default()
+        {
+            return Err(DerivationError::InputsChanged);
+        }
+        check_consistency(
+            validate_inputs(&self.capture)?,
+            &self.answer,
+            &selected.cursor,
+        )?;
+        self.intake = Some(ValidatedIntake {
+            cursor: selected.cursor.clone(),
+            observation: selected.observation.clone(),
+        });
+        Ok(self)
+    }
+}

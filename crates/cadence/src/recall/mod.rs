@@ -193,7 +193,14 @@ mod resident {
     };
     use tokio::sync::{mpsc, oneshot};
 
+    use crate::server::derivation_service::{self, Driver};
+    use cadence::derivation::{DerivationError, Lifecycle};
+
     enum Request {
+        Lifecycle {
+            root: PathBuf,
+            reply: oneshot::Sender<std::result::Result<Lifecycle, DerivationError>>,
+        },
         Store {
             root: PathBuf,
             operation: Operation,
@@ -315,11 +322,21 @@ mod resident {
         // first_touch borrows the factory across await in a migratable task.
         // Sync applies to that borrow, not to writable store/index ownership.
         pub fn spawn<I: ConfigIo + Clone + Sync>(factory: SessionFactory<I>) -> Self {
+            Self::spawn_with_driver(factory, Driver::default())
+        }
+        pub fn spawn_with_driver<I: ConfigIo + Clone + Sync>(
+            factory: SessionFactory<I>,
+            driver: Driver,
+        ) -> Self {
             let (requests, mut receiver) = mpsc::channel::<Request>(32);
             tokio::spawn(async move {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
+                        Request::Lifecycle { root, reply } => {
+                            let result = derivation_service::query(&factory, &root, &driver).await;
+                            let _ = reply.send(result);
+                        }
                         Request::Store {
                             root,
                             operation,
@@ -363,6 +380,22 @@ mod resident {
             Self { requests }
         }
 
+        pub async fn lifecycle(
+            &self,
+            root: &Path,
+        ) -> std::result::Result<Lifecycle, DerivationError> {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::Lifecycle {
+                    root: root.into(),
+                    reply,
+                })
+                .await
+                .map_err(|_| derivation_service::store_error(Error::Closed))?;
+            completion
+                .await
+                .map_err(|_| derivation_service::store_error(Error::Closed))?
+        }
         pub async fn store(&self, root: &Path, operation: Operation) -> Result<View> {
             let (reply, completion) = oneshot::channel();
             self.requests

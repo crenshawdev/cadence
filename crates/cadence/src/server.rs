@@ -17,6 +17,13 @@ use crate::envelope::Envelope;
 #[path = "recall/mod.rs"]
 pub mod recall;
 
+#[allow(dead_code)]
+#[path = "derivation_service.rs"]
+pub mod derivation_service;
+#[cfg(test)]
+#[path = "derivation_service_tests.rs"]
+mod derivation_service_tests;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -54,6 +61,23 @@ impl CadenceServer {
     ) -> Self {
         Self {
             service: recall::Resident::spawn(factory),
+        }
+    }
+
+    pub async fn lifecycle(
+        &self,
+        root: &std::path::Path,
+    ) -> Result<cadence::derivation::Lifecycle, cadence::derivation::DerivationError> {
+        self.service.lifecycle(root).await
+    }
+
+    #[cfg(test)]
+    pub fn with_derivation_driver<I: crate::config::reload::ConfigIo + Clone + Sync>(
+        factory: crate::import::SessionFactory<I>,
+        driver: derivation_service::Driver,
+    ) -> Self {
+        Self {
+            service: recall::Resident::spawn_with_driver(factory, driver),
         }
     }
 

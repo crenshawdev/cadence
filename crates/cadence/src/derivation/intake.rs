@@ -126,3 +126,11 @@ impl RecheckedLifecycle {
         )
     }
 }
+
+impl SelectedIntake {
+    pub fn pending(&self, data: &Value) -> Result<bool, DerivationError> {
+        Ok(retirement(data)?.is_none_or(|record| {
+            record.original_cursor != self.observation.cursor.clone().unwrap_or(Value::Null)
+        }))
+    }
+}
