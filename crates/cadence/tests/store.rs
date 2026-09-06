@@ -384,3 +384,163 @@ fn unsafe_store_or_policy_does_not_append_refusal() {
         assert!(!root.path().join("decisions.jsonl").exists());
     });
 }
+
+#[test]
+fn external_changes_are_refused_without_touching_any_store_target() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    for change in [
+        "in-place",
+        "same-size-time",
+        "replacement",
+        "deletion",
+        "symlink",
+        "unreadable",
+        "parent",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        runtime().block_on(async {
+            let planning = root.path().join("planning");
+            let store = Store::open(Filesystem::new(&planning).unwrap(), Allow)
+                .await
+                .unwrap();
+            store
+                .request(Operation::AppendItem(item("original")))
+                .await
+                .unwrap();
+            let target = planning.join("items.jsonl");
+            let before_decisions = std::fs::read(planning.join("decisions.jsonl")).unwrap();
+            let before_state = std::fs::read(planning.join("state.json")).unwrap();
+            let original = std::fs::read(&target).unwrap();
+            let mut expected = Some(b"foreign edit\n".to_vec());
+            match change {
+                "in-place" => std::fs::write(&target, expected.as_ref().unwrap()).unwrap(),
+                "same-size-time" => {
+                    let file = std::fs::File::open(&target).unwrap();
+                    let metadata = file.metadata().unwrap();
+                    let mut bytes = original.clone();
+                    bytes[0] = b'!';
+                    std::fs::write(&target, &bytes).unwrap();
+                    file.set_times(
+                        std::fs::FileTimes::new()
+                            .set_accessed(metadata.accessed().unwrap())
+                            .set_modified(metadata.modified().unwrap()),
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        file.metadata().unwrap().modified().unwrap(),
+                        metadata.modified().unwrap()
+                    );
+                    expected = Some(bytes);
+                }
+                "replacement" => {
+                    let replacement = root.path().join("replacement");
+                    std::fs::write(&replacement, &original).unwrap();
+                    std::fs::rename(replacement, &target).unwrap();
+                    expected = Some(original.clone());
+                }
+                "deletion" => {
+                    std::fs::remove_file(&target).unwrap();
+                    expected = None;
+                }
+                "symlink" => {
+                    let foreign = root.path().join("foreign");
+                    std::fs::write(&foreign, expected.as_ref().unwrap()).unwrap();
+                    std::fs::remove_file(&target).unwrap();
+                    symlink(foreign, &target).unwrap();
+                }
+                "unreadable" => {
+                    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o0)).unwrap();
+                    expected = Some(original.clone());
+                }
+                "parent" => {
+                    std::fs::rename(&planning, root.path().join("old-planning")).unwrap();
+                    std::fs::create_dir(&planning).unwrap();
+                    std::fs::write(&target, &original).unwrap();
+                    std::fs::write(planning.join("decisions.jsonl"), &before_decisions).unwrap();
+                    std::fs::write(planning.join("state.json"), &before_state).unwrap();
+                    expected = Some(original.clone());
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                matches!(
+                    store.request(Operation::AppendItem(item("refused"))).await,
+                    Err(Error::Conflict(_) | Error::Io(_))
+                ),
+                "{change}"
+            );
+            if change == "unreadable" {
+                std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600)).unwrap();
+            }
+            assert_eq!(std::fs::read(&target).ok(), expected, "{change}");
+            assert_eq!(
+                std::fs::read(planning.join("decisions.jsonl")).unwrap(),
+                before_decisions
+            );
+            assert_eq!(
+                std::fs::read(planning.join("state.json")).unwrap(),
+                before_state
+            );
+            assert!(std::fs::read_dir(&planning).unwrap().all(|entry| {
+                !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".tmp")
+            }));
+            if ["in-place", "same-size-time", "deletion", "symlink"].contains(&change) {
+                assert!(
+                    Store::open(Filesystem::new(&planning).unwrap(), Allow)
+                        .await
+                        .is_err()
+                );
+            }
+        });
+    }
+}
+
+#[test]
+fn edit_after_preparation_preserves_foreign_bytes_and_discards_only_preparation() {
+    let root = tempfile::tempdir().unwrap();
+    runtime().block_on(async {
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        store
+            .request(Operation::AppendItem(item("original")))
+            .await
+            .unwrap();
+        drop(store);
+        let before_state = std::fs::read(root.path().join("state.json")).unwrap();
+        let before_decisions = std::fs::read(root.path().join("decisions.jsonl")).unwrap();
+        let target = root.path().join("items.jsonl");
+        let mut injected = false;
+        let fs = Filesystem::new(root.path())
+            .unwrap()
+            .with_probe(move |stage, _| {
+                if stage == Stage::Prepared && !injected {
+                    injected = true;
+                    std::fs::write(&target, b"foreign after preparation\n")?;
+                }
+                Ok(())
+            });
+        let store = Store::open(fs, Allow).await.unwrap();
+        assert!(matches!(
+            store.request(Operation::AppendItem(item("blocked"))).await,
+            Err(Error::Conflict(_))
+        ));
+        assert_eq!(
+            std::fs::read(root.path().join("items.jsonl")).unwrap(),
+            b"foreign after preparation\n"
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("state.json")).unwrap(),
+            before_state
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("decisions.jsonl")).unwrap(),
+            before_decisions
+        );
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 3);
+    });
+}

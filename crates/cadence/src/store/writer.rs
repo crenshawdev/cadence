@@ -83,7 +83,10 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let items_bytes = observed[ITEMS].bytes.as_deref().unwrap_or_default();
         let decision_bytes = observed[DECISIONS].bytes.as_deref().unwrap_or_default();
         let snapshot = match observed[STATE].bytes.as_deref() {
-            Some(bytes) => Snapshot::parse(bytes, items_bytes, decision_bytes)?,
+            Some(bytes) if observed.values().all(|file| file.bytes.is_some()) => {
+                Snapshot::parse(bytes, items_bytes, decision_bytes)?
+            }
+            Some(_) => return Err(Error::Conflict("owned generation lost a store file".into())),
             None if observed.values().all(|file| file.bytes.is_none()) => {
                 Snapshot::new(0, b"", b"", Value::Null)?
             }
@@ -128,6 +131,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 "rewrite_snapshot"
             }
         };
+        self.revalidate()?;
         self.policy.validate(&MutationContext {
             operation: operation_name,
             snapshot: &self.view.snapshot,
@@ -142,12 +146,41 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             .ok_or_else(|| Error::Invalid("generation overflow".into()))?;
         next.snapshot = Snapshot::new(generation, &items, &decisions, next.snapshot.data)?;
         let state = next.snapshot.render()?;
+        let mut prepared_files = Vec::new();
         for (name, bytes) in [(ITEMS, items), (DECISIONS, decisions), (STATE, state)] {
             if self.observed[name].bytes.as_ref() == Some(&bytes) {
                 continue;
             }
+            match self.storage.prepare(name, &bytes) {
+                Ok(prepared) => prepared_files.push((name, bytes, prepared)),
+                Err(error) => {
+                    for (_, _, prepared) in prepared_files {
+                        self.storage.discard(prepared)?;
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        // Best effort at this check point, not an OS compare-and-swap. An
+        // uncooperative writer can still race the subsequent replacements.
+        if let Err(error) = self.revalidate().and_then(|()| {
+            self.policy.validate(&MutationContext {
+                operation: operation_name,
+                snapshot: &self.view.snapshot,
+            })
+        }) {
+            for (_, _, prepared) in prepared_files {
+                self.storage.discard(prepared)?;
+            }
+            return Err(error);
+        }
+        let mut failure = None;
+        for (name, bytes, prepared) in prepared_files {
+            if failure.is_some() {
+                self.storage.discard(prepared)?;
+                continue;
+            }
             let result = (|| {
-                let prepared = self.storage.prepare(name, &bytes)?;
                 let installed = self.storage.install(&prepared);
                 self.storage.discard(prepared)?;
                 installed?;
@@ -159,11 +192,23 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 }
                 Err(error) => {
                     self.failed = Some(error.clone());
-                    return Err(error);
+                    failure = Some(error);
                 }
             }
         }
+        if let Some(error) = failure {
+            return Err(error);
+        }
         self.view = next;
         Ok(self.view.clone())
+    }
+
+    fn revalidate(&mut self) -> Result<()> {
+        for (name, expected) in &self.observed {
+            if self.storage.read(name)? != *expected {
+                return Err(Error::Conflict(format!("externally changed store: {name}")));
+            }
+        }
+        Ok(())
     }
 }

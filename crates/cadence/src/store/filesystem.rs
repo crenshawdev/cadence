@@ -1,12 +1,14 @@
 //! Filesystem work belongs exclusively to the resource-owning writer thread.
 use super::{Error, Observed, Result, Storage};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
     TemporarySync,
+    Prepared,
     DirectorySync,
     Confirmation,
 }
@@ -58,14 +60,55 @@ impl Storage for Filesystem {
 
     fn read(&mut self, target: &str) -> Result<Observed> {
         let target = self.target(target)?;
-        let bytes = match fs::read(&target) {
-            Ok(bytes) => Some(bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        let mut identity = String::new();
+        for parent in target.parent().unwrap().ancestors() {
+            if parent.as_os_str().is_empty() {
+                continue;
+            }
+            let metadata = fs::symlink_metadata(parent)?;
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err(Error::Conflict(format!(
+                    "non-directory or symlink ancestor: {}",
+                    parent.display()
+                )));
+            }
+            identity.push_str(&format!("{}:{};", metadata.dev(), metadata.ino()));
+        }
+        let metadata = match fs::symlink_metadata(&target) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Observed {
+                    bytes: None,
+                    identity,
+                });
+            }
             Err(error) => return Err(error.into()),
         };
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(Error::Conflict(format!(
+                "not an owned regular file: {}",
+                target.display()
+            )));
+        }
+        if metadata.mode() & 0o444 == 0 {
+            return Err(Error::Io(format!("unreadable file: {}", target.display())));
+        }
+        let mut file = File::open(&target)?;
+        let opened = file.metadata()?;
+        if opened.dev() != metadata.dev() || opened.ino() != metadata.ino() {
+            return Err(Error::Conflict("file replaced during read".into()));
+        }
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        identity.push_str(&format!(
+            "{}:{}:{}",
+            opened.dev(),
+            opened.ino(),
+            opened.mode()
+        ));
         Ok(Observed {
-            bytes,
-            identity: String::new(),
+            bytes: Some(bytes),
+            identity,
         })
     }
 
@@ -93,6 +136,7 @@ impl Storage for Filesystem {
             file.write_all(bytes)?;
             (self.probe)(Stage::TemporarySync, &temporary)?;
             file.sync_all()?;
+            (self.probe)(Stage::Prepared, &target)?;
             Ok(())
         })();
         if let Err(error) = result {
