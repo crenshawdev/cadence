@@ -1,7 +1,7 @@
 // Record the frozen reference in isolated fixture copies. No runtime imports
 // from cadence-core: the subprocess boundary is the behavior being measured.
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -151,18 +151,65 @@ function assertUntainted(recording, pid, suppliedPaths) {
   if (kinds.length) throw new Error(`${recording.invocation}: captured ${kinds.join(' and ')} taint`);
 }
 
+function recordingNames(dir) {
+  return existsSync(dir) ? readdirSync(dir).filter(name => name.endsWith('.json')).sort() : [];
+}
+
+function guardNode(dir, allowNodeChange) {
+  const current = process.versions.node.split('.')[0];
+  const majors = new Set();
+  for (const name of recordingNames(dir)) {
+    const path = join(dir, name);
+    if (lstatSync(path).isSymbolicLink()) throw new Error(`symlinked recording: ${path}`);
+    let recording;
+    try { recording = JSON.parse(readFileSync(path, 'utf8')); }
+    catch { continue; } // Malformed recordings are still compared and named by --check.
+    if (typeof recording?.node !== 'string' || !/^[0-9]+$/.test(recording.node)) {
+      throw new Error(`${path}: recording has no Node major`);
+    }
+    if (recording.node !== current) majors.add(recording.node);
+  }
+  if (majors.size && !allowNodeChange) {
+    throw new Error(`Node major mismatch: running ${current}, recordings ${[...majors].sort().join(', ')}; `
+      + 'the CI pin must move with the recordings; explicit re-recording requires --allow-node-change');
+  }
+}
+
+function compareRecordings(output, committed) {
+  const expected = new Set(recordingNames(output));
+  const existing = new Set(recordingNames(committed));
+  let differences = 0;
+  for (const name of [...new Set([...expected, ...existing])].sort()) {
+    const path = join(committed, name);
+    const kind = !existing.has(name) ? 'missing' : !expected.has(name) ? 'extra'
+      : !readFileSync(join(output, name)).equals(readFileSync(path)) ? 'different' : null;
+    if (kind) {
+      console.error(`${relative(repo, path)}: ${kind}`);
+      differences++;
+    }
+  }
+  if (differences) process.exitCode = 1;
+}
+
 function main() {
   const only = new Set();
   let noNormalize = false;
   let taintStderr = false;
+  let check = false;
+  let allowNodeChange = false;
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--no-normalize') { noNormalize = true; continue; }
     if (args[i] === '--taint-stderr') { taintStderr = true; continue; }
+    if (args[i] === '--check') { check = true; continue; }
+    if (args[i] === '--allow-node-change') { allowNodeChange = true; continue; }
     if (args[i] !== '--only' || !identifier.test(args[i + 1] || '')) {
-      throw new Error('usage: record.mjs [--only <invocation>]... [--no-normalize] [--taint-stderr]');
+      throw new Error('usage: record.mjs [--only <invocation>]... [--check] [--allow-node-change] [--no-normalize] [--taint-stderr]');
     }
     only.add(args[++i]);
+  }
+  if (check && (only.size || allowNodeChange)) {
+    throw new Error('--check covers every invocation and cannot use --only or --allow-node-change');
   }
   // Always load and validate, even when the negative control skips application.
   const rules = loadRules();
@@ -188,98 +235,107 @@ function main() {
     }
   }
   const git = executable('git');
-  const output = join(here, 'recordings');
-  mkdirSync(output, { recursive: true });
-  if (lstatSync(output).isSymbolicLink()) throw new Error('symlinked recordings directory');
-  for (const entry of selected) {
-    const source = contained(join(here, 'fixtures'), realpathSync(join(here, 'fixtures', entry.bundle)));
-    const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'cadence-golden-')));
-    try {
-      // Reject fixture symlinks rather than copying a write escape into scratch.
-      cpSync(source, scratch, { recursive: true, filter(path) {
-        if (lstatSync(path).isSymbolicLink()) throw new Error(`symlinked fixture: ${path}`);
-        return true;
-      } });
-      const support = join(scratch, '.golden-env');
-      mkdirSync(support);
-      mkdirSync(join(support, 'bin'));
-      mkdirSync(join(support, 'user-home'));
-      symlinkSync(process.execPath, join(support, 'bin/node'));
-      symlinkSync(git, join(support, 'bin/git'));
-      const empty = join(support, 'empty.json');
-      writeFileSync(empty, '{}\n');
-      const global = entry.global_config === undefined ? empty
-        : contained(scratch, realpathSync(resolve(scratch, entry.global_config)));
-      const env = {
-        PATH: join(support, 'bin'), HOME: join(support, 'user-home'),
-        TZ: 'UTC', LC_ALL: 'C.UTF-8', LANG: 'C.UTF-8',
-        CADENCE_GLOBAL_CONFIG: global,
-        CADENCE_MANAGED_SETTINGS: empty,
-        CADENCE_USER_SETTINGS: empty,
-        ...(entry.git ? {
-          GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
-          GIT_AUTHOR_NAME: 'Golden Fixture', GIT_AUTHOR_EMAIL: 'golden@example.invalid',
-          GIT_COMMITTER_NAME: 'Golden Fixture', GIT_COMMITTER_EMAIL: 'golden@example.invalid',
-          GIT_AUTHOR_DATE: '2000-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2000-01-01T00:00:00Z',
-          GIT_TERMINAL_PROMPT: '0', GIT_ALLOW_PROTOCOL: '',
-        } : {}),
-      };
-      const refs = entry.git ? setupRepository(scratch, env, entry.setup) : null;
-      const substitute = text => {
-        let result = text.replaceAll('<FIXTURE>', scratch);
-        if (refs) result = result.replaceAll('<BASE>', refs.base).replaceAll('<HEAD>', refs.head);
-        return result;
-      };
-      const restore = text => text.replaceAll(scratch, '<FIXTURE>').replaceAll(repo, '<REPO>');
-      const argv = entry.argv.map(substitute);
-      const stdin = entry.stdin === undefined ? null : substitute(entry.stdin);
-      const before = snapshot(scratch);
-      const child = spawnSync(process.execPath, [resolve(repo, entry.script), ...argv], {
-        cwd: scratch, env, encoding: 'utf8', timeout: 60_000,
-        maxBuffer: 32 * 1024 * 1024,
-        stdio: [stdin === null ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-        ...(stdin === null ? {} : { input: stdin }),
-      });
-      if (child.error || child.signal || child.status === null) {
-        throw new Error(`${entry.invocation}: ${child.error?.message || child.signal || 'no exit status'}`);
-      }
-      const stdout = child.stdout.trim() ? JSON.parse(child.stdout) : null;
-      if (stdout !== null && (typeof stdout !== 'object' || Array.isArray(stdout))) {
-        throw new Error(`${entry.invocation}: stdout must be one JSON object`);
-      }
-      const recording = {
-        invocation: entry.invocation, operation: entry.operation,
-        bundle: entry.bundle, script: entry.script, argv, stdin, env,
-        node: process.versions.node.split('.')[0], exit: child.status,
-        stdout, stderr: child.stderr, files: {}, deleted: [],
-      };
-      const after = snapshot(scratch);
-      for (const [path, bytes] of after) {
-        if (!before.get(path)?.equals(bytes)) recording.files[path] = bytes.toString('utf8');
-      }
-      recording.deleted = [...before.keys()].filter(path => !after.has(path));
-      if (taintStderr) recording.stderr += `\ngolden taint pid=${child.pid} hostname=${hostname()}\n`;
-      const destination = join(output, `${entry.invocation}.json`);
-      // Opening without following symlinks protects an existing recording too.
-      const normalized = normalize(recording, before, restore, noNormalize ? [] : rules);
-      const suppliedPaths = new Set([
-        entry.script, ...entry.argv.filter(arg => arg.includes('/')),
-        ...before.keys(), ...after.keys(),
-      ]);
-      // Include parent paths, which a refusal or fixture prose can name alone.
-      for (const path of [...suppliedPaths]) {
-        let parent = dirname(path);
-        while (parent !== '.' && parent !== '/' && !suppliedPaths.has(parent)) {
-          suppliedPaths.add(parent);
-          parent = dirname(parent);
+  const committed = join(here, 'recordings');
+  if (existsSync(committed) && lstatSync(committed).isSymbolicLink()) throw new Error('symlinked recordings directory');
+  // Inspect every existing major before spawning a fixture or comparing bytes.
+  // Default regeneration has the same guard as CI, with an explicit migration flag.
+  guardNode(committed, allowNodeChange);
+  const output = check ? mkdtempSync(join(tmpdir(), 'cadence-golden-check-')) : committed;
+  if (!check) mkdirSync(output, { recursive: true });
+  try {
+    for (const entry of selected) {
+      const source = contained(join(here, 'fixtures'), realpathSync(join(here, 'fixtures', entry.bundle)));
+      const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'cadence-golden-')));
+      try {
+        // Reject fixture symlinks rather than copying a write escape into scratch.
+        cpSync(source, scratch, { recursive: true, filter(path) {
+          if (lstatSync(path).isSymbolicLink()) throw new Error(`symlinked fixture: ${path}`);
+          return true;
+        } });
+        const support = join(scratch, '.golden-env');
+        mkdirSync(support);
+        mkdirSync(join(support, 'bin'));
+        mkdirSync(join(support, 'user-home'));
+        symlinkSync(process.execPath, join(support, 'bin/node'));
+        symlinkSync(git, join(support, 'bin/git'));
+        const empty = join(support, 'empty.json');
+        writeFileSync(empty, '{}\n');
+        const global = entry.global_config === undefined ? empty
+          : contained(scratch, realpathSync(resolve(scratch, entry.global_config)));
+        const env = {
+          PATH: join(support, 'bin'), HOME: join(support, 'user-home'),
+          TZ: 'UTC', LC_ALL: 'C.UTF-8', LANG: 'C.UTF-8',
+          CADENCE_GLOBAL_CONFIG: global,
+          CADENCE_MANAGED_SETTINGS: empty,
+          CADENCE_USER_SETTINGS: empty,
+          ...(entry.git ? {
+            GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+            GIT_AUTHOR_NAME: 'Golden Fixture', GIT_AUTHOR_EMAIL: 'golden@example.invalid',
+            GIT_COMMITTER_NAME: 'Golden Fixture', GIT_COMMITTER_EMAIL: 'golden@example.invalid',
+            GIT_AUTHOR_DATE: '2000-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2000-01-01T00:00:00Z',
+            GIT_TERMINAL_PROMPT: '0', GIT_ALLOW_PROTOCOL: '',
+          } : {}),
+        };
+        const refs = entry.git ? setupRepository(scratch, env, entry.setup) : null;
+        const substitute = text => {
+          let result = text.replaceAll('<FIXTURE>', scratch);
+          if (refs) result = result.replaceAll('<BASE>', refs.base).replaceAll('<HEAD>', refs.head);
+          return result;
+        };
+        const restore = text => text.replaceAll(scratch, '<FIXTURE>').replaceAll(repo, '<REPO>');
+        const argv = entry.argv.map(substitute);
+        const stdin = entry.stdin === undefined ? null : substitute(entry.stdin);
+        const before = snapshot(scratch);
+        const child = spawnSync(process.execPath, [resolve(repo, entry.script), ...argv], {
+          cwd: scratch, env, encoding: 'utf8', timeout: 60_000,
+          maxBuffer: 32 * 1024 * 1024,
+          stdio: [stdin === null ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+          ...(stdin === null ? {} : { input: stdin }),
+        });
+        if (child.error || child.signal || child.status === null) {
+          throw new Error(`${entry.invocation}: ${child.error?.message || child.signal || 'no exit status'}`);
         }
+        const stdout = child.stdout.trim() ? JSON.parse(child.stdout) : null;
+        if (stdout !== null && (typeof stdout !== 'object' || Array.isArray(stdout))) {
+          throw new Error(`${entry.invocation}: stdout must be one JSON object`);
+        }
+        const recording = {
+          invocation: entry.invocation, operation: entry.operation,
+          bundle: entry.bundle, script: entry.script, argv, stdin, env,
+          node: process.versions.node.split('.')[0], exit: child.status,
+          stdout, stderr: child.stderr, files: {}, deleted: [],
+        };
+        const after = snapshot(scratch);
+        for (const [path, bytes] of after) {
+          if (!before.get(path)?.equals(bytes)) recording.files[path] = bytes.toString('utf8');
+        }
+        recording.deleted = [...before.keys()].filter(path => !after.has(path));
+        if (taintStderr) recording.stderr += `\ngolden taint pid=${child.pid} hostname=${hostname()}\n`;
+        const destination = join(output, `${entry.invocation}.json`);
+        // Opening without following symlinks protects an existing recording too.
+        const normalized = normalize(recording, before, restore, noNormalize ? [] : rules);
+        const suppliedPaths = new Set([
+          entry.script, ...entry.argv.filter(arg => arg.includes('/')),
+          ...before.keys(), ...after.keys(),
+        ]);
+        // Include parent paths, which a refusal or fixture prose can name alone.
+        for (const path of [...suppliedPaths]) {
+          let parent = dirname(path);
+          while (parent !== '.' && parent !== '/' && !suppliedPaths.has(parent)) {
+            suppliedPaths.add(parent);
+            parent = dirname(parent);
+          }
+        }
+        assertUntainted(normalized, child.pid, suppliedPaths);
+        writeFileSync(destination, JSON.stringify(normalized, null, 2) + '\n',
+          { flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW });
+      } finally {
+        rmSync(scratch, { recursive: true, force: true });
       }
-      assertUntainted(normalized, child.pid, suppliedPaths);
-      writeFileSync(destination, JSON.stringify(normalized, null, 2) + '\n',
-        { flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW });
-    } finally {
-      rmSync(scratch, { recursive: true, force: true });
     }
+    if (check) compareRecordings(output, committed);
+  } finally {
+    if (check) rmSync(output, { recursive: true, force: true });
   }
 }
 
