@@ -65,6 +65,64 @@ Phase 1, the crate skeleton, planned 2026-09-05 as two sequential plans:
   row so self-verify stays clean, and the install path and the install-then-restart
   step are documented.
 
+Phase 2, the golden harness, planned 2026-09-05 as three sequential plans - the
+Node-side fixtures, manifest and recorder spine first, then the recorder over
+the whole surface with its committed normalization rules and drift check, then
+the Rust comparison side that reads what the first two wrote. The phase validates the measuring instrument, not
+parity: nothing is ported when it closes, and every id below is a property of
+the harness, proven by showing it can fail.
+
+- **HAR-01**: Fixture `.planning` bundles under `crates/cadence/tests/golden/fixtures/`
+  are built by a committed script from the frozen tag `v3.7.12`, re-rooting its
+  archived phase subtrees as live phases beside synthesized `ROADMAP.md`,
+  `STATE.md` and `REQUIREMENTS.md` and seeded `trace.jsonl`, `reads.jsonl` and
+  `CAPTURE.md`; a rebuild changes no tracked byte, and the slice bundle answers
+  `status` as a live cycle rather than the tag's own closed-milestone answer.
+- **HAR-02**: A committed recorder runs the frozen JavaScript over every runtime
+  operation the parity surface names - every leaf arm of `planning.mjs`'s dispatch
+  and of the sixteen other phase-16 entry scripts, plus `worktree-base resolve` -
+  against a scratch copy of the named bundle under an environment built from
+  scratch, building a throwaway git repository with a pinned identity and dates
+  for the operations that need one, and writes one recording per invocation that
+  carries the exit status, the stdout envelope and, for a write operation, the
+  post-run bytes of every created, changed or deleted file; a refusal's recording
+  carries the JavaScript `reason` literal as its machine code.
+- **HAR-03**: Recordings are deterministic by construction: two consecutive
+  recorder runs, and runs from another working directory, temp root, timezone
+  and locale, produce byte-identical recordings; no recording carries an absolute
+  filesystem path, a hostname or a process id; every clock-derived field is
+  covered by a named rule carried as data in a committed `normalization.json`
+  that the recorder and the Rust test both apply, scoped to the lines an
+  operation wrote, or pinned at its source, rather than scrubbed by a blanket
+  date pattern; every recording names the interpreter major that produced it;
+  the three settings overrides pointed at empty files change no recorded byte;
+  and running with the rules disabled changes a recording, so the pin is shown
+  to have force.
+- **HAR-04**: A drift check regenerates every recording into scratch and compares
+  it against the committed set without touching it, exiting non-zero and naming
+  each recording whose bytes differ - including one changed by a single-byte hand
+  edit - refusing by name a run under a Node major other than the one the
+  recordings carry, and the test workflow runs that check on that major beside
+  the existing jobs.
+- **HAR-05**: The Rust envelope's `refused`, `unknown` and `not-applicable` arms
+  serialize a machine `code` field beside the prose `reason`, in the kebab-case
+  spelling the JavaScript seam uses, proven by `cargo test`, with the `ok` arm
+  and the D-07 successful-call property unchanged.
+- **HAR-06**: A Rust integration test loads every committed recording and the
+  invocation manifest without running `node`, compares an operation's answer
+  field-by-field on that operation's declared decision-bearing keys - by `code`
+  for a refusal and byte-for-byte for write-side file contents after the
+  committed normalization rules are applied to the answer - and fails on a
+  deliberately wrong answer with output that names the field that differed,
+  while the recording's own answer passes and an answer differing only in a
+  normalized field passes too.
+- **HAR-07**: Every recording is accounted for by name as compared or pending on
+  every run, a manifest entry with no recording or a recording with no manifest
+  entry fails the test, an activation naming no recorded operation or an
+  operation whose projection names no key fails rather than skips, and
+  `cargo test --locked` at the repo root passes with `insta`, `tempfile` and
+  `regex` present only in the dev-dependency graph.
+
 `v3.7.12 - what each role runs at` opened 2026-09-04 and closed 2026-09-05, the
 LAST 3.x release (4.0.0 is a Rust rewrite, decided 2026-09-05). Three phases,
 three ids - `RNG-06` in phase 1, `ROL-01` in phase 2, `ROL-02` in phase 3 - are
@@ -602,6 +660,13 @@ section only, bounded at the next `## ` heading.
 | REL-02 | Phase 19 | Pending |
 | BOT-01 | Phase 19 | Pending |
 | BOT-02 | Phase 19 | Pending |
+| HAR-01 | Phase 2 | Pending |
+| HAR-02 | Phase 2 | Pending |
+| HAR-03 | Phase 2 | Pending |
+| HAR-04 | Phase 2 | Pending |
+| HAR-05 | Phase 2 | Pending |
+| HAR-06 | Phase 2 | Pending |
+| HAR-07 | Phase 2 | Pending |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
