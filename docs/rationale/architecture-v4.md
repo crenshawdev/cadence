@@ -259,6 +259,76 @@ agent graphs. The existing command loop is the migration spine; rebuild only
 what it exercises. Afterwards: docs explain why, skills orchestrate, Rust
 decides, models judge, and no duplicated process rule is left to drift.
 
+### 3g. The enum workflow spine, and why 4.0 keeps it internal (2026-09-06)
+
+Source: `cadence-rust-rewrite-architecture-handoff.md`, John's notes plus a
+Codex conversation. Its thesis is that workflow stages become Rust enums so the
+binary KNOWS state rather than a model interpreting prose, transitions read
+`(current_state, evidence) -> valid next state`, and the orchestrator shrinks to
+ask / dispatch / return. The direction is accepted. Three corrections and one
+scope ruling apply.
+
+**Its premise is half wrong, and that changes the shape.** Phase state is
+already derived mechanically, not held in prose. `bin/planning/core.mjs:192`
+(`derivePhases`) reads PLAN / SUMMARY / UAT off disk to get `unplanned |
+planned | executed | complete`; `bin/planning/status.mjs:160` takes `current`
+as the first non-complete phase; `status.mjs:164-170` already reports drift
+when a ROADMAP checkbox disagrees with the derived status. What IS prose is
+STATE.md's `Status:` / `Next:` cursor and the checkpoint and blocked overlays
+that live in report text. So the question is not "replace prose with an enum",
+it is whether the enum is STORED or DERIVED.
+
+**Derived. The enum types the output of the derivation; it is not an
+authoritative store.** Cadence's load-bearing property is that a human edits
+the markdown and the tool agrees with them. A store makes every hand edit into
+drift and grows a repair command to reconcile it. Keep the derivation as truth
+and store at most a memo keyed by a hash of its inputs, where disagreement is a
+hard error rather than a silent recompute.
+
+**It is not one enum.** State is a product of independent axes: phase id, the
+derived phase status, plan and task position, gate outcomes (plan-check,
+review, UAT, verification) and an overlay (paused, checkpointed-awaiting-
+decision). Flattened into one enum those multiply out and the exhaustiveness
+being paid for turns into noise. The shape is a struct of small enums with
+transitions as a function over the tuple. Stated explicitly because "the enum
+is the contractual workflow spine" will otherwise be built literally.
+
+**`evidence` is undefined and load-bearing.** In `(current_state, evidence) ->
+next`, evidence is the whole design: today it is filesystem and git facts -
+plan files, SUMMARY, UAT pass state, commits, trace brackets. The transition
+function cannot be written until that set is enumerated. Enumerate before code.
+
+**Derive the variants from phase 2's recordings, not from a design session.**
+The handoff doc's own rule - only states justified by observed behavior, and a
+new variant requires evidence that the existing model cannot represent a real
+condition - enforces itself if the enum is sequenced after the golden harness,
+whose recordings ARE the observed behavior of the frozen surface. Sequenced
+before it, the rule is an assertion.
+
+**Design elements the doc omits.** (1) An operator override: a machine that
+permits only legal transitions must carry a RECORDED override, because "skip
+that, do this" is most of Cadence's day-to-day value; designed in, or it
+arrives later as an undocumented flag. (2) Evidence refs on contracted results:
+a typed `Accepted` carrying no commit SHAs, `file:line` or criterion ids is a
+rubber stamp - prose ambiguity moved into a field, minus the prose that let a
+human catch a wrong call. (3) Code anchors verified at read time: the
+`CodeAnchor { path, symbol, start_line, end_line, source_revision }` idea is
+the strongest in the doc, but anchors rot silently unless the symbol is checked
+to still exist at that path and the content hash of the range still matches.
+(4) Retrieval scope: "LSP/compiler-backed" implies a language server per
+project, and cadence is language-agnostic; the cheap deterministic retrieval is
+git, tree-sitter and grep, which is excerpt's territory, so compiler-backed
+lookup is an optional accelerator and not the mechanism.
+
+**Scope ruling, John 2026-09-06: internal only at this point.** The handoff doc
+named enum-backed workflow state as a 4.0 goal; the nineteen-phase roadmap has
+no such phase and is parity-only (`ROADMAP.md:9` states "no hidden state
+machine"). The ruling settles it in the roadmap's favour. In 4.0 the spine is
+INTERNAL: the enum types the derivation, every JSON answer stays byte-identical
+to `v3.7.12`, and authoritative state defers to a later stage. No phases are
+inserted; the nineteen stand. The reason is that new behavior in the same
+release whose golden tests pin the old behavior fights itself.
+
 ## 4. The deferral constraint, and the rules it forces
 
 Measured facts (CLI 2.1.261):
