@@ -18,8 +18,7 @@ pub enum Cycle {
 }
 
 /// Numeric identity uses the frozen reader's binary64 Number semantics.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub struct PhaseId(pub(crate) f64);
 
 impl PhaseId {
@@ -132,6 +131,15 @@ pub struct CapturedInputs {
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DerivationError {
+    DerivationConflict {
+        requested_hash: String,
+        stored_hash: Option<String>,
+        fields: Vec<String>,
+    },
+    Store {
+        kind: String,
+        detail: String,
+    },
     InvalidIntake {
         source: String,
         detail: String,
@@ -162,6 +170,8 @@ pub enum DerivationError {
 impl DerivationError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::DerivationConflict { .. } => "derivation-conflict",
+            Self::Store { .. } => "store-error",
             Self::InvalidIntake { .. } => "invalid-intake",
             Self::StateConflict { .. } => "state-conflict",
             Self::InvalidStatus { .. } => "invalid-status",
@@ -269,4 +279,45 @@ pub struct IntakeRecord {
 pub struct SelectedIntake {
     pub cursor: CompatibilityCursor,
     pub observation: IntakeObservation,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LifecycleMemo {
+    pub encoding_version: u64,
+    pub semantics_version: u64,
+    pub input_hash: String,
+    pub answer: Lifecycle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemoDisposition {
+    Hit,
+    Miss,
+}
+
+pub use super::memo::{check_memo, memo_from_data};
+
+// Binary64 overflow is admitted by the frozen numeric grammar. JSON has no
+// infinity number; preserve that identity explicitly instead of emitting null.
+impl Serialize for PhaseId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.0 == f64::INFINITY {
+            serializer.serialize_str("Infinity")
+        } else {
+            serializer.serialize_f64(self.0)
+        }
+    }
+}
+impl<'de> Deserialize<'de> for PhaseId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value.as_str() == Some("Infinity") {
+            return Ok(Self(f64::INFINITY));
+        }
+        value
+            .as_f64()
+            .filter(|n| n.is_finite() && *n >= 0.0)
+            .map(Self)
+            .ok_or_else(|| serde::de::Error::custom("invalid numeric phase id"))
+    }
 }

@@ -1426,3 +1426,153 @@ fn encoding_boundaries_fixed_v1_and_semantic_order() {
         .reverse();
     assert_ne!(input_key(&a), input_key(&b));
 }
+
+fn memo_fixture() -> (String, Lifecycle, serde_json::Value) {
+    let c = key_fixture();
+    let answer = derive(&c).unwrap();
+    let key = input_key(&c).unwrap();
+    let raw = serde_json::to_value(LifecycleMemo::fresh(key.clone(), answer.clone())).unwrap();
+    (key, answer, raw)
+}
+fn memo_corruptions() -> Vec<(String, serde_json::Value)> {
+    use serde_json::json;
+    let (_, _, raw) = memo_fixture();
+    let mut rows = Vec::new();
+    for (pointer, field, value) in [
+        ("/cycle", "cycle", json!("closed")),
+        ("/current", "current", json!(null)),
+        ("/total", "total", json!(3)),
+        ("/phases/1/id", "phases[1].id", json!(3.0)),
+        ("/phases/0/name", "phases[0].name", json!("Changed")),
+        (
+            "/phases/0/plans",
+            "phases[0].plans",
+            json!(["PLAN.md", "PLAN-1.md"]),
+        ),
+        ("/phases/0/status", "phases[0].status", json!("executed")),
+        ("/phases/0/uat", "phases[0].uat", json!(null)),
+        (
+            "/phases/1/uat",
+            "phases[1].uat",
+            json!({"pass":0,"fail":0,"pending":0,"skipped":0,"blocked":0}),
+        ),
+    ] {
+        let mut changed = raw.clone();
+        *changed["answer"].pointer_mut(pointer).unwrap() = value;
+        rows.push((field.into(), changed));
+    }
+    for counter in ["pass", "fail", "pending", "skipped", "blocked"] {
+        let mut changed = raw.clone();
+        changed["answer"]["phases"][0]["uat"][counter] = json!(9);
+        rows.push((format!("phases[0].uat.{counter}"), changed));
+    }
+    let mut changed = raw;
+    changed["answer"]["phases"]
+        .as_array_mut()
+        .unwrap()
+        .reverse();
+    rows.push(("phases[0].id".into(), changed));
+    rows
+}
+
+#[test]
+fn memo_comparison_all_fields_and_unconditional_hit_negative_control() {
+    let (key, fresh, raw) = memo_fixture();
+    assert_eq!(check_memo(None, &key, &fresh), Ok(MemoDisposition::Miss));
+    assert_eq!(
+        check_memo(Some(&raw), &key, &fresh),
+        Ok(MemoDisposition::Hit)
+    );
+    let rejects = |check: &dyn Fn(
+        &serde_json::Value,
+    ) -> Result<MemoDisposition, DerivationError>| {
+        memo_corruptions().iter().all(|(field, raw)| matches!(check(raw), Err(DerivationError::DerivationConflict { requested_hash, stored_hash, fields }) if requested_hash == key && stored_hash.as_deref() == Some(&key) && fields.contains(field)))
+    };
+    assert!(rejects(&|r| check_memo(Some(r), &key, &fresh)));
+    assert!(!rejects(&|_| Ok(MemoDisposition::Hit)));
+    for name in ["encoding_version", "semantics_version", "input_hash"] {
+        let mut changed = raw.clone();
+        changed[name] = if name == "input_hash" {
+            serde_json::json!("a".repeat(64))
+        } else {
+            serde_json::json!(2)
+        };
+        assert_eq!(
+            check_memo(Some(&changed), &key, &fresh),
+            Ok(MemoDisposition::Miss)
+        );
+    }
+}
+
+#[test]
+fn memo_comparison_envelope_malformed_namespace_and_current_payload() {
+    use serde_json::json;
+    let (key, fresh, raw) = memo_fixture();
+    let mut rows = vec![
+        ("encoding_version", serde_json::Value::Null),
+        ("encoding_version", json!({})),
+    ];
+    for name in [
+        "encoding_version",
+        "semantics_version",
+        "input_hash",
+        "answer",
+    ] {
+        let mut changed = raw.clone();
+        changed.as_object_mut().unwrap().remove(name);
+        rows.push((name, changed));
+        let mut changed = raw.clone();
+        changed[name] = json!(false);
+        rows.push((name, changed));
+    }
+    for (field, value) in [
+        ("status", json!("paused")),
+        ("id", json!(null)),
+        ("uat", json!({})),
+        ("plans", json!(false)),
+    ] {
+        let mut changed = raw.clone();
+        changed["answer"]["phases"][0][field] = value;
+        let error = check_memo(Some(&changed), &"b".repeat(64), &fresh).unwrap_err();
+        assert_eq!(error.code(), "derivation-conflict");
+        assert!(error.to_string().contains(&format!("phases[0].{field}")));
+    }
+    for (field, raw) in rows {
+        assert!(
+            matches!(check_memo(Some(&raw), &key, &fresh), Err(DerivationError::DerivationConflict { fields, .. }) if fields == [field])
+        );
+    }
+    let mut old = raw.clone();
+    old["semantics_version"] = json!(2);
+    old["answer"] = json!({"opaque":"older schema"});
+    assert_eq!(
+        check_memo(Some(&old), &key, &fresh),
+        Ok(MemoDisposition::Miss)
+    );
+    old["input_hash"] = json!("broken");
+    assert!(check_memo(Some(&old), &key, &fresh).is_err());
+    for data in [
+        json!({"derivation":null}),
+        json!({"derivation":[]}),
+        json!([]),
+    ] {
+        assert_eq!(
+            memo_from_data(&data, &key).unwrap_err().code(),
+            "derivation-conflict"
+        );
+    }
+    assert!(memo_from_data(&json!({}), &key).unwrap().is_none());
+    // Overflow is still a numeric identity in the domain and must survive JSON.
+    let c = captured(&format!(
+        "## Phases\n- [ ] **Phase {}: Overflow**",
+        "9".repeat(400)
+    ));
+    let fresh = derive(&c).unwrap();
+    round_trip(&fresh);
+    let key = input_key(&c).unwrap();
+    let memo = serde_json::to_value(LifecycleMemo::fresh(key.clone(), fresh.clone())).unwrap();
+    assert_eq!(
+        check_memo(Some(&memo), &key, &fresh),
+        Ok(MemoDisposition::Hit)
+    );
+}
