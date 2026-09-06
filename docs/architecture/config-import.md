@@ -76,3 +76,146 @@ Interrupted imports also have `.store-intent.json`; restart to finish recovery
 before rolling back. A killed process can leave disposable `.<target>.<pid>.<n>.tmp` temporary
 files, which do not signify completion and are not adopted as store data. Every
 legacy file is retained; checkout alone removes none of these untracked outputs.
+
+## Artifact mapping and preserved meaning
+
+| Frozen artifact | New maintained destination | Preserved source meaning |
+|---|---|---|
+| CAPTURE.md | items.jsonl | Independent byte-position identities, kind, checked completion and phase spelling; unsupported spans remain non-effective source evidence. An absent queue is empty. |
+| FILED.md | items.jsonl | Provider/repository/fingerprint identity and the optional unconfirmed marker; filing does not imply confirmation. |
+| DECLINED.md | items.jsonl | Fingerprint events and authored prose decisions with reasoning. Declines exclude the identity's entire revision history from recall. |
+| STATE.md | state.json | Original cursor fields and spelling; phase 1 of 0 is preserved without deriving current phase status. |
+| trace.jsonl and trace.1.jsonl | decisions.jsonl | Routing and explicit gate/refusal evidence only, with within-file positions and generation provenance. Missing receipts stay unavailable. |
+| ARCHIVE.md | Preserved legacy file | PLAN-3 history input, never a fourth newly maintained store. |
+| Repo config.json | Repo config.v4.json | Stored values remain in their source layer; read defaults are not written. |
+| Resolved global config.json | Sibling config.v4.json, when a source exists | Shared identities collapse to the repo destination; distinct identities remain separate. |
+
+Capture continuations, fences, unknown headings, invalid UTF-8, and unrecognized
+fragments are retained as labeled original bytes rather than blindly indexed.
+For a FILED/DECLINED collision, both events survive with one immutable identity and
+a warning; declined wins by an explicit rule, not file-traversal chronology.
+Authored declines are also terminal recall exclusions.
+
+Malformed/incomplete historical log rows, read activity, worker brackets,
+measurement data and rotation state stay in original evidence. Observed effort
+requires agent identity; blank observations are omitted and unfamiliar nonblank
+spelling is retained separately from requested effort. A rotation seal and an
+exact anchored-tail copy can prove a carried event, preserving both origins.
+Equal payloads alone do not justify deduplication. Partial copies without that
+proof remain separate.
+
+Service tests exercise import followed by policy changes on the same owner,
+including failed reads, later restoration, rename replacement, symlink retargeting,
+layer collapse/separation, internal config writes and interrupted import recovery.
+Refusals compare every maintained store's bytes. Capture reporting uses current
+identities across durable completed/filed/declined revisions; exceeding the bound
+still permits a durable append. Rollback tests also load the original STATE,
+FILED, DECLINED and config through readers extracted from v3.7.12. External test
+fixtures never inherit the checkout's git ancestor, and required legacy files are
+checked for exact frozen provenance before import.
+
+## Complete frozen configuration disposition table
+
+These are the 94 schema leaves, excluding metadata and object containers:
+**80 keep-resemantic, 14 dead**. Every keep-resemantic row retains its stored value,
+presence and original layer, with synchronous policy revalidation. Role and legacy
+model keys remain distinct; dispatch precedence belongs to later routing work.
+Unknown data is non-effective evidence, never an implicit new supported setting.
+Scope, invalid-layer and migration diagnostics remain separate.
+
+| Frozen key | Disposition | Import behavior |
+|---|---|---|
+| `granularity` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `model.escalate_on_failure` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `model.overrides.cad-planner` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.overrides.cad-assumptions-analyzer` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.overrides.cad-verifier` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.overrides.cad-reviewer` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.overrides.cad-executor` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.overrides.cad-plan-checker` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.effort.cad-planner` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.effort.cad-assumptions-analyzer` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.effort.cad-verifier` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.effort.cad-reviewer` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.effort.cad-executor` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `model.effort.cad-plan-checker` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-planner.model` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-assumptions-analyzer.model` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-verifier.model` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-reviewer.model` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-executor.model` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-plan-checker.model` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-planner.effort` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-assumptions-analyzer.effort` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-verifier.effort` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-reviewer.effort` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-executor.effort` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `roles.cad-plan-checker.effort` | keep-resemantic | Carry independently, including explicit null; do not coalesce role and legacy paths. |
+| `workflow.research` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `workflow.plan_check` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `workflow.verifier` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `workflow.skip_discuss` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `workflow.inline_plan_threshold` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `workflow.max_plan_tasks` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `workflow.max_plan_bytes` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `workflow.max_dispatch_tokens.cad-planner` | dead | Retire separately from D-06; no terminal-window measurement or budget enforcement survives. |
+| `workflow.max_dispatch_tokens.cad-assumptions-analyzer` | dead | Retire separately from D-06; no terminal-window measurement or budget enforcement survives. |
+| `workflow.max_dispatch_tokens.cad-verifier` | dead | Retire separately from D-06; no terminal-window measurement or budget enforcement survives. |
+| `workflow.max_dispatch_tokens.cad-reviewer` | dead | Retire separately from D-06; no terminal-window measurement or budget enforcement survives. |
+| `workflow.max_dispatch_tokens.cad-executor` | dead | Retire separately from D-06; no terminal-window measurement or budget enforcement survives. |
+| `workflow.max_dispatch_tokens.cad-plan-checker` | dead | Retire separately from D-06; no terminal-window measurement or budget enforcement survives. |
+| `workflow.test_command` | keep-resemantic | Global only; strip repo presence including null/blocking ancestors. Warn for non-null repo values; never promote them. |
+| `workflow.lint_command` | keep-resemantic | Global only; strip repo presence including null/blocking ancestors. Warn for non-null repo values; never promote them. |
+| `parallelization.enabled` | dead | Warn by name and remove from both effective layers/defaults; original is non-effective evidence. |
+| `parallelization.max_concurrent_agents` | dead | Warn by name and remove from both effective layers/defaults; original is non-effective evidence. |
+| `parallelization.min_plans_for_parallel` | dead | Warn by name and remove from both effective layers/defaults; original is non-effective evidence. |
+| `parallelization.use_worktrees` | dead | Warn by name and remove from both effective layers/defaults; original is non-effective evidence. |
+| `git.protected_branches` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.on_protected` | keep-resemantic | Carry; normalize legacy deny to refuse. Invalid permission values fail closed. |
+| `git.integration_branch` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.auto_branch` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.base_branch` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.create_tag` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.on_land_cleanup` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.issue_check` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.forge_provider` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.forge_repo` | keep-resemantic | Preserve actual layer; imported global slug gets a scope diagnostic. New global writes refuse. |
+| `git.forge_host` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `git.auto_close` | dead | Warn by name and remove from both effective layers/defaults; original is non-effective evidence. |
+| `planning.commit_docs` | keep-resemantic | Carry; false never disables durable store writes. |
+| `planning.max_capture_bullets` | keep-resemantic | Retain integer; report active captured identities in items, excluding completed/filed/declined. Never refuse capture. |
+| `memory.backend` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.mode` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.reviewers` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.key_file` | keep-resemantic | Global only; strip repo presence including null/blocking ancestors. Warn for non-null repo values; never promote them. |
+| `review.request_timeout_ms` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.max_prompt_tokens` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.openai.tiers.flagship` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.openai.tiers.balanced` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.openai.tiers.cheap` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.gemini.tiers.flagship` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.gemini.tiers.balanced` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.gemini.tiers.cheap` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.deepseek.tiers.flagship` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.deepseek.tiers.balanced` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.providers.deepseek.tiers.cheap` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.plan.gate` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.plan.tier` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.plan.effort` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.diff.gate` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.diff.tier` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.diff.effort` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.risk_surface.gate` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.risk_surface.tier` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.risk_surface.effort` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.triggers.risk_surface.surfaces` | keep-resemantic | Keep absence, null and [] distinct. Import accepts unanswered null; explicit writes require arrays. |
+| `review.triggers.risk_surface.waive_routing_floor` | keep-resemantic | Keep absence, null and [] distinct. Import accepts unanswered null; explicit writes require arrays. |
+| `review.triggers.phase_diff.gate` | dead | Warn by name and remove from both effective layers/defaults; original is non-effective evidence. |
+| `review.triggers.phase_diff.tier` | dead | Warn by name and remove from both effective layers/defaults; original is non-effective evidence. |
+| `review.triggers.phase_diff.effort` | dead | Warn by name and remove from both effective layers/defaults; original is non-effective evidence. |
+| `review.consult.enabled` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.consult.tier` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.consult.effort` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.consult.attempt_threshold` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.decision_review.tier` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |
+| `review.decision_review.effort` | keep-resemantic | Carry stored value and source layer; defaults remain read-time only. |

@@ -684,3 +684,469 @@ fn first_touch_checks_source_changes_and_normalizes_known_legacy_values() {
         for name in [ITEMS,DECISIONS,STATE,"config.v4.json",INTENT] {assert!(!root.join(name).exists());}
     });
 }
+
+fn semantic_bytes(root: &Path) -> Vec<Vec<u8>> {
+    [ITEMS, DECISIONS, STATE]
+        .iter()
+        .map(|name| std::fs::read(root.join(name)).unwrap())
+        .collect()
+}
+fn change_config(path: &Path, key: &str, value: Value) {
+    let mut raw: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    merge::set(&mut raw, key, value);
+    std::fs::write(path, serde_json::to_vec(&raw).unwrap()).unwrap();
+}
+fn capture_item(id: &str) -> cadence::store::model::ItemRecord {
+    cadence::store::model::ItemRecord {
+        version: cadence::store::model::VERSION,
+        id: id.into(),
+        revision: 1,
+        origin: cadence::store::model::Origin {
+            source: "service-test".into(),
+            original: Evidence::Missing,
+        },
+        text: format!("{id}\ncontinued text"),
+        kind: "todo".into(),
+        disposition: Disposition::Captured,
+        completed: false,
+        filing_uncertain: false,
+    }
+}
+fn global_fixture(dir: &Path) -> PathBuf {
+    let parent = dir.join("global");
+    std::fs::create_dir(&parent).unwrap();
+    let path = parent.join("config.json");
+    std::fs::write(&path, br#"{"workflow":{"verifier":true}}"#).unwrap();
+    path
+}
+fn frozen_readers_still_read_originals(fixture: &Path, root: &Path) {
+    let library = fixture.join("frozen-readers");
+    std::fs::create_dir(&library).unwrap();
+    for name in [
+        "planning-files.mjs",
+        "lease-grammar.mjs",
+        "config-merge.mjs",
+        "global-only-keys.mjs",
+    ] {
+        std::fs::write(
+            library.join(name),
+            frozen(&format!("cadence-core/bin/lib/{name}")),
+        )
+        .unwrap();
+    }
+    let script = r#"
+import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+const [library, root] = process.argv.slice(1);
+const readers = await import(pathToFileURL(`${library}/planning-files.mjs`));
+const config = await import(pathToFileURL(`${library}/config-merge.mjs`));
+const cursor = readers.parseCursor(readFileSync(`${root}/STATE.md`, 'utf8'));
+console.log(JSON.stringify({cursor,
+ filed:readers.parseFiledRows(readFileSync(`${root}/FILED.md`, 'utf8')).length,
+ declined:readers.parseDeclinedRows(readFileSync(`${root}/DECLINED.md`, 'utf8')).length,
+ auto_close:config.mergeLayers(`${root}/config.json`).config.git.auto_close}));
+"#;
+    let output = std::process::Command::new("node")
+        .args(["--input-type=module", "-e", script])
+        .arg(&library)
+        .arg(root)
+        .current_dir(fixture)
+        .env(
+            "CADENCE_GLOBAL_CONFIG",
+            fixture.join("absent-reader-global.json"),
+        )
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let read: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(read["cursor"]["phase"], json!(1));
+    assert_eq!(read["cursor"]["total"], json!(0));
+    assert!(read["filed"].as_u64().unwrap() > 0 && read["declined"].as_u64().unwrap() > 0);
+    assert_eq!(read["auto_close"], json!(true));
+}
+
+#[test]
+fn same_owner_imports_then_rechecks_each_layer_denials_and_internal_writes() {
+    for layer in [Layer::Global, Layer::Repo] {
+        let fixture = extraction();
+        let root = fixture.path().join(".planning");
+        let originals = tree_bytes(&root);
+        let global = global_fixture(fixture.path());
+        let old_global = std::fs::read(&global).unwrap();
+        let denied = Arc::new(Mutex::new(None));
+        let factory = SessionFactory::with_io(
+            Some(global.clone()),
+            DenyIo {
+                path: denied.clone(),
+            },
+            policy_evaluation(),
+        );
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let session = factory.first_touch(&root).await.unwrap();
+            assert!(Arc::ptr_eq(
+                &session,
+                &factory.first_touch(&root).await.unwrap()
+            ));
+            assert_eq!(session.import_manifest().created.len(), 5);
+            for key in config::RETIRED {
+                assert!(session.import_manifest().warnings[0].contains(key));
+            }
+            session
+                .request(Operation::AppendItem(capture_item("permitted")))
+                .await
+                .unwrap();
+            let active = &session.import_manifest().active;
+            let target = if layer == Layer::Repo {
+                &active.repo
+            } else {
+                active.global.as_ref().unwrap()
+            };
+            change_config(target, "workflow.verifier", json!(false));
+            let before = semantic_bytes(&root);
+            assert!(
+                session
+                    .request(Operation::AppendItem(capture_item("refused")))
+                    .await
+                    .is_err()
+            );
+            assert_eq!(semantic_bytes(&root), before);
+            change_config(target, "workflow.verifier", json!(true));
+            let good_generation = session.config().unwrap().number;
+            *denied.lock().unwrap() = Some(target.clone());
+            assert!(
+                session
+                    .request(Operation::AppendItem(capture_item("unreadable")))
+                    .await
+                    .is_err()
+            );
+            assert!(session.request(Operation::Read).await.is_err());
+            assert_eq!(semantic_bytes(&root), before);
+            *denied.lock().unwrap() = None;
+            session
+                .request(Operation::AppendItem(capture_item("restored")))
+                .await
+                .unwrap();
+            assert!(session.config().unwrap().number > good_generation);
+            session
+                .set_config(Layer::Repo, "planning.max_capture_bullets", json!(1))
+                .await
+                .unwrap();
+            assert_eq!(session.capture_report().await.unwrap().bound, 1);
+            session
+                .set_config(layer, "workflow.verifier", json!(false))
+                .await
+                .unwrap();
+            let before = semantic_bytes(&root);
+            let config_before = std::fs::read(target).unwrap();
+            assert!(
+                session
+                    .request(Operation::AppendItem(capture_item("new-policy")))
+                    .await
+                    .is_err()
+            );
+            assert!(
+                session
+                    .set_config(layer, "workflow.verifier", json!(true))
+                    .await
+                    .is_err()
+            );
+            assert_eq!(semantic_bytes(&root), before);
+            assert_eq!(std::fs::read(target).unwrap(), config_before);
+            change_config(target, "workflow.verifier", json!(true));
+            session
+                .request(Operation::RewriteSnapshot(json!({"cursor":"next"})))
+                .await
+                .unwrap();
+            let view = session.request(Operation::Read).await.unwrap();
+            assert_eq!(view.snapshot.data["import"]["complete"], json!(true));
+            assert_eq!(view.snapshot.data["current"]["cursor"], json!("next"));
+            assert!(
+                view.items
+                    .iter()
+                    .all(|r| !matches!(r.id.as_str(), "refused" | "unreadable" | "new-policy"))
+            );
+        });
+        for (path, bytes) in originals {
+            assert_eq!(std::fs::read(root.join(path)).unwrap(), bytes);
+        }
+        assert_eq!(std::fs::read(global).unwrap(), old_global);
+        frozen_readers_still_read_originals(fixture.path(), &root);
+    }
+}
+
+#[test]
+fn resident_policy_follows_rename_symlink_retarget_and_layer_collapse() {
+    use std::os::unix::fs::symlink;
+    let fixture = extraction();
+    let root = fixture.path().join(".planning");
+    let global = global_fixture(fixture.path());
+    let factory = SessionFactory::new(Some(global), policy_evaluation());
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let session = factory.first_touch(&root).await.unwrap();
+        let active = &session.import_manifest().active;
+        let global = active.global.as_ref().unwrap();
+        let first = session.config().unwrap();
+        let replacement = fixture.path().join("checkout-config.json");
+        std::fs::write(&replacement, br#"{"workflow":{"verifier":false}}"#).unwrap();
+        std::fs::rename(&replacement, global).unwrap();
+        let before = semantic_bytes(&root);
+        assert!(
+            session
+                .request(Operation::AppendItem(capture_item("renamed-denial")))
+                .await
+                .is_err()
+        );
+        assert_eq!(semantic_bytes(&root), before);
+        assert_ne!(
+            session.config().unwrap().global.unwrap().stamp,
+            first.global.unwrap().stamp
+        );
+        change_config(global, "workflow.verifier", json!(true));
+        let original_repo = std::fs::read(&active.repo).unwrap();
+        let refused = fixture.path().join("refused.json");
+        let allowed = fixture.path().join("allowed.json");
+        std::fs::write(&refused, br#"{"workflow":{"verifier":false}}"#).unwrap();
+        std::fs::write(&allowed, br#"{"workflow":{"verifier":true}}"#).unwrap();
+        std::fs::remove_file(&active.repo).unwrap();
+        symlink(&refused, &active.repo).unwrap();
+        assert!(
+            session
+                .request(Operation::AppendItem(capture_item("symlink-denial")))
+                .await
+                .is_err()
+        );
+        assert_eq!(semantic_bytes(&root), before);
+        std::fs::remove_file(&active.repo).unwrap();
+        symlink(&allowed, &active.repo).unwrap();
+        session
+            .request(Operation::AppendItem(capture_item("retargeted")))
+            .await
+            .unwrap();
+        assert_eq!(session.config().unwrap().repo.identity, allowed);
+        std::fs::remove_file(&active.repo).unwrap();
+        std::fs::write(&active.repo, &original_repo).unwrap();
+        std::fs::remove_file(global).unwrap();
+        symlink(&active.repo, global).unwrap();
+        assert!(session.config().unwrap().global.is_none());
+        session
+            .request(Operation::AppendItem(capture_item("collapsed")))
+            .await
+            .unwrap();
+        std::fs::remove_file(global).unwrap();
+        std::fs::write(global, br#"{"workflow":{"verifier":false}}"#).unwrap();
+        let before = semantic_bytes(&root);
+        assert!(session.config().unwrap().global.is_some());
+        assert!(
+            session
+                .request(Operation::AppendItem(capture_item("separated-denial")))
+                .await
+                .is_err()
+        );
+        assert_eq!(semantic_bytes(&root), before);
+        change_config(global, "workflow.verifier", json!(true));
+        session
+            .request(Operation::AppendItem(capture_item("separated-restored")))
+            .await
+            .unwrap();
+        assert!(Arc::ptr_eq(
+            &session,
+            &factory.first_touch(&root).await.unwrap()
+        ));
+    });
+}
+
+#[test]
+fn capture_threshold_counts_active_identities_across_durable_revisions() {
+    use cadence::store::items::{ItemChange, revise};
+    let fixture = extraction();
+    let root = fixture.path().join(".planning");
+    let factory = SessionFactory::new(None, policy_evaluation());
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let session = factory.first_touch(&root).await.unwrap();
+        let baseline = session.request(Operation::Read).await.unwrap().items.len();
+        session
+            .set_config(Layer::Repo, "planning.max_capture_bullets", json!(1))
+            .await
+            .unwrap();
+        let first = capture_item("capture-first");
+        session
+            .request(Operation::AppendItem(first.clone()))
+            .await
+            .unwrap();
+        assert_eq!(session.capture_report().await.unwrap().active, 1);
+        session
+            .request(Operation::AppendItem(
+                revise(&first, ItemChange::Complete).unwrap(),
+            ))
+            .await
+            .unwrap();
+        let second = capture_item("capture-second");
+        let third = capture_item("capture-third");
+        session
+            .request(Operation::AppendItem(second.clone()))
+            .await
+            .unwrap();
+        let crossed = session
+            .request(Operation::AppendItem(third.clone()))
+            .await
+            .unwrap();
+        let report = session.capture_report().await.unwrap();
+        assert_eq!(
+            report,
+            config::CaptureReport {
+                active: 2,
+                bound: 1,
+                exceeded: true,
+                unit: "items"
+            }
+        );
+        assert_eq!(crossed.items.len(), baseline + 4);
+        let durable: Vec<cadence::store::model::ItemRecord> =
+            cadence::store::model::parse_lines(&std::fs::read(root.join(ITEMS)).unwrap()).unwrap();
+        assert_eq!(durable, crossed.items);
+        assert!(durable.iter().any(|r| r.id == third.id));
+        session
+            .request(Operation::AppendItem(
+                revise(
+                    &third,
+                    ItemChange::File {
+                        pointer: "github owner/repo abc".into(),
+                        uncertain: true,
+                    },
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+        session
+            .request(Operation::AppendItem(
+                revise(
+                    &second,
+                    ItemChange::Decline {
+                        reason: "explicit decline".into(),
+                    },
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+        let last = session
+            .request(Operation::AppendItem(capture_item("capture-active")))
+            .await
+            .unwrap();
+        assert_eq!(last.items.len(), baseline + 7);
+        assert_eq!(
+            session.capture_report().await.unwrap(),
+            config::CaptureReport {
+                active: 1,
+                bound: 1,
+                exceeded: false,
+                unit: "items"
+            }
+        );
+        assert!(last.recall_items().iter().all(|r| r.id != second.id));
+    });
+}
+
+#[test]
+fn aliased_legacy_sources_keep_one_import_destination_and_global_request_scope() {
+    use std::os::unix::fs::symlink;
+    let fixture = extraction();
+    let root = fixture.path().join(".planning");
+    let alias = fixture.path().join("global-link.json");
+    symlink(root.join("config.json"), &alias).unwrap();
+    let factory = SessionFactory::new(Some(alias), policy_evaluation());
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let session = factory.first_touch(&root).await.unwrap();
+        assert_eq!(session.import_manifest().created.len(), 4);
+        assert_eq!(
+            session.import_manifest().active.global.as_ref(),
+            Some(&session.import_manifest().active.repo)
+        );
+        let current = session.config().unwrap();
+        assert!(current.global.is_none());
+        assert_eq!(current.effective.sources["git.forge_repo"], Layer::Repo);
+        let before = semantic_bytes(&root);
+        assert!(
+            session
+                .set_config(Layer::Global, "git.forge_repo", json!("owner/repo"))
+                .await
+                .is_err()
+        );
+        assert_eq!(semantic_bytes(&root), before);
+        session
+            .set_config(Layer::Repo, "planning.max_capture_bullets", json!(2))
+            .await
+            .unwrap();
+        assert_eq!(session.capture_report().await.unwrap().bound, 2);
+    });
+}
+
+#[test]
+fn same_factory_recovers_interrupted_import_then_uses_active_policy() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let fixture = extraction();
+    let root = fixture.path().join(".planning");
+    let interrupt = Arc::new(AtomicBool::new(true));
+    let fault = interrupt.clone();
+    let factory =
+        SessionFactory::new(None, policy_evaluation()).with_probe(Arc::new(move |stage, path| {
+            if stage == Stage::Renamed
+                && path.file_name().unwrap() == ITEMS
+                && fault.swap(false, Ordering::SeqCst)
+            {
+                return Err(Error::Io("interrupted import installation".into()));
+            }
+            Ok(())
+        }));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        assert!(factory.first_touch(&root).await.is_err());
+        assert!(root.join(INTENT).exists());
+        let session = factory.first_touch(&root).await.unwrap();
+        assert!(!root.join(INTENT).exists());
+        assert_eq!(
+            session
+                .request(Operation::Read)
+                .await
+                .unwrap()
+                .snapshot
+                .generation,
+            1
+        );
+        session
+            .request(Operation::AppendItem(capture_item("after-recovery")))
+            .await
+            .unwrap();
+        change_config(
+            &session.import_manifest().active.repo,
+            "workflow.verifier",
+            json!(false),
+        );
+        let before = semantic_bytes(&root);
+        assert!(
+            session
+                .request(Operation::AppendItem(capture_item("recovery-denied")))
+                .await
+                .is_err()
+        );
+        assert_eq!(semantic_bytes(&root), before);
+        change_config(
+            &session.import_manifest().active.repo,
+            "workflow.verifier",
+            json!(true),
+        );
+        session
+            .request(Operation::AppendItem(capture_item("recovery-restored")))
+            .await
+            .unwrap();
+        assert!(Arc::ptr_eq(
+            &session,
+            &factory.first_touch(&root).await.unwrap()
+        ));
+    });
+}
