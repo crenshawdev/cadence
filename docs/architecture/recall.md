@@ -44,3 +44,37 @@ tie breaker. The default response has at most five hits; `total` counts all
 matches before truncation. Limits must be positive integers. `none` returns an
 explicit disabled answer; unknown backends and empty queries are refused.
 Ranking and rendering perform no I/O. Public MCP tool selection remains phase 5.
+
+The resident handler's clones carry request senders. One consumer owns the
+derived indexes and uses the existing session factory to obtain one store owner
+per resolved planning root. Each request has its own reply channel. Version
+requests do not initialize planning storage. Accepted requests drain when the
+last handle closes; dropping a reply receiver does not cancel admitted work.
+The store and recall index require no lock; config, first-touch import and the
+session registry retain PLAN-2's synchronization under the 2026-09-06 ruling.
+The factory's `Sync` bound permits its borrow across a migratable task's await;
+it does not make writable store or index state shared.
+
+Before answering, recall reads the current confirmed store view and config,
+document content and file identities, and HEAD-reachable commit/blob identities.
+The derived index is reused only while these inputs and coverage reasons match.
+Declines, appends, document edits, checkout and config changes invalidate the
+affected result. Source reads still run on every query; only the ranking index
+is cached, with no watcher or durable index file. Preparation runs off the async
+worker, then rechecks store and config generations before rendering. A generation
+change during preparation returns a retryable conflict; a failed controlling
+config reload returns unavailable/error rather than cached enablement. The
+checks observe inputs at their read points, not a filesystem-wide atomic snapshot.
+
+The process regression test extracts actual `v3.7.12` planning inputs into an
+external temporary repository and uses `CadenceServer::new` in three separate
+processes. One response contains an appended structured capture and authored
+CONTEXT prose with exact citations before and after restart. The first process
+warms an eligible filed identity twice, declines it through the owner, and
+requires zero hits and total immediately afterward. The second process verifies
+that exclusion survives restart, then warms and declines a second eligible
+identity. The third verifies both persisted declines. Earlier FILED and eligible
+structured revisions remain in git throughout. Actual serialized responses,
+including snippets and totals, are checked; unchanged inputs must produce equal
+results across restarts. Current decline state controls historical item identity
+eligibility, while independent authored prose retains its own provenance.

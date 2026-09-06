@@ -724,3 +724,410 @@ async fn version_is_lazy_and_owner_releases_sessions_after_handles_close() {
         .unwrap()
         .unwrap();
 }
+
+const RESTART_QUERY: &str = "saffronotter cobaltnebula";
+const RESTART_DOC: &str = "tasks/recall-continuity/CONTEXT.md";
+const RESTART_TERMS: [&str; 2] = ["declinequartzalpha", "declinequartzbeta"];
+const RESTART_LEDGER: &str = "# Filed\n- 2026-09-06 github continuity/recall a11fa: declinequartzalpha\n- 2026-09-06 github continuity/recall be7a: declinequartzbeta\n";
+
+fn restart_items() -> Vec<ItemRecord> {
+    crate::import::items::translate(
+        None,
+        Some(&crate::import::Source {
+            path: "FILED.md".into(),
+            bytes: RESTART_LEDGER.as_bytes().into(),
+        }),
+        None,
+    )
+    .unwrap()
+    .records
+}
+
+fn assert_mixed_response(answer: &Answer) {
+    assert_eq!(answer.backend, "builtin");
+    assert_eq!(answer.total, 2);
+    assert_eq!(answer.results.len(), 2);
+    assert!(answer.results.iter().any(|hit| {
+        hit.snippet == RESTART_QUERY
+            && matches!(&hit.provenance, Provenance::Record { id, revision: 1, commit: None, .. } if id == "restart-mixed")
+    }));
+    assert!(answer.results.iter().any(|hit| {
+        hit.snippet == RESTART_QUERY
+            && matches!(&hit.provenance, Provenance::Document { path, line: 3, commit: None, .. } if path == RESTART_DOC)
+    }));
+}
+
+fn assert_no_declined_hits(answer: &Answer) {
+    assert_eq!(answer.backend, "builtin");
+    assert_eq!(answer.total, 0, "declined identity affected result total");
+    assert!(
+        answer.results.is_empty(),
+        "declined identity reached snippets"
+    );
+}
+
+#[derive(Serialize, Deserialize)]
+struct RestartEvidence {
+    pid: u32,
+    generation: u64,
+    mixed_before: Answer,
+    mixed_after: Answer,
+    warm_eligible: Option<Answer>,
+    excluded: Vec<Answer>,
+    store_commit: Option<String>,
+}
+
+// A fresh process runs the production constructor and methods; the test only
+// drives operations and records their actual responses for the parent to check.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn recall_restart_child() {
+    let Ok(fixture) = std::env::var("CADENCE_RECALL_FIXTURE") else {
+        return;
+    };
+    let fixture = Path::new(&fixture);
+    assert!(
+        !fixture.starts_with(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+        )
+    );
+    let stage = std::env::var("CADENCE_RECALL_STAGE").unwrap();
+    let root = fixture.join(".planning");
+    let server = crate::server::CadenceServer::new();
+    let reader = server.clone();
+    let mut store_commit = None;
+    let initial = server.store(&root, Operation::Read).await.unwrap();
+    let targets = restart_items();
+    if stage == "first" {
+        assert_eq!(
+            initial.snapshot.generation, 1,
+            "first touch must perform import"
+        );
+        assert_eq!(initial.snapshot.data["import"]["complete"], true);
+        server
+            .store(
+                &root,
+                Operation::AppendItem(item("restart-mixed", RESTART_QUERY)),
+            )
+            .await
+            .unwrap();
+        for target in &targets {
+            server
+                .store(&root, Operation::AppendItem(target.clone()))
+                .await
+                .unwrap();
+        }
+        git(fixture, &["add", ".planning/items.jsonl"]);
+        store_commit = Some(commit(
+            fixture,
+            "feat: eligible structured revisions are retained",
+        ));
+    } else {
+        assert_eq!(
+            initial.snapshot.generation,
+            if stage == "restart" { 5 } else { 6 }
+        );
+        assert!(matches!(
+            initial.lookup_item(&targets[0].id).unwrap().disposition,
+            Disposition::Declined { .. }
+        ));
+    }
+    let mixed_before = reader.recall(&root, RESTART_QUERY, None).await.unwrap();
+    assert_mixed_response(&mixed_before);
+    assert_eq!(
+        server.recall(&root, RESTART_QUERY, None).await.unwrap(),
+        mixed_before
+    );
+    let mut excluded = Vec::new();
+    if stage != "first" {
+        let old_decline = reader.recall(&root, RESTART_TERMS[0], None).await.unwrap();
+        assert_no_declined_hits(&old_decline);
+        excluded.push(old_decline);
+    }
+    let warm_eligible = if stage == "first" || stage == "restart" {
+        let index = usize::from(stage == "restart");
+        let target = &targets[index];
+        // The item demonstrably reaches the response before the decline. The
+        // identical second query uses the resident's already-built index.
+        let warm = reader
+            .recall(&root, RESTART_TERMS[index], None)
+            .await
+            .unwrap();
+        assert_eq!(warm.total, 1);
+        assert_eq!(warm.results.len(), 1);
+        assert!(
+            matches!(&warm.results[0].provenance, Provenance::Record { id, .. } if id == &target.id)
+        );
+        assert_eq!(
+            server
+                .recall(&root, RESTART_TERMS[index], None)
+                .await
+                .unwrap(),
+            warm
+        );
+        let declined = cadence::store::items::revise(
+            target,
+            cadence::store::items::ItemChange::Decline {
+                reason: "outside this project's scope".into(),
+            },
+        )
+        .unwrap();
+        server
+            .store(&root, Operation::AppendItem(declined))
+            .await
+            .unwrap();
+        let after = reader
+            .recall(&root, RESTART_TERMS[index], None)
+            .await
+            .unwrap();
+        assert_no_declined_hits(&after);
+        assert_eq!(
+            server
+                .recall(&root, RESTART_TERMS[index], None)
+                .await
+                .unwrap(),
+            after
+        );
+        excluded.push(after);
+        Some(warm)
+    } else {
+        assert_eq!(stage, "confirm");
+        None
+    };
+    if stage == "restart" {
+        put(
+            &root,
+            "tasks/restart-probe/CONTEXT.md",
+            "# Restart\n\nreopenedcachetoken\n",
+        );
+    }
+    if stage != "first" {
+        assert_eq!(
+            reader
+                .recall(&root, "reopenedcachetoken", None)
+                .await
+                .unwrap()
+                .total,
+            1
+        );
+    }
+    for term in RESTART_TERMS
+        .iter()
+        .take(if stage == "first" { 1 } else { 2 })
+    {
+        let answer = reader.recall(&root, term, None).await.unwrap();
+        assert_no_declined_hits(&answer);
+        excluded.push(answer);
+    }
+    // Even a combined query must contain only the two eligible mixed-source
+    // hits, so a declined snippet cannot hide beyond a single-term assertion.
+    let combined = reader
+        .recall(
+            &root,
+            &format!("{RESTART_QUERY} {}", RESTART_TERMS[0]),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_mixed_response(&combined);
+    let mixed_after = reader.recall(&root, RESTART_QUERY, None).await.unwrap();
+    assert_mixed_response(&mixed_after);
+    assert_eq!(
+        reader.recall(&root, RESTART_QUERY, None).await.unwrap(),
+        mixed_after
+    );
+    let final_view = server.store(&root, Operation::Read).await.unwrap();
+    let evidence = RestartEvidence {
+        pid: std::process::id(),
+        generation: final_view.snapshot.generation,
+        mixed_before,
+        mixed_after,
+        warm_eligible,
+        excluded,
+        store_commit,
+    };
+    fs::write(
+        fixture.join(format!("{stage}-response.json")),
+        serde_json::to_vec(&evidence).unwrap(),
+    )
+    .unwrap();
+}
+
+fn restart_fixture() -> tempfile::TempDir {
+    use std::io::Write;
+    let dir = temp();
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let archive = Command::new("git")
+        .current_dir(repo)
+        .args(["archive", "v3.7.12", ".planning"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        archive.status.success(),
+        "{}",
+        String::from_utf8_lossy(&archive.stderr)
+    );
+    let mut tar = Command::new("tar")
+        .args(["-x", "-C"])
+        .arg(dir.path())
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    tar.stdin
+        .take()
+        .unwrap()
+        .write_all(&archive.stdout)
+        .unwrap();
+    assert!(tar.wait().unwrap().success());
+    for name in ["config.json", "STATE.md", "FILED.md", "DECLINED.md"] {
+        let frozen = Command::new("git")
+            .current_dir(repo)
+            .args(["show", &format!("v3.7.12:.planning/{name}")])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(frozen.status.success());
+        assert_eq!(
+            fs::read(dir.path().join(".planning").join(name)).unwrap(),
+            frozen.stdout
+        );
+    }
+    for name in [
+        "items.jsonl",
+        "decisions.jsonl",
+        "state.json",
+        "config.v4.json",
+    ] {
+        assert!(!dir.path().join(".planning").join(name).exists());
+    }
+    dir
+}
+
+fn run_restart_child(fixture: &Path, stage: &str) -> RestartEvidence {
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "server::recall::tests::recall_restart_child",
+            "--nocapture",
+        ])
+        .current_dir(fixture)
+        .env("CADENCE_RECALL_FIXTURE", fixture)
+        .env("CADENCE_RECALL_STAGE", stage)
+        .env("CADENCE_GLOBAL_CONFIG", fixture.join("global/config.json"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "child {stage}:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&fs::read(fixture.join(format!("{stage}-response.json"))).unwrap())
+        .unwrap()
+}
+
+#[test]
+fn ac7_and_ac2_survive_real_import_warm_declines_and_two_process_restarts() {
+    let dir = restart_fixture();
+    let root = dir.path().join(".planning");
+    let originals: Vec<_> = ["config.json", "STATE.md", "FILED.md", "DECLINED.md"]
+        .into_iter()
+        .map(|name| (name, fs::read(root.join(name)).unwrap()))
+        .collect();
+    git(dir.path(), &["init", "-q"]);
+    put(
+        &root,
+        RESTART_DOC,
+        &format!("## Design\n\n{RESTART_QUERY}\n"),
+    );
+    // Retain synthetic FILED evidence in git, then restore the actual frozen
+    // FILED bytes before automatic import. Both provenance claims are exact.
+    put(&root, "FILED.md", RESTART_LEDGER);
+    git(
+        dir.path(),
+        &[
+            "add",
+            ".planning/FILED.md",
+            ".planning/tasks/recall-continuity/CONTEXT.md",
+        ],
+    );
+    let filed_commit = commit(
+        dir.path(),
+        "docs: earlier filed identities and authored context exist",
+    );
+    assert_eq!(
+        git(
+            dir.path(),
+            &["show", &format!("{filed_commit}:.planning/FILED.md")]
+        ),
+        RESTART_LEDGER.trim()
+    );
+    fs::write(
+        root.join("FILED.md"),
+        &originals
+            .iter()
+            .find(|(name, _)| *name == "FILED.md")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+
+    let first = run_restart_child(dir.path(), "first");
+    let restart = run_restart_child(dir.path(), "restart");
+    let confirm = run_restart_child(dir.path(), "confirm");
+    assert_eq!(
+        (first.generation, restart.generation, confirm.generation),
+        (5, 6, 6)
+    );
+    assert_ne!(first.pid, restart.pid);
+    assert_ne!(restart.pid, confirm.pid);
+    for evidence in [&first, &restart, &confirm] {
+        assert_mixed_response(&evidence.mixed_before);
+        assert_mixed_response(&evidence.mixed_after);
+        assert!(!evidence.excluded.is_empty());
+        for answer in &evidence.excluded {
+            assert_no_declined_hits(answer);
+        }
+    }
+    assert_eq!(first.warm_eligible.as_ref().unwrap().total, 1);
+    assert_eq!(restart.warm_eligible.as_ref().unwrap().total, 1);
+    // Across each restart the inputs match exactly: compare the full result
+    // collection, including order, scores, snippets, total and citations.
+    assert_eq!(first.mixed_after, restart.mixed_before);
+    assert_eq!(restart.mixed_after, confirm.mixed_before);
+    let history = git(
+        dir.path(),
+        &[
+            "show",
+            &format!(
+                "{}:.planning/items.jsonl",
+                first.store_commit.as_ref().unwrap()
+            ),
+        ],
+    );
+    let prior: Vec<ItemRecord> = history
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    for target in restart_items() {
+        assert!(prior.iter().any(|record| record.id == target.id
+            && record.revision == 1
+            && matches!(record.disposition, Disposition::Filed { .. })));
+    }
+    for (name, bytes) in originals {
+        assert_eq!(
+            fs::read(root.join(name)).unwrap(),
+            bytes,
+            "frozen import source changed: {name}"
+        );
+    }
+}
