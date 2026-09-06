@@ -14,6 +14,7 @@ pub struct View {
 pub enum Operation {
     Read,
     AppendItem(ItemRecord),
+    AppendDecision(DecisionRecord),
     RewriteSnapshot(Value),
 }
 
@@ -116,6 +117,11 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 next.items.push(item);
                 model::validate_items(&next.items)?;
                 "append_item"
+            }
+            Operation::AppendDecision(record) => {
+                next.decisions.push(super::decisions::normalize(record));
+                model::validate_decisions(&next.decisions)?;
+                "append_decision"
             }
             Operation::RewriteSnapshot(data) => {
                 next.snapshot.data = data;

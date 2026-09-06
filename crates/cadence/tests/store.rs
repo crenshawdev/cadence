@@ -279,3 +279,108 @@ fn equal_prose_completion_and_guarded_uncertainty_preserve_identity() {
         assert!(view.lookup_item("first").unwrap().filing_uncertain);
     });
 }
+
+#[test]
+fn durable_decisions_preserve_provenance_and_missing_receipts() {
+    use cadence::store::model::{Decision, DecisionRecord};
+    let root = tempfile::tempdir().unwrap();
+    runtime().block_on(async {
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        for (id, effort) in [("blank", " \t"), ("unknown", "host-experimental")] {
+            store
+                .request(Operation::AppendDecision(DecisionRecord {
+                    version: VERSION,
+                    id: id.into(),
+                    revision: 1,
+                    origin: item("origin").origin,
+                    decision: Decision::Routing {
+                        choice: "worker-a".into(),
+                        config_provenance: [("model".into(), Evidence::Text("user-global".into()))]
+                            .into(),
+                        requested_effort: Evidence::Text("high".into()),
+                        observed_effort: Evidence::Text(effort.into()),
+                        receipt: Evidence::Missing,
+                    },
+                }))
+                .await
+                .unwrap();
+        }
+        drop(store);
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        let view = store.request(Operation::Read).await.unwrap();
+        assert_eq!(
+            view.decisions
+                .iter()
+                .map(|r| r.id.as_str())
+                .collect::<Vec<_>>(),
+            ["blank", "unknown"]
+        );
+        for (index, record) in view.decisions.iter().enumerate() {
+            let Decision::Routing {
+                config_provenance,
+                observed_effort,
+                requested_effort,
+                receipt,
+                ..
+            } = &record.decision
+            else {
+                panic!("routing expected")
+            };
+            assert_eq!(
+                config_provenance["model"],
+                Evidence::Text("user-global".into())
+            );
+            assert_eq!(*requested_effort, Evidence::Text("high".into()));
+            assert_eq!(*receipt, Evidence::Missing);
+            assert_eq!(
+                *observed_effort,
+                if index == 0 {
+                    Evidence::Missing
+                } else {
+                    Evidence::Text("host-experimental".into())
+                }
+            );
+        }
+        let bytes = std::fs::read(root.path().join("decisions.jsonl")).unwrap();
+        let lines: Vec<serde_json::Value> = cadence::store::model::parse_lines(&bytes).unwrap();
+        assert!(lines[0]["decision"].get("observed_effort").is_none());
+        assert!(lines.iter().all(|r| r["decision"].get("receipt").is_none()));
+    });
+}
+
+#[test]
+fn unsafe_store_or_policy_does_not_append_refusal() {
+    struct Deny;
+    impl Policy for Deny {
+        fn validate(&mut self, _: &MutationContext<'_>) -> Result<()> {
+            Err(Error::Policy("revoked".into()))
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    runtime().block_on(async {
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), Deny)
+            .await
+            .unwrap();
+        assert!(matches!(
+            store.request(Operation::AppendItem(item("denied"))).await,
+            Err(Error::Policy(_))
+        ));
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+        drop(store);
+        std::fs::write(root.path().join("state.json"), b"foreign corrupted state").unwrap();
+        assert!(
+            Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("state.json")).unwrap(),
+            b"foreign corrupted state"
+        );
+        assert!(!root.path().join("decisions.jsonl").exists());
+    });
+}

@@ -20,6 +20,12 @@ pub enum Evidence {
     Text(String),
 }
 
+impl Evidence {
+    pub fn is_missing(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Origin {
     pub source: String,
@@ -55,7 +61,9 @@ pub enum Decision {
         choice: String,
         config_provenance: BTreeMap<String, Evidence>,
         requested_effort: Evidence,
+        #[serde(default, skip_serializing_if = "Evidence::is_missing")]
         observed_effort: Evidence,
+        #[serde(default, skip_serializing_if = "Evidence::is_missing")]
         receipt: Evidence,
     },
     Gate {
