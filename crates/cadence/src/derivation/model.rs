@@ -132,6 +132,12 @@ pub struct CapturedInputs {
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DerivationError {
+    StateConflict {
+        source: String,
+        field: String,
+        declared: String,
+        derived: String,
+    },
     InvalidStatus {
         source: String,
         original_status: String,
@@ -152,6 +158,7 @@ pub enum DerivationError {
 impl DerivationError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::StateConflict { .. } => "state-conflict",
             Self::InvalidStatus { .. } => "invalid-status",
             Self::MissingPlanningRoot { .. } => "missing-planning-root",
             Self::MissingRoadmap { .. } => "missing-roadmap",
@@ -199,5 +206,46 @@ impl CompatibilityCursor {
         match self {
             Self::Unavailable(p) | Self::Held(p) | Self::Assertion { provenance: p, .. } => p,
         }
+    }
+}
+
+/// Exact compatibility observations, outside CapturedInputs and the lifecycle key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IntakeObservation {
+    pub cursor: Option<serde_json::Value>,
+    pub retirement: Option<serde_json::Value>,
+}
+
+impl IntakeObservation {
+    pub fn from_data(data: &serde_json::Value) -> Self {
+        Self {
+            cursor: data.get("cursor").cloned(),
+            retirement: data
+                .get("derivation")
+                .and_then(|d| {
+                    if d.is_object() {
+                        d.get("intake")
+                    } else {
+                        Some(d)
+                    }
+                })
+                .cloned(),
+        }
+    }
+}
+
+/// Produced only after consistency validation and final reobservation.
+#[derive(Clone, Debug)]
+pub struct ValidatedIntake {
+    pub(crate) cursor: CompatibilityCursor,
+    pub(crate) observation: IntakeObservation,
+}
+
+impl ValidatedIntake {
+    pub fn cursor(&self) -> &CompatibilityCursor {
+        &self.cursor
+    }
+    pub fn observation(&self) -> &IntakeObservation {
+        &self.observation
     }
 }

@@ -841,3 +841,230 @@ fn ac5_normalize_malformed_and_inconsistent_inputs_stay_unavailable() {
         ));
     }
 }
+
+fn agreement(
+    capture: &CapturedInputs,
+    word: &str,
+    phase: u64,
+    total: u64,
+) -> Result<(), DerivationError> {
+    let cursor = normalize_imported_cursor(&imported_cursor(word, phase, total))?;
+    check_consistency(validate_inputs(capture)?, &derive(capture)?, &cursor)
+}
+
+fn agreement_failures(
+    check: impl Fn(&CapturedInputs, &str, u64, u64) -> Result<(), DerivationError>,
+) -> Vec<String> {
+    let live = captured("## Phases\n- [ ] **Phase 3: Three**");
+    let closed = captured("## Phases\nNo active phases.");
+    let mut done = captured("## Phases\n- [x] **Phase 3: Three**");
+    complete(&mut done.phases[0]);
+    let mut failed = Vec::new();
+    for word in [
+        "unplanned",
+        "ready to plan",
+        "context gathered",
+        "planned",
+        "executed",
+        "complete",
+        "phase complete",
+        "paused",
+    ] {
+        for (label, capture, phase, total, expected) in [
+            (
+                "live",
+                &live,
+                3,
+                4,
+                matches!(
+                    word,
+                    "unplanned" | "ready to plan" | "context gathered" | "paused"
+                ),
+            ),
+            ("wrong phase", &live, 2, 4, word == "paused"),
+            (
+                "all complete",
+                &done,
+                99,
+                4,
+                matches!(word, "complete" | "phase complete" | "paused"),
+            ),
+            (
+                "closed",
+                &closed,
+                99,
+                0,
+                matches!(
+                    word,
+                    "unplanned"
+                        | "ready to plan"
+                        | "context gathered"
+                        | "complete"
+                        | "phase complete"
+                        | "paused"
+                ),
+            ),
+            ("closed nonzero", &closed, 99, 4, false),
+        ] {
+            let result = check(capture, word, phase, total);
+            if result.is_ok() != expected {
+                failed.push(format!("{label}: {word}"));
+            } else if let Err(error) = result {
+                assert_eq!(error.code(), "state-conflict");
+            }
+        }
+    }
+    failed
+}
+
+#[test]
+fn ac5_agreement_canonical_alias_closed_all_complete_and_hold_table() {
+    assert_eq!(agreement_failures(agreement), Vec::<String>::new());
+}
+
+#[test]
+fn ac5_agreement_frozen_agree_mutant_fails_shared_table() {
+    let failed = agreement_failures(|capture, word, phase, total| {
+        let answer = derive(capture)?;
+        if answer.current.is_some() && word == "unplanned" {
+            return Err(DerivationError::StateConflict {
+                source: "data.cursor".into(),
+                field: "status".into(),
+                declared: "unplanned".into(),
+                derived: "unplanned".into(),
+            });
+        }
+        agreement(capture, word, phase, total)
+    });
+    assert!(failed.contains(&"live: unplanned".into()));
+}
+
+fn conflict_only<T>(
+    result: &Result<T, DerivationError>,
+    source: &str,
+    field: &str,
+    declared: &str,
+    derived: &str,
+) -> bool {
+    matches!(result, Err(DerivationError::StateConflict { source: s, field: f, declared: a, derived: b })
+        if s == source && f == field && a == declared && b == derived && a != b)
+}
+
+#[test]
+fn ac6_conflicts_both_checkbox_directions_and_success_with_drift_mutant() {
+    for checked in [true, false] {
+        let mut capture = captured(&format!(
+            "## Phases\n- [{}] **Phase 3: Three**",
+            if checked { "x" } else { " " }
+        ));
+        if !checked {
+            complete(&mut capture.phases[0]);
+        }
+        let answer = derive(&capture).unwrap();
+        let cursor = normalize_imported_cursor(&serde_json::Value::Null).unwrap();
+        let result = check_consistency(validate_inputs(&capture).unwrap(), &answer, &cursor);
+        let declared = checked.to_string();
+        let derived = (!checked).to_string();
+        assert!(conflict_only(
+            &result,
+            "ROADMAP.md:2 entry 0",
+            "complete",
+            &declared,
+            &derived
+        ));
+        let error = result.unwrap_err().to_string();
+        for expected in [
+            "state-conflict",
+            "ROADMAP.md:2 entry 0",
+            &declared,
+            &derived,
+        ] {
+            assert!(error.contains(expected));
+        }
+        let success_with_drift: Result<_, DerivationError> =
+            Ok(serde_json::json!({"answer": answer, "drift": error}));
+        assert!(!conflict_only(
+            &success_with_drift,
+            "ROADMAP.md:2 entry 0",
+            "complete",
+            &declared,
+            &derived
+        ));
+    }
+}
+
+#[test]
+fn ac6_conflicts_query_wrappers_and_ordered_tie_diagnostics() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("ROADMAP.md"), "## Phases\n- [ ] **Phase 3.0: First**\n- [x] **Phase 3: Second**\n- [x] **Phase 4: Fourth**").unwrap();
+    let result = query(temp.path(), &mut ArtifactFiles);
+    assert!(conflict_only(
+        &result,
+        "ROADMAP.md:3 entry 1",
+        "complete",
+        "true",
+        "false"
+    ));
+    let raw = imported_cursor("planned", 2, 4);
+    let cursor = normalize_imported_cursor(&raw).unwrap();
+    let observation = IntakeObservation::from_data(&serde_json::json!({"cursor":raw}));
+    let result = prepare_query_with_intake(temp.path(), &mut ArtifactFiles, &cursor, &observation);
+    assert!(conflict_only(
+        &result,
+        "ROADMAP.md:3 entry 1",
+        "complete",
+        "true",
+        "false"
+    ));
+}
+
+struct FixedIntake(IntakeObservation);
+impl IntakeIo for FixedIntake {
+    fn observe_intake(&mut self) -> Result<IntakeObservation, DerivationError> {
+        Ok(self.0.clone())
+    }
+}
+
+#[test]
+fn ac5_agreement_query_requires_exact_cursor_and_retirement_recheck() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("ROADMAP.md"),
+        "## Phases\n- [ ] **Phase 3: Three**",
+    )
+    .unwrap();
+    let raw = imported_cursor("unplanned", 3, 4);
+    let cursor = normalize_imported_cursor(&raw).unwrap();
+    let observation = IntakeObservation::from_data(&serde_json::json!({"cursor":raw}));
+    let prepared =
+        prepare_query_with_intake(temp.path(), &mut ArtifactFiles, &cursor, &observation).unwrap();
+    assert_eq!(
+        recheck_query(&prepared, &mut ArtifactFiles)
+            .unwrap_err()
+            .code(),
+        "inputs-changed"
+    );
+    let candidate = query_with_intake(
+        temp.path(),
+        &mut ArtifactFiles,
+        &cursor,
+        &observation,
+        &mut FixedIntake(observation.clone()),
+    )
+    .unwrap();
+    assert_eq!(candidate.intake().unwrap().observation(), &observation);
+    for retirement in [false, true] {
+        let mut changed = observation.clone();
+        if retirement {
+            changed.retirement = Some(serde_json::json!({"retired":true}));
+        } else {
+            changed.cursor.as_mut().unwrap()["next"] = "changed".into();
+        }
+        assert_eq!(
+            recheck_query_with_intake(&prepared, &mut ArtifactFiles, &mut FixedIntake(changed))
+                .unwrap_err()
+                .code(),
+            "inputs-changed"
+        );
+    }
+}
