@@ -2,106 +2,311 @@
 
 ## Overview
 
-**Opened 2026-09-05. This cycle ships as `4.0.0` and it is a rewrite, not a
-port.** `cadence-core` becomes a session-resident server in Rust: one
-long-running process per session that the main thread and every subagent share.
-The binary owns truth about process, the model owns engineering judgment, and
-the skill orchestrates between them with no hidden state machine. The design is
-`docs/rationale/architecture-v4.md`, written 2026-09-05; this roadmap is the
-execution order, not a second copy of it.
+**Opened 2026-09-05. This cycle ships as `4.0.0`.** `cadence-core` becomes a
+session-resident server in Rust: one long-running process per session that the
+main thread and every subagent share. The binary owns truth about process, the
+model owns engineering judgment, and the skill orchestrates between them. The
+design is `docs/rationale/architecture-v4.md`; this roadmap is the execution
+order, not a second copy of it.
+
+**It is a REARCHITECTURE, not a port. John's ruling, 2026-09-06:** "cadence up
+to three dot seven was an excellent learning experience, it's now time to take
+all of that knowledge and really do a rearchitecture and a redesign around
+cadence four dot o. the only thing literally that needs to keep in parity at
+this point is the user facing part as much as possible." That ruling replaced
+the roadmap this file used to carry, whose phases 5 through 16 were each "port
+module cluster X" and existed only under the port model.
 
 **The frozen reference is the tag `v3.7.12`**, an annotated tag whose commit is
-`c39bbd8c`. That tree is the reference implementation and the golden-test spec.
-It stays frozen until the Rust server reaches parity. The maintenance line is
-the branch `3.x`, cut from that same commit; nothing on it is ported forward
-automatically.
+`c39bbd8c`. It remains the reference for what a USER experiences and stops
+being the specification for internals. The maintenance line is the branch `3.x`,
+cut from that same commit; nothing on it is ported forward automatically.
 
-**Size of what is being replaced, measured 2026-09-05.** 125 non-test `.mjs`
-files under `cadence-core/`, 2,514,184 bytes, plus 113 test files at 3,330,036
-bytes. Those do not port one to one. The change is architectural, so much of
-the JavaScript is prose-adjacent glue with no counterpart in the server design,
-and the test bytes become the spec for golden tests against the binary rather
-than a port target.
+### Where parity is owed, and where it is not
 
-**What is already decided and is not reopened here.** No Bun bridge and no
-incremental port: it is rewritten whole, in Rust. No parallel execution in
-4.0.0, so worktree dispatch, `worktree-base.mjs`, the `baseRef` preflight, the
-`phase_diff` trigger and the four `parallelization.*` keys are dropped rather
-than ported. No JavaScript prototype of the state-patch design. excerpt folds
-in as the read and search layer, opt-in at setup, with the invariant that a
-prompt Cadence emits with excerpt absent is byte-identical to today. The
-zero-dependency ethos is revoked for the Rust codebase and replaced by a
-Cargo.lock-pinned offline cross-compile from one CI job.
+The three-way cut John drew, and it decides every phase below:
 
-**The order, and why it is this order.** Phase 1 seeds the crate from excerpt,
-which already carries rmcp, tree-sitter, the ripgrep crates, the PreToolUse hook
-and the cross-compile CI, so the skeleton is a move rather than a greenfield.
-Phase 2 builds the golden harness before any domain code, so parity is
-measurable from the first module rather than asserted at the end. Phase 3 takes
-one vertical slice end to end, and every later module follows its shape.
+- **Project source code** - the project's own. Cadence reads it, never owns it.
+  The executor writing Rust and tests is untouched by any rule here.
+- **The model thinking and working** - PLAN, CONTEXT, SUMMARY, REVIEW, UAT.
+  Authored prose, read back by humans and models. Markdown is correct here and
+  stays.
+- **Everything else stored** - CAPTURE, STATE, ARCHIVE, FILED, DECLINED, trace,
+  reads, config. Designed by accretion under premises that have expired. This
+  is the bucket the rewrite rethinks, and phase 3 is where it lands.
 
-**The 3.x baseline spike was cut on 2026-09-05.** It was scheduled first on the
-claim that it expires, but every task mined the frozen archive at
-`/projects/cadence-archive-v3.7.12/.planning/` rather than measuring a running
-3.x, and a frozen archive does not expire. It also measured tokens, the axis
-section 7 of the design doc explicitly declines to sell the architecture on. The
-rewrite decision is already taken, so a before-and-after figure is a scorecard
-that can be produced from that archive whenever one is wanted. `BAS-01` is
-deferred, not dropped.
+The governing principle for the boundary, settled 2026-09-06: **user-facing is
+what a person reads or acts on, not what produces it.** `/cad-why`'s narrative
+and `/cad-progress`'s receipts are owed byte-for-byte where they promise
+identity; the store behind them is free.
+
+**The durable unit of parity is a scenario-bounded workflow episode**, not a CLI
+invocation: given repository and persisted state, an invocation and mode,
+effective user policy, scripted user decisions, controlled worker and provider
+outcomes, and interruption history, the skill reaches the specified observable
+state, presents the required evidence or refusal, and produces no unauthorized
+effects. Phase 16 is where that is asserted. It must also name its stop point -
+refusal, checkpoint, awaiting-user-decision, or completion - because "the skill
+returned" and "all its effects are durable" are different claims.
+
+### What 4.0.0 stops doing
+
+These are decisions on record, not shortfalls. The acceptance gate asserts their
+ABSENCE rather than their behavior.
+
+- **Parallel and worktree execution**, dropped outright. Worktree dispatch,
+  `worktree-base.mjs`, the `baseRef` preflight, the `phase_diff` trigger and the
+  four `parallelization.*` keys go. Evidence it costs little: phase 3 of
+  `v3.7.12` found collisions between all three plan pairs and routed sequential
+  anyway. The lease is NOT collateral - `planning/lease-check.mjs:32-37` says
+  in its own words that it covers sequential execution, and declared-scope
+  enforcement over source work survives.
+- **Cross-session concurrency**, stated plainly rather than half-supported.
+  John's habit is one writer plus read-only sessions, so exclusivity is owed on
+  WRITES only and is satisfied by construction (phase 3). This deletes the
+  capture lock and its stale-takeover defect. Do not propose a refuse-to-start
+  guard; it would block the readers he actually uses.
+- **`git.auto_close`.** `README.md:14` promises the engineer authorizes every
+  push and `:20` says Cadence is deliberately not an autopilot; `auto_close` is
+  the shipped arm that does what `:20` disclaims (GH-247). The JavaScript keeps
+  it, because `v3.7.12` must not move. The key joins `stakes` and
+  `parallelization.*` as retired. John loses that workflow at 4.0.0 by choice.
+- **The reads log**, entirely. The host's own session transcripts already hold
+  reads; the log was a third copy.
+- **`ARCHIVE.md`**, dropped. Recall reads git history for pruned phases instead
+  of a hand-copied snippet index. Accepted cost: recall gets slower and more
+  complex for archived material and gains a git dependency in a read path that
+  has none today.
+- **Two of the three hooks.** `subagent-trace` and `read-trace` OBSERVE, and
+  observation moves into the binary once the binary is the channel. `git-guard`
+  DECIDES - a `PreToolUse` gate returning deny or allow on a Bash command the
+  model issues on its own - so it cannot become a tool call and it stays.
+- **`cad-docs-verify`**, dropped. It needs zero operations; it is a prompt, not
+  a skill.
+
+### The skill surface after the fold
+
+28 user-facing skills become **21 distinct implementations**. A fold PRESERVES
+the existing command alias, so nothing disappears from the prompt: the user
+types the old name and it routes.
+
+- **Merged 3 into 1:** `cad-decision-review` + `cad-minimalism-review` +
+  `cad-plan-review` become `/cad-review <target>`. All three point a reviewer at
+  an artifact and adjudicate; only the prompt and the target differ.
+- **Folded:** `cad-coverage` into `cad-verify` (coverage is a verification
+  question), `cad-health` and `cad-report` into `cad-progress` (same question at
+  different depth, and both render from the log), `cad-pause` into an EVENT
+  rather than a workflow (the binary tracks state, so a pause is an intent in
+  the log and resuming is the binary knowing it).
+- **Kept despite zero recorded use:** `cad-adopt` and `cad-new-project` (they
+  bootstrap OTHER repos, so absence here proves nothing), `cad-undo` (zero use
+  is what you want from a safety net), `cad-debug` (episodic value, kept on
+  judgment), `cad-help` - John's reversal, "if a user can't issue that, we're
+  gonna get dinged for it". Discoverability at the prompt is a product
+  requirement and the MCP tool list being self-describing does not replace it.
+
+Weak calls flagged at decision time, so a later phase can reopen them on
+evidence rather than rediscovering the doubt: `cad-debug` is kept on no
+evidence, and `cad-report` may be underrated - it was never run here, but the
+receipts it renders are what `/cad-suggest` mines, and suggest is the fifth
+most-used skill.
+
+### The store, after the rearchitecture
+
+Nine operational files become three, plus config. This is phase 3.
+
+- `CAPTURE.md` + `FILED.md` + `DECLINED.md` -> **one item store** (captured ->
+  filed | declined). The three-file split existed because, under a CLI, anything
+  could `cat` a file and a filter could be forgotten, so exclusion was made
+  structural. The binary is now the sole reader, so the guarantee moves from
+  "the file is not named" to "the query excludes declined" - testable in ONE
+  place. That exclusion is now a filter rather than a structural fact, so it
+  owes a test that fails if a declined item ever reaches recall.
+- `trace.jsonl` + `trace.1` + `reads.jsonl` + `reads.1` -> **one decisions log**
+  carrying routing decisions, gate outcomes and refusals, and nothing that is an
+  activity feed. Routing is the one thing nothing else holds:
+  `{role, agent, model, model_source, effort, escalated, warning_count}` is
+  cadence's own decision AND the config key that decided it. Git does not know
+  it; a transcript shows the result and never the reasoning. Consequence: at 113
+  lines per full cycle there is little left to rotate, so the rotation machinery
+  mostly evaporates.
+- `STATE.md` -> **a state snapshot**, an internal detail, never read by a skill.
+  State becomes a QUESTION the binary answers, not a file a model interprets.
+  Today's stale-cursor failure becomes impossible by construction.
+- `ARCHIVE.md` -> **dropped**, as above.
+- config -> **global + repo**, merged once at startup. Managed settings are an
+  admin-imposed layer for enterprise deployment, which is not this tool's
+  audience. Carry forward the collapse rule, which is load-bearing:
+  `config-merge.mjs` collapses toward REPO, never global, because resolving the
+  other way would silently revoke a permission the repo granted.
+
+The five markdown-stored records become JSON or JSONL. Append-only JSONL also
+diffs better than a markdown read-modify-write, because every change is a pure
+addition rather than a whole-file re-serialize.
+
+### Standing design constraints
+
+- **Modular and convertible to async.** The Rust discipline that delivers this
+  against the function-coloring problem: keep the core SYNC and PURE, push all
+  I/O to the edge. Domain logic takes data and returns data; I/O sits behind a
+  trait; **no tokio types in the core**. The moment `tokio::fs` or a
+  `JoinHandle` appears in domain logic that module is colored and the conversion
+  cost is back.
+- **Write, confirm, return.** A write is acknowledged only after it is done and
+  confirmed. This RAISES the bar over `v3.7.12`, where
+  `planning-files.mjs:2747` deliberately has no fsync and the promise is only
+  "never torn". Cost is irrelevant at cadence's write rates.
+- **Concurrent writes queue to an async handler.** One writer task owns the
+  store; callers send work plus a reply channel and await their own completion.
+  In tokio terms `mpsc` for the queue and `oneshot` per reply. **The single
+  consumer IS the mutual exclusion** - no lock primitive anywhere - and it
+  composes with write-then-ack because the caller still blocks until its own
+  write is on disk.
+- **Test what is testable, acknowledge the rest, rely on live usage.** John's
+  call, explicitly without the model involved and WITHOUT A MOCKUP. Real
+  coverage is owed on the pure core, the store's append/read/snapshot/crash
+  behavior, and anything reaching a decision without dispatching. Anything with
+  a model in the loop is acknowledged as untested rather than scaffolded around.
+  The discipline that keeps this honest: **write down what is knowingly
+  untested.** An acknowledged gap is a decision; an unnoticed one is a bug found
+  later.
+- **The log must be good enough to DIAGNOSE A LIVE FAILURE**, not merely to feed
+  `/cad-suggest`. If live usage is the test, the system must be observable in
+  live usage, which makes the decisions log the verification instrument for the
+  half that cannot be tested.
+- **Assert on SHAPE, never on the content the model produced.** One commit per
+  task in order, each signed, subjects naming their tasks, the SUMMARY listing
+  exactly those SHAs, the cursor moved, the log holding the routing decision.
+  Cadence's job is orchestration, so orchestration is what gets asserted.
+
+### The order, and why it is this order
+
+**Machinery first, then the skills that fire it.** An earlier draft of this
+roadmap ordered phases 6 onward by the lifecycle a USER walks - intake,
+execution, verification, landing - and a falsification pass against the frozen
+tree killed it: **23 ordering violations across 18 skill surfaces, with every
+proposed cluster depending on a later one.** The dependency order is not the
+lifecycle order, because three subsystems cut across every cluster:
+
+- **The commit rail.** Sixteen commit-capable or risk-gated skills consume the
+  protected-branch guard, and it can ask, refuse or abort
+  (`references/git-guard.md:6-20`). Scheduling it late lets a cluster's
+  acceptance run pass while protected-branch behavior is simply absent.
+- **The review subsystem.** `cad-plan` does not "own plan review" - it FIRES
+  `references/review-triggers.md` and obeys that subsystem's gate
+  (`workflows/plan.md:442-478`). The same is true of `cad-execute`
+  (`workflows/execute.md:412-438`), `cad-task` (`workflows/task.md:197-206`) and
+  `cad-debug` (`workflows/debug.md:120-136`).
+- **Config.** `cad-new-project` and `cad-adopt` do not own their own role and
+  cost intake; both explicitly follow the Roles interview arm of
+  `workflows/config.md` (`workflows/new-project.md:66-75`,
+  `workflows/adopt.md:61-74`), and `cad-suggest` writes no key itself - the
+  write on "yes" happens inside `/cad-config` (`workflows/suggest.md:122-138`).
+
+So phases 6, 7 and 8 build those three, and phases 9 through 14 build the skill
+surfaces that compose them. Phase 3 is the store, because John named it as the
+next step and everything later writes through it. Phase 4 derives state from the
+store, because no skill cluster can be built until the binary can answer where
+the work stands. Phase 5 takes one vertical slice through the finished boundary,
+so the tool schema, the typed refusal and the patch shape are proven before ten
+surfaces are built against them. Phase 15 collects what belongs to no cluster,
+phase 16 is the gate, and phase 17 ships.
+
+**A phase is a unit of work with a plan and a gate; it is not an acceptance
+unit.** Those two boundaries are allowed to differ, and here they do: phases 6
+through 14 implement, and phase 16 accepts. Do not go hunting for an independent
+acceptance unit inside a single cluster.
+
+**The enum workflow spine stays INTERNAL in 4.0.0** (John, 2026-09-06: "agreed
+only internal at this point"). The enum types the OUTPUT of the derivation and
+is not an authoritative store, because cadence's load-bearing property is that a
+human edits the markdown and the tool agrees with them; a store makes every hand
+edit into drift and grows a repair command. It is also not one enum - state is a
+product of independent axes and one flat enum multiplies them out until the
+exhaustiveness is noise. Phase 4 owns it.
 
 **Out of scope, deliberately.** The near-term 3.x prose fixes in section 8 of
-the architecture doc are a separate decision and are not scheduled here.
-`GH-140`, whether Cadence grows a Codex host adapter, becomes sharper once the
-boundary is a binary rather than prose, but the adapter decision is not made in
-this cycle. The open GitHub issues filed against the JavaScript tree are being
-triaged by hand and are not carried into these phases.
+the architecture doc are a separate decision. `GH-140`, whether Cadence grows a
+Codex host adapter, gets sharper once the boundary is a binary rather than
+prose, but the adapter decision is not made in this cycle. The 3.x baseline
+spike (`BAS-01`) is deferred, not dropped: every task mined the frozen archive
+rather than measuring a running 3.x, and a frozen archive does not expire.
 
 ## Open Questions
 
-- **OQ-1 - is a ToolSearch preamble needed at all, and if so does a conditional
-  one get skipped when the schema is already loaded.** Moved to phase 1 on
-  2026-09-05. The original question assumed the preamble was required and only
-  asked what it costs: unconditional, about 900 tokens per skill invocation
-  across `/cad-context`, `/cad-task`, `/cad-debug` and `/cad-adopt`, so roughly
-  3,600 tokens per run for one useful load. A direct probe on 2026-09-05
-  settled it against a purpose-built two-tool MCP server with settings
-  isolated: a tool never loaded through `ToolSearch` was called directly and
-  returned normally, so deferral is NOT enforced at call time on CLI 2.1.261.
-  A paired run showed the agent volunteering a `ToolSearch` anyway, saying it
-  had to load the schema first, so the ~900-token load is a convention the
-  model follows and not a requirement. The question that remains is whether a
-  preamble should exist at all, and if so whether it should tell the model to
-  SKIP the load. Phase 1's skeleton binary is no longer needed to answer OQ-1.
-- **OQ-2 - do loaded tools survive compaction.** Moved to phase 2 on 2026-09-05.
-  The CLI carries `preCompactDiscoveredTools` and a "carried from compact
-  boundary" string, which is suggestive and not an observation. A compaction was
-  observed on 2026-09-05 and a tool loaded before the boundary was callable
-  after it, but the paired negative control failed: a tool never loaded was
-  callable too, so the observation does not separate survival from the
-  enforcement simply being off. It is answered against the binary in phase 1,
-  where an unloaded tool has a defined failure to compare against.
+- **OQ-1 - should a ToolSearch preamble exist at all, and if so should it tell
+  the model to SKIP the load.** Re-homed to phase 5 on 2026-09-06 (it sat on
+  phase 1, which has closed). The cost half is answered: unconditional, about
+  900 tokens per skill invocation across `/cad-context`, `/cad-task`,
+  `/cad-debug` and `/cad-adopt`, roughly 3,600 tokens per run for one useful
+  load. The enforcement half is answered too - a direct probe on 2026-09-05
+  against a purpose-built two-tool MCP server with settings isolated called a
+  tool that had never been loaded through `ToolSearch` and it returned normally,
+  so deferral is NOT enforced at call time on CLI 2.1.261, and a paired run
+  showed the agent volunteering a `ToolSearch` anyway. So the ~900-token load is
+  a convention the model follows, not a requirement. What remains is a product
+  decision about cadence's own tool surface, which is phase 5's subject.
+- **OQ-2 - do loaded tools survive compaction.** Re-homed to phase 5 on
+  2026-09-06, same reason. The CLI carries `preCompactDiscoveredTools` and a
+  "carried from compact boundary" string, which is suggestive and not an
+  observation. A compaction was observed on 2026-09-05 and a tool loaded before
+  the boundary was callable after it, but **the paired negative control
+  failed**: a tool never loaded was callable too, so the observation does not
+  separate survival from the enforcement simply being off. It needs the binary's
+  own tool surface, where an unloaded tool has a defined failure to compare
+  against.
+- **OQ-3 - does the item store's recall exclusion hold under a hand edit.**
+  New, 2026-09-06, and owned by phase 3. Dropping the three-file split moves the
+  declined-item guarantee from structure to a query filter. The test that fails
+  when a declined item reaches recall is named as an obligation above; the open
+  question is what happens when a human edits the store directly, which the
+  three-file layout made visible and a single store does not.
+
+## The `4.0-port-decision` issues, re-homed
+
+Thirteen open issues were each tagged to a phase number the restructure
+invalidated. Re-mapped 2026-09-06 from the frozen defect site rather than from
+the old label, so each surfaces when its phase is planned. **The GitHub labels
+still carry the old numbers and have not been updated.**
+
+| Issue | Frozen defect site | Phase |
+|---|---|---|
+| GH-241 | `lib/trace.mjs:1752-1757` accepts any nonempty observed effort string, whitespace included | 3 |
+| GH-229 | `planning/core.mjs:519-524`, with the no-commit skip at `workflows/execute.md:338-346` and `workflows/task.md:154-164` | 6 |
+| GH-248 | `planning/risk-check.mjs:949-997` stores ref-only receipts needing a head/base pair; a staged record has no head (`:395-402`) | 6 |
+| GH-256 | `route.mjs:967-983` treats an explicit role-effort `null` as unset, against `config.schema.json:32-37` | 7 |
+| GH-237 | `review-provider.mjs:1142-1148` zeroes one invalid Gemini output component when the other is usable | 8 |
+| GH-239 | `review-provider.mjs:1335-1350` exits on non-2xx before extracting usage | 8 |
+| GH-240 | `review-provider.mjs:988-989` accepts any finite nonnegative number, summed without a checked bound | 8 |
+| GH-250 | `issue-filing.mjs:727-763` refuses on the local FILED read before forge resolution | 8 |
+| GH-251 | `lib/filing-decision.mjs:730-755` leaves GitLab lookup unmeasured and space-joins fingerprints | 8 |
+| GH-202 | `planning/risk-carry.mjs:119-127` does a source `lstatSync` outside carry error handling; the dispatcher maps it to generic `internal` (`planning.mjs:420-423`) | 13 |
+
+**Three are UNKNOWN and were not guessed.** `GH-230` and `GH-178` have no local
+record naming a `cadence-core/` site, and `GH-140` (a Codex host adapter)
+describes an undecided question with no frozen implementation to point at.
+Assigning them a phase would be invention; they stay unhomed until someone reads
+the issue text on the tracker.
 
 ## Phases
 
 - [x] **Phase 1: The crate skeleton** - a named binary that builds, cross-compiles to four targets from one CI job, and serves a minimal MCP tool surface
-- [ ] **Phase 2: The golden harness** - fixtures at the frozen tag and a Rust test that diffs the binary against recorded JavaScript output
-- [ ] **Phase 3: The L0 persistence kernel** - the four modules every later port depends on, each carrying a design decision rather than a straight port
-- [ ] **Phase 4: One vertical slice** - `/cad-execute` end to end, the shape every other command follows
-- [ ] **Phase 5: The L1 leaf ports** - 41 modules that import no other lib module, portable in parallel once L0 stands
-- [ ] **Phase 6: L2 and the shared planning core** - the ten layered lib modules and `planning/core.mjs`, the gate every handler waits on
-- [ ] **Phase 7: G4 stage 1 - the read-only lifecycle handlers** - `cursor-get`, `status`, `audit`, `replay-check` against frozen fixture trees
-- [ ] **Phase 8: G4 stage 2 - the planning and verification writers** - `cursor-set`, `seed-reqs`, `uat`, `criteria-coverage`, proven by write/read round trips
-- [ ] **Phase 9: G4 stage 3 - the receipt chain** - `trace`, `reads`, `cite-count`, `task-record`, including rotation under competing writers
-- [ ] **Phase 10: G4 stage 4 - the risk settlement loop** - `detect-surfaces`, `lease-check`, `adjudication`, `deferred-record`, `deferred-list`, `risk-check`
-- [ ] **Phase 11: G4 stage 5 - phase completion** - `phase-done`, with injected second-write failures separating untouched refusal from partial application
-- [ ] **Phase 12: G4 stage 6 - the evidence carries** - `risk-carry` and `deferred-carry`, tested for idempotence, collision and carried homes
-- [ ] **Phase 13: G4 stage 7 - renumber and prune** - `renumber` and `milestone-prune`, the ordered moves and partial failures that end the lifecycle
-- [ ] **Phase 14: The remaining handler clusters** - command discovery, declared-work bounds, and the capture and recall group
-- [ ] **Phase 15: The L3 hook and history layer** - `subagent-trace`, `why-corpus`, `why-render`, the three modules that sit above L2
-- [ ] **Phase 16: The entry scripts** - the seventeen top-level CLIs that own git, forge, config, routing and review behavior
-- [ ] **Phase 17: Contract enforcement** - the obligations that live today as prose instructions to a model, made behavior the binary enforces
-- [ ] **Phase 18: The parity gate** - full parity with `v3.7.12` asserted by output diff AND contract assertions, together
-- [ ] **Phase 19: The release path** - a tagged release that publishes four checksum-verified archives, and a SessionStart hook that fetches and installs the pinned binary
+- [x] **Phase 2: The golden harness** - fixtures at the frozen tag and a recorder that captures the JavaScript surface's behavior deterministically
+- [ ] **Phase 3: The store and its queries** - the item store, the decisions log, the state snapshot, two-layer config, the `v3.7.12` import, and recall
+- [ ] **Phase 4: Derivation and the internal spine** - phase state derived from disk, the evidence set enumerated, and the binary selecting what comes next
+- [ ] **Phase 5: The boundary and the execute slice** - the typed tool schema, typed refusals, and `/cad-execute` proven end to end through it
+- [ ] **Phase 6: The commit rail and the risk gates** - `git-guard`, the protected-branch decision, the lease and the risk check: what sixteen skills commit through
+- [ ] **Phase 7: Config and routing** - two-layer effective config, the roles interview, retired-key migration, and `route resolve`
+- [ ] **Phase 8: The review and settlement subsystem** - triggers, reviewer dispatch, the provider arm, adjudication, deferred and filing: what a skill FIRES rather than implements
+- [ ] **Phase 9: Planning intake** - `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context`, `cad-plan`
+- [ ] **Phase 10: Execution and tasks** - `cad-execute` in full, and `cad-task`
+- [ ] **Phase 11: Verification and audit** - `cad-verify`, the merged `cad-review` command surface, `cad-audit`
+- [ ] **Phase 12: Receipts and retune** - `cad-progress`, `cad-why`, `cad-suggest`, `cad-capture`
+- [ ] **Phase 13: Landing and milestones** - `cad-land`, `cad-milestone`, `cad-undo`
+- [ ] **Phase 14: Support** - `cad-debug`, `cad-spike`, `cad-help`
+- [ ] **Phase 15: Contract enforcement** - the residual obligations that live today as prose instructions and belong to no single cluster
+- [ ] **Phase 16: The acceptance gate** - scenario-bounded workflow episodes, asserted with contract checks rather than an output diff
+- [ ] **Phase 17: The release path** - a tagged release that publishes four checksum-verified archives, and a SessionStart hook that fetches and installs the pinned binary
 
 ## Phase Details
 
@@ -114,306 +319,642 @@ Seeded from excerpt, which already carries the dependency set and the CI. Adds
 the binary's name and the typed envelope vocabulary from section 3a of the
 design doc. No domain modules yet.
 
-OQ-1 and OQ-2 were dropped from this phase on 2026-09-05: a direct probe against
-a throwaway two-tool MCP server answered OQ-1 the same day and reduced OQ-2 to a
-question whose answer changes nothing.
-
 **The release path was moved out on 2026-09-05, after the plans were written.**
 The original phase 1 carried a second plan for the release workflow, the
 checksum pin and the SessionStart bootstrap. Nothing is downloadable until
 `4.0.0` is tagged, so that plan's own honest outcome was a bootstrap that
 no-ops on every machine and three acceptance criteria that could not be
-observed at phase close. It is now phase 19, where a release actually exists.
+observed at phase close. It is now phase 17, where a release actually exists.
 Phase 1 is the crate skeleton and nothing else.
 
 ### Phase 2: The golden harness
 
-**Goal.** Parity against `v3.7.12` is a test that runs, not a claim.
+**Goal.** The behavior of the frozen surface is recorded deterministically, so
+a later claim about it is measured rather than asserted.
 
-Fixture `.planning` trees captured at the frozen tag, the JavaScript output
-recorded for the operations phases 3 through 16 will implement, and a Rust test
-that diffs the binary's answers against those recordings. Built before domain
-code so that every later module lands against a measurable target.
+**Closed 2026-09-06.** Three plans, seventeen signed commits. Result: 156
+recordings over 74 distinct operations, 17 fixture bundles, 6 normalization
+rules, 25 golden tests, 35 Rust tests. The `golden-drift` CI job is green.
 
-Sized 2026-09-05 against the frozen tag: **40 fixture bundles over 72 runtime
-operations** - 43 planning subcommands and 29 reached through the entry scripts,
-plus 4 tooling selectors, 76 inventoried in total.
+**It validated the measuring instrument, and it proved no parity.** The honest
+number at close was `compared=0 pending=156`: the binary implements no recorded
+operation, so the harness is proven by its negative controls and never by
+agreement. Its close must not be read, by a verifier or by a human, as evidence
+that any parity claim holds.
 
-**This phase validates the measuring instrument, not parity.** Nothing is ported
-when it closes, so most assertions are written here and activate per later port
-stage. Its close must not be read, by a verifier or by a human, as evidence that
-any parity claim holds.
+**The goldens were then DELETED in `7d64c4c9`; the fixtures were kept.** Under
+the rearchitecture ruling the 156 recordings pin the WRONG UNIT - each is one
+CLI invocation, an internal operation a redesign may delete outright. What
+survives is the fixture corpus, the normalization rules, and the lesson below.
+Phase 16 rebuilds acceptance at the scenario boundary instead.
 
-The recording mechanism has to neutralize every source of nondeterminism without
-neutering the assertion: timestamps, correlation ids, absolute paths, git SHAs,
-hostname, PID, iteration order and locale. Two clock-field normalizations are
-not enough - read-side failure outputs carry absolute paths.
+**The harness caught a real defect on its first CI run and the defect is the
+phase's most durable output.** `golden-drift` went red on one recording.
+Ten committed fixture files carried the literal string `/code/cadence` in their
+PROSE, inherited from the real `.planning/` history at the tag, and
+`record.mjs:285` does an unconditional `text.replaceAll(repo, '<REPO>')` applied
+to the whole serialized recording, so it reached captured file bytes. **The
+committed goldens only reproduced on a machine rooted at `/code/cadence`.**
+Fixed by sanitizing the path in `build-fixtures.mjs` rather than in the fixture
+tree, because the fixtures are BUILT from the tag and a sed over the tree would
+be undone by the next rebuild.
 
-### Phase 3: The L0 persistence kernel
+**The lesson every later phase inherits: four local determinism checks missed
+this because they varied `TMPDIR`, `TZ`, `LC_ALL` and `HOME` but never the REPO
+PATH.** Any determinism criterion from here on must relocate the repository -
+`git archive HEAD | tar -x` into a scratch dir, `git init`, run the check there.
 
-**Goal.** The four modules every later port depends on exist in Rust with their
-observable behavior preserved exactly.
+### Phase 3: The store and its queries
 
-`lease-grammar` (5,423 B), `planning-files` (143,256 B), `capture-file`
-(19,692 B) and `trace` (121,994 B) - 290,365 bytes measured at the frozen tag.
-These are the true phase-0 surface: no handler can be ported before they stand.
+**Goal.** The basic data functions live in the binary. Nine operational files
+become three plus config, and every one of them is written by the binary alone.
 
-**All four are hand-rolled, decided 2026-09-05 after a crate survey.** No crate
-reproduces the behavior that has to be preserved: `atomicWrite`'s PID/sequence
-sibling temp with a deliberate absence of fsync and deliberate target-symlink
-replacement; the capture lock's exclusive-create with stale takeover across
-separate processes; byte-preserving markdown round-trips that keep fences,
-section boundaries, CRLF/BOM asymmetry, ordering and untouched text; and the
-domain-specific rotation and carry rules of the event log.
+This is the step John named after the design closed, and it is first because
+every later phase writes through it. It covers the item store, the decisions
+log, the state snapshot, the two-layer config merge, the `v3.7.12` import, and
+recall as a query over the store plus git.
 
-**A known defect must be decided here rather than ported blind.** The capture
-lock's stale takeover can admit two simultaneous owners, and ARCHIVE - which
-shares that lock - lacks the compensating retries CAPTURE has. Parity would mean
-porting a data-loss path. Decide at plan time whether to preserve it or fix it.
+**The shape is settled and is not reopened at plan time.** Sync pure core, I/O
+at the edge behind a trait, no tokio types in domain logic. One writer task owns
+the store; callers send work plus a reply channel and await their own
+completion, so the single consumer is the mutual exclusion and no lock primitive
+appears anywhere. A write is acknowledged only after it is confirmed on disk.
 
-Three compatibility rules freeze before any handler lands: JS numeric acceptance
-and raw phase spelling, directory-result sort order, and JSON key order with
-absent-versus-null handling, where fixed field order has a JS exception that puts
-numeric property names ahead of ordinary ones.
+**What is genuinely testable here, and is therefore owed real coverage:** the
+pure core (parsing, classification, derivation, rendering - plain functions, no
+fixtures, no runtime, no server); the store's round trip (append then read
+returns what was appended in order, a rewritten snapshot survives); and crash
+behavior (a crash mid-write leaves the old value or the new one, never a torn
+one). That last one is newly testable BECAUSE of write-then-ack;
+`v3.7.12`'s `atomicWrite` promises only "never torn".
 
-### Phase 4: One vertical slice
+**Three obligations this phase creates for itself.**
 
-**Goal.** `/cad-execute` runs end to end against the binary, and its shape is
-the template every other command follows.
+1. **A declined item must never reach recall**, and that is now a filter rather
+   than a structural fact. Write the test that fails if one does. It is the
+   whole cost of collapsing the three files, and OQ-3 asks what a hand edit does
+   to it.
+2. **Config read once into memory must be invalidated when the file changes
+   underneath.** A resident process merges once at startup, which deletes the
+   2,903 bytes of per-invocation reconstruction `config-merge.mjs:187` pays, but
+   it introduces external edits, `git checkout` and rebase as new failure modes.
+   A failed reload must not silently preserve old permission-like settings as if
+   current, and the policy must say which changes require revalidation before a
+   mutating request commits rather than after.
+3. **The `v3.7.12` import is a one-way migration and it must be lossless in the
+   directions that matter.** Old config keys are handled explicitly rather than
+   left as dead effective settings. A pre-4.0 `.planning/` must import without
+   the user hand-editing anything.
 
-The five-step loop from section 3c: ask for the next dispatch, refuse with a
-reason or hand back a prompt, invoke the executor, return a typed state patch,
-repeat. The tool schema is the patch schema, and the BINARY validates
-against it: a malformed argument comes back as a `refused` envelope naming
-what was wrong, not an MCP-layer rejection (design doc 3e, revised
-2026-09-05). Proves the boundary works
-before the remaining modules are built against it.
+**What residency does NOT fix, and must still be designed for.** A resident
+server can still crash between syscalls, so single-file replacement, operation
+journaling and recoverable partial transitions all remain. A single process does
+not make a multi-file action atomic. Other writers - humans, editors, `git
+checkout` - do not honor the binary's ownership, so file identity must be
+revalidated before mutation and conflicts reported rather than assumed away.
+ENOENT can mean initialize; EACCES cannot mean empty data, and that distinction
+matters MORE when stale cached content tempts the server to continue writing.
 
-**It runs on a strict subset of the foundation, which is why it sits here rather
-than after the ports.** Measured 2026-09-05: roughly 19,004 bytes of foundation
-source plus 4,503 bytes of `lease-check` spans and the 756-byte SUMMARY
-template. Module-level imports do not bound it - `planning/core.mjs` imports L2,
-but the six functions the slice needs (`ok`, `fail`, `read`, `listPlanFiles`,
-`planNumber`, `gitLine`) use no L2 symbol, so a function-level port pulls none
-of L2 in.
+### Phase 4: Derivation and the internal spine
 
-**Six conditions are not stubbable.** Fake any of them and the slice proves
-nothing: real host-to-MCP-to-Rust calls including bad patch arguments that come
-back `refused` with reasons; binary-owned dispatch selection built from real
-files and state; a real executor doing work, running tests and committing;
+**Goal.** The binary answers "where did I leave off" and "what comes next"
+from the store and the repository, and the model stops interpreting a cursor.
+
+**Half the premise is already true and half is new behavior, and the difference
+decides what this phase owes.** Phase STATUS is already derived mechanically.
+Next-ACTION selection is not: `planning/status.mjs:315-332` returns `current`,
+`outstanding`, phase facts, the cursor and drift, and no next action at all -
+the first-match action table and the handoff that invokes it live in PROSE, at
+`workflows/progress.md:188-203` and `:233-240`. So "the binary answers what
+comes next" is a MOVE of behavior out of prose, not an extension of something
+the binary already does, and it needs its own acceptance assertion for route
+SELECTION rather than only for phase status. Without that assertion the
+ownership move can silently omit the behavior and every status test still
+passes.
+
+**The half that is already true.** Phase state is derived mechanically in
+`v3.7.12`, not held in prose: `planning/core.mjs:192` (`derivePhases`) reads
+PLAN, SUMMARY and UAT off disk to get `unplanned | planned | executed |
+complete`, `planning/status.mjs:160` takes `current` as the first non-complete
+phase, and `:164-170` already reports drift when a ROADMAP checkbox disagrees.
+What IS prose is `STATE.md`'s `Status:` and `Next:` cursor and the checkpoint
+and blocked overlays that live in report text. So the question was never
+"replace prose with an enum"; it is whether the enum is STORED or DERIVED, and
+the answer is derived.
+
+**Enumerate the evidence set before writing any transition.** In
+`(current_state, evidence) -> next`, evidence is the whole design: today it is
+filesystem and git facts - plan files, SUMMARY, UAT pass state, commits, trace
+brackets. The transition function cannot be written until that set is
+enumerated, and `.codex-analysis/frozen-surface-derivation-map.md` is the
+starting inventory.
+
+**Shape: a struct of small enums, with transitions as a function over the
+tuple.** The axes are phase id, derived phase status, plan and task position,
+gate outcomes (plan-check, review, UAT, verification) and an overlay (paused,
+checkpointed-awaiting-decision). Stated explicitly because "the enum is the
+contractual workflow spine" will otherwise be built literally as one flat enum.
+
+**Store at most a memo keyed by a hash of the derivation's inputs, and make
+disagreement a hard error** rather than a silent recompute. A human editing the
+markdown and the tool agreeing with them is the property being protected.
+
+**A concrete instance of the failure class this deletes**, hit while closing
+phase 2: the cursor and the derivation use two different vocabularies for the
+same fact - `AGREE` at `planning/status.mjs:121-125` maps a derived `unplanned`
+to the legal cursor phrases `ready to plan` and `context gathered` - so a
+`STATE.md` written with the derived word produced the drift report "cursor says
+phase 3 unplanned; derived phase 3 unplanned". Two identical strings, no
+difference named, and the reader is left to discover the vocabularies differ.
+When state is a question the binary answers there is only one vocabulary and
+this cannot be written down wrong.
+
+**Two elements the source design omits and this phase must add.** A RECORDED
+operator override, because "skip that, do this" is most of Cadence's day-to-day
+value and it will otherwise arrive later as an undocumented flag. And evidence
+refs on contracted results - commit SHAs, `file:line`, criterion ids - because a
+typed `Accepted` carrying none of those is a rubber stamp: prose ambiguity moved
+into a field, minus the prose that let a human catch a wrong call.
+
+**`cad-pause` collapses into this phase as an event.** Under a derived cursor a
+pause is an intent in the decisions log and resuming is the binary knowing it.
+The verb survives at the prompt; the workflow does not.
+
+### Phase 5: The boundary and the execute slice
+
+**Goal.** One vertical slice runs end to end through the finished boundary, and
+its shape is the template every cluster follows.
+
+The five-step loop from section 3c of the design doc: ask for the next dispatch,
+refuse with a reason or hand back a prompt, invoke the executor, return a typed
+state patch, repeat. **The tool schema is the patch schema and the BINARY
+validates against it** - a malformed argument comes back as a `refused` envelope
+naming what was wrong, not an MCP-layer rejection.
+
+It sits after the store and the derivation rather than before them because
+binary-owned dispatch selection IS the derivation, and durability across a
+restart IS the store. It sits before the clusters because ten of them built
+against an unproven schema is the expensive way to discover the schema is wrong.
+
+**Six conditions are not stubbable. Fake any of them and the slice proves
+nothing:** real host-to-MCP-to-Rust calls including bad patch arguments that
+come back `refused` with reasons; binary-owned dispatch selection built from
+real files and state; a real executor doing work, running tests and committing;
 scoped lossless patch application where a rejection leaves state unchanged;
 durability across a restart between dispatches, recovering the same outstanding
 work; and binary-owned STATE and SUMMARY rendering with the model's attempts to
 bypass that boundary denied.
 
-Legitimately stubbable, and to be reported as stubbed rather than passed: fixed
-executor rung and configuration, reviews explicitly disabled, an explicit
-integer phase with legacy trees refused, a fixed branch policy, and no trace
+**Legitimately stubbable, and to be reported as stubbed rather than passed:**
+fixed executor rung and configuration, reviews explicitly disabled, an explicit
+integer phase with legacy trees refused, a fixed branch policy, and no log
 rotation - refusing past the bound instead.
 
-### Phase 5: The L1 leaf ports
+**What the slice still cannot prove**, and should not be read as proving: that a
+small state patch carries enough history for the planning and debugging roles
+later; cross-domain lifecycle conflicts (UAT, gap plans, deferred reviews,
+reruns) that break a simple "all tasks done" transition; and that one executor
+schema scales to three or four tools.
 
-**Goal.** The 41 lib modules that import no other lib module exist in Rust.
+**OQ-1 and OQ-2 settle here**, because both are questions about cadence's own
+tool surface and this is the phase that first has one.
 
-480,634 bytes across 41 modules, of which **40 are ported and one is not**:
-`lib/repo-auto-close.mjs` (3,088 B) exists solely as "the ONE read of
-`git.auto_close`", and 4.0.0 retires that key (see phase 18), so it is deleted
-rather than ported. 477,546 bytes land here.
+**A typed writer API is not enough on its own.** Writers must not accept
+arbitrary file paths and unlimited replacement content as their sole interface -
+that moves the syscall into the binary while preserving most model-authored
+structural corruption. Use operation-specific structure, content validation and
+expected versions, and allow free text only where judgment belongs.
 
-Two neighbours shrink without disappearing: `close-decision.mjs` loses
-`decideGateHalt`, the autonomous-close halt, and keeps `resolveReapBranch` and
-`decideCleanup` which serve ordinary land cleanup; `publish-decision.mjs` keeps
-deciding whether a mutating action may run and returning the byte-exact git
-argv, with the authorization arm simplified to "the engineer authorized it".
+### Phase 6: The commit rail and the risk gates
 
-Because they are leaves, they carry no ordering constraint among themselves and
-can be split across plans freely once L0 stands. This is the largest phase by
-module count and the least entangled by dependency.
+**Goal.** The one surviving hook and the gates every commit passes through exist
+before any skill that commits.
 
-### Phase 6: L2 and the shared planning core
+**It is here because sixteen skills consume it.** A falsification pass found
+this as the roadmap's single worst ordering defect: `cad-new-project`,
+`cad-adopt`, `cad-phase`, `cad-context`, `cad-plan`, `cad-execute`, `cad-task`,
+`cad-verify`, `cad-coverage`, `cad-pause`, `cad-capture`, `cad-land`,
+`cad-milestone`, `cad-undo`, `cad-debug` and `cad-spike` all commit or gate
+through it. The contract is not cosmetic - it can ask, refuse or abort on a
+protected branch (`references/git-guard.md:6-20`) - so a cluster whose
+acceptance ran without it would pass while the behavior was simply absent.
 
-**Goal.** The ten layered lib modules and `planning/core.mjs` stand, and every
-handler cluster is unblocked.
+**`git-guard` stays a hook and cannot be anything else.** It is a `PreToolUse`
+gate that returns a DECISION synchronously on a Bash command, guarding the one
+channel the binary does not mediate: the model running arbitrary shell. It
+cannot become a tool call, because the point is catching commands the model
+issues on its own. It needs no resident state to answer "is this branch
+protected", so it needs no transport to the server.
 
-344,432 bytes of L2 plus core's 60,362. This is the gate: `planning/core.mjs`
-imports `arg-contract`, `config-merge`, `deferred-queue` and `read-trace` at
-`cadence-core/bin/planning/core.mjs:27-31`, and every handler imports core, so
-nothing downstream starts until this closes.
+**The risk gates come with it**, because they sit on the same path and the same
+consumers: `risk-check` over a commit range, `detect-surfaces`, and the lease.
+Source-scope enforcement survives the loss of parallel execution - the lease
+catches a staged file outside the plan's declared scope, includes both sides of
+a rename, and protects exactly the source work the binary-writes rule leaves
+outside its ownership (`planning/lease-check.mjs:32-37`). Delete the pairwise
+overlap check and the concurrency narration; keep declared-scope enforcement,
+unprovable-lease refusal, byte-exact pathname handling and the intentional
+lockfile and report exceptions.
 
-### Phase 7: G4 stage 1 - the read-only lifecycle handlers
+**Two open GitHub issues land here**, and both are range-identity defects:
+`GH-229`, where a caller hands the check a `HEAD..HEAD` range and the record
+reads as a completed clean check (`planning/core.mjs:519-524`, with the
+no-commit skip at `workflows/execute.md:338-346` and
+`workflows/task.md:154-164`), and `GH-248`, where receipts are stored ref-only
+and require a head/base pair while a staged record has no head
+(`planning/risk-check.mjs:949-997`, `:395-402`).
 
-**Goal.** `cursor-get`, `status`, `audit` and `replay-check` answer correctly
-against frozen trees.
+### Phase 7: Config and routing
 
-Golden reads over complete, incomplete and colliding fixture trees. Writers can
-remain absent because the fixtures supply their artifacts, which is what makes
-this stage independently green.
+**Goal.** Effective config and role routing exist before the skills that read
+them, and before the two intake commands that delegate their whole interview to
+config.
 
-### Phase 8: G4 stage 2 - the planning and verification writers
+**It is here because intake depends on it, not the reverse.**
+`cad-new-project` and `cad-adopt` do not own their role and cost intake - both
+explicitly follow the Roles interview arm of `workflows/config.md`
+(`workflows/new-project.md:66-75`, `workflows/adopt.md:61-74`). `cad-suggest`
+likewise proposes tokens and writes no key; the write on "yes" happens inside
+`/cad-config` (`workflows/suggest.md:122-138`). Standalone config can also
+bootstrap a missing repo config by copying the template
+(`workflows/config.md:10-15`), which is another call site for the same
+initialize family phase 9 uses.
 
-**Goal.** `cursor-set`, `seed-reqs`, `uat` and `criteria-coverage` write what
-they should and refuse what they must.
+Two layers, global and repo, merged once at startup. **Carry forward the
+collapse rule, which is load-bearing:** the merge collapses toward REPO, never
+global, because resolving the other way would silently revoke a permission the
+repo granted. Managed settings are dropped.
 
-Write-then-read round trips, untouched-byte assertions on everything the write
-did not target, and malformed-input refusals. Phase completion and requirement
-state changes stay pending until stage 5.
+**Retired-key migration lands here**: `stakes`, the four `parallelization.*`
+keys and `git.auto_close` are expanded or removed rather than left as dead
+effective settings. If the migration runs once at import, the behavior is still
+owed even though the `config unset` operation can disappear.
 
-### Phase 9: G4 stage 3 - the receipt chain
+**`GH-256` is a real defect in this surface**: `route.mjs:967-983` treats an
+explicit role-effort `null` as unset and then falls through to the legacy key,
+contrary to the schema contract at `config.schema.json:32-37`. Decide it at plan
+time rather than reproducing it.
 
-**Goal.** `trace`, `reads`, `cite-count` and `task-record` produce and consume
-receipts correctly.
+**The invalidation obligation from phase 3 is discharged here.** Config read
+once into memory must be invalidated when the file changes underneath - external
+edits, `git checkout`, rebase - and a failed reload must not silently preserve
+old permission-like settings as if current.
 
-Append, render and rotation tests, read joins, and record-to-recall paths.
-Rotation must be proven to preserve generations under competing writers, which
-`O_APPEND` alone does not guarantee.
+### Phase 8: The review and settlement subsystem
 
-**A knowingly half-enforced invariant.** Receipts can be validated here, but the
-native risk consumer and the adjudication producers do not arrive until stage 4.
-That gap is deliberate and must be recorded, not silently tolerated.
+**Goal.** The machinery a skill FIRES rather than implements: triggers, reviewer
+dispatch, the cross-model provider arm, adjudication, the deferred queue, issue
+filing and the triage re-arm.
 
-### Phase 10: G4 stage 4 - the risk settlement loop
+**Five skills fire it and none of them own it.** `cad-plan`
+(`workflows/plan.md:442-478`), `cad-execute` (`workflows/execute.md:412-438`),
+`cad-task` (`workflows/task.md:197-206`), `cad-debug`
+(`workflows/debug.md:120-136`), and `cad-milestone`, whose first gate invokes
+`/cad-audit` and explicitly refuses to rederive the checks
+(`workflows/milestone.md:15-21`). Building it inside any one cluster would make
+the other four depend on that cluster.
 
-**Goal.** `detect-surfaces`, `lease-check`, `adjudication`, `deferred-record`,
-`deferred-list` and `risk-check` close the loop stage 3 left open.
+**The permanent-write violation this phase must fix, and it was missed by the
+first inventory.** On an advisory fire it is **the REVIEWER ITSELF** that writes
+the permanent findings file `.planning/phases/<N>/REVIEW-<trigger>.md`, through
+a Bash heredoc in the frozen contract (`references/review-triggers.md:165-176`),
+and the workflow relies on that file existing even if the session ends
+(`workflows/plan.md:462-468`). That is a skill writing a permanent workflow
+file, which 4.0.0 forbids outright. A migration driven only from the earlier
+premise-audit checklist would have left it in place. The reviewer submits
+findings to the binary instead, and the binary persists them.
 
-Synthetic git ranges driving record-to-receipt-to-risk-status sequences, and
-deferred-to-adjudicated sequences. Completes G4's risk settlement; integration
-with routing, the review provider and landing stays with the parity gate.
+**A review dispatch must close the bracket it opened**, including the fallback
+arm after a provider failure. Preserve artifact identity and the outer provider
+timeout, and keep re-arm allowances consumable across sessions
+(`references/triage-gate.md:160`) - that one survives sequential execution and
+is not parallel collateral.
 
-### Phase 11: G4 stage 5 - phase completion
+**Adjudication refuses paraphrased findings**, and minimalism preserves claim
+and `failure_scenario` text verbatim. These are identity promises and are
+asserted exactly rather than semantically.
 
-**Goal.** `phase-done` transitions a phase and refuses cleanly when it cannot.
+**Five open GitHub issues land here**, four of them in the provider and filing
+arms: `GH-237` (`review-provider.mjs:1142-1148` turns an invalid one of Gemini's
+two output components into zero when the other is usable), `GH-239` (`:1335-1350`
+exits on non-2xx before extracting response usage), `GH-240` (`:988-989` accepts
+any finite nonnegative number, and Gemini sums without a checked integer bound),
+`GH-250` (`issue-filing.mjs:727-763` refuses on the local FILED read before
+forge resolution and tracker lookup), and `GH-251`
+(`lib/filing-decision.mjs:730-755` leaves GitLab lookup unmeasured and
+space-joins fingerprints - Forgejo's part is no longer the defect, its live
+measurement is at `:678-700`).
 
-Complete and undo transitions, plus injected second-write failures. The
-acceptance that matters is telling an untouched refusal apart from a partial
-application - the module performs the document transition itself.
+### Phase 9: Planning intake
 
-### Phase 12: G4 stage 6 - the evidence carries
+**Goal.** `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context` and
+`cad-plan` run against the binary, and none of them writes a permanent file.
 
-**Goal.** `risk-carry` and `deferred-carry` move evidence without losing it.
+This is the largest concentration of prose-owned permanent writes in the frozen
+tree, and it is therefore where the "only the binary writes" rule is actually
+tested. The families it must cover: idempotent initialize and adopt with typed
+`created` fields, created atomically rather than check-then-copy; PROJECT,
+REQUIREMENTS and ROADMAP content, where the model supplies structured sections
+and the binary validates and persists; CONTEXT creation with criterion and
+decision identity checks; and PLAN identity, path and multi-plan numbering.
 
-Idempotence, destination collision, symlink and carried-home tests.
+**Plan-number allocation needs transaction semantics.** Sequential execution
+inside one session does not prevent a second session choosing the same next
+number, and the gap-plan lookup makes "next free" a real query rather than
+`n+1`.
 
-**A knowingly half-enforced invariant.** Evidence can survive removal here, but
-the carry-before-prune ordering is not exercised until stage 7.
+**`cad-phase` is the sharp one, and it carries a known live bug.** Its structural
+mutations and the cursor update become one binary operation, with the model
+supplying decisions about ambiguous prose references and orphaned requirements.
+"Reconcile by hand" becomes a recovery tool with inspected state rather than an
+instruction. The bug: **`renumber insert` shifts `Phase K` tokens and
+`phases/K/` paths inside COMPLETED shipped requirement rows, not only live
+ones** (GH-259). One insert at 3 corrupted six historical records; exactly one
+hunk was correct, and the dry-run cannot show it because it reports
+`{"edit":"REQUIREMENTS.md"}` with no change count. Until this phase lands, do
+NOT use `/cad-phase insert` on this repository - hand-edit instead.
 
-### Phase 13: G4 stage 7 - renumber and prune
+**Two permanent-write paths an earlier inventory missed, both landing here.**
+Context intake can directly correct a REQUIREMENTS row on user approval
+(`workflows/context.md:394-397`), and an adjudicated plan review can edit
+surviving findings straight into the PLAN files (`workflows/plan.md:471-474`).
+Both are skills writing permanent workflow files and both must go through the
+binary; the second one takes its decision from phase 8 and its persistence from
+here.
 
-**Goal.** `renumber` and `milestone-prune` complete the lifecycle, and the
-carry-prune-land ordering finally holds end to end.
+**What this cluster does NOT own, corrected against the frozen tree.**
+`cad-new-project` and `cad-adopt` do not own their role and cost intake - they
+follow config's Roles interview, which is phase 7. `cad-plan` does not own plan
+review - it fires the trigger and obeys the gate, which is phase 8. Crediting
+either to this phase would hide a dependency rather than remove it.
 
-Ordered moves, partial failures, archive residue and recall. `renumber`'s stop
-discipline and prune's continue discipline stay distinct and must not be
-unified. This stage closes the invariants stages 3 and 6 left half-enforced.
+**The plan gate stays on Claude.** The plan IS the verification instrument, so
+if the same agent authors the criteria and executes against them there is no
+independent check left. What moved is the grounding: a falsification pass reads
+a finished plan against the frozen tree and reports which acceptance criteria
+are FALSE, scoped to criteria that make a claim about code that already exists.
 
-**The JavaScript `renumber` carries a defect this port must not reproduce.**
-Measured 2026-09-05: `renumber insert` shifts `Phase K` tokens and `phases/K/`
-paths inside COMPLETED, shipped requirement rows, not only live ones, silently
-rewriting historical evidence into plausible-looking wrong values. Parity here
-means parity with the intent, and the deviation must be recorded explicitly.
+### Phase 10: Execution and tasks
 
-### Phase 14: The remaining handler clusters
+**Goal.** `cad-execute` in full and `cad-task` run against the binary, with the
+receipts they produce owned by the binary rather than assembled by a
+coordinator.
 
-**Goal.** Command discovery, the declared-work bounds and the capture and recall
-group all stand.
+Phase 5 proved the loop on a strict subset. This phase is the rest: the
+executor contract's report progression, the SUMMARY, the task record, the lease,
+and `cad-task`'s treeless arm.
 
-`detect-commands` (11,257 B), `plan-size` with `criteria-size` (18,850 B), and
-the capture cluster of `capture`, `capture-check`, `capture-sections`,
-`debt-harvest` and `recall` (33,038 B) - 63,145 bytes over 8 modules. Small
-against G4, and independent of it.
+**Report rotation becomes durable attempt history.** Today the executor contract
+renames a report and then overwrites it whole after each task commit. The
+replacement is typed task-progress, checkpoint and completion operations where
+previous attempts survive, because completed work must not replay accidentally
+and partial progress must outlive a stop.
 
-### Phase 15: The L3 hook and history layer
+**The SUMMARY's mechanical fields derive from stored execution facts** - tasks,
+commits - rather than being assembled by the coordinator, while deviations and
+open items stay authored and stay reachable from recall.
 
-**Goal.** `subagent-trace`, `why-corpus` and `why-render` stand on top of L2.
+**A third missed write path lands here:** execute can directly amend a refuted
+`D-NN` decision inside CONTEXT (`workflows/execute.md:520-527`). Same rule - the
+model supplies the ruling, the binary applies it.
 
-109,084 bytes. These are the only lib modules three edges deep, and they back
-the SubagentStop hook and `/cad-why`.
+**`cad-task` uses the task executor contract, not the phase one**: its non-phase
+plan directory explicitly disables `lease-check`. Its treeless arm must keep
+finishing honestly - a repository with no `.planning/` reports done with the
+risk check's disposition stated and the record called unrecorded, and creates no
+`.planning/` and no `tasks/<slug>/`.
 
-### Phase 16: The entry scripts
+**Source-scope enforcement survives the loss of parallel execution.** The lease
+catches a staged file outside the plan's declared scope, includes both sides of
+a rename, and protects exactly the source work that the binary-writes rule
+leaves outside its ownership. Delete the pairwise overlap check and the
+concurrency narration; keep declared-scope enforcement, unprovable-lease
+refusal, byte-exact pathname handling and the intentional lockfile and report
+exceptions.
 
-**Goal.** The seventeen top-level CLIs behave as they do at the frozen tag.
+### Phase 11: Verification and audit
 
-469,273 bytes across `config`, `forge`, `git-branch`, `git-guard`,
-`git-publish`, `issue-check`, `issue-filing`, `land-cleanup`, `planning`,
-`read-trace`, `release-bump`, `review-provider`, `route`, `skim`,
-`subagent-trace`, `weight` and `why`. `self-verify`, `test` and `worktree-base`
-are excluded - the first two are CI support, the third dies with parallel
-execution.
+**Goal.** `cad-verify` (with `cad-coverage` folded in), the merged `cad-review`,
+and `cad-audit` run against the binary.
 
-### Phase 17: Contract enforcement
+**Only the COMMAND SURFACE of the merge lands here; the subsystem is phase 8.**
+`cad-decision-review`, `cad-minimalism-review` and `cad-plan-review` all point a
+reviewer at an artifact and adjudicate a ruling, with near-identical operation
+sets, so they become `/cad-review <target>` with the three old commands kept as
+aliases. What this phase adds is the target selection and the prompt per target;
+the trigger, the dispatch, the provider arm and the adjudication were built in
+phase 8 and are fired, not reimplemented.
+
+**The verifier stops writing its own findings file.** It submits findings to the
+binary, which stores input provenance and the merge or rejected-entry result.
+Two semantic records may still be worth keeping - what was claimed and what was
+rejected - but "two files, two writers" is the obsolete part, not the evidence.
+
+**A human UAT result must never be overwritten by a verifier**, and only full
+completion advances status. Binary persistence does not turn a model claim into
+a trusted fact, and the exact code and index that were reviewed remain part of
+the record.
+
+**Status authority spans skills and the tests must say so:** plan seeds Pending,
+verify alone advances completion, undo legitimately resets it, and progress
+derives truth and only repairs the cursor. A per-skill suite can otherwise pass
+while producing inconsistent shared state.
+
+### Phase 12: Receipts and retune
+
+**Goal.** `cad-progress` (with `cad-health` and `cad-report` folded in),
+`cad-why`, `cad-suggest` and `cad-capture` run against the binary, and the
+decisions log is good enough to diagnose a live failure.
+
+**This phase owns the log's content bar.** Decisions and outcomes only - routing
+decisions, gate outcomes, refusals - and each record must carry enough to
+explain what went WRONG, not merely enough to count. If live usage is the test,
+the system has to be observable in live usage, which is why this is a
+correctness requirement and not analytics.
+
+**`read-trace` and `subagent-trace` are removed here.** Reads are dropped
+entirely. The subagent hook's replacement is that every dispatch returns a state
+patch, so the binary learns a subagent finished by being TOLD. **The residual
+risk to design for, explicitly: a subagent that dies or returns nothing never
+reports, and today the hook catches that because `SubagentStop` fires
+regardless. The hook's real value is detecting the FAILURE to report, not the
+happy path.** Do not close this phase without an answer to that.
+
+**`cad-why`'s rendered text is byte-exact** (`skills/cad-why/SKILL.md:24-28`).
+It is one of the few places identity is promised to the user, so it is asserted
+as identity. Its corpus join must also read git history for pruned phases now
+that `ARCHIVE.md` is gone.
+
+**`cad-suggest` is the log's highest-value consumer** - seventeen invocations,
+the fifth most-used skill - and it needs the REASONING rather than the history,
+which is why routing is the one log category nothing else can supply. Its
+accepted-suggestion handoff writes config keys directly, and it must relay
+figures unchanged, show the exact proposed tokens, and write nothing before
+acceptance.
+
+**`cad-capture` keeps its accumulation policy even though its lint retires.**
+`lib/capture-writers.mjs` is not only policing direct file writes: it classifies
+capture-producing sites by whether they accumulate durable queue material. A
+binary-only system can still accumulate one unwanted capture per close forever,
+so the retention and accumulation policy survives even though the shell and
+subcommand recognizers do not.
+
+### Phase 13: Landing and milestones
+
+**Goal.** `cad-land`, `cad-milestone` and `cad-undo` run against the binary,
+with the ordering that protects evidence enforced rather than instructed.
+
+**The ordering is the whole phase, and it has no import edge anywhere in the
+frozen tree.** Risk carry, then deferred carry, then prune, then land - it
+exists only as prose at `workflows/milestone.md:103,128`. Individually correct
+modules can still delete the evidence that should have blocked a landing.
+
+**Milestone prune loses its archive mode with `ARCHIVE.md`.** What survives is
+the transaction discipline underneath it: dedup by actual artifact, preserve the
+unreadable-versus-missing distinction, and persist enough before deleting. A
+crash or retry during prune remains possible.
+
+**Landing is where external effects stop being transactional with local
+storage.** A tracker create or a publish can succeed remotely while the reply or
+the local record is lost. Preserve idempotency and reconciliation, avoid blind
+retries of paid or mutating actions, and keep the title-scoped fingerprint
+lookup that stops an already-filed finding being filed twice.
+
+**Authorize before publishing, and confirm the merge before pull, tag or reap.**
+With `git.auto_close` retired, no path publishes or merges without an explicit
+authorization, and phase 16 asserts that absence.
+
+**`cad-undo` mutates permanent workflow files through a prose-directed `git
+revert`**, not an operation-specific writer (`workflows/undo.md:26-38`) - the
+committing and `--no-commit` paths both. That is the last of the missed
+prose-mutation paths and it needs a binary-owned equivalent.
+
+**`cad-undo` uses protected-branch checks only**, not integration advice, and
+rolls back from the SUMMARY's commit manifest. Exact shown hashes only, reverse
+order, no status reset in `--no-commit` mode, and stop on conflict.
+
+### Phase 14: Support
+
+**Goal.** `cad-debug`, `cad-spike` and `cad-help` run against the binary.
+
+`/cad-config`'s command surface is NOT here - it moved to phase 7 with the
+config layer itself, because `cad-new-project` and `cad-adopt` delegate their
+whole Roles interview to it and would otherwise depend on a later phase.
+
+`cad-debug` fires the shared risk-surface reviewer and imports the shared triage
+and re-arm semantics (`workflows/debug.md:120-136`); it does not own review, and
+phase 8 supplies it. `cad-debug` and `cad-spike` persist hypotheses, state and
+verdicts through the binary. Do not lose interruption recovery or the falsifiable criteria recorded
+BEFORE an experiment - that ordering is what makes a spike a spike. Temporary
+experiment material keeps its own lifecycle and is not a permanent write.
+
+`cad-help` is a product requirement, not a nicety, and it is here because John
+reversed its proposed deletion: "if a user can't issue that, we're gonna get
+dinged for it." A self-describing MCP tool list does not replace it.
+
+### Phase 15: Contract enforcement
 
 **Goal.** Obligations that exist today only as prose instructions to a model
 become behavior the binary enforces.
 
-Measured 2026-09-05 across 88 files: **298 command sites** (15 parallel-only,
-4 embedded `node -e` programs), **137 prose-only obligation families** and
-**70 refusal and formatting contract families**. The 298 command sites are
-distributed into the port phases that own them; this phase owns the obligations
-and the refusal contracts, which belong to no single module.
+Measured 2026-09-05 across 88 files: **298 command sites** (15 parallel-only, 4
+embedded `node -e` programs), **137 prose-only obligation families** and **70
+refusal and formatting contract families**. Most of those distribute into the
+cluster that owns them; this phase owns what belongs to no single cluster, plus
+`git-guard`.
 
-**These are the parity breaks a golden-output diff cannot catch**, because their
-failure mode is ordering, timing, cross-session concurrency or an absent
-refusal. The eight ranked worst: preserving risk and deferred evidence before
-prune and land (`cadence-core/workflows/milestone.md:103`); writing completion
-only after a green suite (`skills/cad-executor-contract/SKILL.md:92`); staging
-the actual fix before scanning the index (`cadence-core/workflows/verify.md:274`);
-preserving and consuming re-arm allowances across sessions
-(`cadence-core/references/triage-gate.md:160`); authorizing reused MRs and
-confirming merge before pull, tag or reap (`skills/cad-land/SKILL.md:202`);
-requiring correctly scoped durable evidence before "done"
-(`cadence-core/workflows/task.md:208`); preserving artifact identity and the
-outer provider timeout (`cadence-core/references/review-cross-model.md:98,120`);
-and dispatching exactly the outstanding set including gap plans
-(`cadence-core/workflows/execute.md:74`).
+**These are the parity breaks an output diff cannot catch**, because their
+failure mode is ordering, timing, cross-session state or an ABSENT refusal. The
+ranked worst: preserving risk and deferred evidence before prune and land
+(`workflows/milestone.md:103`); writing completion only after a green suite
+(`skills/cad-executor-contract/SKILL.md:92`); staging the actual fix before
+scanning the index (`workflows/verify.md:274`); preserving and consuming re-arm
+allowances across sessions (`references/triage-gate.md:160`); authorizing reused
+MRs and confirming merge before pull, tag or reap (`skills/cad-land/SKILL.md:202`);
+requiring correctly scoped durable evidence before "done" (`workflows/task.md:208`);
+preserving artifact identity and the outer provider timeout
+(`references/review-cross-model.md:98,120`); and dispatching exactly the
+outstanding set including gap plans (`workflows/execute.md:74`).
 
-### Phase 18: The parity gate
+**`git-guard` is NOT here - it moved to phase 6**, ahead of the sixteen skills
+that commit through it. What remains in this phase is the residue: the
+obligations whose consumer is spread across clusters and which no single one can
+own.
 
-**Goal.** Full parity with `v3.7.12` is asserted, not claimed.
+**The self-verify checks are regenerated, not deleted.** Several recognizers
+become obsolete when MCP calls replace shell invocations, but product grammar,
+risk and gate tests, evidence-provenance checks, config reachability and
+supported-skill references all remain useful. Deleting the module because some
+recognizers retired would discard unrelated guarantees.
 
-The golden harness from phase 2 running over every ported operation, PLUS the
-contract assertions from phase 17. Neither alone is sufficient: output diffs
-miss ordering and concurrency and absent refusals, and contract assertions miss
-byte-level drift.
+**Resource limits are more important under residency, not less.** A hand-edited
+log, a huge project, a broken provider or a repeated call can exhaust memory,
+and a child process that exited used to reclaim descriptors and memory for free.
+Bounded reads, observable truncation, per-operation deadlines, backpressured
+queues and explicit shutdown behavior replace what process exit used to do.
 
-The gate includes the workflow ordering that has no import edge anywhere in the
-tree - risk carry, then deferred carry, then prune, then land. Individually
-correct modules can still delete the evidence that should have blocked a
-landing.
+### Phase 16: The acceptance gate
 
-**Parity is against `v3.7.12` minus what 4.0.0 deliberately retires.** These are
-decisions on record, not shortfalls, and the gate asserts their ABSENCE rather
-than their behavior.
+**Goal.** Parity at the user-facing surface is asserted, not claimed - and it is
+asserted at the scenario boundary, because the CLI-invocation boundary died with
+the port model.
 
-*Parallel execution and everything that serves it* - `planning/plan-overlap.mjs`
-and `worktree-base.mjs`, 14,145 bytes, and zero whole lib modules.
+**Three complementary levels, and none of them is an operation-output diff.**
 
-*`git.auto_close`*, decided 2026-09-05. `README.md:14` promises the engineer
-authorizes every push and `:20` says Cadence is deliberately not an autopilot;
-`git.auto_close` is the shipped arm that does the thing `:20` disclaims
-(GH-247). The JavaScript keeps it - `v3.7.12` is the frozen reference and must
-not move - so this is the one place 4.0.0 is deliberately NOT at parity. It
-deletes `lib/repo-auto-close.mjs` outright (3,088 B), removes `decideGateHalt`
-from `close-decision.mjs`, and simplifies the authorization arm of
-`publish-decision.mjs`. The config key joins `stakes` and `parallelization.*`
-as a retired key. The gate must assert that no path publishes or merges without
-an explicit authorization, which is a contract assertion (phase 17), not an
-output diff.
+1. **Scenario acceptance contracts**, keyed by skill plus mode plus user
+   decisions plus the evidence or failure path. These own public parity. Each
+   names its stop point, because "the skill returned" and "all its effects are
+   durable" are different claims.
+2. **Deterministic domain invariants and state-transition tests** for acceptance
+   ids, UAT first-pass and human ownership, cursor derivation, scoped review and
+   ruling identity, replay, item append and dedup, and safe publish
+   authorization. **Select each invariant because a consumer depends on it, not
+   because a JavaScript function once existed.**
+3. **A small live-model evaluation suite** for plan quality, actual code
+   behavior, question quality and adversarial review grounding. Record evidence
+   and budgets, and do not claim deterministic parity for reasoning quality.
 
-### Phase 19: The release path
+**Where the naive one-skill-one-test unit fails, and the gate must handle it:**
+interactive inputs decide the output, so scripted decisions are part of the
+fixture; model work is nondeterministic, so pin change scope, evidence, commit
+separation and SUMMARY coverage rather than source text; resumption crosses
+invocations and sessions, so pause-then-progress, verify-clear-verify,
+execute-timeout-replay and milestone-then-land are single episodes; advisory
+work outlives the foreground, so test eventual records and crash paths rather
+than an event count taken when the command stops; and external effects are not
+in the fixtures, so stub the forge and keep a small isolated integration suite
+for successful effects.
+
+**Maintain exact identity only where identity is promised** - `cad-why`'s text,
+verbatim finding bodies, `issue-check`'s skip reason. A semantic judge would
+miss those failures; a byte-diff everywhere else pins transport that has
+deliberately changed.
+
+**The gate asserts ABSENCE for what 4.0.0 retired**, which no output diff can
+do because a retired feature produces no output: no parallel path, no
+`git.auto_close`, no reads log, no `ARCHIVE.md`, no `cad-docs-verify`.
+
+**Phase 2's fixtures and normalization rules are the seed corpus.** For each
+assertion carried forward, name its public consumer and translate it into a
+domain or scenario invariant; drop the ones that only pin obsolete transport.
+
+**Write down what is knowingly untested before this phase closes.** An
+acknowledged gap is a decision; an unnoticed one is a bug found later.
+
+### Phase 17: The release path
 
 **Goal.** A tagged release publishes four checksum-verified archives, and a
 machine that starts a session gets the right binary installed without being
 asked.
 
-The `publish` job verifies each archive's sha256 against a pin file committed
-in the plugin and refuses the release on any mismatch. A POSIX shell
-SessionStart hook reads that pin, fetches the platform's archive, verifies it
-and installs the binary at a versioned path. The plugin's `.mcp.json` points at
-that path.
+The `publish` job verifies each archive's sha256 against a pin file committed in
+the plugin and refuses the release on any mismatch. A POSIX shell SessionStart
+hook reads that pin, fetches the platform's archive, verifies it and installs
+the binary at a versioned path. The plugin's `.mcp.json` points at that path.
 
 Scheduled last on purpose. It depends on phase 1's crate, packaging script and
 cross-compile matrix, and the pin cannot be filled until the version being
-released is the one that will carry the archives - which is the `4.0.0`
-landing, not any tag that exists today. Its plan was written as phase 1's
-second plan on 2026-09-05 and moved here the same day; it is on disk at
-`.planning/phases/19/PLAN.md`.
+released is the one that will carry the archives - which is the `4.0.0` landing,
+not any tag that exists today. Its plan was written as phase 1's second plan on
+2026-09-05 and moved out the same day; it is on disk at
+`.planning/phases/17/PLAN.md`.

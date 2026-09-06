@@ -78,32 +78,6 @@ the harness, proven by showing it can fail.
   `STATE.md` and `REQUIREMENTS.md` and seeded `trace.jsonl`, `reads.jsonl` and
   `CAPTURE.md`; a rebuild changes no tracked byte, and the slice bundle answers
   `status` as a live cycle rather than the tag's own closed-milestone answer.
-- **HAR-02**: A committed recorder runs the frozen JavaScript over every runtime
-  operation the parity surface names - every leaf arm of `planning.mjs`'s dispatch
-  and of the sixteen other phase-16 entry scripts, plus `worktree-base resolve` -
-  against a scratch copy of the named bundle under an environment built from
-  scratch, building a throwaway git repository with a pinned identity and dates
-  for the operations that need one, and writes one recording per invocation that
-  carries the exit status, the stdout envelope and, for a write operation, the
-  post-run bytes of every created, changed or deleted file; a refusal's recording
-  carries the JavaScript `reason` literal as its machine code.
-- **HAR-03**: Recordings are deterministic by construction: two consecutive
-  recorder runs, and runs from another working directory, temp root, timezone
-  and locale, produce byte-identical recordings; no recording carries an absolute
-  filesystem path, a hostname or a process id; every clock-derived field is
-  covered by a named rule carried as data in a committed `normalization.json`
-  that the recorder and the Rust test both apply, scoped to the lines an
-  operation wrote, or pinned at its source, rather than scrubbed by a blanket
-  date pattern; every recording names the interpreter major that produced it;
-  the three settings overrides pointed at empty files change no recorded byte;
-  and running with the rules disabled changes a recording, so the pin is shown
-  to have force.
-- **HAR-04**: A drift check regenerates every recording into scratch and compares
-  it against the committed set without touching it, exiting non-zero and naming
-  each recording whose bytes differ - including one changed by a single-byte hand
-  edit - refusing by name a run under a Node major other than the one the
-  recordings carry, and the test workflow runs that check on that major beside
-  the existing jobs.
 - **HAR-05**: The Rust envelope's `refused`, `unknown` and `not-applicable` arms
   serialize a machine `code` field beside the prose `reason`, in the kebab-case
   spelling the JavaScript seam uses, proven by `cargo test`, with the `ok` arm
@@ -262,6 +236,51 @@ true when written.
 `## Deferred` keep their own reasons and are not live scope until a phase picks
 one up.
 
+
+## Retired
+
+Requirements a decision deliberately removed from this cycle. Kept for the
+record, and OUT of `## Active` on purpose so `/cad-audit` does not count them
+as unpicked - exclusion here is by SECTION PLACEMENT, the documented exit at
+`references/req-traceability.md:174-188`. Nothing is owed against a row below.
+
+- **HAR-02**: A committed recorder runs the frozen JavaScript over every runtime
+  operation the parity surface names - every leaf arm of `planning.mjs`'s dispatch
+  and of the sixteen other phase-16 entry scripts, plus `worktree-base resolve` -
+  against a scratch copy of the named bundle under an environment built from
+  scratch, building a throwaway git repository with a pinned identity and dates
+  for the operations that need one, and writes one recording per invocation that
+  carries the exit status, the stdout envelope and, for a write operation, the
+  post-run bytes of every created, changed or deleted file; a refusal's recording
+  carries the JavaScript `reason` literal as its machine code.
+  **RETIRED 2026-09-06 in `7d64c4c9`** with the goldens: the recorder is
+  deleted, and "every runtime operation" is the unit the rearchitecture
+  abandoned. Nothing is owed against this row.
+
+- **HAR-03**: Recordings are deterministic by construction: two consecutive
+  recorder runs, and runs from another working directory, temp root, timezone
+  and locale, produce byte-identical recordings; no recording carries an absolute
+  filesystem path, a hostname or a process id; every clock-derived field is
+  covered by a named rule carried as data in a committed `normalization.json`
+  that the recorder and the Rust test both apply, scoped to the lines an
+  operation wrote, or pinned at its source, rather than scrubbed by a blanket
+  date pattern; every recording names the interpreter major that produced it;
+  the three settings overrides pointed at empty files change no recorded byte;
+  and running with the rules disabled changes a recording, so the pin is shown
+  to have force.
+  **RETIRED 2026-09-06 in `7d64c4c9`** with the goldens. Its determinism
+  DISCIPLINE carries to phase 16 as a roadmap-level constraint, sharpened by
+  the defect this row's own check list missed: it varied working directory,
+  temp root, timezone and locale, and never the REPO PATH.
+
+- **HAR-04**: A drift check regenerates every recording into scratch and compares
+  it against the committed set without touching it, exiting non-zero and naming
+  each recording whose bytes differ - including one changed by a single-byte hand
+  edit - refusing by name a run under a Node major other than the one the
+  recordings carry, and the test workflow runs that check on that major beside
+  the existing jobs.
+  **RETIRED 2026-09-06 in `7d64c4c9`** with the goldens: the `golden-drift`
+  job is removed from `.github/workflows/test.yml` and four jobs remain.
 
 ## Shipped
 
@@ -657,16 +676,13 @@ section only, bounded at the next `## ` heading.
 | BIN-01 | Phase 1 | Complete |
 | BIN-02 | Phase 1 | Complete |
 | REL-01 | Phase 1 | Complete |
-| REL-02 | Phase 19 | Pending |
-| BOT-01 | Phase 19 | Pending |
-| BOT-02 | Phase 19 | Pending |
-| HAR-01 | Phase 2 | Pending |
-| HAR-02 | Phase 2 | Pending |
-| HAR-03 | Phase 2 | Pending |
-| HAR-04 | Phase 2 | Pending |
-| HAR-05 | Phase 2 | Pending |
-| HAR-06 | Phase 2 | Pending |
-| HAR-07 | Phase 2 | Pending |
+| REL-02 | Phase 17 | Pending |
+| BOT-01 | Phase 17 | Pending |
+| BOT-02 | Phase 17 | Pending |
+| HAR-01 | Phase 2 | Complete |
+| HAR-05 | Phase 2 | Complete |
+| HAR-06 | Phase 16 | Deferred |
+| HAR-07 | Phase 16 | Deferred |
 
 
 Empty between milestones. `v3.7.1`'s ten rows moved to `## Shipped` at its
