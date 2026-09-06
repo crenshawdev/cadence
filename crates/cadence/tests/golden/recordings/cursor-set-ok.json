@@ -36,12 +36,12 @@
       "name": "Archived phase",
       "status": "planned",
       "next": "/cad-execute 1",
-      "updated": "2026-09-06"
+      "updated": "<TODAY>"
     }
   },
   "stderr": "",
   "files": {
-    ".planning/STATE.md": "# State\n\nPhase: 1 of 2 (Archived phase)\nStatus: planned\nNext: /cad-execute 1\nUpdated: 2026-09-06\n"
+    ".planning/STATE.md": "# State\n\nPhase: 1 of 2 (Archived phase)\nStatus: planned\nNext: /cad-execute 1\nUpdated: <TODAY>\n"
   },
   "deleted": []
 }
