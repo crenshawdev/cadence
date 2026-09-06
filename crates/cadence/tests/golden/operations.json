@@ -4,7 +4,11 @@
     "operation": "status",
     "bundle": "slice",
     "script": "cadence-core/bin/planning.mjs",
-    "argv": ["status", "--dir", "<FIXTURE>/.planning"],
+    "argv": [
+      "status",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
     "git": false
   },
   {
@@ -12,7 +16,13 @@
     "operation": "replay-check",
     "bundle": "slice",
     "script": "cadence-core/bin/planning.mjs",
-    "argv": ["replay-check", "--phase", "1", "--dir", "<FIXTURE>/.planning"],
+    "argv": [
+      "replay-check",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
     "git": false
   },
   {
@@ -20,7 +30,12 @@
     "operation": "cursor get",
     "bundle": "slice",
     "script": "cadence-core/bin/planning.mjs",
-    "argv": ["cursor", "get", "--dir", "<FIXTURE>/.planning"],
+    "argv": [
+      "cursor",
+      "get",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
     "git": false
   },
   {
@@ -28,7 +43,13 @@
     "operation": "plan-overlap",
     "bundle": "slice",
     "script": "cadence-core/bin/planning.mjs",
-    "argv": ["plan-overlap", "--phase", "1", "--dir", "<FIXTURE>/.planning"],
+    "argv": [
+      "plan-overlap",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
     "git": false
   },
   {
@@ -36,7 +57,1379 @@
     "operation": "plan-overlap",
     "bundle": "slice",
     "script": "cadence-core/bin/planning.mjs",
-    "argv": ["plan-overlap", "--phase", "9", "--dir", "<FIXTURE>/.planning"],
+    "argv": [
+      "plan-overlap",
+      "--phase",
+      "9",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "status-refused",
+    "operation": "status",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "status",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "cursor-get-refused",
+    "operation": "cursor get",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "cursor",
+      "get",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "cursor-set-ok",
+    "operation": "cursor set",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "cursor",
+      "set",
+      "--phase",
+      "1",
+      "--status",
+      "executing",
+      "--next",
+      "/cad-execute 1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "cursor-set-refused",
+    "operation": "cursor set",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "cursor",
+      "set",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "phase-done-ok",
+    "operation": "phase-done",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "phase-done",
+      "--n",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "phase-done-refused",
+    "operation": "phase-done",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "phase-done",
+      "--n",
+      "9",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "uat-init-ok",
+    "operation": "uat init",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "init",
+      "--phase",
+      "2",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false,
+    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]"
+  },
+  {
+    "invocation": "uat-init-refused",
+    "operation": "uat init",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "init",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false,
+    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]"
+  },
+  {
+    "invocation": "uat-refresh-ok",
+    "operation": "uat refresh",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "refresh",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false,
+    "stdin": "[{\"name\":\"Golden item\",\"expected\":\"A result\",\"criterion\":\"AC1\"}]"
+  },
+  {
+    "invocation": "uat-refresh-refused",
+    "operation": "uat refresh",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "refresh",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false,
+    "stdin": "{}"
+  },
+  {
+    "invocation": "uat-record-ok",
+    "operation": "uat record",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "record",
+      "--phase",
+      "1",
+      "--item",
+      "1",
+      "--result",
+      "pass",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "uat-record-refused",
+    "operation": "uat record",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "record",
+      "--phase",
+      "1",
+      "--item",
+      "999",
+      "--result",
+      "pass",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "uat-merge-ok",
+    "operation": "uat merge",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "merge",
+      "--phase",
+      "1",
+      "--payload",
+      "<FIXTURE>/uat-merge.json",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "uat-merge-refused",
+    "operation": "uat merge",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "merge",
+      "--phase",
+      "1",
+      "--payload",
+      "<FIXTURE>/invalid.json",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "uat-status-ok",
+    "operation": "uat status",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "status",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "uat-status-refused",
+    "operation": "uat status",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "uat",
+      "status",
+      "--phase",
+      "9",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "reads-ok",
+    "operation": "reads",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "reads",
+      "--join",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "reads-refused",
+    "operation": "reads",
+    "bundle": "unreadable-reads",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "reads",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "audit-ok",
+    "operation": "audit",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "audit",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "audit-refused",
+    "operation": "audit",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "audit",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "criteria-coverage-ok",
+    "operation": "criteria-coverage",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "criteria-coverage",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "criteria-coverage-refused",
+    "operation": "criteria-coverage",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "criteria-coverage",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "criteria-size-ok",
+    "operation": "criteria-size",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "criteria-size",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "criteria-size-refused",
+    "operation": "criteria-size",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "criteria-size",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "replay-check-refused",
+    "operation": "replay-check",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "replay-check",
+      "--phase",
+      "9",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "plan-size-ok",
+    "operation": "plan-size",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "plan-size",
+      "--phase",
+      "1",
+      "--max-tasks",
+      "8",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "plan-size-refused",
+    "operation": "plan-size",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "plan-size",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "cite-count-ok",
+    "operation": "cite-count",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "cite-count",
+      "--phase",
+      "1",
+      "--payload",
+      "<FIXTURE>/recall.json",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "cite-count-refused",
+    "operation": "cite-count",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "cite-count",
+      "--phase",
+      "1",
+      "--point",
+      "invalid",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "seed-reqs-ok",
+    "operation": "seed-reqs",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "seed-reqs",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "seed-reqs-refused",
+    "operation": "seed-reqs",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "seed-reqs",
+      "--phase",
+      "9",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "recall-ok",
+    "operation": "recall",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "recall",
+      "trace",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "recall-refused",
+    "operation": "recall",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "recall",
+      "trace",
+      "--top",
+      "0",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "task-record-ok",
+    "operation": "task-record",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "task-record",
+      "--slug",
+      "golden-task",
+      "--base",
+      "<BASE>",
+      "--head",
+      "<HEAD>",
+      "--text",
+      "Record the source change.",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as BASE, then a second commit appending a source line to src/auth.mjs as HEAD."
+  },
+  {
+    "invocation": "task-record-refused",
+    "operation": "task-record",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "task-record",
+      "--slug",
+      "invalid/slug",
+      "--base",
+      "<BASE>",
+      "--head",
+      "<HEAD>",
+      "--text",
+      "Refused.",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as BASE, then a second commit appending a source line to src/auth.mjs as HEAD."
+  },
+  {
+    "invocation": "lease-check-ok",
+    "operation": "lease-check",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "lease-check",
+      "--phase",
+      "1",
+      "--plan",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as BASE and HEAD, then append a source line to src/auth.mjs and stage that path as the staged uncommitted set; the plan leases src/auth.mjs."
+  },
+  {
+    "invocation": "lease-check-refused",
+    "operation": "lease-check",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "lease-check",
+      "--phase",
+      "9",
+      "--plan",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as BASE and HEAD, then append a source line to src/auth.mjs and stage that path as the staged uncommitted set; the plan leases src/auth.mjs."
+  },
+  {
+    "invocation": "detect-commands-ok",
+    "operation": "detect-commands",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "detect-commands",
+      "--root",
+      "<FIXTURE>",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "detect-commands-refused",
+    "operation": "detect-commands",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "detect-commands",
+      "--root",
+      "<FIXTURE>/missing",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "detect-surfaces-ok",
+    "operation": "detect-surfaces",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "detect-surfaces",
+      "--root",
+      "<FIXTURE>",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "detect-surfaces-refused",
+    "operation": "detect-surfaces",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "detect-surfaces",
+      "--root",
+      "<FIXTURE>/missing",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-append-ok",
+    "operation": "trace append",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "append",
+      "--phase",
+      "1",
+      "--family",
+      "lifecycle",
+      "--event",
+      "phase_start",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-append-refused",
+    "operation": "trace append",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "append",
+      "--phase",
+      "1",
+      "--family",
+      "invalid",
+      "--event",
+      "phase_start",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-close-ok",
+    "operation": "trace close",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "close",
+      "--phase",
+      "1",
+      "--plan",
+      "1",
+      "--role",
+      "cad-executor",
+      "--replay",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "trace-close-refused",
+    "operation": "trace close",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "close",
+      "--phase",
+      "1",
+      "--duration-ms",
+      "invalid",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "trace-render-ok",
+    "operation": "trace render",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "render",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-render-refused",
+    "operation": "trace render",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "render",
+      "--phase",
+      "invalid",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-window-ok",
+    "operation": "trace window",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "window",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-window-refused",
+    "operation": "trace window",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "window",
+      "--phase",
+      "invalid",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-suggest-ok",
+    "operation": "trace suggest",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "suggest",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-suggest-refused",
+    "operation": "trace suggest",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "suggest",
+      "--phase",
+      "invalid",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-ignore-ok",
+    "operation": "trace ignore",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "ignore",
+      "--root",
+      "<FIXTURE>",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "trace-ignore-refused",
+    "operation": "trace ignore",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "trace",
+      "ignore",
+      "--root",
+      "<FIXTURE>/missing",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "risk-check-run-ok",
+    "operation": "risk-check run",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "risk-check",
+      "run",
+      "--phase",
+      "1",
+      "--plan",
+      "1",
+      "--base",
+      "<BASE>",
+      "--head",
+      "<HEAD>",
+      "--surfaces",
+      "auth",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as BASE, then a second commit touching the auth risk-surface path src/auth.mjs as HEAD."
+  },
+  {
+    "invocation": "risk-check-run-refused",
+    "operation": "risk-check run",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "risk-check",
+      "run",
+      "--phase",
+      "1",
+      "--base",
+      "<BASE>",
+      "--head",
+      "<HEAD>",
+      "--staged",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as BASE, then a second commit touching the auth risk-surface path src/auth.mjs as HEAD."
+  },
+  {
+    "invocation": "risk-check-status-ok",
+    "operation": "risk-check status",
+    "bundle": "risk-recorded",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "risk-check",
+      "status",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "risk-check-status-refused",
+    "operation": "risk-check status",
+    "bundle": "risk-recorded",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "risk-check",
+      "status",
+      "--phase",
+      "1",
+      "--plan",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "adjudication-ok",
+    "operation": "adjudication",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "adjudication",
+      "--phase",
+      "1",
+      "--trigger",
+      "risk_surface",
+      "--discriminator",
+      "golden",
+      "--base",
+      "<BASE>",
+      "--head",
+      "<HEAD>",
+      "--payload",
+      "<FIXTURE>/adjudication.json",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "adjudication-refused",
+    "operation": "adjudication",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "adjudication",
+      "--phase",
+      "1",
+      "--trigger",
+      "risk_surface",
+      "--discriminator",
+      "golden",
+      "--base",
+      "<BASE>",
+      "--head",
+      "<HEAD>",
+      "--payload",
+      "<FIXTURE>/invalid.json",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "deferred-record-ok",
+    "operation": "deferred record",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "deferred",
+      "record",
+      "--phase",
+      "1",
+      "--trigger",
+      "risk_surface",
+      "--discriminator",
+      "golden",
+      "--base",
+      "<BASE>",
+      "--head",
+      "<HEAD>",
+      "--payload",
+      "<FIXTURE>/findings.json",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "deferred-record-refused",
+    "operation": "deferred record",
+    "bundle": "planning-inputs",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "deferred",
+      "record",
+      "--phase",
+      "1",
+      "--trigger",
+      "risk_surface",
+      "--discriminator",
+      "golden",
+      "--base",
+      "<BASE>",
+      "--head",
+      "<HEAD>",
+      "--payload",
+      "<FIXTURE>/invalid.json",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "risk-carry-ok",
+    "operation": "risk-carry",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "risk-carry",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "risk-carry-refused",
+    "operation": "risk-carry",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "risk-carry",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "deferred-list-ok",
+    "operation": "deferred list",
+    "bundle": "deferred",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "deferred",
+      "list",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "deferred-list-refused",
+    "operation": "deferred list",
+    "bundle": "deferred",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "deferred",
+      "list",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "deferred-carry-ok",
+    "operation": "deferred carry",
+    "bundle": "deferred",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "deferred",
+      "carry",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "deferred-carry-refused",
+    "operation": "deferred carry",
+    "bundle": "deferred",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "deferred",
+      "carry",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/missing"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "capture-ok",
+    "operation": "capture",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "capture",
+      "--kind",
+      "todo",
+      "--text",
+      "Exercise the capture queue.",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "capture-refused",
+    "operation": "capture",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "capture",
+      "--kind",
+      "invalid",
+      "--text",
+      "Refused.",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "capture-sections-ok",
+    "operation": "capture-sections",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "capture-sections",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "capture-sections-refused",
+    "operation": "capture-sections",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "capture-sections",
+      "--file",
+      "<FIXTURE>/.planning",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "capture-check-ok",
+    "operation": "capture-check",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "capture-check",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "capture-check-refused",
+    "operation": "capture-check",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "capture-check",
+      "--file",
+      "<FIXTURE>/.planning",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "debt-harvest-ok",
+    "operation": "debt-harvest",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "debt-harvest",
+      "--root",
+      "<FIXTURE>",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "debt-harvest-refused",
+    "operation": "debt-harvest",
+    "bundle": "project",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "debt-harvest",
+      "--root",
+      "<FIXTURE>/missing",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "renumber-insert-ok",
+    "operation": "renumber insert",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "renumber",
+      "insert",
+      "--at",
+      "2",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "renumber-insert-refused",
+    "operation": "renumber insert",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "renumber",
+      "insert",
+      "--at",
+      "99",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "renumber-remove-ok",
+    "operation": "renumber remove",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "renumber",
+      "remove",
+      "--n",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "renumber-remove-refused",
+    "operation": "renumber remove",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "renumber",
+      "remove",
+      "--n",
+      "99",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": true,
+    "setup": "Commit the bundle as the base commit; HEAD equals BASE."
+  },
+  {
+    "invocation": "milestone-prune-ok",
+    "operation": "milestone-prune",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "milestone-prune",
+      "--label",
+      "golden",
+      "--mode",
+      "archive",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "milestone-prune-refused",
+    "operation": "milestone-prune",
+    "bundle": "slice",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "milestone-prune",
+      "--label",
+      "golden",
+      "--mode",
+      "invalid",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "status-closed",
+    "operation": "status",
+    "bundle": "closed",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "status",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "replay-check-multi",
+    "operation": "replay-check",
+    "bundle": "multi",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "replay-check",
+      "--phase",
+      "5",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "plan-overlap-multi",
+    "operation": "plan-overlap",
+    "bundle": "multi",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "plan-overlap",
+      "--phase",
+      "5",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "audit-multi",
+    "operation": "audit",
+    "bundle": "multi",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "audit",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "replay-check-incomplete",
+    "operation": "replay-check",
+    "bundle": "incomplete",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "replay-check",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
+    "git": false
+  },
+  {
+    "invocation": "plan-overlap-malformed",
+    "operation": "plan-overlap",
+    "bundle": "malformed",
+    "script": "cadence-core/bin/planning.mjs",
+    "argv": [
+      "plan-overlap",
+      "--phase",
+      "1",
+      "--dir",
+      "<FIXTURE>/.planning"
+    ],
     "git": false
   }
 ]
