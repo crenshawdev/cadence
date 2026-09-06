@@ -2,12 +2,13 @@
 mod capture;
 mod model;
 mod parse;
+mod query;
 pub use capture::{ArtifactFiles, ArtifactIo, capture_inputs};
 pub use model::*;
 pub use parse::{parse_roadmap, parse_uat};
+pub use query::{PreparedLifecycle, RecheckedLifecycle, prepare_query, query, recheck_query};
 
-/// Availability is checked before interpreting any evidence as lifecycle state.
-pub(crate) fn validate_inputs(capture: &CapturedInputs) -> Result<&ParsedRoadmap, DerivationError> {
+fn validate_observation_failures(capture: &CapturedInputs) -> Result<(), DerivationError> {
     fn check<T>(observation: &Observation<T>) -> Result<(), DerivationError> {
         if let Observation::Failed(error) = observation {
             return Err(DerivationError::InputFailure(error.clone()));
@@ -15,21 +16,27 @@ pub(crate) fn validate_inputs(capture: &CapturedInputs) -> Result<&ParsedRoadmap
         Ok(())
     }
     check(&capture.root_probe)?;
+    check(&capture.roadmap)?;
+    for phase in &capture.phases {
+        check(&phase.plans)?;
+        check(&phase.summary)?;
+        check(&phase.uat)?;
+    }
+    Ok(())
+}
+
+/// Availability is checked before interpreting any evidence as lifecycle state.
+pub(crate) fn validate_inputs(capture: &CapturedInputs) -> Result<&ParsedRoadmap, DerivationError> {
+    validate_observation_failures(capture)?;
     if matches!(capture.root_probe, Observation::Absent) {
         return Err(DerivationError::MissingPlanningRoot {
             path: capture.root.clone(),
         });
     }
-    check(&capture.roadmap)?;
     if matches!(capture.roadmap, Observation::Absent) {
         return Err(DerivationError::MissingRoadmap {
             path: capture.root.join("ROADMAP.md"),
         });
-    }
-    for phase in &capture.phases {
-        check(&phase.plans)?;
-        check(&phase.summary)?;
-        check(&phase.uat)?;
     }
     capture
         .declarations

@@ -80,6 +80,369 @@ fn denial(path: &str) -> InputFailure {
     }
 }
 
+/// Switch snapshots at the second root resolution, precisely between the
+/// production preparation and recheck. No domain implementation is replaced.
+struct ChangingIo {
+    before: MemoryIo,
+    after: MemoryIo,
+    captures: usize,
+}
+
+impl ChangingIo {
+    fn new(before: MemoryIo, after: MemoryIo) -> Self {
+        Self {
+            before,
+            after,
+            captures: 0,
+        }
+    }
+    fn active(&mut self) -> &mut MemoryIo {
+        if self.captures < 2 {
+            &mut self.before
+        } else {
+            &mut self.after
+        }
+    }
+}
+
+impl ArtifactIo for ChangingIo {
+    fn resolve_root(&mut self, selected: &Path) -> Result<PathBuf, InputFailure> {
+        self.captures += 1;
+        self.active().resolve_root(selected)
+    }
+    fn probe_root(&mut self, path: &Path) -> Observation<()> {
+        self.active().probe_root(path)
+    }
+    fn list_phase(&mut self, path: &Path) -> Observation<Vec<String>> {
+        self.active().list_phase(path)
+    }
+    fn probe_summary(&mut self, path: &Path) -> Observation<()> {
+        self.active().probe_summary(path)
+    }
+    fn read(&mut self, path: &Path) -> Observation<Vec<u8>> {
+        self.active().read(path)
+    }
+}
+
+struct DenialAsAbsence<I>(I);
+
+fn swallow<T>(value: Observation<T>) -> Observation<T> {
+    match value {
+        Observation::Failed(_) => Observation::Absent,
+        value => value,
+    }
+}
+
+impl<I: ArtifactIo> ArtifactIo for DenialAsAbsence<I> {
+    fn resolve_root(&mut self, selected: &Path) -> Result<PathBuf, InputFailure> {
+        self.0.resolve_root(selected)
+    }
+    fn probe_root(&mut self, path: &Path) -> Observation<()> {
+        swallow(self.0.probe_root(path))
+    }
+    fn list_phase(&mut self, path: &Path) -> Observation<Vec<String>> {
+        swallow(self.0.list_phase(path))
+    }
+    fn probe_summary(&mut self, path: &Path) -> Observation<()> {
+        swallow(self.0.probe_summary(path))
+    }
+    fn read(&mut self, path: &Path) -> Observation<Vec<u8>> {
+        swallow(self.0.read(path))
+    }
+}
+
+// The consumer intentionally knows nothing about artifact truth tables. It
+// replaces its existing memo only when the supplied query returns success.
+fn publication_guard(
+    result: Result<Lifecycle, DerivationError>,
+    expected: &DerivationError,
+) -> Result<(), String> {
+    let prior = b"existing memo: retain these exact bytes\n".to_vec();
+    let mut memo = prior.clone();
+    let mut publications = 0;
+    let error = match result {
+        Ok(answer) => {
+            memo = serde_json::to_vec(&answer).unwrap();
+            publications += 1;
+            None
+        }
+        Err(error) => Some(error),
+    };
+    if error.as_ref() != Some(expected) || publications != 0 || memo != prior {
+        return Err(format!(
+            "error={error:?}, publications={publications}, prior_preserved={}",
+            memo == prior
+        ));
+    }
+    Ok(())
+}
+
+fn run_query(io: &mut impl ArtifactIo) -> Result<Lifecycle, DerivationError> {
+    query(Path::new("/planning"), io).map(|candidate| candidate.answer().clone())
+}
+
+fn change_cases() -> Vec<(&'static str, MemoryIo, MemoryIo)> {
+    let mut pending = MemoryIo::one();
+    pending.probes.insert(
+        "/planning/phases/1/SUMMARY.md".into(),
+        Observation::Present(()),
+    );
+    pending.reads.insert(
+        "/planning/phases/1/UAT.md".into(),
+        Observation::Present(b"### 1. Item\nstatus: pending".to_vec()),
+    );
+    let mut pass = pending.clone();
+    pass.reads.insert(
+        "/planning/phases/1/UAT.md".into(),
+        Observation::Present(b"### 1. Item\nstatus: pass".to_vec()),
+    );
+    let mut complete = pass.clone();
+    complete.reads.insert(
+        "/planning/ROADMAP.md".into(),
+        Observation::Present(roadmap("- [x] **Phase 1: One**")),
+    );
+    let mut disappeared = complete.clone();
+    disappeared
+        .probes
+        .remove(Path::new("/planning/phases/1/SUMMARY.md"));
+    let mut absent = pass.clone();
+    absent
+        .probes
+        .remove(Path::new("/planning/phases/1/SUMMARY.md"));
+    vec![
+        ("UAT byte change", pending, pass.clone()),
+        ("SUMMARY appearance", absent, pass),
+        ("SUMMARY disappearance", complete, disappeared),
+    ]
+}
+
+#[test]
+fn ac7_changes_refuse_candidate_and_preserve_prior_memo() {
+    for (label, before, after) in change_cases() {
+        let mut io = ChangingIo::new(before, after);
+        let result = run_query(&mut io);
+        assert_eq!(
+            result.as_ref().unwrap_err().code(),
+            "inputs-changed",
+            "{label}"
+        );
+        assert_eq!(io.captures, 2);
+        assert_eq!(
+            publication_guard(result, &DerivationError::InputsChanged),
+            Ok(()),
+            "{label}"
+        );
+    }
+}
+
+#[test]
+fn ac7_omitted_recheck_mutant_fails_same_publication_guard() {
+    for (label, before, after) in change_cases() {
+        let mut io = ChangingIo::new(before, after);
+        let omitted = prepare_query(Path::new("/planning"), &mut io)
+            .map(|prepared| prepared.answer().clone());
+        assert_eq!(io.captures, 1);
+        assert!(
+            publication_guard(omitted, &DerivationError::InputsChanged).is_err(),
+            "mutant survived: {label}"
+        );
+    }
+}
+
+fn denied(operation: &str, path: &str) -> MemoryIo {
+    let mut io = MemoryIo::one();
+    match operation {
+        "root" | "summary" => {
+            io.probes
+                .insert(path.into(), Observation::Failed(denial(path)));
+        }
+        "list" => {
+            io.lists
+                .insert(path.into(), Observation::Failed(denial(path)));
+        }
+        _ => {
+            io.reads
+                .insert(path.into(), Observation::Failed(denial(path)));
+        }
+    }
+    io
+}
+
+const DENIALS: [(&str, &str); 5] = [
+    ("root", "/planning"),
+    ("read", "/planning/ROADMAP.md"),
+    ("list", "/planning/phases/1"),
+    ("summary", "/planning/phases/1/SUMMARY.md"),
+    ("read", "/planning/phases/1/UAT.md"),
+];
+
+#[test]
+fn ac7_read_list_probe_denials_refuse_at_prepare_and_recheck() {
+    for (operation, path) in DENIALS {
+        for second in [false, true] {
+            let after = denied(operation, path);
+            let before = if second {
+                MemoryIo::one()
+            } else {
+                after.clone()
+            };
+            let mut io = ChangingIo::new(before, after);
+            let result = run_query(&mut io);
+            assert_eq!(result.as_ref().unwrap_err().code(), "input-error");
+            assert_eq!(
+                publication_guard(result, &DerivationError::InputFailure(denial(path))),
+                Ok(()),
+                "{operation} {path} second={second}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ac7_denial_as_absence_mutant_fails_same_publication_guard() {
+    for (operation, path) in DENIALS {
+        let mut io = DenialAsAbsence(denied(operation, path));
+        let result = run_query(&mut io);
+        assert!(
+            publication_guard(result, &DerivationError::InputFailure(denial(path))).is_err(),
+            "mutant survived: {path}"
+        );
+    }
+}
+
+#[test]
+fn ac7_ordinary_absence_keeps_truth_table_and_same_capture() {
+    for (plan, summary, uat, status) in [
+        (false, false, None, LifecycleStatus::Unplanned),
+        (true, false, None, LifecycleStatus::Planned),
+        (false, true, None, LifecycleStatus::Executed),
+        (false, true, Some(""), LifecycleStatus::Executed),
+        (
+            false,
+            true,
+            Some("---\nstatus: complete\n---"),
+            LifecycleStatus::Executed,
+        ),
+        (
+            false,
+            true,
+            Some("### 1. Item\nstatus: pass"),
+            LifecycleStatus::Complete,
+        ),
+        (
+            true,
+            true,
+            Some("### 1. Item\nstatus: pass"),
+            LifecycleStatus::Complete,
+        ),
+    ] {
+        let mut io = MemoryIo::one();
+        if plan {
+            io.lists.insert(
+                "/planning/phases/1".into(),
+                Observation::Present(vec!["PLAN.md".into()]),
+            );
+        }
+        if summary {
+            io.probes.insert(
+                "/planning/phases/1/SUMMARY.md".into(),
+                Observation::Present(()),
+            );
+        }
+        if let Some(text) = uat {
+            io.reads.insert(
+                "/planning/phases/1/UAT.md".into(),
+                Observation::Present(text.as_bytes().to_vec()),
+            );
+        }
+        if status == LifecycleStatus::Complete {
+            io.reads.insert(
+                "/planning/ROADMAP.md".into(),
+                Observation::Present(roadmap("- [x] **Phase 1: One**")),
+            );
+        }
+        let prepared = prepare_query(Path::new("/planning"), &mut io).unwrap();
+        let rechecked = recheck_query(&prepared, &mut io).unwrap();
+        assert_eq!(prepared.capture(), rechecked.capture());
+        assert_eq!(prepared.answer(), rechecked.answer());
+        assert_eq!(rechecked.answer().phases[0].status, status);
+        assert_eq!(run_query(&mut io).unwrap(), *rechecked.answer());
+    }
+}
+
+#[test]
+fn ac7_other_named_changes_refuse_but_excluded_names_do_not() {
+    for change in [
+        "root absent",
+        "roadmap absent",
+        "roadmap invalid",
+        "plan appearance",
+        "UAT absent to empty",
+    ] {
+        let before = MemoryIo::one();
+        let mut after = before.clone();
+        match change {
+            "root absent" => {
+                after.probes.remove(Path::new("/planning"));
+            }
+            "roadmap absent" => {
+                after.reads.remove(Path::new("/planning/ROADMAP.md"));
+            }
+            "roadmap invalid" => {
+                after.reads.insert(
+                    "/planning/ROADMAP.md".into(),
+                    Observation::Present(b"invalid".to_vec()),
+                );
+            }
+            "plan appearance" => {
+                after.lists.insert(
+                    "/planning/phases/1".into(),
+                    Observation::Present(vec!["PLAN.md".into()]),
+                );
+            }
+            _ => {
+                after.reads.insert(
+                    "/planning/phases/1/UAT.md".into(),
+                    Observation::Present(vec![]),
+                );
+            }
+        }
+        assert_eq!(
+            publication_guard(
+                run_query(&mut ChangingIo::new(before, after)),
+                &DerivationError::InputsChanged
+            ),
+            Ok(()),
+            "{change}"
+        );
+    }
+    let mut before = MemoryIo::one();
+    before.lists.insert(
+        "/planning/phases/1".into(),
+        Observation::Present(vec![
+            "PLAN-2.md".into(),
+            "PLAN-1.md".into(),
+            "CONTEXT.md".into(),
+        ]),
+    );
+    let mut after = before.clone();
+    after.lists.insert(
+        "/planning/phases/1".into(),
+        Observation::Present(vec![
+            "STATE.md".into(),
+            "PLAN-1.md".into(),
+            "PLAN-2.md".into(),
+        ]),
+    );
+    assert_eq!(
+        run_query(&mut ChangingIo::new(before, after))
+            .unwrap()
+            .phases[0]
+            .status,
+        LifecycleStatus::Planned
+    );
+}
+
 #[test]
 fn capture_matching_directories_count_and_dangling_summary_is_absent() {
     let temp = tempfile::tempdir().unwrap();
