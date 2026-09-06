@@ -57,7 +57,3 @@ globset = "0.4.20"
 # and phase 19 archive checksums are untouched. insta renders comparison
 # failures; tempfile holds writable fixtures and negative-control copies; regex
 # applies shared rules in the same dialect subset as the JavaScript recorder.
-[dev-dependencies]
-insta = "1"
-tempfile = "3"
-regex = "1"
