@@ -132,9 +132,19 @@ pub struct CapturedInputs {
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DerivationError {
-    MissingPlanningRoot { path: PathBuf },
-    MissingRoadmap { path: PathBuf },
-    InvalidRoadmap { detail: String },
+    InvalidStatus {
+        source: String,
+        original_status: String,
+    },
+    MissingPlanningRoot {
+        path: PathBuf,
+    },
+    MissingRoadmap {
+        path: PathBuf,
+    },
+    InvalidRoadmap {
+        detail: String,
+    },
     InputFailure(InputFailure),
     InputsChanged,
 }
@@ -142,6 +152,7 @@ pub enum DerivationError {
 impl DerivationError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::InvalidStatus { .. } => "invalid-status",
             Self::MissingPlanningRoot { .. } => "missing-planning-root",
             Self::MissingRoadmap { .. } => "missing-roadmap",
             Self::InvalidRoadmap { .. } => "invalid-roadmap",
@@ -157,3 +168,36 @@ impl std::fmt::Display for DerivationError {
     }
 }
 impl std::error::Error for DerivationError {}
+
+/// Untouched compatibility evidence, including fields from unavailable input.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CursorProvenance {
+    pub source: String,
+    pub original_cursor: serde_json::Value,
+    pub source_bytes: Option<Vec<u8>>,
+    pub phase: Option<PhaseId>,
+    pub total: Option<u64>,
+    pub name: Option<String>,
+    pub original_status: Option<String>,
+    pub next: Option<String>,
+    pub updated: Option<String>,
+    pub original_fields: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CompatibilityCursor {
+    Unavailable(CursorProvenance),
+    Assertion {
+        status: LifecycleStatus,
+        provenance: CursorProvenance,
+    },
+    Held(CursorProvenance),
+}
+
+impl CompatibilityCursor {
+    pub fn provenance(&self) -> &CursorProvenance {
+        match self {
+            Self::Unavailable(p) | Self::Held(p) | Self::Assertion { provenance: p, .. } => p,
+        }
+    }
+}

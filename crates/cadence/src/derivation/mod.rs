@@ -1,9 +1,11 @@
 //! Captured artifact evidence and synchronous lifecycle derivation.
 mod capture;
+mod compatibility;
 mod model;
 mod parse;
 mod query;
 pub use capture::{ArtifactFiles, ArtifactIo, capture_inputs};
+pub use compatibility::{normalize_imported_cursor, normalize_legacy_state};
 pub use model::*;
 pub use parse::{parse_roadmap, parse_uat};
 pub use query::{PreparedLifecycle, RecheckedLifecycle, prepare_query, query, recheck_query};

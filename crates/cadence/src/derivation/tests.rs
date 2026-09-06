@@ -639,3 +639,205 @@ fn contract_absent_empty_failed_are_distinct() {
         round_trip(&value);
     }
 }
+
+fn imported_cursor(status: &str, phase: u64, total: u64) -> serde_json::Value {
+    serde_json::json!({"available": true, "phase": phase, "total": total, "name": "Three",
+        "status": status, "next": "  /cad-plan 3 --exact\t ", "updated": "2026-09-06",
+        "original_fields": {"phase": format!("{phase} of {total} (Three)"), "status": status,
+            "next": "  /cad-plan 3 --exact\t ", "updated": "2026-09-06", "extra": [null, "retained"]},
+        "extra": {"keep": true}})
+}
+
+fn legacy_state(status: &str) -> String {
+    format!(
+        "# State\nPhase: 3 of 4 (Three)\nStatus: {status}\nNext:  /cad-plan 3 --exact\t \nUpdated: 2026-09-06\n"
+    )
+}
+
+#[test]
+fn ac5_normalize_aliases_and_exact_provenance_on_both_paths() {
+    use LifecycleStatus::*;
+    for (word, expected) in [
+        ("unplanned", Unplanned),
+        ("ready to plan", Unplanned),
+        ("context gathered", Unplanned),
+        ("planned", Planned),
+        ("executed", Executed),
+        ("complete", Complete),
+        ("phase complete", Complete),
+    ] {
+        let raw = imported_cursor(word, 3, 4);
+        let before = raw.clone();
+        let normalized = normalize_imported_cursor(&raw).unwrap();
+        assert!(
+            matches!(&normalized, CompatibilityCursor::Assertion { status, .. } if *status == expected)
+        );
+        let p = normalized.provenance();
+        assert_eq!(p.original_cursor, before);
+        assert_eq!(p.original_fields.as_ref(), raw.get("original_fields"));
+        assert_eq!(p.next.as_deref(), raw["next"].as_str());
+        assert_eq!(raw, before);
+        let state = legacy_state(word);
+        let normalized = normalize_legacy_state(state.as_bytes()).unwrap();
+        assert!(
+            matches!(&normalized, CompatibilityCursor::Assertion { status, .. } if *status == expected)
+        );
+        assert_eq!(
+            normalized.provenance().source_bytes.as_deref(),
+            Some(state.as_bytes())
+        );
+        assert_eq!(
+            normalized.provenance().next.as_deref(),
+            Some("/cad-plan 3 --exact")
+        );
+    }
+    for normalized in [
+        normalize_imported_cursor(&imported_cursor("paused", 3, 4)),
+        normalize_legacy_state(legacy_state("paused").as_bytes()),
+    ] {
+        assert!(matches!(normalized.unwrap(), CompatibilityCursor::Held(_)));
+    }
+    for word in ["surprised", "Planned", "UNPLANNED"] {
+        for (source, result) in [
+            (
+                "data.cursor",
+                normalize_imported_cursor(&imported_cursor(word, 3, 4)),
+            ),
+            (
+                "STATE.md",
+                normalize_legacy_state(legacy_state(word).as_bytes()),
+            ),
+        ] {
+            let error = result.unwrap_err();
+            assert_eq!(error.code(), "invalid-status");
+            assert_eq!(
+                error,
+                DerivationError::InvalidStatus {
+                    source: source.into(),
+                    original_status: word.into()
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn ac5_normalize_blank_name_and_next_are_line_bounded_native_constraints() {
+    for (old, new) in [
+        ("(Three)", "(   )"),
+        ("Next:  /cad-plan 3 --exact\t ", "Next:"),
+        ("Next:  /cad-plan 3 --exact\t ", "Next: \t "),
+    ] {
+        let state = legacy_state("unplanned").replace(old, new);
+        let result = normalize_legacy_state(state.as_bytes()).unwrap();
+        assert!(
+            matches!(result, CompatibilityCursor::Unavailable(_)),
+            "{state}"
+        );
+        assert_eq!(
+            result.provenance().source_bytes.as_deref(),
+            Some(state.as_bytes())
+        );
+    }
+    for (key, value) in [
+        ("name", "   "),
+        ("next", ""),
+        ("next", " \t "),
+        ("next", "\nUpdated: 2026-09-06"),
+    ] {
+        let mut raw = imported_cursor("unplanned", 3, 4);
+        raw.as_object_mut().unwrap().remove("original_fields");
+        raw[key] = value.into();
+        let result = normalize_imported_cursor(&raw).unwrap();
+        assert!(
+            matches!(result, CompatibilityCursor::Unavailable(_)),
+            "{key}={value:?}"
+        );
+        assert_eq!(result.provenance().original_cursor, raw);
+    }
+}
+
+#[test]
+fn ac5_normalize_malformed_and_inconsistent_inputs_stay_unavailable() {
+    for key in ["phase", "total", "name", "status", "next", "updated"] {
+        for replacement in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!([])),
+        ] {
+            let mut raw = imported_cursor("unplanned", 3, 4);
+            if let Some(value) = replacement {
+                raw[key] = value;
+            } else {
+                raw.as_object_mut().unwrap().remove(key);
+            }
+            let result = normalize_imported_cursor(&raw).unwrap();
+            assert!(
+                matches!(result, CompatibilityCursor::Unavailable(_)),
+                "{key}"
+            );
+            assert_eq!(result.provenance().original_cursor, raw);
+        }
+    }
+    for (key, value) in [
+        ("phase", "+3 of 4 (Three)"),
+        ("phase", "3e0 of 4 (Three)"),
+        ("phase", "3 of 4 (   )"),
+        ("phase", "3 of 4 (Other)"),
+        ("phase", "2 of 4 (Three)"),
+        ("phase", "3 of 5 (Three)"),
+        ("status", "planned"),
+        ("status", ""),
+        ("next", "other"),
+        ("next", ""),
+        ("updated", "2026-09-07"),
+    ] {
+        let mut raw = imported_cursor("unplanned", 3, 4);
+        raw["original_fields"][key] = value.into();
+        assert!(
+            matches!(
+                normalize_imported_cursor(&raw).unwrap(),
+                CompatibilityCursor::Unavailable(_)
+            ),
+            "{key}={value}"
+        );
+    }
+    for date in ["2026-9-06", "20260906", "yesterday", "2026-09-06 extra"] {
+        let state = legacy_state("unplanned").replace("2026-09-06", date);
+        assert!(matches!(
+            normalize_legacy_state(state.as_bytes()).unwrap(),
+            CompatibilityCursor::Unavailable(_)
+        ));
+        let mut raw = imported_cursor("unplanned", 3, 4);
+        raw["updated"] = date.into();
+        raw["original_fields"]["updated"] = date.into();
+        assert!(matches!(
+            normalize_imported_cursor(&raw).unwrap(),
+            CompatibilityCursor::Unavailable(_)
+        ));
+    }
+    for prefix in ["Phase:", "Status:", "Next:", "Updated:"] {
+        let state = legacy_state("unplanned")
+            .lines()
+            .filter(|s| !s.starts_with(prefix))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            matches!(
+                normalize_legacy_state(state.as_bytes()).unwrap(),
+                CompatibilityCursor::Unavailable(_)
+            ),
+            "{prefix}"
+        );
+    }
+    for raw in [
+        serde_json::Value::Null,
+        serde_json::json!({"available": true}),
+        serde_json::json!({"available": false}),
+    ] {
+        assert!(matches!(
+            normalize_imported_cursor(&raw).unwrap(),
+            CompatibilityCursor::Unavailable(_)
+        ));
+    }
+}
