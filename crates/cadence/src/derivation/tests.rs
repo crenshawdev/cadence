@@ -1068,3 +1068,140 @@ fn ac5_agreement_query_requires_exact_cursor_and_retirement_recheck() {
         );
     }
 }
+
+fn validated_for(data: &serde_json::Value) -> RecheckedLifecycle {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("ROADMAP.md"),
+        "## Phases\n- [ ] **Phase 3: Three**",
+    )
+    .unwrap();
+    let selected = select_intake(data).unwrap();
+    query_with_intake(
+        temp.path(),
+        &mut ArtifactFiles,
+        &selected.cursor,
+        &selected.observation,
+        &mut FixedIntake(selected.observation.clone()),
+    )
+    .unwrap()
+}
+
+#[test]
+fn ac5_adopt_atomic_namespace_preservation_fresh_null_and_rearmed_cursor() {
+    let original = serde_json::json!({"cursor":imported_cursor("paused", 3, 4), "unrelated":[1,null], "derivation":{"extension":true}});
+    let accepted = validated_for(&original);
+    let memo = serde_json::json!({"fixture":"opaque memo"});
+    let adopted = adopt(&original, memo.clone(), accepted.intake().unwrap()).unwrap();
+    assert_eq!(adopted["cursor"], original["cursor"]);
+    assert_eq!(adopted["unrelated"], original["unrelated"]);
+    assert_eq!(adopted["derivation"]["extension"], true);
+    assert_eq!(adopted["derivation"]["memo"], memo);
+    assert_eq!(adopted["derivation"]["intake"]["retired"], true);
+    assert!(matches!(
+        select_intake(&adopted).unwrap().cursor,
+        CompatibilityCursor::Unavailable(_)
+    ));
+    let again = adopt(
+        &adopted,
+        serde_json::json!("second memo"),
+        validated_for(&adopted).intake().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        again["derivation"]["intake"],
+        adopted["derivation"]["intake"]
+    );
+    let mut changed = adopted.clone();
+    changed["cursor"]["extra"] = false.into();
+    assert!(matches!(
+        select_intake(&changed).unwrap().cursor,
+        CompatibilityCursor::Held(_)
+    ));
+    assert_eq!(
+        adopt(&changed, memo.clone(), accepted.intake().unwrap())
+            .unwrap_err()
+            .code(),
+        "inputs-changed"
+    );
+    let fresh = serde_json::Value::Null;
+    let adopted = adopt(&fresh, memo, validated_for(&fresh).intake().unwrap()).unwrap();
+    assert!(adopted.is_object());
+    assert!(adopted.get("cursor").is_none());
+    assert!(adopted["derivation"].get("memo").is_some());
+}
+
+#[test]
+fn ac5_adopt_malformed_retirement_cannot_suppress_comparison_or_discard_data() {
+    let original = serde_json::json!({"cursor":imported_cursor("unplanned", 3, 4)});
+    let accepted = validated_for(&original);
+    let valid = adopt(
+        &original,
+        serde_json::json!("opaque fixture"),
+        accepted.intake().unwrap(),
+    )
+    .unwrap();
+    let mut malformed = Vec::new();
+    for (field, value) in [
+        ("version", serde_json::json!(2)),
+        ("source", serde_json::json!("elsewhere")),
+        ("retired", serde_json::json!(false)),
+        ("normalized", serde_json::Value::Null),
+        ("original_cursor", serde_json::json!({})),
+    ] {
+        let mut data = valid.clone();
+        data["derivation"]["intake"][field] = value;
+        malformed.push(data);
+    }
+    for field in [
+        "version",
+        "source",
+        "original_cursor",
+        "normalized",
+        "retired",
+    ] {
+        let mut data = valid.clone();
+        data["derivation"]["intake"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        malformed.push(data);
+    }
+    let mut only_retirement = valid.clone();
+    only_retirement["derivation"]
+        .as_object_mut()
+        .unwrap()
+        .remove("memo");
+    malformed.push(only_retirement);
+    for value in [
+        serde_json::Value::Null,
+        serde_json::json!(true),
+        serde_json::json!([]),
+    ] {
+        let mut data = valid.clone();
+        data["derivation"]["intake"] = value;
+        malformed.push(data);
+    }
+    malformed.extend([
+        serde_json::json!(42),
+        serde_json::json!([]),
+        serde_json::json!("data"),
+        serde_json::json!({"derivation":null}),
+        serde_json::json!({"derivation":[]}),
+    ]);
+    for data in malformed {
+        let before = data.clone();
+        assert_eq!(
+            select_intake(&data).unwrap_err().code(),
+            "invalid-intake",
+            "{data}"
+        );
+        assert_eq!(
+            adopt(&data, serde_json::Value::Null, accepted.intake().unwrap())
+                .unwrap_err()
+                .code(),
+            "invalid-intake"
+        );
+        assert_eq!(data, before);
+    }
+}

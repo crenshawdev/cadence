@@ -132,6 +132,10 @@ pub struct CapturedInputs {
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DerivationError {
+    InvalidIntake {
+        source: String,
+        detail: String,
+    },
     StateConflict {
         source: String,
         field: String,
@@ -158,6 +162,7 @@ pub enum DerivationError {
 impl DerivationError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::InvalidIntake { .. } => "invalid-intake",
             Self::StateConflict { .. } => "state-conflict",
             Self::InvalidStatus { .. } => "invalid-status",
             Self::MissingPlanningRoot { .. } => "missing-planning-root",
@@ -248,4 +253,20 @@ impl ValidatedIntake {
     pub fn observation(&self) -> &IntakeObservation {
         &self.observation
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IntakeRecord {
+    pub version: u32,
+    pub source: String,
+    pub original_cursor: serde_json::Value,
+    pub normalized: CompatibilityCursor,
+    pub retired: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SelectedIntake {
+    pub cursor: CompatibilityCursor,
+    pub observation: IntakeObservation,
 }
