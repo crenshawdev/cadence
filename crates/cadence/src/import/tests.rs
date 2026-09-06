@@ -193,3 +193,155 @@ fn actual_frozen_declines_include_authored_decisions_and_exclude_them_from_recal
     assert!(result.records.is_empty());
     assert_eq!(result.evidence[0].source, invalid);
 }
+
+#[test]
+fn frozen_cursor_survives_restart_without_deriving_phase_status() {
+    let state = Source {
+        path: "STATE.md".into(),
+        bytes: frozen(".planning/STATE.md"),
+    };
+    let translated = decisions::translate(Some(&state), None, None).unwrap();
+    assert_eq!(translated.cursor["phase"], json!(1.0));
+    assert_eq!(translated.cursor["total"], json!(0));
+    assert_eq!(translated.cursor["name"], json!("no active cycle"));
+    assert_eq!(translated.cursor["status"], json!("ready to plan"));
+    assert_eq!(translated.cursor["next"], json!("/cad-phase add"));
+    assert_eq!(
+        translated.cursor["original_fields"]["phase"],
+        json!("1 of 0 (no active cycle)")
+    );
+    assert_eq!(translated.evidence[0].source, state);
+    let dir = tempfile::tempdir().unwrap();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(Filesystem::new(dir.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        let first = store
+            .request(Operation::RewriteSnapshot(
+                json!({"cursor":translated.cursor,"source_evidence":translated.evidence}),
+            ))
+            .await
+            .unwrap();
+        drop(store);
+        let reopened = Store::open(Filesystem::new(dir.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        assert_eq!(reopened.request(Operation::Read).await.unwrap(), first);
+    });
+}
+
+#[test]
+fn mixed_legacy_logs_admit_only_decisions_and_keep_requested_observed_effort_distinct() {
+    use cadence::store::model::Decision;
+    let mut raw = String::new();
+    let routing = json!({"family":"routing","event":"resolve","phase":"03.1","agent":"cad-executor-high","role":"cad-executor","effort":"high","model_source":"repo","agent_id":"a","observed_effort":" \t "});
+    for row in [
+        routing.clone(),
+        json!({"family":"routing","event":"resolve","phase":3,"agent":"cad-executor-high","agent_id":"b","effort":"high","observed_effort":"host-unfamiliar"}),
+        json!({"family":"outcome","event":"risk_check","phase":3,"checked":false,"inconclusive":true,"reason":"unresolved-range"}),
+        json!({"family":"outcome","event":"census_undeclared","phase":3,"censuses":["one"]}),
+        json!({"family":"read","event":"recall","tokens":100}),
+        json!({"family":"lifecycle","event":"dispatch","tokens":200}),
+        json!({"family":"lifecycle","event":"record_rotated"}),
+        json!({"family":"routing","event":"resolve","phase":null,"agent":"cad-executor-high"}),
+        json!({"family":"outcome","event":"unknown"}),
+    ] {
+        raw.push_str(&format!("{row}\n"));
+    }
+    raw.push_str("broken row\n{\"family\":\"outcome\"");
+    let current = source("trace.jsonl", &raw);
+    let rotated = source("trace.1.jsonl", &format!("{routing}\n"));
+    let result = decisions::translate(None, Some(&current), Some(&rotated)).unwrap();
+    assert_eq!(result.records.len(), 5); // equal payload in another source is not proof of a carry
+    assert_ne!(result.records[0].id, result.records[4].id);
+    let Decision::Routing {
+        requested_effort,
+        observed_effort,
+        receipt,
+        ..
+    } = &result.records[0].decision
+    else {
+        panic!("routing missing")
+    };
+    assert_eq!(*requested_effort, Evidence::Text("high".into()));
+    assert_eq!(*observed_effort, Evidence::Missing);
+    assert_eq!(*receipt, Evidence::Missing);
+    assert!(
+        !serde_json::to_string(&result.records[0])
+            .unwrap()
+            .contains("observed_effort")
+    );
+    let Decision::Routing {
+        observed_effort, ..
+    } = &result.records[1].decision
+    else {
+        panic!("routing missing")
+    };
+    assert_eq!(*observed_effort, Evidence::Text("host-unfamiliar".into()));
+    assert!(matches!(result.records[2].decision, Decision::Gate { .. }));
+    assert!(matches!(
+        result.records[3].decision,
+        Decision::Refusal { .. }
+    ));
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|s| s.contains("malformed/incomplete"))
+    );
+    assert_eq!(result.evidence[0].source, current);
+    assert_eq!(
+        result.records,
+        decisions::translate(None, Some(&current), Some(&rotated))
+            .unwrap()
+            .records
+    );
+    let transaction = Transaction {
+        id: "log-source-generation".into(),
+        items: vec![],
+        decisions: result.records,
+        snapshot: None,
+        external: vec![],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(Filesystem::new(dir.path()).unwrap(), Allow)
+            .await
+            .unwrap();
+        let first = store
+            .request(Operation::Transact(transaction.clone()))
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .request(Operation::Transact(transaction))
+                .await
+                .unwrap(),
+            first
+        );
+    });
+}
+
+#[test]
+fn proven_rotation_copy_coalesces_events_and_retains_both_origins() {
+    let anchor = json!({"family":"lifecycle","event":"phase_start","phase":3,"corr":"a"});
+    let gate = json!({"family":"outcome","event":"risk_check","phase":3,"corr":"a","checked":true});
+    let rotated = source("trace.1.jsonl", &format!("{anchor}\n{gate}\n{gate}\n"));
+    let marker = json!({"family":"lifecycle","event":"record_rotated","file":"trace.1.jsonl","carried_bytes":rotated.bytes.len(),"corr":"a"});
+    let current = source(
+        "trace.jsonl",
+        &format!("{anchor}\n{gate}\n{gate}\n{marker}\n"),
+    );
+    let result = decisions::translate(None, Some(&current), Some(&rotated)).unwrap();
+    assert_eq!(result.records.len(), 2); // two real identical events, each with two source positions
+    assert_ne!(result.records[0].id, result.records[1].id);
+    for record in result.records {
+        let Evidence::Text(original) = record.origin.original else {
+            panic!("missing origins")
+        };
+        let origins: Vec<serde_json::Value> = serde_json::from_str(&original).unwrap();
+        assert_eq!(origins.len(), 2);
+        assert_eq!(origins[0]["path"], json!("trace.jsonl"));
+        assert_eq!(origins[1]["path"], json!("trace.1.jsonl"));
+    }
+}

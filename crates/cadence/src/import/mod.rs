@@ -1,4 +1,5 @@
 //! Legacy sources are immutable evidence, never replayed writers.
+pub mod decisions;
 pub mod items;
 
 use cadence::store::model::digest;
