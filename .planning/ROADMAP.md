@@ -159,9 +159,20 @@ addition rather than a whole-file re-serialize.
 - **Concurrent writes queue to an async handler.** One writer task owns the
   store; callers send work plus a reply channel and await their own completion.
   In tokio terms `mpsc` for the queue and `oneshot` per reply. **The single
-  consumer IS the mutual exclusion** - no lock primitive anywhere - and it
-  composes with write-then-ack because the caller still blocks until its own
-  write is on disk.
+  consumer IS the mutual exclusion** - no lock primitive in the STORE or the
+  recall INDEX - and it composes with write-then-ack because the caller still
+  blocks until its own write is on disk.
+  **Scoped 2026-09-06, on John's ruling**, after phase 3 found the original
+  "no lock primitive anywhere" contradicted by working code. The argument above
+  is about the store's write path: the queue serializes, therefore the store
+  needs no lock. It never reached shared state outside the store. Config and
+  the session map DO need synchronization, because the resident process is
+  shared by the main thread and every subagent by design, so concurrent
+  requests inside one process are real even though decision 5 removed
+  cross-session concurrency. Verified at the ruling: `crates/cadence/src/store/`
+  contains zero lock primitives, and the three that exist are
+  `import/mod.rs:447` (session map), `import/mod.rs:355` (first-touch import)
+  and `config/reload.rs:217` (shared config).
 - **Test what is testable, acknowledge the rest, rely on live usage.** John's
   call, explicitly without the model involved and WITHOUT A MOCKUP. Real
   coverage is owed on the pure core, the store's append/read/snapshot/crash
@@ -400,7 +411,9 @@ recall as a query over the store plus git.
 at the edge behind a trait, no tokio types in domain logic. One writer task owns
 the store; callers send work plus a reply channel and await their own
 completion, so the single consumer is the mutual exclusion and no lock primitive
-appears anywhere. A write is acknowledged only after it is confirmed on disk.
+appears in the STORE or the recall INDEX (scoped 2026-09-06 - see the decision
+above; config and the session map are outside it and may synchronize). A write
+is acknowledged only after it is confirmed on disk.
 
 **What is genuinely testable here, and is therefore owed real coverage:** the
 pure core (parsing, classification, derivation, rendering - plain functions, no

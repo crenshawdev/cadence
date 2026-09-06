@@ -1,6 +1,6 @@
-PLAN PARTIAL
+PLAN COMPLETE
 Plan: /code/cadence/.planning/phases/3/PLAN-2.md
-Tasks: 6 of 7
+Tasks: 7 of 7
 
 | Task | Commit | Note |
 |---|---|---|
@@ -10,9 +10,10 @@ Tasks: 6 of 7
 | 4 — Item source translation | b5747d9b2b2340571d8fc62de5a77a58885e7fc6 | Prediction and observation: 24 binary tests passed. Clippy and TypeScript green; lease accepted 4 files. Signature G, requested key and owner; no deletions. |
 | 5 — Decision and cursor translation | 31f3d7e8c33d3271576019ac391da37e5a54804e | Prediction and observation: 27 binary tests passed. Clippy and TypeScript green; lease accepted 3 files. Signature G, requested key and owner; no deletions. |
 | 6 — Recoverable first touch | 5f443abf49e069010e44282329448a678c5016ac | Resumed Verify: 32 passed, 0 failed, as predicted. AC5 and four real SIGKILL recoveries passed; frozen provenance assertions passed. Clippy and TypeScript passed; lease accepted 4 files; signature G with required key/owner. |
+| 7 — Resident import/policy integration | 9abb862c28d7c1bdb1f83d4014a24883da9e7f1f | Prediction and observation: 37 binary tests passed, 0 failed. Clippy and TypeScript passed; lease accepted 2 files; signature G with required key/owner. Final workspace suite: 72 passed, 0 failed; final Clippy passed. |
 
 Deviations: 2 historical entries, both resolved — external fixture authorization and the archive helper working-directory defect. No acceptance criterion was changed.
-Open items: Task 7 and the final workspace suite remain pending. Conservative rotation deduplication handles full sealed copies only; partial under-pressure carries remain separate rather than coalescing unproven identities.
+Open items: No execution blocker remains. Conservative rotation deduplication handles full sealed copies only; partial under-pressure carries remain separate rather than coalescing unproven identities.
 
 ## Execution constraints and evidence
 
@@ -111,3 +112,27 @@ The user accepted the archive diagnosis and explicitly directed the fixture corr
 Prediction: 32 binary tests pass, no failures, with actual AC5 child import and four process-kill recovery barriers. Observed exactly 32 passed, 0 failed (2.02 seconds). No unused-helper warning remained. The provenance assertions found all required files with exactly the expected bytes and no existing v4 outputs; they caught no further discrepancy. Original-file equality, all eight D-06 warning names, precise repo removal of git.auto_close, four created output paths, stable replay identities, generation 1 after every recovery, optional absence, unreadability, malformed config, foreign partial output refusals, and source-change refusal all passed. The original Verify criterion was unchanged.
 
 Clippy with RUSTC_WRAPPER cleared and TypeScript via installed Node executable/ignored stdin both passed. The lease gate accepted the four individually staged paths. Task 6 commit 5f443abf49e069010e44282329448a678c5016ac is signed G with key 693AB15F91734B0C and John Crenshaw <john@jcrenshaw.dev> as author and committer. No deleted files and no remaining source changes after commit. Prior five commits remain intact. This cumulative report stays uncommitted. Status is PARTIAL until Task 7 and the final green workspace suite.
+
+## Task 7: combined resident service evidence
+
+Added five integration tests using external fixtures and the production SessionFactory/Session. Prediction was 37 binary tests passed, zero failed; observed exactly 37 passed, zero failed (2.95 seconds). One owner imports the frozen tree, permits a mutation, refuses after an edit to either active layer, refuses both reads and writes on injected PermissionDenied, and permits a fresh evaluation after restoration. Every refused mutation compares all three maintained store files byte-for-byte. Internal config writes are immediately visible and cannot use a proposed true value to authorize themselves under a current false policy.
+
+Further cases cover checkout-style rename replacement, symlink retargeting, collapse/separation of active layer identities, one destination for aliased legacy sources, preserved explicit global request scope, and retry/recovery on the same factory after an interrupted participant installation. All policy mutations reach the existing writer; no protected-branch or dispatch algorithm was added.
+
+Capture threshold tests use actual durable item revisions: completed, filed and declined identities are excluded, multiline text does not add units, and a threshold-crossing append is acknowledged and found in items.jsonl. The report shows active identities in items rather than revision-line counts. Declined identities remain absent from recall. Original config and all extracted planning bytes remain unchanged after requests. Tests extract the actual frozen planning-files, lease-grammar, config-merge and global-only-keys readers into external temporary directories and run Node with ignored stdin: frozen STATE/FILED/DECLINED/config reads still succeed, including the old git.auto_close=true value, while the active versioned layer excludes it. This proves rollback availability without claiming checkout removes untracked outputs.
+
+The architecture note now documents artifact mapping, warning semantics, active paths and exact rollback inventory, source-fragment retention, cross-ledger decline precedence, conservative rotation deduplication, global forge scope, and all 94 config dispositions (80 keep-resemantic, 14 dead). No pre-existing analysis report changed.
+
+Clippy and TypeScript passed before commit. The lease accepted two individually staged files. Task 7 commit 9abb862c28d7c1bdb1f83d4014a24883da9e7f1f is signed G with key 693AB15F91734B0C and John Crenshaw <john@jcrenshaw.dev> as both author and committer. No deletions or uncommitted implementation files remain. This status is deliberately PLAN PARTIAL until the final workspace suite passes.
+
+## Final validation: PLAN COMPLETE
+
+Both historical checkpoints above are resolved; their earlier status and resume instructions are retained only as the run history. All seven tasks are committed. No Verify criterion was changed, and neither resumed task contradicted its stated prediction.
+
+The published workflow.test_command was unset, so the manifest-derived final command was cargo test --workspace. Before execution, the prediction was 72 passed, 0 failed: the supplied 62-test baseline plus ten new tests. Observed exactly 72 passed, 0 failed: library 5, binary 37, MCP 4, store 16, crash/recovery 10; doc-tests 0. The full suite included the existing AC8 syscall-order test and passed without a regression. Command environment was RUSTC_WRAPPER= CARGO_NET_OFFLINE=true CARGO_HOME=/code/cadence/target/store-cargo-home TMPDIR=/tmp. The full suite ran once after Task 7's commit.
+
+The predicted final Clippy result also matched: cargo clippy --all-targets -- -D warnings, with the same environment and cleared wrapper, exited 0. TypeScript had already passed before both task commits. Final commit diff whitespace checks passed. Frozen cadence-core tracked-diff and untracked-file queries returned no paths; it remains identical to v3.7.12. Both new commit signatures verified G with the required owner and key.
+
+During final verification, existing report files appeared staged in the shared workspace; this execution did not stage them and leaves their index state untouched. This cumulative report is updated in the working tree as requested and is not included in either implementation commit. No installs, persistent git configuration changes, pushes, or changes outside the authorized repository and temporary fixture paths were made.
+
+Final shared-workspace bookkeeping: the staged reports were subsequently committed concurrently as d17c1a9fb3bd28b83e2ab7b692eb5a5c1a3abb0d (docs: commit the phase 2 and 3 run reports). A moving HEAD~2..HEAD whitespace check therefore included that report commit and exited 2 for trailing whitespace/blank EOF lines in historical phase 2 logs. No task Verify failed. Checking the explicit Task 6–7 commit range, 31f3d7e8c33d3271576019ac391da37e5a54804e..9abb862c28d7c1bdb1f83d4014a24883da9e7f1f, passed unchanged. No log cleanup or index mutation was performed. Implementation paths remain clean; only this requested final report update remains modified in the working tree.
