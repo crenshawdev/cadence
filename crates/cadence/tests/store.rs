@@ -1,0 +1,167 @@
+use cadence::store::filesystem::{Filesystem, Stage};
+use cadence::store::model::{Disposition, Evidence, ItemRecord, Origin, VERSION};
+use cadence::store::writer::{Operation, Store};
+use cadence::store::{Error, MutationContext, Policy, Result};
+use std::process::{Command, Stdio};
+
+struct Allow;
+impl Policy for Allow {
+    fn validate(&mut self, _: &MutationContext<'_>) -> Result<()> {
+        Ok(())
+    }
+}
+fn item(id: &str) -> ItemRecord {
+    ItemRecord {
+        version: VERSION,
+        id: id.into(),
+        revision: 1,
+        origin: Origin {
+            source: "test".into(),
+            original: Evidence::Missing,
+        },
+        text: id.into(),
+        kind: "todo".into(),
+        disposition: Disposition::Captured,
+        completed: false,
+        filing_uncertain: false,
+    }
+}
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Runtime::new().unwrap()
+}
+
+#[test]
+fn subprocess_driver() {
+    let Ok(root) = std::env::var("CADENCE_STORE_CHILD_ROOT") else {
+        return;
+    };
+    runtime().block_on(async {
+        let store = Store::open(Filesystem::new(root).unwrap(), Allow)
+            .await
+            .unwrap();
+        if std::env::var("CADENCE_STORE_CHILD_MODE").unwrap() == "write" {
+            store
+                .request(Operation::AppendItem(item("first")))
+                .await
+                .unwrap();
+            store
+                .request(Operation::AppendItem(item("second")))
+                .await
+                .unwrap();
+            store
+                .request(Operation::RewriteSnapshot(
+                    serde_json::json!({"cursor":[3,1],"exact":null}),
+                ))
+                .await
+                .unwrap();
+        } else {
+            let view = store.request(Operation::Read).await.unwrap();
+            assert_eq!(
+                view.items.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+                ["first", "second"]
+            );
+            assert_eq!(
+                view.snapshot.data,
+                serde_json::json!({"cursor":[3,1],"exact":null})
+            );
+        }
+    });
+}
+
+#[test]
+fn append_order_and_snapshot_survive_fresh_process() {
+    let root = tempfile::tempdir().unwrap();
+    for mode in ["write", "read"] {
+        let result = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "subprocess_driver", "--nocapture"])
+            .env("CADENCE_STORE_CHILD_ROOT", root.path())
+            .env("CADENCE_STORE_CHILD_MODE", mode)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
+#[test]
+fn confirmation_holds_own_reply_and_cancellation_preserves_admitted_work() {
+    let root = tempfile::tempdir().unwrap();
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let mut held = false;
+    let fs = Filesystem::new(root.path())
+        .unwrap()
+        .with_probe(move |stage, _| {
+            if stage == Stage::Confirmation && !held {
+                held = true;
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            }
+            Ok(())
+        });
+    let rt = runtime();
+    let store = rt.block_on(Store::open(fs, Allow)).unwrap();
+    let cloned = store.clone();
+    let caller = rt.spawn(async move { cloned.request(Operation::AppendItem(item("held"))).await });
+    entered_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    assert!(!caller.is_finished());
+    caller.abort();
+    release_tx.send(()).unwrap();
+    let view = rt.block_on(store.request(Operation::Read)).unwrap();
+    assert_eq!(view.items[0].id, "held");
+}
+
+#[test]
+fn either_sync_failure_prevents_success() {
+    for fail in [Stage::TemporarySync, Stage::DirectorySync] {
+        let root = tempfile::tempdir().unwrap();
+        let fs = Filesystem::new(root.path())
+            .unwrap()
+            .with_probe(move |stage, _| {
+                if stage == fail {
+                    Err(Error::Io(format!("injected {fail:?}")))
+                } else {
+                    Ok(())
+                }
+            });
+        runtime().block_on(async {
+            let store = Store::open(fs, Allow).await.unwrap();
+            assert_eq!(
+                store.request(Operation::AppendItem(item("fail"))).await,
+                Err(Error::Io(format!("injected {fail:?}")))
+            );
+        });
+    }
+}
+
+#[test]
+fn concurrently_queued_callers_receive_distinct_outcomes() {
+    struct RejectFirst(bool);
+    impl Policy for RejectFirst {
+        fn validate(&mut self, _: &MutationContext<'_>) -> Result<()> {
+            if std::mem::take(&mut self.0) {
+                Err(Error::Policy("first refused".into()))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    runtime().block_on(async {
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), RejectFirst(true))
+            .await
+            .unwrap();
+        let (first, second) = tokio::join!(
+            store.request(Operation::AppendItem(item("one"))),
+            store.request(Operation::AppendItem(item("two")))
+        );
+        assert_eq!(first, Err(Error::Policy("first refused".into())));
+        assert_eq!(second.unwrap().items, [item("two")]);
+    });
+}

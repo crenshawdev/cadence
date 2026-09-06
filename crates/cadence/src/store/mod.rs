@@ -1,4 +1,6 @@
+pub mod filesystem;
 pub mod model;
+pub mod writer;
 
 use model::Snapshot;
 
