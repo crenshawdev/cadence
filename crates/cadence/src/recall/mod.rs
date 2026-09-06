@@ -1,4 +1,5 @@
 //! Recall's domain core consumes eligible records and explicit snippets only.
+mod documents;
 mod rank;
 #[cfg(test)]
 mod tests;
@@ -107,6 +108,17 @@ pub struct Answer {
 pub struct Corpus {
     candidates: Vec<Candidate>,
     index: rank::Index,
+}
+
+/// The mixed-source read boundary; its result is immediately queryable.
+pub fn live(view: &View, root: &std::path::Path) -> (Corpus, Vec<String>) {
+    let documents = documents::read(root, &mut documents::Files);
+    let mut candidates = current(view);
+    candidates.extend(documents.candidates);
+    (
+        Corpus::new(candidates, &declined(view)),
+        documents.incomplete,
+    )
 }
 impl Corpus {
     pub fn new(candidates: Vec<Candidate>, excluded: &BTreeSet<String>) -> Self {
