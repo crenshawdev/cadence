@@ -449,7 +449,8 @@ fn external_changes_are_refused_without_touching_any_store_target() {
                     symlink(foreign, &target).unwrap();
                 }
                 "unreadable" => {
-                    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o0)).unwrap();
+                    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o0))
+                        .unwrap();
                     expected = Some(original.clone());
                 }
                 "parent" => {
@@ -543,4 +544,266 @@ fn edit_after_preparation_preserves_foreign_bytes_and_discards_only_preparation(
         );
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 3);
     });
+}
+
+fn transaction(id: &str) -> cadence::store::transaction::Transaction {
+    use cadence::store::model::{Decision, DecisionRecord};
+    cadence::store::transaction::Transaction {
+        id: id.into(),
+        items: vec![item("transaction-item")],
+        decisions: vec![DecisionRecord {
+            version: VERSION,
+            id: "transaction-decision".into(),
+            revision: 1,
+            origin: item("origin").origin,
+            decision: Decision::Gate {
+                outcome: "accepted".into(),
+                evidence: Evidence::Missing,
+            },
+        }],
+        snapshot: Some(serde_json::json!({"complete":true})),
+        external: vec![],
+    }
+}
+
+#[test]
+fn interrupted_participants_recover_once_before_reads() {
+    use cadence::store::transaction::INTENT;
+    for stop_after in ["items.jsonl", "decisions.jsonl", "state.json"] {
+        let root = tempfile::tempdir().unwrap();
+        runtime().block_on(async {
+            let fs = Filesystem::new(root.path())
+                .unwrap()
+                .with_probe(move |stage, path| {
+                    if stage == Stage::Confirmation && path.file_name().unwrap() == stop_after {
+                        Err(Error::Io(format!("interrupted after {stop_after}")))
+                    } else {
+                        Ok(())
+                    }
+                });
+            let store = Store::open(fs, Allow).await.unwrap();
+            assert!(
+                store
+                    .request(Operation::Transact(transaction("import-v3")))
+                    .await
+                    .is_err()
+            );
+            assert!(root.path().join(INTENT).exists());
+            drop(store);
+            let store = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+                .await
+                .unwrap();
+            let view = store.request(Operation::Read).await.unwrap();
+            assert_eq!(view.items.len(), 1);
+            assert_eq!(view.decisions.len(), 1);
+            assert_eq!(view.snapshot.data, serde_json::json!({"complete":true}));
+            assert_eq!(
+                store
+                    .request(Operation::Transact(transaction("import-v3")))
+                    .await
+                    .unwrap(),
+                view
+            );
+            assert!(!root.path().join(INTENT).exists());
+            drop(store);
+            let second = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+                .await
+                .unwrap();
+            assert_eq!(second.request(Operation::Read).await.unwrap(), view);
+            let mut reused = transaction("import-v3");
+            reused.snapshot = Some(serde_json::json!({"different":true}));
+            assert!(matches!(
+                second.request(Operation::Transact(reused)).await,
+                Err(Error::Conflict(_))
+            ));
+        });
+    }
+}
+
+#[test]
+fn foreign_pending_participant_blocks_every_replay_write() {
+    for foreign in ["items.jsonl", "decisions.jsonl", "state.json"] {
+        let root = tempfile::tempdir().unwrap();
+        runtime().block_on(async {
+            let fs = Filesystem::new(root.path())
+                .unwrap()
+                .with_probe(|stage, path| {
+                    if stage == Stage::Confirmation && path.file_name().unwrap() == "items.jsonl" {
+                        Err(Error::Io("interrupt".into()))
+                    } else {
+                        Ok(())
+                    }
+                });
+            let store = Store::open(fs, Allow).await.unwrap();
+            assert!(
+                store
+                    .request(Operation::Transact(transaction("foreign")))
+                    .await
+                    .is_err()
+            );
+            drop(store);
+            std::fs::write(root.path().join(foreign), b"foreign pending participant").unwrap();
+            let names = [
+                "items.jsonl",
+                "decisions.jsonl",
+                "state.json",
+                ".store-intent.json",
+            ];
+            let before: Vec<_> = names
+                .iter()
+                .map(|name| std::fs::read(root.path().join(name)).ok())
+                .collect();
+            assert!(matches!(
+                Store::open(Filesystem::new(root.path()).unwrap(), Allow).await,
+                Err(Error::Conflict(_))
+            ));
+            let after: Vec<_> = names
+                .iter()
+                .map(|name| std::fs::read(root.path().join(name)).ok())
+                .collect();
+            assert_eq!(before, after);
+        });
+    }
+}
+
+#[test]
+fn queued_reader_cannot_observe_partial_transaction() {
+    let root = tempfile::tempdir().unwrap();
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let fs = Filesystem::new(root.path())
+        .unwrap()
+        .with_probe(move |stage, path| {
+            if stage == Stage::Confirmation && path.file_name().unwrap() == "items.jsonl" {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            }
+            Ok(())
+        });
+    let rt = runtime();
+    let store = rt.block_on(Store::open(fs, Allow)).unwrap();
+    let writer = store.clone();
+    let pending_write = rt.spawn(async move {
+        writer
+            .request(Operation::Transact(transaction("queued")))
+            .await
+    });
+    entered_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    let pending_read = rt.spawn(async move { store.request(Operation::Read).await });
+    assert!(!pending_read.is_finished());
+    release_tx.send(()).unwrap();
+    let written = rt.block_on(pending_write).unwrap().unwrap();
+    let read = rt.block_on(pending_read).unwrap().unwrap();
+    assert_eq!(read, written);
+    assert_eq!(read.items.len(), 1);
+    assert_eq!(read.decisions.len(), 1);
+}
+
+#[test]
+fn registered_external_config_participates_in_recovery() {
+    use cadence::store::Storage;
+    use cadence::store::transaction::ExternalChange;
+    for stop_after in [
+        "global.json",
+        "repo.json",
+        "items.jsonl",
+        "decisions.jsonl",
+        "state.json",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let global = external.path().join("global.json");
+        let repo = root.path().join("repo.json");
+        std::fs::write(&global, b"old-global").unwrap();
+        std::fs::write(&repo, b"old-repo").unwrap();
+        let adapter = || {
+            Filesystem::new(root.path())
+                .unwrap()
+                .with_participant("global-config", &global)
+                .unwrap()
+                .with_participant("repo-config", &repo)
+                .unwrap()
+        };
+        let mut request = transaction("config-import");
+        for (target, bytes) in [
+            ("global-config", b"new-global".to_vec()),
+            ("repo-config", b"new-repo".to_vec()),
+        ] {
+            request.external.push(ExternalChange {
+                target: target.into(),
+                expected: adapter().read(target).unwrap(),
+                bytes,
+            });
+        }
+        runtime().block_on(async {
+            let store = Store::open(
+                adapter().with_probe(move |stage, path| {
+                    if stage == Stage::Confirmation && path.file_name().unwrap() == stop_after {
+                        Err(Error::Io("interrupt".into()))
+                    } else {
+                        Ok(())
+                    }
+                }),
+                Allow,
+            )
+            .await
+            .unwrap();
+            assert!(
+                store
+                    .request(Operation::Transact(request.clone()))
+                    .await
+                    .is_err()
+            );
+            drop(store);
+            let store = Store::open(adapter(), Allow).await.unwrap();
+            let view = store.request(Operation::Transact(request)).await.unwrap();
+            assert_eq!(view.items.len(), 1);
+            assert_eq!(view.decisions.len(), 1);
+            assert_eq!(std::fs::read(&global).unwrap(), b"new-global");
+            assert_eq!(std::fs::read(&repo).unwrap(), b"new-repo");
+        });
+    }
+}
+
+#[test]
+fn recovery_resync_failures_cannot_open_an_acknowledged_store() {
+    for failure in [Stage::RecoverySync, Stage::DirectorySync] {
+        let root = tempfile::tempdir().unwrap();
+        runtime().block_on(async {
+            let fs = Filesystem::new(root.path())
+                .unwrap()
+                .with_probe(|stage, path| {
+                    if stage == Stage::Confirmation && path.file_name().unwrap() == "state.json" {
+                        Err(Error::Io("interrupt at metadata".into()))
+                    } else {
+                        Ok(())
+                    }
+                });
+            let store = Store::open(fs, Allow).await.unwrap();
+            assert!(
+                store
+                    .request(Operation::Transact(transaction("resync")))
+                    .await
+                    .is_err()
+            );
+            drop(store);
+            let fs = Filesystem::new(root.path())
+                .unwrap()
+                .with_probe(move |stage, _| {
+                    if stage == failure {
+                        Err(Error::Io("recovery synchronization failed".into()))
+                    } else {
+                        Ok(())
+                    }
+                });
+            assert!(matches!(Store::open(fs, Allow).await, Err(Error::Io(_))));
+            assert!(root.path().join(".store-intent.json").exists());
+            let store = Store::open(Filesystem::new(root.path()).unwrap(), Allow)
+                .await
+                .unwrap();
+            assert_eq!(store.request(Operation::Read).await.unwrap().items.len(), 1);
+        });
+    }
 }

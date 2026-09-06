@@ -13,6 +13,7 @@ pub struct View {
 
 pub enum Operation {
     Read,
+    Transact(super::transaction::Transaction),
     AppendItem(ItemRecord),
     AppendDecision(DecisionRecord),
     RewriteSnapshot(Value),
@@ -75,7 +76,8 @@ struct Writer<S: Storage, P: Policy> {
 }
 
 impl<S: Storage, P: Policy> Writer<S, P> {
-    fn open(mut storage: S, policy: P) -> Result<Self> {
+    fn open(mut storage: S, mut policy: P) -> Result<Self> {
+        super::transaction::recover(&mut storage, &mut policy)?;
         let mut observed = BTreeMap::new();
         for name in [ITEMS, DECISIONS, STATE] {
             observed.insert(name.to_string(), storage.read(name)?);
@@ -114,8 +116,41 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             return Err(error.clone());
         }
         let mut next = self.view.clone();
+        let mut external = Vec::new();
+        let mut operations = next.snapshot.operations.clone();
         let operation_name = match operation {
             Operation::Read => return Ok(next),
+            Operation::Transact(transaction) => {
+                if transaction.id.trim().is_empty() {
+                    return Err(Error::Invalid("empty operation identity".into()));
+                }
+                let fingerprint = transaction.fingerprint()?;
+                if let Some(prior) = operations.get(&transaction.id) {
+                    self.revalidate()?;
+                    return if *prior == fingerprint {
+                        Ok(next)
+                    } else {
+                        Err(Error::Conflict(
+                            "operation identity reused for different content".into(),
+                        ))
+                    };
+                }
+                operations.insert(transaction.id, fingerprint);
+                next.items.extend(transaction.items);
+                next.decisions.extend(
+                    transaction
+                        .decisions
+                        .into_iter()
+                        .map(super::decisions::normalize),
+                );
+                model::validate_items(&next.items)?;
+                model::validate_decisions(&next.decisions)?;
+                if let Some(data) = transaction.snapshot {
+                    next.snapshot.data = data;
+                }
+                external = transaction.external;
+                "transaction"
+            }
             Operation::AppendItem(item) => {
                 next.items.push(item);
                 model::validate_items(&next.items)?;
@@ -144,60 +179,41 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             .generation
             .checked_add(1)
             .ok_or_else(|| Error::Invalid("generation overflow".into()))?;
-        next.snapshot = Snapshot::new(generation, &items, &decisions, next.snapshot.data)?;
+        next.snapshot = Snapshot::new(generation, &items, &decisions, next.snapshot.data)?
+            .with_operations(operations)?;
         let state = next.snapshot.render()?;
-        let mut prepared_files = Vec::new();
-        for (name, bytes) in [(ITEMS, items), (DECISIONS, decisions), (STATE, state)] {
-            if self.observed[name].bytes.as_ref() == Some(&bytes) {
-                continue;
+        let mut participants = Vec::new();
+        for change in external {
+            if !matches!(change.target.as_str(), "repo-config" | "global-config") {
+                return Err(Error::Invalid("unknown external participant".into()));
             }
-            match self.storage.prepare(name, &bytes) {
-                Ok(prepared) => prepared_files.push((name, bytes, prepared)),
-                Err(error) => {
-                    for (_, _, prepared) in prepared_files {
-                        self.storage.discard(prepared)?;
-                    }
-                    return Err(error);
-                }
-            }
+            participants.push(super::transaction::Participant {
+                target: change.target,
+                expected: change.expected,
+                bytes: change.bytes,
+            });
         }
-        // Best effort at this check point, not an OS compare-and-swap. An
-        // uncooperative writer can still race the subsequent replacements.
-        if let Err(error) = self.revalidate().and_then(|()| {
-            self.policy.validate(&MutationContext {
+        for (name, bytes) in [(ITEMS, items), (DECISIONS, decisions), (STATE, state)] {
+            participants.push(super::transaction::Participant {
+                target: name.into(),
+                expected: self.observed[name].clone(),
+                bytes,
+            });
+        }
+        if let Err(error) = super::transaction::commit(
+            &mut self.storage,
+            &mut self.policy,
+            &MutationContext {
                 operation: operation_name,
                 snapshot: &self.view.snapshot,
-            })
-        }) {
-            for (_, _, prepared) in prepared_files {
-                self.storage.discard(prepared)?;
-            }
+            },
+            participants,
+        ) {
+            self.failed = Some(error.clone());
             return Err(error);
         }
-        let mut failure = None;
-        for (name, bytes, prepared) in prepared_files {
-            if failure.is_some() {
-                self.storage.discard(prepared)?;
-                continue;
-            }
-            let result = (|| {
-                let installed = self.storage.install(&prepared);
-                self.storage.discard(prepared)?;
-                installed?;
-                self.storage.confirm(name, &bytes)
-            })();
-            match result {
-                Ok(observed) => {
-                    self.observed.insert(name.to_string(), observed);
-                }
-                Err(error) => {
-                    self.failed = Some(error.clone());
-                    failure = Some(error);
-                }
-            }
-        }
-        if let Some(error) = failure {
-            return Err(error);
+        for name in [ITEMS, DECISIONS, STATE] {
+            self.observed.insert(name.into(), self.storage.read(name)?);
         }
         self.view = next;
         Ok(self.view.clone())

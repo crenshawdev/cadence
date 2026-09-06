@@ -2,6 +2,7 @@ pub mod decisions;
 pub mod filesystem;
 pub mod items;
 pub mod model;
+pub mod transaction;
 pub mod writer;
 
 use model::Snapshot;
@@ -44,10 +45,11 @@ pub trait Policy: Send + 'static {
 }
 
 /// Adapter-owned identity tokens have no filesystem semantics in the core.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Observed {
     pub bytes: Option<Vec<u8>>,
     pub identity: String,
+    pub directory_identity: String,
 }
 
 /// Preparation is disposable; install must synchronize file then directory,
@@ -59,4 +61,6 @@ pub trait Storage: Send + 'static {
     fn install(&mut self, prepared: &Self::Prepared) -> Result<()>;
     fn discard(&mut self, prepared: Self::Prepared) -> Result<()>;
     fn confirm(&mut self, target: &str, bytes: &[u8]) -> Result<Observed>;
+    fn resync(&mut self, target: &str, bytes: &[u8]) -> Result<Observed>;
+    fn remove(&mut self, target: &str) -> Result<()>;
 }

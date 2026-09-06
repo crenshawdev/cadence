@@ -92,6 +92,7 @@ pub struct Snapshot {
     pub items_digest: String,
     pub decisions_digest: String,
     pub data: Value,
+    pub operations: BTreeMap<String, String>,
     pub integrity: String,
 }
 
@@ -107,10 +108,17 @@ impl Snapshot {
             items_digest: digest(items),
             decisions_digest: digest(decisions),
             data,
+            operations: BTreeMap::new(),
             integrity: String::new(),
         };
         snapshot.integrity = snapshot.content_digest()?;
         Ok(snapshot)
+    }
+
+    pub fn with_operations(mut self, operations: BTreeMap<String, String>) -> Result<Self> {
+        self.operations = operations;
+        self.integrity = self.content_digest()?;
+        Ok(self)
     }
 
     fn content_digest(&self) -> Result<String> {

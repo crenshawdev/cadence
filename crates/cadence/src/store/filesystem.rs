@@ -1,5 +1,6 @@
 //! Filesystem work belongs exclusively to the resource-owning writer thread.
 use super::{Error, Observed, Result, Storage};
+use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::MetadataExt;
@@ -11,6 +12,7 @@ pub enum Stage {
     Prepared,
     DirectorySync,
     Confirmation,
+    RecoverySync,
 }
 
 type Probe = Box<dyn FnMut(Stage, &Path) -> Result<()> + Send>;
@@ -19,6 +21,7 @@ pub struct Filesystem {
     root: PathBuf,
     sequence: u64,
     probe: Probe,
+    participants: BTreeMap<String, PathBuf>,
 }
 
 pub struct Prepared {
@@ -35,6 +38,7 @@ impl Filesystem {
             root,
             sequence: 0,
             probe: Box::new(|_, _| Ok(())),
+            participants: BTreeMap::new(),
         })
     }
 
@@ -48,10 +52,34 @@ impl Filesystem {
     }
 
     fn target(&self, target: &str) -> Result<PathBuf> {
+        if let Some(path) = self.participants.get(target) {
+            return Ok(path.clone());
+        }
+        if matches!(target, "repo-config" | "global-config") {
+            return Err(Error::Invalid(
+                "config participant was not registered".into(),
+            ));
+        }
         if Path::new(target).components().count() != 1 || target == "." || target == ".." {
             return Err(Error::Invalid("expected a store filename".into()));
         }
         Ok(self.root.join(target))
+    }
+
+    /// Config/import participants are registered by the factory, never resolved
+    /// from paths supplied by a persisted intent. Their parent must exist.
+    pub fn with_participant(mut self, name: &str, path: impl Into<PathBuf>) -> Result<Self> {
+        if !matches!(name, "repo-config" | "global-config") {
+            return Err(Error::Invalid("unknown config participant".into()));
+        }
+        let path = path.into();
+        if !path.is_absolute() || !path.parent().is_some_and(Path::is_dir) {
+            return Err(Error::Invalid(
+                "config participant needs an absolute path and existing parent".into(),
+            ));
+        }
+        self.participants.insert(name.to_string(), path);
+        Ok(self)
     }
 }
 
@@ -79,6 +107,7 @@ impl Storage for Filesystem {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Observed {
                     bytes: None,
+                    directory_identity: identity.clone(),
                     identity,
                 });
             }
@@ -100,6 +129,7 @@ impl Storage for Filesystem {
         }
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)?;
+        let directory_identity = identity.clone();
         identity.push_str(&format!(
             "{}:{}:{}",
             opened.dev(),
@@ -109,6 +139,7 @@ impl Storage for Filesystem {
         Ok(Observed {
             bytes: Some(bytes),
             identity,
+            directory_identity,
         })
     }
 
@@ -170,5 +201,24 @@ impl Storage for Filesystem {
             return Err(Error::Conflict(format!("installed bytes differ: {target}")));
         }
         Ok(observed)
+    }
+
+    fn resync(&mut self, target: &str, bytes: &[u8]) -> Result<Observed> {
+        let path = self.target(target)?;
+        (self.probe)(Stage::RecoverySync, &path)?;
+        File::open(&path)?.sync_all()?;
+        let parent = path.parent().unwrap();
+        (self.probe)(Stage::DirectorySync, parent)?;
+        File::open(parent)?.sync_all()?;
+        self.confirm(target, bytes)
+    }
+
+    fn remove(&mut self, target: &str) -> Result<()> {
+        let path = self.target(target)?;
+        fs::remove_file(&path)?;
+        let parent = path.parent().unwrap();
+        (self.probe)(Stage::DirectorySync, parent)?;
+        File::open(parent)?.sync_all()?;
+        Ok(())
     }
 }
