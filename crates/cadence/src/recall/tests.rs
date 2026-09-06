@@ -538,3 +538,189 @@ async fn current_decline_suppresses_git_filed_and_store_identity_but_not_indepen
         matches!(&answer.results[0].provenance,Provenance::Document {path,..} if path == "PROJECT.md")
     );
 }
+
+#[tokio::test]
+async fn production_clones_share_import_writer_and_invalidate_warm_recall() {
+    let dir = temp();
+    let root = dir.path().join(".planning");
+    put(&root, "PROJECT.md", "ownerfalcon authored prose");
+    let server = crate::server::CadenceServer::with_factory(factory());
+    let clone = server.clone();
+    let first = server.store(&root, Operation::Read).await.unwrap();
+    assert_eq!(first.snapshot.generation, 1);
+    let captured = item("resident-capture", "ownerfalcon captured knowledge");
+    let appended = server
+        .store(&root, Operation::AppendItem(captured.clone()))
+        .await
+        .unwrap();
+    assert_eq!(appended.snapshot.generation, 2);
+    assert_eq!(clone.store(&root, Operation::Read).await.unwrap(), appended);
+    let warm = clone.recall(&root, "ownerfalcon", None).await.unwrap();
+    assert_eq!(warm.total, 2);
+    assert_eq!(
+        server.recall(&root, "ownerfalcon", None).await.unwrap(),
+        warm
+    );
+    let dead = cadence::store::items::revise(
+        &captured,
+        cadence::store::items::ItemChange::Decline {
+            reason: "declined".into(),
+        },
+    )
+    .unwrap();
+    server
+        .store(&root, Operation::AppendItem(dead))
+        .await
+        .unwrap();
+    let after = clone.recall(&root, "ownerfalcon", None).await.unwrap();
+    assert_eq!(after.total, 1);
+    assert!(
+        after
+            .results
+            .iter()
+            .all(|h| matches!(h.provenance, Provenance::Document { .. }))
+    );
+    put(&root, "PROJECT.md", "changedfalcon document edit");
+    assert_eq!(
+        server
+            .recall(&root, "ownerfalcon", None)
+            .await
+            .unwrap()
+            .total,
+        0
+    );
+    assert_eq!(
+        clone
+            .recall(&root, "changedfalcon", None)
+            .await
+            .unwrap()
+            .total,
+        1
+    );
+    put(&root, "config.v4.json", r#"{"memory":{"backend":"none"}}"#);
+    let disabled = server.recall(&root, "changedfalcon", None).await.unwrap();
+    assert_eq!(disabled.backend, "none");
+    assert_eq!(disabled.total, 0);
+    put(
+        &root,
+        "config.v4.json",
+        r#"{"memory":{"backend":"builtin"}}"#,
+    );
+    assert_eq!(
+        clone
+            .recall(&root, "changedfalcon", None)
+            .await
+            .unwrap()
+            .total,
+        1
+    );
+    // A checkout changes reachable history and must change the next answer.
+    git(dir.path(), &["init", "-q"]);
+    put(&root, "phases/1/CONTEXT.md", "checkoutfalcon history");
+    git(dir.path(), &["add", ".planning/phases/1/CONTEXT.md"]);
+    let old = commit(dir.path(), "docs: checkout history exists");
+    fs::remove_file(root.join("phases/1/CONTEXT.md")).unwrap();
+    git(dir.path(), &["add", ".planning/phases/1/CONTEXT.md"]);
+    commit(dir.path(), "docs: historical document is pruned");
+    let history = server.recall(&root, "checkoutfalcon", None).await.unwrap();
+    assert!(
+        matches!(&history.results[0].provenance,Provenance::Document {commit:Some(sha),..} if sha == &old)
+    );
+    git(dir.path(), &["checkout", "--quiet", &old]);
+    let checked_out = clone.recall(&root, "checkoutfalcon", None).await.unwrap();
+    assert_eq!(checked_out.total, 1);
+    assert!(matches!(
+        &checked_out.results[0].provenance,
+        Provenance::Document { commit: None, .. }
+    ));
+}
+
+#[tokio::test]
+async fn resident_never_answers_from_cached_config_after_reload_failure() {
+    use crate::config::reload::{ConfigIo, FileIo, Input};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    #[derive(Clone)]
+    struct Switch(Arc<AtomicBool>);
+    impl ConfigIo for Switch {
+        fn read(&mut self, path: &Path) -> cadence::store::Result<Input> {
+            if self.0.load(Ordering::SeqCst) && path.ends_with("config.v4.json") {
+                return Err(cadence::store::Error::Io("PermissionDenied".into()));
+            }
+            FileIo.read(path)
+        }
+    }
+    let denied = Arc::new(AtomicBool::new(false));
+    let dir = temp();
+    put(dir.path(), "PROJECT.md", "configfalcon text");
+    let server = crate::server::CadenceServer::with_factory(SessionFactory::with_io(
+        None,
+        Switch(denied.clone()),
+        Arc::new(|_, _| Ok(())),
+    ));
+    assert_eq!(
+        server
+            .recall(dir.path(), "configfalcon", None)
+            .await
+            .unwrap()
+            .total,
+        1
+    );
+    denied.store(true, Ordering::SeqCst);
+    assert!(matches!(
+        server.recall(dir.path(), "configfalcon", None).await,
+        Err(cadence::store::Error::Io(_))
+    ));
+    denied.store(false, Ordering::SeqCst);
+    put(dir.path(), "config.v4.json", "{");
+    assert!(
+        server
+            .recall(dir.path(), "configfalcon", None)
+            .await
+            .is_err()
+    );
+    put(
+        dir.path(),
+        "config.v4.json",
+        r#"{"memory":{"backend":"none"}}"#,
+    );
+    assert_eq!(
+        server
+            .recall(dir.path(), "configfalcon", None)
+            .await
+            .unwrap()
+            .backend,
+        "none"
+    );
+}
+
+#[tokio::test]
+async fn version_is_lazy_and_owner_releases_sessions_after_handles_close() {
+    use std::sync::mpsc;
+    let dir = temp();
+    let (done, completion) = mpsc::channel();
+    struct Notice(mpsc::Sender<()>);
+    impl Drop for Notice {
+        fn drop(&mut self) {
+            let _ = self.0.send(());
+        }
+    }
+    let notice = Notice(done);
+    let server = crate::server::CadenceServer::with_factory(SessionFactory::new(
+        None,
+        Arc::new(move |_, _| {
+            let _ = &notice;
+            Ok(())
+        }),
+    ));
+    server.cadence_version().await.unwrap();
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    let clone = server.clone();
+    let root = dir.path().join(".planning");
+    let pending = tokio::spawn(async move { clone.store(&root, Operation::Read).await });
+    drop(server);
+    assert_eq!(pending.await.unwrap().unwrap().snapshot.generation, 1);
+    tokio::task::spawn_blocking(move || completion.recv_timeout(std::time::Duration::from_secs(5)))
+        .await
+        .unwrap()
+        .unwrap();
+}

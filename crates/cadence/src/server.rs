@@ -42,12 +42,55 @@ pub struct VersionReport {
 /// has to be a handle onto one shared thing rather than a copy of it, or a
 /// clone would answer from its own.
 #[derive(Clone)]
-pub struct CadenceServer;
+pub struct CadenceServer {
+    #[allow(dead_code)] // Called by internal clients until phase 5 registers tools.
+    service: recall::Resident,
+}
+
+#[allow(dead_code)]
+impl CadenceServer {
+    pub fn with_factory<I: crate::config::reload::ConfigIo + Clone + Sync>(
+        factory: crate::import::SessionFactory<I>,
+    ) -> Self {
+        Self {
+            service: recall::Resident::spawn(factory),
+        }
+    }
+
+    pub async fn store(
+        &self,
+        root: &std::path::Path,
+        operation: cadence::store::writer::Operation,
+    ) -> cadence::store::Result<cadence::store::writer::View> {
+        self.service.store(root, operation).await
+    }
+
+    pub async fn recall(
+        &self,
+        root: &std::path::Path,
+        query: &str,
+        limit: Option<i64>,
+    ) -> cadence::store::Result<recall::Answer> {
+        self.service.recall(root, query, limit).await
+    }
+}
 
 #[tool_router]
 impl CadenceServer {
     pub fn new() -> Self {
-        Self
+        let global = std::env::var_os("CADENCE_GLOBAL_CONFIG")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|home| std::path::PathBuf::from(home).join(".claude/cadence/config.json"))
+            })
+            .filter(|path| !path.as_os_str().is_empty());
+        // These internal operations only own planning storage. Forge and
+        // dispatch policy are evaluated by their later operation surfaces.
+        Self::with_factory(crate::import::SessionFactory::new(
+            global,
+            std::sync::Arc::new(|_, _| Ok(())),
+        ))
     }
 
     #[tool(

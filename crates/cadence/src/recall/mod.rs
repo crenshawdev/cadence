@@ -172,3 +172,221 @@ impl Corpus {
         Ok(answer)
     }
 }
+
+// Runtime and filesystem work live outside the ranker and renderer. The task
+// owns every derived index; handles only send requests and await their reply.
+pub use resident::Resident;
+mod resident {
+    use super::*;
+    use crate::{
+        config::{
+            merge,
+            reload::{self, ConfigIo, Generation},
+        },
+        import::{Session, SessionFactory},
+    };
+    use cadence::store::{Error, Result, writer::Operation};
+    use std::{
+        collections::BTreeMap,
+        os::unix::fs::MetadataExt,
+        path::{Path, PathBuf},
+    };
+    use tokio::sync::{mpsc, oneshot};
+
+    enum Request {
+        Store {
+            root: PathBuf,
+            operation: Operation,
+            reply: oneshot::Sender<Result<View>>,
+        },
+        Recall {
+            root: PathBuf,
+            query: String,
+            limit: Option<i64>,
+            reply: oneshot::Sender<Result<Answer>>,
+        },
+    }
+    #[derive(Clone)]
+    pub struct Resident {
+        requests: mpsc::Sender<Request>,
+    }
+
+    #[derive(PartialEq, Eq)]
+    struct Inputs {
+        store: (u64, String, String),
+        config: u64,
+        documents: BTreeMap<String, String>,
+        file_ids: BTreeMap<String, (u64, u64)>,
+        history: BTreeSet<String>,
+        incomplete: Vec<String>,
+    }
+    struct Cached {
+        inputs: Inputs,
+        corpus: Corpus,
+    }
+
+    fn prepare(root: &Path, view: &View, config: &Generation) -> (Inputs, Vec<Candidate>) {
+        let docs = documents::read(root, &mut documents::Files);
+        let file_ids = docs
+            .identities
+            .keys()
+            .filter_map(|path| {
+                std::fs::metadata(root.join(path))
+                    .ok()
+                    .map(|m| (path.clone(), (m.dev(), m.ino())))
+            })
+            .collect();
+        let mut candidates = current(view);
+        candidates.extend(docs.candidates);
+        let history = history::read(root, view, &candidates, &mut history::Git);
+        candidates.extend(history.candidates);
+        let inputs = Inputs {
+            store: (
+                view.snapshot.generation,
+                view.snapshot.items_digest.clone(),
+                view.snapshot.decisions_digest.clone(),
+            ),
+            config: config.number,
+            documents: docs.identities,
+            file_ids,
+            history: history.identities,
+            incomplete: docs
+                .incomplete
+                .into_iter()
+                .chain(history.incomplete)
+                .collect(),
+        };
+        (inputs, candidates)
+    }
+
+    async fn answer<I: ConfigIo>(
+        session: &Session<I>,
+        root: &Path,
+        query: &str,
+        limit: Option<i64>,
+        cache: &mut Option<Cached>,
+    ) -> Result<Answer> {
+        // Reads through the same owner as writes. Since this task serializes
+        // its operations, only another supplied session client can change the
+        // generation during I/O; rechecking below catches that too.
+        let view = session.request(Operation::Read).await?;
+        let config = session.config()?;
+        let backend = merge::get(&config.effective.values, "memory.backend")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| Error::Policy("recall controlling config unavailable".into()))?;
+        // Validate arguments and backend before any expensive corpus read.
+        let empty = Corpus::new(vec![], &BTreeSet::new());
+        let disabled = empty.query(query, limit, backend).map_err(Error::Invalid)?;
+        if backend == "none" {
+            *cache = None;
+            return Ok(disabled);
+        }
+        let task_root = root.to_path_buf();
+        let task_view = view.clone();
+        let task_config = config.clone();
+        let (inputs, candidates) =
+            tokio::task::spawn_blocking(move || prepare(&task_root, &task_view, &task_config))
+                .await
+                .map_err(|_| Error::Closed)?;
+        let latest = session.request(Operation::Read).await?;
+        let latest_config = session.config()?;
+        if latest.snapshot != view.snapshot || latest_config != config {
+            *cache = None;
+            return Err(Error::Conflict(
+                "recall inputs changed during preparation; retry with current generation".into(),
+            ));
+        }
+        if cache.as_ref().is_none_or(|cached| cached.inputs != inputs) {
+            *cache = Some(Cached {
+                inputs,
+                corpus: Corpus::new(candidates, &declined(&latest)),
+            });
+        }
+        let cached = cache.as_ref().expect("prepared cache");
+        let mut result = cached
+            .corpus
+            .query(query, limit, backend)
+            .map_err(Error::Invalid)?;
+        result.incomplete = cached.inputs.incomplete.clone();
+        Ok(result)
+    }
+
+    impl Resident {
+        // first_touch borrows the factory across await in a migratable task.
+        // Sync applies to that borrow, not to writable store/index ownership.
+        pub fn spawn<I: ConfigIo + Clone + Sync>(factory: SessionFactory<I>) -> Self {
+            let (requests, mut receiver) = mpsc::channel::<Request>(32);
+            tokio::spawn(async move {
+                let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
+                while let Some(request) = receiver.recv().await {
+                    match request {
+                        Request::Store {
+                            root,
+                            operation,
+                            reply,
+                        } => {
+                            let result = match factory.first_touch(&root).await {
+                                Ok(session) => session.request(operation).await,
+                                Err(e) => Err(e),
+                            };
+                            let _ = reply.send(result);
+                        }
+                        Request::Recall {
+                            root,
+                            query,
+                            limit,
+                            reply,
+                        } => {
+                            let result = match reload::identity(&root) {
+                                Ok(root) => {
+                                    let cache = caches.entry(root.clone()).or_default();
+                                    let result = match factory.first_touch(&root).await {
+                                        Ok(session) => {
+                                            answer(&session, &root, &query, limit, cache).await
+                                        }
+                                        Err(e) => Err(e),
+                                    };
+                                    if result.is_err() {
+                                        *cache = None;
+                                    }
+                                    result
+                                }
+                                Err(e) => Err(e),
+                            };
+                            let _ = reply.send(result);
+                        }
+                    }
+                }
+                // Dropping the factory releases its sessions and writer handles.
+                // Accepted requests drain; canceled reply receivers cannot panic.
+            });
+            Self { requests }
+        }
+
+        pub async fn store(&self, root: &Path, operation: Operation) -> Result<View> {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::Store {
+                    root: root.into(),
+                    operation,
+                    reply,
+                })
+                .await
+                .map_err(|_| Error::Closed)?;
+            completion.await.map_err(|_| Error::Closed)?
+        }
+        pub async fn recall(&self, root: &Path, query: &str, limit: Option<i64>) -> Result<Answer> {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::Recall {
+                    root: root.into(),
+                    query: query.into(),
+                    limit,
+                    reply,
+                })
+                .await
+                .map_err(|_| Error::Closed)?;
+            completion.await.map_err(|_| Error::Closed)?
+        }
+    }
+}
