@@ -37,6 +37,18 @@ pub struct UatCounts {
     pub blocked: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UatItem {
+    pub status: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParsedUat {
+    pub items: Vec<UatItem>,
+    pub counts: UatCounts,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PhaseRecord {
     pub id: PhaseId,
