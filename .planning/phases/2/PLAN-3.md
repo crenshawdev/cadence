@@ -283,7 +283,14 @@ prevent - and it must not be read as any parity claim.
   `cursor.agrees`, `parallelSafe` - SEVEN keys, assigning each to the operation
   whose COMMITTED recording actually carries it (open the recordings and look;
   `parallelSafe` is `worktree-base resolve`'s, and `frontmatter_issues` is
-  carried by `plan-overlap-malformed` and `milestone-prune-ok`). D-06 originally
+  carried in STDOUT by `plan-overlap-malformed` only). A correction to this line
+  itself, worth keeping because it is the trap plan 2 Task 4 already documents:
+  an earlier draft also credited `milestone-prune-ok`, which was wrong - that
+  recording's stdout is `ok, action, label, mode, phases, roadmap, requirements,
+  dirs, residue_rows`, and the token appears only inside its captured `files`
+  bytes. A `grep -l` over a recording FILE matches the captured file contents as
+  well as the envelope; PARSE the recording and read `stdout` when the question
+  is what an envelope carries. D-06 originally
   named nine; `drift` and `undeclared` were struck 2026-09-06 because no
   recording carries either - see the amendment in CONTEXT. Do NOT hunt for them
   and do NOT invent an operation to hold them. Every
