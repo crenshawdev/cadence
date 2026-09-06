@@ -13,7 +13,7 @@
   "stdin": "{\"situation\":\"A bounded offline probe.\"}",
   "env": {
     "PATH": "<FIXTURE>/.golden-env/bin",
-    "HOME": "<FIXTURE>/.golden-env/home",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
     "TZ": "UTC",
     "LC_ALL": "C.UTF-8",
     "LANG": "C.UTF-8",
@@ -26,7 +26,7 @@
   "stdout": {
     "ok": false,
     "reason": "no-key",
-    "detail": "set env $OPENAI_API_KEY or <FIXTURE>/.golden-env/home/.config/cadence/providers.env",
+    "detail": "set env $OPENAI_API_KEY or <FIXTURE>/.golden-env/user-home/.config/cadence/providers.env",
     "hint": "write the key into that env file as NAME=value, or export it in this shell, then re-run - the key is never read from a repo config"
   },
   "stderr": "",

@@ -1,0 +1,42 @@
+{
+  "invocation": "seed-reqs-ok",
+  "operation": "seed-reqs",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "seed-reqs",
+    "--phase",
+    "1",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "phase": 1,
+    "seeded": [
+      "TRC-04",
+      "TRC-06",
+      "MSR-05",
+      "TRC-05"
+    ],
+    "skipped": []
+  },
+  "stderr": "",
+  "files": {
+    ".planning/REQUIREMENTS.md": "# Requirements: Golden fixture\n\n## Active\n\n- **MSR-05**: Archived phase 1 requirement\n- **TRC-04**: Archived phase 1 requirement\n- **TRC-05**: Archived phase 1 requirement\n- **TRC-06**: Archived phase 1 requirement\n\n## Traceability\n\n| Requirement | Phase | Status |\n|-------------|-------|--------|\n| TRC-04 | Phase 1 | Pending |\n| TRC-06 | Phase 1 | Pending |\n| MSR-05 | Phase 1 | Pending |\n| TRC-05 | Phase 1 | Pending |\n"
+  },
+  "deleted": []
+}

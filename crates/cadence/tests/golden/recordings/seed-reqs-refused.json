@@ -1,0 +1,35 @@
+{
+  "invocation": "seed-reqs-refused",
+  "operation": "seed-reqs",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "seed-reqs",
+    "--phase",
+    "9",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "no-phase-dir",
+    "detail": "<FIXTURE>/.planning/phases/9 not found",
+    "hint": "run /cad-plan <N> first - the ids seeded here come from the `requirements:` lines of the PLAN files in that directory"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

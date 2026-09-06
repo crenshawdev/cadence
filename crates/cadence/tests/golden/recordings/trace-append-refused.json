@@ -1,0 +1,40 @@
+{
+  "invocation": "trace-append-refused",
+  "operation": "trace append",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "trace",
+    "append",
+    "--phase",
+    "1",
+    "--family",
+    "invalid",
+    "--event",
+    "phase_start",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "bad-args",
+    "detail": "trace append --family must be one of routing | provider | lifecycle | outcome",
+    "hint": "send one of the families the detail lists; a coordinator closing a bracket calls `trace close` instead, which picks the family itself - nothing was appended"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

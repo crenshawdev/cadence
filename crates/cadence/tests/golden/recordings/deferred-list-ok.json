@@ -1,0 +1,43 @@
+{
+  "invocation": "deferred-list-ok",
+  "operation": "deferred list",
+  "bundle": "deferred",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "deferred",
+    "list",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "members": [
+      {
+        "phase": "1",
+        "trigger": "diff",
+        "discriminator": "golden",
+        "round": 1,
+        "path": "phases/1/DEFERRED-diff-golden.json",
+        "findings": 1
+      }
+    ],
+    "findings": 1,
+    "unreadable": []
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

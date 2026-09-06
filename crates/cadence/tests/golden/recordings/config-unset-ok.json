@@ -1,0 +1,37 @@
+{
+  "invocation": "config-unset-ok",
+  "operation": "config unset",
+  "bundle": "config",
+  "script": "cadence-core/bin/config.mjs",
+  "argv": [
+    "unset",
+    "--file",
+    "<FIXTURE>/.planning/config.json",
+    "memory.backend"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "file": "<FIXTURE>/.planning/config.json",
+    "removed": [
+      "memory.backend"
+    ]
+  },
+  "stderr": "",
+  "files": {
+    ".planning/config.json": "{\n  \"memory\": {},\n  \"review\": {\n    \"triggers\": {\n      \"risk_surface\": {\n        \"surfaces\": [\n          \"secrets\",\n          \"destructive\",\n          \"untrusted_input\"\n        ]\n      },\n      \"diff\": {\n        \"tier\": \"flagship\"\n      }\n    }\n  }\n}\n"
+  },
+  "deleted": []
+}

@@ -1,0 +1,57 @@
+{
+  "invocation": "weight-ok",
+  "operation": "weight",
+  "bundle": "plugin",
+  "script": "cadence-core/bin/weight.mjs",
+  "argv": [
+    "--root",
+    "<FIXTURE>"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "checked": "surface-weight",
+    "surfaces": [
+      {
+        "surface": "agents/cad-executor.md",
+        "bytes": 459,
+        "estTokens": 115
+      },
+      {
+        "surface": "cadence-core/references/conventions.md",
+        "bytes": 16941,
+        "estTokens": 4236
+      },
+      {
+        "surface": "cadence-core/templates/STATE.md",
+        "bytes": 511,
+        "estTokens": 128
+      },
+      {
+        "surface": "cadence-core/workflows/progress.md",
+        "bytes": 14974,
+        "estTokens": 3744
+      },
+      {
+        "surface": "skills/cad-progress/SKILL.md",
+        "bytes": 1154,
+        "estTokens": 289
+      }
+    ]
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

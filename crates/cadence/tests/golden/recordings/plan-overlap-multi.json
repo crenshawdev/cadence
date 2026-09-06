@@ -1,0 +1,83 @@
+{
+  "invocation": "plan-overlap-multi",
+  "operation": "plan-overlap",
+  "bundle": "multi",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "plan-overlap",
+    "--phase",
+    "5",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "phase": 5,
+    "plans": [
+      {
+        "plan": "PLAN-1.md",
+        "files": 1
+      },
+      {
+        "plan": "PLAN-2.md",
+        "files": 1
+      },
+      {
+        "plan": "PLAN-3.md",
+        "files": 1
+      },
+      {
+        "plan": "PLAN-4.md",
+        "files": 4
+      },
+      {
+        "plan": "PLAN-5.md",
+        "files": 1
+      },
+      {
+        "plan": "PLAN-6.md",
+        "files": 6
+      },
+      {
+        "plan": "PLAN-7.md",
+        "files": 4
+      }
+    ],
+    "overlaps": [
+      {
+        "plans": [
+          "PLAN-3.md",
+          "PLAN-7.md"
+        ],
+        "files": [
+          ".planning/DOCS-CLAIMS.md"
+        ]
+      },
+      {
+        "plans": [
+          "PLAN-4.md",
+          "PLAN-6.md"
+        ],
+        "files": [
+          "cadence-core/bin/weight-budgets.json"
+        ]
+      }
+    ]
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

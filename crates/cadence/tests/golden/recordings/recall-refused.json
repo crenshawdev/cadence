@@ -1,0 +1,36 @@
+{
+  "invocation": "recall-refused",
+  "operation": "recall",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "recall",
+    "trace",
+    "--top",
+    "0",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "bad-args",
+    "detail": "--top must be a positive integer",
+    "hint": "send --top as a whole number of 1 or more, or drop it to take the default 5 results"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

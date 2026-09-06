@@ -14,7 +14,7 @@
   "stdin": null,
   "env": {
     "PATH": "<FIXTURE>/.golden-env/bin",
-    "HOME": "<FIXTURE>/.golden-env/home",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
     "TZ": "UTC",
     "LC_ALL": "C.UTF-8",
     "LANG": "C.UTF-8",
@@ -93,6 +93,25 @@
     "total": 1
   },
   "stderr": "",
-  "files": {},
-  "deleted": []
+  "files": {
+    ".planning/ROADMAP.md": "# Roadmap: Golden slice\n\n## Phases\n\n- [ ] **Phase 1: Next phase** - Unplanned continuation\n\n## Phase Details\n\n### Phase 1: Next phase\n**Goal:** Continue the live cycle\n**Depends on:** Phase 1\n"
+  },
+  "deleted": [
+    ".planning/phases/1/ADJUDICATION-plan-cad-plan-2a385615.json",
+    ".planning/phases/1/ADJUDICATION-risk_surface-plan-1-r2.json",
+    ".planning/phases/1/ADJUDICATION-risk_surface-plan-1.json",
+    ".planning/phases/1/ADJUDICATION-risk_surface-plan-2.json",
+    ".planning/phases/1/CONTEXT.md",
+    ".planning/phases/1/FINDINGS.json",
+    ".planning/phases/1/PLAN-1.md",
+    ".planning/phases/1/PLAN-2.md",
+    ".planning/phases/1/REVIEW-risk_surface-plan-1-r2.md",
+    ".planning/phases/1/REVIEW-risk_surface-plan-1.md",
+    ".planning/phases/1/REVIEW-risk_surface-plan-2.md",
+    ".planning/phases/1/SUMMARY.md",
+    ".planning/phases/1/UAT.md",
+    ".planning/phases/1/reports/plan-1.md",
+    ".planning/phases/1/reports/plan-2.md",
+    ".planning/phases/1/verifier-findings.json"
+  ]
 }

@@ -1,0 +1,35 @@
+{
+  "invocation": "config-get-ok",
+  "operation": "config get",
+  "bundle": "config",
+  "script": "cadence-core/bin/config.mjs",
+  "argv": [
+    "get",
+    "--file",
+    "<FIXTURE>/.planning/config.json",
+    "roles.cad-executor.model"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/global-config.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "values": {
+      "roles.cad-executor.model": "opus"
+    },
+    "source": "global+repo"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

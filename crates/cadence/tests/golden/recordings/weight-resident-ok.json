@@ -1,0 +1,73 @@
+{
+  "invocation": "weight-resident-ok",
+  "operation": "weight resident",
+  "bundle": "plugin",
+  "script": "cadence-core/bin/weight.mjs",
+  "argv": [
+    "resident",
+    "--root",
+    "<FIXTURE>"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "checked": "resident-weight",
+    "commands": [
+      {
+        "command": "cad-progress",
+        "eagerBytes": 16128,
+        "eagerFiles": [
+          {
+            "surface": "cadence-core/workflows/progress.md",
+            "bytes": 14974
+          },
+          {
+            "surface": "skills/cad-progress/SKILL.md",
+            "bytes": 1154
+          }
+        ],
+        "reachableBytes": 33069,
+        "reachableFiles": [
+          {
+            "surface": "cadence-core/references/conventions.md",
+            "bytes": 16941
+          },
+          {
+            "surface": "cadence-core/workflows/progress.md",
+            "bytes": 14974
+          },
+          {
+            "surface": "skills/cad-progress/SKILL.md",
+            "bytes": 1154
+          }
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "role": "cad-executor",
+        "agent": "agents/cad-executor.md",
+        "agentBytes": 459,
+        "contracts": [],
+        "dispatchBytes": 459
+      }
+    ],
+    "zeroResident": [],
+    "zeroResidentBytes": 0
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

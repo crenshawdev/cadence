@@ -1,0 +1,55 @@
+{
+  "invocation": "criteria-coverage-ok",
+  "operation": "criteria-coverage",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "criteria-coverage",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "version": {
+      "plugin": "3.7.12",
+      "uat_fields": "1"
+    },
+    "phases": [
+      {
+        "phase": 1,
+        "criteria": 7,
+        "items": 10
+      }
+    ],
+    "untraced": [
+      {
+        "phase": 1,
+        "item": 8,
+        "name": "The identity join against this repo's own record"
+      }
+    ],
+    "counts": {
+      "criteria": 7,
+      "covered": 7,
+      "uncovered": 0,
+      "untraced": 1,
+      "phases": 1
+    }
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

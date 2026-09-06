@@ -1,0 +1,93 @@
+{
+  "invocation": "audit-multi",
+  "operation": "audit",
+  "bundle": "multi",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "audit",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "requirements": [
+      {
+        "id": "DOC-02",
+        "break": "unpicked"
+      }
+    ],
+    "orphans": {
+      "plan_ids": [
+        {
+          "file": "phases/5/PLAN-1.md",
+          "ids": [
+            "DOC-02"
+          ]
+        },
+        {
+          "file": "phases/5/PLAN-2.md",
+          "ids": [
+            "DOC-02"
+          ]
+        },
+        {
+          "file": "phases/5/PLAN-3.md",
+          "ids": [
+            "DOC-02"
+          ]
+        },
+        {
+          "file": "phases/5/PLAN-4.md",
+          "ids": [
+            "DOC-02"
+          ]
+        },
+        {
+          "file": "phases/5/PLAN-5.md",
+          "ids": [
+            "DOC-02"
+          ]
+        },
+        {
+          "file": "phases/5/PLAN-6.md",
+          "ids": [
+            "DOC-02"
+          ]
+        },
+        {
+          "file": "phases/5/PLAN-7.md",
+          "ids": [
+            "DOC-02"
+          ]
+        }
+      ]
+    },
+    "unseeded": {
+      "active_ids": [
+        "DOC-02"
+      ]
+    },
+    "counts": {
+      "total": 1,
+      "traced": 0,
+      "broken": 1,
+      "deferred": 0
+    }
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -2,7 +2,7 @@
 // from cadence-core: the subprocess boundary is the behavior being measured.
 import { spawnSync } from 'node:child_process';
 import { accessSync, constants, cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -138,14 +138,29 @@ function normalize(recording, before, restore, rules) {
   return result;
 }
 
+function assertUntainted(recording, pid, suppliedPaths) {
+  const host = hostname();
+  // Remove only supplied paths, never arbitrary absolute paths: an atomicWrite
+  // refusal can expose a new temp suffix containing the real child pid.
+  const paths = [...suppliedPaths].filter(Boolean).sort((a, b) => b.length - a.length);
+  const withoutPaths = text => paths.reduce((s, path) => s.replaceAll(path, ''), text);
+  const kinds = [];
+  if (host && withoutPaths(JSON.stringify(recording)).includes(host)) kinds.push('hostname');
+  const streams = withoutPaths(JSON.stringify(recording.stdout) + '\n' + recording.stderr);
+  if (new RegExp(`(^|[^0-9])${pid}([^0-9]|$)`).test(streams)) kinds.push('pid');
+  if (kinds.length) throw new Error(`${recording.invocation}: captured ${kinds.join(' and ')} taint`);
+}
+
 function main() {
   const only = new Set();
   let noNormalize = false;
+  let taintStderr = false;
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--no-normalize') { noNormalize = true; continue; }
+    if (args[i] === '--taint-stderr') { taintStderr = true; continue; }
     if (args[i] !== '--only' || !identifier.test(args[i + 1] || '')) {
-      throw new Error('usage: record.mjs [--only <invocation>]... [--no-normalize]');
+      throw new Error('usage: record.mjs [--only <invocation>]... [--no-normalize] [--taint-stderr]');
     }
     only.add(args[++i]);
   }
@@ -188,7 +203,7 @@ function main() {
       const support = join(scratch, '.golden-env');
       mkdirSync(support);
       mkdirSync(join(support, 'bin'));
-      mkdirSync(join(support, 'home'));
+      mkdirSync(join(support, 'user-home'));
       symlinkSync(process.execPath, join(support, 'bin/node'));
       symlinkSync(git, join(support, 'bin/git'));
       const empty = join(support, 'empty.json');
@@ -196,7 +211,7 @@ function main() {
       const global = entry.global_config === undefined ? empty
         : contained(scratch, realpathSync(resolve(scratch, entry.global_config)));
       const env = {
-        PATH: join(support, 'bin'), HOME: join(support, 'home'),
+        PATH: join(support, 'bin'), HOME: join(support, 'user-home'),
         TZ: 'UTC', LC_ALL: 'C.UTF-8', LANG: 'C.UTF-8',
         CADENCE_GLOBAL_CONFIG: global,
         CADENCE_MANAGED_SETTINGS: empty,
@@ -243,9 +258,23 @@ function main() {
         if (!before.get(path)?.equals(bytes)) recording.files[path] = bytes.toString('utf8');
       }
       recording.deleted = [...before.keys()].filter(path => !after.has(path));
+      if (taintStderr) recording.stderr += `\ngolden taint pid=${child.pid} hostname=${hostname()}\n`;
       const destination = join(output, `${entry.invocation}.json`);
       // Opening without following symlinks protects an existing recording too.
       const normalized = normalize(recording, before, restore, noNormalize ? [] : rules);
+      const suppliedPaths = new Set([
+        entry.script, ...entry.argv.filter(arg => arg.includes('/')),
+        ...before.keys(), ...after.keys(),
+      ]);
+      // Include parent paths, which a refusal or fixture prose can name alone.
+      for (const path of [...suppliedPaths]) {
+        let parent = dirname(path);
+        while (parent !== '.' && parent !== '/' && !suppliedPaths.has(parent)) {
+          suppliedPaths.add(parent);
+          parent = dirname(parent);
+        }
+      }
+      assertUntainted(normalized, child.pid, suppliedPaths);
       writeFileSync(destination, JSON.stringify(normalized, null, 2) + '\n',
         { flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW });
     } finally {

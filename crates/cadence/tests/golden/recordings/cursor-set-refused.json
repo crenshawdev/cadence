@@ -1,0 +1,34 @@
+{
+  "invocation": "cursor-set-refused",
+  "operation": "cursor set",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "cursor",
+    "set",
+    "--dir",
+    "<FIXTURE>/missing"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "no-planning-dir",
+    "detail": "<FIXTURE>/missing not found",
+    "hint": "/cad-new-project"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

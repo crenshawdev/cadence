@@ -1,0 +1,45 @@
+{
+  "invocation": "criteria-size-ok",
+  "operation": "criteria-size",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "criteria-size",
+    "--phase",
+    "1",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "phase": 1,
+    "phases": [
+      {
+        "phase": 1,
+        "context_criteria": 7,
+        "context_found": true,
+        "roadmap_criteria": 0,
+        "roadmap_found": false
+      }
+    ],
+    "over": [],
+    "compared": [],
+    "within": null
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

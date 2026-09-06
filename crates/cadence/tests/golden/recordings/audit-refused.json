@@ -1,0 +1,33 @@
+{
+  "invocation": "audit-refused",
+  "operation": "audit",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "audit",
+    "--dir",
+    "<FIXTURE>/missing"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "no-requirements",
+    "detail": "<FIXTURE>/missing/REQUIREMENTS.md not found",
+    "hint": "point --dir at the .planning/ directory that holds REQUIREMENTS.md, or run /cad-new-project if this project has none yet - the audit reads its `## Traceability` table"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

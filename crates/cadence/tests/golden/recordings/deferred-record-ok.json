@@ -24,7 +24,7 @@
   "stdin": null,
   "env": {
     "PATH": "<FIXTURE>/.golden-env/bin",
-    "HOME": "<FIXTURE>/.golden-env/home",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
     "TZ": "UTC",
     "LC_ALL": "C.UTF-8",
     "LANG": "C.UTF-8",
@@ -58,6 +58,8 @@
     "findings": 1
   },
   "stderr": "",
-  "files": {},
+  "files": {
+    ".planning/phases/1/DEFERRED-risk_surface-golden.json": "{\n  \"phase\": \"1\",\n  \"trigger\": \"risk_surface\",\n  \"discriminator\": \"golden\",\n  \"round\": 1,\n  \"base\": \"5191a92e44aaaf6dc22502ed847912e21c4ede7c\",\n  \"head\": \"5191a92e44aaaf6dc22502ed847912e21c4ede7c\",\n  \"base_id\": \"5191a92e44aaaf6dc22502ed847912e21c4ede7c\",\n  \"head_id\": \"5191a92e44aaaf6dc22502ed847912e21c4ede7c\",\n  \"findings\": [\n    {\n      \"file\": \"src/auth.mjs\",\n      \"line\": 2,\n      \"severity\": \"low\",\n      \"claim\": \"The policy is a literal.\",\n      \"failure_scenario\": \"A second policy would need a separate decision.\"\n    }\n  ]\n}\n"
+  },
   "deleted": []
 }

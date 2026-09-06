@@ -1,0 +1,58 @@
+{
+  "invocation": "replay-check-incomplete",
+  "operation": "replay-check",
+  "bundle": "incomplete",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "replay-check",
+    "--phase",
+    "1",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "phase": 1,
+    "rerun": false,
+    "reports": [
+      {
+        "plan": "PLAN-1.md",
+        "k": 1,
+        "report": "phases/1/reports/plan-1.md",
+        "exists": false,
+        "status": null,
+        "complete": false
+      },
+      {
+        "plan": "PLAN-2.md",
+        "k": 2,
+        "report": "phases/1/reports/plan-2.md",
+        "exists": false,
+        "status": null,
+        "complete": false
+      }
+    ],
+    "replay": false,
+    "dispatch_set": [
+      "PLAN-1.md",
+      "PLAN-2.md"
+    ],
+    "reports_read": []
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -1,0 +1,37 @@
+{
+  "invocation": "config-check-refused",
+  "operation": "config check",
+  "bundle": "config",
+  "script": "cadence-core/bin/config.mjs",
+  "argv": [
+    "check",
+    "unknown.golden=true"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "invalid",
+    "detail": [
+      {
+        "key": "unknown.golden",
+        "error": "unknown key"
+      }
+    ],
+    "hint": "each error names the pair it refused - run `config.mjs keys` for the keys this schema carries and the values each one takes, then re-run with a pair it accepts"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -1,0 +1,37 @@
+{
+  "invocation": "cite-count-refused",
+  "operation": "cite-count",
+  "bundle": "planning-inputs",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "cite-count",
+    "--phase",
+    "1",
+    "--point",
+    "invalid",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "bad-args",
+    "detail": "cite-count --point must be one of planned | committed",
+    "hint": "send one of the two points the detail lists, naming which moment in /cad-plan this count was taken at, or drop --point"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

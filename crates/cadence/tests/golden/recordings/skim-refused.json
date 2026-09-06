@@ -1,0 +1,32 @@
+{
+  "invocation": "skim-refused",
+  "operation": "skim",
+  "bundle": "project",
+  "script": "cadence-core/bin/skim.mjs",
+  "argv": [
+    "<FIXTURE>/missing.mjs",
+    "--stats"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "no-such-file",
+    "detail": "ENOENT: no such file or directory, open '<FIXTURE>/missing.mjs'",
+    "hint": "check the path - skim.mjs takes one file, absolute or relative to the current directory - then re-run"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -1,0 +1,35 @@
+{
+  "invocation": "capture-check-refused",
+  "operation": "capture-check",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "capture-check",
+    "--file",
+    "<FIXTURE>/.planning",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "unreadable-capture",
+    "detail": "<FIXTURE>/.planning: EISDIR: illegal operation on a directory, read",
+    "hint": "make that file readable and re-run - the queue is PRESENT and could not be opened, so this is not a report that the queue is empty, carries no annotated item and holds no `## Archive` heading"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -1,0 +1,38 @@
+{
+  "invocation": "config-validate-unknown-key",
+  "operation": "config validate",
+  "bundle": "config-unknown",
+  "script": "cadence-core/bin/config.mjs",
+  "argv": [
+    "validate",
+    "--file",
+    "<FIXTURE>/.planning/config.json"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "file": "<FIXTURE>/.planning/config.json",
+    "checked": 4,
+    "errors": [
+      {
+        "key": "unknown.golden",
+        "error": "unknown key"
+      }
+    ]
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

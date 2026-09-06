@@ -1,0 +1,34 @@
+{
+  "invocation": "cursor-get-refused",
+  "operation": "cursor get",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "cursor",
+    "get",
+    "--dir",
+    "<FIXTURE>/missing"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "no-cursor",
+    "detail": "<FIXTURE>/missing/STATE.md not found",
+    "hint": "run /cad-progress, which derives where the project is from the phase artifacts and writes the cursor; /cad-new-project if this project has no .planning/ yet"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

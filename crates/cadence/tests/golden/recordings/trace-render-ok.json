@@ -1,0 +1,45 @@
+{
+  "invocation": "trace-render-ok",
+  "operation": "trace render",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "trace",
+    "render",
+    "--phase",
+    "1",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 0,
+  "stdout": {
+    "ok": true,
+    "file": "<FIXTURE>/.planning/trace.jsonl",
+    "corr": "1",
+    "capped": false,
+    "counts": {
+      "routing": 3,
+      "provider": 0,
+      "lifecycle": 0,
+      "outcome": 0
+    },
+    "brackets": [],
+    "outcomes": [],
+    "unpaired": []
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

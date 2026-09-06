@@ -7,7 +7,7 @@
   "stdin": "{\"cwd\":\"<FIXTURE>\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"<FIXTURE>/src/auth.mjs\"}}",
   "env": {
     "PATH": "<FIXTURE>/.golden-env/bin",
-    "HOME": "<FIXTURE>/.golden-env/home",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
     "TZ": "UTC",
     "LC_ALL": "C.UTF-8",
     "LANG": "C.UTF-8",

@@ -1,0 +1,36 @@
+{
+  "invocation": "trace-window-refused",
+  "operation": "trace window",
+  "bundle": "slice",
+  "script": "cadence-core/bin/planning.mjs",
+  "argv": [
+    "trace",
+    "window",
+    "--phase",
+    "invalid",
+    "--dir",
+    "<FIXTURE>/.planning"
+  ],
+  "stdin": null,
+  "env": {
+    "PATH": "<FIXTURE>/.golden-env/bin",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
+    "TZ": "UTC",
+    "LC_ALL": "C.UTF-8",
+    "LANG": "C.UTF-8",
+    "CADENCE_GLOBAL_CONFIG": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_MANAGED_SETTINGS": "<FIXTURE>/.golden-env/empty.json",
+    "CADENCE_USER_SETTINGS": "<FIXTURE>/.golden-env/empty.json"
+  },
+  "node": "26",
+  "exit": 1,
+  "stdout": {
+    "ok": false,
+    "reason": "bad-args",
+    "detail": "trace window --phase needs a phase number: --phase <N>",
+    "hint": "correct the flag the detail names and re-run - nothing was written. A value that itself starts with `--` cannot be protected by a bare `--` separator here: every `--`-prefixed word is read as a flag that consumes the next one, so send such a value through the matching `--<name>-file` flag where one exists"
+  },
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

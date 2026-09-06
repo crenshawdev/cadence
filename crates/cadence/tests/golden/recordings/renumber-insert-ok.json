@@ -14,7 +14,7 @@
   "stdin": null,
   "env": {
     "PATH": "<FIXTURE>/.golden-env/bin",
-    "HOME": "<FIXTURE>/.golden-env/home",
+    "HOME": "<FIXTURE>/.golden-env/user-home",
     "TZ": "UTC",
     "LC_ALL": "C.UTF-8",
     "LANG": "C.UTF-8",
@@ -91,6 +91,8 @@
     "total": 2
   },
   "stderr": "",
-  "files": {},
+  "files": {
+    ".planning/ROADMAP.md": "# Roadmap: Golden slice\n\n## Phases\n\n- [x] **Phase 1: Archived phase** - Complete archive\n- [ ] **Phase 3: Next phase** - Unplanned continuation\n\n## Phase Details\n\n### Phase 1: Archived phase\n**Goal:** Preserve the archived phase\n**Depends on:** Nothing\n\n### Phase 3: Next phase\n**Goal:** Continue the live cycle\n**Depends on:** Phase 1\n"
+  },
   "deleted": []
 }
