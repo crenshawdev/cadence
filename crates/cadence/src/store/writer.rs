@@ -22,7 +22,12 @@ pub enum Operation {
 struct Request {
     operation: Operation,
     reply: oneshot::Sender<Result<View>>,
+    #[cfg(test)]
+    id: String,
 }
+
+#[cfg(test)]
+type BeforeReply = Box<dyn FnMut(&str) -> Result<()> + Send>;
 
 #[derive(Clone)]
 pub struct Store {
@@ -31,6 +36,29 @@ pub struct Store {
 
 impl Store {
     pub async fn open<S: Storage, P: Policy>(storage: S, policy: P) -> Result<Self> {
+        Self::open_inner(
+            storage,
+            policy,
+            #[cfg(test)]
+            None,
+        )
+        .await
+    }
+
+    #[cfg(test)]
+    pub async fn open_observed_for_test<S: Storage, P: Policy>(
+        storage: S,
+        policy: P,
+        before_reply: BeforeReply,
+    ) -> Result<Self> {
+        Self::open_inner(storage, policy, Some(before_reply)).await
+    }
+
+    async fn open_inner<S: Storage, P: Policy>(
+        storage: S,
+        policy: P,
+        #[cfg(test)] mut before_reply: Option<BeforeReply>,
+    ) -> Result<Self> {
         let (requests, mut receiver) = mpsc::channel::<Request>(32);
         let (ready, completion) = oneshot::channel();
         std::thread::Builder::new()
@@ -48,9 +76,14 @@ impl Store {
                 };
                 while let Some(request) = receiver.blocking_recv() {
                     let result = writer.execute(request.operation);
-                    // Canceled callers do not cancel operations admitted to the queue.
-                    // There is exactly one send site, after all disk confirmation.
-                    let _ = request.reply.send(result);
+                    finish_reply(
+                        request.reply,
+                        result,
+                        #[cfg(test)]
+                        &request.id,
+                        #[cfg(test)]
+                        &mut before_reply,
+                    );
                 }
             })?;
         completion.await.map_err(|_| Error::Closed)??;
@@ -58,13 +91,58 @@ impl Store {
     }
 
     pub async fn request(&self, operation: Operation) -> Result<View> {
+        self.enqueue(
+            operation,
+            #[cfg(test)]
+            String::new(),
+        )
+        .await
+    }
+
+    #[cfg(test)]
+    pub async fn request_identified_for_test(
+        &self,
+        id: &str,
+        operation: Operation,
+    ) -> Result<View> {
+        self.enqueue(operation, id.to_string()).await
+    }
+
+    async fn enqueue(&self, operation: Operation, #[cfg(test)] id: String) -> Result<View> {
         let (reply, completion) = oneshot::channel();
         self.requests
-            .send(Request { operation, reply })
+            .send(Request {
+                operation,
+                reply,
+                #[cfg(test)]
+                id,
+            })
             .await
             .map_err(|_| Error::Closed)?;
         completion.await.map_err(|_| Error::Closed)?
     }
+}
+
+/// All acknowledgement scheduling goes through this function. The cfg(test)
+/// marker and actual send are one completion operation, including if that
+/// operation is moved earlier by a future change.
+fn finish_reply(
+    reply: oneshot::Sender<Result<View>>,
+    result: Result<View>,
+    #[cfg(test)] id: &str,
+    #[cfg(test)] before_reply: &mut Option<BeforeReply>,
+) {
+    #[cfg(test)]
+    let result = if result.is_ok() && !id.is_empty() {
+        match before_reply.as_mut().map(|hook| hook(id)).transpose() {
+            Ok(_) => result,
+            Err(error) => Err(error),
+        }
+    } else {
+        result
+    };
+    // Canceled callers do not cancel admitted work. A lost reply is not an ack.
+    let _ = reply.send(result);
 }
 
 struct Writer<S: Storage, P: Policy> {

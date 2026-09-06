@@ -21,11 +21,22 @@ pub enum Stage {
 
 type Probe = Box<dyn FnMut(Stage, &Path) -> Result<()> + Send>;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum OmitSync {
+    #[default]
+    Neither,
+    Temporary,
+    Directory,
+}
+
 pub struct Filesystem {
     root: PathBuf,
     sequence: u64,
     probe: Probe,
     participants: BTreeMap<String, PathBuf>,
+    #[cfg(test)]
+    omit_sync: OmitSync,
 }
 
 pub struct Prepared {
@@ -43,6 +54,8 @@ impl Filesystem {
             sequence: 0,
             probe: Box::new(|_, _| Ok(())),
             participants: BTreeMap::new(),
+            #[cfg(test)]
+            omit_sync: OmitSync::Neither,
         })
     }
 
@@ -53,6 +66,30 @@ impl Filesystem {
     ) -> Self {
         self.probe = Box::new(probe);
         self
+    }
+
+    #[cfg(test)]
+    pub fn omit_sync_for_test(mut self, omission: OmitSync) -> Self {
+        self.omit_sync = omission;
+        self
+    }
+
+    fn sync_temporary(&self, file: &File) -> Result<()> {
+        #[cfg(test)]
+        if self.omit_sync == OmitSync::Temporary {
+            return Ok(());
+        }
+        file.sync_all()?;
+        Ok(())
+    }
+
+    fn sync_directory(&self, parent: &Path) -> Result<()> {
+        #[cfg(test)]
+        if self.omit_sync == OmitSync::Directory {
+            return Ok(());
+        }
+        File::open(parent)?.sync_all()?;
+        Ok(())
     }
 
     fn target(&self, target: &str) -> Result<PathBuf> {
@@ -173,7 +210,7 @@ impl Storage for Filesystem {
             (self.probe)(Stage::Writing, &target)?;
             file.write_all(&bytes[middle..])?;
             (self.probe)(Stage::TemporarySync, &temporary)?;
-            file.sync_all()?;
+            self.sync_temporary(&file)?;
             (self.probe)(Stage::TemporarySynced, &target)?;
             (self.probe)(Stage::Prepared, &target)?;
             Ok(())
@@ -190,7 +227,7 @@ impl Storage for Filesystem {
         (self.probe)(Stage::Renamed, &prepared.target)?;
         let parent = prepared.target.parent().unwrap();
         (self.probe)(Stage::DirectorySync, parent)?;
-        File::open(parent)?.sync_all()?;
+        self.sync_directory(parent)?;
         (self.probe)(Stage::DirectorySynced, &prepared.target)?;
         Ok(())
     }
@@ -219,7 +256,7 @@ impl Storage for Filesystem {
         File::open(&path)?.sync_all()?;
         let parent = path.parent().unwrap();
         (self.probe)(Stage::DirectorySync, parent)?;
-        File::open(parent)?.sync_all()?;
+        self.sync_directory(parent)?;
         self.confirm(target, bytes)
     }
 
@@ -228,7 +265,7 @@ impl Storage for Filesystem {
         fs::remove_file(&path)?;
         let parent = path.parent().unwrap();
         (self.probe)(Stage::DirectorySync, parent)?;
-        File::open(parent)?.sync_all()?;
+        self.sync_directory(parent)?;
         Ok(())
     }
 }

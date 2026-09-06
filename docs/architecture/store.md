@@ -112,3 +112,36 @@ comment explicitly declines fsync while promising no torn file. Process kill
 leaves the kernel and its caches alive. Power loss can persist a rename without
 its file data and is a different failure model. These tests do not simulate power
 failure and do not prove AC8's successful-fsync-before-acknowledgement ordering.
+
+## Synchronization ordering fixture (AC8)
+
+Run `cargo test -p cadence --test store_crash ac8_syscall_order` on Linux with
+`strace` installed and permission to trace a spawned child. The fixture runs
+`strace -f -yy -o <trace>` without status filtering, so all threads share one
+ordered output. Missing strace, denied tracing, or missing request markers is
+reported as **BLOCKED AC8**, via a failing test, never as a skipped/pass result.
+This machine does not have strace; AC8 remains unverified here.
+
+The driver initializes the store before a synchronous request-specific START
+pipe marker, then admits exactly one measured snapshot write. The writer's common
+`finish_reply` operation writes a synchronous, unbuffered PRESEND pipe marker
+immediately before its actual success send. The caller must receive that exact
+request's success reply and writes a separate REPLY marker. The receiver marker
+is only receipt evidence; PRESEND is the acknowledgement-order evidence.
+
+The checker joins unfinished/resumed calls by TID, tracking entry and completion
+separately. It binds the measured rename to its exact sibling temporary filename
+and matches fsync descriptors by decoded paths. The temporary fsync must complete
+successfully before rename starts; rename must complete before a successful
+containing-directory fsync; that sync must complete before the writer's PRESEND
+marker. Failed, missing, or reordered calls fail the check. Initialization and
+other request intervals cannot supply this proof.
+
+Two separate negative controls omit only temporary-file synchronization or only
+directory synchronization at the real adapter's sync sites. They preserve the
+same replacement and reply path, must receive a success reply, and must each be
+rejected by the same checker. All omission settings and pre-send callbacks are
+`cfg(test)` only. The integration driver compiles the exact production store
+source with that configuration rather than maintaining another implementation.
+Production builds have no omission controls or marker callbacks. No synthetic
+trace or process-kill result is accepted as evidence for AC8.
