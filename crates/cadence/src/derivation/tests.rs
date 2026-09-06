@@ -926,7 +926,24 @@ fn ac5_agreement_canonical_alias_closed_all_complete_and_hold_table() {
 fn ac5_agreement_frozen_agree_mutant_fails_shared_table() {
     let failed = agreement_failures(|capture, word, phase, total| {
         let answer = derive(capture)?;
-        if answer.current.is_some() && word == "unplanned" {
+        // Test-only reinstatement of the frozen AGREE table, before native
+        // alias normalization. Its omission of canonical unplanned must fail.
+        let frozen_agree: &[(LifecycleStatus, &[&str])] = &[
+            (
+                LifecycleStatus::Unplanned,
+                &["ready to plan", "context gathered"],
+            ),
+            (LifecycleStatus::Planned, &["planned"]),
+            (LifecycleStatus::Executed, &["executed"]),
+        ];
+        let current = answer.phases.iter().find(|p| Some(p.id) == answer.current);
+        if word != "paused"
+            && current.is_some_and(|phase| {
+                !frozen_agree
+                    .iter()
+                    .any(|(status, words)| *status == phase.status && words.contains(&word))
+            })
+        {
             return Err(DerivationError::StateConflict {
                 source: "data.cursor".into(),
                 field: "status".into(),
