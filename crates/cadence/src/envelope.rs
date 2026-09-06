@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// ```json
 /// {"status": "ok", "version": "3.7.12", "os": "linux"}
-/// {"status": "refused", "reason": "the phase has no CONTEXT.md"}
+/// {"status": "refused", "code": "no-phase-dir", "reason": "the phase has no CONTEXT.md"}
 /// ```
 ///
 /// That is the shape the model already reads from the JavaScript seams, whose
@@ -34,9 +34,9 @@ use serde::{Deserialize, Serialize};
 /// beside the tag. An operation with one value to report gives it a named
 /// field; there is no arm here for a payload without one.
 ///
-/// The three non-`ok` arms carry a `reason` and nothing else. Whether a
-/// refusal also owes the caller a hint, a remedy or a machine-readable code is
-/// a question for the operations that raise them, not for the vocabulary.
+/// The three non-`ok` arms carry a machine `code` and a prose `reason`.
+/// Goldens compare the code to the JavaScript refusal token (D-04), so two
+/// different refusals cannot agree just because they share an arm tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub enum Envelope<T> {
@@ -45,12 +45,16 @@ pub enum Envelope<T> {
     /// The operation could have run and Cadence declined to run it. The caller
     /// asked a well-formed question and the answer is no.
     Refused {
+        /// Machine token in the operation's kebab-case vocabulary.
+        code: String,
         /// Why, in words a person reads.
         reason: String,
     },
     /// Cadence cannot say. The question is a fair one for this operation and
     /// the evidence to answer it is missing, unreadable or ambiguous.
     Unknown {
+        /// Machine token in the operation's kebab-case vocabulary.
+        code: String,
         /// What could not be established, in words a person reads.
         reason: String,
     },
@@ -58,6 +62,8 @@ pub enum Envelope<T> {
     /// wrong about - a phase gate asked of a repository with no phases.
     #[serde(rename = "not-applicable")]
     NotApplicable {
+        /// Machine token in the operation's kebab-case vocabulary.
+        code: String,
         /// Why the question does not apply, in words a person reads.
         reason: String,
     },
@@ -85,24 +91,26 @@ mod tests {
     }
 
     #[test]
-    fn refused_carries_a_reason_and_nothing_else() {
+    fn refused_carries_a_code_and_prose_reason() {
         let envelope: Envelope<Payload> = Envelope::Refused {
+            code: "no-phase-dir".to_string(),
             reason: "the phase has no CONTEXT.md".to_string(),
         };
         assert_eq!(
             serde_json::to_value(envelope).unwrap(),
-            json!({"status": "refused", "reason": "the phase has no CONTEXT.md"})
+            json!({"status": "refused", "code": "no-phase-dir", "reason": "the phase has no CONTEXT.md"})
         );
     }
 
     #[test]
-    fn unknown_carries_a_reason_and_nothing_else() {
+    fn unknown_carries_a_code_and_prose_reason() {
         let envelope: Envelope<Payload> = Envelope::Unknown {
+            code: "unreadable-tree".to_string(),
             reason: "the working tree could not be read".to_string(),
         };
         assert_eq!(
             serde_json::to_value(envelope).unwrap(),
-            json!({"status": "unknown", "reason": "the working tree could not be read"})
+            json!({"status": "unknown", "code": "unreadable-tree", "reason": "the working tree could not be read"})
         );
     }
 
@@ -112,13 +120,14 @@ mod tests {
     #[test]
     fn not_applicable_keeps_its_hyphen() {
         let envelope: Envelope<Payload> = Envelope::NotApplicable {
+            code: "no-phases".to_string(),
             reason: "this repository has no phases".to_string(),
         };
         let value = serde_json::to_value(envelope).unwrap();
         assert_eq!(value["status"], json!("not-applicable"));
         assert_eq!(
             value,
-            json!({"status": "not-applicable", "reason": "this repository has no phases"})
+            json!({"status": "not-applicable", "code": "no-phases", "reason": "this repository has no phases"})
         );
     }
 
@@ -127,12 +136,15 @@ mod tests {
         let arms: Vec<Envelope<Payload>> = vec![
             Envelope::Ok(Payload { phase: 4 }),
             Envelope::Refused {
+                code: "no-phase-dir".to_string(),
                 reason: "no".to_string(),
             },
             Envelope::Unknown {
+                code: "unreadable-tree".to_string(),
                 reason: "cannot say".to_string(),
             },
             Envelope::NotApplicable {
+                code: "no-phases".to_string(),
                 reason: "does not apply".to_string(),
             },
         ];
@@ -152,6 +164,7 @@ mod tests {
     #[test]
     fn refused_is_a_successful_call_carrying_its_refusal() {
         let envelope: Envelope<Payload> = Envelope::Refused {
+            code: "no-phase-dir".to_string(),
             reason: "risk floor raises this plan above the configured rung".to_string(),
         };
         let response = Json(envelope)
@@ -164,6 +177,7 @@ mod tests {
             .structured_content
             .expect("the refusal must ride structured content, not a text convention");
         assert_eq!(structured["status"], json!("refused"));
+        assert_eq!(structured["code"], json!("no-phase-dir"));
         assert_eq!(
             structured["reason"],
             json!("risk floor raises this plan above the configured rung")
