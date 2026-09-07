@@ -18,6 +18,14 @@ pub struct Staged {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WipIndex {
+    pub head: String,
+    pub branch: Vec<u8>,
+    pub index_id: String,
+    pub paths: Vec<PathBuf>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Change {
     pub index: u8,
     pub worktree: u8,
@@ -261,4 +269,140 @@ pub fn staged(root: &Path, base: &str, receipts: &BTreeSet<PathBuf>) -> Result<S
         authored,
         diff,
     })
+}
+
+fn covered(change: &Change, paths: &BTreeSet<PathBuf>) -> bool {
+    paths.contains(&change.path)
+        && change
+            .original
+            .as_ref()
+            .is_none_or(|original| paths.contains(original))
+}
+
+pub fn stage_authorized(
+    root: &Path,
+    expected: &Observation,
+    authorized: &BTreeSet<PathBuf>,
+    ignored_paths: &BTreeSet<PathBuf>,
+    stage_paths: &BTreeSet<PathBuf>,
+) -> Result<Option<WipIndex>> {
+    if expected
+        .changes
+        .iter()
+        .any(|change| !covered(change, ignored_paths) && !covered(change, authorized))
+    {
+        return Err(Error::Conflict(
+            "pause found dirty work outside the authorized set".into(),
+        ));
+    }
+    let current = observe(root)?;
+    let authored = |observation: &Observation| {
+        observation
+            .changes
+            .iter()
+            .filter(|change| !covered(change, ignored_paths))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    if current.head != expected.head
+        || current.index != expected.index
+        || authored(&current) != authored(expected)
+    {
+        return Err(Error::Conflict(
+            "authorized work changed before pause staging".into(),
+        ));
+    }
+    let mut add_paths = BTreeSet::new();
+    for change in &expected.changes {
+        if change.worktree != b' ' && covered(change, stage_paths) {
+            add_paths.insert(change.path.clone());
+            if change.index == b' '
+                && let Some(original) = &change.original
+            {
+                add_paths.insert(original.clone());
+            }
+        }
+    }
+    if !add_paths.is_empty() {
+        let mut args = vec![std::ffi::OsString::from("add"), "--all".into(), "--".into()];
+        args.extend(add_paths.iter().map(|path| path.as_os_str().to_owned()));
+        run(root, args)?;
+    }
+    let staged_paths = paths(&run(
+        root,
+        [
+            "diff",
+            "--cached",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            expected.head.as_str(),
+            "--",
+        ],
+    )?)?;
+    let wip_paths: Vec<_> = staged_paths
+        .iter()
+        .filter(|path| stage_paths.contains(*path))
+        .cloned()
+        .collect();
+    if wip_paths.is_empty() {
+        return Ok(None);
+    }
+    if wip_paths.len() != staged_paths.len() {
+        return Err(Error::Conflict(
+            "pause found non-WIP material in the staged index".into(),
+        ));
+    }
+    Ok(Some(WipIndex {
+        head: expected.head.clone(),
+        branch: expected.branch.clone(),
+        index_id: index_id(root)?,
+        paths: wip_paths,
+    }))
+}
+
+fn unstaged(root: &Path, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut args = vec![
+        std::ffi::OsString::from("diff"),
+        "--name-only".into(),
+        "-z".into(),
+        "--no-renames".into(),
+        "--".into(),
+    ];
+    args.extend(paths.iter().map(|path| path.as_os_str().to_owned()));
+    self::paths(&run(root, args)?)
+}
+
+pub fn commit_wip(root: &Path, expected: &WipIndex, description: &str) -> Result<String> {
+    let head = String::from_utf8(line(run(root, ["rev-parse", "--verify", "HEAD"])?))
+        .map_err(|_| Error::Invalid("invalid Git HEAD".into()))?;
+    if head != expected.head
+        || line(run(root, ["branch", "--show-current"])?) != expected.branch
+        || index_id(root)? != expected.index_id
+        || !unstaged(root, &expected.paths)?.is_empty()
+    {
+        return Err(Error::Conflict(
+            "guarded material changed before WIP commit".into(),
+        ));
+    }
+    let description = description.trim();
+    if description.is_empty() || description.contains(['\r', '\n']) {
+        return Err(Error::Invalid("WIP description must be one line".into()));
+    }
+    run(root, ["commit", "-m", &format!("wip: {description}")])?;
+    let committed = String::from_utf8(line(run(root, ["rev-parse", "--verify", "HEAD"])?))
+        .map_err(|_| Error::Invalid("invalid WIP commit identity".into()))?;
+    let tree = String::from_utf8(line(run(root, ["rev-parse", "HEAD^{tree}"])?))
+        .map_err(|_| Error::Invalid("invalid WIP tree identity".into()))?;
+    let parent = String::from_utf8(line(run(root, ["rev-parse", "HEAD^"])?))
+        .map_err(|_| Error::Invalid("invalid WIP parent identity".into()))?;
+    if tree != expected.index_id
+        || parent != expected.head
+        || !unstaged(root, &expected.paths)?.is_empty()
+    {
+        return Err(Error::Conflict(
+            "WIP commit differs from the guarded staged tree".into(),
+        ));
+    }
+    Ok(committed)
 }

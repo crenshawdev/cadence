@@ -70,6 +70,21 @@ async fn configured_fixture(config: Value) -> tempfile::TempDir {
     )
     .unwrap();
     git::run(temp.path(), ["init", "-b", "main"]).unwrap();
+    git::run(
+        temp.path(),
+        ["config", "--local", "user.name", "Pause Fixture"],
+    )
+    .unwrap();
+    git::run(
+        temp.path(),
+        ["config", "--local", "user.email", "pause@example.invalid"],
+    )
+    .unwrap();
+    git::run(
+        temp.path(),
+        ["config", "--local", "commit.gpgsign", "false"],
+    )
+    .unwrap();
     server().lifecycle(&root).await.unwrap();
     git::run(temp.path(), ["add", "--", ".planning"]).unwrap();
     git_config(temp.path(), &["commit", "-m", "imported fixture"]);
@@ -322,6 +337,10 @@ fn pause_integration_policy_uses_active_version_before_title_and_preserves_all_a
             }
             if case == "missing" {
                 fs::write(root.join(".planning/ROADMAP.md"), "# Roadmap\n\n## Phases\n\n- [ ] **Phase 1: Work**\n").unwrap();
+            }
+            if matches!(case, "active" | "missing") {
+                git::run(root, ["add", "--", ".planning"]).unwrap();
+                git_config(root, &["commit", "-m", "set branch fixture inputs"]);
             }
             if case == "published" { git::run(root, ["tag", "--no-sign", "9.8.7+release"]).unwrap(); }
             if case == "off-base" { git::run(root, ["checkout", "-b", "existing-work"]).unwrap(); }
@@ -780,6 +799,158 @@ fn pause_adjudicated_findings_wait_for_a_recorded_operator_disposition() {
             server().pause(request).await.unwrap(),
             Response::Wait(_)
         ));
+    });
+}
+
+#[test]
+fn pause_wip_preserves_exact_bytes_deletion_and_rename() {
+    runtime().block_on(async {
+        let temp = risk_fixture("off", None).await;
+        let root = temp.path();
+        fs::write(root.join("binary data.bin"), b"old bytes\n").unwrap();
+        fs::write(root.join("delete-me.txt"), "remove me\n").unwrap();
+        fs::write(root.join("old name.txt"), "rename contents\n").unwrap();
+        git::run(
+            root,
+            [
+                "add",
+                "--",
+                "binary data.bin",
+                "delete-me.txt",
+                "old name.txt",
+            ],
+        )
+        .unwrap();
+        git_config(root, &["commit", "-m", "seed work files"]);
+        let before = git::run(root, ["rev-parse", "HEAD"]).unwrap();
+
+        let bytes = b"\0preserved\xffbytes\n";
+        fs::write(root.join("binary data.bin"), bytes).unwrap();
+        fs::remove_file(root.join("delete-me.txt")).unwrap();
+        git::run(root, ["mv", "--", "old name.txt", "renamed \u{2713}.txt"]).unwrap();
+        fs::write(root.join("new file.txt"), "new contents\n").unwrap();
+        fs::write(
+            root.join(".planning/phases/1/working notes.md"),
+            "record this with the pause documentation\n",
+        )
+        .unwrap();
+        let mut request = input(root, "wip-exact");
+        request.authorized.extend(
+            [
+                "binary data.bin",
+                "delete-me.txt",
+                "old name.txt",
+                "renamed \u{2713}.txt",
+                "new file.txt",
+                ".planning/phases/1/working notes.md",
+            ]
+            .into_iter()
+            .map(PathBuf::from),
+        );
+
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("authorized WIP must be preserved");
+        };
+        let wip = capture.wip.expect("dirty source work needs a WIP");
+        assert_eq!(
+            git::run(root, ["rev-parse", "HEAD"]).unwrap(),
+            format!("{wip}\n").as_bytes()
+        );
+        assert_ne!(before, format!("{wip}\n").as_bytes());
+        assert_eq!(
+            git::run(root, ["log", "-1", "--format=%s"]).unwrap(),
+            b"wip: Work\n"
+        );
+        let binary = format!("{wip}:binary data.bin");
+        let renamed = format!("{wip}:renamed \u{2713}.txt");
+        let added = format!("{wip}:new file.txt");
+        let deleted = format!("{wip}:delete-me.txt");
+        let planning = format!("{wip}:.planning/phases/1/working notes.md");
+        assert_eq!(git::run(root, ["show", binary.as_str()]).unwrap(), bytes);
+        assert_eq!(
+            git::run(root, ["show", renamed.as_str()]).unwrap(),
+            b"rename contents\n"
+        );
+        assert_eq!(
+            git::run(root, ["show", added.as_str()]).unwrap(),
+            b"new contents\n"
+        );
+        assert!(git::run(root, ["show", deleted.as_str()]).is_err());
+        assert!(git::run(root, ["show", planning.as_str()]).is_err());
+        assert!(root.join(".planning/phases/1/working notes.md").is_file());
+    });
+}
+
+#[test]
+fn pause_wip_refuses_unauthorized_dirt_and_skips_an_originally_clean_tree() {
+    runtime().block_on(async {
+        let dirty = risk_fixture("off", None).await;
+        fs::write(dirty.path().join("authorized.txt"), "authorized\n").unwrap();
+        fs::write(dirty.path().join("unrelated.txt"), "unrelated\n").unwrap();
+        let mut request = input(dirty.path(), "unauthorized-wip");
+        request.authorized.insert("authorized.txt".into());
+        let head = git::run(dirty.path(), ["rev-parse", "HEAD"]).unwrap();
+        assert!(server().pause(request).await.is_err());
+        assert_eq!(git::run(dirty.path(), ["rev-parse", "HEAD"]).unwrap(), head);
+        assert!(git::run(dirty.path(), ["diff", "--cached", "--quiet"]).is_ok());
+
+        let clean = risk_fixture("off", None).await;
+        let head = git::run(clean.path(), ["rev-parse", "HEAD"]).unwrap();
+        let Response::Ready(capture) = server()
+            .pause(input(clean.path(), "clean-wip"))
+            .await
+            .unwrap()
+        else {
+            panic!("clean pause must be ready");
+        };
+        assert_eq!(capture.wip, None);
+        assert_eq!(git::run(clean.path(), ["rev-parse", "HEAD"]).unwrap(), head);
+    });
+}
+
+#[test]
+fn pause_wip_rechecks_the_staged_tree_before_commit() {
+    runtime().block_on(async {
+        let temp = risk_fixture("off", None).await;
+        let root = temp.path();
+        fs::write(root.join("guarded.txt"), "first\n").unwrap();
+        let observed = git::observe(root).unwrap();
+        let authorized = BTreeSet::from([PathBuf::from("guarded.txt")]);
+        let staged =
+            git::stage_authorized(root, &observed, &authorized, &BTreeSet::new(), &authorized)
+                .unwrap()
+                .unwrap();
+        let head = git::run(root, ["rev-parse", "HEAD"]).unwrap();
+        fs::write(root.join("guarded.txt"), "second\n").unwrap();
+        git::run(root, ["add", "--", "guarded.txt"]).unwrap();
+        assert!(git::commit_wip(root, &staged, "guarded work").is_err());
+        assert_eq!(git::run(root, ["rev-parse", "HEAD"]).unwrap(), head);
+    });
+}
+
+#[test]
+fn pause_wip_reports_a_real_commit_hook_failure_without_discarding_the_index() {
+    runtime().block_on(async {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = risk_fixture("off", None).await;
+        let root = temp.path();
+        fs::write(root.join("hooked.txt"), "preserve me\n").unwrap();
+        let hook = root.join(".git/hooks/pre-commit");
+        fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+        let mut permissions = fs::metadata(&hook).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&hook, permissions).unwrap();
+        let mut request = input(root, "hook-failure");
+        request.authorized.insert("hooked.txt".into());
+        let head = git::run(root, ["rev-parse", "HEAD"]).unwrap();
+
+        assert!(server().pause(request).await.is_err());
+        assert_eq!(git::run(root, ["rev-parse", "HEAD"]).unwrap(), head);
+        assert_eq!(
+            git::run(root, ["show", ":hooked.txt"]).unwrap(),
+            b"preserve me\n"
+        );
     });
 }
 

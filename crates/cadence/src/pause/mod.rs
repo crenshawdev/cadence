@@ -40,6 +40,7 @@ pub struct Capture {
     pub authorized: BTreeSet<PathBuf>,
     pub observed: git::Observation,
     pub risk: Option<risk::Outcome>,
+    pub wip: Option<String>,
 }
 
 pub fn capture(input: Input, retained: Option<&ValidatedIntake>) -> Result<Capture> {
@@ -103,6 +104,7 @@ pub fn capture(input: Input, retained: Option<&ValidatedIntake>) -> Result<Captu
         authorized: input.authorized,
         observed,
         risk: None,
+        wip: None,
     })
 }
 

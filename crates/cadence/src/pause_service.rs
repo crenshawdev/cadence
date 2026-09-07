@@ -257,6 +257,106 @@ fn receipt_paths<I: ConfigIo>(session: &Session<I>, root: &Path) -> Result<BTree
         .collect()
 }
 
+fn repo_path(root: &Path, path: &Path) -> Result<PathBuf> {
+    let root = fs::canonicalize(root)?;
+    let path = path
+        .strip_prefix(&root)
+        .map_err(|_| Error::Conflict("pause-owned path escaped the repository".into()))?
+        .to_path_buf();
+    if path.as_os_str().is_empty()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(name) if name != ".git"))
+    {
+        return Err(Error::Conflict("invalid pause-owned path".into()));
+    }
+    Ok(path)
+}
+
+fn surface_config_receipt(
+    view: &View,
+    scope: &Scope,
+    config: &Generation,
+    root: &Path,
+    head: &str,
+) -> Result<Option<PathBuf>> {
+    let answer = persistence::read(&view.snapshot.data)?
+        .values()
+        .find_map(|record| {
+            if record.scope == *scope
+                && let Fact::Gate(gate) = &record.fact
+                && gate.id.starts_with("pause-risk-surfaces-")
+                && matches!(gate.state, State::Answered(_))
+            {
+                Some(surfaces_from_answer(gate))
+            } else {
+                None
+            }
+        })
+        .transpose()?
+        .flatten();
+    let Some(answer) = answer else {
+        return Ok(None);
+    };
+    let path = repo_path(root, &config.repo.identity)?;
+    let Some(path_text) = path.to_str() else {
+        return Ok(None);
+    };
+    let object = format!("{head}:{path_text}");
+    let Ok(bytes) = git::run(root, ["show", object.as_str()]) else {
+        return Ok(None);
+    };
+    let mut raw: serde_json::Value = serde_json::from_slice(&bytes)?;
+    merge::set(
+        &mut raw,
+        "review.triggers.risk_surface.surfaces",
+        serde_json::to_value(answer)?,
+    );
+    let expected = serde_json::to_vec_pretty(&raw)?;
+    Ok((config.repo.bytes.as_deref() == Some(expected.as_slice())).then_some(path))
+}
+
+fn commit_planning_docs(config: &Generation) -> Result<bool> {
+    merge::get(&config.effective.values, "planning.commit_docs")
+        .and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| Error::Policy("missing effective planning.commit_docs".into()))
+}
+
+async fn prepare_wip<I: ConfigIo>(
+    session: &Session<I>,
+    view: &View,
+    captured: &Capture,
+    config: &Generation,
+    root: &Path,
+    planning: &Path,
+) -> Result<Option<git::WipIndex>> {
+    let mut ignored = receipt_paths(session, root)?;
+    if let Some(path) =
+        surface_config_receipt(view, &captured.scope, config, root, &captured.observed.head)?
+    {
+        ignored.insert(path);
+    }
+    let planning = planning
+        .strip_prefix(root)
+        .map_err(|_| Error::Conflict("planning root escaped the repository".into()))?;
+    let separate_docs = commit_planning_docs(config)?;
+    let stage_paths = captured
+        .authorized
+        .iter()
+        .filter(|path| !ignored.contains(*path))
+        .filter(|path| !separate_docs || !path.starts_with(planning))
+        .cloned()
+        .collect();
+    let root = root.to_path_buf();
+    let expected = captured.observed.clone();
+    let authorized = captured.authorized.clone();
+    tokio::task::spawn_blocking(move || {
+        git::stage_authorized(&root, &expected, &authorized, &ignored, &stage_paths)
+    })
+    .await
+    .map_err(|_| Error::Closed)?
+}
+
 fn accepted(
     view: &View,
     scope: &Scope,
@@ -707,7 +807,8 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
         ));
     }
     captured.observed.branch = observed.branch.into_bytes();
-    risk_gate(
+    let wip = prepare_wip(&session, &view, &captured, &config, &root, &planning).await?;
+    let response = risk_gate(
         &session,
         &mut view,
         &mut captured,
@@ -716,5 +817,23 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
         &planning,
         CommitKind::Wip,
     )
-    .await
+    .await?;
+    let Response::Ready(mut ready) = response else {
+        return Ok(response);
+    };
+    if let Some(wip) = wip {
+        if session.config()? != config {
+            return Err(Error::Conflict(
+                "pause config changed before WIP commit".into(),
+            ));
+        }
+        let root = root.clone();
+        let description = ready.phase.name.clone();
+        let committed =
+            tokio::task::spawn_blocking(move || git::commit_wip(&root, &wip, &description))
+                .await
+                .map_err(|_| Error::Closed)??;
+        ready.wip = Some(committed);
+    }
+    Ok(Response::Ready(ready))
 }
