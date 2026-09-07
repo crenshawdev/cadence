@@ -24,6 +24,13 @@ pub mod derivation_service;
 #[path = "derivation_service_tests.rs"]
 mod derivation_service_tests;
 
+#[allow(dead_code)]
+#[path = "evidence_service.rs"]
+pub mod evidence_service;
+#[cfg(test)]
+#[path = "evidence_service_tests.rs"]
+mod evidence_service_tests;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -62,6 +69,14 @@ impl CadenceServer {
         Self {
             service: recall::Resident::spawn(factory),
         }
+    }
+
+    pub async fn evidence(
+        &self,
+        root: &std::path::Path,
+        command: evidence_service::Command,
+    ) -> cadence::store::Result<evidence_service::Recovery> {
+        self.service.evidence(root, command).await
     }
 
     pub async fn lifecycle(

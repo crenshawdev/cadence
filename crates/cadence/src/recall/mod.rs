@@ -196,7 +196,14 @@ mod resident {
     use crate::server::derivation_service::{self, Driver};
     use cadence::derivation::{DerivationError, Lifecycle};
 
+    use crate::server::evidence_service::{self, Command, Recovery};
+
     enum Request {
+        Evidence {
+            root: PathBuf,
+            command: Command,
+            reply: oneshot::Sender<Result<Recovery>>,
+        },
         Lifecycle {
             root: PathBuf,
             reply: oneshot::Sender<std::result::Result<Lifecycle, DerivationError>>,
@@ -333,6 +340,14 @@ mod resident {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
+                        Request::Evidence {
+                            root,
+                            command,
+                            reply,
+                        } => {
+                            let result = evidence_service::execute(&factory, &root, command).await;
+                            let _ = reply.send(result);
+                        }
                         Request::Lifecycle { root, reply } => {
                             let result = derivation_service::query(&factory, &root, &driver).await;
                             let _ = reply.send(result);
@@ -378,6 +393,19 @@ mod resident {
                 // Accepted requests drain; canceled reply receivers cannot panic.
             });
             Self { requests }
+        }
+
+        pub async fn evidence(&self, root: &Path, command: Command) -> Result<Recovery> {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::Evidence {
+                    root: root.into(),
+                    command,
+                    reply,
+                })
+                .await
+                .map_err(|_| Error::Closed)?;
+            completion.await.map_err(|_| Error::Closed)?
         }
 
         pub async fn lifecycle(
