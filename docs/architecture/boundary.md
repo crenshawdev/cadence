@@ -49,18 +49,22 @@ summarized them would be editing the record it exists to carry.
 
 Both were found by running a real host, and neither is visible to any
 in-process or raw-stdio test. Both cost a blocked live UAT before they were
-understood, and both are properties of the host rather than of MCP.
+understood. Neither is a property of MCP itself: the first is enforced by the
+host, and the second is an Anthropic API constraint that the host reports on
+the API's behalf.
 
 **Every advertised schema needs a root `"type": "object"`.** `schemars` renders
 a Rust tagged enum as a root-level `oneOf` with no `type`, which the host
 rejects. Four of the six advertised schemas were shaped that way.
 
 **An input schema may not use a top-level `oneOf`, `anyOf` or `allOf`, and
-needs real `properties`.** A root type alone is not sufficient. The host drops
-such a tool silently from its list and says so only in its own log:
-`Skipping tool "cadence_query": its input schema uses top-level oneOf`. A
-dropped tool does not exist for the user, and the server still reports itself
-connected, so nothing local looks wrong.
+needs real `properties`.** A root type alone is not sufficient. This one is not
+the host's own rule - the host's log names its source: `Skipping tool
+"cadence_query": its input schema uses top-level oneOf, which the Anthropic API
+does not accept`. The tool is dropped silently from the list, so a dropped tool
+does not exist for the user, and the server still reports itself connected -
+nothing local looks wrong. Expect the same rejection from any host that passes
+these schemas to that API.
 
 The consequence for anyone changing these types: the ADVERTISED schema may
 become less expressive to satisfy the host, and the VALIDATOR may not become
