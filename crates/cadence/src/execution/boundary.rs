@@ -307,6 +307,127 @@ impl BoundaryV1 {
     }
 }
 
+impl BoundaryV1 {
+    pub fn identity(&self) -> Result<String, Failure> {
+        Ok(crate::store::model::digest(&canonical_bytes(&(
+            "boundary-envelope-v1",
+            self,
+        ))?))
+    }
+
+    pub fn terminal(scope: BoundaryScope) -> Result<Self, Failure> {
+        let request =
+            crate::store::model::digest(&canonical_bytes(&("boundary-terminal-v1", &scope))?);
+        Ok(Self::new(
+            scope,
+            BoundaryTool::CadenceQuery,
+            "log-bound".into(),
+            request,
+            None,
+            &PreparedAnswer::new(terminal_envelope())?,
+        ))
+    }
+
+    pub fn validate(&self, terminal: bool) -> Result<(), Failure> {
+        let digest = |value: &str| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        };
+        if self.codec != ENVELOPE_CODEC
+            || !self.scope.valid()
+            || !digest(&self.request_digest)
+            || !digest(&self.response_digest)
+            || self
+                .subject_id
+                .as_ref()
+                .is_some_and(|id| id.trim().is_empty())
+            || (!terminal
+                && self.operation
+                    != match self.tool {
+                        BoundaryTool::CadenceQuery => "execute-next",
+                        BoundaryTool::CadenceApply => "executor",
+                    })
+        {
+            return Err(Failure::Encoding);
+        }
+        if terminal {
+            if *self != Self::terminal(self.scope.clone())? {
+                return Err(Failure::Encoding);
+            }
+        } else if self.outcome == "refused:log-bound" {
+            return Err(Failure::Encoding);
+        }
+        match &self.receipt {
+            Receipt::Dispatch {
+                dispatch_id,
+                prompt_bytes,
+            } => {
+                if !matches!(self.scope, BoundaryScope::Execution { .. })
+                    || self.tool != BoundaryTool::CadenceQuery
+                    || self.outcome != "dispatch"
+                    || self.subject_id.as_ref() != Some(dispatch_id)
+                    || *prompt_bytes == 0
+                {
+                    return Err(Failure::Encoding);
+                }
+            }
+            Receipt::Compact { envelope } => {
+                if matches!(envelope, Envelope::Ok(Success::Dispatch { .. }))
+                    || (self.scope == BoundaryScope::RootRefusal
+                        && !matches!(envelope, Envelope::Refused { .. }))
+                {
+                    return Err(Failure::Encoding);
+                }
+                if let Envelope::Ok(success) = envelope {
+                    let phase = match success {
+                        Success::NextPlan { phase, plan } if *plan > 0 => *phase,
+                        Success::Complete { phase } => *phase,
+                        Success::JudgmentStop {
+                            phase,
+                            dispatch_id,
+                            blocker_ids,
+                        } if self.subject_id.as_ref() == Some(dispatch_id)
+                            && !blocker_ids.is_empty()
+                            && blocker_ids.iter().all(|id| !id.trim().is_empty()) =>
+                        {
+                            *phase
+                        }
+                        _ => return Err(Failure::Encoding),
+                    };
+                    if self.scope != (BoundaryScope::Execution { phase }) {
+                        return Err(Failure::Encoding);
+                    }
+                } else {
+                    let (code, reason) = match envelope {
+                        Envelope::Refused { code, reason }
+                        | Envelope::Unknown { code, reason }
+                        | Envelope::NotApplicable { code, reason } => (code, reason),
+                        _ => unreachable!(),
+                    };
+                    if code.is_empty()
+                        || !code
+                            .bytes()
+                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                        || reason.trim().is_empty()
+                    {
+                        return Err(Failure::Encoding);
+                    }
+                }
+                let answer = PreparedAnswer::new(envelope.clone())?;
+                if answer.envelope != *envelope
+                    || self.outcome != outcome(envelope)
+                    || self.response_digest != answer.response_digest
+                {
+                    return Err(Failure::Encoding);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

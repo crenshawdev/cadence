@@ -1,5 +1,9 @@
 use super::model::{self, DECISIONS, DecisionRecord, ITEMS, ItemRecord, STATE, Snapshot};
 use super::{Error, MutationContext, Observed, Policy, Result, Storage};
+use cadence::envelope::Envelope;
+use cadence::execution::boundary::{
+    BoundaryScope, BoundaryV1, ExecutionEnvelope, Failure, Receipt, Success, envelope_digest,
+};
 use cadence::execution::model::{
     ActiveDispatch, BoundaryDecision, BoundaryTool, EXECUTION_SCHEMA, ExecutionOccurrence,
     ExecutionSnapshot, ExecutorPatch, PlanDisposition, TerminalOutcome,
@@ -19,7 +23,29 @@ pub struct View {
 /// Owner-serialized precondition; this does not compare-and-swap Markdown files.
 pub const STALE_SNAPSHOT: &str = "conditional snapshot precondition changed";
 
+#[derive(Clone, Debug, Serialize)]
+pub enum BoundaryChange {
+    Observe,
+    Dispatch {
+        plan_set_fingerprint: String,
+        dispatch: ActiveDispatch,
+    },
+    Patch {
+        patch: ExecutorPatch,
+        commit_paths: BTreeMap<String, Vec<String>>,
+        render_version: u32,
+        complete_phase: bool,
+    },
+}
+
 pub enum Operation {
+    BoundaryV1 {
+        expected_generation: u64,
+        expected_integrity: String,
+        operation_id: String,
+        decision: BoundaryV1,
+        change: Box<BoundaryChange>,
+    },
     Read,
     ReadVerified,
     CompareRewriteSnapshot {
@@ -219,6 +245,14 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let decisions = model::parse_lines(decision_bytes)?;
         model::validate_items(&items)?;
         model::validate_decisions(&decisions)?;
+        if decisions.iter().any(|record| {
+            matches!(&record.decision,
+            model::Decision::BoundaryV1(value) if value.store_generation > snapshot.generation)
+        }) {
+            return Err(Error::Invalid(
+                "boundary generation exceeds snapshot".into(),
+            ));
+        }
         Ok(Self {
             storage,
             policy,
@@ -237,6 +271,19 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             return Err(error.clone());
         }
         match operation {
+            Operation::BoundaryV1 {
+                expected_generation,
+                expected_integrity,
+                operation_id,
+                decision,
+                change,
+            } => self.boundary_v1(
+                expected_generation,
+                &expected_integrity,
+                &operation_id,
+                decision,
+                *change,
+            ),
             Operation::AdmitExecution {
                 expected_generation,
                 expected_integrity,
@@ -377,7 +424,8 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 next.snapshot.data = data;
                 "rewrite_snapshot"
             }
-            Operation::AdmitExecution { .. }
+            Operation::BoundaryV1 { .. }
+            | Operation::AdmitExecution { .. }
             | Operation::ApplyExecutionPatch { .. }
             | Operation::RecordExecutionRefusal { .. } => {
                 unreachable!("execution operations are handled before store operations")
@@ -401,6 +449,196 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             operation_name,
             super::transaction::IntentKind::Store,
         )
+    }
+
+    fn boundary_v1(
+        &mut self,
+        expected_generation: u64,
+        expected_integrity: &str,
+        operation_id: &str,
+        decision: BoundaryV1,
+        change: BoundaryChange,
+    ) -> Result<View> {
+        self.revalidate()?;
+        self.policy.validate(&MutationContext {
+            operation: "boundary_v1",
+            snapshot: &self.view.snapshot,
+        })?;
+        require_current_execution(&self.view).map_err(boundary_error)?;
+        if !decision.scope.valid() {
+            return Err(Error::Invalid("invalid boundary scope".into()));
+        }
+        if terminal_v1(&self.view, &decision.scope).is_some() {
+            return Ok(self.view.clone());
+        }
+        decision.validate(false).map_err(boundary_error)?;
+        if operation_id.trim().is_empty() {
+            return Err(Error::Invalid("empty operation identity".into()));
+        }
+        let fingerprint = operation_fingerprint(&("boundary-operation-v1", &decision, &change))?;
+        if let Some(prior) = self.view.snapshot.operations.get(operation_id) {
+            return if *prior == fingerprint {
+                Ok(self.view.clone())
+            } else {
+                Err(Error::Conflict(
+                    "operation identity reused for different content".into(),
+                ))
+            };
+        }
+        let id = decision.identity().map_err(boundary_error)?;
+        if self.view.decisions.iter().any(|record| record.id == id) {
+            // A distinct caller ID cannot turn the same answer into another mutation.
+            return if matches!(change, BoundaryChange::Observe) {
+                Ok(self.view.clone())
+            } else {
+                Err(Error::Conflict(
+                    "boundary decision already admitted under another operation".into(),
+                ))
+            };
+        }
+        let count = self.view.decisions.iter().filter(|record| matches!(&record.decision,
+            model::Decision::BoundaryV1(value) if value.boundary.scope == decision.scope && !value.terminal)).count();
+        if count >= 256 {
+            let terminal = BoundaryV1::terminal(decision.scope).map_err(boundary_error)?;
+            let record = record_v1(terminal, self.next_generation()?, true)?;
+            let kind = super::transaction::IntentKind::BoundaryObservationV1 {
+                scope: match &record.decision {
+                    model::Decision::BoundaryV1(value) => value.boundary.scope.clone(),
+                    _ => unreachable!(),
+                },
+                decision_id: record.id.clone(),
+            };
+            let mut next = self.view.clone();
+            next.decisions.push(record);
+            model::validate_decisions(&next.decisions)?;
+            return self.persist(
+                next,
+                self.view.snapshot.operations.clone(),
+                Vec::new(),
+                "boundary_terminal_v1",
+                kind,
+            );
+        }
+        self.check_expected(expected_generation, expected_integrity)?;
+        let mut next = self.view.clone();
+        let mut participants = Vec::new();
+        let kind = match change {
+            BoundaryChange::Observe => super::transaction::IntentKind::BoundaryObservationV1 {
+                scope: decision.scope.clone(),
+                decision_id: id.clone(),
+            },
+            BoundaryChange::Dispatch {
+                plan_set_fingerprint,
+                dispatch,
+            } => {
+                let phase = dispatch.phase;
+                if decision.scope != (BoundaryScope::Execution { phase })
+                    || decision.tool != BoundaryTool::CadenceQuery
+                    || decision.receipt
+                        != (Receipt::Dispatch {
+                            dispatch_id: dispatch.id.clone(),
+                            prompt_bytes: dispatch.prompt_bytes,
+                        })
+                    || plan_set_fingerprint != dispatch.plan_set_fingerprint
+                {
+                    return Err(Error::Invalid("dispatch boundary identity mismatch".into()));
+                }
+                let mut execution = execution_snapshot(&next.snapshot.data)?;
+                let occurrence = execution
+                    .occurrences
+                    .entry(phase.to_string())
+                    .or_insert_with(|| ExecutionOccurrence {
+                        phase,
+                        plan_set_fingerprint,
+                        version: dispatch.expected_execution_version,
+                        active: None,
+                        plans: Vec::new(),
+                        terminal: None,
+                        receipts: BTreeMap::new(),
+                    });
+                let (occurrence, _) =
+                    cadence::execution::dispatch::admit_dispatch(occurrence, dispatch)
+                        .map_err(|error| Error::Conflict(error.to_string()))?;
+                execution.occurrences.insert(phase.to_string(), occurrence);
+                install_execution(&mut next.snapshot.data, execution)?;
+                super::transaction::IntentKind::ExecutionDispatchV1 {
+                    phase,
+                    decision_id: id.clone(),
+                }
+            }
+            BoundaryChange::Patch {
+                patch,
+                commit_paths,
+                render_version,
+                complete_phase,
+            } => {
+                let BoundaryScope::Execution { phase } = decision.scope else {
+                    return Err(Error::Invalid("patch lacks execution scope".into()));
+                };
+                if render_version != cadence::execution::render::SUMMARY_RENDER_VERSION
+                    || decision.tool != BoundaryTool::CadenceApply
+                    || decision.subject_id.as_ref() != Some(&patch.dispatch_id)
+                    || !matches!(
+                        &decision.receipt,
+                        Receipt::Compact {
+                            envelope: Envelope::Ok(_)
+                        }
+                    )
+                    || (complete_phase && patch.outcome != PlanDisposition::Complete)
+                {
+                    return Err(Error::Invalid("invalid execution patch operation".into()));
+                }
+                let application =
+                    cadence::execution::patch::apply_executor_patch(&next.snapshot.data, &patch)
+                        .map_err(|error| Error::Invalid(error.to_string()))?;
+                let application =
+                    cadence::execution::patch::attach_commit_paths(application, &commit_paths)
+                        .map_err(|error| Error::Invalid(error.to_string()))?;
+                if application.outcome.phase != phase
+                    || application.disposition
+                        == cadence::execution::patch::ApplicationDisposition::Replay
+                {
+                    return Err(Error::Conflict(
+                        "patch replay lacks its original operation".into(),
+                    ));
+                }
+                next.snapshot.data = application.data;
+                let mut execution = execution_snapshot(&next.snapshot.data)?;
+                if complete_phase {
+                    let occurrence = execution
+                        .occurrences
+                        .get_mut(&phase.to_string())
+                        .ok_or_else(|| {
+                            Error::Invalid("patch execution occurrence is absent".into())
+                        })?;
+                    if occurrence.terminal.is_some() {
+                        return Err(Error::Conflict(
+                            "execution occurrence is already terminal".into(),
+                        ));
+                    }
+                    occurrence.terminal = Some(TerminalOutcome::Complete { phase });
+                }
+                install_execution(&mut next.snapshot.data, execution.clone())?;
+                let target = format!("phase-summary:{phase}");
+                participants.push(super::transaction::Participant {
+                    expected: self.storage.read(&target)?,
+                    target,
+                    bytes: cadence::execution::render::render_phase_summary(&execution, phase)
+                        .map_err(|error| Error::Invalid(error.to_string()))?,
+                });
+                super::transaction::IntentKind::ExecutionPatchV1 {
+                    phase,
+                    decision_id: id.clone(),
+                    render_version,
+                }
+            }
+        };
+        next.decisions
+            .push(record_v1(decision, self.next_generation()?, false)?);
+        model::validate_decisions(&next.decisions)?;
+        let mut operations = next.snapshot.operations.clone();
+        operations.insert(operation_id.to_owned(), fingerprint);
+        self.persist(next, operations, participants, "boundary_v1", kind)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -870,4 +1108,137 @@ fn install_execution(data: &mut Value, execution: ExecutionSnapshot) -> Result<(
         .ok_or_else(|| Error::Invalid("snapshot data must be an object".into()))?
         .insert("execution".into(), stored);
     Ok(())
+}
+
+fn boundary_error(error: Failure) -> Error {
+    Error::Invalid(error.to_string())
+}
+
+fn record_v1(
+    boundary: BoundaryV1,
+    store_generation: u64,
+    terminal: bool,
+) -> Result<DecisionRecord> {
+    boundary.validate(terminal).map_err(boundary_error)?;
+    Ok(DecisionRecord {
+        version: model::VERSION,
+        id: boundary.identity().map_err(boundary_error)?,
+        revision: 1,
+        origin: model::Origin {
+            source: "execution-boundary-v1".into(),
+            original: model::Evidence::Missing,
+        },
+        decision: model::Decision::BoundaryV1(model::BoundaryRecordV1 {
+            boundary,
+            store_generation,
+            terminal,
+        }),
+    })
+}
+
+pub fn require_current_execution(view: &View) -> std::result::Result<(), Failure> {
+    if view
+        .decisions
+        .iter()
+        .any(|record| matches!(record.decision, model::Decision::Boundary { .. }))
+    {
+        return Err(Failure::LegacyExecution);
+    }
+    if let Some(occurrences) = view
+        .snapshot
+        .data
+        .get("execution")
+        .and_then(|value| value.get("occurrences"))
+        .and_then(Value::as_object)
+    {
+        for key in occurrences.keys() {
+            if !view.decisions.iter().any(|record| {
+                matches!(&record.decision,
+                model::Decision::BoundaryV1(value) if matches!(value.boundary.scope,
+                    BoundaryScope::Execution { phase } if phase.to_string() == *key))
+            }) {
+                return Err(Failure::LegacyExecution);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn terminal_v1<'a>(view: &'a View, scope: &BoundaryScope) -> Option<ConfirmedBoundary<'a>> {
+    view.decisions
+        .iter()
+        .find_map(|record| match &record.decision {
+            model::Decision::BoundaryV1(value)
+                if &value.boundary.scope == scope && value.terminal =>
+            {
+                Some(ConfirmedBoundary {
+                    id: &record.id,
+                    value,
+                })
+            }
+            _ => None,
+        })
+}
+
+pub struct ConfirmedBoundary<'a> {
+    pub id: &'a str,
+    pub value: &'a model::BoundaryRecordV1,
+}
+
+impl ConfirmedBoundary<'_> {
+    pub fn envelope(
+        &self,
+        dispatch: Option<ExecutionEnvelope>,
+    ) -> std::result::Result<ExecutionEnvelope, Failure> {
+        self.value.boundary.validate(self.value.terminal)?;
+        let envelope = match &self.value.boundary.receipt {
+            Receipt::Compact { envelope } => envelope.clone(),
+            Receipt::Dispatch {
+                dispatch_id,
+                prompt_bytes,
+            } => {
+                let Some(envelope @ Envelope::Ok(Success::Dispatch { .. })) = dispatch else {
+                    return Err(Failure::Confirmation);
+                };
+                if let Envelope::Ok(Success::Dispatch { dispatch, prompt }) = &envelope
+                    && (&dispatch.id != dispatch_id
+                        || dispatch.prompt_bytes != *prompt_bytes
+                        || prompt.len() as u64 != *prompt_bytes)
+                {
+                    return Err(Failure::Confirmation);
+                }
+                envelope
+            }
+        };
+        if envelope_digest(&envelope)? != self.value.boundary.response_digest {
+            return Err(Failure::Confirmation);
+        }
+        Ok(envelope)
+    }
+}
+
+pub fn confirmed_boundary<'a>(
+    view: &'a View,
+    expected: &BoundaryV1,
+) -> std::result::Result<ConfirmedBoundary<'a>, Failure> {
+    if let Some(terminal) = terminal_v1(view, &expected.scope) {
+        return Ok(terminal);
+    }
+    let id = expected.identity()?;
+    view.decisions
+        .iter()
+        .find_map(|record| match &record.decision {
+            model::Decision::BoundaryV1(value)
+                if record.id == id
+                    && value.boundary == *expected
+                    && value.store_generation <= view.snapshot.generation =>
+            {
+                Some(ConfirmedBoundary {
+                    id: &record.id,
+                    value,
+                })
+            }
+            _ => None,
+        })
+        .ok_or(Failure::Confirmation)
 }

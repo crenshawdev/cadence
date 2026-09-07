@@ -839,3 +839,242 @@ fn phase_six_store_acceptance_inventory_runs_registered_evidence() {
         run();
     }
 }
+
+use cadence::envelope::Envelope;
+use cadence::execution::boundary::{
+    BoundaryScope, BoundaryV1, ExecutionEnvelope, PreparedAnswer, Success,
+};
+use cadence::store::writer::{BoundaryChange, confirmed_boundary};
+
+fn scoped_answer(
+    scope: BoundaryScope,
+    tool: BoundaryTool,
+    unique: &str,
+    envelope: ExecutionEnvelope,
+    subject: Option<String>,
+) -> BoundaryV1 {
+    BoundaryV1::new(
+        scope,
+        tool,
+        match tool {
+            BoundaryTool::CadenceQuery => "execute-next",
+            BoundaryTool::CadenceApply => "executor",
+        }
+        .into(),
+        digest(unique.as_bytes()),
+        subject,
+        &PreparedAnswer::new(envelope).unwrap(),
+    )
+}
+
+fn scoped_refusal(scope: BoundaryScope, unique: &str) -> BoundaryV1 {
+    scoped_answer(
+        scope,
+        BoundaryTool::CadenceQuery,
+        unique,
+        Envelope::Refused {
+            code: "invalid-input".into(),
+            reason: "the execution input is invalid".into(),
+        },
+        None,
+    )
+}
+
+fn scoped_operation(
+    view: &View,
+    id: &str,
+    decision: BoundaryV1,
+    change: BoundaryChange,
+) -> Operation {
+    Operation::BoundaryV1 {
+        expected_generation: view.snapshot.generation,
+        expected_integrity: view.snapshot.integrity.clone(),
+        operation_id: id.into(),
+        decision,
+        change: Box::new(change),
+    }
+}
+
+// This oracle sorts parsed JSON independently and never serializes a response type.
+fn independent_canonical(value: &Value) -> Vec<u8> {
+    match value {
+        Value::Object(map) => {
+            let sorted: BTreeMap<_, _> = map.iter().collect();
+            let parts: Vec<_> = sorted
+                .into_iter()
+                .map(|(key, value)| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).unwrap(),
+                        String::from_utf8(independent_canonical(value)).unwrap()
+                    )
+                })
+                .collect();
+            format!("{{{}}}", parts.join(",")).into_bytes()
+        }
+        Value::Array(array) => format!(
+            "[{}]",
+            array
+                .iter()
+                .map(|value| String::from_utf8(independent_canonical(value)).unwrap())
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+        .into_bytes(),
+        _ => serde_json::to_vec(value).unwrap(),
+    }
+}
+
+fn assert_disk_answer(root: &Path, view: &View, decision: &BoundaryV1, expected: Value) {
+    let selected = confirmed_boundary(view, decision).unwrap();
+    let bytes = std::fs::read_to_string(planning(root).join(DECISIONS)).unwrap();
+    let record = bytes
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|record| record["id"] == selected.id)
+        .unwrap();
+    assert_eq!(record["decision"]["class"], "boundary_v1");
+    assert_eq!(record["decision"]["boundary"]["codec"], 1);
+    assert_eq!(
+        record["decision"]["boundary"]["response_digest"],
+        digest(&independent_canonical(&expected))
+    );
+    if record["decision"]["boundary"]["receipt"]["receipt"] == "compact" {
+        assert_eq!(
+            record["decision"]["boundary"]["receipt"]["envelope"],
+            expected
+        );
+        assert_eq!(
+            serde_json::to_value(selected.envelope(None).unwrap()).unwrap(),
+            expected
+        );
+    }
+}
+
+async fn scoped_dispatch(store: &Store) -> (View, ActiveDispatch, BoundaryV1) {
+    let view = store
+        .request(Operation::RewriteSnapshot(seed_data()))
+        .await
+        .unwrap();
+    let plan = native_plan();
+    let set = plan_set_fingerprint(std::slice::from_ref(&plan)).unwrap();
+    let candidate = build_dispatch(&plan, &set, 0, BASE, 512).unwrap();
+    let mut returned = candidate.clone();
+    returned.expected_execution_version = 1;
+    let decision = scoped_answer(
+        BoundaryScope::Execution { phase: 6 },
+        BoundaryTool::CadenceQuery,
+        "new-dispatch",
+        Envelope::Ok(Success::Dispatch {
+            dispatch: Box::new(returned.clone()),
+            prompt: "x".repeat(512),
+        }),
+        Some(candidate.id.clone()),
+    );
+    let view = store
+        .request(scoped_operation(
+            &view,
+            "new-dispatch",
+            decision.clone(),
+            BoundaryChange::Dispatch {
+                plan_set_fingerprint: set,
+                dispatch: candidate,
+            },
+        ))
+        .await
+        .unwrap();
+    (view, returned, decision)
+}
+
+#[test]
+fn scoped_writer_confirms_dispatch_complete_blocked_and_observation_public_digests() {
+    for blocked in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        prepare_root(root.path());
+        runtime().block_on(async {
+            let store = open(root.path()).await;
+            let (view, dispatch, decision) = scoped_dispatch(&store).await;
+            let mut expected_dispatch = serde_json::to_value(&dispatch).unwrap();
+            expected_dispatch["body"] = json!("Build the execution slice.\n");
+            assert_disk_answer(root.path(), &view, &decision, json!({"status":"ok","outcome":"dispatch","dispatch":expected_dispatch,"prompt":"x".repeat(512)}));
+            let selected = confirmed_boundary(&view, &decision).unwrap();
+            assert!(selected.envelope(None).is_err());
+            let answer = Envelope::Ok(Success::Dispatch { dispatch: Box::new(dispatch.clone()), prompt: "x".repeat(512) });
+            assert_eq!(selected.envelope(Some(answer.clone())).unwrap(), answer);
+            let mut patch = complete_patch(&dispatch);
+            let expected = if blocked {
+                patch.outcome = PlanDisposition::Blocked;
+                patch.tasks = vec![TaskOutcome::Blocked { task_id:"T1".into(), blocker_id:"B1".into() }, TaskOutcome::NotRun { task_id:"T2".into() }];
+                patch.blockers = vec![Blocker { id:"B1".into(), text:"judgment".into(), evidence:vec![EvidenceReference::Criterion { id:"AC4".into() }] }];
+                json!({"status":"ok","outcome":"judgment-stop","phase":6,"dispatch_id":dispatch.id,"blocker_ids":["B1"]})
+            } else { json!({"status":"ok","outcome":"complete","phase":6}) };
+            let decision = scoped_answer(BoundaryScope::Execution { phase:6 }, BoundaryTool::CadenceApply, "new-patch",
+                serde_json::from_value(expected.clone()).unwrap(), Some(dispatch.id.clone()));
+            let commit_paths = if blocked { BTreeMap::new() } else { BTreeMap::from([(COMMIT_1.into(), vec!["src/one.rs".into()]),(COMMIT_2.into(), vec!["src/two.rs".into()])]) };
+            let change = BoundaryChange::Patch { patch, commit_paths, render_version:SUMMARY_RENDER_VERSION, complete_phase:!blocked };
+            let applied = store.request(scoped_operation(&view, "new-patch", decision.clone(), change.clone())).await.unwrap();
+            assert_disk_answer(root.path(), &applied, &decision, expected.clone());
+            let old_summary = std::fs::read(planning(root.path()).join("phases/6/SUMMARY.md")).unwrap();
+            let observation = scoped_answer(BoundaryScope::Execution { phase:6 }, BoundaryTool::CadenceQuery, "observe", serde_json::from_value(expected.clone()).unwrap(), Some(dispatch.id.clone()));
+            let observed = store.request(scoped_operation(&applied, "observe", observation.clone(), BoundaryChange::Observe)).await.unwrap();
+            assert_disk_answer(root.path(), &observed, &observation, expected);
+            let replay = store.request(scoped_operation(&view, "new-patch", decision.clone(), change.clone())).await.unwrap();
+            assert_eq!(replay, observed);
+            let mut changed = decision; changed.request_digest = digest(b"changed");
+            assert!(store.request(scoped_operation(&view, "new-patch", changed, change)).await.is_err());
+            let refusal = scoped_refusal(BoundaryScope::RootRefusal, "malformed");
+            let refused = store.request(scoped_operation(&observed, "malformed", refusal.clone(), BoundaryChange::Observe)).await.unwrap();
+            assert_eq!(refused.snapshot.data, applied.snapshot.data);
+            assert_eq!(std::fs::read(planning(root.path()).join("phases/6/SUMMARY.md")).unwrap(), old_summary);
+            assert_disk_answer(root.path(), &refused, &refusal, json!({"status":"refused","code":"invalid-input","reason":"the execution input is invalid"}));
+        });
+    }
+}
+
+#[test]
+fn scoped_budgets_admit_256_plus_terminal_and_reopen_never_grows_either_scope() {
+    for phase_first in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        prepare_root(root.path());
+        runtime().block_on(async {
+        let mut store = open(root.path()).await;
+        let (mut view, dispatch, original) = scoped_dispatch(&store).await;
+        let data = view.snapshot.data.clone();
+        for scope in if phase_first { [BoundaryScope::Execution { phase:6 }, BoundaryScope::RootRefusal] } else { [BoundaryScope::RootRefusal, BoundaryScope::Execution { phase:6 }] } {
+            let existing = if scope == BoundaryScope::RootRefusal { 0 } else { 1 };
+            for index in existing..256 {
+                let unique = format!("{scope:?}:{index}");
+                let decision = scoped_refusal(scope.clone(), &unique);
+                let before = view.clone();
+                view = store.request(scoped_operation(&view, &unique, decision.clone(), BoundaryChange::Observe)).await.unwrap();
+                assert_eq!(store.request(scoped_operation(&before, &unique, decision, BoundaryChange::Observe)).await.unwrap(), view);
+            }
+            let decision = scoped_refusal(scope.clone(), "overflow");
+            let terminal = store.request(scoped_operation(&view, "overflow", decision.clone(), BoundaryChange::Observe)).await.unwrap();
+            let selected = confirmed_boundary(&terminal, &decision).unwrap();
+            assert!(selected.value.terminal);
+            assert_eq!(selected.value.boundary.response_digest, "dbf0572cace415f2802f207056eafe427501f99eb793bd9551d6b114477b4ab9");
+            assert_ne!(selected.id, selected.value.boundary.response_digest);
+            assert_eq!(terminal.snapshot.operations, view.snapshot.operations);
+            assert_eq!(terminal.snapshot.data, data);
+            assert_eq!(terminal.decisions.iter().filter(|record| matches!(&record.decision, Decision::BoundaryV1(value) if value.boundary.scope == scope)).count(), 257);
+            let disk = [STATE, DECISIONS].map(|name| std::fs::read(planning(root.path()).join(name)).unwrap());
+            drop(store); store = open(root.path()).await;
+            for index in 0..6 {
+                let mut candidate = if index == 0 && scope != BoundaryScope::RootRefusal { original.clone() }
+                    else { scoped_refusal(scope.clone(), &format!("retry-{index}")) };
+                candidate.tool = if index % 2 == 0 { BoundaryTool::CadenceQuery } else { BoundaryTool::CadenceApply };
+                let change = if index == 3 { BoundaryChange::Patch { patch:complete_patch(&dispatch), commit_paths:BTreeMap::new(), render_version:SUMMARY_RENDER_VERSION, complete_phase:true } }
+                    else { BoundaryChange::Observe };
+                let replay = store.request(Operation::BoundaryV1 { expected_generation:0, expected_integrity:"changed".into(), operation_id:"new-dispatch".into(), decision:candidate.clone(), change:Box::new(change) }).await.unwrap();
+                assert_eq!(replay, terminal);
+                assert!(confirmed_boundary(&replay, &candidate).unwrap().value.terminal);
+                assert_eq!([STATE, DECISIONS].map(|name| std::fs::read(planning(root.path()).join(name)).unwrap()), disk);
+            }
+            view = terminal;
+        }
+        assert_eq!(view.decisions.len(), 514);
+        assert_eq!(view.snapshot.operations.len(), 512);
+    });
+    }
+}

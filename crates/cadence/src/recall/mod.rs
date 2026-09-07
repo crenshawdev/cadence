@@ -80,7 +80,7 @@ pub fn current(view: &View) -> Vec<Candidate> {
             } => (choice, receipt),
             Decision::Gate { outcome, evidence } => (outcome, evidence),
             Decision::Refusal { reason, evidence } => (reason, evidence),
-            Decision::Boundary { .. } => continue,
+            Decision::Boundary { .. } | Decision::BoundaryV1(_) => continue,
         };
         let text = match evidence {
             Evidence::Text(text) => format!("{label}\n{text}"),

@@ -74,6 +74,7 @@ pub enum Decision {
         reason: String,
         evidence: Evidence,
     },
+    BoundaryV1(BoundaryRecordV1),
     Boundary {
         phase: u32,
         tool: String,
@@ -86,6 +87,14 @@ pub enum Decision {
         response_digest: String,
         terminal: bool,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoundaryRecordV1 {
+    pub boundary: cadence::execution::boundary::BoundaryV1,
+    pub store_generation: u64,
+    pub terminal: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,7 +216,50 @@ pub fn validate_items(records: &[ItemRecord]) -> Result<()> {
 
 pub fn validate_decisions(records: &[DecisionRecord]) -> Result<()> {
     let mut revisions = BTreeMap::new();
+    let mut immutable = std::collections::BTreeSet::new();
+    let mut scopes = BTreeMap::new();
+    let mut generation = 0;
     for record in records {
+        if immutable.contains(&record.id) {
+            return Err(Error::Invalid(
+                "immutable boundary identity repeated".into(),
+            ));
+        }
+        if let Decision::BoundaryV1(value) = &record.decision {
+            value
+                .boundary
+                .validate(value.terminal)
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+            if record.revision != 1
+                || revisions.contains_key(&record.id)
+                || record.id
+                    != value
+                        .boundary
+                        .identity()
+                        .map_err(|error| Error::Invalid(error.to_string()))?
+                || value.store_generation == 0
+                || value.store_generation <= generation
+                || record.origin
+                    != (Origin {
+                        source: "execution-boundary-v1".into(),
+                        original: Evidence::Missing,
+                    })
+            {
+                return Err(Error::Invalid("invalid immutable boundary record".into()));
+            }
+            let (count, terminal) = scopes.entry(&value.boundary.scope).or_insert((0, false));
+            if *terminal || (value.terminal && *count != 256) || (!value.terminal && *count >= 256)
+            {
+                return Err(Error::Invalid("invalid boundary budget history".into()));
+            }
+            if value.terminal {
+                *terminal = true;
+            } else {
+                *count += 1;
+            }
+            generation = value.store_generation;
+            immutable.insert(&record.id);
+        }
         validate_revision(
             record.version,
             &record.id,

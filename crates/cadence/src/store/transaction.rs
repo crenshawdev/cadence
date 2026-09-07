@@ -1,15 +1,30 @@
 use super::model::{self, DECISIONS, DecisionRecord, ITEMS, ItemRecord, STATE, Snapshot, VERSION};
 use super::{Error, MutationContext, Observed, Policy, Result, Storage};
+use cadence::envelope::Envelope;
+use cadence::execution::boundary::{BoundaryScope, Receipt, Success};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
 pub const INTENT: &str = ".store-intent.json";
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum IntentKind {
     Store,
+    BoundaryObservationV1 {
+        scope: BoundaryScope,
+        decision_id: String,
+    },
+    ExecutionDispatchV1 {
+        phase: u32,
+        decision_id: String,
+    },
+    ExecutionPatchV1 {
+        phase: u32,
+        decision_id: String,
+        render_version: u32,
+    },
     ExecutionDispatch {
         phase: u32,
     },
@@ -64,6 +79,7 @@ pub(crate) struct Participant {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Intent {
     version: u32,
     kind: IntentKind,
@@ -110,7 +126,7 @@ impl Intent {
                 "snapshot must be the final intent participant".into(),
             ));
         }
-        match self.kind {
+        match self.kind.clone() {
             IntentKind::Store if summary_phase.is_some() => {
                 return Err(Error::Invalid(
                     "store intent cannot render a phase summary".into(),
@@ -148,7 +164,7 @@ impl Intent {
         model::validate_items(&model::parse_lines(items)?)?;
         model::validate_decisions(&model::parse_lines(decisions)?)?;
         let snapshot = Snapshot::parse(bytes(STATE)?, items, decisions)?;
-        match self.kind {
+        match self.kind.clone() {
             IntentKind::ExecutionDispatch { phase } => {
                 let execution = execution_snapshot(&snapshot)?;
                 let occurrence =
@@ -177,13 +193,16 @@ impl Intent {
                     ));
                 }
             }
-            IntentKind::Store
+            IntentKind::BoundaryObservationV1 { .. }
+            | IntentKind::ExecutionDispatchV1 { .. }
+            | IntentKind::ExecutionPatchV1 { .. }
+            | IntentKind::Store
             | IntentKind::ExecutionRefusal { .. }
             | IntentKind::ExecutionPatch { summary: false, .. } => {}
         }
         if let IntentKind::ExecutionDispatch { phase }
         | IntentKind::ExecutionPatch { phase, .. }
-        | IntentKind::ExecutionRefusal { phase } = self.kind
+        | IntentKind::ExecutionRefusal { phase } = self.kind.clone()
         {
             let decisions: Vec<DecisionRecord> = model::parse_lines(decisions)?;
             if !decisions.iter().any(|record| {
@@ -201,7 +220,170 @@ impl Intent {
                 ));
             }
         }
+        self.validate_boundary_v1(&snapshot, decisions, summary_phase)?;
         Ok(snapshot)
+    }
+    fn validate_boundary_v1(
+        &self,
+        snapshot: &Snapshot,
+        decisions: &[u8],
+        summary_phase: Option<u32>,
+    ) -> Result<()> {
+        let (scope, id, summary) = match &self.kind {
+            IntentKind::BoundaryObservationV1 { scope, decision_id } => {
+                (scope.clone(), decision_id, false)
+            }
+            IntentKind::ExecutionDispatchV1 { phase, decision_id } => (
+                BoundaryScope::Execution { phase: *phase },
+                decision_id,
+                false,
+            ),
+            IntentKind::ExecutionPatchV1 {
+                phase,
+                decision_id,
+                render_version,
+            } => {
+                if *render_version != cadence::execution::render::SUMMARY_RENDER_VERSION {
+                    return Err(Error::Invalid("unsupported boundary render version".into()));
+                }
+                (
+                    BoundaryScope::Execution { phase: *phase },
+                    decision_id,
+                    true,
+                )
+            }
+            _ => return Ok(()),
+        };
+        if !scope.valid()
+            || summary != summary_phase.is_some()
+            || summary_phase.is_some_and(|phase| scope != (BoundaryScope::Execution { phase }))
+            || self.participants.len() != if summary { 4 } else { 3 }
+            || self
+                .participants
+                .iter()
+                .any(|p| matches!(p.target.as_str(), "repo-config" | "global-config"))
+        {
+            return Err(Error::Invalid(
+                "invalid boundary intent participants".into(),
+            ));
+        }
+        let records: Vec<DecisionRecord> = model::parse_lines(decisions)?;
+        let value = records
+            .iter()
+            .find_map(|record| match &record.decision {
+                model::Decision::BoundaryV1(value)
+                    if &record.id == id
+                        && value.boundary.scope == scope
+                        && value.store_generation == snapshot.generation =>
+                {
+                    Some(value)
+                }
+                _ => None,
+            })
+            .ok_or_else(|| Error::Invalid("intent lacks its exact boundary decision".into()))?;
+        if records.iter().any(|record| {
+            matches!(&record.decision,
+            model::Decision::BoundaryV1(value) if value.store_generation > snapshot.generation)
+        }) {
+            return Err(Error::Invalid(
+                "boundary generation exceeds snapshot".into(),
+            ));
+        }
+        match &self.kind {
+            IntentKind::ExecutionDispatchV1 { phase, .. } => {
+                let execution = execution_snapshot(snapshot)?;
+                let active = execution
+                    .occurrences
+                    .get(&phase.to_string())
+                    .and_then(|o| o.active.as_ref())
+                    .ok_or_else(|| {
+                        Error::Invalid("dispatch intent lacks active dispatch".into())
+                    })?;
+                if active.phase != *phase
+                    || value.terminal
+                    || value.boundary.receipt
+                        != (Receipt::Dispatch {
+                            dispatch_id: active.id.clone(),
+                            prompt_bytes: active.prompt_bytes,
+                        })
+                {
+                    return Err(Error::Invalid("dispatch intent receipt mismatch".into()));
+                }
+            }
+            IntentKind::ExecutionPatchV1 { phase, .. } => {
+                let execution = execution_snapshot(snapshot)?;
+                let occurrence =
+                    execution
+                        .occurrences
+                        .get(&phase.to_string())
+                        .ok_or_else(|| {
+                            Error::Invalid("patch intent lacks execution occurrence".into())
+                        })?;
+                let subject =
+                    value.boundary.subject_id.as_ref().ok_or_else(|| {
+                        Error::Invalid("patch intent lacks receipt identity".into())
+                    })?;
+                let receipt = occurrence
+                    .receipts
+                    .get(subject)
+                    .ok_or_else(|| Error::Invalid("patch intent lacks execution receipt".into()))?;
+                let answer_matches = match &value.boundary.receipt {
+                    Receipt::Compact {
+                        envelope:
+                            Envelope::Ok(Success::Complete {
+                                phase: answer_phase,
+                            }),
+                    } => {
+                        answer_phase == phase
+                            && matches!(
+                                occurrence.terminal,
+                                Some(cadence::execution::model::TerminalOutcome::Complete { .. })
+                            )
+                    }
+                    Receipt::Compact {
+                        envelope:
+                            Envelope::Ok(Success::NextPlan {
+                                phase: answer_phase,
+                                ..
+                            }),
+                    } => {
+                        answer_phase == phase
+                            && receipt.outcome.disposition
+                                == cadence::execution::model::PlanDisposition::Complete
+                    }
+                    Receipt::Compact {
+                        envelope:
+                            Envelope::Ok(Success::JudgmentStop {
+                                phase: answer_phase,
+                                dispatch_id,
+                                blocker_ids,
+                            }),
+                    } => {
+                        answer_phase == phase
+                            && dispatch_id == subject
+                            && matches!(&occurrence.terminal,
+                            Some(cadence::execution::model::TerminalOutcome::JudgmentStop { blocker_ids: stored, .. }) if stored == blocker_ids)
+                    }
+                    _ => false,
+                };
+                if !answer_matches || value.terminal {
+                    return Err(Error::Invalid("patch intent answer mismatch".into()));
+                }
+                let rendered = cadence::execution::render::render_phase_summary(&execution, *phase)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
+                if !self
+                    .participants
+                    .iter()
+                    .any(|p| p.target == format!("phase-summary:{phase}") && p.bytes == rendered)
+                {
+                    return Err(Error::Invalid(
+                        "phase summary differs from execution projection".into(),
+                    ));
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }
 
@@ -328,6 +510,9 @@ pub(crate) fn recover<S: Storage, P: Policy>(storage: &mut S, policy: &mut P) ->
         return Ok(());
     };
     let intent: Intent = serde_json::from_slice(&bytes)?;
+    if serde_json::from_slice::<Value>(&bytes)? != serde_json::to_value(&intent)? {
+        return Err(Error::Invalid("unknown operation intent fields".into()));
+    }
     let snapshot = intent.validate()?;
     validate_all(storage, &intent.participants, true)?;
     policy.validate(&MutationContext {
