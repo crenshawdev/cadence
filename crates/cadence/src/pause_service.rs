@@ -15,7 +15,7 @@ use cadence::{
         persistence,
     },
     pause::{
-        self, Capture, Input,
+        self, Capture, Input, ResumeInvocation,
         branch::{self, Integration, Policy},
         git,
         risk::{self, CommitKind, Consequence, Outcome, Review},
@@ -357,6 +357,283 @@ async fn prepare_wip<I: ConfigIo>(
     .map_err(|_| Error::Closed)?
 }
 
+fn config_identity(config: &Generation) -> Result<String> {
+    Ok(cadence::store::model::digest(&serde_json::to_vec(&(
+        &config.repo.identity,
+        &config.repo.bytes,
+        config
+            .global
+            .as_ref()
+            .map(|input| (&input.identity, &input.bytes)),
+    ))?))
+}
+
+fn resume_record(
+    captured: &Capture,
+    observed: &git::Observation,
+    config: &Generation,
+) -> Result<Record> {
+    let invocation = ResumeInvocation {
+        version: 1,
+        action: "pause".into(),
+        phase: captured.phase.clone(),
+        preserved_head: observed.head.clone(),
+        branch: observed.branch.clone(),
+        config: config_identity(config)?,
+    };
+    Ok(Record {
+        version: evidence::VERSION,
+        scope: captured.scope.clone(),
+        fact: Fact::Override(Override {
+            id: "pause-resume".into(),
+            reason: captured.sentence.clone(),
+            authorization: Authorization::Invocation {
+                id: format!("pause:{}", captured.scope.occurrence),
+                invocation: serde_json::to_string(&invocation)?,
+            },
+            meaning: Meaning::PausedNext {
+                sentence: captured.sentence.clone(),
+            },
+        }),
+    })
+}
+
+fn recorded_resume(
+    view: &View,
+    captured: &Capture,
+    config: &Generation,
+) -> Result<Option<(Record, ResumeInvocation)>> {
+    for record in persistence::read(&view.snapshot.data)?.into_values() {
+        if record.scope != captured.scope {
+            continue;
+        }
+        let Fact::Override(value) = &record.fact else {
+            continue;
+        };
+        if value.id != "pause-resume" {
+            continue;
+        }
+        let Authorization::Invocation { id, invocation } = &value.authorization else {
+            return Err(Error::Conflict(
+                "recorded pause resume authorization changed".into(),
+            ));
+        };
+        let Meaning::PausedNext { sentence } = &value.meaning else {
+            return Err(Error::Conflict(
+                "recorded pause resume meaning changed".into(),
+            ));
+        };
+        let invocation: ResumeInvocation = serde_json::from_str(invocation)
+            .map_err(|_| Error::Conflict("recorded pause provenance is unusable".into()))?;
+        if value.reason != captured.sentence
+            || sentence != &captured.sentence
+            || id != &format!("pause:{}", captured.scope.occurrence)
+            || invocation.version != 1
+            || invocation.action != "pause"
+            || invocation.phase != captured.phase
+            || invocation.config != config_identity(config)?
+        {
+            return Err(Error::Conflict("recorded pause resume changed".into()));
+        }
+        return Ok(Some((record, invocation)));
+    }
+    Ok(None)
+}
+
+fn deferred_receipts(
+    view: &View,
+    scope: &Scope,
+    planning: &Path,
+    root: &Path,
+) -> Result<BTreeSet<PathBuf>> {
+    let mut paths = BTreeSet::new();
+    for record in persistence::read(&view.snapshot.data)?.values() {
+        if record.scope != *scope {
+            continue;
+        }
+        let Fact::AcceptedResult(result) = &record.fact else {
+            continue;
+        };
+        let Ok(review) = serde_json::from_str::<Review>(&result.evidence_text) else {
+            continue;
+        };
+        if Review::parse(result, &review.fire).is_err() {
+            continue;
+        }
+        for (path, _) in deferred_artifacts(planning, &scope.phase, &review)? {
+            paths.insert(repo_path(root, &path)?);
+        }
+    }
+    Ok(paths)
+}
+
+fn final_paths<I: ConfigIo>(
+    session: &Session<I>,
+    view: &View,
+    captured: &Capture,
+    config: &Generation,
+    root: &Path,
+    planning: &Path,
+) -> Result<BTreeSet<PathBuf>> {
+    let mut paths = session
+        .import_manifest()
+        .created
+        .iter()
+        .map(|path| repo_path(root, path))
+        .collect::<Result<BTreeSet<_>>>()?;
+    let planning_relative = planning
+        .strip_prefix(root)
+        .map_err(|_| Error::Conflict("planning root escaped the repository".into()))?;
+    paths.extend(
+        captured
+            .authorized
+            .iter()
+            .filter(|path| path.starts_with(planning_relative))
+            .cloned(),
+    );
+    if consequence(config)? == Consequence::Deferred {
+        paths.extend(deferred_receipts(view, &captured.scope, planning, root)?);
+    }
+    Ok(paths)
+}
+
+fn verify_participants(
+    root: &Path,
+    planning: &Path,
+    view: &View,
+    commit: Option<&str>,
+) -> Result<()> {
+    let planning = planning
+        .strip_prefix(root)
+        .map_err(|_| Error::Conflict("planning root escaped the repository".into()))?;
+    for (name, expected) in persistence::confirmed_participants(view)? {
+        let path = planning.join(name);
+        if fs::read(root.join(&path))? != expected {
+            return Err(Error::Conflict(format!(
+                "confirmed store participant changed: {}",
+                path.display()
+            )));
+        }
+        if let Some(commit) = commit
+            && git::committed_file(root, commit, &path)? != expected
+        {
+            return Err(Error::Conflict(format!(
+                "pause commit lacks confirmed store participant: {}",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+async fn stage_final<I: ConfigIo>(
+    session: &Session<I>,
+    view: &View,
+    captured: &Capture,
+    config: &Generation,
+    root: &Path,
+    planning: &Path,
+) -> Result<(git::Observation, Option<git::WipIndex>)> {
+    let paths = final_paths(session, view, captured, config, root, planning)?;
+    let root = root.to_path_buf();
+    let observed = tokio::task::spawn_blocking({
+        let root = root.clone();
+        move || git::observe(&root)
+    })
+    .await
+    .map_err(|_| Error::Closed)??;
+    let expected = observed.clone();
+    let staged = tokio::task::spawn_blocking(move || {
+        git::stage_authorized(&root, &expected, &paths, &BTreeSet::new(), &paths)
+    })
+    .await
+    .map_err(|_| Error::Closed)??;
+    Ok((observed, staged))
+}
+
+async fn finalize_pause<I: ConfigIo>(
+    session: &Session<I>,
+    view: &mut View,
+    captured: &Capture,
+    invocation: &ResumeInvocation,
+    config: &Generation,
+    root: &Path,
+    planning: &Path,
+) -> Result<Response> {
+    loop {
+        if session.config()? != *config || session.derivation_view().await? != *view {
+            return Err(Error::Conflict(
+                "pause store/config changed before record commit".into(),
+            ));
+        }
+        verify_participants(root, planning, view, None)?;
+        let (observed, staged) =
+            stage_final(session, view, captured, config, root, planning).await?;
+        if observed.branch != invocation.branch {
+            return Err(Error::Conflict(
+                "pause branch changed before record commit".into(),
+            ));
+        }
+        let Some(staged) = staged else {
+            git::require_clean(root)?;
+            verify_participants(root, planning, view, Some(&observed.head))?;
+            return Ok(Response::Ready(Box::new(captured.clone())));
+        };
+        if observed.head != invocation.preserved_head {
+            return Err(Error::Conflict(
+                "pause record base changed before its commit".into(),
+            ));
+        }
+
+        let mut guarded = captured.clone();
+        guarded.observed = observed;
+        let response = risk_gate(
+            session,
+            view,
+            &mut guarded,
+            config,
+            root,
+            planning,
+            CommitKind::ResumeRecord,
+        )
+        .await?;
+        if !matches!(response, Response::Ready(_)) {
+            return Ok(response);
+        }
+        if session.config()? != *config || session.derivation_view().await? != *view {
+            return Err(Error::Conflict(
+                "pause store/config changed during record guard".into(),
+            ));
+        }
+        verify_participants(root, planning, view, None)?;
+        let (_, latest) = stage_final(session, view, captured, config, root, planning).await?;
+        let Some(latest) = latest else {
+            return Err(Error::Conflict(
+                "pause record disappeared before its commit".into(),
+            ));
+        };
+        if latest.index_id != staged.index_id {
+            continue;
+        }
+
+        let subject = format!("docs: pause at phase {}", captured.phase.identity);
+        let root_for_commit = root.to_path_buf();
+        let committed = tokio::task::spawn_blocking(move || {
+            git::commit_guarded(&root_for_commit, &latest, &subject)
+        })
+        .await
+        .map_err(|_| Error::Closed)??;
+        if session.derivation_view().await? != *view {
+            return Err(Error::Conflict(
+                "pause store changed after record commit".into(),
+            ));
+        }
+        verify_participants(root, planning, view, Some(&committed))?;
+        git::require_clean(root)?;
+        return Ok(Response::Ready(Box::new(captured.clone())));
+    }
+}
+
 fn accepted(
     view: &View,
     scope: &Scope,
@@ -414,18 +691,23 @@ fn write_same(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn persist_deferred(planning: &Path, phase: &str, review: &Review) -> Result<PathBuf> {
-    let home = planning.join("phases").join(phase);
-    if !home.is_dir() {
-        return Err(Error::Conflict(
-            "pause risk phase directory is unavailable".into(),
-        ));
+fn deferred_artifacts(
+    planning: &Path,
+    phase: &str,
+    review: &Review,
+) -> Result<[(PathBuf, Vec<u8>); 2]> {
+    if review.fire.index_id.len() < 12
+        || !review
+            .fire
+            .index_id
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+        || review.fire.round == 0
+    {
+        return Err(Error::Invalid("invalid deferred review identity".into()));
     }
-    let short = review
-        .fire
-        .index_id
-        .get(..12)
-        .unwrap_or(&review.fire.index_id);
+    let home = planning.join("phases").join(phase);
+    let short = &review.fire.index_id[..12];
     let suffix = if review.fire.round > 1 {
         format!("-r{}", review.fire.round)
     } else {
@@ -433,15 +715,12 @@ fn persist_deferred(planning: &Path, phase: &str, review: &Review) -> Result<Pat
     };
     let discriminator = format!("pause-{short}");
     let review_path = home.join(format!("REVIEW-risk_surface-{discriminator}{suffix}.md"));
-    write_same(
-        &review_path,
-        &serde_json::to_vec_pretty(&serde_json::json!({
-            "findings": review.findings,
-        }))?,
-    )?;
+    let review_bytes = serde_json::to_vec_pretty(&serde_json::json!({
+        "findings": review.findings,
+    }))?;
     let queue_name = format!("DEFERRED-risk_surface-{discriminator}{suffix}.json");
     let queue_path = home.join(&queue_name);
-    let queue = serde_json::to_vec_pretty(&serde_json::json!({
+    let queue_bytes = serde_json::to_vec_pretty(&serde_json::json!({
         "phase": phase,
         "trigger": "risk_surface",
         "discriminator": discriminator,
@@ -449,8 +728,24 @@ fn persist_deferred(planning: &Path, phase: &str, review: &Review) -> Result<Pat
         "findings": review.findings,
         "payload": review_path.strip_prefix(planning).unwrap_or(&review_path),
     }))?;
-    write_same(&queue_path, &queue)?;
-    Ok(Path::new("phases").join(phase).join(queue_name))
+    Ok([(review_path, review_bytes), (queue_path, queue_bytes)])
+}
+
+fn persist_deferred(planning: &Path, phase: &str, review: &Review) -> Result<PathBuf> {
+    let home = planning.join("phases").join(phase);
+    if !home.is_dir() {
+        return Err(Error::Conflict(
+            "pause risk phase directory is unavailable".into(),
+        ));
+    }
+    let [review, queue] = deferred_artifacts(planning, phase, review)?;
+    write_same(&review.0, &review.1)?;
+    write_same(&queue.0, &queue.1)?;
+    queue
+        .0
+        .strip_prefix(planning)
+        .map(Path::to_path_buf)
+        .map_err(|_| Error::Conflict("deferred queue escaped the planning root".into()))
 }
 
 async fn override_review<I: ConfigIo>(
@@ -744,6 +1039,25 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
     captured.observed = original;
     let session = factory.first_touch(&planning).await?;
     let config = session.config()?;
+    if let Some((record, invocation)) = recorded_resume(&view, &captured, &config)? {
+        if captured.observed.branch != invocation.branch {
+            return Err(Error::Conflict(
+                "pause branch changed after its resume record".into(),
+            ));
+        }
+        let operation = format!("pause-resume:{}", record.key()?);
+        view = session.commit_evidence(&view, &operation, &record).await?;
+        return finalize_pause(
+            &session,
+            &mut view,
+            &captured,
+            &invocation,
+            &config,
+            &root,
+            &planning,
+        )
+        .await;
+    }
     let policy = policy(&config)?;
     let mut observed = observe(root.clone(), planning.clone(), policy.clone()).await?;
     if let Some(gate) = branch::protected(&policy, &observed)? {
@@ -835,5 +1149,35 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
                 .map_err(|_| Error::Closed)??;
         ready.wip = Some(committed);
     }
-    Ok(Response::Ready(ready))
+    if session.config()? != config {
+        return Err(Error::Conflict(
+            "pause config changed before resume persistence".into(),
+        ));
+    }
+    let record_observation = {
+        let root = root.clone();
+        tokio::task::spawn_blocking(move || git::observe(&root))
+            .await
+            .map_err(|_| Error::Closed)??
+    };
+    let record = resume_record(&ready, &record_observation, &config)?;
+    let Fact::Override(value) = &record.fact else {
+        unreachable!("pause resume is an override")
+    };
+    let Authorization::Invocation { invocation, .. } = &value.authorization else {
+        unreachable!("pause resume is an invocation")
+    };
+    let invocation: ResumeInvocation = serde_json::from_str(invocation)?;
+    let operation = format!("pause-resume:{}", record.key()?);
+    view = session.commit_evidence(&view, &operation, &record).await?;
+    finalize_pause(
+        &session,
+        &mut view,
+        &ready,
+        &invocation,
+        &config,
+        &root,
+        &planning,
+    )
+    .await
 }

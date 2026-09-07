@@ -23,6 +23,17 @@ pub struct Phase {
     pub provenance: String,
 }
 
+/// Durable provenance for the invocation that created a pending resume grant.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResumeInvocation {
+    pub version: u32,
+    pub action: String,
+    pub phase: Phase,
+    pub preserved_head: String,
+    pub branch: Vec<u8>,
+    pub config: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct Input {
     pub scope: Scope,

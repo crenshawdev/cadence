@@ -4,22 +4,26 @@ use cadence::{
     evidence::{
         self, Fact, Record, Scope,
         gates::{self, Gate, State},
-        overrides::Meaning,
+        overrides::{Authorization, Meaning},
         results::{AcceptedResult, Reference},
     },
     next_action::observations,
     pause::{
-        Input, Phase, git,
+        Input, Phase, ResumeInvocation, git,
         risk::{self, Finding, Outcome, Review, Severity},
         risk_diff,
     },
+    store::{Error, filesystem::Stage},
 };
 use serde_json::{Value, json};
 use std::{
     collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 fn runtime() -> tokio::runtime::Runtime {
@@ -240,10 +244,11 @@ fn pause_protected_questions_survive_reopen_and_answers_are_occurrence_scoped() 
             let result = server().pause(request.clone()).await.unwrap();
             if choice == "abort" {
                 assert!(matches!(result, Response::Refused(_)));
+                assert_eq!(git::run(temp.path(), ["rev-parse", "HEAD"]).unwrap(), head);
             } else {
                 assert!(matches!(result, Response::Ready(_)), "{result:?}");
+                assert_eq!(git::run(temp.path(), ["rev-parse", "HEAD^"]).unwrap(), head);
             }
-            assert_eq!(git::run(temp.path(), ["rev-parse", "HEAD"]).unwrap(), head);
             if choice == "create" {
                 assert_eq!(
                     git::run(temp.path(), ["branch", "--show-current"]).unwrap(),
@@ -307,6 +312,7 @@ fn pause_base_guards_use_local_refs_and_shared_history() {
             let result = server().pause(input(root, case)).await.unwrap();
             if case == "advanced" {
                 assert!(matches!(result, Response::Ready(_)), "{result:?}");
+                assert_eq!(git::run(root, ["rev-parse", "HEAD^"]).unwrap(), head);
             } else {
                 let kind = match case {
                     "detached" => "detached",
@@ -320,7 +326,9 @@ fn pause_base_guards_use_local_refs_and_shared_history() {
                     gate
                 );
             }
-            assert_eq!(git::run(root, ["rev-parse", "HEAD"]).unwrap(), head);
+            if case != "advanced" {
+                assert_eq!(git::run(root, ["rev-parse", "HEAD"]).unwrap(), head);
+            }
         }
     });
 }
@@ -853,12 +861,12 @@ fn pause_wip_preserves_exact_bytes_deletion_and_rename() {
         };
         let wip = capture.wip.expect("dirty source work needs a WIP");
         assert_eq!(
-            git::run(root, ["rev-parse", "HEAD"]).unwrap(),
+            git::run(root, ["rev-parse", "HEAD^"]).unwrap(),
             format!("{wip}\n").as_bytes()
         );
         assert_ne!(before, format!("{wip}\n").as_bytes());
         assert_eq!(
-            git::run(root, ["log", "-1", "--format=%s"]).unwrap(),
+            git::run(root, ["show", "-s", "--format=%s", &wip]).unwrap(),
             b"wip: Work\n"
         );
         let binary = format!("{wip}:binary data.bin");
@@ -904,7 +912,10 @@ fn pause_wip_refuses_unauthorized_dirt_and_skips_an_originally_clean_tree() {
             panic!("clean pause must be ready");
         };
         assert_eq!(capture.wip, None);
-        assert_eq!(git::run(clean.path(), ["rev-parse", "HEAD"]).unwrap(), head);
+        assert_eq!(
+            git::run(clean.path(), ["rev-parse", "HEAD^"]).unwrap(),
+            head
+        );
     });
 }
 
@@ -950,6 +961,218 @@ fn pause_wip_reports_a_real_commit_hook_failure_without_discarding_the_index() {
         assert_eq!(
             git::run(root, ["show", ":hooked.txt"]).unwrap(),
             b"preserve me\n"
+        );
+    });
+}
+
+#[test]
+fn pause_commits_exact_resume_record_for_dirty_and_clean_starts() {
+    runtime().block_on(async {
+        for dirty in [true, false] {
+            let temp = risk_fixture("off", None).await;
+            let root = temp.path();
+            let before = String::from_utf8(git::run(root, ["rev-parse", "HEAD"]).unwrap())
+                .unwrap()
+                .trim()
+                .to_owned();
+            let mut request = input(root, if dirty { "record-dirty" } else { "record-clean" });
+            if dirty {
+                fs::write(root.join("source.txt"), b"exact source bytes\0\xff").unwrap();
+                request.authorized.insert("source.txt".into());
+            }
+            let Response::Ready(capture) = server().pause(request.clone()).await.unwrap() else {
+                panic!("pause record must commit");
+            };
+            let commits = String::from_utf8(
+                git::run(root, ["rev-list", "--count", &format!("{before}..HEAD")]).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(commits.trim(), if dirty { "2" } else { "1" });
+            assert_eq!(capture.wip.is_some(), dirty);
+            if let Some(wip) = &capture.wip {
+                assert_eq!(
+                    git::run(root, ["show", &format!("{wip}:source.txt")]).unwrap(),
+                    b"exact source bytes\0\xff"
+                );
+                assert_eq!(
+                    git::run(root, ["rev-parse", "HEAD^"]).unwrap(),
+                    format!("{wip}\n").as_bytes()
+                );
+            }
+            assert_eq!(
+                git::run(root, ["log", "-1", "--format=%s"]).unwrap(),
+                b"docs: pause at phase 1\n"
+            );
+            git::require_clean(root).unwrap();
+
+            let service = server();
+            let recovery = service
+                .evidence(&root.join(".planning"), Command::Read)
+                .await
+                .unwrap();
+            let record = recovery
+                .current
+                .iter()
+                .find(|record| {
+                    record.scope == request.scope
+                        && matches!(&record.fact, Fact::Override(value) if value.id == "pause-resume")
+                })
+                .unwrap();
+            let Fact::Override(value) = &record.fact else {
+                unreachable!()
+            };
+            assert_eq!(value.reason, "verify the fix on the device");
+            assert!(matches!(
+                &value.meaning,
+                Meaning::PausedNext { sentence } if sentence == "verify the fix on the device"
+            ));
+            let Authorization::Invocation { invocation, .. } = &value.authorization else {
+                panic!("pause record needs invocation provenance");
+            };
+            let invocation: ResumeInvocation = serde_json::from_str(invocation).unwrap();
+            assert_eq!(invocation.version, 1);
+            assert_eq!(invocation.action, "pause");
+            assert_eq!(invocation.phase, capture.phase);
+            assert_eq!(invocation.preserved_head, capture.wip.unwrap_or(before));
+            assert!(!invocation.config.is_empty());
+
+            let permission = service
+                .evidence(
+                    &root.join(".planning"),
+                    Command::Permission {
+                        scope: request.scope,
+                        override_id: "pause-resume".into(),
+                    },
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                permission.permission,
+                Some(cadence::evidence::authority::Permission::Pending)
+            );
+            let view = service
+                .store(
+                    &root.join(".planning"),
+                    cadence::store::writer::Operation::Read,
+                )
+                .await
+                .unwrap();
+            for (name, bytes) in evidence::persistence::confirmed_participants(&view).unwrap() {
+                assert_eq!(
+                    git::run(root, ["show", &format!("HEAD:.planning/{name}")]).unwrap(),
+                    bytes
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn pause_record_failure_after_wip_is_partial_and_retry_is_idempotent() {
+    runtime().block_on(async {
+        let temp = risk_fixture("off", None).await;
+        let root = temp.path();
+        let before = String::from_utf8(git::run(root, ["rev-parse", "HEAD"]).unwrap())
+            .unwrap()
+            .trim()
+            .to_owned();
+        fs::write(root.join("partial.txt"), "preserve before record\n").unwrap();
+        let mut request = input(root, "partial-record");
+        request.authorized.insert("partial.txt".into());
+        let armed = Arc::new(AtomicBool::new(true));
+        let probe_armed = armed.clone();
+        let factory = SessionFactory::new(None, Arc::new(|_, _| Ok(()))).with_probe(Arc::new(
+            move |stage, path| {
+                if stage == Stage::Prepared
+                    && path.ends_with(cadence::store::model::STATE)
+                    && probe_armed.swap(false, Ordering::SeqCst)
+                {
+                    Err(Error::Io("injected pause record failure".into()))
+                } else {
+                    Ok(())
+                }
+            },
+        ));
+        let failed = CadenceServer::with_factory(factory);
+        assert!(failed.pause(request.clone()).await.is_err());
+        let wip = String::from_utf8(git::run(root, ["rev-parse", "HEAD"]).unwrap())
+            .unwrap()
+            .trim()
+            .to_owned();
+        assert_ne!(wip, before);
+        assert_eq!(
+            git::run(root, ["show", &format!("{wip}:partial.txt")]).unwrap(),
+            b"preserve before record\n"
+        );
+        let recovery = server()
+            .evidence(&root.join(".planning"), Command::Read)
+            .await
+            .unwrap();
+        assert!(!recovery.current.iter().any(|record| matches!(
+            &record.fact,
+            Fact::Override(value) if value.id == "pause-resume"
+        )));
+
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("retry must finish the preserved pause");
+        };
+        assert_eq!(capture.wip, None);
+        let count = String::from_utf8(
+            git::run(root, ["rev-list", "--count", &format!("{before}..HEAD")]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(count.trim(), "2");
+        let subjects = String::from_utf8(
+            git::run(root, ["log", "--format=%s", &format!("{before}..HEAD")]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(subjects.matches("wip: Work").count(), 1);
+        assert_eq!(subjects.matches("docs: pause at phase 1").count(), 1);
+        let recovery = server()
+            .evidence(&root.join(".planning"), Command::Read)
+            .await
+            .unwrap();
+        assert_eq!(
+            recovery
+                .history
+                .iter()
+                .filter(|record| matches!(
+                    &record.fact,
+                    Fact::Override(value) if value.id == "pause-resume"
+                ))
+                .count(),
+            1
+        );
+        git::require_clean(root).unwrap();
+    });
+}
+
+#[test]
+fn pause_record_risk_identity_ignores_changed_binary_receipt_bytes() {
+    runtime().block_on(async {
+        let temp = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let root = temp.path();
+        let note = ".planning/phases/1/operator note.md";
+        fs::write(
+            root.join(note),
+            "DROP TABLE only in authored documentation\n",
+        )
+        .unwrap();
+        let mut request = input(root, "record-risk-receipts");
+        request.authorized.insert(note.into());
+
+        let need = reviewing(server().pause(request.clone()).await.unwrap());
+        assert_eq!(need.fire.commit_kind, risk::CommitKind::ResumeRecord);
+        assert_eq!(need.fire.authored, vec![PathBuf::from(note)]);
+        review(root, &request, &need, Vec::new()).await;
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("receipt-only changes must not create a second review fire");
+        };
+        assert_eq!(capture.wip, None);
+        git::require_clean(root).unwrap();
+        assert_eq!(
+            git::run(root, ["show", &format!("HEAD:{note}")]).unwrap(),
+            b"DROP TABLE only in authored documentation\n"
         );
     });
 }

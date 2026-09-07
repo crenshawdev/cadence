@@ -4,9 +4,13 @@ use std::{
     collections::BTreeSet,
     ffi::OsStr,
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
 };
+
+static TEMP_INDEX_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Staged {
@@ -216,6 +220,107 @@ pub fn index_id(root: &Path) -> Result<String> {
         .map_err(|_| Error::Invalid("invalid staged tree identity".into()))
 }
 
+struct TempIndex {
+    directory: PathBuf,
+    path: PathBuf,
+}
+
+impl TempIndex {
+    fn create() -> Result<Self> {
+        loop {
+            let sequence = TEMP_INDEX_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let directory = std::env::temp_dir().join(format!(
+                "cadence-risk-index-{}-{sequence}",
+                std::process::id()
+            ));
+            match fs::create_dir(&directory) {
+                Ok(()) => {
+                    return Ok(Self {
+                        path: directory.join("index"),
+                        directory,
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+
+    fn run<I, S>(&self, root: &Path, args: I, input: Option<&[u8]>) -> Result<Vec<u8>>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut command = Command::new("git");
+        command
+            .current_dir(root)
+            .args(args)
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("GIT_INDEX_FILE", &self.path)
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command.spawn()?;
+        if let Some(bytes) = input {
+            child
+                .stdin
+                .take()
+                .ok_or_else(|| Error::Io("Git index input unavailable".into()))?
+                .write_all(bytes)?;
+        }
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            return Err(Error::Invalid(format!(
+                "Git failed ({}): {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+        Ok(output.stdout)
+    }
+}
+
+impl Drop for TempIndex {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.directory);
+    }
+}
+
+fn authored_index_id(root: &Path, base: &str, authored: &[PathBuf]) -> Result<String> {
+    let index = TempIndex::create()?;
+    index.run(root, ["read-tree", base], None)?;
+    for path in authored {
+        index.run(
+            root,
+            [
+                OsStr::new("update-index"),
+                OsStr::new("--force-remove"),
+                path.as_os_str(),
+            ],
+            None,
+        )?;
+        let entry = run(
+            root,
+            [
+                OsStr::new("ls-files"),
+                OsStr::new("--stage"),
+                OsStr::new("-z"),
+                OsStr::new("--"),
+                path.as_os_str(),
+            ],
+        )?;
+        if !entry.is_empty() {
+            index.run(root, ["update-index", "-z", "--index-info"], Some(&entry))?;
+        }
+    }
+    String::from_utf8(line(index.run(root, ["write-tree"], None)?))
+        .map_err(|_| Error::Invalid("invalid authored staged tree identity".into()))
+}
+
 /// Store receipts are supplied by provenance, not recognized by filename.
 pub fn staged(root: &Path, base: &str, receipts: &BTreeSet<PathBuf>) -> Result<Staged> {
     let head = String::from_utf8(line(run(root, ["rev-parse", "--verify", "HEAD"])?))
@@ -238,6 +343,7 @@ pub fn staged(root: &Path, base: &str, receipts: &BTreeSet<PathBuf>) -> Result<S
         .filter(|path| !receipts.contains(*path) && !review_artifact(path))
         .cloned()
         .collect();
+    let authored_id = authored_index_id(root, base, &authored)?;
     let diff = if authored.is_empty() {
         Vec::new()
     } else {
@@ -264,7 +370,7 @@ pub fn staged(root: &Path, base: &str, receipts: &BTreeSet<PathBuf>) -> Result<S
     }
     Ok(Staged {
         base: base.into(),
-        index_id: before,
+        index_id: authored_id,
         scope,
         authored,
         diff,
@@ -373,7 +479,7 @@ fn unstaged(root: &Path, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     self::paths(&run(root, args)?)
 }
 
-pub fn commit_wip(root: &Path, expected: &WipIndex, description: &str) -> Result<String> {
+pub fn commit_guarded(root: &Path, expected: &WipIndex, subject: &str) -> Result<String> {
     let head = String::from_utf8(line(run(root, ["rev-parse", "--verify", "HEAD"])?))
         .map_err(|_| Error::Invalid("invalid Git HEAD".into()))?;
     if head != expected.head
@@ -382,16 +488,16 @@ pub fn commit_wip(root: &Path, expected: &WipIndex, description: &str) -> Result
         || !unstaged(root, &expected.paths)?.is_empty()
     {
         return Err(Error::Conflict(
-            "guarded material changed before WIP commit".into(),
+            "guarded material changed before commit".into(),
         ));
     }
-    let description = description.trim();
-    if description.is_empty() || description.contains(['\r', '\n']) {
-        return Err(Error::Invalid("WIP description must be one line".into()));
+    let subject = subject.trim();
+    if subject.is_empty() || subject.contains(['\r', '\n']) {
+        return Err(Error::Invalid("commit subject must be one line".into()));
     }
-    run(root, ["commit", "-m", &format!("wip: {description}")])?;
+    run(root, ["commit", "-m", subject])?;
     let committed = String::from_utf8(line(run(root, ["rev-parse", "--verify", "HEAD"])?))
-        .map_err(|_| Error::Invalid("invalid WIP commit identity".into()))?;
+        .map_err(|_| Error::Invalid("invalid commit identity".into()))?;
     let tree = String::from_utf8(line(run(root, ["rev-parse", "HEAD^{tree}"])?))
         .map_err(|_| Error::Invalid("invalid WIP tree identity".into()))?;
     let parent = String::from_utf8(line(run(root, ["rev-parse", "HEAD^"])?))
@@ -401,8 +507,44 @@ pub fn commit_wip(root: &Path, expected: &WipIndex, description: &str) -> Result
         || !unstaged(root, &expected.paths)?.is_empty()
     {
         return Err(Error::Conflict(
-            "WIP commit differs from the guarded staged tree".into(),
+            "commit differs from the guarded staged tree".into(),
         ));
     }
     Ok(committed)
+}
+
+pub fn commit_wip(root: &Path, expected: &WipIndex, description: &str) -> Result<String> {
+    let description = description.trim();
+    if description.is_empty() || description.contains(['\r', '\n']) {
+        return Err(Error::Invalid("WIP description must be one line".into()));
+    }
+    commit_guarded(root, expected, &format!("wip: {description}"))
+}
+
+pub fn require_clean(root: &Path) -> Result<()> {
+    if run(
+        root,
+        [
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--renames",
+        ],
+    )?
+    .is_empty()
+    {
+        Ok(())
+    } else {
+        Err(Error::Conflict(
+            "pause commit did not leave a clean worktree".into(),
+        ))
+    }
+}
+
+pub fn committed_file(root: &Path, commit: &str, path: &Path) -> Result<Vec<u8>> {
+    let path = path
+        .to_str()
+        .ok_or_else(|| Error::Invalid("committed participant path is not UTF-8".into()))?;
+    run(root, ["show", &format!("{commit}:{path}")])
 }

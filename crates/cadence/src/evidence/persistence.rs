@@ -2,13 +2,22 @@
 use super::{Record, nonblank};
 use crate::store::{
     Error, Result,
-    model::{Decision, DecisionRecord, Evidence, Origin, VERSION},
+    model::{self, DECISIONS, Decision, DecisionRecord, Evidence, ITEMS, Origin, STATE, VERSION},
+    writer::View,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub const NAMESPACE: &str = "native_evidence";
 const MARKER: &str = "cadence.native_evidence.v1";
+
+pub fn confirmed_participants(view: &View) -> Result<[(&'static str, Vec<u8>); 3]> {
+    Ok([
+        (ITEMS, model::render_lines(&view.items)?),
+        (DECISIONS, model::render_lines(&view.decisions)?),
+        (STATE, view.snapshot.render()?),
+    ])
+}
 
 pub fn read(data: &Value) -> Result<BTreeMap<String, Record>> {
     let Some(value) = data.get(NAMESPACE) else {
