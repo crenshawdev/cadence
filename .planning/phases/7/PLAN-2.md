@@ -11,6 +11,7 @@ files:
   - crates/cadence/src/execution/lease.rs
   - crates/cadence/src/execution/model.rs
   - crates/cadence/src/execution/plan.rs
+  - crates/cadence/src/recall/mod.rs
   - crates/cadence/src/execution/dispatch.rs
   - crates/cadence/tests/phase7_lease.rs
   - crates/cadence/src/execution/patch.rs
