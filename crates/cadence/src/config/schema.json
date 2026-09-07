@@ -348,11 +348,17 @@
     "values": [
       "ask",
       "refuse",
+      "deny",
       "allow"
     ],
     "default": "ask",
     "src": "repo",
     "disposition": "keep-resemantic"
+  },
+  "git.guard_hard_fail": {
+    "type": "bool",
+    "default": false,
+    "disposition": "native"
   },
   "git.integration_branch": {
     "type": "enum",

@@ -6,4 +6,5 @@ pub mod evidence;
 pub mod execution;
 pub mod next_action;
 pub mod pause;
+pub mod rail;
 pub mod store;

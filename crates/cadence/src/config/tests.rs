@@ -84,7 +84,13 @@ fn all_frozen_keys_have_exactly_one_disposition_and_retirements_have_no_defaults
         .collect();
     assert_eq!(keys, DISPOSITIONS.iter().map(|(k, _)| *k).collect());
     assert_eq!(DISPOSITIONS.len(), 94);
-    assert_eq!(schema().len(), 94);
+    assert_eq!(
+        schema()
+            .keys()
+            .filter(|key| keys.contains(key.as_str()))
+            .count(),
+        94
+    );
     assert_eq!(DISPOSITIONS.iter().filter(|(_, dead)| *dead).count(), 14);
     let mut all = json!({});
     for (key, dead) in DISPOSITIONS {
@@ -889,5 +895,42 @@ fn explicit_config_writes_validate_frozen_types_and_forge_grammars() {
     );
     assert!(
         write::validate_update(Layer::Repo, "git.forge_host", &json!("a".repeat(254))).is_err()
+    );
+}
+
+#[test]
+fn native_guard_hard_fail_is_separate_from_the_frozen_key_census() {
+    assert_eq!(schema().len(), 95);
+    assert!(
+        !DISPOSITIONS
+            .iter()
+            .any(|(key, _)| *key == "git.guard_hard_fail")
+    );
+    let spec = &schema()["git.guard_hard_fail"];
+    assert_eq!(spec["default"], false);
+    for value in [json!(false), json!(true)] {
+        assert!(reload::valid_type(spec, &value, false));
+    }
+    for value in [
+        Value::Null,
+        json!(0),
+        json!(1),
+        json!("true"),
+        json!([]),
+        json!({}),
+    ] {
+        assert!(!reload::valid_type(spec, &value, false));
+        assert!(
+            reload::validate_effective(&merge(
+                None,
+                Some(json!({"git":{"guard_hard_fail":value}})),
+                false
+            ))
+            .is_err()
+        );
+    }
+    assert_eq!(
+        get(&merge(None, None, false).values, "git.guard_hard_fail"),
+        Some(&json!(false))
     );
 }

@@ -188,12 +188,21 @@ pub fn merge(global: Option<Value>, repo: Option<Value>, global_intent: bool) ->
             sources.insert(key.clone(), Layer::Global);
         }
     }
+    let mut values = deep_merge(&defaults, &merged);
+    if values.get("git").is_some_and(Value::is_object) {
+        let protected =
+            cadence::rail::branch::protected_branches(get(&values, "git.protected_branches"));
+        set(&mut values, "git.protected_branches", json!(protected));
+        if get(&values, "git.on_protected") == Some(&json!("deny")) {
+            set(&mut values, "git.on_protected", json!("refuse"));
+        }
+    }
     Effective {
         raw_global: global,
         raw_repo: repo,
         global: global_values,
         repo: repo_values,
-        values: deep_merge(&defaults, &merged),
+        values,
         sources,
         global_intent,
         diagnostics,

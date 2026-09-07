@@ -1,6 +1,7 @@
 //! Bash decisions use a short-lived writer, independent of the resident queue.
+use cadence::rail::branch::{self, Permission};
 use cadence::store::model::digest;
-use cadence::store::writer::audit::{self, Audit, Outcome, Verb};
+use cadence::store::writer::audit::{self, Audit, Outcome, PolicyEvidence, Verb};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -49,6 +50,7 @@ fn verb(command: &str) -> Option<Verb> {
     }
     match words.next()? {
         "push" => Some(Verb::Push),
+        "commit" => Some(Verb::Commit),
         _ => None,
     }
 }
@@ -79,13 +81,67 @@ pub(super) fn run(bytes: &[u8]) -> ExitCode {
         })
         .filter(|path| !path.as_os_str().is_empty());
     let factory = crate::import::SessionFactory::new(global, std::sync::Arc::new(|_, _| Ok(())));
-    let audit = Audit {
+    let mut audit = Audit {
         event_id: audit::event_identity(event.session_id.as_deref(), event.tool_use_id.as_deref()),
         command_digest: digest(event.tool_input.command.as_bytes()),
         cwd: event.cwd, project: project.clone(), verb, branch: None, policy: None,
         outcome: Outcome::Ask, unavailable: vec![],
         reason: "Cadence rail: every Bash git push requires permission. Approve only if you are deliberately publishing.".into(),
     };
+    if audit.verb == Verb::Commit {
+        let Ok(config) = factory.guard_config(&project.join(".planning")) else {
+            return ExitCode::SUCCESS;
+        };
+        let observed = std::process::Command::new("git")
+            .current_dir(&audit.cwd)
+            .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
+            .stdin(std::process::Stdio::null())
+            .output();
+        let Ok(observed) = observed else {
+            return ExitCode::SUCCESS;
+        };
+        if !observed.status.success() {
+            return ExitCode::SUCCESS;
+        }
+        let Ok(name) = String::from_utf8(observed.stdout) else {
+            return ExitCode::SUCCESS;
+        };
+        let name = name.trim_end_matches('\n').to_owned();
+        if name.is_empty() {
+            return ExitCode::SUCCESS;
+        }
+        let values = &config.effective.values;
+        let protected =
+            branch::protected_branches(crate::config::merge::get(values, "git.protected_branches"));
+        let on_protected = crate::config::merge::get(values, "git.on_protected")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("ask");
+        let permission = branch::permission(&protected, on_protected, &name);
+        audit.outcome = match permission {
+            Ok(Permission::Ask) => Outcome::Ask,
+            Ok(Permission::Deny) => Outcome::Deny,
+            _ => return ExitCode::SUCCESS,
+        };
+        audit.reason = format!(
+            "Cadence rail: {name:?} is a protected branch; git.on_protected={on_protected}. Create a task branch or obtain permission to commit here."
+        );
+        audit.branch = Some(name);
+        audit.policy = Some(PolicyEvidence {
+            complete: true,
+            protected,
+            on_protected: on_protected.into(),
+            hard_fail: crate::config::merge::get(values, "git.guard_hard_fail")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            provenance: config
+                .effective
+                .sources
+                .iter()
+                .filter(|(key, _)| key.starts_with("git."))
+                .map(|(key, layer)| (key.clone(), format!("{layer:?}")))
+                .collect(),
+        });
+    }
     let runtime = match tokio::runtime::Builder::new_current_thread().build() {
         Ok(runtime) => runtime,
         Err(error) => {

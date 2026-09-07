@@ -619,3 +619,140 @@ fn binary_project_discovery_walks_nested_cwd_and_stops_at_foreign_git_boundaries
     assert!(result.stdout.is_empty());
     assert!(!unrelated.path().join(".planning").exists());
 }
+
+fn git(root: &Path, args: &[&str]) -> Vec<u8> {
+    let result = Command::new("git")
+        .current_dir(root)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    result.stdout
+}
+fn native_fixture() -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    git(root.path(), &["init", "-b", "main"]);
+    std::fs::create_dir(root.path().join(".planning")).unwrap();
+    let factory = import::SessionFactory::new(
+        Some(root.path().join("missing-global.json")),
+        std::sync::Arc::new(|_, _| Ok(())),
+    );
+    runtime()
+        .block_on(factory.first_touch(&root.path().join(".planning")))
+        .unwrap();
+    root
+}
+#[test]
+fn merged_compatibility_preserves_names_empty_lists_and_layer_provenance() {
+    use config::merge::{get, merge};
+    for (raw, expected) in [
+        (serde_json::json!("release"), serde_json::json!(["release"])),
+        (
+            serde_json::json!(["release", " ", 2, null, " main "]),
+            serde_json::json!(["release", " main "]),
+        ),
+        (serde_json::json!([]), serde_json::json!([])),
+        (
+            serde_json::json!(["", 2]),
+            serde_json::json!(["main", "master"]),
+        ),
+        (
+            serde_json::json!(" "),
+            serde_json::json!(["main", "master"]),
+        ),
+        (
+            serde_json::json!(false),
+            serde_json::json!(["main", "master"]),
+        ),
+        (
+            serde_json::Value::Null,
+            serde_json::json!(["main", "master"]),
+        ),
+        (
+            serde_json::json!({"branch":"release"}),
+            serde_json::json!(["main", "master"]),
+        ),
+    ] {
+        let global =
+            serde_json::json!({"git":{"protected_branches":["global"],"on_protected":"refuse"}});
+        let repo = serde_json::json!({"git":{"protected_branches":raw,"on_protected":"deny"}});
+        let merged = merge(Some(global.clone()), Some(repo.clone()), false);
+        assert_eq!(
+            get(&merged.values, "git.protected_branches"),
+            Some(&expected)
+        );
+        assert_eq!(
+            get(&merged.values, "git.on_protected"),
+            Some(&serde_json::json!("refuse"))
+        );
+        assert_eq!(merged.raw_repo, Some(repo.clone()));
+        assert_eq!(merged.repo, repo);
+        assert_eq!(merged.raw_global, Some(global));
+        assert_eq!(
+            merged.sources["git.protected_branches"],
+            config::Layer::Repo
+        );
+        config::reload::validate_effective(&merged).unwrap();
+    }
+    let inherited = merge(
+        Some(serde_json::json!({"git":{"protected_branches":"release","on_protected":"deny"}})),
+        Some(serde_json::json!({})),
+        false,
+    );
+    assert_eq!(
+        inherited.sources["git.protected_branches"],
+        config::Layer::Global
+    );
+    assert_eq!(
+        get(&inherited.values, "git.protected_branches"),
+        Some(&serde_json::json!(["release"]))
+    );
+}
+#[test]
+fn native_commit_policy_asks_denies_and_passes_using_shared_permission() {
+    for (branches, policy, expected) in [
+        (serde_json::json!(["main"]), "ask", Some("ask")),
+        (serde_json::json!(["main"]), "refuse", Some("deny")),
+        (serde_json::json!("main"), "deny", Some("deny")),
+        (serde_json::json!(["main"]), "allow", None),
+        (serde_json::json!(["release"]), "refuse", None),
+        (serde_json::json!([]), "refuse", None),
+        (serde_json::json!(["", 4]), "ask", Some("ask")),
+    ] {
+        let root = native_fixture();
+        std::fs::write(
+            root.path().join(".planning/config.v4.json"),
+            serde_json::to_vec(
+                &serde_json::json!({"git":{"protected_branches":branches,"on_protected":policy}}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let before = stored(root.path());
+        let result = hook(root.path(), root.path(), "git commit -m fixture", "commit");
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        if let Some(expected) = expected {
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap()["hookSpecificOutput"]
+                    ["permissionDecision"],
+                expected
+            );
+            let view = stored(root.path());
+            let audit = audit::from_record(view.decisions.last().unwrap()).unwrap();
+            assert_eq!(audit.branch.as_deref(), Some("main"));
+            assert!(audit.policy.unwrap().complete);
+        } else {
+            assert!(result.stdout.is_empty());
+            assert_eq!(stored(root.path()), before);
+        }
+    }
+}

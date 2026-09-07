@@ -138,13 +138,11 @@ pub fn question(
 }
 
 pub fn protected(policy: &Policy, observed: &Observed) -> Result<Option<Gate>> {
-    if !policy.protected.contains(&observed.branch) {
-        return Ok(None);
-    }
-    match policy.on_protected.as_str() {
-        "allow" => Ok(None),
-        "refuse" => Err(Error::Policy("pause refused on protected branch".into())),
-        "ask" => question(
+    use crate::rail::branch::{Permission, permission};
+    match permission(&policy.protected, &policy.on_protected, &observed.branch)? {
+        Permission::Pass => Ok(None),
+        Permission::Deny => Err(Error::Policy("pause refused on protected branch".into())),
+        Permission::Ask => question(
             "protected",
             "Pause on a protected branch: create a work branch, proceed here, or abort?",
             &[
@@ -156,7 +154,6 @@ pub fn protected(policy: &Policy, observed: &Observed) -> Result<Option<Gate>> {
             observed,
         )
         .map(Some),
-        _ => Err(Error::Policy("invalid protected-branch policy".into())),
     }
 }
 
