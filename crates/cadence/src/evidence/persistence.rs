@@ -27,6 +27,7 @@ pub fn read(data: &Value) -> Result<BTreeMap<String, Record>> {
 pub fn project(data: &Value, record: &Record) -> Result<Value> {
     record.validate()?;
     let mut records = read(data)?;
+    validate_transition(&records, record)?;
     records.insert(record.key()?, record.clone());
     let mut result = if data.is_null() {
         serde_json::json!({})
@@ -75,4 +76,53 @@ pub fn decode_history(decision: &DecisionRecord) -> Result<Option<Record>> {
     let record: Record = serde_json::from_str(text)?;
     record.validate()?;
     Ok(Some(record))
+}
+
+fn validate_transition(records: &BTreeMap<String, Record>, record: &Record) -> Result<()> {
+    use super::{Fact, checker::Attempt};
+    if let Fact::Checker(check) = &record.fact {
+        let prior: Vec<_> = records
+            .values()
+            .filter(|r| r.scope == record.scope)
+            .filter_map(|r| match &r.fact {
+                Fact::Checker(check) => Some(check),
+                _ => None,
+            })
+            .collect();
+        if prior.iter().any(|old| old.id == check.id) {
+            return Err(Error::Conflict(
+                "checker observation identity already recorded".into(),
+            ));
+        }
+        let spent = prior.iter().any(|old| old.revision_spent);
+        match &check.attempt {
+            Attempt::Initial if check.revision_spent != spent => {
+                return Err(Error::Invalid(
+                    "initial check cannot spend or refund revision".into(),
+                ));
+            }
+            Attempt::Revision {
+                previous_check,
+                previous_blockers,
+                ..
+            } => {
+                if spent {
+                    return Err(Error::Conflict("one checker revision already spent".into()));
+                }
+                let previous = prior
+                    .iter()
+                    .find(|old| old.id == *previous_check)
+                    .ok_or_else(|| {
+                        Error::Invalid("revision lacks recorded initial check".into())
+                    })?;
+                if previous.blockers() != *previous_blockers {
+                    return Err(Error::Invalid(
+                        "revision changed the blocker list under reconsideration".into(),
+                    ));
+                }
+            }
+            _ => (),
+        }
+    }
+    Ok(())
 }

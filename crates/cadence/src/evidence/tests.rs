@@ -46,7 +46,9 @@ fn checkpoint_round_trips_all_types_and_dispositions() {
             },
         ] {
             let mut value = record(kind.clone());
-            let Fact::Checkpoint(checkpoint) = &mut value.fact;
+            let Fact::Checkpoint(checkpoint) = &mut value.fact else {
+                panic!("checkpoint")
+            };
             checkpoint.state = state;
             assert_eq!(
                 checkpoint.requires_operator_answer(),

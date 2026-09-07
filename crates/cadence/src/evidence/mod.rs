@@ -1,4 +1,5 @@
 //! Native routing facts. Pure validation and projection; no ambient observation.
+pub mod checker;
 pub mod checkpoint;
 pub mod persistence;
 
@@ -39,6 +40,7 @@ impl Scope {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum Fact {
     Checkpoint(checkpoint::Checkpoint),
+    Checker(checker::Checker),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,11 +58,13 @@ impl Record {
         self.scope.validate()?;
         match &self.fact {
             Fact::Checkpoint(value) => value.validate(),
+            Fact::Checker(value) => value.validate(),
         }
     }
     pub fn key(&self) -> Result<String> {
         let (kind, id) = match &self.fact {
             Fact::Checkpoint(value) => ("checkpoint", &value.id),
+            Fact::Checker(value) => ("checker", &value.id),
         };
         Ok(crate::store::model::digest(&serde_json::to_vec(&(
             &self.scope,

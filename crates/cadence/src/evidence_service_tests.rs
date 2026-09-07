@@ -113,7 +113,9 @@ fn checkpoint_service_records_recovers_and_refuses_without_changes() {
             assert_eq!(&before.snapshot.data[key], value);
         }
         let mut invalid = value.clone();
-        let Fact::Checkpoint(cp) = &mut invalid.fact;
+        let Fact::Checkpoint(cp) = &mut invalid.fact else {
+            panic!("checkpoint")
+        };
         cp.need.clear();
         assert!(
             submit(&server, root.path(), "invalid", invalid)
@@ -201,4 +203,155 @@ fn closed_resident_returns_closed() {
         runtime().block_on(server.evidence(root.path(), Command::Read)),
         Err(Error::Closed)
     );
+}
+
+use cadence::evidence::checker::{
+    Attempt, CheckedMaterial, Checker, Disposition as CheckDisposition, Finding, Severity,
+};
+fn finding(number: u32, severity: Severity) -> Finding {
+    Finding {
+        number,
+        severity,
+        location: "PLAN-1.md:42".into(),
+        claim: "  Exact finding 日本語\n".into(),
+        fix: "Keep the output reference".into(),
+    }
+}
+fn checker(root: &Path, id: &str, raw: &str, findings: Vec<Finding>) -> Record {
+    let mut value = checkpoint(root);
+    value.fact = Fact::Checker(Checker {
+        id: id.into(),
+        raw_return: raw.into(),
+        disposition: Checker::disposition(raw, &findings),
+        findings,
+        checked_material: vec![CheckedMaterial {
+            path: "phases/5/PLAN-1.md".into(),
+            content_digest: cadence::store::model::digest(b"actual observed plan content"),
+        }],
+        attempt: Attempt::Initial,
+        revision_spent: false,
+    });
+    value
+}
+
+#[test]
+fn checker_service_retains_actual_results_and_spent_revision() {
+    let root = fixture();
+    std::fs::write(
+        root.path().join("TRACE.jsonl"),
+        "{\"family\":\"trace\",\"event\":\"close\",\"role\":\"cad-plan-checker\",\"phase\":5}\n",
+    )
+    .unwrap();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        assert!(
+            server
+                .evidence(root.path(), Command::Read)
+                .await
+                .unwrap()
+                .current
+                .is_empty()
+        );
+        let cases = [
+            (
+                "pass",
+                "## VERIFICATION PASSED",
+                vec![],
+                CheckDisposition::Pass,
+            ),
+            (
+                "warnings",
+                "## ISSUES FOUND",
+                vec![finding(1, Severity::Warning)],
+                CheckDisposition::Pass,
+            ),
+            (
+                "blockers",
+                "## ISSUES FOUND",
+                vec![finding(1, Severity::Blocker)],
+                CheckDisposition::Fail,
+            ),
+            (
+                "mixed",
+                "## ISSUES FOUND",
+                vec![finding(1, Severity::Warning), finding(2, Severity::Blocker)],
+                CheckDisposition::Fail,
+            ),
+            ("empty", "", vec![], CheckDisposition::Unusable),
+            (
+                "unmarked",
+                "finished checking",
+                vec![],
+                CheckDisposition::Unusable,
+            ),
+        ];
+        let mut expected = Vec::new();
+        for (id, raw, findings, disposition) in cases {
+            let value = checker(root.path(), id, raw, findings);
+            let Fact::Checker(check) = &value.fact else {
+                panic!("checker")
+            };
+            assert_eq!(check.disposition, disposition);
+            assert!(!check.revision_spent);
+            submit(&server, root.path(), id, value.clone())
+                .await
+                .unwrap();
+            expected.push(value);
+        }
+        let mut revision = checker(
+            root.path(),
+            "revised",
+            "## ISSUES FOUND",
+            vec![finding(2, Severity::Blocker)],
+        );
+        let Fact::Checker(check) = &mut revision.fact else {
+            panic!("checker")
+        };
+        check.attempt = Attempt::Revision {
+            previous_check: "mixed".into(),
+            previous_blockers: vec![finding(2, Severity::Blocker)],
+            diff: "-old plan\n+fixed plan\n".into(),
+        };
+        check.revision_spent = true;
+        check.checked_material[0].content_digest =
+            cadence::store::model::digest(b"revised observed body");
+        submit(&server, root.path(), "revision", revision.clone())
+            .await
+            .unwrap();
+        expected.push(revision.clone());
+        drop(server);
+        let reopened = CadenceServer::with_factory(factory());
+        let recovered = reopened.evidence(root.path(), Command::Read).await.unwrap();
+        assert_eq!(recovered.history, expected);
+        for value in &expected {
+            assert!(recovered.current.contains(value));
+        }
+        let mut second = revision;
+        let Fact::Checker(check) = &mut second.fact else {
+            panic!("checker")
+        };
+        check.id = "revision-two".into();
+        let before = reopened
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        assert!(
+            submit(&reopened, root.path(), "second-revision", second)
+                .await
+                .is_err()
+        );
+        let refund = checker(root.path(), "fresh-input", "## VERIFICATION PASSED", vec![]);
+        assert!(
+            submit(&reopened, root.path(), "refund", refund)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            reopened
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            before
+        );
+    });
 }
