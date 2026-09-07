@@ -1411,3 +1411,117 @@ fn fresh_process_pause_and_noncurrent_report_change_controls() {
         }
     }
 }
+
+#[test]
+fn phase_five_acceptance_inventory_names_executable_obligations() {
+    const SERVER: &str = include_str!("server.rs");
+    const EVIDENCE: &str = include_str!("evidence_service_tests.rs");
+    const NEXT_ACTION: &str = include_str!("next_action_service_tests.rs");
+    const PAUSE: &str = include_str!("pause_service_tests.rs");
+    const MCP: &str = include_str!("../tests/mcp.rs");
+
+    for module in [
+        "evidence_service_tests",
+        "next_action_service_tests",
+        "pause_service_tests",
+    ] {
+        assert!(
+            SERVER.contains(&format!(
+                "#[cfg(test)]\n#[path = \"{module}.rs\"]\nmod {module};"
+            )),
+            "phase 5 acceptance module is not registered: {module}"
+        );
+    }
+
+    let obligations: [(&str, &[(&str, &str)]); 7] = [
+        (
+            "AC1 killed checkpoint readback",
+            &[(
+                EVIDENCE,
+                "ac1_checkpoint_survives_real_kill_and_address_only_fresh_reader",
+            )],
+        ),
+        (
+            "AC2 checker disposition and revision readback",
+            &[(
+                EVIDENCE,
+                "ac2_ac3_checker_and_gate_facts_survive_process_death",
+            )],
+        ),
+        (
+            "AC3 question, answer and unanswered readback",
+            &[(
+                EVIDENCE,
+                "ac2_ac3_checker_and_gate_facts_survive_process_death",
+            )],
+        ),
+        (
+            "AC4 all override forms and scoped expiry",
+            &[
+                (
+                    EVIDENCE,
+                    "four_overrides_share_submission_and_durable_readback",
+                ),
+                (
+                    EVIDENCE,
+                    "occurrence_permission_survives_restart_and_ends_only_by_scoped_transition",
+                ),
+            ],
+        ),
+        (
+            "AC5 authored selector inventory",
+            &[(
+                NEXT_ACTION,
+                "fresh_children_prove_all_winning_rules_and_adjacent_pairs",
+            )],
+        ),
+        (
+            "AC6 guarded pause, Git and restart behavior",
+            &[
+                (PAUSE, "pause_wip_preserves_exact_bytes_deletion_and_rename"),
+                (
+                    PAUSE,
+                    "pause_commits_exact_resume_record_for_dirty_and_clean_starts",
+                ),
+                (
+                    PAUSE,
+                    "pause_record_risk_identity_ignores_changed_binary_receipt_bytes",
+                ),
+                (
+                    PAUSE,
+                    "pause_survives_process_loss_at_each_real_commit_boundary",
+                ),
+                (
+                    NEXT_ACTION,
+                    "committed_pause_is_selected_exactly_and_requires_scoped_acceptance",
+                ),
+            ],
+        ),
+        (
+            "AC7 accepted-result evidence refusal",
+            &[
+                (
+                    EVIDENCE,
+                    "accepted_results_require_real_references_and_preserve_checker_outcomes",
+                ),
+                (
+                    EVIDENCE,
+                    "ac7_no_reference_refuses_before_native_state_or_history_write",
+                ),
+            ],
+        ),
+    ];
+    for (criterion, tests) in obligations {
+        assert!(!tests.is_empty(), "missing evidence for {criterion}");
+        for &(source, name) in tests {
+            assert!(
+                source.contains(&format!("#[test]\nfn {name}()")),
+                "missing executable evidence for {criterion}: {name}"
+            );
+        }
+    }
+
+    assert!(MCP.contains(
+        "#[test]\nfn tools_list_declares_exactly_cadence_version_with_an_output_schema()"
+    ));
+}
