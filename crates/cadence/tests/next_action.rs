@@ -164,3 +164,71 @@ fn closed_residue_uses_legal_names_and_live_directories_are_not_residue() {
     let live = lifecycle(root, false);
     assert!(capture(root, &live).unwrap().residue.is_empty());
 }
+
+#[test]
+fn observation_read_denial_child() {
+    let Ok(root) = std::env::var("CADENCE_ROUTING_DENIAL_ROOT") else {
+        return;
+    };
+    let root = Path::new(&root);
+    let mode = std::env::var("CADENCE_ROUTING_DENIAL_MODE").unwrap();
+    let life = derive(&capture_inputs(root, &mut ArtifactFiles).unwrap()).unwrap();
+    let observed = capture(root, &life).unwrap();
+    if mode == "report" {
+        assert!(
+            matches!(&observed.reports[0].1[0].bytes, Observation::Failed(error) if error.category == InputFailureCategory::PermissionDenied)
+        );
+        assert!(observed.outstanding(life.phases[0].id));
+    } else {
+        assert_eq!(
+            observed.queue.unreadable,
+            [std::path::PathBuf::from(if mode == "home" {
+                "deferred"
+            } else {
+                "deferred/1"
+            })]
+        );
+        assert!(observed.queue.members.is_empty());
+        assert!(observed.queue.needs_triage());
+    }
+}
+
+#[test]
+fn real_read_denials_remain_explicit_in_fresh_children() {
+    use std::os::unix::{fs::PermissionsExt, process::CommandExt};
+    for mode in ["report", "home", "phase-directory"] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::set_permissions(root, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::create_dir_all(root.join("phases/1/reports")).unwrap();
+        fs::create_dir_all(root.join("deferred/1")).unwrap();
+        fs::write(root.join("phases/1/PLAN.md"), "plan").unwrap();
+        let report = root.join("phases/1/reports/plan-1.md");
+        fs::write(&report, "PLAN COMPLETE").unwrap();
+        lifecycle(root, false);
+        let denied = match mode {
+            "report" => report,
+            "home" => root.join("deferred"),
+            _ => root.join("deferred/1"),
+        };
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o0)).unwrap();
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "observation_read_denial_child", "--nocapture"])
+            .env("CADENCE_ROUTING_DENIAL_ROOT", root)
+            .env("CADENCE_ROUTING_DENIAL_MODE", mode)
+            .stdin(std::process::Stdio::null());
+        // A privileged test runner must exercise the same denial as an ordinary reader.
+        if unsafe { libc::geteuid() } == 0 {
+            command.gid(65534).uid(65534);
+        }
+        let output = command.output().unwrap();
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            output.status.success(),
+            "{mode}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}

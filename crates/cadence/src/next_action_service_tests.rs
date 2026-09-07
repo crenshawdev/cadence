@@ -957,3 +957,266 @@ fn reordered_observations_preserve_lowest_planned_winner() {
         assert_eq!(instruction(&server, &root).await, "/cad-execute 2");
     });
 }
+
+#[test]
+fn next_action_process_child() {
+    let Ok(selected) = std::env::var("CADENCE_NEXT_ACTION_CHILD_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(selected);
+    let mode = std::env::var("CADENCE_NEXT_ACTION_CHILD_MODE").unwrap();
+    let output = runtime().block_on(async {
+        let f = factory();
+        let session = f.first_touch(&root).await.unwrap();
+        let task_root = root.clone();
+        let task_session = session.clone();
+        let driver = Driver { event: Arc::new(move |event| {
+            if event != Event::RoutingObserved { return; }
+            match mode.as_str() {
+                "native-change" => tokio::runtime::Handle::current().block_on(async {
+                    let before = task_session.derivation_view().await.unwrap();
+                    let mut record = pause_record(&task_root, "replacement-native");
+                    let Fact::Override(value) = &mut record.fact else { unreachable!() };
+                    value.meaning = Meaning::PausedNext { sentence: "changed native resume".into() };
+                    task_session.commit_evidence(&before, "replace-native", &record).await.unwrap();
+                }),
+                "legacy-change" => tokio::runtime::Handle::current().block_on(async {
+                    let before = task_session.derivation_view().await.unwrap();
+                    let mut data = before.snapshot.data.clone();
+                    data["cursor"]["next"] = "changed legacy resume".into();
+                    data["cursor"]["original_fields"]["next"] = "changed legacy resume".into();
+                    task_session.request(Operation::CompareRewriteSnapshot { expected_generation: before.snapshot.generation, expected_integrity: before.snapshot.integrity, data }).await.unwrap();
+                }),
+                "outside-report-change" => fs::write(task_root.join("phases/2/reports/plan-1.md"), "PLAN PARTIAL").unwrap(),
+                "unconsumed-file-change" => fs::write(task_root.join("phases/1/reports/plan-1.99.md"), "PLAN PARTIAL").unwrap(),
+                _ => {},
+            }
+        }), ..Driver::default() };
+        let server = CadenceServer::with_derivation_driver(f, driver);
+        let result = server.next_action(&root).await.map(|action| action.map(|a| json!({"instruction":a.instruction(),"resume":matches!(a, cadence::next_action::Action::Resume(_))})));
+        let view = session.derivation_view().await.unwrap();
+        json!({"pid":std::process::id(), "result":result,"memo":view.snapshot.data["derivation"]["memo"],"cursor":view.snapshot.data["cursor"],"intake":view.snapshot.data["derivation"]["intake"]})
+    });
+    println!("NEXT_ACTION_RESULT {output}");
+}
+
+fn child(root: &Path, mode: &str) -> serde_json::Value {
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "server::next_action_service_tests::next_action_process_child",
+            "--nocapture",
+        ])
+        .env("CADENCE_NEXT_ACTION_CHILD_ROOT", root)
+        .env("CADENCE_NEXT_ACTION_CHILD_MODE", mode)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let value: serde_json::Value = serde_json::from_str(
+        stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("NEXT_ACTION_RESULT "))
+            .expect("missing child result"),
+    )
+    .unwrap();
+    assert_ne!(value["pid"], std::process::id());
+    value
+}
+
+#[test]
+fn fresh_children_prove_all_winning_rules_and_adjacent_pairs() {
+    use LifecycleStatus::*;
+    // These are authored answers, not values obtained from either selector.
+    let cases = vec![
+        ("W1", vec![Planned], "verify the fix on the device"),
+        ("W2", vec![Planned], "/cad-execute 1"),
+        ("W3", vec![Executed], "/cad-execute 1"),
+        ("W4", vec![Executed], "/cad-verify 1"),
+        ("W5", vec![Unplanned], "/cad-context 1"),
+        ("W5-skip", vec![Unplanned], "/cad-plan 1"),
+        ("W6", vec![Complete], "Triage the deferred queue"),
+        ("W6-unreadable", vec![Complete], "Triage the deferred queue"),
+        ("W7", vec![], "/cad-milestone"),
+        ("W8", vec![], "/cad-phase add"),
+        ("W9", vec![Complete], "/cad-milestone"),
+        ("P12", vec![Planned], "verify the fix on the device"),
+        ("P23", vec![Executed, Planned], "/cad-execute 2"),
+        ("P34", vec![Executed, Executed], "/cad-execute 2"),
+        ("P45", vec![Unplanned, Executed], "/cad-verify 2"),
+        ("P56", vec![Unplanned], "/cad-context 1"),
+        ("P67", vec![], "Triage the deferred queue"),
+        ("P78", vec![], "/cad-milestone"),
+        ("P89", vec![], "/cad-phase add"),
+    ];
+    assert_eq!(
+        cases.iter().map(|(name, _, _)| *name).collect::<Vec<_>>(),
+        [
+            "W1",
+            "W2",
+            "W3",
+            "W4",
+            "W5",
+            "W5-skip",
+            "W6",
+            "W6-unreadable",
+            "W7",
+            "W8",
+            "W9",
+            "P12",
+            "P23",
+            "P34",
+            "P45",
+            "P56",
+            "P67",
+            "P78",
+            "P89"
+        ]
+    );
+    for (name, states, expected) in cases {
+        let temp = fixture(&states);
+        let root = temp.path().join(".planning");
+        if matches!(name, "W3" | "P23") {
+            fs::remove_file(root.join("phases/1/reports/plan-1.md")).unwrap();
+        }
+        if name == "P34" {
+            fs::remove_file(root.join("phases/2/reports/plan-1.md")).unwrap();
+        }
+        if matches!(name, "W6" | "P56" | "P67") {
+            queued(&root);
+        }
+        if name == "W6-unreadable" {
+            fs::write(root.join("deferred"), "unreadable home").unwrap();
+        }
+        if matches!(name, "W7" | "P67" | "P78") {
+            fs::create_dir_all(root.join("phases/1")).unwrap();
+        }
+        if name == "W5-skip" {
+            fs::write(
+                root.join("config.json"),
+                r#"{"workflow":{"skip_discuss":true}}"#,
+            )
+            .unwrap();
+        }
+        if name == "P12" {
+            fs::write(root.join("STATE.md"), "Phase: 1 of 1 (Work 1)\nStatus: paused\nNext: verify the fix on the device\nUpdated: 2026-09-06\n").unwrap();
+        }
+        if name == "W1" {
+            runtime().block_on(async {
+                let server = CadenceServer::with_factory(factory());
+                let mut record = pause_record(&root, "run");
+                let Fact::Override(value) = &mut record.fact else {
+                    unreachable!()
+                };
+                value.meaning = Meaning::PausedNext {
+                    sentence: "verify the fix on the device".into(),
+                };
+                submit(&server, &root, "pause", record).await;
+            });
+        }
+        let first = child(&root, "query");
+        assert_eq!(
+            first["result"]["Ok"]["instruction"], expected,
+            "{name}: {first}"
+        );
+        assert_eq!(
+            first["result"]["Ok"]["resume"],
+            matches!(name, "W1" | "P12"),
+            "{name}"
+        );
+        runtime().block_on(async {
+            let server = CadenceServer::with_factory(factory());
+            let gate = progress_gate();
+            submit(
+                &server,
+                &root,
+                "unrelated-question",
+                fact(&root, "unrelated", Fact::Gate(gate.clone())),
+            )
+            .await;
+            submit(
+                &server,
+                &root,
+                "unrelated-stop",
+                fact(
+                    &root,
+                    "unrelated",
+                    Fact::Gate(answered(gate, gates::Disposition::Stop)),
+                ),
+            )
+            .await;
+        });
+        let second = child(&root, "query");
+        assert_ne!(first["pid"], second["pid"]);
+        assert_eq!(
+            second["result"], first["result"],
+            "{name} after unrelated history"
+        );
+        assert_eq!(second["memo"], first["memo"], "{name} lifecycle memo");
+    }
+}
+
+#[test]
+fn fresh_process_pause_and_noncurrent_report_change_controls() {
+    for mode in [
+        "native-change",
+        "legacy-change",
+        "outside-report-change",
+        "unconsumed-file-change",
+    ] {
+        let states = if mode == "outside-report-change" {
+            vec![LifecycleStatus::Executed, LifecycleStatus::Executed]
+        } else {
+            vec![LifecycleStatus::Planned]
+        };
+        let temp = fixture(&states);
+        let root = temp.path().join(".planning");
+        if mode == "legacy-change" {
+            fs::write(root.join("STATE.md"), "Phase: 1 of 1 (Work 1)\nStatus: paused\nNext: legacy exact resume\nUpdated: 2026-09-06\n").unwrap();
+        }
+        if mode == "native-change" {
+            runtime().block_on(async {
+                let server = CadenceServer::with_factory(factory());
+                submit(&server, &root, "pause", pause_record(&root, "run")).await;
+            });
+        }
+        let before = child(&root, "query");
+        assert!(before["result"].get("Ok").is_some());
+        if mode == "legacy-change" {
+            assert_eq!(before["intake"]["retired"], true);
+        }
+        let changed = child(&root, mode);
+        assert_eq!(
+            changed["memo"], before["memo"],
+            "extra inputs stay outside lifecycle key: {mode}"
+        );
+        if mode == "unconsumed-file-change" {
+            assert_eq!(changed["result"], before["result"]);
+        } else {
+            assert_eq!(
+                changed["result"]["Err"], "InputsChanged",
+                "{mode}: {changed}"
+            );
+        }
+        let after = child(&root, "query");
+        let expected = match mode {
+            "native-change" => "changed native resume",
+            "legacy-change" => "changed legacy resume",
+            "outside-report-change" => "/cad-execute 2",
+            _ => "/cad-execute 1",
+        };
+        assert_eq!(
+            after["result"]["Ok"]["instruction"], expected,
+            "{mode}: {after}"
+        );
+        if mode == "legacy-change" {
+            assert_eq!(after["cursor"]["next"], "changed legacy resume");
+        }
+    }
+}

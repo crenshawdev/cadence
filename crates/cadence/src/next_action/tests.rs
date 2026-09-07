@@ -20,11 +20,34 @@ fn fixture(name: &'static str, statuses: &[LifecycleStatus], expected: &'static 
         .map(|(i, status)| PhaseRecord {
             id: PhaseId((i + 1) as f64),
             name: format!("Phase {}", i + 1),
-            plans: vec!["PLAN.md".into()],
+            plans: if *status == LifecycleStatus::Unplanned {
+                vec![]
+            } else {
+                vec!["PLAN.md".into()]
+            },
             status: *status,
             uat: None,
         })
         .collect();
+    let observations = Observations {
+        reports: phases
+            .iter()
+            .map(|phase| {
+                (
+                    phase.id,
+                    phase
+                        .plans
+                        .iter()
+                        .map(|_| Report {
+                            path: format!("phases/{}/reports/plan-1.md", phase.id.address()).into(),
+                            bytes: Observation::Present(b"PLAN COMPLETE\n".to_vec()),
+                        })
+                        .collect(),
+                )
+            })
+            .collect(),
+        ..Observations::default()
+    };
     Fixture {
         name,
         lifecycle: Lifecycle {
@@ -40,7 +63,7 @@ fn fixture(name: &'static str, statuses: &[LifecycleStatus], expected: &'static 
             total: phases.len(),
             phases,
         },
-        observations: Observations::default(),
+        observations,
         pause: None,
         skip: false,
         expected,
@@ -55,13 +78,13 @@ impl Fixture {
         self
     }
     fn outstanding(mut self, id: f64) -> Self {
-        self.observations.reports.push((
-            PhaseId(id),
-            vec![Report {
-                path: "reports/plan-1.md".into(),
-                bytes: Observation::Absent,
-            }],
-        ));
+        self.observations
+            .reports
+            .iter_mut()
+            .find(|(phase, _)| *phase == PhaseId(id))
+            .unwrap()
+            .1[0]
+            .bytes = Observation::Absent;
         self
     }
     fn queue(mut self) -> Self {
