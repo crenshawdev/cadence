@@ -45,7 +45,7 @@ invocation: given repository and persisted state, an invocation and mode,
 effective user policy, scripted user decisions, controlled worker and provider
 outcomes, and interruption history, the skill reaches the specified observable
 state, presents the required evidence or refusal, and produces no unauthorized
-effects. Phase 17 is where that is asserted. It must also name its stop point -
+effects. Phase 18 is where that is asserted. It must also name its stop point -
 refusal, checkpoint, awaiting-user-decision, or completion - because "the skill
 returned" and "all its effects are durable" are different claims.
 
@@ -228,18 +228,19 @@ lifecycle order, because three subsystems cut across every cluster:
   `workflows/adopt.md:61-74`), and `cad-suggest` writes no key itself - the
   write on "yes" happens inside `/cad-config` (`workflows/suggest.md:122-138`).
 
-So phases 6, 7 and 8 build those three, and phases 9 through 14 build the skill
-surfaces that compose them. Phase 3 is the store, because John named it as the
-next step and everything later writes through it. Phase 4 derives state from the
-store, because no skill cluster can be built until the binary can answer where
-the work stands. Phase 6 takes one vertical slice through the finished boundary,
-so the tool schema, the typed refusal and the patch shape are proven before ten
-surfaces are built against them. Phase 16 collects what belongs to no cluster,
-phase 17 is the gate, and phase 18 ships.
+So phases 6, 7 and 8 build the boundary, commit rail and config; phases 9
+and 10 build review delivery and evidence verification; and phases 11 through
+15 build the skill surfaces that compose them. Phase 3 is the store, because
+John named it as the next step and everything later writes through it. Phase 4
+derives state from the store, because no skill cluster can be built until the
+binary can answer where the work stands. Phase 6 takes one vertical slice through
+the finished boundary, so the tool schema, the typed refusal and the patch shape
+are proven before ten surfaces are built against them. Phase 17 collects what
+belongs to no cluster, phase 18 is the gate, and phase 19 ships.
 
 **A phase is a unit of work with a plan and a gate; it is not an acceptance
 unit.** Those two boundaries are allowed to differ, and here they do: phases 6
-through 15 implement, and phase 17 accepts. Do not go hunting for an independent
+through 16 implement, and phase 18 accepts. Do not go hunting for an independent
 acceptance unit inside a single cluster.
 
 **The enum workflow spine stays INTERNAL in 4.0.0** (John, 2026-09-06: "agreed
@@ -294,18 +295,22 @@ invalidated. Re-mapped 2026-09-06 from the frozen defect site rather than from
 the old label, so each surfaces when its phase is planned. **The GitHub labels
 still carry the old numbers and have not been updated.**
 
+The owner assigned GH-237, GH-239, GH-240, GH-250 and GH-251 to review work,
+so phase 10 owns them, resolving the earlier conflict between phase 8 in this
+table and phase 9 in the detail.
+
 | Issue | Frozen defect site | Phase |
 |---|---|---|
 | GH-241 | `lib/trace.mjs:1752-1757` accepts any nonempty observed effort string, whitespace included | 3 |
 | GH-229 | `planning/core.mjs:519-524`, with the no-commit skip at `workflows/execute.md:338-346` and `workflows/task.md:154-164` | 6 |
 | GH-248 | `planning/risk-check.mjs:949-997` stores ref-only receipts needing a head/base pair; a staged record has no head (`:395-402`) | 6 |
 | GH-256 | `route.mjs:967-983` treats an explicit role-effort `null` as unset, against `config.schema.json:32-37` | 7 |
-| GH-237 | `review-provider.mjs:1142-1148` zeroes one invalid Gemini output component when the other is usable | 8 |
-| GH-239 | `review-provider.mjs:1335-1350` exits on non-2xx before extracting usage | 8 |
-| GH-240 | `review-provider.mjs:988-989` accepts any finite nonnegative number, summed without a checked bound | 8 |
-| GH-250 | `issue-filing.mjs:727-763` refuses on the local FILED read before forge resolution | 8 |
-| GH-251 | `lib/filing-decision.mjs:730-755` leaves GitLab lookup unmeasured and space-joins fingerprints | 8 |
-| GH-202 | `planning/risk-carry.mjs:119-127` does a source `lstatSync` outside carry error handling; the dispatcher maps it to generic `internal` (`planning.mjs:420-423`) | 13 |
+| GH-237 | `review-provider.mjs:1142-1148` zeroes one invalid Gemini output component when the other is usable | 10 |
+| GH-239 | `review-provider.mjs:1335-1350` exits on non-2xx before extracting usage | 10 |
+| GH-240 | `review-provider.mjs:988-989` accepts any finite nonnegative number, summed without a checked bound | 10 |
+| GH-250 | `issue-filing.mjs:727-763` refuses on the local FILED read before forge resolution | 10 |
+| GH-251 | `lib/filing-decision.mjs:730-755` leaves GitLab lookup unmeasured and space-joins fingerprints | 10 |
+| GH-202 | `planning/risk-carry.mjs:119-127` does a source `lstatSync` outside carry error handling; the dispatcher maps it to generic `internal` (`planning.mjs:420-423`) | 14 |
 | GH-230 | No source defect: dispatch cache read grows with the SQUARE of turn count and nothing bounds dispatch length | 5 |
 
 The last three had no local record naming a source site and were left unhomed by
@@ -327,7 +332,7 @@ settled:
   drops the reads log entirely, so the defect has no surface left. This is the
   third instance of the category that keeps being missed: **ask what 4.0.0 stops
   doing, not only what Rust makes unrepresentable.** One real consequence
-  survives for phase 13: `lib/trace-suggest.mjs:601` folds `reads.jsonl` for
+  survives for phase 14: `lib/trace-suggest.mjs:601` folds `reads.jsonl` for
   `/cad-suggest`'s R7 in-dispatch re-reading signal, so that signal goes with
   the log and suggest must not silently report a conflated count as a clean one.
 - **`GH-140` is out of scope for 4.0.0 and stays open.** Whether Cadence grows a
@@ -345,16 +350,17 @@ settled:
 - [x] **Phase 6: The boundary and the execute slice** - the typed tool schema, typed refusals, and `/cad-execute` proven end to end through it
 - [ ] **Phase 7: The commit rail and the risk gates** - `git-guard`, the protected-branch decision, the lease and the risk check: what sixteen skills commit through
 - [ ] **Phase 8: Config and routing** - two-layer effective config, the roles interview, retired-key migration, and `route resolve`
-- [ ] **Phase 9: The review and settlement subsystem** - triggers, reviewer dispatch, the provider arm, adjudication, deferred and filing: what a skill FIRES rather than implements
-- [ ] **Phase 10: Planning intake** - `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context`, `cad-plan`
-- [ ] **Phase 11: Execution and tasks** - `cad-execute` in full, and `cad-task`
-- [ ] **Phase 12: Verification and audit** - `cad-verify`, the merged `cad-review` command surface, `cad-audit`
-- [ ] **Phase 13: Receipts and retune** - `cad-progress`, `cad-why`, `cad-suggest`, `cad-capture`
-- [ ] **Phase 14: Landing and milestones** - `cad-land`, `cad-milestone`, `cad-undo`
-- [ ] **Phase 15: Support** - `cad-debug`, `cad-spike`, `cad-help`
-- [ ] **Phase 16: Contract enforcement** - the residual obligations that live today as prose instructions and belong to no single cluster
-- [ ] **Phase 17: The acceptance gate** - scenario-bounded workflow episodes, asserted with contract checks rather than an output diff
-- [ ] **Phase 18: The release path** - a tagged release that publishes four checksum-verified archives, and a SessionStart hook that fetches and installs the pinned binary
+- [ ] **Phase 9: Review delivery and identity** - raw reviewer returns persisted by the binary, shared gate settings, first usable review, and durable snapshot identity
+- [ ] **Phase 10: Review evidence verification** - verified settlement, the provider and filing arms with their five repairs, deferred settlement and durable triage re-arm
+- [ ] **Phase 11: Planning intake** - `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context`, `cad-plan`
+- [ ] **Phase 12: Execution and tasks** - `cad-execute` in full, and `cad-task`
+- [ ] **Phase 13: Verification and audit** - `cad-verify`, the merged `cad-review` command surface, `cad-audit`
+- [ ] **Phase 14: Receipts and retune** - `cad-progress`, `cad-why`, `cad-suggest`, `cad-capture`
+- [ ] **Phase 15: Landing and milestones** - `cad-land`, `cad-milestone`, `cad-undo`
+- [ ] **Phase 16: Support** - `cad-debug`, `cad-spike`, `cad-help`
+- [ ] **Phase 17: Contract enforcement** - the residual obligations that live today as prose instructions and belong to no single cluster
+- [ ] **Phase 18: The acceptance gate** - scenario-bounded workflow episodes, asserted with contract checks rather than an output diff
+- [ ] **Phase 19: The release path** - a tagged release that publishes four checksum-verified archives, and a SessionStart hook that fetches and installs the pinned binary
 
 ## Phase Details
 
@@ -372,7 +378,7 @@ The original phase 1 carried a second plan for the release workflow, the
 checksum pin and the SessionStart bootstrap. Nothing is downloadable until
 `4.0.0` is tagged, so that plan's own honest outcome was a bootstrap that
 no-ops on every machine and three acceptance criteria that could not be
-observed at phase close. It is now phase 18, where a release actually exists.
+observed at phase close. It is now phase 19, where a release actually exists.
 Phase 1 is the crate skeleton and nothing else.
 
 ### Phase 2: The golden harness
@@ -394,7 +400,7 @@ that any parity claim holds.
 the rearchitecture ruling the 156 recordings pin the WRONG UNIT - each is one
 CLI invocation, an internal operation a redesign may delete outright. What
 survives is the fixture corpus, the normalization rules, and the lesson below.
-Phase 17 rebuilds acceptance at the scenario boundary instead.
+Phase 18 rebuilds acceptance at the scenario boundary instead.
 
 **The harness caught a real defect on its first CI run and the defect is the
 phase's most durable output.** `golden-drift` went red on one recording.
@@ -691,7 +697,7 @@ likewise proposes tokens and writes no key; the write on "yes" happens inside
 `/cad-config` (`workflows/suggest.md:122-138`). Standalone config can also
 bootstrap a missing repo config by copying the template
 (`workflows/config.md:10-15`), which is another call site for the same
-initialize family phase 10 uses.
+initialize family phase 11 uses.
 
 Two layers, global and repo, merged once at startup. **Carry forward the
 collapse rule, which is load-bearing:** the merge collapses toward REPO, never
@@ -713,52 +719,140 @@ once into memory must be invalidated when the file changes underneath - external
 edits, `git checkout`, rebase - and a failed reload must not silently preserve
 old permission-like settings as if current.
 
-### Phase 9: The review and settlement subsystem
+### Phase 9: Review delivery and identity
 
-**Goal.** The machinery a skill FIRES rather than implements: triggers, reviewer
-dispatch, the cross-model provider arm, adjudication, the deferred queue, issue
-filing and the triage re-arm.
+**Goal.** Reviewers return raw findings, the binary persists them before
+completion, and every fire has durable artifact identity and one configured
+gate meaning.
 
-**Five skills fire it and none of them own it.** `cad-plan`
-(`workflows/plan.md:442-478`), `cad-execute` (`workflows/execute.md:412-438`),
-`cad-task` (`workflows/task.md:197-206`), `cad-debug`
-(`workflows/debug.md:120-136`), and `cad-milestone`, whose first gate invokes
-`/cad-audit` and explicitly refuses to rederive the checks
-(`workflows/milestone.md:15-21`). Building it inside any one cluster would make
-the other four depend on that cluster.
+**Split from review and settlement on 2026-09-07.** The audit at
+`.codex-analysis/phase-9-decision-brief.md` found 2 capabilities built, 5 partial
+and 11 absent, making this the largest remaining phase. The owner chose delivery
+and identity first, evidence verification second. Both halves retain their
+obligations; the split adds a phase rather than weakening acceptance.
 
-**The permanent-write violation this phase must fix, and it was missed by the
-first inventory.** On an advisory fire it is **the REVIEWER ITSELF** that writes
-the permanent findings file `.planning/phases/<N>/REVIEW-<trigger>.md`, through
-a Bash heredoc in the frozen contract (`references/review-triggers.md:165-176`),
-and the workflow relies on that file existing even if the session ends
-(`workflows/plan.md:462-468`). That is a skill writing a permanent workflow
-file, which 4.0.0 forbids outright. A migration driven only from the earlier
-premise-audit checklist would have left it in place. The reviewer submits
-findings to the binary instead, and the binary persists them.
+**It follows the commit rail and config because review consumes both.** The
+frozen plan, execute, task, debug and verify workflows fire shared review
+machinery; manual plan review uses the same ordinary trigger policy. Milestone
+consumes settlement and preserved evidence. Delivery and identity must exist
+before evidence verification and before the skill clusters compose either half.
 
-**A review dispatch must close the bracket it opened**, including the fallback
-arm after a provider failure. Preserve artifact identity and the outer provider
-timeout, and keep re-arm allowances consumable across sessions
-(`references/triage-gate.md:160`) - that one survives sequential execution and
-is not parallel collateral.
+**The advisory delivery decision is WAIT.** The reviewer is read-only and
+returns raw findings. The invoking skill waits for that return and forwards it
+unchanged to a binary result operation. The binary persists the findings and
+closes the dispatch before acknowledging completion. This accepts the lost
+overlap with next-plan work and commit preparation. Advisory findings remain
+raw and unruled, even under an adjudicated combination mode; their severity does
+not halt work or require immediate adjudication.
 
-**Adjudication refuses paraphrased findings**, and minimalism preserves claim
-and `failure_scenario` text verbatim. These are identity promises and are
-asserted exactly rather than semantically.
+The current reviewer contract instructs a Bash heredoc
+(`skills/cad-reviewer-contract/SKILL.md:114`). The native guard passes through
+Bash (`crates/cadence/src/guard/mod.rs:78`), so denying Write never established
+binary ownership. Neither the reviewer nor the invoking skill writes the
+permanent findings file. The binary retains exact original finding strings and
+supplies queries or recoverable renderings for completion reports, deferred
+consumers, reports and milestone preservation.
 
-**Five open GitHub issues land here**, four of them in the provider and filing
-arms: `GH-237` (`review-provider.mjs:1142-1148` turns an invalid one of Gemini's
-two output components into zero when the other is usable), `GH-239` (`:1335-1350`
-exits on non-2xx before extracting response usage), `GH-240` (`:988-989` accepts
-any finite nonnegative number, and Gemini sums without a checked integer bound),
-`GH-250` (`issue-filing.mjs:727-763` refuses on the local FILED read before
-forge resolution and tracker lookup), and `GH-251`
-(`lib/filing-decision.mjs:730-755` leaves GitLab lookup unmeasured and
-space-joins fingerprints - Forgejo's part is no longer the defect, its live
-measurement is at `:678-700`).
+**A saved gate setting has one meaning.** Manual and automatic plan and risk
+entry points honor the same effective settings, including task reviews and
+deferred gates. Decision review and minimalism retain their specialist
+contracts. A gate requiring settlement remains pending until the evidence
+verification half accepts it; receiving findings alone cannot clear it.
 
-### Phase 10: Planning intake
+**Single-reviewer mode stops at the first usable review.** Try the configured
+order sequentially, stop after one usable response, and record failed attempts
+and their cost. An empty findings array can be usable. If the configured choices
+all fail, use the local fallback and record its actual outcome. Do not dispatch
+a full panel and then discard all but one result. The provider arm added in the
+next phase obeys this same selection and delivery contract.
+
+**Every fire has an immutable identity and a durable home before dispatch.**
+Generalize pause's `Fire` (`crates/cadence/src/pause/risk.rs:44`) to typed
+committed-range, staged-tree and named-file snapshots. Retain reviewed bytes or
+object identities, scope, occurrence and round rather than only mutable paths.
+Reuse phase/task homes and add binary-owned root occurrences for inline, debug
+and diagnosis work, enumerated for unsettled and deferred reviews. A repeated
+filename cannot identify a repeated fire.
+
+Persist the pending fire first, bind the return to it, make duplicate acceptance
+idempotent, and close every dispatch exactly once, including failures and
+fallbacks. Pending or interrupted work never reports clean. Reuse pause's gate,
+findings and identity machinery without treating its staged-only contract as a
+general review transaction.
+
+**Acceptance requires an owner-reviewed live pilot.** Record a real local
+advisory return, unchanged forwarding, binary persistence before completion,
+failed-attempt closure and an uncommitted snapshot whose identity survives later
+edits. The owner inspects those episodes and accepts the stated semantic
+limitations. A valid JSON fixture cannot establish that a real review happened;
+deterministic identity, persistence and replay checks do not replace this pilot.
+
+### Phase 10: Review evidence verification
+
+**Goal.** Settlement verifies original findings, reviewer participation, fix
+commits and citations before it can clear a gate or supply findings for filing.
+
+**It follows delivery because evidence must have a recorded origin.** The
+binary-persisted originals, dispatch voices and immutable artifacts from phase 9
+are the inputs to settlement. It precedes planning, execution, verification and
+landing so those skill clusters consume one verified result instead of each
+accepting their own settlement text.
+
+**Settlement verifies evidence, not just its shape.** Use one bounded findings
+validator and compare every ruling with binary-persisted originals and recorded
+dispatch voices, with one ruling per finding. Refuse paraphrased claims or
+`failure_scenario` text and fabricated participation. Minimalism preserves both
+strings verbatim while retaining its deletion-value meaning and the user's
+choice of what to delete.
+
+Resolve supplied fix commits and validate cited material, line identity and any
+relied-on counter-evidence against the reviewed artifact. Missing or deleted
+source remains visible with explicit base, head or snapshot-side evidence. The
+current hex-pattern check for a fix ID
+(`cadence-core/bin/lib/adjudication-record.mjs:438`) and path-exists-at-head
+citation check (`cadence-core/bin/planning/adjudication.mjs:90`) are insufficient.
+Invalid or fabricated settlement is refused, not recorded as a cleared gate.
+
+**Deferred settlement must match before it supersedes a queue member.** Reuse
+the existing deferred producer and reader, extend carry and retention to every
+admitted home, and replace sibling-file existence checks with matching valid
+settlement. Reuse scoped override receipts and generalize the one-extra-round
+triage allowance so it is consumed durably across sessions. A restart cannot
+re-arm an exhausted fire.
+
+**The cross-model provider and remote filing arms land with their repairs.**
+Provider credential lookup, bounded payloads, transport, sanitized diagnostics
+and the outer timeout feed the delivery contract from phase 9. Record actual
+voices and usage, distinguish usable empty findings from failure, and close
+failed-provider and local-fallback outcomes exactly once. Filing preserves human
+choice, exact fingerprint deduplication, bounded tracker lookup and reconciliation
+after an ambiguous create. Reuse filed/declined item bookkeeping; a local
+transaction cannot make remote creation atomic.
+
+**Five open GitHub issues land here with the code they repair:** `GH-237`
+(`review-provider.mjs:1142-1148` turns an invalid one of Gemini's two output
+components into zero when the other is usable), `GH-239` (`:1335-1350` exits on
+non-2xx before extracting response usage), `GH-240` (`:988-989` accepts any finite
+nonnegative number, and Gemini sums without a checked integer bound), `GH-250`
+(`issue-filing.mjs:727-763` refuses on the local FILED read before forge
+resolution and tracker lookup), and `GH-251`
+(`lib/filing-decision.mjs:730-755` leaves GitLab lookup unmeasured and space-joins
+fingerprints; Forgejo's historical measurement is at `:678-700`). Invalid or
+overflowed usage is unavailable, not zero, and available response usage survives
+an HTTP refusal. An unavailable legacy mirror is distinct from a corrupt
+authoritative store; the latter still refuses. GitLab lookup remains explicitly
+unmeasured until live evidence establishes its search semantics.
+
+**Acceptance requires an owner-reviewed live pilot.** Record real provider
+participation and failure/local-fallback closure, per-voice rulings checked
+against source, refused fabricated evidence, deferred settlement and exhausted
+re-arm after restart, and human-authorized filing, deduplication and
+reconciliation on each claimed forge. The owner inspects the episodes and
+accepts their stated semantic limitations. A valid JSON fixture cannot establish
+that a real review happened. Missing provider or forge cases remain unverified;
+another backend's success does not establish them.
+
+### Phase 11: Planning intake
 
 **Goal.** `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context` and
 `cad-plan` run against the binary, and none of them writes a permanent file.
@@ -792,14 +886,14 @@ Context intake can directly correct a REQUIREMENTS row on user approval
 (`workflows/context.md:394-397`), and an adjudicated plan review can edit
 surviving findings straight into the PLAN files (`workflows/plan.md:471-474`).
 Both are skills writing permanent workflow files and both must go through the
-binary; the second one takes its decision from phase 9 and its persistence from
+binary; the second one takes its decision from phase 10 and its persistence from
 here.
 
 **What this cluster does NOT own, corrected against the frozen tree.**
 `cad-new-project` and `cad-adopt` do not own their role and cost intake - they
 follow config's Roles interview, which is phase 8. `cad-plan` does not own plan
-review - it fires the trigger and obeys the gate, which is phase 9. Crediting
-either to this phase would hide a dependency rather than remove it.
+review - it fires the trigger from phase 9 and obeys the settlement from phase
+10. Crediting either to this phase would hide a dependency rather than remove it.
 
 **The plan gate stays on Claude.** The plan IS the verification instrument, so
 if the same agent authors the criteria and executes against them there is no
@@ -807,7 +901,7 @@ independent check left. What moved is the grounding: a falsification pass reads
 a finished plan against the frozen tree and reports which acceptance criteria
 are FALSE, scoped to criteria that make a claim about code that already exists.
 
-### Phase 11: Execution and tasks
+### Phase 12: Execution and tasks
 
 **Goal.** `cad-execute` in full and `cad-task` run against the binary, with the
 receipts they produce owned by the binary rather than assembled by a
@@ -845,18 +939,19 @@ concurrency narration; keep declared-scope enforcement, unprovable-lease
 refusal, byte-exact pathname handling and the intentional lockfile and report
 exceptions.
 
-### Phase 12: Verification and audit
+### Phase 13: Verification and audit
 
 **Goal.** `cad-verify` (with `cad-coverage` folded in), the merged `cad-review`,
 and `cad-audit` run against the binary.
 
-**Only the COMMAND SURFACE of the merge lands here; the subsystem is phase 9.**
+**Only the COMMAND SURFACE of the merge lands here; the subsystem belongs to
+phases 9 and 10.**
 `cad-decision-review`, `cad-minimalism-review` and `cad-plan-review` all point a
 reviewer at an artifact and adjudicate a ruling, with near-identical operation
 sets, so they become `/cad-review <target>` with the three old commands kept as
 aliases. What this phase adds is the target selection and the prompt per target;
 the trigger, the dispatch, the provider arm and the adjudication were built in
-phase 9 and are fired, not reimplemented.
+phases 9 and 10 and are fired, not reimplemented.
 
 **The verifier stops writing its own findings file.** It submits findings to the
 binary, which stores input provenance and the merge or rejected-entry result.
@@ -873,7 +968,7 @@ verify alone advances completion, undo legitimately resets it, and progress
 derives truth and only repairs the cursor. A per-skill suite can otherwise pass
 while producing inconsistent shared state.
 
-### Phase 13: Receipts and retune
+### Phase 14: Receipts and retune
 
 **Goal.** `cad-progress` (with `cad-health` and `cad-report` folded in),
 `cad-why`, `cad-suggest` and `cad-capture` run against the binary, and the
@@ -912,7 +1007,7 @@ binary-only system can still accumulate one unwanted capture per close forever,
 so the retention and accumulation policy survives even though the shell and
 subcommand recognizers do not.
 
-### Phase 14: Landing and milestones
+### Phase 15: Landing and milestones
 
 **Goal.** `cad-land`, `cad-milestone` and `cad-undo` run against the binary,
 with the ordering that protects evidence enforced rather than instructed.
@@ -935,7 +1030,7 @@ lookup that stops an already-filed finding being filed twice.
 
 **Authorize before publishing, and confirm the merge before pull, tag or reap.**
 With `git.auto_close` retired, no path publishes or merges without an explicit
-authorization, and phase 17 asserts that absence.
+authorization, and phase 18 asserts that absence.
 
 **`cad-undo` mutates permanent workflow files through a prose-directed `git
 revert`**, not an operation-specific writer (`workflows/undo.md:26-38`) - the
@@ -946,7 +1041,7 @@ prose-mutation paths and it needs a binary-owned equivalent.
 rolls back from the SUMMARY's commit manifest. Exact shown hashes only, reverse
 order, no status reset in `--no-commit` mode, and stop on conflict.
 
-### Phase 15: Support
+### Phase 16: Support
 
 **Goal.** `cad-debug`, `cad-spike` and `cad-help` run against the binary.
 
@@ -956,7 +1051,7 @@ whole Roles interview to it and would otherwise depend on a later phase.
 
 `cad-debug` fires the shared risk-surface reviewer and imports the shared triage
 and re-arm semantics (`workflows/debug.md:120-136`); it does not own review, and
-phase 9 supplies it. `cad-debug` and `cad-spike` persist hypotheses, state and
+phases 9 and 10 supply it. `cad-debug` and `cad-spike` persist hypotheses, state and
 verdicts through the binary. Do not lose interruption recovery or the falsifiable criteria recorded
 BEFORE an experiment - that ordering is what makes a spike a spike. Temporary
 experiment material keeps its own lifecycle and is not a permanent write.
@@ -965,7 +1060,7 @@ experiment material keeps its own lifecycle and is not a permanent write.
 reversed its proposed deletion: "if a user can't issue that, we're gonna get
 dinged for it." A self-describing MCP tool list does not replace it.
 
-### Phase 16: Contract enforcement
+### Phase 17: Contract enforcement
 
 **Goal.** Obligations that exist today only as prose instructions to a model
 become behavior the binary enforces.
@@ -1006,7 +1101,7 @@ and a child process that exited used to reclaim descriptors and memory for free.
 Bounded reads, observable truncation, per-operation deadlines, backpressured
 queues and explicit shutdown behavior replace what process exit used to do.
 
-### Phase 17: The acceptance gate
+### Phase 18: The acceptance gate
 
 **Goal.** Parity at the user-facing surface is asserted, not claimed - and it is
 asserted at the scenario boundary, because the CLI-invocation boundary died with
@@ -1033,8 +1128,8 @@ fixture; model work is nondeterministic, so pin change scope, evidence, commit
 separation and SUMMARY coverage rather than source text; resumption crosses
 invocations and sessions, so pause-then-progress, verify-clear-verify,
 execute-timeout-replay and milestone-then-land are single episodes; advisory
-work outlives the foreground, so test eventual records and crash paths rather
-than an event count taken when the command stops; and external effects are not
+completion waits for binary persistence, so test interrupted delivery, replay
+and durable acknowledgment before completion; and external effects are not
 in the fixtures, so stub the forge and keep a small isolated integration suite
 for successful effects.
 
@@ -1055,7 +1150,7 @@ domain or scenario invariant; drop the ones that only pin obsolete transport.
 **Write down what is knowingly untested before this phase closes.** An
 acknowledged gap is a decision; an unnoticed one is a bug found later.
 
-### Phase 18: The release path
+### Phase 19: The release path
 
 **Goal.** A tagged release publishes four checksum-verified archives, and a
 machine that starts a session gets the right binary installed without being

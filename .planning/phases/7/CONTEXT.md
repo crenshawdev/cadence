@@ -23,14 +23,14 @@ deterministic risk classifier and its surfaces; and the two range-identity
 defects `GH-229` and `GH-248`.
 
 Out: A native pre-commit round trip for the executor - deliberately deferred to
-phase 11 by D-31, because it needs the executor to hold a Cadence tool and a
+phase 12 by D-31, because it needs the executor to hold a Cadence tool and a
 round trip the phase-6 contract does not give it
 (`skills/cad-executor-contract/SKILL.md:14`, `agents/cad-executor.md:4`).
 Cadence making the task commit itself - rejected outright, it would discard the
 executor loop phase 6 just proved. Configurable routing and role selection -
 phase 8 (`.planning/ROADMAP.md:680-715`). Review-provider dispatch and reviewer
 adjudication - phase 9 (`.planning/ROADMAP.md:716-765`). Full execution and task
-behavior, checkpoints, attempt history and `/cad-task` - phase 11.
+behavior, checkpoints, attempt history and `/cad-task` - phase 12.
 
 Not out, and the roadmap is wrong about it: the phase-6 Write/Edit ownership
 guard is NOT superseded by "one surviving hook". It is native, shipped and
@@ -60,7 +60,7 @@ arm. See D-34.
   blocks on an input the user cannot see or fix.
 
 - D-31 (Lease enforcement: compare at patch time now; pre-commit gate in
-  phase 11): Verified against the current tree - `plan.files` has FIVE readers,
+  phase 12): Verified against the current tree - `plan.files` has FIVE readers,
   not the three this decision first claimed: told to the executor
   (`crates/cadence/src/execution/dispatch.rs:74`), field validation
   (`crates/cadence/src/execution/plan.rs:151`, `:158`), inter-plan ordering
