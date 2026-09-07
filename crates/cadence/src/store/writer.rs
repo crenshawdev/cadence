@@ -283,8 +283,18 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         if let Some(error) = &self.failed {
             return Err(error.clone());
         }
+        // Unverified reads expose the last confirmed view, even if external
+        // bytes have since changed. Only verified reads and writes refresh it.
+        if matches!(operation, Operation::Read) {
+            return Ok(self.view.clone());
+        }
         let _ownership = self.storage.acquire()?;
-        super::transaction::recover(&mut self.storage, &mut self.policy)?;
+        if let Err(error) = super::transaction::recover(&mut self.storage, &mut self.policy) {
+            // Recovery can install participants just like commit. A failed
+            // attempt requires a replacement owner, not a retry on this writer.
+            self.failed = Some(error.clone());
+            return Err(error);
+        }
         let (view, observed) = Self::observe(&mut self.storage)?;
         if observed != self.observed {
             if view.snapshot.generation <= self.view.snapshot.generation
