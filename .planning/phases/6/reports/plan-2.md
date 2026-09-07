@@ -542,3 +542,160 @@ The dispatch records two verification prediction mismatches in total: the
 corrected fmt wrap and this later protected-path drift. Neither required a
 change to Task 7's acceptance criteria or implementation. No Task 5 or Task 6
 work was performed by this dispatch.
+
+
+## Tasks 5-6 continuation from 636d2447 - live UAT retry
+
+PLAN PARTIAL. This dispatch follows the installed 3.7.12 executor contract,
+with the user's explicit append-only report and reporting-format overrides.
+Starting HEAD: `636d2447bec532108acfb2afde53ca89aa4089a2`; branch
+`cadence/binary-owns-process`; initial tree clean. No CLAUDE.md is expected.
+The earlier UAT will remain intact as a labelled prior attempt.
+Evidence root: `/tmp/cadence-uat-20260907-5yt3jjm7`.
+
+Task 5 PREDICTION before Verify: three host tools available without ToolSearch;
+`cadence_apply({})` returns a successful typed refusal; two real executor
+dispatches change source, call their prescribed verification and suite commands,
+return lossless patches and produce two ordered signed task commits. Six
+protected attempts (Write and Edit for each of three paths) are denied and one
+source Write succeeds. The first fixture server is intentionally terminated
+between dispatches and the resumed session uses a distinct server PID.
+No prediction grades model-produced source, test prose or judgment text.
+Compaction causality remains inconclusive.
+
+Prerequisite ACTUAL: `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp`
+returned 14 passed, 0 failed, 0 ignored, 0 filtered, exit 0 (30.04 seconds).
+This is the targeted prerequisite, not the dispatch's final full suite.
+Its individual count was not separately predicted before invocation.
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo build -p cadence` exited 0. The temporary
+authority helper build also exited 0; it is a setup stub, never a server proxy.
+Installed config lookup returned null lint override; command detection returned
+clippy and TypeScript, both subprocess exits 0 with unused stdin ignored.
+D-29: no Node test suite will be run or used as a gate.
+
+
+### Task 5 ACTUAL and blocked checkpoint
+
+PLAN CHECKPOINT: blocked. Tasks 5 and 6: 0 of 2 satisfied. The earlier plan
+tasks remain as previously reported; no completion status is changed.
+
+Both real hosts ran Claude Code 2.1.263, model alias opus resolved to
+claude-opus-5, isolated MCP/settings, no plugin and no ToolSearch calls. The
+boundary host (PID 2757430, server 2757470) exited 0 after 2 turns and 1 tool
+call. The actual malformed apply input was `{"dispatch_id":"null"}`, not `{}`.
+It received successful `refused:invalid-patch`. Independent JSON hashing
+confirmed the request and response digests against the unique durable decision
+`9418fc503a3dff8646f6eb53e684e200e0df92d8c78fc7c4954b4236c2139a37`.
+The temporary authority helper then actually wrote its two declared fixture
+records; those are setup stubs, not live execution or operator-answer proof.
+
+The actual `claude -p "/cad-execute 6"` host (PID 2758322, server 2758359)
+exited 0 after 2 turns and one diagnostic cadence_version call. There were
+zero query/apply calls in this execution invocation and zero Task/Agent calls,
+source mutations, task verification/suite calls, task commits or accepted
+patches. Both hosts exposed only cadence_apply and cadence_version. Both logs
+state: `Skipping tool "cadence_query": its input schema uses top-level oneOf,
+which the Anthropic API does not accept. Other tools from this server remain
+available.` This is a second host restriction, after the fixed root-type one.
+
+[deviation] Expected all three tools callable and the loop to dispatch; actual
+query input is filtered for root oneOf. The required producer change is outside
+the lease, so work stopped without a workaround or changed acceptance rule.
+[deviation] Expected the probe's exact empty object; actual model arguments were
+`{"dispatch_id":"null"}`. The first progress claim of exact `{}` success was
+corrected after independent stream inspection. A successful malformed refusal
+is proved; the empty-object live input is not.
+
+Closing Verify PREDICTION: three raw tool names, six object schema roots, root
+query oneOf retained; zero task commits, dispatch decisions and SUMMARY; static
+and preservation command exits all 0. ACTUAL: all matched. The raw probe ran
+directly as server PID 2761289, exit 0. Its root-oneOf variant counts are
+version input/output 0/4, query 1/4, apply 0/4. This verifies Task 7's root fix
+in passing; no old negative control was re-derived or repeated.
+
+Independent fixture Git inspection: clean, HEAD unchanged at signed baseline
+`9ed495ed128d88dd8838979396fd8a46d029d6d5`, zero source diff and task commits.
+Native state has no execution namespace. Exactly three decisions exist: the
+malformed refusal plus native-evidence:fixture-authority-0 and -1. SUMMARY is
+absent. There are no dispatch IDs, accepted patch IDs or executor task SHAs.
+
+Neither PID pair is replacement between plan dispatches. No intentional server
+termination or host resume occurred; every owned PID was absent on closing
+inspection. The separate guard probe was not launched after the blocker, as
+the user explicitly required STOP. This retry has zero Write/Edit attempts,
+zero denials/allowances and zero compaction events. Earlier three Write denials
+and one source allowance are preserved only as prior observations; live Edit
+denial remains unverified in both attempts. Causal compaction conclusion is
+INCONCLUSIVE. No model-produced source, test output or judgment prose is graded.
+
+Static ACTUAL: clippy exit 0, fmt exit 0, TypeScript exit 0. Frozen cadence-core
+comparison and the full user-protected planning-path comparison both exit 0.
+All children explicitly had CADENCE_GLOBAL_CONFIG empty; all Node invocations
+ignored unused stdin. npm cache/logs and host artifacts stayed inside the
+temporary fixture root. Global config.v4.json remains absent.
+
+Task 6 was NOT STARTED; no final Cargo suite or Node suite was run. D-29 uses
+the frozen-tree diff, never the incompatible Node grammar as a gate. AC3/full
+AC7 and the acceptance map remain unverified/outstanding. Phase 11 attempt
+history, checkpoints, general SUMMARY/task/lease behavior and phase 7-9 rails
+remain unimplemented. OQ-1 has a direct pre-load malformed-apply observation;
+OQ-2 remains non-decision-bearing under its failed negative control.
+
+Need: a host-loadable query input schema that preserves typed discriminator
+constraints, regression coverage of this host restriction, then a new Task 5
+run and Task 6. That producer is outside the Task 5/6 leases. No permission
+question or unauthorized repair is attempted in this checkpoint.
+
+Commit-gate PREDICTION before Verify: only UAT.md staged; lease-check ok:true,
+all protected diffs and whitespace checks exit 0; signed Task 5 observation
+commit has author/committer John Crenshaw, key 693AB15F91734B0C, no trailers,
+no deletions. The existing report remains unstaged and preserves its entire
+prior content as a prefix.
+
+
+PLAN CHECKPOINT: blocked
+Plan: `.planning/phases/6/PLAN-2.md`
+Tasks: 0 of 2 requested tasks satisfied; Task 5 partial observation committed,
+Task 6 not started.
+
+| Task | Commit | Result |
+|---|---|---|
+| 5 - Run actual host, executor and denial UAT | `89723fb99f1a045dc0dfe8d29eeaa10277529c91` | Partial, BLOCKED: real host filters query input union; records actual malformed refusal and preserves prior attempt verbatim. |
+| 6 - Acceptance map | none | Not started under the explicit Task 5 stop condition. |
+
+Commit gate ACTUAL: lease-check exit 0, ok:true, 1 staged UAT path; protected
+planning and frozen-tree comparisons exit 0 immediately before commit; staged
+whitespace exit 0. Commit subject `feat(6): record live query schema rejection`.
+Author and committer John Crenshaw <john@jcrenshaw.dev>; signature status G, key
+693AB15F91734B0C; verify-commit exit 0. Exactly UAT.md is in this commit, no
+body/trailers and no deletions. The existing report remains unstaged.
+
+[deviation] Closing audit predicted only this dispatch's two paths would differ
+from the supplied HEAD. It observed two concurrent commits,
+`1ffe5f17979b877f9e7d9989da7b5f5055023bdc` and
+`d61f33deae8077cdd8f165b76ac0cbb41b3af5ba`, modifying only
+`.github/workflows/test.yml`. Those commits were not created or changed by this
+dispatch. An audit assertion over the whole branch range exited 1 as a result;
+this is recorded rather than attributed to the UAT commit or reverted. The
+UAT commit's parent is d61f33de. Its own path list remains exactly UAT.md.
+Repeated protected-path and frozen-tree comparisons after this observation
+both exited 0. The CI-only changes did not alter the tested Rust/skill bytes.
+
+Closing audit recheck PREDICTION: own commit contains only UAT.md; original
+report bytes remain its prefix and original UAT bytes remain the new UAT's
+suffix; no untracked artifacts, no global config.v4.json, and only the report
+is modified in the worktree. No new .mcp.json or executable script is added.
+
+Deviations: 3 - host query filtering, actual malformed input differing from
+the requested empty object, concurrent CI commits invalidating a range audit.
+Open items: Task 5 live dispatch/executor/verify/suite/commit/patch/SUMMARY proof,
+intentional between-dispatch replacement and resume, protected Edit and retry
+Write/source-allow observations, exact empty-object live input, and Task 6
+acceptance map/final suite. Compaction was not observed and causality remains
+INCONCLUSIVE. The later phase 7-9 and phase 11 obligations remain unimplemented.
+No final full suite is invoked after this blocked checkpoint.
+
+Closing audit recheck ACTUAL: every stated check passed, exit 0. The full
+prior report is retained, the full prior blocked UAT is preserved verbatim,
+only the report is modified/unstaged, and no untracked repository artifact
+exists. No push was performed. Final status remains CHECKPOINT: blocked.

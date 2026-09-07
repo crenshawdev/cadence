@@ -146,6 +146,41 @@ PLAN-1 -> PLAN-3 -> PLAN-2 does not.**
   `tools/list`, and record the root `type` of all six schemas from the wire.
   Task 5 stays blocked until that probe shows six of six.
 
+### Task 8: Advertise an input schema the host will actually list
+
+**Added 2026-09-07 after Task 5's second live block. Execution order is task 8,
+then 5, then 6.** Task 7 gave every schema a root `"type": "object"`, which was
+necessary and not sufficient.
+
+- **Files:** `crates/cadence/src/server.rs`, `crates/cadence/tests/mcp.rs`
+- **Action:** `cadence_query` is silently DROPPED from the host's tool list. The
+  host states the reason itself: `Skipping tool "cadence_query": its input
+  schema uses top-level oneOf`. Its input currently advertises
+  `['$schema','oneOf','title','type']` - an object root with a top-level union
+  and no `properties`, unlike the other two which carry real `properties`.
+  Re-express that input as an object with `properties` and `required`, the
+  operation discriminator among them, so the host can render it. Keep the
+  discriminator explicit and keep every strict per-variant rule EXACTLY as
+  strict - validation already lives inside Cadence, because the handler receives
+  raw JSON and deserializes internally, so nothing about admission changes. A
+  less expressive ADVERTISED schema is acceptable here and a less strict
+  VALIDATOR is not. Do not weaken the executor patch, drop the discriminator,
+  or accept an operation the resident would refuse.
+- **Verify:** **V8.** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp`
+  passes, including every existing schema, discriminator and refusal assertion
+  unchanged. Add a general assertion over the whole returned tool list: no
+  advertised `inputSchema` uses a top-level `oneOf`, `anyOf` or `allOf`, and
+  every one carries `properties`. Not one hardcoded case - a later tool is
+  covered by construction. Run the negative control: reintroduce the union root,
+  confirm the new test fails, restore, and REPORT what it said. Then start the
+  built binary as `cadence serve --project-root <tmpdir>` and record from the
+  wire that all three tools list with object roots, `properties`, and no
+  top-level union. Finally re-run the real host non-interactively with
+  `--mcp-config`/`--strict-mcp-config` and prove from its own output that
+  **three** tools are exposed and `cadence_query` is no longer skipped. Quoting
+  the host's own tool list is the only thing that closes this; a green cargo
+  suite cannot, since a green suite is exactly what shipped both host defects.
+
 ## Notes
 
 - Execute PLAN-1 -> PLAN-2. The `server.rs` and `main.rs` overlap is deliberate
