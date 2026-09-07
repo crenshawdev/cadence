@@ -185,6 +185,20 @@ addition rather than a whole-file re-serialize.
   `/cad-suggest`. If live usage is the test, the system must be observable in
   live usage, which makes the decisions log the verification instrument for the
   half that cannot be tested.
+- **Zero JavaScript ships.** John's ruling, 2026-09-07, asked for the `.mjs`
+  surface to be as light as possible and floated a script that only calls the
+  binary. A redirect is the one shape that does not qualify: it puts the model
+  back in Bash, the free-form channel with no typed arguments, no validation and
+  no structured refusal that this design exists to close, and it keeps node a
+  runtime dependency for no gain (`docs/rationale/architecture-v4.md:241`). So
+  the target is not a thin shim but none. Measured 2026-09-07, `cadence-core`
+  holds 238 `.mjs` files, of which 125 are non-test source at 47,884 lines; all
+  of them leave with it. Skills are markdown calling MCP tools directly and the
+  binary is the only executable cadence ships. The single non-Rust survivor is
+  the SessionStart bootstrap, POSIX shell rather than node, which fetches the
+  platform release and verifies its checksum on first run
+  (`docs/rationale/architecture-v4.md:248-252`; its own size estimate is tagged
+  a guess and untested).
 - **Assert on SHAPE, never on the content the model produced.** One commit per
   task in order, each signed, subjects naming their tasks, the SUMMARY listing
   exactly those SHAs, the cursor moved, the log holding the routing decision.
@@ -1031,7 +1045,8 @@ deliberately changed.
 
 **The gate asserts ABSENCE for what 4.0.0 retired**, which no output diff can
 do because a retired feature produces no output: no parallel path, no
-`git.auto_close`, no reads log, no `ARCHIVE.md`, no `cad-docs-verify`.
+`git.auto_close`, no reads log, no `ARCHIVE.md`, no `cad-docs-verify`, and no
+JavaScript anywhere in the shipped plugin.
 
 **Phase 2's fixtures and normalization rules are the seed corpus.** For each
 assertion carried forward, name its public consumer and translate it into a
