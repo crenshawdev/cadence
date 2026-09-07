@@ -11,6 +11,9 @@ pub const INTENT: &str = ".store-intent.json";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum IntentKind {
+    GuardAudit {
+        audit: super::writer::audit::Audit,
+    },
     Store,
     BoundaryObservationV1 {
         scope: BoundaryScope,
@@ -193,7 +196,8 @@ impl Intent {
                     ));
                 }
             }
-            IntentKind::BoundaryObservationV1 { .. }
+            IntentKind::GuardAudit { .. }
+            | IntentKind::BoundaryObservationV1 { .. }
             | IntentKind::ExecutionDispatchV1 { .. }
             | IntentKind::ExecutionPatchV1 { .. }
             | IntentKind::Store
@@ -220,8 +224,54 @@ impl Intent {
                 ));
             }
         }
+        self.validate_guard_audit(&snapshot)?;
         self.validate_boundary_v1(&snapshot, decisions, summary_phase)?;
         Ok(snapshot)
+    }
+    fn validate_guard_audit(&self, snapshot: &Snapshot) -> Result<()> {
+        let IntentKind::GuardAudit { audit } = &self.kind else {
+            return Ok(());
+        };
+        if self.participants.len() != 3
+            || self
+                .participants
+                .iter()
+                .any(|p| !matches!(p.target.as_str(), ITEMS | DECISIONS | STATE))
+        {
+            return Err(Error::Invalid(
+                "guard audit cannot change external participants".into(),
+            ));
+        }
+        let participant = |name| self.participants.iter().find(|p| p.target == name).unwrap();
+        let items = participant(ITEMS);
+        let decisions = participant(DECISIONS);
+        let state = participant(STATE);
+        let old_items = items.expected.bytes.as_deref().unwrap_or_default();
+        let old_decisions = decisions.expected.bytes.as_deref().unwrap_or_default();
+        let old = match state.expected.bytes.as_deref() {
+            Some(bytes) => Snapshot::parse(bytes, old_items, old_decisions)?,
+            None if items.expected.bytes.is_none() && decisions.expected.bytes.is_none() => {
+                Snapshot::new(0, b"", b"", Value::Null)?
+            }
+            _ => {
+                return Err(Error::Invalid(
+                    "guard audit cannot adopt partial store".into(),
+                ));
+            }
+        };
+        let mut expected: Vec<DecisionRecord> = model::parse_lines(old_decisions)?;
+        expected.push(audit.record()?);
+        if items.bytes != old_items
+            || decisions.bytes != model::render_lines(&expected)?
+            || old.generation.checked_add(1) != Some(snapshot.generation)
+            || snapshot.operations != old.operations
+            || snapshot.data != super::writer::audit::project(&old, audit)?
+        {
+            return Err(Error::Invalid(
+                "guard audit changed data outside its projection".into(),
+            ));
+        }
+        Ok(())
     }
     fn validate_boundary_v1(
         &self,
@@ -516,7 +566,11 @@ pub(crate) fn recover<S: Storage, P: Policy>(storage: &mut S, policy: &mut P) ->
     let snapshot = intent.validate()?;
     validate_all(storage, &intent.participants, true)?;
     policy.validate(&MutationContext {
-        operation: "recovery",
+        operation: if matches!(intent.kind, IntentKind::GuardAudit { .. }) {
+            "guard_audit_recovery"
+        } else {
+            "recovery"
+        },
         snapshot: &snapshot,
     })?;
     for participant in &intent.participants {

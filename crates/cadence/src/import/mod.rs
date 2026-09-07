@@ -358,6 +358,11 @@ struct SessionPolicy<I: ConfigIo> {
 }
 impl<I: ConfigIo> Policy for SessionPolicy<I> {
     fn validate(&mut self, context: &MutationContext<'_>) -> Result<()> {
+        if matches!(context.operation, "guard_audit" | "guard_audit_recovery") {
+            // The writer and intent validator prove the narrow projection before
+            // this exception can admit work with unavailable controlling inputs.
+            return Ok(());
+        }
         let pending = self
             .importing
             .lock()
@@ -402,7 +407,9 @@ impl<I: ConfigIo> Session<I> {
     pub async fn request(&self, mut operation: Operation) -> Result<View> {
         // Queries refuse unavailable controlling config as well. Keep durable
         // import metadata through later cursor/snapshot changes.
-        self.config()?;
+        if !matches!(operation, Operation::GuardAudit(..)) {
+            self.config()?;
+        }
         let wrap = |value: Value| json!({"import":self.manifest,"current":value});
         match &mut operation {
             Operation::RewriteSnapshot(value) => *value = wrap(std::mem::take(value)),
@@ -532,12 +539,65 @@ pub struct SessionFactory<I: ConfigIo + Clone = FileIo> {
     #[cfg(test)]
     probe: Option<TestProbe>,
 }
+
+struct AuditOnlyPolicy;
+impl Policy for AuditOnlyPolicy {
+    fn validate(&mut self, context: &MutationContext<'_>) -> Result<()> {
+        if matches!(context.operation, "guard_audit" | "guard_audit_recovery") {
+            Ok(())
+        } else {
+            Err(Error::Policy(
+                "guard audit cannot admit or recover policy-dependent work".into(),
+            ))
+        }
+    }
+}
 impl SessionFactory<FileIo> {
     pub fn new(global: Option<PathBuf>, evaluate: Evaluate) -> Self {
         Self::with_io(global, FileIo, evaluate)
     }
 }
 impl<I: ConfigIo + Clone> SessionFactory<I> {
+    pub fn guard_config(&self, root: &Path) -> Result<Generation> {
+        let legacy = Paths {
+            repo: root.join("config.json"),
+            global: self.global.clone(),
+        };
+        let mut io = self.io.clone();
+        let state = observe(&mut io, &root.join(STATE))?.bytes;
+        let imported = state
+            .as_deref()
+            .map(serde_json::from_slice::<Snapshot>)
+            .transpose()?
+            .is_some_and(|s| s.data["import"]["complete"] == true);
+        let paths = if imported {
+            write::active_paths(&legacy)?
+        } else {
+            legacy
+        };
+        Reload::new(paths, io).refresh()
+    }
+
+    pub async fn guard_audit(
+        &self,
+        root: &Path,
+        audit: cadence::store::writer::audit::Audit,
+    ) -> Result<View> {
+        match self.first_touch(root).await {
+            Ok(session) => session.request(Operation::GuardAudit(audit)).await,
+            Err(error) => {
+                // Healthy policy must use normal import ownership, including its
+                // source-change refusals. Only unavailable policy admits fallback.
+                if self.guard_config(root).is_ok() {
+                    return Err(error);
+                }
+                let storage = cadence::store::filesystem::Filesystem::new(root)?;
+                let store = Store::open(storage, AuditOnlyPolicy).await?;
+                store.request(Operation::GuardAudit(audit)).await
+            }
+        }
+    }
+
     pub fn with_io(global: Option<PathBuf>, io: I, evaluate: Evaluate) -> Self {
         Self {
             global,
@@ -576,23 +636,39 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
         let mut io = self.io.clone();
         let pending = observe(&mut io, &root.join(INTENT))?.bytes;
         let state = observe(&mut io, &root.join(STATE))?.bytes;
+        let mut pending_audit = false;
         let pending_import = if let Some(bytes) = &pending {
             let intent: Value = serde_json::from_slice(bytes)?;
+            pending_audit = intent["kind"]["operation"] == "guard-audit";
             let participant = intent["participants"]
                 .as_array()
                 .and_then(|p| p.iter().find(|p| p["target"] == STATE))
                 .ok_or_else(|| Error::Conflict("pending intent lacks snapshot".into()))?;
             let bytes: Vec<u8> = serde_json::from_value(participant["bytes"].clone())?;
             let snapshot: Snapshot = serde_json::from_slice(&bytes)?;
-            snapshot.generation == 1
+            let previous: Option<Vec<u8>> =
+                serde_json::from_value(participant["expected"]["bytes"].clone())?;
+            snapshot.data["import"]["complete"] == true
+                && previous
+                    .as_deref()
+                    .map(serde_json::from_slice::<Snapshot>)
+                    .transpose()?
+                    .is_none_or(|s| s.data["import"]["complete"] != true)
         } else {
             false
         };
-        let importing = Arc::new(Mutex::new(if state.is_none() || pending_import {
-            Some(prepare_import(&root, &legacy, &active, &mut io)?)
-        } else {
-            None
-        }));
+        let audit_only = state
+            .as_deref()
+            .map(serde_json::from_slice::<Snapshot>)
+            .transpose()?
+            .is_some_and(|s| cadence::store::writer::audit::audit_only(&s));
+        let importing = Arc::new(Mutex::new(
+            if state.is_none() || pending_import || audit_only {
+                Some(prepare_import(&root, &legacy, &active, &mut io)?)
+            } else {
+                None
+            },
+        ));
         if pending.is_none() && state.is_none() {
             for path in [root.join(ITEMS), root.join(DECISIONS), active.repo.clone()]
                 .into_iter()
@@ -644,7 +720,7 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
             }
             Ok(())
         });
-        let transaction = if pending.is_none()
+        let transaction = if (pending.is_none() || pending_audit)
             && let Some(inputs) = importing
                 .lock()
                 .map_err(|_| Error::Policy("import guard unavailable".into()))?
@@ -679,8 +755,22 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
             None
         };
         let store = Store::open(storage, policy).await?;
-        let view = if let Some(transaction) = transaction {
-            store.request(Operation::Transact(transaction)).await?
+        let view = if let Some(mut transaction) = transaction {
+            let current = store.request(Operation::ReadVerified).await?;
+            if current.snapshot.data["import"]["complete"] == true {
+                current
+            } else {
+                if let Some(guard) = current.snapshot.data.get("guard_audit") {
+                    transaction.snapshot.as_mut().unwrap()["guard_audit"] = guard.clone();
+                }
+                store
+                    .request(Operation::CompareTransact {
+                        expected_generation: current.snapshot.generation,
+                        expected_integrity: current.snapshot.integrity,
+                        transaction,
+                    })
+                    .await?
+            }
         } else {
             store.request(Operation::Read).await?
         };

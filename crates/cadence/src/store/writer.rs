@@ -13,6 +13,9 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 
+#[path = "../guard/audit.rs"]
+pub mod audit;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct View {
     pub items: Vec<ItemRecord>,
@@ -39,6 +42,7 @@ pub enum BoundaryChange {
 }
 
 pub enum Operation {
+    GuardAudit(audit::Audit),
     BoundaryV1 {
         expected_generation: u64,
         expected_integrity: String,
@@ -298,6 +302,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             self.observed = observed;
         }
         match operation {
+            Operation::GuardAudit(audit) => self.guard_audit(audit),
             Operation::BoundaryV1 {
                 expected_generation,
                 expected_integrity,
@@ -451,7 +456,8 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 next.snapshot.data = data;
                 "rewrite_snapshot"
             }
-            Operation::BoundaryV1 { .. }
+            Operation::GuardAudit(..)
+            | Operation::BoundaryV1 { .. }
             | Operation::AdmitExecution { .. }
             | Operation::ApplyExecutionPatch { .. }
             | Operation::RecordExecutionRefusal { .. } => {
@@ -951,6 +957,30 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             return Err(Error::Conflict(STALE_SNAPSHOT.into()));
         }
         Ok(())
+    }
+
+    fn guard_audit(&mut self, audit: audit::Audit) -> Result<View> {
+        let record = audit.record()?;
+        if let Some(prior) = self.view.decisions.iter().find(|r| r.id == record.id) {
+            return if audit.same_event(&audit::from_record(prior)?) {
+                Ok(self.view.clone())
+            } else {
+                Err(Error::Conflict(
+                    "guard event identity reused for different command".into(),
+                ))
+            };
+        }
+        let mut next = self.view.clone();
+        next.snapshot.data = audit::project(&self.view.snapshot, &audit)?;
+        next.decisions.push(record);
+        model::validate_decisions(&next.decisions)?;
+        self.persist(
+            next,
+            self.view.snapshot.operations.clone(),
+            Vec::new(),
+            "guard_audit",
+            super::transaction::IntentKind::GuardAudit { audit },
+        )
     }
 
     fn persist(
