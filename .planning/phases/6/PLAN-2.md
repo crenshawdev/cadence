@@ -112,6 +112,40 @@ release wiring belongs to phase 18.
 - **Action:** Run the deterministic suite and inspect the live checklist independently of the executor's return. Map AC1-AC8 to named machine tests and, only for AC3/AC7's host/model clauses, the recorded UAT observations. Confirm the three-tool count, typed refusal log, strict stubs, restart identity, lossless patch, renderer ownership and guard denial individually. Report phase 11's attempt history, checkpoints, general SUMMARY/task/lease behavior and phase 7-9 rails as unimplemented, not implied by a green slice. Record OQ-1 as no preamble and OQ-2 as non-decision-bearing under the failed negative control. Do not move ROADMAP/STATE/REQUIREMENTS or alter phase 1-5 artifacts in this plan.
 - **Verify:** From `/code/cadence`, `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence` and `TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings` pass; `TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check` passes; `TMPDIR=/tmp npx tsc -p tsconfig.ci.json` and `TMPDIR=/tmp node --test` preserve the frozen reference checks. `git diff --exit-code v3.7.12 -- cadence-core/` is empty. `rg --files crates skills agents hooks | rg '\.(mjs|js|cjs)$'` shows no newly added phase-6 executable or redirect, and the phase diff adds no `.mcp.json`. The acceptance map must leave the live clauses unverified if Task 5 did not actually run; a green Cargo suite alone cannot complete AC3 or AC7.
 
+### Task 7: Make every advertised schema loadable by a real host
+
+**Added 2026-09-07 after Task 5's live UAT was blocked. Execution order is Task
+7, then Task 5, then Task 6 - the number does not set the order, exactly as
+PLAN-1 -> PLAN-3 -> PLAN-2 does not.**
+
+- **Files:** `crates/cadence/src/server.rs`, `crates/cadence/tests/mcp.rs`
+- **Action:** Give every advertised input and output schema a root `"type":
+  "object"`. Four of the six are currently rooted at `oneOf` with no `type` and
+  a real host rejects all four: `cadence_version.outputSchema`,
+  `cadence_query.inputSchema`, `cadence_query.outputSchema` and
+  `cadence_apply.outputSchema`. The cause is `schemars` rendering a Rust tagged
+  enum as a root-level `oneOf` - `QueryArguments` (`crates/cadence/src/server.rs:222`)
+  and the envelope types. Keep the discriminated union semantics Task 1
+  requires: the variants stay expressed, they simply sit under an
+  object-typed root rather than replacing it. Do not flatten a union into a
+  free-form object, do not drop the query discriminator, and do not weaken the
+  executor patch to a generic map to make a schema validate. Do not hand-write
+  a schema constant; derive it and post-process the root, so the schema still
+  comes from the type Cadence deserializes.
+- **Verify:** **V7.** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp`
+  passes. A named test handshakes with the real stdio child, reads `tools/list`,
+  and asserts for EVERY advertised tool that both `inputSchema` and
+  `outputSchema` are present and each carries a root `"type": "object"` - a
+  general assertion over the returned list, not four hardcoded cases, so a
+  fourth tool added later is covered by construction. Deleting the root-type
+  fix must make that test fail; state that negative control was actually run and
+  what it reported. The existing three-tool, discriminator and executor-patch
+  assertions still pass unchanged, proving the union semantics survived. Then
+  re-run the raw probe the finding came from: start the built binary as
+  `cadence serve --project-root <tmpdir>`, send initialize / initialized /
+  `tools/list`, and record the root `type` of all six schemas from the wire.
+  Task 5 stays blocked until that probe shows six of six.
+
 ## Notes
 
 - Execute PLAN-1 -> PLAN-2. The `server.rs` and `main.rs` overlap is deliberate
