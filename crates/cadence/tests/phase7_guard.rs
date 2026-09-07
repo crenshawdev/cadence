@@ -537,10 +537,20 @@ fn legacy_invocations_do_not_coalesce_by_command_digest() {
 }
 
 fn hook(root: &Path, cwd: &Path, command: &str, id: &str) -> std::process::Output {
+    hook_environment(root, cwd, command, id, &[])
+}
+fn hook_environment(
+    root: &Path,
+    cwd: &Path,
+    command: &str,
+    id: &str,
+    environment: &[(&str, &Path)],
+) -> std::process::Output {
     use std::io::Write;
     let mut process = Command::new(env!("CARGO_BIN_EXE_cadence"))
         .arg("guard")
         .env("CADENCE_GLOBAL_CONFIG", root.join("missing-global.json"))
+        .envs(environment.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -909,4 +919,360 @@ fn bounded_scanner_observes_hook_cwd_without_retargeting_or_simulating_checkout(
         git(other.path(), &["symbolic-ref", "--short", "HEAD"]),
         b"feature\n"
     );
+}
+
+fn permission_output(result: &std::process::Output) -> Option<String> {
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    if result.stdout.is_empty() {
+        None
+    } else {
+        Some(serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap()["hookSpecificOutput"]["permissionDecision"].as_str().unwrap().into())
+    }
+}
+fn latest_audit(root: &Path) -> Audit {
+    audit::from_record(stored(root).decisions.last().unwrap()).unwrap()
+}
+fn native_policy(root: &Path, value: serde_json::Value) {
+    std::fs::write(
+        root.join(".planning/config.v4.json"),
+        serde_json::to_vec(&value).unwrap(),
+    )
+    .unwrap();
+}
+#[test]
+fn unavailable_git_and_unresolved_branch_are_distinct_durable_failure_passes() {
+    for missing_git in [true, false] {
+        let root = native_fixture();
+        let empty_path = root.path().join("empty-bin");
+        std::fs::create_dir(&empty_path).unwrap();
+        if !missing_git {
+            std::fs::write(
+                root.path().join(".git/HEAD"),
+                format!("{}\n", "0".repeat(40)),
+            )
+            .unwrap();
+        }
+        let env = if missing_git {
+            vec![("PATH", empty_path.as_path())]
+        } else {
+            vec![]
+        };
+        let result = hook_environment(root.path(), root.path(), "git commit -m x", "failure", &env);
+        assert_eq!(permission_output(&result), None);
+        assert!(!result.stderr.is_empty());
+        let audit = latest_audit(root.path());
+        assert_eq!(audit.outcome, Outcome::FailurePass);
+        assert!(
+            audit
+                .unavailable
+                .iter()
+                .any(|f| f.input == if missing_git { "Git" } else { "branch" })
+        );
+        assert!(audit.reason.contains("not policy approval"));
+    }
+}
+#[test]
+fn torn_layers_ask_even_after_custom_list_loss_and_simultaneous_git_failure() {
+    for global in [true, false] {
+        for missing_git in [true, false] {
+            let root = native_fixture();
+            git(root.path(), &["symbolic-ref", "HEAD", "refs/heads/release"]);
+            let layer = if global {
+                root.path().join("config.v4.json")
+            } else {
+                root.path().join(".planning/config.v4.json")
+            };
+            std::fs::write(&layer, br#"{"git":{"protected_branches":["release"]}}"#).unwrap();
+            assert_eq!(
+                permission_output(&hook(
+                    root.path(),
+                    root.path(),
+                    "git commit -m x",
+                    "healthy"
+                )),
+                Some("ask".into())
+            );
+            std::fs::write(&layer, b"{torn").unwrap();
+            let empty = root.path().join("empty");
+            std::fs::create_dir(&empty).unwrap();
+            let env = if missing_git {
+                vec![("PATH", empty.as_path())]
+            } else {
+                vec![]
+            };
+            let result =
+                hook_environment(root.path(), root.path(), "git commit -m x", "torn", &env);
+            assert_eq!(permission_output(&result), Some("ask".into()));
+            let audit = latest_audit(root.path());
+            assert!(
+                audit
+                    .reason
+                    .contains("defaults rather than the user's settings")
+            );
+            assert!(audit.reason.contains(layer.to_str().unwrap()));
+            assert!(
+                audit
+                    .unavailable
+                    .iter()
+                    .any(|f| f.input.starts_with(if global {
+                        "global config"
+                    } else {
+                        "repo config"
+                    }))
+            );
+            assert_eq!(
+                audit.unavailable.iter().any(|f| f.input == "Git"),
+                missing_git
+            );
+        }
+    }
+}
+#[test]
+fn torn_layer_retains_an_independently_established_refusal() {
+    let root = native_fixture();
+    std::fs::write(
+        root.path().join("config.v4.json"),
+        br#"{"git":{"on_protected":"refuse"}}"#,
+    )
+    .unwrap();
+    std::fs::write(root.path().join(".planning/config.v4.json"), b"{torn").unwrap();
+    let result = hook(root.path(), root.path(), "git commit -m x", "deny-torn");
+    assert_eq!(permission_output(&result), Some("deny".into()));
+    let audit = latest_audit(root.path());
+    assert_eq!(audit.outcome, Outcome::Deny);
+    assert!(
+        audit
+            .reason
+            .contains("defaults rather than the user's settings")
+    );
+}
+#[test]
+fn confirmed_hard_fail_survives_own_layer_loss_restart_and_current_head_changes() {
+    use std::os::unix::fs::PermissionsExt;
+    for global in [true, false] {
+        for damage in ["torn", "missing", "unreadable"] {
+            let root = native_fixture();
+            git(root.path(), &["symbolic-ref", "HEAD", "refs/heads/release"]);
+            let layer = if global {
+                root.path().join("config.v4.json")
+            } else {
+                root.path().join(".planning/config.v4.json")
+            };
+            std::fs::write(
+                &layer,
+                br#"{"git":{"protected_branches":["release"],"guard_hard_fail":true}}"#,
+            )
+            .unwrap();
+            assert_eq!(
+                permission_output(&hook(
+                    root.path(),
+                    root.path(),
+                    "git commit -m x",
+                    "confirmed"
+                )),
+                Some("ask".into())
+            );
+            let before = stored(root.path()).snapshot.data["guard_audit"]["denial_policy"].clone();
+            match damage {
+                "torn" => std::fs::write(&layer, b"{torn").unwrap(),
+                "missing" => std::fs::remove_file(&layer).unwrap(),
+                _ => std::fs::set_permissions(&layer, std::fs::Permissions::from_mode(0o000))
+                    .unwrap(),
+            }
+            let empty = root.path().join("empty");
+            std::fs::create_dir(&empty).unwrap();
+            let result = hook_environment(
+                root.path(),
+                root.path(),
+                "git commit -m x",
+                "lost-opt-in",
+                &[("PATH", &empty)],
+            );
+            assert_eq!(
+                permission_output(&result),
+                Some("deny".into()),
+                "{global} {damage}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert_eq!(
+                stored(root.path()).snapshot.data["guard_audit"]["denial_policy"],
+                before
+            );
+            assert!(
+                latest_audit(root.path())
+                    .reason
+                    .contains("defaults rather than the user's settings")
+            );
+            // A former protected observation cannot authorize denial after HEAD changes.
+            git(root.path(), &["symbolic-ref", "HEAD", "refs/heads/feature"]);
+            let changed = hook_environment(
+                root.path(),
+                root.path(),
+                "git commit -m x",
+                "changed-head",
+                &[("PATH", &empty)],
+            );
+            assert_eq!(permission_output(&changed), Some("ask".into()));
+        }
+    }
+}
+#[test]
+fn fresh_readable_hard_fail_and_opt_out_use_current_policy_only() {
+    for name in ["main", "release"] {
+        let root = native_fixture();
+        git(
+            root.path(),
+            &["symbolic-ref", "HEAD", &format!("refs/heads/{name}")],
+        );
+        native_policy(
+            root.path(),
+            serde_json::json!({"git":{"guard_hard_fail":true,"protected_branches":[name]}}),
+        );
+        std::fs::write(root.path().join("config.v4.json"), b"{torn").unwrap();
+        let empty = root.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+        let result = hook_environment(
+            root.path(),
+            root.path(),
+            "git commit -m x",
+            "fresh",
+            &[("PATH", &empty)],
+        );
+        assert_eq!(permission_output(&result), Some("deny".into()));
+        std::fs::write(root.path().join("config.v4.json"), b"{}").unwrap();
+        native_policy(
+            root.path(),
+            serde_json::json!({"git":{"guard_hard_fail":false,"on_protected":"allow"}}),
+        );
+        assert_eq!(
+            permission_output(&hook(
+                root.path(),
+                root.path(),
+                "git commit -m x",
+                "opt-out"
+            )),
+            None
+        );
+        assert_eq!(
+            permission_output(&hook_environment(
+                root.path(),
+                root.path(),
+                "git commit -m x",
+                "missing-after-opt-out",
+                &[("PATH", &empty)]
+            )),
+            None
+        );
+    }
+}
+#[test]
+fn audit_failure_is_loud_without_claiming_durability_and_keeps_hard_denial() {
+    use std::os::unix::fs::PermissionsExt;
+    for hard_fail in [true, false] {
+        let root = native_fixture();
+        native_policy(
+            root.path(),
+            serde_json::json!({"git":{"guard_hard_fail":hard_fail}}),
+        );
+        let log = root.path().join(".planning/decisions.jsonl");
+        let before = std::fs::read(&log).unwrap();
+        std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let empty = root.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+        let result = hook_environment(
+            root.path(),
+            root.path(),
+            "git commit -m x",
+            "audit-failed",
+            &[("PATH", &empty)],
+        );
+        assert_eq!(permission_output(&result), hard_fail.then(|| "deny".into()));
+        let stderr = String::from_utf8(result.stderr).unwrap();
+        assert!(stderr.contains("Git"));
+        assert!(stderr.contains("audit storage/confirmation unavailable"));
+        assert!(stderr.contains("not confirmed durably"));
+        std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(std::fs::read(&log).unwrap(), before);
+    }
+}
+
+#[path = "support/signing.rs"]
+mod signing;
+#[test]
+fn hard_fail_reads_current_symbolic_head_through_real_worktree_gitdir() {
+    let fixture = tempfile::tempdir().unwrap();
+    let seed = fixture.path().join("seed");
+    std::fs::create_dir(&seed).unwrap();
+    git(&seed, &["init", "-b", "main"]);
+    let key = signing::generate(&seed);
+    let result = Command::new("git")
+        .current_dir(&seed)
+        .env("GNUPGHOME", signing::home(&seed))
+        .args([
+            "-c",
+            "user.name=John Crenshaw",
+            "-c",
+            "user.email=john@jcrenshaw.dev",
+            "-c",
+            &format!("user.signingkey={key}"),
+            "commit",
+            "-S",
+            "--allow-empty",
+            "-m",
+            "fixture base",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let root = fixture.path().join("worktree");
+    git(
+        &seed,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "release",
+            root.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+    assert!(root.join(".git").is_file());
+    std::fs::create_dir(root.join(".planning")).unwrap();
+    std::fs::write(
+        root.join(".planning/config.json"),
+        br#"{"git":{"guard_hard_fail":true,"protected_branches":["release"]}}"#,
+    )
+    .unwrap();
+    let empty = fixture.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let result = hook_environment(
+        &root,
+        &root,
+        "git commit -m x",
+        "worktree",
+        &[("PATH", &empty)],
+    );
+    assert_eq!(permission_output(&result), Some("deny".into()));
+    assert_eq!(latest_audit(&root).branch.as_deref(), Some("release"));
+    let gitdir = git(&root, &["rev-parse", "--absolute-git-dir"]);
+    let gitdir = Path::new(std::str::from_utf8(&gitdir).unwrap().trim());
+    std::fs::write(gitdir.join("HEAD"), format!("{}\n", "0".repeat(40))).unwrap();
+    let unknown = hook_environment(
+        &root,
+        &root,
+        "git commit -m x",
+        "worktree-detached",
+        &[("PATH", &empty)],
+    );
+    assert_eq!(permission_output(&unknown), None);
+    assert_eq!(latest_audit(&root).outcome, Outcome::FailurePass);
 }

@@ -68,6 +68,12 @@ impl ConfigIo for FileIo {
             Err(e) => return Err(Error::Io(format!("config {}: {e}", path.display()))),
         };
         let metadata = file.metadata()?;
+        if metadata.mode() & 0o444 == 0 {
+            return Err(Error::Io(format!(
+                "config {} is unreadable",
+                path.display()
+            )));
+        }
         if !metadata.is_file() {
             return Err(Error::Invalid(format!(
                 "config {} is not a file",

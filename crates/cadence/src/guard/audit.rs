@@ -57,7 +57,7 @@ pub struct Audit {
     pub project: PathBuf,
     pub verb: Verb,
     pub branch: Option<String>,
-    pub policy: Option<PolicyEvidence>,
+    pub policy: Option<Box<PolicyEvidence>>,
     pub outcome: Outcome,
     pub unavailable: Vec<Unavailable>,
     pub reason: String,
@@ -168,4 +168,27 @@ pub fn project(snapshot: &Snapshot, audit: &Audit) -> Result<Value> {
         guard.insert("denial_policy".into(), serde_json::to_value(policy)?);
     }
     Ok(data)
+}
+
+/// Read only confirmed state. This reader cannot recover policy-dependent work.
+pub async fn confirmed(root: &std::path::Path) -> Result<super::View> {
+    struct ReadOnly;
+    impl super::super::Policy for ReadOnly {
+        fn validate(&mut self, _: &super::super::MutationContext<'_>) -> Result<()> {
+            Err(Error::Policy(
+                "guard observation cannot authorize recovery".into(),
+            ))
+        }
+    }
+    let store =
+        super::Store::open(super::super::filesystem::Filesystem::new(root)?, ReadOnly).await?;
+    store.request(super::Operation::ReadVerified).await
+}
+
+pub fn denial_policy(view: &super::View) -> Option<PolicyEvidence> {
+    serde_json::from_value::<PolicyEvidence>(
+        view.snapshot.data["guard_audit"]["denial_policy"].clone(),
+    )
+    .ok()
+    .filter(|policy| policy.complete)
 }
