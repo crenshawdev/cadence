@@ -1,7 +1,12 @@
 //! Integration tests: spawn the real `cadence serve` binary and drive it over
 //! stdio with hand-rolled newline-delimited JSON-RPC. No client-side rmcp
 //! feature is needed for this, and nothing here shares a process with the
-//! server - what these tests see is what a host sees.
+//! server. These tests prove wire behavior, not host/model semantics. Synthetic
+//! fixture patches and command receipts do not prove that an executor ran.
+//! AC3/AC7's live clauses require the observations in phase 6's UAT.md; source,
+//! test-output and judgment quality and compaction causality are not asserted.
+//! Phase 11 attempt history, checkpoints and general SUMMARY/task/lease behavior,
+//! and phase 7-9 commit/Bash/routing/review rails remain unimplemented by this slice.
 //!
 //! The `Client` below is the seed of phase 2's golden harness, so it knows
 //! nothing about which tools exist. Every fact about the surface is stated in
@@ -887,6 +892,37 @@ impl Fixture {
             "expected_execution_version":dispatch["expected_execution_version"],"outcome":"complete",
             "tasks":tasks,"deviations":[],"blockers":[]})
     }
+}
+
+#[test]
+fn execution_calls_refuse_noninteger_phases_and_legacy_plans_without_dispatch() {
+    let fixture = Fixture::new(&[&["T1"]]);
+    let mut client = fixture.client();
+    let before = fixture.semantic_bytes();
+    for phase in ["0", "-1", "6.0", "6.5", "6e0", "\"6\"", "null"] {
+        let input = serde_json::from_str(&format!(
+            r#"{{"operation":"execute-next","phase":{phase}}}"#
+        ))
+        .unwrap();
+        let answer = fixture.call(&mut client, "cadence_query", input);
+        assert_eq!(answer["status"], "refused", "phase {phase}");
+        assert!(answer.get("dispatch").is_none());
+        assert_eq!(fixture.semantic_bytes(), before);
+    }
+
+    // A legacy plan has the original frontmatter but no native execution block.
+    // It must not acquire a dispatch from its prose or the seeded authority.
+    fs::write(
+        fixture.root().join(".planning/phases/6/PLAN-1.md"),
+        "---\nphase: 6\nplan: 1\nrequirements: [AC2]\nfiles: [src/shared.txt]\n---\nComplete T1 and run the suite.\n",
+    )
+    .unwrap();
+    let legacy = fixture.query(&mut client);
+    assert_eq!(legacy["status"], "refused");
+    assert!(legacy.get("dispatch").is_none());
+    assert_eq!(fixture.semantic_bytes(), before);
+    assert!(fixture.read().snapshot.data.get("execution").is_none());
+    assert!(client.finish().success());
 }
 
 #[test]

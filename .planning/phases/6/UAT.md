@@ -433,6 +433,73 @@ Static PREDICTION before Verify: clippy, fmt and TypeScript exit 0. ACTUAL:
 No Node test suite ran; D-29's frozen-reference obligation is the byte diff.
 Task 5 commit/lease/preservation receipts are appended to the existing report.
 
+## Task 6 - acceptance map and boundary closure
+
+Machine evidence below names registered tests, not model simulations. `mcp::`
+means the integration target `crates/cadence/tests/mcp.rs`; `store::` means
+`crates/cadence/tests/execution_store.rs`; `service::` means the binary target's
+`server::execution_service_tests`; `execution::` and `guard::` are their actual
+module names. The final suite result is appended to the existing
+`reports/plan-2.md`, after the Task 6 commit, before plan completion is claimed.
+Live citations are used only for AC3/AC7's host/model clauses. A green machine
+suite does not establish those clauses independently.
+
+| Criterion | Named machine evidence | Live clause and limit |
+|---|---|---|
+| AC1: three tools, schemas, raw typed refusals and audit | `mcp::tool_schemas_list_exactly_three_tools_with_output_schemas`; `mcp::tool_schemas_all_inputs_and_outputs_have_object_roots`; `mcp::tool_schemas_all_inputs_have_properties_without_root_unions`; `mcp::tool_schemas_malformed_objects_reach_cadence_and_protocol_errors_stay_distinct`; `service::execution_service_malformed_arguments_confirm_root_refusals_without_semantic_work` | Machine criterion; no model result substituted. |
+| AC2: strict phase/native input, overlap order, one durable dispatch and opaque body | `mcp::execution_calls_refuse_noninteger_phases_and_legacy_plans_without_dispatch`; `execution::plan::tests::three_plan_overlap_graph_orders_shared_and_transitive_leases`; `service::resident_selects_overlap_graph_durably_and_ignores_report_bodies`; `server::execution_service::schema_tests::execution_service_prompt_contains_generated_schema_and_opaque_utf8_body`; `store::dispatch_is_durable_and_preserves_unrelated_namespaces_after_reopen` | Machine criterion. New wire test refuses seven noninteger/nonpositive forms and a legacy-only plan, confirms each decision and unchanged execution/SUMMARY, and finds no execution namespace. |
+| AC3: stateless skill, fixed executor, patch inventory and actual execution | `mcp::skill_contract_matches_wire_patch_and_direct_tool_permissions`; `mcp::execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans` (synthetic patch/commit mechanics only) | U1-U5 observe real invocation, fixed executor, exact prompt, source edits, given command calls, ordered signed commits and lossless accepted JSON patches. Observed with explicit fixture receipt guidance. Unassisted contract reliability remains unverified; the initial fixture failed twice. |
+| AC4: lossless accepted state, Git validation, renderer ownership and next/complete | `execution::patch::tests::complete_patch_preserves_every_unrelated_json_value`; `service::signed_commits_apply_in_strict_order_and_paths_survive_replay`; `store::accepted_patch_and_derived_summary_survive_reopen`; `store::invalid_summary_targets_bytes_versions_and_summary_only_intents_refuse_before_mutation`; `mcp::execution_calls_confirm_dispatch_completion_and_refused_patch_semantics`; `mcp::execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans` | Machine criterion; general phase 11 SUMMARY/task/lease behavior is unimplemented. |
+| AC5: invalid patch/identity/evidence/commit refusals preserve execution/SUMMARY and log once | `execution::patch::tests::exact_task_set_and_order_are_enforced`; `execution::patch::tests::foreign_and_stale_dispatch_identity_are_rejected`; `execution::patch::tests::evidence_forms_are_typed_and_validated`; `execution::patch::tests::every_top_level_patch_key_is_required_and_unknown_keys_refuse`; `service::missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse`; `mcp::execution_calls_confirm_dispatch_completion_and_refused_patch_semantics`; `store::refusal_changes_only_decisions_generation_and_integrity` | Machine criterion; model judgment text is not graded. |
+| AC6: process death, stable outstanding dispatch, once-only apply/replay and summary | `mcp::execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans`; `service::execution_restart_dispatch_recovery_distinguishes_pre_admission`; `service::execution_restart_lost_apply_replays_one_immutable_transition`; `service::execution_restart_repairs_summary_before_final_state_confirmation` | Machine criterion. The wire test's normal child closure and service tests' actual process kills are distinct evidence. No cross-format migration is claimed. |
+| AC7: direct guard, protected Write/Edit denial, source allowance and no new executable redirects | `guard::tests::guard_denies_owned_outputs_through_every_path_spelling`; `guard::tests::guard_fails_closed_for_malformed_ambiguous_and_oversized_write_events`; `guard::tests::guard_allows_unowned_source_paths_inside_and_outside_planning`; `guard::tests::guard_cli_retains_the_serve_handshake` | U3/U6 observe direct Rust hook calls, authorized executor source edits, three Write denials, three Edit denials, source Write allowance and unchanged protected bytes. Preservation checks below cover the shipped-tree clause. |
+| AC8: transition 257, terminal replay and evidence limits | `store::transition_257_persists_one_terminal_log_bound_and_later_calls_replay_it`; `store::scoped_budgets_admit_256_plus_terminal_and_reopen_never_grows_either_scope`; `mcp::execution_calls_log_bound_replay_preserves_terminal_bytes` | Machine criterion; the MCP module explicitly states that synthetic patches/receipts do not prove host/model semantics. No assertion on model-produced content or compaction causality. |
+
+Additional boundary distinctions are independently named:
+`mcp::execution_calls_confirm_blocked_judgment_stop` proves the strict typed
+stop; `mcp::execution_calls_store_failure_never_acknowledges_a_refusal` proves
+failed refusal persistence cannot claim success; the fixed stub values are
+asserted by `mcp::execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans`.
+Those strict stops do not implement phase 11's checkpoint workflow.
+
+Task 6 targeted PREDICTION before Verify: new wire test 1 passed, 0 failed,
+15 filtered, exit 0; clippy/fmt/TypeScript exit 0. ACTUAL: all matched. Exact
+targeted command is `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp
+execution_calls_refuse_noninteger_phases_and_legacy_plans_without_dispatch`.
+The added test observes seven refused phase values (`0`, `-1`, `6.0`, `6.5`,
+`6e0`, string `6`, null) and one legacy-only plan through the production child.
+Static commands are the same required clippy/fmt/TypeScript commands above.
+
+The exact full-suite Verify command, `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p
+cadence`, is the one post-commit final suite for this single-member workspace.
+PREDICTION: 350 passed, 0 failed, exit 0 (supplied 349 baseline plus this one
+test). Its actual counts and exit belong to the final appended report receipt;
+this prediction does not certify an unrun suite. There is no second workspace
+suite and no Node test gate.
+
+Preservation PREDICTION before Verify: `git diff --exit-code v3.7.12 --
+cadence-core/` is empty; protected planning comparisons against input HEAD are
+empty; no added `.mcp.json` and no new `.mjs`/`.js`/`.cjs` under crates, skills,
+agents or hooks. ACTUAL exits and the repeated precommit lease/signature checks
+are recorded in the appended report. D-29's frozen-reference obligation is
+satisfied by the empty byte diff, per the explicit dispatch instruction.
+
+OQ-1 is no preamble. OQ-2 is non-decision-bearing under the failed negative
+control, and the unobserved compaction conclusion is INCONCLUSIVE. No missing
+observation is classified as skipped-as-pass. The live AC3/AC7 observations
+above cover this fixture and host; they do not prove model-produced content,
+unassisted receipt reliability, compaction survival causality, installed wiring,
+or a product operator-answer flow.
+
+**Still unimplemented:** phase 11 attempt history, checkpoints, general
+SUMMARY/task/lease behavior, `/cad-task` and CONTEXT amendments; phase 7's full
+commit/Bash/protected-branch/risk rails; phase 8 configurable routing; phase 9
+review-provider dispatch. Phase 17 cycle acceptance and phase 18 installed
+MCP/bootstrap/plugin wiring are not completed by this slice. D-27 cross-format
+execution resume remains unsupported. D-28 proves content/directory recovery,
+not installed-file identity or hardware power-loss durability. No ROADMAP,
+STATE, REQUIREMENTS or frozen phase artifact is updated by this acceptance map.
+
 ## Current-dispatch history - two receipt-refused invocations
 
 These are actual model runs against the initial fixture, before the added plan
