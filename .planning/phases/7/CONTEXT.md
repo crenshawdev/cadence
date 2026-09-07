@@ -302,12 +302,15 @@ arm. See D-34.
       hook manifest no longer invokes `cadence-core/bin/git-guard.mjs`, and the
       Write/Edit ownership guard's behavior is unchanged.
 
-- [ ] AC2: The guard's own failure is loud. With Git unreadable and with a torn
-      config layer, the command proceeds and a guard-failure decision is
-      recorded naming which input was unavailable. With the hard-fail config key
-      set and a protected branch, the same conditions deny instead. Both paths
-      are exercised deliberately, not inferred - including at least one against
-      a real host.
+- [ ] AC2: The guard's own failure is loud, and its two failure kinds stay
+      distinct. With Git unreadable or the branch unresolvable, the command
+      proceeds and a guard-failure decision is recorded naming which input was
+      unavailable. With a torn controlling config layer the command ASKS, giving
+      the defaults-instead-of-your-settings reason, and an already-established
+      deny survives the tear with that reason appended. With the hard-fail
+      config key set and a protected branch, these conditions deny instead. All
+      three outcomes are exercised deliberately, not inferred - including at
+      least one against a real host.
 
 - [ ] AC3: A plan declares `files:` and `directories:`. A trailing slash in
       `files:` is REFUSED with a typed error naming the field; it is never
