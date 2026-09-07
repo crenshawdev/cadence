@@ -756,3 +756,157 @@ fn native_commit_policy_asks_denies_and_passes_using_shared_permission() {
         }
     }
 }
+
+#[test]
+fn bounded_scanner_recognizes_top_level_separators_paths_and_seven_options() {
+    let root = native_fixture();
+    std::fs::write(
+        root.path().join(".planning/config.v4.json"),
+        br#"{"git":{"on_protected":"refuse"}}"#,
+    )
+    .unwrap();
+    let mut cases = vec![
+        ("/usr/bin/git push origin main".to_string(), "ask"),
+        ("git commit -m x && git push".into(), "ask"),
+        ("git push; git commit -m x".into(), "ask"),
+    ];
+    for separator in [";", "\n", "|", "||", "&&", "&"] {
+        cases.push((format!("echo harmless{separator}git commit -m x"), "deny"));
+        cases.push((format!("git status{separator}git push"), "ask"));
+    }
+    for option in [
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree",
+        "--namespace",
+        "--exec-path",
+        "--config-env",
+    ] {
+        cases.push((format!("git {option} 'not a verb' commit -m x"), "deny"));
+        cases.push((format!("git {option}=value --no-pager push"), "ask"));
+    }
+    cases.push((format!("{}git push", ";|&\n".repeat(10_000)), "ask"));
+    for (i, (command, expected)) in cases.iter().enumerate() {
+        let result = hook(root.path(), root.path(), command, &format!("grammar-{i}"));
+        assert!(result.status.success());
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap()["hookSpecificOutput"]
+                ["permissionDecision"],
+            *expected,
+            "{command}"
+        );
+    }
+}
+#[test]
+fn bounded_scanner_never_rescans_quotes_escapes_wrappers_or_substitutions() {
+    let root = native_fixture();
+    let mut commands: Vec<String> = [
+        "echo git push",
+        "command -v git commit",
+        "sudo git push",
+        "env git push",
+        "xargs git push",
+        "$(git push)",
+        "echo $(echo text; git push)",
+        "echo `git push`",
+        "git push $(echo target)",
+        "echo \"unterminated; git push",
+        "echo 'unterminated; git push",
+        "git push; echo \\",
+        "echo done # comment; git push",
+        "cat <<EOF\ngit push\nEOF",
+        "(git push)",
+        "{ git push; }",
+        "bash -c \"echo text; git commit -m x\"",
+        "echo \"text; git push origin main\"",
+        "git -C push",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    for separator in [";", "|", "||", "&&", "&", "\n"] {
+        for quote in ['\'', '"'] {
+            commands.push(format!(
+                "echo {quote}text{separator} git push origin main{quote}"
+            ));
+            commands.push(format!(
+                "bash -c {quote}echo text{separator} git commit -m x{quote}"
+            ));
+        }
+    }
+    commands.extend(
+        [
+            r"echo text\; git push",
+            r"echo text\| git push",
+            r"echo text\& git push",
+        ]
+        .map(str::to_owned),
+    );
+    let before = stored(root.path());
+    for (i, command) in commands.iter().enumerate() {
+        let result = hook(root.path(), root.path(), command, &format!("silent-{i}"));
+        assert!(result.status.success());
+        assert!(result.stdout.is_empty(), "false segment: {command}");
+        assert_eq!(
+            stored(root.path()),
+            before,
+            "silent input wrote audit: {command}"
+        );
+    }
+    let result = hook(
+        root.path(),
+        root.path(),
+        "echo 'text; git commit' && git push",
+        "genuine-top-level",
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap()["hookSpecificOutput"]
+            ["permissionDecision"],
+        "ask"
+    );
+}
+#[test]
+fn bounded_scanner_observes_hook_cwd_without_retargeting_or_simulating_checkout() {
+    let root = native_fixture();
+    let other = native_fixture();
+    git(
+        other.path(),
+        &["symbolic-ref", "HEAD", "refs/heads/feature"],
+    );
+    std::fs::write(
+        root.path().join(".planning/config.v4.json"),
+        br#"{"git":{"on_protected":"refuse"}}"#,
+    )
+    .unwrap();
+    for (i, command) in [
+        format!("git -C {} commit -m x", other.path().display()),
+        "git checkout feature && git commit -m x".into(),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let result = hook(root.path(), root.path(), command, &format!("cwd-{i}"));
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap()["hookSpecificOutput"]
+                ["permissionDecision"],
+            "deny"
+        );
+        let view = stored(root.path());
+        assert_eq!(
+            audit::from_record(view.decisions.last().unwrap())
+                .unwrap()
+                .branch
+                .as_deref(),
+            Some("main")
+        );
+    }
+    assert_eq!(
+        git(root.path(), &["symbolic-ref", "--short", "HEAD"]),
+        b"main\n"
+    );
+    assert_eq!(
+        git(other.path(), &["symbolic-ref", "--short", "HEAD"]),
+        b"feature\n"
+    );
+}
