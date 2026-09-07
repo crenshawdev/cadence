@@ -197,7 +197,10 @@ mod resident {
     use crate::server::derivation_service::{self, Driver};
     use cadence::derivation::{DerivationError, Lifecycle};
 
-    use crate::server::evidence_service::{self, Command, Recovery};
+    use crate::server::{
+        evidence_service::{self, Command, Recovery},
+        execution_service,
+    };
 
     enum Request {
         Pause {
@@ -214,6 +217,17 @@ mod resident {
             root: PathBuf,
             command: Command,
             reply: oneshot::Sender<Result<Recovery>>,
+        },
+        ExecutionQuery {
+            root: PathBuf,
+            phase: u32,
+            reply: oneshot::Sender<execution_service::Response>,
+        },
+        ExecutionApply {
+            root: PathBuf,
+            phase: u32,
+            patch: cadence::execution::model::ExecutorPatch,
+            reply: oneshot::Sender<execution_service::Response>,
         },
         Lifecycle {
             root: PathBuf,
@@ -371,6 +385,22 @@ mod resident {
                             let result = evidence_service::execute(&factory, &root, command).await;
                             let _ = reply.send(result);
                         }
+                        Request::ExecutionQuery { root, phase, reply } => {
+                            let result =
+                                execution_service::query(&factory, &root, phase, &driver).await;
+                            let _ = reply.send(result);
+                        }
+                        Request::ExecutionApply {
+                            root,
+                            phase,
+                            patch,
+                            reply,
+                        } => {
+                            let result =
+                                execution_service::apply(&factory, &root, phase, patch, &driver)
+                                    .await;
+                            let _ = reply.send(result);
+                        }
                         Request::Lifecycle { root, reply } => {
                             let result = derivation_service::query(&factory, &root, &driver).await;
                             let _ = reply.send(result);
@@ -500,6 +530,62 @@ mod resident {
                 .await
                 .map_err(|_| Error::Closed)?;
             completion.await.map_err(|_| Error::Closed)?
+        }
+
+        pub async fn query_execution(
+            &self,
+            root: &Path,
+            phase: u32,
+        ) -> execution_service::Response {
+            let (reply, completion) = oneshot::channel();
+            if self
+                .requests
+                .send(Request::ExecutionQuery {
+                    root: root.into(),
+                    phase,
+                    reply,
+                })
+                .await
+                .is_err()
+            {
+                return resident_closed(phase, "request");
+            }
+            completion
+                .await
+                .unwrap_or_else(|_| resident_closed(phase, "reply"))
+        }
+
+        pub async fn apply_executor_patch(
+            &self,
+            root: &Path,
+            phase: u32,
+            patch: cadence::execution::model::ExecutorPatch,
+        ) -> execution_service::Response {
+            let (reply, completion) = oneshot::channel();
+            if self
+                .requests
+                .send(Request::ExecutionApply {
+                    root: root.into(),
+                    phase,
+                    patch,
+                    reply,
+                })
+                .await
+                .is_err()
+            {
+                return resident_closed(phase, "request");
+            }
+            completion
+                .await
+                .unwrap_or_else(|_| resident_closed(phase, "reply"))
+        }
+    }
+
+    fn resident_closed(phase: u32, side: &str) -> execution_service::Response {
+        execution_service::Response::Refused {
+            phase,
+            code: "resident-closed".into(),
+            reason: format!("resident {side} owner is closed"),
         }
     }
 }

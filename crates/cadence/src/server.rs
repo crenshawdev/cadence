@@ -45,6 +45,13 @@ pub mod pause_service;
 #[path = "pause_service_tests.rs"]
 mod pause_service_tests;
 
+#[allow(dead_code)]
+#[path = "execution_service.rs"]
+pub mod execution_service;
+#[cfg(test)]
+#[path = "execution_service_tests.rs"]
+mod execution_service_tests;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -138,6 +145,23 @@ impl CadenceServer {
         limit: Option<i64>,
     ) -> cadence::store::Result<recall::Answer> {
         self.service.recall(root, query, limit).await
+    }
+
+    pub async fn query_execution(
+        &self,
+        root: &std::path::Path,
+        phase: u32,
+    ) -> execution_service::Response {
+        self.service.query_execution(root, phase).await
+    }
+
+    pub async fn apply_executor_patch(
+        &self,
+        root: &std::path::Path,
+        phase: u32,
+        patch: cadence::execution::model::ExecutorPatch,
+    ) -> execution_service::Response {
+        self.service.apply_executor_patch(root, phase, patch).await
     }
 }
 

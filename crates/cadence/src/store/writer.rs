@@ -49,6 +49,7 @@ pub enum Operation {
         expected_integrity: String,
         operation_id: String,
         patch: ExecutorPatch,
+        commit_paths: BTreeMap<String, Vec<String>>,
         decision: BoundaryDecision,
         render_version: u32,
         complete_phase: bool,
@@ -256,6 +257,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 expected_integrity,
                 operation_id,
                 patch,
+                commit_paths,
                 decision,
                 render_version,
                 complete_phase,
@@ -264,6 +266,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 &expected_integrity,
                 &operation_id,
                 patch,
+                commit_paths,
                 decision,
                 render_version,
                 complete_phase,
@@ -478,6 +481,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         expected_integrity: &str,
         operation_id: &str,
         patch: ExecutorPatch,
+        commit_paths: BTreeMap<String, Vec<String>>,
         decision: BoundaryDecision,
         render_version: u32,
         complete_phase: bool,
@@ -491,6 +495,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let fingerprint = operation_fingerprint(&(
             "execution-patch",
             &patch,
+            &commit_paths,
             &decision,
             render_version,
             complete_phase,
@@ -510,6 +515,9 @@ impl<S: Storage, P: Policy> Writer<S, P> {
 
         let application =
             cadence::execution::patch::apply_executor_patch(&self.view.snapshot.data, &patch)
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+        let application =
+            cadence::execution::patch::attach_commit_paths(application, &commit_paths)
                 .map_err(|error| Error::Invalid(error.to_string()))?;
         if application.disposition == cadence::execution::patch::ApplicationDisposition::Replay {
             self.revalidate()?;

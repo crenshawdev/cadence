@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use cadence::execution::dispatch::build_dispatch;
 use cadence::execution::model::{
@@ -184,6 +187,10 @@ fn apply_operation(view: &View, dispatch: &ActiveDispatch) -> Operation {
         expected_integrity: view.snapshot.integrity.clone(),
         operation_id: "patch-6-1".into(),
         patch: complete_patch(dispatch),
+        commit_paths: BTreeMap::from([
+            (COMMIT_1.into(), vec!["src/one.rs".into()]),
+            (COMMIT_2.into(), vec!["src/two.rs".into()]),
+        ]),
         decision: boundary(
             BoundaryTool::CadenceApply,
             "executor",
@@ -302,6 +309,7 @@ fn blocked_patch_persists_judgment_without_completing_the_plan() {
                     "blocked-6-1",
                 ),
                 patch,
+                commit_paths: BTreeMap::new(),
                 render_version: SUMMARY_RENDER_VERSION,
                 complete_phase: false,
             })

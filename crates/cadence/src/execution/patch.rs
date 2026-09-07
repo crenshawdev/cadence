@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde_json::{Map, Value};
@@ -145,6 +145,7 @@ fn apply_to_occurrence(
         tasks: patch.tasks.clone(),
         deviations: patch.deviations.clone(),
         blockers: patch.blockers.clone(),
+        commit_paths: BTreeMap::new(),
         transition_id: transition_id.clone(),
     };
     let receipt = AppliedReceipt {
@@ -193,6 +194,91 @@ fn apply_to_occurrence(
         transition_id,
         outcome,
     })
+}
+
+/// Binds paths observed from Git to the otherwise executor-authored outcome.
+/// The executor cannot assert this field; only the binary's apply boundary can
+/// attach it after resolving every commit.
+pub fn attach_commit_paths(
+    mut application: PatchApplication,
+    commit_paths: &BTreeMap<String, Vec<String>>,
+) -> Result<PatchApplication, PatchError> {
+    let expected = application
+        .outcome
+        .tasks
+        .iter()
+        .filter_map(|task| match task {
+            TaskOutcome::Completed { commit, .. } => Some(commit.clone()),
+            TaskOutcome::Blocked { .. } | TaskOutcome::NotRun { .. } => None,
+        })
+        .collect::<BTreeSet<_>>();
+    if expected != commit_paths.keys().cloned().collect() {
+        return Err(PatchError::new(
+            "commit-path-set",
+            "observed paths must name exactly the completed task commits",
+        ));
+    }
+    for paths in commit_paths.values() {
+        if paths.iter().collect::<BTreeSet<_>>().len() != paths.len()
+            || paths.windows(2).any(|pair| pair[0] > pair[1])
+            || paths.iter().any(|path| !safe_relative_path(path))
+        {
+            return Err(PatchError::new(
+                "commit-path-set",
+                "observed commit paths must be unique sorted relative paths",
+            ));
+        }
+    }
+    if application.disposition == ApplicationDisposition::Replay {
+        if &application.outcome.commit_paths != commit_paths {
+            return Err(PatchError::new(
+                "commit-path-conflict",
+                "replayed Git observations differ from the durable receipt",
+            ));
+        }
+        return Ok(application);
+    }
+
+    application.outcome.commit_paths = commit_paths.clone();
+    let mut execution: ExecutionSnapshot = serde_json::from_value(
+        application
+            .data
+            .get("execution")
+            .cloned()
+            .ok_or_else(|| PatchError::new("missing-execution", "snapshot lost execution"))?,
+    )
+    .map_err(|error| PatchError::new("invalid-execution", error.to_string()))?;
+    let occurrence = execution
+        .occurrences
+        .values_mut()
+        .find(|occurrence| {
+            occurrence
+                .receipts
+                .contains_key(&application.outcome.dispatch_id)
+        })
+        .ok_or_else(|| PatchError::new("missing-receipt", "applied receipt is absent"))?;
+    let receipt = occurrence
+        .receipts
+        .get_mut(&application.outcome.dispatch_id)
+        .expect("selected occurrence contains the receipt");
+    receipt.outcome.commit_paths = commit_paths.clone();
+    if let Some(outcome) = occurrence
+        .plans
+        .iter_mut()
+        .find(|outcome| outcome.dispatch_id == application.outcome.dispatch_id)
+    {
+        outcome.commit_paths = commit_paths.clone();
+    }
+    let object = application
+        .data
+        .as_object_mut()
+        .ok_or_else(|| PatchError::new("invalid-snapshot", "snapshot data must be an object"))?;
+    object.insert(
+        "execution".into(),
+        serde_json::to_value(execution)
+            .map_err(|error| PatchError::new("execution-encode", error.to_string()))?,
+    );
+    Ok(application)
 }
 
 fn validate_tasks(

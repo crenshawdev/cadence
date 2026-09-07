@@ -163,6 +163,8 @@ pub struct PlanOutcome {
     pub tasks: Vec<TaskOutcome>,
     pub deviations: Vec<Deviation>,
     pub blockers: Vec<Blocker>,
+    #[serde(default)]
+    pub commit_paths: BTreeMap<String, Vec<String>>,
     pub transition_id: String,
 }
 
