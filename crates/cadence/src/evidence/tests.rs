@@ -205,3 +205,122 @@ fn review_receipt_counts_do_not_replace_finding_reference() {
     );
     assert!(persistence::project(&json!({}), &value).is_err());
 }
+
+#[test]
+fn applicability_oracle_rejects_phase_wide_grant() {
+    use authority::{Occurrence, Permission};
+    use overrides::*;
+    fn cases(decide: fn(&[Record], &Scope, &str) -> Permission) {
+        let mut grant = record(CheckpointType::Decision);
+        grant.fact = Fact::Override(Override {
+            id: "pause".into(),
+            reason: "continue later".into(),
+            authorization: Authorization::Invocation {
+                id: "answer".into(),
+                invocation: "pause here".into(),
+            },
+            meaning: Meaning::PausedNext {
+                sentence: "resume exact instruction".into(),
+            },
+        });
+        let pending = persistence::project(&json!({}), &grant).unwrap();
+        let records: Vec<_> = persistence::read(&pending).unwrap().into_values().collect();
+        assert_eq!(decide(&records, &grant.scope, "pause"), Permission::Pending);
+        let mut later = grant.scope.clone();
+        later.occurrence = "another".into();
+        assert_eq!(decide(&records, &later, "pause"), Permission::Absent);
+        for state in [
+            Occurrence::Fulfilled {
+                completion: "done".into(),
+            },
+            Occurrence::Superseded {
+                by: "another".into(),
+            },
+        ] {
+            let transition = Record {
+                version: VERSION,
+                scope: grant.scope.clone(),
+                fact: Fact::Occurrence(state),
+            };
+            let ended: Vec<_> =
+                persistence::read(&persistence::project(&pending, &transition).unwrap())
+                    .unwrap()
+                    .into_values()
+                    .collect();
+            assert!(!decide(&ended, &grant.scope, "pause").active());
+        }
+    }
+    cases(authority::permission);
+    let broad = |records: &[Record], scope: &Scope, _: &str| {
+        if records
+            .iter()
+            .any(|r| r.scope.phase == scope.phase && matches!(r.fact, Fact::Override(_)))
+        {
+            Permission::Pending
+        } else {
+            Permission::Absent
+        }
+    };
+    assert!(
+        std::panic::catch_unwind(|| cases(broad)).is_err(),
+        "the same assertions must reject a phase-wide grant"
+    );
+}
+
+#[test]
+fn applicability_oracle_rejects_automatic_old_verdict_reuse() {
+    use checker::{Attempt, CheckedMaterial, Checker, Disposition};
+    use material::{Observation, Observations};
+    type Decide = fn(
+        &[Record],
+        &Scope,
+        &str,
+        &Observations,
+    ) -> crate::store::Result<authority::CheckerApplicability>;
+    fn cases(decide: Decide) {
+        let mut checked = record(CheckpointType::Decision);
+        let path = checked.scope.plan.clone();
+        let original = crate::store::model::digest(b"original");
+        checked.fact = Fact::Checker(Checker {
+            id: "check".into(),
+            raw_return: "## VERIFICATION PASSED".into(),
+            disposition: Disposition::Pass,
+            findings: vec![],
+            checked_material: vec![CheckedMaterial {
+                path: path.clone(),
+                content_digest: original.clone(),
+            }],
+            attempt: Attempt::Initial,
+            revision_spent: false,
+        });
+        let records: Vec<_> =
+            persistence::read(&persistence::project(&json!({}), &checked).unwrap())
+                .unwrap()
+                .into_values()
+                .collect();
+        for (observation, expected) in [
+            (Observation::Read(original), true),
+            (
+                Observation::Read(crate::store::model::digest(b"changed")),
+                false,
+            ),
+            (Observation::Failed("PermissionDenied".into()), false),
+        ] {
+            let observed = Observations::from([(path.clone(), observation)]);
+            let result = decide(&records, &checked.scope, "check", &observed).unwrap();
+            assert_eq!(result.verdict_applicable, expected);
+            assert_eq!(result.continuation_allowed, expected);
+        }
+    }
+    cases(authority::checker_applicability);
+    let reuse = |records: &[Record], scope: &Scope, id: &str, observations: &Observations| {
+        let mut result = authority::checker_applicability(records, scope, id, observations)?;
+        result.verdict_applicable = true;
+        result.continuation_allowed = true;
+        Ok(result)
+    };
+    assert!(
+        std::panic::catch_unwind(|| cases(reuse)).is_err(),
+        "the same assertions must reject stale approval reuse"
+    );
+}

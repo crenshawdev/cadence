@@ -817,6 +817,10 @@ fn evidence_process_child() {
     let root = std::path::PathBuf::from(root);
     let mode = std::env::var("CADENCE_EVIDENCE_CHILD_MODE").unwrap();
     runtime().block_on(async {
+        if mode.starts_with("authority-") && !matches!(mode.as_str(), "authority-write" | "authority-lost") {
+            authority_child_consumer(&root, &mode).await;
+            return;
+        }
         // The fresh reader consumes only the address, never producer payloads.
         if mode == "read" || mode == "retry" {
             let server = CadenceServer::with_factory(factory());
@@ -845,7 +849,9 @@ fn evidence_process_child() {
         std::io::stdout().flush().unwrap();
         if mode == "never-recorded" { process_barrier(); }
         if mode == "lost-reply" { armed.store(true,Ordering::SeqCst); }
-        if mode == "facts" {
+        if matches!(mode.as_str(), "authority-write" | "authority-lost") {
+            authority_child_producer(&server, &root, &armed, mode == "authority-lost").await;
+        } else if mode == "facts" {
             for (id,raw,findings) in [
                 ("pass","## VERIFICATION PASSED",vec![]),
                 ("warnings","## ISSUES FOUND",vec![finding(1,Severity::Warning)]),
@@ -912,7 +918,7 @@ fn killed_writer(root: &Path, mode: &str) -> serde_json::Value {
     assert_eq!(status.signal(), Some(libc::SIGKILL));
     assert_eq!(
         lines.iter().any(|line| line == "EVIDENCE_ACK"),
-        matches!(mode, "checkpoint" | "facts")
+        matches!(mode, "checkpoint" | "facts" | "authority-write")
     );
     let baseline: serde_json::Value = serde_json::from_str(
         lines
@@ -2041,4 +2047,388 @@ fn narrowed_revision_keeps_initial_observations_and_read_failures_never_approve(
         let server = CadenceServer::with_factory(factory());
         assert!(checker_permission(&server,root.path(),&revised.scope,"revised").await.revision_spent);
     });
+}
+
+fn authority_process_fixture() -> tempfile::TempDir {
+    let root = process_fixture();
+    std::fs::write(root.path().join("STATE.md"),"Phase: 5 of 5 (Evidence)\nStatus: paused\nNext:  legacy pause 日本語  \nUpdated: 2026-09-06\n").unwrap();
+    std::fs::write(root.path().join("phases/5/CONTEXT.md"), "locked context").unwrap();
+    root
+}
+fn process_pause(root: &Path) -> Record {
+    override_record(
+        root,
+        "pause",
+        Meaning::PausedNext {
+            sentence: "  Resume the exact sentence 日本語\t  ".into(),
+        },
+    )
+}
+async fn authority_child_producer(
+    server: &CadenceServer,
+    root: &Path,
+    armed: &AtomicBool,
+    lose_reply: bool,
+) {
+    spent_revision(server, root).await;
+    submit(
+        server,
+        root,
+        "rerun",
+        override_record(
+            root,
+            "rerun",
+            Meaning::Rerun {
+                admitted_plans: vec!["PLAN-1.md".into()],
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    submit(
+        server,
+        root,
+        "bypass",
+        override_record(
+            root,
+            "bypass",
+            Meaning::Bypass {
+                target: Bypass::Result {
+                    checker_id: "initial".into(),
+                    disposition: CheckDisposition::Fail,
+                    material: observed_material(
+                        root,
+                        &["phases/5/PLAN-1.md", "phases/5/CONTEXT.md"],
+                    ),
+                },
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    let question = gate(root, "ranges", Purpose::Decision);
+    submit(server, root, "question", question.clone())
+        .await
+        .unwrap();
+    submit(
+        server,
+        root,
+        "answer",
+        answered(question, GateDisposition::Approve),
+    )
+    .await
+    .unwrap();
+    for (id, base, head) in [("review-one", "B", "C"), ("review-two", "D", "E")] {
+        let mut receipt = review_receipt(base, head);
+        receipt.finding_record = format!("phases/5/{id}.md:17");
+        let mut value = override_record(root, id, Meaning::Review(receipt));
+        let Fact::Override(o) = &mut value.fact else {
+            unreachable!()
+        };
+        o.authorization = Authorization::Answer {
+            id: "operator-answer-1".into(),
+            question_id: "ranges".into(),
+        };
+        submit(server, root, id, value).await.unwrap();
+    }
+    if lose_reply {
+        armed.store(true, Ordering::SeqCst);
+    }
+    submit(server, root, "pause-grant", process_pause(root))
+        .await
+        .unwrap();
+}
+
+async fn authority_child_consumer(root: &Path, mode: &str) {
+    let (action, id) = mode.split_once(':').expect("query identity");
+    let server = CadenceServer::with_factory(factory());
+    let initial = server.evidence(root, Command::Read).await.unwrap();
+    let record = initial
+        .current
+        .iter()
+        .find(|r| match &r.fact {
+            Fact::Override(o) => o.id == id,
+            Fact::Checker(c) => c.id == id,
+            _ => false,
+        })
+        .expect("persisted query identity")
+        .clone();
+    let before = server.store(root, Operation::ReadVerified).await.unwrap();
+    match action {
+        "authority-fulfill" => {
+            submit(
+                &server,
+                root,
+                "fulfilled",
+                terminal(
+                    &record,
+                    Occurrence::Fulfilled {
+                        completion: "completed resume".into(),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
+        }
+        "authority-supersede" => {
+            submit(
+                &server,
+                root,
+                "superseded",
+                terminal(
+                    &record,
+                    Occurrence::Superseded {
+                        by: "later-occurrence".into(),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
+        }
+        "authority-retry" => {
+            submit(&server, root, "pause-grant", process_pause(root))
+                .await
+                .unwrap();
+        }
+        "authority-override" => {
+            let material = material::basis(&initial.current, &record.scope, id).unwrap();
+            let paths: Vec<_> = material.iter().map(|m| m.path.as_str()).collect();
+            submit(
+                &server,
+                root,
+                "changed-material",
+                material_override(
+                    root,
+                    "changed-material",
+                    id,
+                    observed_material(root, &paths),
+                ),
+            )
+            .await
+            .unwrap();
+        }
+        "authority-fresh" => {
+            let mut fresh = checker(root, "fresh-child", "## VERIFICATION PASSED", vec![]);
+            fresh.scope = record.scope.clone();
+            let Fact::Checker(c) = &mut fresh.fact else {
+                unreachable!()
+            };
+            c.checked_material =
+                observed_material(root, &["phases/5/PLAN-1.md", "phases/5/CONTEXT.md"]);
+            c.revision_spent = true;
+            submit(&server, root, "fresh-child", fresh).await.unwrap();
+        }
+        "authority-query" | "authority-check" | "authority-later" => (),
+        _ => panic!("unknown authority action"),
+    }
+    let recovered = if matches!(record.fact, Fact::Checker(_)) {
+        server
+            .evidence(
+                root,
+                Command::CheckerApplicability {
+                    scope: record.scope.clone(),
+                    checker_id: id.into(),
+                },
+            )
+            .await
+            .unwrap()
+    } else {
+        let mut scope = record.scope.clone();
+        if action == "authority-later" {
+            scope.occurrence = "later-occurrence".into();
+        }
+        server
+            .evidence(
+                root,
+                Command::Permission {
+                    scope,
+                    override_id: id.into(),
+                },
+            )
+            .await
+            .unwrap()
+    };
+    let after = server.store(root, Operation::ReadVerified).await.unwrap();
+    if matches!(
+        action,
+        "authority-query" | "authority-check" | "authority-retry" | "authority-later"
+    ) {
+        assert_eq!(
+            before, after,
+            "query and logical replay leave durable data unchanged"
+        );
+    }
+    println!(
+        "EVIDENCE_RESULT {}",
+        json!({"pid":std::process::id(),"initial":initial,"recovery":recovered,"data":after.snapshot.data,"generation":after.snapshot.generation,"operations":after.snapshot.operations})
+    );
+}
+
+#[test]
+fn fresh_children_recover_all_authorities_and_exhaust_without_widening() {
+    for ending in ["fulfill", "supersede"] {
+        let root = authority_process_fixture();
+        let baseline = killed_writer(root.path(), "authority-write");
+        let mut original = None;
+        for id in ["rerun", "bypass", "pause", "review-one", "review-two"] {
+            let read = fresh_reader(root.path(), &format!("authority-query:{id}"));
+            preserved_process_data(&baseline, &read);
+            let recovered: Recovery = serde_json::from_value(read["recovery"].clone()).unwrap();
+            assert_eq!(recovered.permission, Some(Permission::Pending));
+            assert_eq!(recovered.history.len(), 9);
+            let expected_reason = "  My exact reason 日本語\r\n";
+            for record in &recovered.current {
+                if let Fact::Override(o) = &record.fact {
+                    assert_eq!(record.version, VERSION);
+                    assert_eq!(o.reason, expected_reason);
+                    assert_eq!(record.scope.occurrence, "dispatch-5-1");
+                    match &o.meaning {
+                        Meaning::Rerun { admitted_plans } => {
+                            assert_eq!(admitted_plans, &["PLAN-1.md"])
+                        }
+                        Meaning::Bypass { target } => assert!(
+                            matches!(target,Bypass::Result { checker_id,disposition:CheckDisposition::Fail,.. } if checker_id == "initial")
+                        ),
+                        Meaning::PausedNext { sentence } => {
+                            assert_eq!(sentence, "  Resume the exact sentence 日本語\t  ")
+                        }
+                        Meaning::Review(receipt) => {
+                            assert_eq!(o.authorization.id(), "operator-answer-1");
+                            assert_eq!(receipt.finding_record, format!("phases/5/{}.md:17", o.id));
+                            assert_eq!(receipt.round, Some(2));
+                            assert_eq!(receipt.settled.survivors, 2);
+                        }
+                    }
+                }
+            }
+            original = Some(recovered);
+        }
+        let original = original.unwrap();
+        let scope = &original
+            .current
+            .iter()
+            .find(|r| matches!(&r.fact,Fact::Override(o) if o.id == "pause"))
+            .unwrap()
+            .scope;
+        assert_eq!(
+            original
+                .review_settlements(scope, "B", "C", "execute", Some(&scope.plan))
+                .len(),
+            1
+        );
+        assert_eq!(
+            original
+                .review_settlements(scope, "D", "E", "execute", Some(&scope.plan))
+                .len(),
+            1
+        );
+        assert!(
+            original
+                .review_settlements(scope, "A", "C", "execute", Some(&scope.plan))
+                .is_empty()
+        );
+        let later = fresh_reader(root.path(), "authority-later:pause");
+        assert_eq!(later["recovery"]["permission"], "absent");
+        fresh_reader(root.path(), &format!("authority-{ending}:pause"));
+        for id in ["rerun", "bypass", "pause", "review-one", "review-two"] {
+            let read = fresh_reader(root.path(), &format!("authority-query:{id}"));
+            preserved_process_data(&baseline, &read);
+            let recovered: Recovery = serde_json::from_value(read["recovery"].clone()).unwrap();
+            assert_eq!(
+                recovered.permission,
+                Some(if ending == "fulfill" {
+                    Permission::Fulfilled
+                } else {
+                    Permission::Superseded
+                })
+            );
+            assert_eq!(recovered.history.len(), 10);
+            assert_eq!(&recovered.history[..9], original.history.as_slice());
+            assert_eq!(
+                recovered
+                    .review_settlements(scope, "B", "C", "execute", Some(&scope.plan))
+                    .len(),
+                1
+            );
+        }
+        let replay = fresh_reader(root.path(), "authority-retry:pause");
+        assert_eq!(replay["recovery"]["history"].as_array().unwrap().len(), 10);
+        assert_ne!(replay["recovery"]["permission"], "pending");
+        let read = fresh_reader(root.path(), "authority-check:initial");
+        let result: CheckerApplicability =
+            serde_json::from_value(read["recovery"]["checker_applicability"].clone()).unwrap();
+        assert!(
+            !result.continuation_allowed,
+            "failed check loses its bypass when the work ends"
+        );
+        assert!(result.revision_spent);
+    }
+}
+
+#[test]
+fn fresh_children_keep_material_freshness_and_lost_reply_idempotence() {
+    let root = authority_process_fixture();
+    let baseline = killed_writer(root.path(), "authority-lost");
+    let read = fresh_reader(root.path(), "authority-query:pause");
+    preserved_process_data(&baseline, &read);
+    assert_eq!(read["recovery"]["permission"], "pending");
+    assert_eq!(read["recovery"]["history"].as_array().unwrap().len(), 9);
+    let replay = fresh_reader(root.path(), "authority-retry:pause");
+    assert_eq!(replay["generation"], read["generation"]);
+    assert_eq!(replay["operations"], read["operations"]);
+    let check = fresh_reader(root.path(), "authority-check:revised");
+    assert_eq!(
+        check["recovery"]["checker_applicability"]["verdict_applicable"],
+        true
+    );
+    std::fs::write(
+        root.path().join("phases/5/PLAN-1.md"),
+        "changed after process death",
+    )
+    .unwrap();
+    let changed = fresh_reader(root.path(), "authority-check:revised");
+    preserved_process_data(&baseline, &changed);
+    let result = &changed["recovery"]["checker_applicability"];
+    assert_eq!(result["freshness"], "changed");
+    assert_eq!(result["continuation_allowed"], false);
+    assert_eq!(result["revision_spent"], true);
+    let allowed = fresh_reader(root.path(), "authority-override:revised");
+    assert_eq!(
+        allowed["recovery"]["checker_applicability"]["continuation_allowed"],
+        true
+    );
+    assert_eq!(
+        allowed["recovery"]["checker_applicability"]["verdict_applicable"],
+        false
+    );
+    fresh_reader(root.path(), "authority-fulfill:pause");
+    let exhausted = fresh_reader(root.path(), "authority-check:revised");
+    assert_eq!(
+        exhausted["recovery"]["checker_applicability"]["continuation_allowed"],
+        false
+    );
+    let retry = fresh_reader(root.path(), "authority-retry:pause");
+    assert_eq!(retry["recovery"]["permission"], "fulfilled");
+    assert_eq!(retry["generation"], exhausted["generation"]);
+    fresh_reader(root.path(), "authority-fresh:revised");
+    let fresh = fresh_reader(root.path(), "authority-check:fresh-child");
+    assert_eq!(
+        fresh["recovery"]["checker_applicability"]["continuation_allowed"],
+        true
+    );
+    assert_eq!(
+        fresh["recovery"]["checker_applicability"]["revision_spent"],
+        true
+    );
+    std::fs::write(root.path().join("phases/5/PLAN-1.md"), "another later edit").unwrap();
+    let later = fresh_reader(root.path(), "authority-check:fresh-child");
+    assert_eq!(
+        later["recovery"]["checker_applicability"]["continuation_allowed"],
+        false
+    );
+    assert_eq!(
+        later["recovery"]["checker_applicability"]["revision_spent"],
+        true
+    );
+    preserved_process_data(&baseline, &later);
 }
