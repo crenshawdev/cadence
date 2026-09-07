@@ -238,7 +238,7 @@ fn checker(root: &Path, id: &str, raw: &str, findings: Vec<Finding>) -> Record {
 fn checker_service_retains_actual_results_and_spent_revision() {
     let root = fixture();
     std::fs::write(
-        root.path().join("TRACE.jsonl"),
+        root.path().join("trace.jsonl"),
         "{\"family\":\"trace\",\"event\":\"close\",\"role\":\"cad-plan-checker\",\"phase\":5}\n",
     )
     .unwrap();
@@ -556,4 +556,228 @@ fn gate_answer_waits_for_its_own_confirmation() {
     let acknowledged = rt.block_on(caller).unwrap().unwrap();
     assert_eq!(acknowledged.current, [expected]);
     assert_eq!(acknowledged.history.len(), 2);
+}
+
+use cadence::evidence::results::{AcceptedResult, Reference};
+fn accepted(root: &Path, id: &str, references: Vec<Reference>) -> Record {
+    let mut value = checkpoint(root);
+    value.fact = Fact::AcceptedResult(AcceptedResult {
+        id: id.into(),
+        contract: "cad-executor".into(),
+        result: "PLAN COMPLETE".into(),
+        evidence_text: "The work passed all checks".into(),
+        references,
+        checker_id: None,
+    });
+    value
+}
+
+#[test]
+fn accepted_results_require_real_references_and_preserve_checker_outcomes() {
+    let root = fixture();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        let refs = [
+            Reference::Commit {
+                sha: "60d94a5a".into(),
+            },
+            Reference::FileLine {
+                file: "src/lib.rs".into(),
+                line: 7,
+            },
+            Reference::Criterion { id: "AC7".into() },
+        ];
+        let mut expected = Vec::new();
+        for (i, reference) in refs.into_iter().enumerate() {
+            let id = format!("accepted-{i}");
+            let value = accepted(root.path(), &id, vec![reference]);
+            submit(&server, root.path(), &id, value.clone())
+                .await
+                .unwrap();
+            expected.push(value);
+        }
+        let before = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        for bad in [
+            Reference::Criterion { id: " \t".into() },
+            Reference::FileLine {
+                file: "".into(),
+                line: 1,
+            },
+            Reference::FileLine {
+                file: "some.rs".into(),
+                line: 0,
+            },
+            Reference::Commit {
+                sha: "just prose".into(),
+            },
+            Reference::Commit { sha: "abc".into() },
+        ] {
+            assert!(
+                submit(
+                    &server,
+                    root.path(),
+                    "bad-reference",
+                    accepted(root.path(), "bad", vec![bad])
+                )
+                .await
+                .is_err()
+            );
+        }
+        for raw in [
+            json!({"kind":"file_line","file":"some.rs"}),
+            json!({"kind":"file_line","line":1}),
+            json!({"kind":"criterion"}),
+            json!({"kind":"prose","text":"it passed"}),
+        ] {
+            assert!(serde_json::from_value::<Reference>(raw).is_err());
+        }
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            before
+        );
+        for (id, raw, findings, disposition) in [
+            (
+                "warnings",
+                "## ISSUES FOUND",
+                vec![finding(1, Severity::Warning)],
+                "pass",
+            ),
+            (
+                "blocked",
+                "## ISSUES FOUND",
+                vec![finding(1, Severity::Blocker)],
+                "fail",
+            ),
+            ("unusable", "", vec![], "unusable"),
+        ] {
+            let check = checker(root.path(), id, raw, findings);
+            submit(&server, root.path(), id, check.clone())
+                .await
+                .unwrap();
+            let mut result = accepted(
+                root.path(),
+                &format!("result-{id}"),
+                vec![Reference::Criterion { id: "AC2".into() }],
+            );
+            let Fact::AcceptedResult(r) = &mut result.fact else {
+                panic!("result")
+            };
+            r.checker_id = Some(id.into());
+            r.result = disposition.into();
+            let written = submit(
+                &server,
+                root.path(),
+                &format!("receipt-{id}"),
+                result.clone(),
+            )
+            .await
+            .unwrap();
+            assert!(written.current.contains(&check));
+            expected.push(result);
+        }
+        drop(server);
+        let reopened = CadenceServer::with_factory(factory());
+        let recovered = reopened.evidence(root.path(), Command::Read).await.unwrap();
+        for value in expected {
+            assert!(recovered.current.contains(&value));
+            assert!(recovered.history.contains(&value));
+        }
+    });
+}
+
+#[test]
+fn ac7_no_reference_refuses_before_native_state_or_history_write() {
+    let root = fixture();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        server.evidence(root.path(), Command::Read).await.unwrap();
+        let before = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        let unsupported = accepted(root.path(), "unsupported", vec![]);
+        assert!(
+            submit(&server, root.path(), "unsupported", unsupported)
+                .await
+                .is_err(),
+            "no-reference acceptance must refuse"
+        );
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            before
+        );
+    });
+}
+
+#[test]
+fn legacy_evidence_is_readable_without_native_acceptance() {
+    use cadence::store::model::{Decision, DecisionRecord, Evidence, Origin};
+    let root = fixture();
+    std::fs::write(root.path().join("trace.jsonl"), "{\"family\":\"outcome\",\"event\":\"legacy_check\",\"phase\":5,\"verdict\":\"opaque legacy pass\"}\n").unwrap();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        let imported = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        assert_eq!(imported.decisions.len(), 1);
+        assert!(
+            imported.snapshot.data["source_evidence"]
+                .to_string()
+                .contains("trace.jsonl")
+        );
+        for (index, evidence) in [
+            Evidence::Missing,
+            Evidence::Null,
+            Evidence::Text("opaque legacy pass".into()),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            server
+                .store(
+                    root.path(),
+                    Operation::AppendDecision(DecisionRecord {
+                        version: 1,
+                        id: format!("legacy-{index}"),
+                        revision: 1,
+                        origin: Origin {
+                            source: "legacy-import".into(),
+                            original: evidence.clone(),
+                        },
+                        decision: Decision::Gate {
+                            outcome: "pass".into(),
+                            evidence,
+                        },
+                    }),
+                )
+                .await
+                .unwrap();
+        }
+        let before = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        drop(server);
+        let reopened = CadenceServer::with_factory(factory());
+        let recovered = reopened.evidence(root.path(), Command::Read).await.unwrap();
+        assert!(recovered.current.is_empty());
+        assert!(recovered.history.is_empty());
+        assert_eq!(
+            reopened
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            before
+        );
+    });
 }

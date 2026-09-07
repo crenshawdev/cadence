@@ -165,5 +165,35 @@ fn validate_transition(records: &BTreeMap<String, Record>, record: &Record) -> R
             _ => (),
         }
     }
+    if let Fact::AcceptedResult(result) = &record.fact {
+        if records.contains_key(&record.key()?) {
+            return Err(Error::Conflict(
+                "accepted result identity already recorded".into(),
+            ));
+        }
+        if let Some(checker_id) = &result.checker_id {
+            let checker = records
+                .values()
+                .filter(|r| r.scope == record.scope)
+                .find_map(|r| match &r.fact {
+                    Fact::Checker(check) if check.id == *checker_id => Some(check),
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    Error::Invalid("accepted checker result lacks its observation".into())
+                })?;
+            use super::checker::Disposition;
+            let disposition = match checker.disposition {
+                Disposition::Pass => "pass",
+                Disposition::Fail => "fail",
+                Disposition::Unusable => "unusable",
+            };
+            if result.result != disposition {
+                return Err(Error::Invalid(
+                    "acceptance cannot change the checker disposition".into(),
+                ));
+            }
+        }
+    }
     Ok(())
 }

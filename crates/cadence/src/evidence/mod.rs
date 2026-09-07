@@ -3,6 +3,7 @@ pub mod checker;
 pub mod checkpoint;
 pub mod gates;
 pub mod persistence;
+pub mod results;
 
 use crate::store::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -43,6 +44,7 @@ pub enum Fact {
     Checkpoint(checkpoint::Checkpoint),
     Checker(checker::Checker),
     Gate(gates::Gate),
+    AcceptedResult(results::AcceptedResult),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +64,7 @@ impl Record {
             Fact::Checkpoint(value) => value.validate(),
             Fact::Checker(value) => value.validate(),
             Fact::Gate(value) => value.validate(),
+            Fact::AcceptedResult(value) => value.validate(),
         }
     }
     pub fn key(&self) -> Result<String> {
@@ -69,6 +72,7 @@ impl Record {
             Fact::Checkpoint(value) => ("checkpoint", &value.id),
             Fact::Checker(value) => ("checker", &value.id),
             Fact::Gate(value) => ("gate", &value.id),
+            Fact::AcceptedResult(value) => ("accepted_result", &value.id),
         };
         Ok(crate::store::model::digest(&serde_json::to_vec(&(
             &self.scope,
