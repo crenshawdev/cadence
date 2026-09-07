@@ -36,6 +36,28 @@ pub struct ReviewReceipt {
     pub head: String,
     pub trigger: String,
     pub plan: Option<String>,
+    pub correlation: String,
+    pub round: Option<u32>,
+    pub anchor: Option<String>,
+    /// The finding record remains distinct from this receipt's aggregate counts.
+    pub finding_record: String,
+    pub settled: SettledCounts,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettledCounts {
+    pub survivors: u32,
+    pub downgraded: u32,
+    pub refuted: u32,
+}
+
+impl ReviewReceipt {
+    pub fn settles(&self, base: &str, head: &str, trigger: &str, plan: Option<&str>) -> bool {
+        self.base == base
+            && self.head == head
+            && self.trigger == trigger
+            && self.plan.as_deref() == plan
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +117,14 @@ impl Override {
                 nonblank("review base", &receipt.base)?;
                 nonblank("review head", &receipt.head)?;
                 nonblank("review trigger", &receipt.trigger)?;
+                nonblank("review correlation", &receipt.correlation)?;
+                nonblank("finding record reference", &receipt.finding_record)?;
+                if let Some(anchor) = &receipt.anchor {
+                    nonblank("review anchor", anchor)?;
+                }
+                if receipt.round == Some(0) {
+                    return Err(Error::Invalid("review round must be positive".into()));
+                }
                 if let Some(plan) = &receipt.plan {
                     nonblank("review plan", plan)?;
                     if plan != &scope.plan {
@@ -175,6 +205,15 @@ mod tests {
                 head: "B".into(),
                 trigger: "execute".into(),
                 plan: Some(scope.plan.clone()),
+                correlation: "review-run".into(),
+                round: None,
+                anchor: None,
+                finding_record: "ADJUDICATION.md".into(),
+                settled: SettledCounts {
+                    survivors: 1,
+                    downgraded: 0,
+                    refuted: 0,
+                },
             }),
         ] {
             let mut record = Record {

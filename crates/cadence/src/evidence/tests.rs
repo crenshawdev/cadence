@@ -155,3 +155,53 @@ fn checkpoint_projection_preserves_namespaces_and_occurrences() {
     legacy.origin.source = "import".into();
     assert_eq!(persistence::decode_history(&legacy).unwrap(), None);
 }
+
+#[test]
+fn review_receipt_counts_do_not_replace_finding_reference() {
+    use overrides::*;
+    let mut value = record(CheckpointType::Decision);
+    value.fact = Fact::Override(Override {
+        id: "range".into(),
+        reason: "  exact reason\n".into(),
+        authorization: Authorization::Invocation {
+            id: "answer".into(),
+            invocation: "accept this range".into(),
+        },
+        meaning: Meaning::Review(ReviewReceipt {
+            base: "B".into(),
+            head: "C".into(),
+            trigger: "execute".into(),
+            plan: Some(value.scope.plan.clone()),
+            correlation: "run".into(),
+            round: Some(1),
+            anchor: None,
+            finding_record: "ADJUDICATION.md:17".into(),
+            settled: SettledCounts {
+                survivors: 3,
+                downgraded: 2,
+                refuted: 1,
+            },
+        }),
+    });
+    let projected = persistence::project(&json!({"legacy":{"reason":null}}), &value).unwrap();
+    assert_eq!(
+        persistence::read(&projected).unwrap()[&value.key().unwrap()],
+        value
+    );
+    assert_eq!(
+        persistence::decode_history(&persistence::history("range", &value).unwrap()).unwrap(),
+        Some(value.clone())
+    );
+    let Fact::Override(o) = &mut value.fact else {
+        unreachable!()
+    };
+    let Meaning::Review(receipt) = &mut o.meaning else {
+        unreachable!()
+    };
+    receipt.finding_record.clear();
+    assert!(
+        value.validate().is_err(),
+        "counts alone cannot support native receipt"
+    );
+    assert!(persistence::project(&json!({}), &value).is_err());
+}

@@ -31,6 +31,22 @@ pub struct Recovery {
     pub history: Vec<Record>,
 }
 
+impl Recovery {
+    /// A historical settlement answers only its recorded work and range.
+    pub fn review_settlements(
+        &self,
+        scope: &cadence::evidence::Scope,
+        base: &str,
+        head: &str,
+        trigger: &str,
+        plan: Option<&str>,
+    ) -> Vec<&Record> {
+        self.history.iter().filter(|r| r.scope == *scope && matches!(&r.fact,
+            cadence::evidence::Fact::Override(value) if matches!(&value.meaning,
+                cadence::evidence::overrides::Meaning::Review(receipt) if receipt.settles(base, head, trigger, plan)))).collect()
+    }
+}
+
 fn recover(view: &View) -> Result<Recovery> {
     Ok(Recovery {
         current: persistence::read(&view.snapshot.data)?

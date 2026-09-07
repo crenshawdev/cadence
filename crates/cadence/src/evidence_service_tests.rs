@@ -1115,6 +1115,15 @@ fn review_receipt(base: &str, head: &str) -> ReviewReceipt {
         head: head.into(),
         trigger: "execute".into(),
         plan: Some("phases/5/PLAN-1.md".into()),
+        correlation: "review-correlation".into(),
+        round: Some(2),
+        anchor: Some("earlier-run-anchor".into()),
+        finding_record: "phases/5/ADJUDICATION.md:17".into(),
+        settled: cadence::evidence::overrides::SettledCounts {
+            survivors: 2,
+            downgraded: 3,
+            refuted: 4,
+        },
     }
 }
 
@@ -1349,5 +1358,154 @@ fn override_requires_actual_invocation_or_recorded_authorizing_answer() {
         let recovered = server.evidence(root.path(), Command::Read).await.unwrap();
         assert!(recovered.current.contains(&value));
         assert!(recovered.current.contains(&from_answer));
+    });
+}
+
+#[test]
+fn review_receipts_keep_two_ranges_one_answer_and_legacy_originals() {
+    let root = fixture();
+    let legacy = concat!(
+        "{\"family\":\"outcome\",\"event\":\"override\",\"phase\":5,\"base\":\"B\",\"sha\":\"C\",\"trigger\":\"execute\",\"detail\":\"  legacy reason  \"}\n",
+        "{\"family\":\"outcome\",\"event\":\"override\",\"phase\":5,\"verdict\":\"override\",\"detail\":\"historical receipt without endpoints\"}\n"
+    );
+    std::fs::write(root.path().join("trace.jsonl"), legacy).unwrap();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        let before = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        assert_eq!(
+            before.decisions.len(),
+            1,
+            "the established legacy outcome stays readable"
+        );
+        let sources: Vec<crate::import::SourceEvidence> =
+            serde_json::from_value(before.snapshot.data["source_evidence"].clone()).unwrap();
+        assert!(
+            sources
+                .iter()
+                .any(|s| s.source.path.ends_with("trace.jsonl")
+                    && s.source.bytes == legacy.as_bytes())
+        );
+        let question = gate(root.path(), "two-ranges", Purpose::Decision);
+        submit(&server, root.path(), "question", question.clone())
+            .await
+            .unwrap();
+        submit(
+            &server,
+            root.path(),
+            "answer",
+            answered(question, GateDisposition::Approve),
+        )
+        .await
+        .unwrap();
+        let mut receipts = Vec::new();
+        for (id, base, head) in [("first", "B", "C"), ("second", "D", "E")] {
+            let mut receipt = review_receipt(base, head);
+            receipt.finding_record = format!("phases/5/{id}-ADJUDICATION.md:17");
+            if id == "second" {
+                receipt.round = None;
+                receipt.anchor = None;
+            }
+            let mut value = override_record(root.path(), id, Meaning::Review(receipt));
+            let Fact::Override(o) = &mut value.fact else {
+                unreachable!()
+            };
+            o.authorization = Authorization::Answer {
+                id: "operator-answer-1".into(),
+                question_id: "two-ranges".into(),
+            };
+            submit(&server, root.path(), id, value.clone())
+                .await
+                .unwrap();
+            receipts.push(value);
+        }
+        let written = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        for field in ["source_evidence", "cursor", "import"] {
+            assert_eq!(written.snapshot.data[field], before.snapshot.data[field]);
+        }
+        assert_eq!(written.decisions[0], before.decisions[0]);
+        for field in ["reason", "base", "head", "finding_record", "correlation"] {
+            let mut raw = serde_json::to_value(&receipts[0]).unwrap();
+            let target = if field == "reason" {
+                &mut raw["fact"]["value"]
+            } else {
+                &mut raw["fact"]["value"]["meaning"]
+            };
+            target.as_object_mut().unwrap().remove(field);
+            assert!(
+                serde_json::from_value::<Record>(raw).is_err(),
+                "missing {field}"
+            );
+            let mut raw = serde_json::to_value(&receipts[0]).unwrap();
+            let target = if field == "reason" {
+                &mut raw["fact"]["value"]
+            } else {
+                &mut raw["fact"]["value"]["meaning"]
+            };
+            target[field] = json!(" \t");
+            assert!(
+                submit(
+                    &server,
+                    root.path(),
+                    "invalid",
+                    serde_json::from_value(raw).unwrap()
+                )
+                .await
+                .is_err(),
+                "blank {field}"
+            );
+        }
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            written
+        );
+        drop(server);
+        let server = CadenceServer::with_factory(factory());
+        let recovered = server.evidence(root.path(), Command::Read).await.unwrap();
+        for value in &receipts {
+            assert!(recovered.current.contains(value));
+            assert!(recovered.history.contains(value));
+        }
+        let scope = &receipts[0].scope;
+        let plan = Some(scope.plan.as_str());
+        assert_eq!(
+            recovered.review_settlements(scope, "B", "C", "execute", plan),
+            vec![&receipts[0]]
+        );
+        assert_eq!(
+            recovered.review_settlements(scope, "D", "E", "execute", plan),
+            vec![&receipts[1]]
+        );
+        for (base, head, trigger, plan) in [
+            ("A", "C", "execute", plan),
+            ("B", "C", "plan", plan),
+            ("B", "C", "execute", Some("PLAN-2.md")),
+            ("B", "C", "execute", None),
+        ] {
+            assert!(
+                recovered
+                    .review_settlements(scope, base, head, trigger, plan)
+                    .is_empty()
+            );
+        }
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            written
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("trace.jsonl")).unwrap(),
+            legacy.as_bytes()
+        );
     });
 }
