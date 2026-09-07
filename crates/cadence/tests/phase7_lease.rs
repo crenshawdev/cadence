@@ -61,7 +61,14 @@ struct Client {
 }
 impl Client {
     fn new(root: &Path) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_cadence"))
+        Self::with_path(root, None)
+    }
+    fn with_path(root: &Path, path: Option<&str>) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cadence"));
+        if let Some(path) = path {
+            command.env("PATH", path);
+        }
+        let mut child = command
             .args(["serve", "--project-root"])
             .arg(root)
             .env("CADENCE_GLOBAL_CONFIG", "")
@@ -878,4 +885,448 @@ fn historical_accepted_out_of_lease_receipts_replay_without_reclassification() {
             .unwrap();
         assert_eq!(replayed, view);
     });
+}
+
+fn wire_patch(dispatch: &Value, sha: &str) -> Value {
+    json!({"schema":1,"kind":"executor","dispatch_id":dispatch["id"],
+        "expected_execution_version":dispatch["expected_execution_version"],"outcome":"complete",
+        "tasks":[{"status":"completed","task_id":"T1","commit":sha,
+            "verification":{"disposition":"passed","commands":[{"command":"printf T1","exit_code":0,"output_digest":"a".repeat(64)}]},
+            "evidence":[{"kind":"commit","sha":sha}]}],"deviations":[],"blockers":[]})
+}
+
+fn wire_dispatch(fixture: &Fixture) -> Value {
+    let mut client = fixture.client();
+    let answer = client.query();
+    assert_eq!(answer["outcome"], "dispatch", "{answer}");
+    client.finish();
+    answer["dispatch"].clone()
+}
+
+fn task_commit(fixture: &Fixture, paths: &[&str]) -> String {
+    for path in paths {
+        let absolute = fixture.root.join(path);
+        fs::create_dir_all(absolute.parent().unwrap()).unwrap();
+        fs::write(absolute, format!("task content for {path}\n")).unwrap();
+        fixture.git(&["add", "--", path]);
+    }
+    fixture.git(&["commit", "-q", "-m", "feat(7): complete T1"]);
+    fixture.git(&["rev-parse", "HEAD"])
+}
+
+fn assert_wire_lease_refusal(
+    fixture: &Fixture,
+    dispatch: &Value,
+    sha: &str,
+    committed: &[String],
+    staged: &[String],
+) -> Value {
+    let before = fixture.read();
+    let summary = fixture.root.join(".planning/phases/7/SUMMARY.md");
+    let summary_before = fs::read(&summary).ok();
+    let index = fs::read(fixture.root.join(".git/index")).unwrap();
+    let patch = wire_patch(dispatch, sha);
+    let mut client = fixture.client();
+    let answer = client.call("cadence_apply", patch.clone());
+    assert_eq!(answer["code"], "undeclared-files", "{answer}");
+    assert!(answer["reason"].as_str().unwrap().len() <= 1024);
+    client.finish();
+    let after = fixture.read();
+    assert_eq!(after.snapshot.data, before.snapshot.data);
+    assert_eq!(fs::read(&summary).ok(), summary_before);
+    assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+    fixture.git(&["cat-file", "-e", &format!("{sha}^{{commit}}")]);
+    assert_eq!(after.decisions.len(), before.decisions.len() + 1);
+    let record = after.decisions.last().unwrap();
+    let cadence::store::model::Decision::BoundaryV1(record) = &record.decision else {
+        panic!("native decision required")
+    };
+    let evidence = record.boundary.lease_refusal.as_ref().unwrap();
+    assert_eq!(evidence.paths.dispatch_id, dispatch["id"].as_str().unwrap());
+    assert_eq!((evidence.paths.phase, evidence.paths.plan), (7, 1));
+    assert_eq!(
+        evidence.paths.tasks,
+        std::collections::BTreeMap::from([("T1".into(), sha.into())])
+    );
+    let expected = if committed.is_empty() {
+        Default::default()
+    } else {
+        std::collections::BTreeMap::from([(sha.into(), committed.to_vec())])
+    };
+    assert_eq!(evidence.paths.committed, expected);
+    assert_eq!(evidence.paths.staged, staged);
+    assert!(evidence.disposition.contains("dispatch remains open"));
+    assert_eq!(
+        record.boundary.response_digest,
+        cadence::execution::boundary::envelope_digest(
+            &serde_json::from_value(answer.clone()).unwrap()
+        )
+        .unwrap()
+    );
+    let bytes = fs::read(fixture.root.join(".planning/decisions.jsonl")).unwrap();
+    let mut client = fixture.client();
+    assert_eq!(client.call("cadence_apply", patch), answer);
+    client.finish();
+    assert_eq!(
+        fs::read(fixture.root.join(".planning/decisions.jsonl")).unwrap(),
+        bytes
+    );
+    assert_eq!(fixture.read(), after);
+    assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+    answer
+}
+
+#[test]
+fn public_git_refusals_preserve_both_rename_endpoints_with_config_enabled_or_disabled() {
+    for configured in ["true", "false"] {
+        for committed in [true, false] {
+            for source_only in [true, false] {
+                let lease = if source_only {
+                    "files: [src/covered.txt, dest.txt]"
+                } else {
+                    "files: [src/covered.txt, src/a.rs]"
+                };
+                let fixture = Fixture::new(lease);
+                fixture.git(&["config", "diff.renames", configured]);
+                let dispatch = wire_dispatch(&fixture);
+                let covered = task_commit(&fixture, &["src/covered.txt"]);
+                fixture.git(&["mv", "src/a.rs", "dest.txt"]);
+                let sha = if committed {
+                    fixture.git(&["commit", "-q", "-m", "feat(7): rename T1"]);
+                    fixture.git(&["rev-parse", "HEAD"])
+                } else {
+                    covered
+                };
+                let offending = vec![if source_only { "src/a.rs" } else { "dest.txt" }.to_owned()];
+                let (commits, index) = if committed {
+                    (offending, vec![])
+                } else {
+                    (vec![], offending)
+                };
+                let answer = assert_wire_lease_refusal(&fixture, &dispatch, &sha, &commits, &index);
+                assert!(answer["reason"].as_str().unwrap().contains(if source_only {
+                    "src/a.rs"
+                } else {
+                    "dest.txt"
+                }));
+            }
+        }
+    }
+}
+
+#[test]
+fn public_git_has_zero_exemptions_for_committed_and_staged_new_report_and_lockfile_paths() {
+    for path in [
+        "outside.txt",
+        "new/path.txt",
+        "Cargo.lock",
+        ".planning/phases/7/reports/plan-1.md",
+    ] {
+        for committed in [true, false] {
+            let fixture = Fixture::new("files: [src/a.rs]");
+            let dispatch = wire_dispatch(&fixture);
+            let sha = if committed {
+                task_commit(&fixture, &[path])
+            } else {
+                let sha = task_commit(&fixture, &["src/a.rs"]);
+                let absolute = fixture.root.join(path);
+                fs::create_dir_all(absolute.parent().unwrap()).unwrap();
+                fs::write(absolute, "staged material\n").unwrap();
+                fixture.git(&["add", "--", path]);
+                sha
+            };
+            assert_wire_lease_refusal(
+                &fixture,
+                &dispatch,
+                &sha,
+                &if committed { vec![path.into()] } else { vec![] },
+                &if committed { vec![] } else { vec![path.into()] },
+            );
+        }
+    }
+}
+
+#[test]
+fn public_git_accepts_directory_covered_rename_and_compares_merge_against_every_parent() {
+    let fixture = Fixture::new("files: []\ndirectories: [src/]");
+    let dispatch = wire_dispatch(&fixture);
+    let sha = task_commit(&fixture, &["src/new.rs"]);
+    fixture.git(&["mv", "src/a.rs", "src/moved.rs"]);
+    let mut client = fixture.client();
+    let answer = client.call("cadence_apply", wire_patch(&dispatch, &sha));
+    assert_eq!(answer["outcome"], "complete", "{answer}");
+    client.finish();
+
+    for covered in [false, true] {
+        let fixture = Fixture::new("files: []\ndirectories: [src/]");
+        let dispatch = wire_dispatch(&fixture);
+        let branch = fixture.git(&["symbolic-ref", "--short", "HEAD"]);
+        fixture.git(&["checkout", "-q", "-b", "side"]);
+        let side = if covered {
+            "src/side.rs"
+        } else {
+            "outside.txt"
+        };
+        task_commit(&fixture, &[side]);
+        fixture.git(&["checkout", "-q", &branch]);
+        task_commit(&fixture, &["src/a.rs"]);
+        fixture.git(&["merge", "-q", "--no-ff", "side", "-m", "feat(7): merge T1"]);
+        let sha = fixture.git(&["rev-parse", "HEAD"]);
+        if covered {
+            let mut client = fixture.client();
+            let answer = client.call("cadence_apply", wire_patch(&dispatch, &sha));
+            assert_eq!(answer["outcome"], "complete", "{answer}");
+            client.finish();
+            let paths = &fixture.read().snapshot.data["execution"]["occurrences"]["7"]["plans"][0]
+                ["commit_paths"][&sha];
+            assert_eq!(*paths, json!(["src/a.rs", "src/side.rs"]));
+        } else {
+            assert_wire_lease_refusal(&fixture, &dispatch, &sha, &[side.into()], &[]);
+        }
+    }
+}
+
+#[test]
+fn public_long_lease_evidence_survives_compact_answer_limits_without_truncation() {
+    let fixture = Fixture::new("files: [src/a.rs]");
+    let dispatch = wire_dispatch(&fixture);
+    let paths = (0..100)
+        .map(|i| format!("outside/{i:03}-{}.txt", "x".repeat(180)))
+        .collect::<Vec<_>>();
+    let refs = paths.iter().map(String::as_str).collect::<Vec<_>>();
+    let sha = task_commit(&fixture, &refs);
+    let answer = assert_wire_lease_refusal(&fixture, &dispatch, &sha, &paths, &[]);
+    assert!(
+        answer["reason"]
+            .as_str()
+            .unwrap()
+            .contains("100 undeclared path observations")
+    );
+    let view = fixture.read();
+    let cadence::store::model::Decision::BoundaryV1(record) =
+        &view.decisions.last().unwrap().decision
+    else {
+        panic!()
+    };
+    assert!(
+        answer["reason"].as_str().unwrap().contains(
+            &record
+                .boundary
+                .lease_refusal
+                .as_ref()
+                .unwrap()
+                .identity()
+                .unwrap()
+        )
+    );
+    assert!(serde_json::to_vec(&record).unwrap().len() > 16 * 1024);
+}
+
+#[cfg(unix)]
+#[test]
+fn public_staged_observation_refuses_unreadable_malformed_non_utf8_and_changed_inputs() {
+    use std::os::unix::{ffi::OsStringExt, fs::PermissionsExt};
+    for case in [
+        "unreadable",
+        "malformed",
+        "non-utf8",
+        "changed-set",
+        "changed-blob",
+    ] {
+        let fixture = Fixture::new("files: [src/a.rs, src/staged.rs]");
+        let dispatch = wire_dispatch(&fixture);
+        let sha = task_commit(&fixture, &["src/a.rs"]);
+        fs::write(fixture.root.join("src/staged.rs"), "initial staged\n").unwrap();
+        fixture.git(&["add", "src/staged.rs"]);
+        let before = fixture.read();
+        let saved_index = fs::read(fixture.root.join(".git/index")).unwrap();
+        let bin = fixture._temp.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let real_git = Command::new("sh")
+            .args(["-c", "command -v git"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let real_git = String::from_utf8(real_git.stdout)
+            .unwrap()
+            .trim()
+            .to_owned();
+        let body = match case {
+            "unreadable" => "case \" $* \" in *' diff --cached --raw '*) printf 'invalid index bytes' > \"$2/.git/index\";; esac\n".into(),
+            "non-utf8" => {
+                let path = std::ffi::OsString::from_vec(b"src/bad-\xff.txt".to_vec());
+                fs::write(fixture.root.join(&path), "invalid UTF-8 path\n").unwrap();
+                let status = Command::new(&real_git).arg("-C").arg(&fixture.root)
+                    .args(["add", "--"]).arg(path).stdin(Stdio::null()).status().unwrap();
+                assert!(status.success());
+                String::new()
+            }
+            "malformed" => "case \" $* \" in *' diff --cached --name-status '*) printf 'R100\\000src/a.rs\\000'; exit 0;; esac\n".into(),
+            _ => {
+                let path = if case == "changed-set" { "src/a.rs" } else { "src/staged.rs" };
+                format!("case \" $* \" in *' diff --cached --raw '*)\ncount=0; test ! -f '{bin}/count' || count=$(cat '{bin}/count'); count=$((count + 1)); printf '%s' \"$count\" > '{bin}/count'\nif test \"$count\" = 3; then printf 'changed staged content\\n' > \"$2/{path}\"; '{real_git}' -C \"$2\" add -- '{path}'; fi;; esac\n", bin=bin.display())
+            }
+        };
+        let wrapper = bin.join("git");
+        fs::write(
+            &wrapper,
+            format!("#!/bin/sh\n{body}exec '{real_git}' \"$@\"\n"),
+        )
+        .unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+        let mut client = Client::with_path(&fixture.root, Some(&path));
+        let answer = client.call("cadence_apply", wire_patch(&dispatch, &sha));
+        assert_eq!(
+            answer["code"],
+            if case.starts_with("changed-") {
+                "inputs-changed"
+            } else {
+                "staged-paths"
+            },
+            "{case}: {answer}"
+        );
+        client.finish();
+        let after = fixture.read();
+        assert_eq!(after.snapshot.data, before.snapshot.data, "{case}");
+        assert_eq!(after.decisions.len(), before.decisions.len() + 1);
+        assert!(!fixture.root.join(".planning/phases/7/SUMMARY.md").exists());
+        fs::write(fixture.root.join(".git/index"), saved_index).unwrap();
+        fixture.git(&["cat-file", "-e", &sha]);
+    }
+}
+
+#[test]
+fn lease_refusal_intent_recovery_preserves_evidence_and_rejects_forged_coverage() {
+    use cadence::execution::{boundary::BoundaryV1, patch::UndeclaredPaths};
+    use cadence::store::{
+        Error, filesystem::Stage, model, transaction::INTENT, writer::BoundaryChange,
+    };
+    use std::collections::BTreeMap;
+    for tampered in [false, true] {
+        let fixture = Fixture::new("files: [src/a.rs]");
+        let dispatch = wire_dispatch(&fixture);
+        let sha = task_commit(&fixture, &["outside.txt"]);
+        let before = fixture.read();
+        let decision = BoundaryV1::lease_refusal(
+            digest(b"pending-lease"),
+            UndeclaredPaths {
+                schema: 1,
+                dispatch_id: dispatch["id"].as_str().unwrap().into(),
+                phase: 7,
+                plan: 1,
+                tasks: BTreeMap::from([("T1".into(), sha.clone())]),
+                committed: BTreeMap::from([(sha.clone(), vec!["outside.txt".into()])]),
+                staged: vec![],
+            },
+        )
+        .unwrap();
+        runtime().block_on(async {
+            let store = Store::open(
+                Filesystem::new(fixture.root.join(".planning"))
+                    .unwrap()
+                    .with_probe(|stage, path| {
+                        if stage == Stage::Confirmation && path.ends_with(INTENT) {
+                            Err(Error::Io("injected pending lease intent".into()))
+                        } else {
+                            Ok(())
+                        }
+                    }),
+                Allow,
+            )
+            .await
+            .unwrap();
+            assert!(
+                store
+                    .request(Operation::BoundaryV1 {
+                        expected_generation: before.snapshot.generation,
+                        expected_integrity: before.snapshot.integrity.clone(),
+                        operation_id: "pending-lease".into(),
+                        decision: decision.clone(),
+                        change: Box::new(BoundaryChange::Observe),
+                    })
+                    .await
+                    .is_err()
+            );
+        });
+        let planning = fixture.root.join(".planning");
+        assert!(planning.join(INTENT).exists());
+        if tampered {
+            let mut intent: Value =
+                serde_json::from_slice(&fs::read(planning.join(INTENT)).unwrap()).unwrap();
+            let participants = intent["participants"].as_array_mut().unwrap();
+            let entry = participants
+                .iter_mut()
+                .find(|p| p["target"] == model::DECISIONS)
+                .unwrap();
+            let bytes: Vec<u8> = serde_json::from_value(entry["bytes"].clone()).unwrap();
+            let mut records: Vec<model::DecisionRecord> = model::parse_lines(&bytes).unwrap();
+            let record = records.last_mut().unwrap();
+            let model::Decision::BoundaryV1(value) = &mut record.decision else {
+                panic!()
+            };
+            let mut paths = value.boundary.lease_refusal.as_ref().unwrap().paths.clone();
+            paths.committed.insert(sha, vec!["src/a.rs".into()]);
+            value.boundary =
+                BoundaryV1::lease_refusal(value.boundary.request_digest.clone(), paths).unwrap();
+            record.id = value.boundary.identity().unwrap();
+            let id = record.id.clone();
+            // Reseal every outer digest: recovery must validate the evidence's
+            // actual lease meaning, not merely detect a damaged checksum.
+            let bytes = records
+                .iter()
+                .flat_map(|r| {
+                    let mut b = serde_json::to_vec(r).unwrap();
+                    b.push(b'\n');
+                    b
+                })
+                .collect::<Vec<_>>();
+            entry["bytes"] = json!(bytes);
+            let state = participants
+                .iter_mut()
+                .find(|p| p["target"] == model::STATE)
+                .unwrap();
+            let bytes_state: Vec<u8> = serde_json::from_value(state["bytes"].clone()).unwrap();
+            let mut snapshot: Value = serde_json::from_slice(&bytes_state).unwrap();
+            snapshot["decisions_digest"] = json!(digest(&bytes));
+            snapshot["integrity"] = json!("");
+            snapshot["integrity"] = json!(digest(&serde_json::to_vec(&snapshot).unwrap()));
+            state["bytes"] = json!(serde_json::to_vec(&snapshot).unwrap());
+            intent["kind"]["decision_id"] = json!(id);
+            intent["integrity"] = json!(digest(
+                &serde_json::to_vec(&json!([
+                    intent["version"],
+                    intent["kind"],
+                    intent["participants"]
+                ]))
+                .unwrap()
+            ));
+            fs::write(planning.join(INTENT), serde_json::to_vec(&intent).unwrap()).unwrap();
+            let disk = [model::STATE, model::DECISIONS, INTENT]
+                .map(|p| fs::read(planning.join(p)).unwrap());
+            runtime().block_on(async {
+                assert!(
+                    Store::open(Filesystem::new(&planning).unwrap(), Allow)
+                        .await
+                        .is_err()
+                );
+            });
+            assert_eq!(
+                [model::STATE, model::DECISIONS, INTENT]
+                    .map(|p| fs::read(planning.join(p)).unwrap()),
+                disk
+            );
+        } else {
+            let after = fixture.read();
+            assert_eq!(after.snapshot.data, before.snapshot.data);
+            assert_eq!(after.decisions.len(), before.decisions.len() + 1);
+            let model::Decision::BoundaryV1(value) = &after.decisions.last().unwrap().decision
+            else {
+                panic!()
+            };
+            assert_eq!(value.boundary, decision);
+            assert!(!planning.join(INTENT).exists());
+            assert_eq!(fixture.read(), after);
+        }
+    }
 }

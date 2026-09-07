@@ -943,9 +943,30 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         };
         (paths, head)
     };
-    let application = match attach_commit_paths(application, &commit_paths, &[]) {
+    let project = root.parent().ok_or(Failure::Encoding)?;
+    let staged = match observe_staged(project).await {
+        Ok(value) => value,
+        Err(reason) => {
+            return record_refusal(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceApply,
+                "executor",
+                &request,
+                "staged-paths",
+                reason,
+                Some(patch.dispatch_id.clone()),
+            )
+            .await;
+        }
+    };
+    let application = match attach_commit_paths(application, &commit_paths, &staged.paths) {
         Ok(value) => value,
         Err(error) => {
+            if let Some(paths) = error.undeclared {
+                return record_lease_refusal(&session, &view, &request, *paths).await;
+            }
             return record_refusal(
                 &session,
                 &view,
@@ -978,6 +999,20 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
             phase,
             BoundaryTool::CadenceApply,
             "apply-executor-patch",
+            &request,
+            "inputs-changed",
+            reason,
+            Some(patch.dispatch_id.clone()),
+        )
+        .await;
+    }
+    if let Err(reason) = reobserve_staged(project, &staged).await {
+        return record_refusal(
+            &session,
+            &view,
+            phase,
+            BoundaryTool::CadenceApply,
+            "executor",
             &request,
             "inputs-changed",
             reason,
@@ -1068,7 +1103,7 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
             BoundaryChange::Patch {
                 patch,
                 commit_paths,
-                staged_paths: Vec::new(),
+                staged_paths: staged.paths,
                 render_version: SUMMARY_RENDER_VERSION,
                 complete_phase,
             },
@@ -1367,33 +1402,148 @@ fn validate_commits_blocking(
                 format!("commit {commit} subject is not conventional or does not name {task_id}"),
             ));
         }
-        let output = git_output_bytes(
-            project,
-            &[
+        // Compare every parent explicitly. A combined merge diff omits paths
+        // changed against only one parent and is insufficient lease evidence.
+        let parents = git_output(project, &["show", "-s", "--format=%P", commit])
+            .map_err(|reason| ("commit-paths", reason))?;
+        let parents = parents.split_whitespace().collect::<Vec<_>>();
+        let mut observed = BTreeSet::new();
+        for parent in parents
+            .iter()
+            .copied()
+            .map(Some)
+            .chain(parents.is_empty().then_some(None))
+        {
+            let mut args = vec![
                 "diff-tree",
                 "--root",
                 "--no-commit-id",
-                "--name-only",
+                "--name-status",
                 "-r",
                 "-z",
-                commit,
-            ],
-        )
-        .map_err(|reason| ("commit-paths", reason))?;
-        let mut observed = output
-            .split(|byte| *byte == 0)
-            .filter(|value| !value.is_empty())
-            .map(|value| {
-                String::from_utf8(value.to_vec())
-                    .map_err(|_| ("commit-paths", "Git path is not valid UTF-8".into()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        observed.sort();
-        observed.dedup();
-        paths.insert(commit.clone(), observed);
+                "-M",
+                "--no-ext-diff",
+                "--no-textconv",
+            ];
+            if let Some(parent) = parent {
+                args.push(parent);
+            }
+            args.extend([commit, "--"]);
+            let output =
+                git_output_bytes(project, &args).map_err(|reason| ("commit-paths", reason))?;
+            observed.extend(read_name_status(&output).map_err(|reason| ("commit-paths", reason))?);
+        }
+        paths.insert(commit.clone(), observed.into_iter().collect());
         prior = commit;
     }
     Ok(paths)
+}
+
+/// Read Git's unquoted NUL records without normalizing or losing pathname bytes.
+pub(super) fn read_name_status(bytes: &[u8]) -> Result<Vec<String>, String> {
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    if bytes.last() != Some(&0) {
+        return Err("unterminated Git name-status record".into());
+    }
+    let mut fields = bytes[..bytes.len() - 1].split(|byte| *byte == 0);
+    let mut paths = BTreeSet::new();
+    while let Some(status) = fields.next() {
+        let status = std::str::from_utf8(status).map_err(|_| "invalid Git status")?;
+        let endpoints = match status.as_bytes() {
+            [b'A' | b'D' | b'M' | b'T'] => 1,
+            [b'R' | b'C', score @ ..]
+                if !score.is_empty()
+                    && score.iter().all(u8::is_ascii_digit)
+                    && std::str::from_utf8(score)
+                        .ok()
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .is_some_and(|n| n <= 100) =>
+            {
+                2
+            }
+            [b'M', score @ ..]
+                if !score.is_empty()
+                    && score.iter().all(u8::is_ascii_digit)
+                    && std::str::from_utf8(score)
+                        .ok()
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .is_some_and(|n| n <= 100) =>
+            {
+                1
+            }
+            _ => return Err("invalid or unresolved Git name-status record".into()),
+        };
+        for _ in 0..endpoints {
+            let path = fields.next().ok_or("missing Git rename/path endpoint")?;
+            let path = std::str::from_utf8(path).map_err(|_| "Git path is not valid UTF-8")?;
+            if !cadence::execution::patch::safe_relative_path(path) {
+                return Err("Git path is not a safe relative path".into());
+            }
+            paths.insert(path.to_owned());
+        }
+    }
+    Ok(paths.into_iter().collect())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct StagedObservation {
+    paths: Vec<String>,
+    objects: Vec<u8>,
+}
+
+async fn observe_staged(project: &Path) -> Result<StagedObservation, String> {
+    let project = project.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let objects = || {
+            git_output_bytes(
+                &project,
+                &[
+                    "diff",
+                    "--cached",
+                    "--raw",
+                    "-z",
+                    "-M",
+                    "--no-abbrev",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--",
+                ],
+            )
+        };
+        let before = objects()?;
+        let bytes = git_output_bytes(
+            &project,
+            &[
+                "diff",
+                "--cached",
+                "--name-status",
+                "-z",
+                "-M",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--",
+            ],
+        )?;
+        let paths = read_name_status(&bytes)?;
+        if objects()? != before {
+            return Err("staged inputs changed during observation".into());
+        }
+        Ok(StagedObservation {
+            paths,
+            objects: before,
+        })
+    })
+    .await
+    .map_err(|_| "staged observation task closed".to_owned())?
+}
+
+async fn reobserve_staged(project: &Path, expected: &StagedObservation) -> Result<(), String> {
+    if &observe_staged(project).await? != expected {
+        return Err("staged inputs changed during the request".into());
+    }
+    Ok(())
 }
 
 fn conventional_subject(subject: &str, task_id: &str) -> bool {
@@ -1486,6 +1636,26 @@ fn boundary(
         subject_id,
         &answer,
     ))
+}
+
+async fn record_lease_refusal<I: ConfigIo>(
+    session: &Arc<Session<I>>,
+    view: &View,
+    request: &str,
+    paths: cadence::execution::patch::UndeclaredPaths,
+) -> Answer {
+    let decision = BoundaryV1::lease_refusal(request.into(), paths)?;
+    let written = session
+        .request(Operation::BoundaryV1 {
+            expected_generation: view.snapshot.generation,
+            expected_integrity: view.snapshot.integrity.clone(),
+            operation_id: format!("execution-observation:{}", decision.identity()?),
+            decision: decision.clone(),
+            change: Box::new(BoundaryChange::Observe),
+        })
+        .await
+        .map_err(store_failure)?;
+    confirmed_boundary(&written, &decision)?.envelope(None)
 }
 
 #[allow(clippy::too_many_arguments)]

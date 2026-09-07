@@ -339,6 +339,22 @@ impl Intent {
                 "boundary generation exceeds snapshot".into(),
             ));
         }
+        if let Some(evidence) = &value.boundary.lease_refusal {
+            if !matches!(self.kind, IntentKind::BoundaryObservationV1 { .. }) {
+                return Err(Error::Invalid(
+                    "lease refusal intent must be an observation".into(),
+                ));
+            }
+            let execution = execution_snapshot(snapshot)?;
+            let active = execution
+                .occurrences
+                .get(&evidence.paths.phase.to_string())
+                .and_then(|o| o.active.as_ref())
+                .ok_or_else(|| Error::Invalid("lease refusal intent lacks open dispatch".into()))?;
+            evidence
+                .validate_active(active)
+                .map_err(|e| Error::Invalid(e.to_string()))?;
+        }
         match &self.kind {
             IntentKind::ExecutionDispatchV1 { phase, .. } => {
                 let execution = execution_snapshot(snapshot)?;

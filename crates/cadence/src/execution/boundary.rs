@@ -268,6 +268,116 @@ impl PreparedAnswer {
     }
 }
 
+/// Versioned binary observations live in the same decision as the compact answer.
+/// Omission on older boundaries preserves their serialized identity preimages.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LeaseRefusal {
+    pub paths: super::patch::UndeclaredPaths,
+    pub disposition: String,
+}
+
+impl LeaseRefusal {
+    pub fn new(paths: super::patch::UndeclaredPaths) -> Self {
+        let disposition = if paths.committed.is_empty() {
+            "The reported commits were not accepted as execution evidence. Stop execution and have the operator repair the staged index within this dispatch's unchanged lease. Cadence left the index and commits untouched. This dispatch remains open for a corrected full patch with the same dispatch ID and execution version."
+        } else {
+            "The commits already exist in Git and were not removed or accepted as execution evidence. Stop execution and have the operator repair or split the offending local history into signed task commits entirely within this dispatch's unchanged lease; do not push, reset, amend, revert or force-push automatically. This dispatch remains open for a corrected full patch with the same dispatch ID and execution version."
+        };
+        let disposition = if !paths.committed.is_empty() && !paths.staged.is_empty() {
+            format!(
+                "{disposition} The operator must also repair the staged index; Cadence left it untouched."
+            )
+        } else {
+            disposition.into()
+        };
+        Self { paths, disposition }
+    }
+
+    pub fn identity(&self) -> Result<String, Failure> {
+        Ok(crate::store::model::digest(&canonical_bytes(&(
+            "lease-refusal-v1",
+            self,
+        ))?))
+    }
+
+    pub fn reason(&self) -> Result<String, Failure> {
+        let observed = format!(
+            "committed {}; staged {}",
+            serde_json::to_string(&self.paths.committed).map_err(|_| Failure::Encoding)?,
+            serde_json::to_string(&self.paths.staged).map_err(|_| Failure::Encoding)?
+        );
+        let reason = format!("undeclared-files: {observed}. {}", self.disposition);
+        if reason.len() <= MAX_REASON_BYTES {
+            return Ok(reason);
+        }
+        let count =
+            self.paths.committed.values().map(Vec::len).sum::<usize>() + self.paths.staged.len();
+        Ok(format!(
+            "undeclared-files: {count} undeclared path observations; complete evidence {} in this decision. {}",
+            self.identity()?,
+            self.disposition
+        ))
+    }
+
+    fn validate(&self) -> Result<(), Failure> {
+        let paths = &self.paths;
+        let valid_paths = |values: &[String]| {
+            !values.is_empty()
+                && values.windows(2).all(|pair| pair[0] < pair[1])
+                && values.iter().all(|p| super::patch::safe_relative_path(p))
+        };
+        if paths.schema != 1
+            || paths.phase == 0
+            || paths.plan == 0
+            || paths.dispatch_id.is_empty()
+            || (paths.committed.is_empty() && paths.staged.is_empty())
+            || paths
+                .tasks
+                .iter()
+                .any(|(id, sha)| id.trim().is_empty() || !super::dispatch::full_sha(sha))
+            || paths
+                .tasks
+                .values()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != paths.tasks.len()
+            || paths
+                .committed
+                .iter()
+                .any(|(sha, p)| !paths.tasks.values().any(|value| value == sha) || !valid_paths(p))
+            || (!paths.staged.is_empty() && !valid_paths(&paths.staged))
+            || self.disposition != Self::new(paths.clone()).disposition
+        {
+            return Err(Failure::Encoding);
+        }
+        Ok(())
+    }
+
+    pub fn validate_active(&self, active: &ActiveDispatch) -> Result<(), Failure> {
+        self.validate()?;
+        if self.paths.dispatch_id != active.id
+            || self.paths.phase != active.phase
+            || self.paths.plan != active.plan
+            || self
+                .paths
+                .tasks
+                .keys()
+                .any(|id| !active.tasks.iter().any(|task| &task.id == id))
+            || self
+                .paths
+                .committed
+                .values()
+                .flatten()
+                .chain(&self.paths.staged)
+                .any(|p| super::lease::covers(&active.files, &active.directories, p))
+        {
+            return Err(Failure::Encoding);
+        }
+        Ok(())
+    }
+}
+
 /// This is a distinct wire contract. No field is defaulted into a legacy
 /// decision, operation fingerprint, snapshot or intent integrity preimage.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -282,6 +392,8 @@ pub struct BoundaryV1 {
     pub subject_id: Option<String>,
     pub response_digest: String,
     pub receipt: Receipt,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lease_refusal: Option<Box<LeaseRefusal>>,
 }
 
 impl BoundaryV1 {
@@ -303,11 +415,36 @@ impl BoundaryV1 {
             subject_id,
             response_digest: answer.response_digest.clone(),
             receipt: answer.receipt.clone(),
+            lease_refusal: None,
         }
     }
 }
 
 impl BoundaryV1 {
+    pub fn lease_refusal(
+        request: String,
+        paths: super::patch::UndeclaredPaths,
+    ) -> Result<Self, Failure> {
+        let evidence = LeaseRefusal::new(paths);
+        evidence.validate()?;
+        let answer = PreparedAnswer::new(Envelope::Refused {
+            code: "undeclared-files".into(),
+            reason: evidence.reason()?,
+        })?;
+        let mut boundary = Self::new(
+            BoundaryScope::Execution {
+                phase: evidence.paths.phase,
+            },
+            BoundaryTool::CadenceApply,
+            "executor".into(),
+            request,
+            Some(evidence.paths.dispatch_id.clone()),
+            &answer,
+        );
+        boundary.lease_refusal = Some(Box::new(evidence));
+        Ok(boundary)
+    }
+
     pub fn identity(&self) -> Result<String, Failure> {
         Ok(crate::store::model::digest(&canonical_bytes(&(
             "boundary-envelope-v1",
@@ -358,6 +495,14 @@ impl BoundaryV1 {
             }
         } else if self.outcome == "refused:log-bound" {
             return Err(Failure::Encoding);
+        }
+        if let Some(evidence) = &self.lease_refusal {
+            evidence.validate()?;
+            let expected =
+                Self::lease_refusal(self.request_digest.clone(), evidence.paths.clone())?;
+            if terminal || *self != expected {
+                return Err(Failure::Encoding);
+            }
         }
         match &self.receipt {
             Receipt::Dispatch {

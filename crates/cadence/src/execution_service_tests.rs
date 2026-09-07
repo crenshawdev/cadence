@@ -288,8 +288,8 @@ fn refusal_code(response: ExecutionEnvelope) -> String {
 fn resident_selects_overlap_graph_durably_and_ignores_report_bodies() {
     runtime().block_on(async {
         let fixture = fixture(&[
-            (&["src/a.rs"], &["T1"], "first body\n"),
-            (&["src/b.rs"], &["T2"], "second body\n"),
+            (&["src/a.rs", "work/one.txt"], &["T1"], "first body\n"),
+            (&["src/b.rs", "work/two.txt"], &["T2"], "second body\n"),
             (&["src/a.rs"], &["T3"], "third body\n"),
         ]);
         let server = CadenceServer::with_factory(factory());
@@ -404,7 +404,11 @@ fn lifecycle_continuation_and_changed_plan_inputs_refuse_dispatch() {
 #[test]
 fn signed_commits_apply_in_strict_order_and_paths_survive_replay() {
     runtime().block_on(async {
-        let fixture = fixture(&[(&["src/a.rs"], &["T1", "T2"], "ordered body\n")]);
+        let fixture = fixture(&[(
+            &["src/a.rs", "work/one.txt", "work/two.txt"],
+            &["T1", "T2"],
+            "ordered body\n",
+        )]);
         let server = CadenceServer::with_factory(factory());
         accept(&server, &fixture).await;
         let dispatch = dispatch(&server, &fixture).await;
@@ -445,7 +449,19 @@ fn signed_commits_apply_in_strict_order_and_paths_survive_replay() {
 fn missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse() {
     runtime().block_on(async {
         async fn ready(tasks: &[&str]) -> (Fixture, CadenceServer, ActiveDispatch) {
-            let fixture = fixture(&[(&["src/a.rs"], tasks, "body\n")]);
+            let fixture = fixture(&[(
+                &[
+                    "src/a.rs",
+                    "work/unsigned.txt",
+                    "work/shared.txt",
+                    "work/first.txt",
+                    "work/second.txt",
+                    "work/mismatch.txt",
+                    "work/untrusted.txt",
+                ],
+                tasks,
+                "body\n",
+            )]);
             let server = CadenceServer::with_factory(factory());
             accept(&server, &fixture).await;
             let dispatch = dispatch(&server, &fixture).await;
@@ -838,10 +854,10 @@ fn execution_restart_lost_apply_replays_one_immutable_transition() {
     runtime().block_on(async {
         for plan_count in [1, 2] {
             let specs: Vec<(&[&str], &[&str], &str)> = if plan_count == 1 {
-                vec![(&["src/a.rs"], &["T1"], "one plan\n")]
+                vec![(&["src/a.rs", "work/lost.txt"], &["T1"], "one plan\n")]
             } else {
                 vec![
-                    (&["src/a.rs"], &["T1"], "first plan\n"),
+                    (&["src/a.rs", "work/lost.txt"], &["T1"], "first plan\n"),
                     (&["src/b.rs"], &["T2"], "second plan\n"),
                 ]
             };
@@ -894,7 +910,11 @@ fn execution_restart_lost_apply_replays_one_immutable_transition() {
 #[test]
 fn execution_restart_repairs_summary_before_final_state_confirmation() {
     runtime().block_on(async {
-        let fixture = fixture(&[(&["src/a.rs"], &["T1"], "summary recovery\n")]);
+        let fixture = fixture(&[(
+            &["src/a.rs", "work/summary.txt"],
+            &["T1"],
+            "summary recovery\n",
+        )]);
         let server = CadenceServer::with_factory(factory());
         accept(&server, &fixture).await;
         let dispatch = dispatch(&server, &fixture).await;
@@ -944,7 +964,11 @@ fn execution_restart_each_dispatch_and_patch_barrier_recovers_one_confirmed_answ
             barriers.push("Renamed:SUMMARY.md");
         }
         for barrier in barriers {
-            let fixture = fixture(&[(&["src/a.rs"], &["T1"], "barrier body 日本語\n")]);
+            let fixture = fixture(&[(
+                &["src/a.rs", "work/barrier.txt"],
+                &["T1"],
+                "barrier body 日本語\n",
+            )]);
             let patch = runtime().block_on(async {
                 let server = CadenceServer::with_factory(factory());
                 accept(&server, &fixture).await;
@@ -1424,7 +1448,7 @@ fn execution_service_malformed_arguments_confirm_root_refusals_without_semantic_
 #[test]
 fn execution_service_apply_resolves_active_receipt_and_foreign_dispatch_scopes() {
     runtime().block_on(async {
-        let fixture = fixture(&[(&["src/a.rs"], &["T1"], "body\n")]);
+        let fixture = fixture(&[(&["src/a.rs", "work/T1.txt"], &["T1"], "body\n")]);
         let server = CadenceServer::with_factory(factory());
         accept(&server, &fixture).await;
         let dispatch = dispatch(&server, &fixture).await;
@@ -1588,7 +1612,7 @@ async fn saturate(server: &CadenceServer, root: &Path, scope: BoundaryScope) -> 
 fn execution_service_terminal_precedes_observation_dispatch_and_new_or_replayed_patch() {
     runtime().block_on(async {
         for state in ["root","new-dispatch","active","applied"] {
-            let fixture=fixture(&[(&["src/a.rs"],&["T1"],"body\n")]);
+            let fixture=fixture(&[(&["src/a.rs", "work/T1.txt"],&["T1"],"body\n")]);
             let server=CadenceServer::with_factory(factory()); accept(&server,&fixture).await;
             let phase=if state=="root"{0}else{6};
             let patch=if state=="new-dispatch" || state=="root"{None}else{
@@ -1735,5 +1759,29 @@ fn phase_six_service_repair_inventory_runs_registered_evidence() {
         );
         run();
         println!("{criterion} repair evidence passed: {name}");
+    }
+}
+
+#[test]
+fn execution_service_name_status_reader_rejects_incomplete_and_invalid_git_bytes() {
+    use execution_service::read_name_status;
+    assert_eq!(
+        read_name_status(b"M\0src/a.rs\0R100\0src/old\0src/new\0").unwrap(),
+        ["src/a.rs", "src/new", "src/old"]
+    );
+    assert_eq!(read_name_status(b"").unwrap(), Vec::<String>::new());
+    for bytes in [
+        b"M\0src/a.rs".as_slice(),
+        b"R100\0src/a.rs\0",
+        b"M\0\0",
+        b"Z\0path\0",
+        b"U\0path\0",
+        b"R101\0old\0new\0",
+        b"R\0old\0new\0",
+        b"M\0../outside\0",
+        b"M\0bad-\xff\0",
+        b"\0",
+    ] {
+        assert!(read_name_status(bytes).is_err(), "{bytes:?}");
     }
 }

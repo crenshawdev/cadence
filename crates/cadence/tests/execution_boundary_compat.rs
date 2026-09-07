@@ -779,3 +779,57 @@ fn phase_six_compatibility_repair_inventory_runs_registered_evidence() {
         println!("{criterion} repair evidence passed: {name}");
     }
 }
+
+#[test]
+fn lease_evidence_extension_preserves_old_preimage_and_validates_full_new_evidence() {
+    let old = json!({"codec":1,"scope":{"scope":"root-refusal"},"tool":"cadence-query","operation":"execute-next",
+        "request_digest":model::digest(b"one"),"outcome":"refused:invalid-input","subject_id":null,
+        "response_digest":model::digest(&canonical(&json!({"status":"refused","code":"invalid-input","reason":"invalid execution input"}))),
+        "receipt":{"receipt":"compact","envelope":{"status":"refused","code":"invalid-input","reason":"invalid execution input"}}});
+    let decoded: BoundaryV1 = serde_json::from_value(old.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&decoded).unwrap(),
+        serde_json::to_vec(&old).unwrap()
+    );
+    assert_eq!(
+        decoded.identity().unwrap(),
+        model::digest(&canonical(&json!(["boundary-envelope-v1", old])))
+    );
+    let paths = cadence::execution::patch::UndeclaredPaths {
+        schema: 1,
+        dispatch_id: "open-dispatch".into(),
+        phase: 7,
+        plan: 2,
+        tasks: BTreeMap::from([("T1".into(), "2".repeat(40))]),
+        committed: BTreeMap::from([("2".repeat(40), vec!["outside.txt".into()])]),
+        staged: vec!["Cargo.lock".into()],
+    };
+    let boundary = BoundaryV1::lease_refusal(model::digest(b"request"), paths).unwrap();
+    let value = serde_json::to_value(&boundary).unwrap();
+    assert!(validate(vec![wire_record(value.clone(), 1, false)]));
+    for field in [
+        "schema",
+        "phase",
+        "tasks",
+        "staged",
+        "committed",
+        "dispatch_id",
+    ] {
+        let mut invalid = value.clone();
+        invalid["lease_refusal"]["paths"][field] = match field {
+            "schema" => json!(99),
+            "phase" => json!(0),
+            "tasks" => json!({}),
+            "staged" => json!(["z", "a"]),
+            "committed" => json!({"3333333333333333333333333333333333333333":["outside.txt"]}),
+            _ => json!("wrong"),
+        };
+        assert!(!validate(vec![wire_record(invalid, 1, false)]), "{field}");
+    }
+    let mut invalid = value.clone();
+    invalid["lease_refusal"]["disposition"] = json!("automatically reset history");
+    assert!(!validate(vec![wire_record(invalid, 1, false)]));
+    let mut invalid = value;
+    invalid["lease_refusal"]["paths"]["staged"] = json!(["../outside"]);
+    assert!(!validate(vec![wire_record(invalid, 1, false)]));
+}

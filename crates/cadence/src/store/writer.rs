@@ -568,6 +568,20 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             );
         }
         self.check_expected(expected_generation, expected_integrity)?;
+        if let Some(evidence) = &decision.lease_refusal {
+            if !matches!(change, BoundaryChange::Observe) {
+                return Err(Error::Invalid(
+                    "lease refusal must be an observation".into(),
+                ));
+            }
+            let execution = execution_snapshot(&self.view.snapshot.data)?;
+            let active = execution
+                .occurrences
+                .get(&evidence.paths.phase.to_string())
+                .and_then(|o| o.active.as_ref())
+                .ok_or_else(|| Error::Invalid("lease refusal lacks its open dispatch".into()))?;
+            evidence.validate_active(active).map_err(boundary_error)?;
+        }
         let mut next = self.view.clone();
         let mut participants = Vec::new();
         let kind = match change {

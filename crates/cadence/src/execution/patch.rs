@@ -524,7 +524,7 @@ fn stable_id(value: &str) -> bool {
         && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
 }
 
-fn safe_relative_path(value: &str) -> bool {
+pub fn safe_relative_path(value: &str) -> bool {
     !value.is_empty()
         && !value.starts_with('/')
         && !value.contains('\\')
