@@ -1,5 +1,6 @@
 pub mod config;
 mod envelope;
+mod guard;
 pub mod import;
 mod server;
 
@@ -19,12 +20,19 @@ struct Cli {
 enum Command {
     /// Run the MCP stdio server.
     Serve,
+    /// Guard binary-owned planning outputs from direct Write/Edit calls.
+    Guard,
 }
 
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
-    match cli.command {
+    run_command(cli.command)
+}
+
+fn run_command(command: Command) -> std::process::ExitCode {
+    match command {
         Command::Serve => run_serve(),
+        Command::Guard => guard::run(),
     }
 }
 
