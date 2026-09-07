@@ -1,6 +1,7 @@
 //! Native routing facts. Pure validation and projection; no ambient observation.
 pub mod checker;
 pub mod checkpoint;
+pub mod gates;
 pub mod persistence;
 
 use crate::store::{Error, Result};
@@ -41,6 +42,7 @@ impl Scope {
 pub enum Fact {
     Checkpoint(checkpoint::Checkpoint),
     Checker(checker::Checker),
+    Gate(gates::Gate),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,12 +61,14 @@ impl Record {
         match &self.fact {
             Fact::Checkpoint(value) => value.validate(),
             Fact::Checker(value) => value.validate(),
+            Fact::Gate(value) => value.validate(),
         }
     }
     pub fn key(&self) -> Result<String> {
         let (kind, id) = match &self.fact {
             Fact::Checkpoint(value) => ("checkpoint", &value.id),
             Fact::Checker(value) => ("checker", &value.id),
+            Fact::Gate(value) => ("gate", &value.id),
         };
         Ok(crate::store::model::digest(&serde_json::to_vec(&(
             &self.scope,

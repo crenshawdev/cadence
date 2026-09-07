@@ -355,3 +355,205 @@ fn checker_service_retains_actual_results_and_spent_revision() {
         );
     });
 }
+
+use cadence::evidence::gates::{
+    Answer, Disposition as GateDisposition, Gate, OptionChoice, Purpose, State as GateState,
+};
+fn gate(root: &Path, id: &str, purpose: Purpose) -> Record {
+    let mut value = checkpoint(root);
+    value.fact = Fact::Gate(Gate {
+        id: id.into(),
+        purpose,
+        checkpoint_id: None,
+        question: "  Continue now? 日本語\n".into(),
+        need: "\n Exact Need\t".into(),
+        options: vec![
+            OptionChoice {
+                id: "continue".into(),
+                text: "Continue now".into(),
+            },
+            OptionChoice {
+                id: "stop".into(),
+                text: "Stop here".into(),
+            },
+        ],
+        state: GateState::Unanswered,
+    });
+    value
+}
+fn answered(mut value: Record, disposition: GateDisposition) -> Record {
+    let Fact::Gate(gate) = &mut value.fact else {
+        panic!("gate")
+    };
+    gate.state = GateState::Answered(Answer {
+        question_id: gate.id.clone(),
+        actual_response: "  yes, with this adjustment\r\n".into(),
+        selected_option: Some("continue".into()),
+        adjustment: Some(" preserve exact names  ".into()),
+        disposition,
+        authorization_id: Some("operator-answer-1".into()),
+    });
+    value
+}
+
+#[test]
+fn gates_service_binds_exact_answers_to_pending_questions_and_occurrences() {
+    let root = fixture();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        let unanswered = gate(root.path(), "pending", Purpose::Progress);
+        submit(&server, root.path(), "pending", unanswered.clone())
+            .await
+            .unwrap();
+        let mut answers = Vec::new();
+        for (index, purpose) in [
+            Purpose::Structural,
+            Purpose::HumanVerify,
+            Purpose::Decision,
+            Purpose::Blocked,
+            Purpose::UnusableCheck,
+            Purpose::Progress,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for (d, disposition) in [
+                GateDisposition::Approve,
+                GateDisposition::Adjust,
+                GateDisposition::Stop,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let id = format!("gate-{index}-{d}");
+                let question = gate(root.path(), &id, purpose.clone());
+                submit(&server, root.path(), &id, question.clone())
+                    .await
+                    .unwrap();
+                let answer = answered(question, disposition);
+                submit(
+                    &server,
+                    root.path(),
+                    &format!("answer-{id}"),
+                    answer.clone(),
+                )
+                .await
+                .unwrap();
+                answers.push(answer);
+            }
+        }
+        let superseded = gate(root.path(), "old", Purpose::Decision);
+        submit(&server, root.path(), "old-question", superseded.clone())
+            .await
+            .unwrap();
+        let mut retired = superseded.clone();
+        let Fact::Gate(g) = &mut retired.fact else {
+            panic!("gate")
+        };
+        g.state = GateState::Superseded { by: "new".into() };
+        submit(&server, root.path(), "supersede", retired)
+            .await
+            .unwrap();
+        let before = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        assert!(
+            submit(
+                &server,
+                root.path(),
+                "old-answer",
+                answered(superseded, GateDisposition::Approve)
+            )
+            .await
+            .is_err()
+        );
+        let mut wrong_id = answered(unanswered.clone(), GateDisposition::Approve);
+        let Fact::Gate(g) = &mut wrong_id.fact else {
+            panic!("gate")
+        };
+        let GateState::Answered(a) = &mut g.state else {
+            panic!("answer")
+        };
+        a.question_id = "different".into();
+        assert!(
+            submit(&server, root.path(), "wrong-id", wrong_id)
+                .await
+                .is_err()
+        );
+        let mut other_occurrence = answers[0].clone();
+        other_occurrence.scope.occurrence = "run-again".into();
+        assert!(
+            submit(&server, root.path(), "reuse-answer", other_occurrence)
+                .await
+                .is_err()
+        );
+        let mut changed = answered(unanswered.clone(), GateDisposition::Approve);
+        let Fact::Gate(g) = &mut changed.fact else {
+            panic!("gate")
+        };
+        g.question.push('?');
+        assert!(
+            submit(&server, root.path(), "changed-question", changed)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            before
+        );
+        drop(server);
+        let reopened = CadenceServer::with_factory(factory());
+        let recovery = reopened.evidence(root.path(), Command::Read).await.unwrap();
+        assert!(recovery.current.contains(&unanswered));
+        for answer in &answers {
+            assert!(recovery.current.contains(answer));
+            assert!(recovery.history.contains(answer));
+        }
+        assert_eq!(recovery.history.len(), 39);
+    });
+}
+
+#[test]
+fn gate_answer_waits_for_its_own_confirmation() {
+    let root = fixture();
+    let rt = runtime();
+    let armed = Arc::new(AtomicBool::new(false));
+    let probe_armed = armed.clone();
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let release_rx = std::sync::Mutex::new(release_rx);
+    let f = factory().with_probe(Arc::new(move |stage, path| {
+        if stage == Stage::Confirmation
+            && path.ends_with("state.json")
+            && probe_armed.swap(false, Ordering::SeqCst)
+        {
+            entered_tx.send(()).unwrap();
+            release_rx.lock().unwrap().recv().unwrap();
+        }
+        Ok(())
+    }));
+    let server = rt.block_on(async { CadenceServer::with_factory(f) });
+    let pending = gate(root.path(), "question", Purpose::Progress);
+    let before = rt
+        .block_on(submit(&server, root.path(), "question", pending.clone()))
+        .unwrap();
+    armed.store(true, Ordering::SeqCst);
+    let clone = server.clone();
+    let path = root.path().to_path_buf();
+    let answer = answered(pending.clone(), GateDisposition::Approve);
+    let expected = answer.clone();
+    let caller = rt.spawn(async move { submit(&clone, &path, "answer", answer).await });
+    entered_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    assert!(!caller.is_finished());
+    assert_eq!(before.current, [pending]);
+    release_tx.send(()).unwrap();
+    let acknowledged = rt.block_on(caller).unwrap().unwrap();
+    assert_eq!(acknowledged.current, [expected]);
+    assert_eq!(acknowledged.history.len(), 2);
+}

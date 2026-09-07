@@ -124,5 +124,46 @@ fn validate_transition(records: &BTreeMap<String, Record>, record: &Record) -> R
             _ => (),
         }
     }
+    if let Fact::Gate(gate) = &record.fact {
+        use super::gates::State;
+        if let Some(checkpoint_id) = &gate.checkpoint_id {
+            let checkpoint = records
+                .values()
+                .filter(|r| r.scope == record.scope)
+                .find_map(|r| match &r.fact {
+                    Fact::Checkpoint(cp) if cp.id == *checkpoint_id => Some(cp),
+                    _ => None,
+                })
+                .ok_or_else(|| Error::Invalid("gate lacks its checkpoint".into()))?;
+            if !checkpoint.requires_operator_answer() {
+                return Err(Error::Invalid(
+                    "suite-red does not require an operator gate".into(),
+                ));
+            }
+        }
+        match records.get(&record.key()?) {
+            None if gate.state != State::Unanswered => {
+                return Err(Error::Invalid(
+                    "answer requires its recorded pending question".into(),
+                ));
+            }
+            Some(Record {
+                fact: Fact::Gate(prior),
+                ..
+            }) => {
+                let mut question = gate.clone();
+                question.state = prior.state.clone();
+                if &question != prior
+                    || prior.state != State::Unanswered
+                    || gate.state == State::Unanswered
+                {
+                    return Err(Error::Conflict(
+                        "question changed, already answered, or superseded".into(),
+                    ));
+                }
+            }
+            _ => (),
+        }
+    }
     Ok(())
 }
