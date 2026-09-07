@@ -2,6 +2,7 @@
 pub mod checker;
 pub mod checkpoint;
 pub mod gates;
+pub mod overrides;
 pub mod persistence;
 pub mod results;
 
@@ -45,6 +46,7 @@ pub enum Fact {
     Checker(checker::Checker),
     Gate(gates::Gate),
     AcceptedResult(results::AcceptedResult),
+    Override(overrides::Override),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +67,7 @@ impl Record {
             Fact::Checker(value) => value.validate(),
             Fact::Gate(value) => value.validate(),
             Fact::AcceptedResult(value) => value.validate(),
+            Fact::Override(value) => value.validate(&self.scope),
         }
     }
     pub fn key(&self) -> Result<String> {
@@ -73,6 +76,7 @@ impl Record {
             Fact::Checker(value) => ("checker", &value.id),
             Fact::Gate(value) => ("gate", &value.id),
             Fact::AcceptedResult(value) => ("accepted_result", &value.id),
+            Fact::Override(value) => ("override", &value.id),
         };
         Ok(crate::store::model::digest(&serde_json::to_vec(&(
             &self.scope,

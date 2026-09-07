@@ -1094,3 +1094,260 @@ fn admitted_lost_reply_retries_once_but_unrecorded_input_stays_absent() {
         assert_eq!(twice["operations"], replay["operations"]);
     }
 }
+
+use cadence::evidence::overrides::{Authorization, Bypass, Meaning, Override, ReviewReceipt};
+fn override_record(root: &Path, id: &str, meaning: Meaning) -> Record {
+    let mut value = checkpoint(root);
+    value.fact = Fact::Override(Override {
+        id: id.into(),
+        reason: "  My exact reason 日本語\r\n".into(),
+        authorization: Authorization::Invocation {
+            id: format!("authorization-{id}"),
+            invocation: "explicit operator request".into(),
+        },
+        meaning,
+    });
+    value
+}
+fn review_receipt(base: &str, head: &str) -> ReviewReceipt {
+    ReviewReceipt {
+        base: base.into(),
+        head: head.into(),
+        trigger: "execute".into(),
+        plan: Some("phases/5/PLAN-1.md".into()),
+    }
+}
+
+#[test]
+fn four_overrides_share_submission_and_durable_readback() {
+    let root = process_fixture();
+    std::fs::write(root.path().join("phases/5/PLAN-2.md"), "second plan").unwrap();
+    std::fs::create_dir_all(root.path().join("phases/5/reports")).unwrap();
+    for n in 1..=2 {
+        std::fs::write(
+            root.path().join(format!("phases/5/reports/plan-{n}.md")),
+            "PLAN COMPLETE\n",
+        )
+        .unwrap();
+    }
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        let failed = checker(
+            root.path(),
+            "failed",
+            "## ISSUES FOUND",
+            vec![finding(1, Severity::Blocker)],
+        );
+        submit(&server, root.path(), "failed", failed.clone())
+            .await
+            .unwrap();
+        let forms = vec![
+            override_record(
+                root.path(),
+                "rerun",
+                Meaning::Rerun {
+                    admitted_plans: vec!["PLAN-1.md".into(), "PLAN-2.md".into()],
+                },
+            ),
+            override_record(
+                root.path(),
+                "bypass",
+                Meaning::Bypass {
+                    target: Bypass::Result {
+                        checker_id: "failed".into(),
+                        disposition: CheckDisposition::Fail,
+                    },
+                },
+            ),
+            override_record(
+                root.path(),
+                "pause",
+                Meaning::PausedNext {
+                    sentence: "  Ask René about 日本語; preserve\tthis  ".into(),
+                },
+            ),
+            override_record(
+                root.path(),
+                "review",
+                Meaning::Review(review_receipt("A", "B")),
+            ),
+        ];
+        let before = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        let mut narrowed = forms[0].clone();
+        let Fact::Override(o) = &mut narrowed.fact else {
+            unreachable!()
+        };
+        o.meaning = Meaning::Rerun {
+            admitted_plans: vec!["PLAN-2.md".into()],
+        };
+        assert!(
+            submit(&server, root.path(), "narrowed", narrowed)
+                .await
+                .is_err()
+        );
+        for original in &forms {
+            let mut missing = serde_json::to_value(original).unwrap();
+            missing["fact"]["value"]
+                .as_object_mut()
+                .unwrap()
+                .remove("reason");
+            assert!(serde_json::from_value::<Record>(missing).is_err());
+            for reason in ["", " \t\n"] {
+                let mut invalid = original.clone();
+                let Fact::Override(o) = &mut invalid.fact else {
+                    unreachable!()
+                };
+                o.reason = reason.into();
+                assert!(
+                    submit(&server, root.path(), "invalid", invalid)
+                        .await
+                        .is_err()
+                );
+            }
+        }
+        let mut rewritten = forms[1].clone();
+        let Fact::Override(o) = &mut rewritten.fact else {
+            unreachable!()
+        };
+        o.meaning = Meaning::Bypass {
+            target: Bypass::Result {
+                checker_id: "failed".into(),
+                disposition: CheckDisposition::Pass,
+            },
+        };
+        assert!(
+            submit(&server, root.path(), "rewrite", rewritten)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            before
+        );
+        for (i, value) in forms.iter().enumerate() {
+            submit(&server, root.path(), &format!("form-{i}"), value.clone())
+                .await
+                .unwrap();
+        }
+        drop(server);
+        let server = CadenceServer::with_factory(factory());
+        let reopened = server.evidence(root.path(), Command::Read).await.unwrap();
+        assert_eq!(
+            reopened.history,
+            [vec![failed.clone()], forms.clone()].concat()
+        );
+        assert!(reopened.current.contains(&failed));
+        for form in forms {
+            assert!(reopened.current.contains(&form));
+        }
+    });
+}
+
+#[test]
+fn override_requires_actual_invocation_or_recorded_authorizing_answer() {
+    let root = fixture();
+    std::fs::write(
+        root.path().join("config.json"),
+        r#"{"workflow":{"plan_check":false}}"#,
+    )
+    .unwrap();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        assert!(
+            server
+                .evidence(root.path(), Command::Read)
+                .await
+                .unwrap()
+                .current
+                .is_empty()
+        );
+        let value = override_record(
+            root.path(),
+            "skip",
+            Meaning::Bypass {
+                target: Bypass::Skipped {
+                    check: "plan-check".into(),
+                },
+            },
+        );
+        let before = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        let unchanged = server
+            .evidence(
+                root.path(),
+                Command::InvokeOverride {
+                    requested: false,
+                    operation_id: "unset".into(),
+                    record: Box::new(value.clone()),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(unchanged.current.is_empty());
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            before
+        );
+        server
+            .evidence(
+                root.path(),
+                Command::InvokeOverride {
+                    requested: true,
+                    operation_id: "set".into(),
+                    record: Box::new(value.clone()),
+                },
+            )
+            .await
+            .unwrap();
+        let mut from_answer = value.clone();
+        let Fact::Override(o) = &mut from_answer.fact else {
+            unreachable!()
+        };
+        o.id = "answer-skip".into();
+        o.authorization = Authorization::Answer {
+            id: "operator-answer-1".into(),
+            question_id: "bypass-question".into(),
+        };
+        assert!(
+            submit(&server, root.path(), "no-answer", from_answer.clone())
+                .await
+                .is_err()
+        );
+        let question = gate(root.path(), "bypass-question", Purpose::UnusableCheck);
+        submit(&server, root.path(), "question", question.clone())
+            .await
+            .unwrap();
+        assert!(
+            submit(&server, root.path(), "unanswered", from_answer.clone())
+                .await
+                .is_err()
+        );
+        submit(
+            &server,
+            root.path(),
+            "answer",
+            answered(question, GateDisposition::Approve),
+        )
+        .await
+        .unwrap();
+        submit(&server, root.path(), "from-answer", from_answer.clone())
+            .await
+            .unwrap();
+        drop(server);
+        let server = CadenceServer::with_factory(factory());
+        let recovered = server.evidence(root.path(), Command::Read).await.unwrap();
+        assert!(recovered.current.contains(&value));
+        assert!(recovered.current.contains(&from_answer));
+    });
+}
