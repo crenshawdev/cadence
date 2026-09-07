@@ -358,3 +358,187 @@ Open items: the schema repair needs a widened source lease, then the remaining
 Task 5 observations and all Task 6 closure work. No source outside the remaining
 lease was changed, no suite was fabricated, and no further execution proceeded
 past this checkpoint.
+
+
+## Task 7 continuation from 98e52cf5 - object schema roots
+
+PLAN PARTIAL
+Plan: .planning/phases/6/PLAN-2.md
+Dispatch scope: Task 7 only; Tasks 5 and 6 are not resumed.
+
+Starting branch `cadence/binary-owns-process`, HEAD
+`98e52cf5ee6006d469841e85a814fffe1e9c22d0`, tree clean. The installed 3.7.12
+executor contract and lean-build reference were read; the repository contract
+is an artifact under test. The dispatch overrides report rotation/rewrite:
+this record is appended to the existing report and remains unstaged.
+
+PREDICTION stated before V7: `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence
+--test mcp` will report 14 passed, 0 failed, 0 ignored, 0 filtered, exit 0.
+The new `tool_schemas_all_inputs_and_outputs_have_object_roots` test reads the
+real child's tool list and checks both schemas of every returned tool, without
+a fixed tool-name or tool-count inventory. Existing assertions are unchanged.
+
+Negative-control PREDICTION: disabling only the root-type insertion and running
+the new test will report 0 passed, 1 failed, 13 filtered, exit 101, with
+`cadence_version.outputSchema` lacking root `type` (actual None, expected
+Some(String("object"))). Restoring the insertion will make the named test pass.
+Raw-probe PREDICTION: the rebuilt binary will handshake and advertise exactly
+three tools, with all six input/output roots equal to `object`, and exit 0.
+
+Static-command discovery through the installed `config.mjs` and
+`planning.mjs detect-commands --root /code/cadence` exited 0: lint override null,
+detected clippy and TypeScript. Node invocations ignored unused stdin.
+Static-check PREDICTION: clippy, fmt and TypeScript each exit 0.
+Evidence files for this dispatch are under `/tmp/cadence-task7-b_w5vrct/`.
+
+
+Task 7 V7 ACTUAL: 14 passed, 0 failed, 0 ignored, 0 filtered, exit 0
+(30.23 seconds). The existing exact-three-tool, query-discriminator and full
+executor-patch assertions passed unchanged; only the new named test was added.
+
+Negative control ACTUALLY RUN: the root insertion was replaced temporarily by
+`let _ = Arc::make_mut(schema);`, retaining schema generation and removing
+only the root-type mutation. The new named test reported 0 passed, 1 failed,
+0 ignored, 13 filtered, exit 101. Its assertion reported
+`"cadence_version".outputSchema must have root type object`, left `None`, right
+`Some(String("object"))`. The complete fixed source bytes were restored; the
+same named test then reported 1 passed, 0 failed, 13 filtered, exit 0.
+Logs: `v7.log`, `negative-control.log`, `restored-control.log` in the evidence
+fixture. The negative failure was expected and proves the test detects the
+missing-root regression.
+
+Raw probe ACTUAL: `/code/cadence/target/debug/cadence serve --project-root
+/tmp/cadence-task7-b_w5vrct/wire-project` ran directly as PID 2636842. The probe
+sent `initialize`, waited for its successful response, sent
+`notifications/initialized`, then `tools/list`, and read the actual response.
+Both the probe and its own server exited 0; closing stdin ended the server.
+No host or executor was launched. All fixture children had
+`CADENCE_GLOBAL_CONFIG` empty. Transcript, tool list and root summary are in
+`wire-transcript.json`, `wire-tools-list.json` and `wire-summary.json`.
+
+| Wire-observed schema | Root type |
+|---|---|
+| cadence_version.inputSchema | object |
+| cadence_version.outputSchema | object |
+| cadence_query.inputSchema | object |
+| cadence_query.outputSchema | object |
+| cadence_apply.inputSchema | object |
+| cadence_apply.outputSchema | object |
+
+Six of six roots are `object`. This clears Task 7's schema prerequisite for a
+later Task 5 retry; it does not turn the historical BLOCKED UAT into a pass.
+
+Initial clippy and TypeScript ACTUAL: exit 0 each, no diagnostics. npm cache
+and logs were directed into the temporary evidence fixture.
+[deviation] Static-check prediction expected fmt exit 0; actual exit 1 asked
+only to wrap the new test's nonempty-list assertion. Applied that formatting
+change inside `mcp.rs`. Fmt recheck PREDICTION: exit 0. No acceptance criterion,
+locked decision or lease changed.
+
+
+PLAN PARTIAL
+Tasks: 5 of 7 satisfied (Tasks 1-4 and 7); Tasks 5 and 6 remain outstanding.
+
+| Task | Commit | Result |
+|---|---|---|
+| 7 - Make every advertised schema loadable by a real host | `b6bff7a4787a43afcc092d668ecc8a04df376705` | Derived input/output schemas gain only root `type: object` at shared tool construction. V7, the required negative control/restoration and raw six-of-six probe passed. Final regression suite pending. |
+
+Commit subject: `feat(6): declare object roots for every tool schema`.
+Signature verified `G` with key `693AB15F91734B0C`; author and committer are
+John Crenshaw <john@jcrenshaw.dev>. Exactly `server.rs` and `mcp.rs` are in the
+commit; no body/trailers or file deletions. Only this report remains modified
+and unstaged for the sequential handoff. One task, one signed atomic commit.
+
+Before commit, `git diff --exit-code v3.7.12 -- cadence-core/` exited 0,
+and the separate `git diff --exit-code 98e52cf5 --` covering all user-protected
+planning paths exited 0. Working and staged whitespace checks exited 0.
+The installed lease check exited 0 with `ok:true`, staged 2. An independent
+byte comparison confirmed every pre-existing MCP test/helper unchanged and
+this report's original bytes retained as a prefix. No new file, executable
+script, `.mcp.json` or untracked repository artifact was added.
+
+Fmt recheck ACTUAL: exit 0, no diagnostics. Final clippy/fmt/TypeScript exits
+are 0/0/0. The only intervening change after clippy was the fmt-required line
+wrap in the new test; TypeScript inputs never changed.
+
+Final-suite PREDICTION before invocation: 348 passed, 0 failed, 0 ignored,
+0 filtered, exit 0 (the supplied 347-test baseline plus the new regression).
+The installed `config.mjs get workflow.test_command` exited 0 with null;
+`Cargo.toml` therefore selects `TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace`.
+This is the dispatch's single final regression suite, run after its task commit
+and report append as required by the installed contract. It is not Task 6's
+acceptance-map work. No Node suite or Task 5 live UAT is invoked.
+
+
+Final-suite ACTUAL: **348 passed, 0 failed, 0 ignored, 0 filtered; exit 0**.
+All 12 harnesses completed in the single final workspace invocation; no repair
+or second full-suite run was needed. Counts match the prediction exactly.
+
+| Harness | Passed | Failed |
+|---|---:|---:|
+| Library | 104 | 0 |
+| Binary | 147 | 0 |
+| derivation_consistency | 6 | 0 |
+| derivation_inputs | 12 | 0 |
+| evidence_store | 4 | 0 |
+| execution_boundary_compat | 9 | 0 |
+| execution_store | 18 | 0 |
+| mcp | 14 | 0 |
+| next_action | 7 | 0 |
+| store | 17 | 0 |
+| store_crash | 10 | 0 |
+| Doctests | 0 | 0 |
+| Total | 348 | 0 |
+
+The binary harness took 97.96 seconds, execution_store 251.22 seconds and MCP
+30.01 seconds. `workspace.log` contains the complete output. The final MCP
+run again passed both the new root assertion and every unchanged pre-existing
+assertion. Wire inspection also retained one query `oneOf` variant and four
+`oneOf` variants in each output envelope; the root insertion preserved these
+unions and their derived constraints.
+
+Final command exits: V7 0; negative control 101 (expected); restored named
+test 0; raw probe 0 and server 0; workspace 0; clippy 0; fmt 0 after the recorded
+initial formatting exit 1; TypeScript 0. No Node-suite result is claimed.
+
+Task 7 COMPLETE. PLAN PARTIAL: 5 of 7 tasks satisfied (Tasks 1-4 and 7).
+Commit: `b6bff7a4787a43afcc092d668ecc8a04df376705`.
+Deviations in this dispatch: one prediction mismatch, the corrected fmt line
+wrap; no acceptance criterion, locked decision or lease deviation.
+Open items within Task 7: none. The six-of-six raw schema prerequisite is
+proved, but actual host loading and the remaining live executor/UAT obligations
+were not rerun or proved here. Task 5's historical BLOCKED UAT stays unchanged;
+Task 6 was not attempted. Full PLAN-2 completion is not claimed.
+
+The source commit remains the sole commit in this dispatch. This report append
+is left unstaged for the sequential handoff; its entire prior content is
+preserved. All scratch evidence is within the one temporary fixture under
+`/tmp`; no unrelated process was monitored or killed.
+
+
+Closing-audit correction: after the suite, HEAD was observed at
+`23b278c3c7a0a6671a9a1aefe9c289c04ffe9915` (`docs: tick phase 5 complete in the
+roadmap`), a later commit not created by this dispatch. Its only change marks
+Phase 5 complete in `.planning/ROADMAP.md`. The Task 7 commit remains
+`b6bff7a4787a43afcc092d668ecc8a04df376705`, with exactly the two leased source
+paths and no planning changes.
+
+[deviation] The closing audit expected the starting protected planning bytes
+and one commit since the supplied HEAD; it observed this later ROADMAP commit
+and two commits in the branch range. The current-HEAD protected-path diff
+therefore exited 1. The source lease remains unchanged, and no later change
+was reverted or edited. The precommit preservation checks had passed, and an
+explicit recheck of `98e52cf5..b6bff7a4` against every protected planning path
+exited 0. The frozen-tree comparison of `v3.7.12..b6bff7a4` also exited 0.
+Current leased source bytes still equal the Task 7 commit (diff exit 0), so the
+suite's tested implementation is unchanged. Whitespace check exited 0; only
+the existing report is modified and unstaged.
+
+Final clarification: this dispatch created exactly one signed source commit;
+the branch additionally contains the later ROADMAP-only commit. Task 7 and all
+its validation remain complete. Current branch-wide preservation against the
+supplied HEAD cannot be claimed for ROADMAP because of that subsequent change.
+The dispatch records two verification prediction mismatches in total: the
+corrected fmt wrap and this later protected-path drift. Neither required a
+change to Task 7's acceptance criteria or implementation. No Task 5 or Task 6
+work was performed by this dispatch.
