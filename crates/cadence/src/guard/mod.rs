@@ -1,4 +1,5 @@
 //! File-ownership guard for host Write and Edit tool calls.
+mod bash;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -75,6 +76,9 @@ pub fn run() -> ExitCode {
             };
         }
     };
+    if tool.as_deref() == Some("Bash") {
+        return bash::run(&bytes);
+    }
     if !matches!(tool.as_deref(), Some("Write" | "Edit")) {
         return ExitCode::SUCCESS;
     }
@@ -121,10 +125,14 @@ fn matched_tool(bytes: &[u8]) -> bool {
 }
 
 fn write_denial(reason: impl Into<String>) -> ExitCode {
+    write_decision("deny", reason)
+}
+
+fn write_decision(decision: &'static str, reason: impl Into<String>) -> ExitCode {
     let output = Output {
         hook_specific_output: HookOutput {
             hook_event_name: "PreToolUse",
-            permission_decision: "deny",
+            permission_decision: decision,
             permission_decision_reason: reason.into(),
         },
     };

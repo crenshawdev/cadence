@@ -535,3 +535,87 @@ fn legacy_invocations_do_not_coalesce_by_command_digest() {
         audit::event_identity(Some("session"), Some("tool-2"))
     );
 }
+
+fn hook(root: &Path, cwd: &Path, command: &str, id: &str) -> std::process::Output {
+    use std::io::Write;
+    let mut process = Command::new(env!("CARGO_BIN_EXE_cadence"))
+        .arg("guard")
+        .env("CADENCE_GLOBAL_CONFIG", root.join("missing-global.json"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = serde_json::json!({"tool_name":"Bash","hook_event_name":"PreToolUse","cwd":cwd,
+        "session_id":"fixture","tool_use_id":id,"tool_input":{"command":command}});
+    process
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&serde_json::to_vec(&input).unwrap())
+        .unwrap();
+    process.wait_with_output().unwrap()
+}
+fn stored(root: &Path) -> cadence::store::writer::View {
+    runtime().block_on(async {
+        let store = Store::open(Filesystem::new(root.join(".planning")).unwrap(), Allow)
+            .await
+            .unwrap();
+        store.request(Operation::ReadVerified).await.unwrap()
+    })
+}
+#[test]
+fn binary_push_asks_only_after_a_confirmed_receipt_and_replays_host_identity() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join(".planning")).unwrap();
+    let result = hook(root.path(), root.path(), "git push origin main", "push-1");
+    assert!(result.status.success());
+    // Independently confirm the store before accepting stdout as a hook result.
+    let view = stored(root.path());
+    let record = view
+        .decisions
+        .iter()
+        .find(|r| r.origin.source == "bash-guard")
+        .unwrap();
+    let audit = audit::from_record(record).unwrap();
+    assert_eq!(audit.outcome, Outcome::Ask);
+    assert_eq!(
+        audit.command_digest,
+        cadence::store::model::digest(b"git push origin main")
+    );
+    let response: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(response["hookSpecificOutput"]["permissionDecision"], "ask");
+    assert_eq!(
+        response["hookSpecificOutput"]["permissionDecisionReason"],
+        audit.reason
+    );
+    let replay = hook(root.path(), root.path(), "git push origin main", "push-1");
+    assert_eq!(replay.stdout, result.stdout);
+    assert_eq!(stored(root.path()), view);
+}
+#[test]
+fn binary_project_discovery_walks_nested_cwd_and_stops_at_foreign_git_boundaries() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join(".planning")).unwrap();
+    let nested = root.path().join("src/deep");
+    std::fs::create_dir_all(&nested).unwrap();
+    let result = hook(root.path(), &nested, "git push", "nested");
+    assert!(result.status.success());
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&result.stdout).unwrap()["hookSpecificOutput"]
+            ["permissionDecision"],
+        "ask"
+    );
+    let before = stored(root.path());
+    std::fs::write(root.path().join("src/.git"), b"gitdir: /unrelated").unwrap();
+    let result = hook(root.path(), &nested, "git push", "foreign");
+    assert!(result.status.success());
+    assert!(result.stdout.is_empty());
+    assert_eq!(stored(root.path()), before);
+    let unrelated = tempfile::tempdir().unwrap();
+    std::fs::create_dir(unrelated.path().join(".git")).unwrap();
+    let result = hook(unrelated.path(), unrelated.path(), "git push", "outside");
+    assert!(result.status.success());
+    assert!(result.stdout.is_empty());
+    assert!(!unrelated.path().join(".planning").exists());
+}

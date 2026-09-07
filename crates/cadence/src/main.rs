@@ -22,7 +22,7 @@ struct Cli {
 enum Command {
     /// Run the MCP stdio server.
     Serve,
-    /// Guard binary-owned planning outputs from direct Write/Edit calls.
+    /// Guard Bash Git commands and binary-owned Write/Edit outputs.
     Guard,
 }
 
