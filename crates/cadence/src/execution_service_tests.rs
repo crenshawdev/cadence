@@ -2,9 +2,11 @@ use super::{
     CadenceServer,
     derivation_service::{Driver, Event},
     evidence_service::Command as EvidenceCommand,
-    execution_service::{self, Response},
+    execution_service,
 };
 use crate::import::SessionFactory;
+use cadence::envelope::Envelope;
+use cadence::execution::boundary::{ExecutionEnvelope, Success};
 use cadence::{
     derivation::LifecycleStatus,
     evidence::{
@@ -214,7 +216,8 @@ async fn accept(server: &CadenceServer, fixture: &Fixture) {
 }
 
 async fn dispatch(server: &CadenceServer, fixture: &Fixture) -> ActiveDispatch {
-    let Response::Dispatch { dispatch, prompt } = server.query_execution(&fixture.root, 6).await
+    let Envelope::Ok(Success::Dispatch { dispatch, prompt }) =
+        server.query_execution(&fixture.root, 6).await.unwrap()
     else {
         panic!("expected a dispatch")
     };
@@ -274,8 +277,8 @@ fn complete_patch(dispatch: &ActiveDispatch, commits: &[&str]) -> ExecutorPatch 
     }
 }
 
-fn refusal_code(response: Response) -> String {
-    let Response::Refused { code, .. } = response else {
+fn refusal_code(response: ExecutionEnvelope) -> String {
+    let Envelope::Refused { code, .. } = response else {
         panic!("expected refusal, got {response:?}")
     };
     code
@@ -322,18 +325,20 @@ fn resident_selects_overlap_graph_durably_and_ignores_report_bodies() {
         let first_commit = commit(&fixture, "one", "feat(phase-6): complete T1", true);
         assert_eq!(
             server
-                .apply_executor_patch(&fixture.root, 6, complete_patch(&first, &[&first_commit]),)
-                .await,
-            Response::NextPlan { phase: 6, plan: 2 }
+                .apply_executor_patch(&fixture.root, complete_patch(&first, &[&first_commit]),)
+                .await
+                .unwrap(),
+            Envelope::Ok(Success::NextPlan { phase: 6, plan: 2 })
         );
         let second = dispatch(&server, &fixture).await;
         assert_eq!(second.plan, 2);
         let second_commit = commit(&fixture, "two", "feat(phase-6): complete T2", true);
         assert_eq!(
             server
-                .apply_executor_patch(&fixture.root, 6, complete_patch(&second, &[&second_commit]),)
-                .await,
-            Response::NextPlan { phase: 6, plan: 3 }
+                .apply_executor_patch(&fixture.root, complete_patch(&second, &[&second_commit]),)
+                .await
+                .unwrap(),
+            Envelope::Ok(Success::NextPlan { phase: 6, plan: 3 })
         );
         assert_eq!(dispatch(&server, &fixture).await.plan, 3);
     });
@@ -345,7 +350,7 @@ fn lifecycle_continuation_and_changed_plan_inputs_refuse_dispatch() {
         let unaccepted = fixture(&[(&["src/a.rs"], &["T1"], "body\n")]);
         let server = CadenceServer::with_factory(factory());
         assert_eq!(
-            refusal_code(server.query_execution(&unaccepted.root, 6).await),
+            refusal_code(server.query_execution(&unaccepted.root, 6).await.unwrap()),
             "continuation-refusal"
         );
 
@@ -362,8 +367,8 @@ fn lifecycle_continuation_and_changed_plan_inputs_refuse_dispatch() {
         )
         .unwrap();
         let server = CadenceServer::with_factory(factory());
-        let response = server.query_execution(&complete.root, 6).await;
-        assert!(matches!(response, Response::Refused { .. }));
+        let response = server.query_execution(&complete.root, 6).await.unwrap();
+        assert!(matches!(response, Envelope::Refused { .. }));
 
         let changed = fixture(&[(&["src/a.rs"], &["T1"], "original body\n")]);
         let accepting = CadenceServer::with_factory(factory());
@@ -385,7 +390,7 @@ fn lifecycle_continuation_and_changed_plan_inputs_refuse_dispatch() {
         };
         let server = CadenceServer::with_derivation_driver(factory(), driver);
         assert_eq!(
-            refusal_code(server.query_execution(&changed.root, 6).await),
+            refusal_code(server.query_execution(&changed.root, 6).await.unwrap()),
             "inputs-changed"
         );
         let view = server
@@ -408,13 +413,17 @@ fn signed_commits_apply_in_strict_order_and_paths_survive_replay() {
         let patch = complete_patch(&dispatch, &[&first, &second]);
         assert_eq!(
             server
-                .apply_executor_patch(&fixture.root, 6, patch.clone())
-                .await,
-            Response::Complete { phase: 6 }
+                .apply_executor_patch(&fixture.root, patch.clone())
+                .await
+                .unwrap(),
+            Envelope::Ok(Success::Complete { phase: 6 })
         );
         assert_eq!(
-            server.apply_executor_patch(&fixture.root, 6, patch).await,
-            Response::Complete { phase: 6 }
+            server
+                .apply_executor_patch(&fixture.root, patch)
+                .await
+                .unwrap(),
+            Envelope::Ok(Success::Complete { phase: 6 })
         );
         let view = server
             .store(&fixture.root, Operation::ReadVerified)
@@ -449,10 +458,10 @@ fn missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse() {
                 server
                     .apply_executor_patch(
                         &fixture.root,
-                        6,
                         complete_patch(&dispatch, &["1111111111111111111111111111111111111111"],),
                     )
                     .await
+                    .unwrap()
             ),
             "missing-commit"
         );
@@ -462,12 +471,9 @@ fn missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse() {
         assert_eq!(
             refusal_code(
                 server
-                    .apply_executor_patch(
-                        &fixture.root,
-                        6,
-                        complete_patch(&dispatch, &[&unsigned]),
-                    )
+                    .apply_executor_patch(&fixture.root, complete_patch(&dispatch, &[&unsigned]),)
                     .await
+                    .unwrap()
             ),
             "bad-signature"
         );
@@ -479,10 +485,10 @@ fn missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse() {
                 server
                     .apply_executor_patch(
                         &fixture.root,
-                        6,
                         complete_patch(&dispatch, &[&shared, &shared]),
                     )
                     .await
+                    .unwrap()
             ),
             "reused-commit"
         );
@@ -495,10 +501,10 @@ fn missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse() {
                 server
                     .apply_executor_patch(
                         &fixture.root,
-                        6,
                         complete_patch(&dispatch, &[&second, &first]),
                     )
                     .await
+                    .unwrap()
             ),
             "git-order"
         );
@@ -508,12 +514,9 @@ fn missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse() {
         assert_eq!(
             refusal_code(
                 server
-                    .apply_executor_patch(
-                        &fixture.root,
-                        6,
-                        complete_patch(&dispatch, &[&mismatch]),
-                    )
+                    .apply_executor_patch(&fixture.root, complete_patch(&dispatch, &[&mismatch]),)
                     .await
+                    .unwrap()
             ),
             "commit-subject"
         );
@@ -524,12 +527,9 @@ fn missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse() {
         assert_eq!(
             refusal_code(
                 server
-                    .apply_executor_patch(
-                        &fixture.root,
-                        6,
-                        complete_patch(&dispatch, &[&untrusted]),
-                    )
+                    .apply_executor_patch(&fixture.root, complete_patch(&dispatch, &[&untrusted]),)
                     .await
+                    .unwrap()
             ),
             "bad-signature"
         );
@@ -565,16 +565,22 @@ fn blocked_patch_persists_judgment_stop_without_dispatching_more_work() {
                 evidence: vec![EvidenceReference::Criterion { id: "AC4".into() }],
             }],
         };
-        let expected = Response::JudgmentStop {
+        let expected = Envelope::Ok(Success::JudgmentStop {
             phase: 6,
             dispatch_id: dispatch.id,
             blocker_ids: vec!["B1".into()],
-        };
+        });
         assert_eq!(
-            server.apply_executor_patch(&fixture.root, 6, patch).await,
+            server
+                .apply_executor_patch(&fixture.root, patch)
+                .await
+                .unwrap(),
             expected
         );
-        assert_eq!(server.query_execution(&fixture.root, 6).await, expected);
+        assert_eq!(
+            server.query_execution(&fixture.root, 6).await.unwrap(),
+            expected
+        );
     });
 }
 
@@ -607,8 +613,8 @@ fn execution_restart_child() {
             "dispatch-lost" => {
                 let server = CadenceServer::with_factory(factory());
                 assert!(matches!(
-                    server.query_execution(&root, phase).await,
-                    Response::Dispatch { .. }
+                    server.query_execution(&root, phase).await.unwrap(),
+                    Envelope::Ok(Success::Dispatch { .. })
                 ));
                 restart_barrier("dispatch-confirmed");
             }
@@ -616,9 +622,10 @@ fn execution_restart_child() {
                 let server = CadenceServer::with_factory(factory());
                 assert!(!matches!(
                     server
-                        .apply_executor_patch(&root, phase, child_patch())
-                        .await,
-                    Response::Refused { .. }
+                        .apply_executor_patch(&root, child_patch())
+                        .await
+                        .unwrap(),
+                    Envelope::Refused { .. }
                 ));
                 restart_barrier("patch-confirmed");
             }
@@ -637,15 +644,17 @@ fn execution_restart_child() {
                 let server = CadenceServer::with_factory(factory);
                 armed.store(true, Ordering::SeqCst);
                 let _ = server
-                    .apply_executor_patch(&root, phase, child_patch())
-                    .await;
+                    .apply_executor_patch(&root, child_patch())
+                    .await
+                    .unwrap();
                 panic!("summary barrier was not reached");
             }
             "read-query" => {
                 let server = CadenceServer::with_factory(factory());
                 println!(
                     "EXECUTION_RESULT {}",
-                    serde_json::to_string(&server.query_execution(&root, phase).await).unwrap()
+                    serde_json::to_string(&server.query_execution(&root, phase).await.unwrap())
+                        .unwrap()
                 );
             }
             "read-apply" => {
@@ -654,8 +663,9 @@ fn execution_restart_child() {
                     "EXECUTION_RESULT {}",
                     serde_json::to_string(
                         &server
-                            .apply_executor_patch(&root, phase, child_patch())
+                            .apply_executor_patch(&root, child_patch())
                             .await
+                            .unwrap()
                     )
                     .unwrap()
                 );
@@ -719,7 +729,11 @@ fn kill_execution_child(root: &Path, mode: &str, barrier: &str, patch: Option<&E
     }
 }
 
-fn execution_child_result(root: &Path, mode: &str, patch: Option<&ExecutorPatch>) -> Response {
+fn execution_child_result(
+    root: &Path,
+    mode: &str,
+    patch: Option<&ExecutorPatch>,
+) -> ExecutionEnvelope {
     let output = execution_child(root, mode, patch).output().unwrap();
     assert!(
         output.status.success(),
@@ -742,7 +756,7 @@ fn boundary_count(root: &Path) -> usize {
         .unwrap_or_default()
         .lines()
         .map(|line| serde_json::from_str::<DecisionRecord>(line).unwrap())
-        .filter(|record| matches!(record.decision, Decision::Boundary { .. }))
+        .filter(|record| matches!(record.decision, Decision::BoundaryV1(_)))
         .count()
 }
 
@@ -760,7 +774,7 @@ fn execution_restart_dispatch_recovery_distinguishes_pre_admission() {
             None,
         );
         assert_eq!(boundary_count(&not_admitted.root), 0);
-        let Response::Dispatch { dispatch, .. } =
+        let Envelope::Ok(Success::Dispatch { dispatch, .. }) =
             execution_child_result(&not_admitted.root, "read-query", None)
         else {
             panic!("fresh process did not admit the first dispatch")
@@ -774,7 +788,7 @@ fn execution_restart_dispatch_recovery_distinguishes_pre_admission() {
         drop(server);
         kill_execution_child(&admitted.root, "dispatch-lost", "dispatch-confirmed", None);
         assert_eq!(boundary_count(&admitted.root), 1);
-        let Response::Dispatch { dispatch, prompt } =
+        let Envelope::Ok(Success::Dispatch { dispatch, prompt }) =
             execution_child_result(&admitted.root, "read-query", None)
         else {
             panic!("fresh process did not recover the dispatch")
@@ -818,9 +832,9 @@ fn execution_restart_lost_apply_replays_one_immutable_transition() {
             assert_eq!(
                 response,
                 if plan_count == 1 {
-                    Response::Complete { phase: 6 }
+                    Envelope::Ok(Success::Complete { phase: 6 })
                 } else {
-                    Response::NextPlan { phase: 6, plan: 2 }
+                    Envelope::Ok(Success::NextPlan { phase: 6, plan: 2 })
                 }
             );
             assert_eq!(
@@ -863,7 +877,7 @@ fn execution_restart_repairs_summary_before_final_state_confirmation() {
         assert!(String::from_utf8_lossy(&installed).contains(&sha));
         assert_eq!(
             execution_child_result(&fixture.root, "read-apply", Some(&patch)),
-            Response::Complete { phase: 6 }
+            Envelope::Ok(Success::Complete { phase: 6 })
         );
         assert!(!fixture.root.join(INTENT).exists());
         assert_eq!(
@@ -949,6 +963,7 @@ fn phase_six_binary_acceptance_inventory_runs_registered_evidence() {
 
 #[test]
 fn execution_service_conversion_is_public_before_receipt_creation() {
+    use cadence::execution::boundary::Response;
     use cadence::{
         envelope::Envelope,
         execution::boundary::{PreparedAnswer, Receipt},
@@ -978,4 +993,435 @@ fn execution_service_conversion_is_public_before_receipt_creation() {
         answer.response_digest,
         "6914d5f0a8f7869ca24286a3432df51d4114d9f9f3163293e2d0be6f8f1148c7"
     );
+}
+
+use cadence::execution::{
+    boundary::{BoundaryScope, BoundaryV1, Failure, PreparedAnswer},
+    model::BoundaryTool,
+};
+use cadence::store::writer::{BoundaryChange, View};
+use execution_service::ValidationFailure;
+use serde_json::{Value, json};
+
+fn canonical_answer(value: &Value) -> Vec<u8> {
+    match value {
+        Value::Object(object) => format!(
+            "{{{}}}",
+            object
+                .iter()
+                .collect::<std::collections::BTreeMap<_, _>>()
+                .into_iter()
+                .map(|(k, v)| format!(
+                    "{}:{}",
+                    serde_json::to_string(k).unwrap(),
+                    String::from_utf8(canonical_answer(v)).unwrap()
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+        .into_bytes(),
+        Value::Array(array) => format!(
+            "[{}]",
+            array
+                .iter()
+                .map(|v| String::from_utf8(canonical_answer(v)).unwrap())
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+        .into_bytes(),
+        _ => serde_json::to_vec(value).unwrap(),
+    }
+}
+fn actual_digest(envelope: &ExecutionEnvelope) -> String {
+    use sha2::{Digest, Sha256};
+    format!(
+        "{:x}",
+        Sha256::digest(canonical_answer(&serde_json::to_value(envelope).unwrap()))
+    )
+}
+fn disk_answer(root: &Path, answer: &ExecutionEnvelope) -> Value {
+    let expected = actual_digest(answer);
+    let record = fs::read_to_string(root.join("decisions.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .rev()
+        .find(|record| {
+            record["decision"]["class"] == "boundary_v1"
+                && record["decision"]["boundary"]["response_digest"] == expected
+        })
+        .unwrap();
+    let receipt = &record["decision"]["boundary"]["receipt"];
+    if receipt["receipt"] == "compact" {
+        assert_eq!(receipt["envelope"], serde_json::to_value(answer).unwrap());
+    }
+    record
+}
+
+#[test]
+fn execution_service_malformed_arguments_confirm_root_refusals_without_semantic_work() {
+    runtime().block_on(async {
+        let fixture = fixture(&[(&["src/a.rs"], &["T1"], "body\n")]);
+        let server = CadenceServer::with_factory(factory());
+        accept(&server, &fixture).await;
+        let before = server
+            .store(&fixture.root, Operation::ReadVerified)
+            .await
+            .unwrap();
+        fs::write(
+            fixture.root.join("phases/6/SUMMARY.md"),
+            "preserved summary\n",
+        )
+        .unwrap();
+        let cases = [
+            (None, ValidationFailure::MissingArguments),
+            (Some(json!({})), ValidationFailure::MissingField),
+            (
+                Some(json!({"operation":"execute-next"})),
+                ValidationFailure::MissingField,
+            ),
+            (Some(json!({"phase":0})), ValidationFailure::WrongType),
+            (
+                Some(serde_json::from_str(r#"{"phase":1.5}"#).unwrap()),
+                ValidationFailure::WrongType,
+            ),
+            (
+                Some(serde_json::from_str(r#"{"phase":1e0}"#).unwrap()),
+                ValidationFailure::WrongType,
+            ),
+            (Some(json!({"phase":"6"})), ValidationFailure::WrongType),
+            (
+                Some(json!({"phase":6,"extra":true})),
+                ValidationFailure::ExtraField,
+            ),
+            (
+                Some(json!({"kind":"foreign"})),
+                ValidationFailure::UnknownTag,
+            ),
+            (
+                Some(json!({"kind":"executor","tasks":"bad"})),
+                ValidationFailure::InvalidPatch,
+            ),
+        ];
+        let mut requests = std::collections::BTreeSet::new();
+        for tool in [BoundaryTool::CadenceQuery, BoundaryTool::CadenceApply] {
+            for (raw, failure) in &cases {
+                let answer = server
+                    .refuse_execution_arguments(&fixture.root, tool, raw.clone(), *failure)
+                    .await
+                    .unwrap();
+                assert!(matches!(answer, Envelope::Refused { .. }));
+                let record = disk_answer(&fixture.root, &answer);
+                assert_eq!(
+                    record["decision"]["boundary"]["scope"],
+                    json!({"scope":"root-refusal"})
+                );
+                let view = server
+                    .store(&fixture.root, Operation::ReadVerified)
+                    .await
+                    .unwrap();
+                let latest = &view.decisions.last().unwrap().decision;
+                let Decision::BoundaryV1(value) = latest else {
+                    panic!("missing public decision")
+                };
+                let operation = if tool == BoundaryTool::CadenceQuery {
+                    "execute-next"
+                } else {
+                    "executor"
+                };
+                let tool_name = if tool == BoundaryTool::CadenceQuery {
+                    "cadence-query"
+                } else {
+                    "cadence-apply"
+                };
+                let expected = cadence::store::model::digest(
+                    &serde_json::to_vec(&json!([
+                        "execution-request-v1",
+                        tool_name,
+                        operation,
+                        raw
+                    ]))
+                    .unwrap(),
+                );
+                assert_eq!(value.boundary.request_digest, expected);
+                assert!(requests.insert(expected));
+                assert_eq!(view.snapshot.data, before.snapshot.data);
+                assert_eq!(
+                    fs::read(fixture.root.join("phases/6/SUMMARY.md")).unwrap(),
+                    b"preserved summary\n"
+                );
+                let repeated = server
+                    .refuse_execution_arguments(&fixture.root, tool, raw.clone(), *failure)
+                    .await
+                    .unwrap();
+                assert_eq!(repeated, answer);
+                assert_eq!(
+                    server
+                        .store(&fixture.root, Operation::ReadVerified)
+                        .await
+                        .unwrap(),
+                    view
+                );
+            }
+        }
+        assert_eq!(requests.len(), 20);
+        let zero = server.query_execution(&fixture.root, 0).await.unwrap();
+        assert_eq!(refusal_code(zero.clone()), "invalid-phase");
+        assert_eq!(
+            disk_answer(&fixture.root, &zero)["decision"]["boundary"]["scope"],
+            json!({"scope":"root-refusal"})
+        );
+    });
+}
+
+#[test]
+fn execution_service_apply_resolves_active_receipt_and_foreign_dispatch_scopes() {
+    runtime().block_on(async {
+        let fixture = fixture(&[(&["src/a.rs"], &["T1"], "body\n")]);
+        let server = CadenceServer::with_factory(factory());
+        accept(&server, &fixture).await;
+        let dispatch = dispatch(&server, &fixture).await;
+        let commit = commit(&fixture, "T1", "feat(6): T1 complete", true);
+        let patch = complete_patch(&dispatch, &[&commit]);
+        let malformed = json!({"dispatch_id":dispatch.id,"tasks":"wrong"});
+        let refused = server
+            .refuse_execution_arguments(
+                &fixture.root,
+                BoundaryTool::CadenceApply,
+                Some(malformed.clone()),
+                ValidationFailure::InvalidPatch,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            disk_answer(&fixture.root, &refused)["decision"]["boundary"]["scope"],
+            json!({"scope":"execution","phase":6})
+        );
+        let applied = server
+            .apply_executor_patch(&fixture.root, patch.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&applied).unwrap(),
+            json!({"status":"ok","outcome":"complete","phase":6})
+        );
+        disk_answer(&fixture.root, &applied);
+        let again = server
+            .refuse_execution_arguments(
+                &fixture.root,
+                BoundaryTool::CadenceApply,
+                Some(malformed),
+                ValidationFailure::InvalidPatch,
+            )
+            .await
+            .unwrap();
+        assert_eq!(again, refused);
+        let mut foreign = patch;
+        foreign.dispatch_id = "foreign".into();
+        let answer = server
+            .apply_executor_patch(&fixture.root, foreign)
+            .await
+            .unwrap();
+        assert_eq!(refusal_code(answer.clone()), "foreign-dispatch");
+        assert_eq!(
+            disk_answer(&fixture.root, &answer)["decision"]["boundary"]["scope"],
+            json!({"scope":"root-refusal"})
+        );
+    });
+}
+
+#[test]
+fn execution_service_semantic_failures_confirm_but_log_config_and_queue_failures_do_not() {
+    runtime().block_on(async {
+        let fixture = fixture(&[(&["src/a.rs"], &["T1"], "body\n")]);
+        let armed = Arc::new(AtomicBool::new(false));
+        let probe = armed.clone();
+        let factory = factory().with_probe(Arc::new(move |stage, path| {
+            if probe.load(Ordering::SeqCst)
+                && stage == Stage::TemporarySync
+                && path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().contains("decisions.jsonl"))
+            {
+                Err(cadence::store::Error::Io("refusal log failure".into()))
+            } else {
+                Ok(())
+            }
+        }));
+        let server = CadenceServer::with_factory(factory);
+        let before = server
+            .store(&fixture.root, Operation::ReadVerified)
+            .await
+            .unwrap();
+        fs::write(
+            fixture.root.join("ROADMAP.md"),
+            "## Phases\n- [x] **Phase 6: Native execution**\n",
+        )
+        .unwrap();
+        let refused = server.query_execution(&fixture.root, 6).await.unwrap();
+        assert_eq!(refusal_code(refused.clone()), "state-conflict");
+        disk_answer(&fixture.root, &refused);
+        let after = server
+            .store(&fixture.root, Operation::ReadVerified)
+            .await
+            .unwrap();
+        assert_eq!(before.snapshot.data, after.snapshot.data);
+        armed.store(true, Ordering::SeqCst);
+        assert_eq!(
+            server
+                .refuse_execution_arguments(
+                    &fixture.root,
+                    BoundaryTool::CadenceQuery,
+                    None,
+                    ValidationFailure::MissingArguments
+                )
+                .await,
+            Err(Failure::Store)
+        );
+        let closed = CadenceServer {
+            service: super::recall::Resident::closed_for_test(),
+        };
+        assert_eq!(
+            closed.query_execution(&fixture.root, 6).await,
+            Err(Failure::Closed)
+        );
+        assert_eq!(
+            closed
+                .refuse_execution_arguments(
+                    &fixture.root,
+                    BoundaryTool::CadenceApply,
+                    None,
+                    ValidationFailure::MissingArguments
+                )
+                .await,
+            Err(Failure::Closed)
+        );
+        fs::write(fixture.root.join("config.v4.json"), "not json").unwrap();
+        assert_eq!(
+            server.query_execution(&fixture.root, 0).await,
+            Err(Failure::Store)
+        );
+    });
+}
+
+async fn saturate(server: &CadenceServer, root: &Path, scope: BoundaryScope) -> View {
+    let mut view = server.store(root, Operation::ReadVerified).await.unwrap();
+    let count=view.decisions.iter().filter(|record|matches!(&record.decision,Decision::BoundaryV1(value) if value.boundary.scope==scope)).count();
+    for index in count..=256 {
+        let decision = BoundaryV1::new(
+            scope.clone(),
+            BoundaryTool::CadenceQuery,
+            "execute-next".into(),
+            cadence::store::model::digest(format!("fill-{index}").as_bytes()),
+            None,
+            &PreparedAnswer::new(Envelope::Refused {
+                code: "fixture-refusal".into(),
+                reason: "fixture input refused".into(),
+            })
+            .unwrap(),
+        );
+        view = server
+            .store(
+                root,
+                Operation::BoundaryV1 {
+                    expected_generation: view.snapshot.generation,
+                    expected_integrity: view.snapshot.integrity.clone(),
+                    operation_id: format!("fill-{scope:?}-{index}"),
+                    decision,
+                    change: Box::new(BoundaryChange::Observe),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    view
+}
+
+#[test]
+fn execution_service_terminal_precedes_observation_dispatch_and_new_or_replayed_patch() {
+    runtime().block_on(async {
+        for state in ["root","new-dispatch","active","applied"] {
+            let fixture=fixture(&[(&["src/a.rs"],&["T1"],"body\n")]);
+            let server=CadenceServer::with_factory(factory()); accept(&server,&fixture).await;
+            let phase=if state=="root"{0}else{6};
+            let patch=if state=="new-dispatch" || state=="root"{None}else{
+                let active=dispatch(&server,&fixture).await;
+                let sha=commit(&fixture,"T1","feat(6): T1 complete",true);
+                let patch=complete_patch(&active,&[&sha]);
+                if state=="applied"{server.apply_executor_patch(&fixture.root,patch.clone()).await.unwrap();}
+                Some(patch)
+            };
+            let terminal=saturate(&server,&fixture.root,if phase==0{BoundaryScope::RootRefusal}else{BoundaryScope::Execution{phase}}).await;
+            let bytes=["decisions.jsonl","state.json"].map(|name|fs::read(fixture.root.join(name)).unwrap());
+            fs::write(fixture.root.join("ROADMAP.md"),"unreadable lifecycle meaning\n").unwrap();
+            fs::remove_file(fixture.root.join("phases/6/PLAN-1.md")).unwrap();
+            let answer=server.query_execution(&fixture.root,phase).await.unwrap();
+            assert_eq!(serde_json::to_value(&answer).unwrap(),json!({"status":"refused","code":"log-bound","reason":"the boundary scope reached its 256-transition limit"}));
+            disk_answer(&fixture.root,&answer);
+            if phase==0 {
+                assert_eq!(server.refuse_execution_arguments(&fixture.root,BoundaryTool::CadenceQuery,None,ValidationFailure::MissingArguments).await.unwrap(),answer);
+                assert_eq!(server.refuse_execution_arguments(&fixture.root,BoundaryTool::CadenceApply,Some(json!({"dispatch_id":"foreign"})),ValidationFailure::InvalidPatch).await.unwrap(),answer);
+            }
+            if let Some(mut patch)=patch {
+                assert_eq!(server.apply_executor_patch(&fixture.root,patch.clone()).await.unwrap(),answer);
+                patch.expected_execution_version=0;
+                assert_eq!(server.apply_executor_patch(&fixture.root,patch).await.unwrap(),answer);
+            }
+            assert_eq!(server.store(&fixture.root,Operation::ReadVerified).await.unwrap(),terminal);
+            assert_eq!(["decisions.jsonl","state.json"].map(|name|fs::read(fixture.root.join(name)).unwrap()),bytes);
+            drop(server);
+            let server=CadenceServer::with_factory(factory());
+            assert_eq!(server.query_execution(&fixture.root,phase).await.unwrap(),answer);
+            fs::write(fixture.root.join("config.v4.json"),"invalid config").unwrap();
+            assert_eq!(server.query_execution(&fixture.root,phase).await,Err(Failure::Store));
+        }
+    });
+}
+
+#[test]
+fn execution_service_oversized_judgment_refuses_before_patch_or_summary_mutation() {
+    runtime().block_on(async {
+        let fixture = fixture(&[(&["src/a.rs"], &["T1"], "body\n")]);
+        let server = CadenceServer::with_factory(factory());
+        accept(&server, &fixture).await;
+        let active = dispatch(&server, &fixture).await;
+        let id = "b".repeat(20000);
+        let patch = ExecutorPatch {
+            schema: PATCH_SCHEMA,
+            kind: PatchKind::Executor,
+            dispatch_id: active.id,
+            expected_execution_version: active.expected_execution_version,
+            outcome: PlanDisposition::Blocked,
+            tasks: vec![TaskOutcome::Blocked {
+                task_id: "T1".into(),
+                blocker_id: id.clone(),
+            }],
+            deviations: vec![],
+            blockers: vec![Blocker {
+                id,
+                text: "judgment preserved".into(),
+                evidence: vec![EvidenceReference::Criterion { id: "AC4".into() }],
+            }],
+        };
+        let before = server
+            .store(&fixture.root, Operation::ReadVerified)
+            .await
+            .unwrap();
+        let refused = server
+            .apply_executor_patch(&fixture.root, patch)
+            .await
+            .unwrap();
+        assert_eq!(refusal_code(refused.clone()), "response-too-large");
+        disk_answer(&fixture.root, &refused);
+        assert_eq!(
+            server
+                .store(&fixture.root, Operation::ReadVerified)
+                .await
+                .unwrap()
+                .snapshot
+                .data,
+            before.snapshot.data
+        );
+        assert!(!fixture.root.join("phases/6/SUMMARY.md").exists());
+    });
 }

@@ -2,10 +2,7 @@
 //!
 //! The resident calls these functions directly. They never send another
 //! resident request, so the single owner cannot deadlock itself.
-use super::{
-    derivation_service::{self, Driver},
-    next_action_service,
-};
+use super::derivation_service::{self, Driver};
 use crate::{
     config::reload::ConfigIo,
     import::{Session, SessionFactory},
@@ -16,8 +13,8 @@ use cadence::{
     execution::{
         dispatch::{admit_dispatch, build_dispatch},
         model::{
-            ActiveDispatch, BoundaryDecision, BoundaryTool, ExecutionOccurrence, ExecutionPlan,
-            ExecutionSnapshot, ExecutorPatch, PlanDisposition, TerminalOutcome,
+            ActiveDispatch, BoundaryTool, ExecutionOccurrence, ExecutionPlan, ExecutionSnapshot,
+            ExecutorPatch, PlanDisposition, TerminalOutcome,
         },
         patch::{ApplicationDisposition, apply_executor_patch, attach_commit_paths},
         plan::{PlanGraph, parse_plan, plan_set_fingerprint},
@@ -27,10 +24,13 @@ use cadence::{
     store::{
         Error,
         model::digest,
-        writer::{Operation, View},
+        writer::{
+            BoundaryChange, Operation, View, confirmed_boundary, require_current_execution,
+            terminal_v1,
+        },
     },
 };
-use serde::Serialize;
+
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -39,7 +39,11 @@ use std::{
     sync::Arc,
 };
 
-pub use cadence::execution::boundary::Response;
+use cadence::envelope::Envelope;
+pub use cadence::execution::boundary::{Answer, Failure, Response};
+use cadence::execution::boundary::{
+    BoundaryScope, BoundaryV1, ExecutionEnvelope, PreparedAnswer, Receipt,
+};
 
 #[derive(Clone)]
 struct Plans {
@@ -64,20 +68,41 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
     selected_root: &Path,
     phase: u32,
     driver: &Driver,
-) -> Response {
-    let raw_request = request_digest(&("query-next", selected_root.to_string_lossy(), phase));
-    if phase == 0 {
-        return refused(phase, "invalid-phase", "phase must be a positive integer");
+) -> Answer {
+    let raw_request = public_request_digest(
+        BoundaryTool::CadenceQuery,
+        Some(&json!({"operation":"execute-next","phase":phase})),
+    );
+    let (root, session, initial) = begin(factory, selected_root).await?;
+    if let Some(answer) = terminal_answer(&session, &initial, &scope(phase)).await? {
+        return Ok(answer);
     }
-    let (checked, mut view) =
-        match derivation_service::checked_query(factory, selected_root, driver).await {
-            Ok(value) => value,
-            Err(error) => return refused(phase, error.code(), format!("{error:?}")),
-        };
-    let root = checked.capture().root.clone();
-    let session = match factory.first_touch(&root).await {
-        Ok(session) => session,
-        Err(error) => return store_refusal(phase, error),
+    if phase == 0 {
+        return record_refusal(
+            &session,
+            &initial,
+            phase,
+            BoundaryTool::CadenceQuery,
+            "execute-next",
+            &raw_request,
+            "invalid-phase",
+            "phase must be a positive integer",
+            None,
+        )
+        .await;
+    }
+    let (checked, mut view) = match checked_execution(&session, &root, driver).await {
+        Ok(value) => value,
+        Err(error) => {
+            return derivation_refusal(
+                &session,
+                phase,
+                BoundaryTool::CadenceQuery,
+                &raw_request,
+                error,
+            )
+            .await;
+        }
     };
     let lifecycle = checked.answer();
     if lifecycle.cycle != Cycle::Live {
@@ -301,10 +326,7 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
                 )
                 .await;
             }
-            let Response::Dispatch {
-                dispatch: returned, ..
-            } = &response
-            else {
+            let Response::Dispatch { .. } = &response else {
                 return record_observation(
                     &session,
                     &view,
@@ -331,50 +353,21 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
                 )
                 .await;
             }
-            let mut original_candidate = returned.as_ref().clone();
-            original_candidate.expected_execution_version = occurrence.version - 1;
             let decision = boundary(
                 phase,
                 BoundaryTool::CadenceQuery,
-                "query-next",
+                "execute-next",
                 &raw_request,
                 &response,
                 Some(active.id.clone()),
                 Some(active.prompt_bytes),
-            );
-            let written = match session
-                .request(Operation::AdmitExecution {
-                    expected_generation: view.snapshot.generation,
-                    expected_integrity: view.snapshot.integrity.clone(),
-                    operation_id: format!("execution-dispatch:{}", active.id),
-                    plan_set_fingerprint: plans.fingerprint.clone(),
-                    dispatch: original_candidate,
-                    decision,
-                })
-                .await
-            {
-                Ok(written) => written,
-                Err(error) => return store_refusal(phase, error),
-            };
-            if !stored_dispatch(&written, phase, returned) {
-                return refused(
-                    phase,
-                    "dispatch-not-confirmed",
-                    "the writer did not confirm the replayed dispatch",
-                );
-            }
-            return response;
+            )?;
+            let confirmed = confirmed_boundary(&view, &decision)?;
+            return confirmed.envelope(Some(response.into_envelope()));
         }
     }
 
-    let continuation = match next_action_service::continuation(
-        factory,
-        &root,
-        &continuation_scope(&root, phase),
-        driver,
-    )
-    .await
-    {
+    let continuation = match checked_continuation(&session, &view, &checked, phase, driver).await {
         Ok(value) => value,
         Err(error) => {
             view = match session.derivation_view().await {
@@ -621,57 +614,67 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
     let decision = boundary(
         phase,
         BoundaryTool::CadenceQuery,
-        "query-next",
+        "execute-next",
         &raw_request,
         &response,
         Some(dispatch.id.clone()),
         Some(dispatch.prompt_bytes),
-    );
-    let operation_id = format!("execution-dispatch:{}", dispatch.id);
-    let written = match session
-        .request(Operation::AdmitExecution {
+    )?;
+    let written = session
+        .request(Operation::BoundaryV1 {
             expected_generation: view.snapshot.generation,
             expected_integrity: view.snapshot.integrity.clone(),
-            operation_id,
-            plan_set_fingerprint: plans.fingerprint,
-            dispatch: candidate,
-            decision,
+            operation_id: format!("execution-dispatch:{}", dispatch.id),
+            decision: decision.clone(),
+            change: Box::new(BoundaryChange::Dispatch {
+                plan_set_fingerprint: plans.fingerprint,
+                dispatch: candidate,
+            }),
         })
         .await
-    {
-        Ok(written) => written,
-        Err(error) => return store_refusal(phase, error),
-    };
-    if !stored_dispatch(&written, phase, &dispatch) {
-        return refused(
-            phase,
-            "dispatch-not-confirmed",
-            "the writer did not confirm the admitted dispatch",
-        );
-    }
-    response
+        .map_err(store_failure)?;
+    confirmed_boundary(&written, &decision)?.envelope(Some(response.into_envelope()))
 }
 
 pub async fn apply<I: ConfigIo + Clone + Sync>(
     factory: &SessionFactory<I>,
     selected_root: &Path,
-    phase: u32,
     patch: ExecutorPatch,
     driver: &Driver,
-) -> Response {
-    let request = request_digest(&("apply-executor-patch", phase, &patch));
-    if phase == 0 {
-        return refused(phase, "invalid-phase", "phase must be a positive integer");
+) -> Answer {
+    let raw = serde_json::to_value(&patch).map_err(|_| Failure::Encoding)?;
+    let request = public_request_digest(BoundaryTool::CadenceApply, Some(&raw));
+    let (root, session, initial) = begin(factory, selected_root).await?;
+    let phase = dispatch_phase(&initial, &patch.dispatch_id)?.unwrap_or(0);
+    if let Some(answer) = terminal_answer(&session, &initial, &scope(phase)).await? {
+        return Ok(answer);
     }
-    let (checked, view) =
-        match derivation_service::checked_query(factory, selected_root, driver).await {
-            Ok(value) => value,
-            Err(error) => return refused(phase, error.code(), format!("{error:?}")),
-        };
-    let root = checked.capture().root.clone();
-    let session = match factory.first_touch(&root).await {
-        Ok(session) => session,
-        Err(error) => return store_refusal(phase, error),
+    if phase == 0 {
+        return record_refusal(
+            &session,
+            &initial,
+            0,
+            BoundaryTool::CadenceApply,
+            "executor",
+            &request,
+            "foreign-dispatch",
+            "the patch does not identify a dispatch in this store",
+            None,
+        )
+        .await;
+    }
+    let (checked, view) = match checked_execution(&session, &root, driver).await {
+        Ok(value) => value,
+        Err(error) => {
+            return derivation_refusal(
+                &session,
+                phase,
+                BoundaryTool::CadenceApply,
+                &request,
+                error,
+            )
+            .await;
+        }
     };
     let Some(phase_record) = checked
         .answer()
@@ -772,6 +775,54 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
             .await;
         }
     };
+    if application.disposition == ApplicationDisposition::Replay {
+        let prior = view
+            .decisions
+            .iter()
+            .find_map(|record| match &record.decision {
+                cadence::store::model::Decision::BoundaryV1(value)
+                    if value.boundary.scope == scope(phase)
+                        && value.boundary.tool == BoundaryTool::CadenceApply
+                        && value.boundary.request_digest == request
+                        && value.boundary.subject_id.as_ref() == Some(&patch.dispatch_id)
+                        && matches!(
+                            value.boundary.receipt,
+                            Receipt::Compact {
+                                envelope: Envelope::Ok(_)
+                            }
+                        ) =>
+                {
+                    Some(&value.boundary)
+                }
+                _ => None,
+            })
+            .ok_or(Failure::Confirmation)?;
+        if let Err(reason) = reobserve(
+            &session,
+            &view,
+            &root,
+            phase,
+            &phase_record.plans,
+            &plans,
+            None,
+        )
+        .await
+        {
+            return record_refusal(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceApply,
+                "executor",
+                &request,
+                "inputs-changed",
+                reason,
+                Some(patch.dispatch_id.clone()),
+            )
+            .await;
+        }
+        return confirmed_boundary(&view, prior)?.envelope(None);
+    }
     if application.disposition == ApplicationDisposition::Applied
         && (checked.answer().cycle != Cycle::Live
             || checked
@@ -796,9 +847,7 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         )
         .await;
     }
-    let (commit_paths, base_sha) = if application.disposition == ApplicationDisposition::Replay {
-        (application.outcome.commit_paths.clone(), String::new())
-    } else {
+    let (commit_paths, base_sha) = {
         let Some(active) = occurrence.active.as_ref() else {
             return record_refusal(
                 &session,
@@ -843,7 +892,20 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         }
         let project = match root.parent() {
             Some(project) => project.to_path_buf(),
-            None => return refused(phase, "invalid-project-root", "planning root has no parent"),
+            None => {
+                return record_refusal(
+                    &session,
+                    &view,
+                    phase,
+                    BoundaryTool::CadenceApply,
+                    "executor",
+                    &request,
+                    "invalid-project-root",
+                    "planning root has no parent",
+                    Some(patch.dispatch_id.clone()),
+                )
+                .await;
+            }
         };
         let head = match git_head(&project).await {
             Ok(head) => head,
@@ -925,7 +987,20 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
     }
     let graph = match PlanGraph::build(&plans.values) {
         Ok(graph) => graph,
-        Err(error) => return refused(phase, error.code, error.detail),
+        Err(error) => {
+            return record_refusal(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceApply,
+                "executor",
+                &request,
+                error.code,
+                error.detail,
+                Some(patch.dispatch_id.clone()),
+            )
+            .await;
+        }
     };
     let next_execution = match application
         .data
@@ -934,7 +1009,20 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         .and_then(execution_value)
     {
         Ok(value) => value,
-        Err(error) => return refused(phase, "invalid-execution-store", error),
+        Err(error) => {
+            return record_refusal(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceApply,
+                "executor",
+                &request,
+                "invalid-execution-store",
+                error,
+                Some(patch.dispatch_id.clone()),
+            )
+            .await;
+        }
     };
     let next_occurrence = &next_execution.occurrences[&phase.to_string()];
     let completed = next_occurrence
@@ -956,41 +1044,46 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
     } else {
         Response::Complete { phase }
     };
-    let complete_phase = matches!(response, Response::Complete { .. });
-    let decision = boundary(
-        phase,
+    let answer = PreparedAnswer::new(response.into_envelope())?;
+    let decision = BoundaryV1::new(
+        scope(phase),
         BoundaryTool::CadenceApply,
-        "apply-executor-patch",
-        &request,
-        &response,
+        "executor".into(),
+        request,
         Some(patch.dispatch_id.clone()),
-        None,
+        &answer,
     );
-    let operation_id = format!("execution-patch:{}", patch.dispatch_id);
-    let written = match session
-        .request(Operation::ApplyExecutionPatch {
+    let complete_phase = matches!(
+        answer.envelope,
+        Envelope::Ok(cadence::execution::boundary::Success::Complete { .. })
+    );
+    let (operation_id, change) = if answer.too_large() {
+        (
+            format!("execution-observation:{}", decision.identity()?),
+            BoundaryChange::Observe,
+        )
+    } else {
+        (
+            format!("execution-patch:{}", patch.dispatch_id),
+            BoundaryChange::Patch {
+                patch,
+                commit_paths,
+                render_version: SUMMARY_RENDER_VERSION,
+                complete_phase,
+            },
+        )
+    };
+    let written = session
+        .request(Operation::BoundaryV1 {
             expected_generation: view.snapshot.generation,
             expected_integrity: view.snapshot.integrity.clone(),
             operation_id,
-            patch,
-            commit_paths,
-            decision,
-            render_version: SUMMARY_RENDER_VERSION,
-            complete_phase,
+            decision: decision.clone(),
+            change: Box::new(change),
         })
         .await
-    {
-        Ok(written) => written,
-        Err(error) => return store_refusal(phase, error),
-    };
-    if !stored_receipt(&written, phase, &application.outcome.dispatch_id) {
-        return refused(
-            phase,
-            "patch-not-confirmed",
-            "the writer did not confirm the executor patch receipt",
-        );
-    }
-    response
+        .map_err(store_failure)?;
+    confirmed_boundary(&written, &decision)?.envelope(None)
 }
 
 fn execution_snapshot(view: &View) -> Result<ExecutionSnapshot, String> {
@@ -1362,29 +1455,32 @@ fn git_status(project: &Path, args: &[&str]) -> Result<bool, String> {
     }
 }
 
-fn request_digest(value: &impl Serialize) -> String {
-    digest(&serde_json::to_vec(value).expect("request identity serializes"))
+fn scope(phase: u32) -> BoundaryScope {
+    if phase == 0 {
+        BoundaryScope::RootRefusal
+    } else {
+        BoundaryScope::Execution { phase }
+    }
 }
 
 fn boundary(
     phase: u32,
     tool: BoundaryTool,
-    operation: &str,
+    _operation: &str,
     request: &str,
     response: &Response,
     subject_id: Option<String>,
-    prompt_bytes: Option<u64>,
-) -> BoundaryDecision {
-    BoundaryDecision {
-        phase,
+    _prompt_bytes: Option<u64>,
+) -> Result<BoundaryV1, Failure> {
+    let answer = PreparedAnswer::new(response.clone().into_envelope())?;
+    Ok(BoundaryV1::new(
+        scope(phase),
         tool,
-        operation: operation.into(),
-        request_digest: request.into(),
-        outcome: response.label(),
+        tool_operation(tool).into(),
+        request.into(),
         subject_id,
-        prompt_bytes,
-        response_digest: request_digest(response),
-    }
+        &answer,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1398,11 +1494,12 @@ async fn record_refusal<I: ConfigIo>(
     code: impl Into<String>,
     reason: impl Into<String>,
     subject_id: Option<String>,
-) -> Response {
+) -> Answer {
+    let code = code.into();
     let response = Response::Refused {
         phase,
-        code: code.into(),
-        reason: reason.into(),
+        reason: stable_reason(&code, &reason.into()),
+        code,
     };
     record_observation(
         session, view, phase, tool, operation, request, response, subject_id,
@@ -1420,21 +1517,19 @@ async fn record_observation<I: ConfigIo>(
     request: &str,
     response: Response,
     subject_id: Option<String>,
-) -> Response {
-    let decision = boundary(phase, tool, operation, request, &response, subject_id, None);
-    let operation_id = format!("execution-observation:{}", request_digest(&decision));
-    match session
-        .request(Operation::RecordExecutionRefusal {
+) -> Answer {
+    let decision = boundary(phase, tool, operation, request, &response, subject_id, None)?;
+    let written = session
+        .request(Operation::BoundaryV1 {
             expected_generation: view.snapshot.generation,
             expected_integrity: view.snapshot.integrity.clone(),
-            operation_id,
-            decision,
+            operation_id: format!("execution-observation:{}", decision.identity()?),
+            decision: decision.clone(),
+            change: Box::new(BoundaryChange::Observe),
         })
         .await
-    {
-        Ok(_) => response,
-        Err(error) => store_refusal(phase, error),
-    }
+        .map_err(store_failure)?;
+    confirmed_boundary(&written, &decision)?.envelope(Some(response.into_envelope()))
 }
 
 fn refused(phase: u32, code: impl Into<String>, reason: impl Into<String>) -> Response {
@@ -1445,31 +1540,315 @@ fn refused(phase: u32, code: impl Into<String>, reason: impl Into<String>) -> Re
     }
 }
 
-fn store_refusal(phase: u32, error: Error) -> Response {
-    let code = if matches!(error, Error::Conflict(_)) {
-        "store-conflict"
+fn store_failure(error: Error) -> Failure {
+    if error == Error::Closed {
+        Failure::Closed
     } else {
-        "store-error"
-    };
-    refused(phase, code, error.to_string())
+        Failure::Store
+    }
 }
 
-fn stored_dispatch(view: &View, phase: u32, dispatch: &ActiveDispatch) -> bool {
-    execution_snapshot(view)
-        .ok()
-        .and_then(|execution| execution.occurrences.get(&phase.to_string()).cloned())
-        .and_then(|occurrence| occurrence.active)
-        .is_some_and(|mut active| {
-            active.body = dispatch.body.clone();
-            active == *dispatch
+fn store_refusal(_phase: u32, error: Error) -> Answer {
+    Err(store_failure(error))
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ValidationFailure {
+    MissingArguments,
+    MissingField,
+    ExtraField,
+    WrongType,
+    UnknownTag,
+    InvalidPatch,
+}
+
+impl ValidationFailure {
+    fn code(self) -> &'static str {
+        match self {
+            Self::MissingArguments => "missing-arguments",
+            Self::MissingField => "missing-field",
+            Self::ExtraField => "extra-field",
+            Self::WrongType => "wrong-type",
+            Self::UnknownTag => "unknown-tag",
+            Self::InvalidPatch => "invalid-patch",
+        }
+    }
+}
+
+fn tool_operation(tool: BoundaryTool) -> &'static str {
+    match tool {
+        BoundaryTool::CadenceQuery => "execute-next",
+        BoundaryTool::CadenceApply => "executor",
+    }
+}
+
+fn public_request_digest(tool: BoundaryTool, raw: Option<&Value>) -> String {
+    // Option encodes absence as null, distinct from an empty arguments object.
+    digest(
+        &serde_json::to_vec(&("execution-request-v1", tool, tool_operation(tool), raw))
+            .expect("JSON request identity serializes"),
+    )
+}
+
+fn stable_reason(code: &str, _detail: &str) -> String {
+    match code {
+        "invalid-phase" => "phase must be a positive integer; supply the native phase number".into(),
+        "foreign-dispatch" => "the patch does not identify a dispatch in this store; request the next execution dispatch".into(),
+        "continuation-refusal" => "execution needs current continuation authority; resolve the pending decision before retrying".into(),
+        _ => format!("execution validation failed ({code}); check the controlling inputs and retry"),
+    }
+}
+
+async fn begin<I: ConfigIo + Clone + Sync>(
+    factory: &SessionFactory<I>,
+    selected: &Path,
+) -> Result<(std::path::PathBuf, Arc<Session<I>>, View), Failure> {
+    let root = crate::config::reload::identity(selected).map_err(store_failure)?;
+    let session = factory.first_touch(&root).await.map_err(store_failure)?;
+    let view = session.derivation_view().await.map_err(store_failure)?;
+    require_current_execution(&view)?;
+    Ok((root, session, view))
+}
+
+fn dispatch_phase(view: &View, id: &str) -> Result<Option<u32>, Failure> {
+    let execution = execution_snapshot(view).map_err(|_| Failure::Store)?;
+    let matches = execution
+        .occurrences
+        .values()
+        .filter(|occurrence| {
+            occurrence
+                .active
+                .as_ref()
+                .is_some_and(|active| active.id == id)
+                || occurrence.receipts.contains_key(id)
         })
+        .map(|occurrence| occurrence.phase)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [phase] if *phase > 0 => Ok(Some(*phase)),
+        _ => Err(Failure::Store),
+    }
 }
 
-fn stored_receipt(view: &View, phase: u32, dispatch_id: &str) -> bool {
-    execution_snapshot(view)
-        .ok()
-        .and_then(|execution| execution.occurrences.get(&phase.to_string()).cloned())
-        .is_some_and(|occurrence| occurrence.receipts.contains_key(dispatch_id))
+async fn terminal_answer<I: ConfigIo>(
+    session: &Session<I>,
+    view: &View,
+    scope: &BoundaryScope,
+) -> Result<Option<ExecutionEnvelope>, Failure> {
+    let Some(terminal) = terminal_v1(view, scope) else {
+        return Ok(None);
+    };
+    let decision = terminal.value.boundary.clone();
+    let written = session
+        .request(Operation::BoundaryV1 {
+            expected_generation: view.snapshot.generation,
+            expected_integrity: view.snapshot.integrity.clone(),
+            operation_id: terminal.id.into(),
+            decision: decision.clone(),
+            change: Box::new(BoundaryChange::Observe),
+        })
+        .await
+        .map_err(store_failure)?;
+    Ok(Some(
+        confirmed_boundary(&written, &decision)?.envelope(None)?,
+    ))
+}
+
+pub async fn refuse_arguments<I: ConfigIo + Clone + Sync>(
+    factory: &SessionFactory<I>,
+    root: &Path,
+    tool: BoundaryTool,
+    raw: Option<Value>,
+    failure: ValidationFailure,
+) -> Answer {
+    let (_, session, view) = begin(factory, root).await?;
+    let phase = if tool == BoundaryTool::CadenceApply {
+        match raw
+            .as_ref()
+            .and_then(|value| value.get("dispatch_id"))
+            .and_then(Value::as_str)
+        {
+            Some(id) => dispatch_phase(&view, id)?.unwrap_or(0),
+            None => 0,
+        }
+    } else {
+        0
+    };
+    if let Some(answer) = terminal_answer(&session, &view, &scope(phase)).await? {
+        return Ok(answer);
+    }
+    record_refusal(
+        &session,
+        &view,
+        phase,
+        tool,
+        tool_operation(tool),
+        &public_request_digest(tool, raw.as_ref()),
+        failure.code(),
+        "invalid execution arguments",
+        None,
+    )
+    .await
+}
+
+async fn derivation_refusal<I: ConfigIo>(
+    session: &Arc<Session<I>>,
+    phase: u32,
+    tool: BoundaryTool,
+    request: &str,
+    error: cadence::derivation::DerivationError,
+) -> Answer {
+    if matches!(error, cadence::derivation::DerivationError::Store { .. }) {
+        return Err(Failure::Store);
+    }
+    let view = session.derivation_view().await.map_err(store_failure)?;
+    record_refusal(
+        session,
+        &view,
+        phase,
+        tool,
+        tool_operation(tool),
+        request,
+        error.code(),
+        "lifecycle input validation failed",
+        None,
+    )
+    .await
+}
+
+// Execution observes lifecycle authority without publishing a memo on a later refusal.
+async fn checked_execution<I: ConfigIo + Clone + Sync>(
+    session: &Session<I>,
+    root: &Path,
+    driver: &Driver,
+) -> Result<(cadence::derivation::RecheckedLifecycle, View), cadence::derivation::DerivationError> {
+    use cadence::derivation::*;
+    struct Intake(IntakeObservation);
+    impl IntakeIo for Intake {
+        fn observe_intake(&mut self) -> Result<IntakeObservation, DerivationError> {
+            Ok(self.0.clone())
+        }
+    }
+    let root = root.to_path_buf();
+    let driver = driver.clone();
+    let view = session
+        .derivation_view()
+        .await
+        .map_err(derivation_service::store_error)?;
+    let data = view.snapshot.data.clone();
+    let checked = tokio::task::spawn_blocking(move || {
+        let mut io = (driver.artifacts)();
+        let prepared = prepare_query(&root, io.as_mut())?;
+        #[cfg(test)]
+        (driver.event)(derivation_service::Event::Derived);
+        let key = input_key(prepared.capture())?;
+        let raw = memo_from_data(&data, &key)?;
+        let selected = select_intake(&data)?;
+        let prepared = prepared.with_intake(&selected)?;
+        #[cfg(test)]
+        (driver.compare)(raw, &key, prepared.answer())?;
+        #[cfg(not(test))]
+        check_memo(raw, &key, prepared.answer())?;
+        recheck_query_with_intake(&prepared, io.as_mut(), &mut Intake(selected.observation))
+    })
+    .await
+    .map_err(|_| derivation_service::store_error(Error::Closed))??;
+    let latest = session
+        .derivation_view()
+        .await
+        .map_err(derivation_service::store_error)?;
+    if latest.snapshot != view.snapshot {
+        return Err(DerivationError::InputsChanged);
+    }
+    Ok((checked, latest))
+}
+
+async fn checked_continuation<I: ConfigIo + Clone + Sync>(
+    session: &Session<I>,
+    view: &View,
+    checked: &cadence::derivation::RecheckedLifecycle,
+    phase: u32,
+    driver: &Driver,
+) -> Result<cadence::next_action::continuation::Continuation, cadence::derivation::DerivationError>
+{
+    use cadence::{
+        derivation::*,
+        evidence::{authority, material, persistence},
+        next_action::continuation,
+    };
+    let fail = derivation_service::store_error;
+    let scope = continuation_scope(&checked.capture().root, phase);
+    scope.validate().map_err(fail)?;
+    let config = session.config().map_err(fail)?;
+    let mut current = persistence::read(&view.snapshot.data).map_err(fail)?;
+    let mut records = Vec::new();
+    for decision in view.decisions.iter().rev() {
+        if let Some(historical) = persistence::decode_history(decision).map_err(fail)?
+            && let Some(record) = current.remove(&historical.key().map_err(fail)?)
+        {
+            records.push(record);
+        }
+    }
+    if !current.is_empty() {
+        return Err(fail(Error::Invalid(
+            "native continuation records lack history".into(),
+        )));
+    }
+    records.reverse();
+    let checker = continuation::latest_checker(&records, &scope);
+    let materials = checker
+        .map(|c| material::basis(&records, &scope, &c.id))
+        .transpose()
+        .map_err(fail)?
+        .unwrap_or_default();
+    let capture = checked.capture().clone();
+    let driver = driver.clone();
+    let observed_materials = materials.clone();
+    let observed = tokio::task::spawn_blocking(move || {
+        let observe = || {
+            super::evidence_service::observe_material(
+                &capture.root,
+                &observed_materials,
+                &mut |path| match ArtifactFiles.read(path) {
+                    Observation::Present(bytes) => Ok(bytes),
+                    Observation::Absent => Err(std::io::ErrorKind::NotFound.into()),
+                    Observation::Failed(_) => {
+                        Err(std::io::Error::other("checked material is unreadable"))
+                    }
+                },
+            )
+        };
+        let observed = observe();
+        #[cfg(test)]
+        (driver.event)(derivation_service::Event::RoutingObserved);
+        if capture_inputs(&capture.root, (driver.artifacts)().as_mut())? != capture
+            || observe() != observed
+        {
+            return Err(DerivationError::InputsChanged);
+        }
+        Ok(observed)
+    })
+    .await
+    .map_err(|_| fail(Error::Closed))??;
+    let applicability = checker
+        .map(|c| authority::checker_applicability(&records, &scope, &c.id, &observed))
+        .transpose()
+        .map_err(fail)?;
+    let plans = checked
+        .answer()
+        .phases
+        .iter()
+        .find(|p| p.id.number() == f64::from(phase))
+        .map(|p| p.plans.as_slice())
+        .unwrap_or_default();
+    let selected = continuation::select(&records, &scope, applicability, plans);
+    if session.derivation_view().await.map_err(fail)?.snapshot != view.snapshot
+        || session.config().map_err(fail)? != config
+    {
+        return Err(DerivationError::InputsChanged);
+    }
+    Ok(selected)
 }
 
 #[cfg(test)]

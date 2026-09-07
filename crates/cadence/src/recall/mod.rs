@@ -218,16 +218,22 @@ mod resident {
             command: Command,
             reply: oneshot::Sender<Result<Recovery>>,
         },
+        ExecutionRefusal {
+            root: PathBuf,
+            tool: cadence::execution::model::BoundaryTool,
+            raw: Option<serde_json::Value>,
+            failure: execution_service::ValidationFailure,
+            reply: oneshot::Sender<execution_service::Answer>,
+        },
         ExecutionQuery {
             root: PathBuf,
             phase: u32,
-            reply: oneshot::Sender<execution_service::Response>,
+            reply: oneshot::Sender<execution_service::Answer>,
         },
         ExecutionApply {
             root: PathBuf,
-            phase: u32,
             patch: cadence::execution::model::ExecutorPatch,
-            reply: oneshot::Sender<execution_service::Response>,
+            reply: oneshot::Sender<execution_service::Answer>,
         },
         Lifecycle {
             root: PathBuf,
@@ -385,20 +391,27 @@ mod resident {
                             let result = evidence_service::execute(&factory, &root, command).await;
                             let _ = reply.send(result);
                         }
+                        Request::ExecutionRefusal {
+                            root,
+                            tool,
+                            raw,
+                            failure,
+                            reply,
+                        } => {
+                            let result = execution_service::refuse_arguments(
+                                &factory, &root, tool, raw, failure,
+                            )
+                            .await;
+                            let _ = reply.send(result);
+                        }
                         Request::ExecutionQuery { root, phase, reply } => {
                             let result =
                                 execution_service::query(&factory, &root, phase, &driver).await;
                             let _ = reply.send(result);
                         }
-                        Request::ExecutionApply {
-                            root,
-                            phase,
-                            patch,
-                            reply,
-                        } => {
+                        Request::ExecutionApply { root, patch, reply } => {
                             let result =
-                                execution_service::apply(&factory, &root, phase, patch, &driver)
-                                    .await;
+                                execution_service::apply(&factory, &root, patch, &driver).await;
                             let _ = reply.send(result);
                         }
                         Request::Lifecycle { root, reply } => {
@@ -532,11 +545,37 @@ mod resident {
             completion.await.map_err(|_| Error::Closed)?
         }
 
-        pub async fn query_execution(
+        #[cfg(test)]
+        pub fn closed_for_test() -> Self {
+            let (requests, receiver) = mpsc::channel(1);
+            drop(receiver);
+            Self { requests }
+        }
+
+        pub async fn refuse_execution_arguments(
             &self,
             root: &Path,
-            phase: u32,
-        ) -> execution_service::Response {
+            tool: cadence::execution::model::BoundaryTool,
+            raw: Option<serde_json::Value>,
+            failure: execution_service::ValidationFailure,
+        ) -> execution_service::Answer {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::ExecutionRefusal {
+                    root: root.into(),
+                    tool,
+                    raw,
+                    failure,
+                    reply,
+                })
+                .await
+                .map_err(|_| execution_service::Failure::Closed)?;
+            completion
+                .await
+                .map_err(|_| execution_service::Failure::Closed)?
+        }
+
+        pub async fn query_execution(&self, root: &Path, phase: u32) -> execution_service::Answer {
             let (reply, completion) = oneshot::channel();
             if self
                 .requests
@@ -548,44 +587,34 @@ mod resident {
                 .await
                 .is_err()
             {
-                return resident_closed(phase, "request");
+                return resident_closed();
             }
-            completion
-                .await
-                .unwrap_or_else(|_| resident_closed(phase, "reply"))
+            completion.await.unwrap_or_else(|_| resident_closed())
         }
 
         pub async fn apply_executor_patch(
             &self,
             root: &Path,
-            phase: u32,
             patch: cadence::execution::model::ExecutorPatch,
-        ) -> execution_service::Response {
+        ) -> execution_service::Answer {
             let (reply, completion) = oneshot::channel();
             if self
                 .requests
                 .send(Request::ExecutionApply {
                     root: root.into(),
-                    phase,
                     patch,
                     reply,
                 })
                 .await
                 .is_err()
             {
-                return resident_closed(phase, "request");
+                return resident_closed();
             }
-            completion
-                .await
-                .unwrap_or_else(|_| resident_closed(phase, "reply"))
+            completion.await.unwrap_or_else(|_| resident_closed())
         }
     }
 
-    fn resident_closed(phase: u32, side: &str) -> execution_service::Response {
-        execution_service::Response::Refused {
-            phase,
-            code: "resident-closed".into(),
-            reason: format!("resident {side} owner is closed"),
-        }
+    fn resident_closed() -> execution_service::Answer {
+        Err(execution_service::Failure::Closed)
     }
 }

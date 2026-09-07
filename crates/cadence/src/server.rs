@@ -147,21 +147,32 @@ impl CadenceServer {
         self.service.recall(root, query, limit).await
     }
 
+    pub async fn refuse_execution_arguments(
+        &self,
+        root: &std::path::Path,
+        tool: cadence::execution::model::BoundaryTool,
+        raw: Option<serde_json::Value>,
+        failure: execution_service::ValidationFailure,
+    ) -> execution_service::Answer {
+        self.service
+            .refuse_execution_arguments(root, tool, raw, failure)
+            .await
+    }
+
     pub async fn query_execution(
         &self,
         root: &std::path::Path,
         phase: u32,
-    ) -> execution_service::Response {
+    ) -> execution_service::Answer {
         self.service.query_execution(root, phase).await
     }
 
     pub async fn apply_executor_patch(
         &self,
         root: &std::path::Path,
-        phase: u32,
         patch: cadence::execution::model::ExecutorPatch,
-    ) -> execution_service::Response {
-        self.service.apply_executor_patch(root, phase, patch).await
+    ) -> execution_service::Answer {
+        self.service.apply_executor_patch(root, patch).await
     }
 }
 
