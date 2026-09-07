@@ -199,6 +199,12 @@ mod resident {
     use crate::server::evidence_service::{self, Command, Recovery};
 
     enum Request {
+        NextAction {
+            root: PathBuf,
+            reply: oneshot::Sender<
+                std::result::Result<Option<cadence::next_action::Action>, DerivationError>,
+            >,
+        },
         Evidence {
             root: PathBuf,
             command: Command,
@@ -340,6 +346,12 @@ mod resident {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
+                        Request::NextAction { root, reply } => {
+                            let result =
+                                crate::server::next_action_service::query(&factory, &root, &driver)
+                                    .await;
+                            let _ = reply.send(result);
+                        }
                         Request::Evidence {
                             root,
                             command,
@@ -406,6 +418,23 @@ mod resident {
                 .await
                 .map_err(|_| Error::Closed)?;
             completion.await.map_err(|_| Error::Closed)?
+        }
+
+        pub async fn next_action(
+            &self,
+            root: &Path,
+        ) -> std::result::Result<Option<cadence::next_action::Action>, DerivationError> {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::NextAction {
+                    root: root.into(),
+                    reply,
+                })
+                .await
+                .map_err(|_| derivation_service::store_error(Error::Closed))?;
+            completion
+                .await
+                .map_err(|_| derivation_service::store_error(Error::Closed))?
         }
 
         pub async fn lifecycle(

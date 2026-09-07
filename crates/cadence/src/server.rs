@@ -31,6 +31,13 @@ pub mod evidence_service;
 #[path = "evidence_service_tests.rs"]
 mod evidence_service_tests;
 
+#[allow(dead_code)]
+#[path = "next_action_service.rs"]
+pub mod next_action_service;
+#[cfg(test)]
+#[path = "next_action_service_tests.rs"]
+mod next_action_service_tests;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -63,6 +70,13 @@ pub struct CadenceServer {
 
 #[allow(dead_code)]
 impl CadenceServer {
+    pub async fn next_action(
+        &self,
+        root: &std::path::Path,
+    ) -> Result<Option<cadence::next_action::Action>, cadence::derivation::DerivationError> {
+        self.service.next_action(root).await
+    }
+
     pub fn with_factory<I: crate::config::reload::ConfigIo + Clone + Sync>(
         factory: crate::import::SessionFactory<I>,
     ) -> Self {

@@ -25,6 +25,7 @@ pub struct Driver {
 pub enum Event {
     Derived,
     BeforeCommit,
+    RoutingObserved,
 }
 impl Default for Driver {
     fn default() -> Self {
@@ -70,6 +71,18 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
     root: &Path,
     driver: &Driver,
 ) -> Result<Lifecycle, DerivationError> {
+    Ok(checked_query(factory, root, driver)
+        .await?
+        .0
+        .answer()
+        .clone())
+}
+
+pub async fn checked_query<I: ConfigIo + Clone + Sync>(
+    factory: &SessionFactory<I>,
+    root: &Path,
+    driver: &Driver,
+) -> Result<(RecheckedLifecycle, cadence::store::writer::View), DerivationError> {
     let selected_root = root.to_path_buf();
     let task_driver = driver.clone();
     let (prepared, mut io) = tokio::task::spawn_blocking(move || {
@@ -113,7 +126,7 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         rechecked.intake().expect("selected intake").observation(),
         &IntakeObservation::from_data(&latest.snapshot.data),
     )?;
-    if disposition == MemoDisposition::Miss || pending {
+    let published = if disposition == MemoDisposition::Miss || pending {
         let data = rechecked.adopt_memo(&view.snapshot.data, &memo)?;
         #[cfg(test)]
         {
@@ -125,7 +138,9 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         session
             .commit_derivation(&view, data)
             .await
-            .map_err(publication_error)?;
-    }
-    Ok(rechecked.answer().clone())
+            .map_err(publication_error)?
+    } else {
+        latest
+    };
+    Ok((rechecked, published))
 }
