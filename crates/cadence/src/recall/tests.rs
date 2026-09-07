@@ -1,6 +1,9 @@
 use super::*;
 use cadence::store::model::{ItemRecord, Origin, Snapshot, VERSION};
 
+#[path = "../../tests/support/signing.rs"]
+mod signing;
+
 fn item(id: &str, text: &str) -> ItemRecord {
     ItemRecord {
         version: VERSION,
@@ -290,10 +293,26 @@ fn unreadable_permitted_source_states_incomplete_coverage() {
 }
 
 use std::process::{Command, Stdio};
+fn repository(dir: &Path) -> std::path::PathBuf {
+    let repo = dir.join("repo");
+    fs::create_dir(&repo).unwrap();
+    git(&repo, &["init", "-q"]);
+    let key_id = signing::generate(&repo);
+    for (key, value) in [
+        ("gpg.format", "openpgp"),
+        ("gpg.program", "gpg"),
+        ("user.signingkey", key_id.as_str()),
+    ] {
+        git(&repo, &["config", "--local", key, value]);
+    }
+    repo
+}
+
 fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .current_dir(root)
         .args(args)
+        .env("GNUPGHOME", signing::home(root))
         .env("GIT_AUTHOR_NAME", "John Crenshaw")
         .env("GIT_AUTHOR_EMAIL", "john@jcrenshaw.dev")
         .env("GIT_COMMITTER_NAME", "John Crenshaw")
@@ -309,17 +328,7 @@ fn git(root: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().into()
 }
 fn commit(root: &Path, message: &str) -> String {
-    git(
-        root,
-        &[
-            "-c",
-            "gpg.program=gpg",
-            "commit",
-            "-S693AB15F91734B0C",
-            "-m",
-            message,
-        ],
-    );
+    git(root, &["commit", "-S", "-m", message]);
     git(root, &["rev-parse", "HEAD"])
 }
 fn history_answer(
@@ -347,8 +356,8 @@ fn history_answer(
 #[test]
 fn removed_authored_memory_has_exact_commit_and_path_without_duplicate_blobs() {
     let dir = temp();
-    git(dir.path(), &["init", "-q"]);
-    let root = dir.path().join(".planning");
+    let repo = repository(dir.path());
+    let root = repo.as_path().join(".planning");
     put(
         &root,
         "phases/1.10/CONTEXT.md",
@@ -360,30 +369,28 @@ fn removed_authored_memory_has_exact_commit_and_path_without_duplicate_blobs() {
         "# Summary\n\nretainedfalcon stays readable\n",
     );
     git(
-        dir.path(),
+        repo.as_path(),
         &[
             "add",
             ".planning/phases/1.10/CONTEXT.md",
             ".planning/_archive-v1/2/SUMMARY.md",
         ],
     );
-    commit(dir.path(), "docs: memory is recorded");
+    commit(repo.as_path(), "docs: memory is recorded");
     git(
-        dir.path(),
+        repo.as_path(),
         &[
-            "-c",
-            "gpg.program=gpg",
             "commit",
-            "-S693AB15F91734B0C",
+            "-S",
             "--allow-empty",
             "-m",
             "chore: unchanged memory remains reachable",
         ],
     );
-    let containing = git(dir.path(), &["rev-parse", "HEAD"]);
+    let containing = git(repo.as_path(), &["rev-parse", "HEAD"]);
     fs::remove_file(root.join("phases/1.10/CONTEXT.md")).unwrap();
-    git(dir.path(), &["add", ".planning/phases/1.10/CONTEXT.md"]);
-    commit(dir.path(), "docs: phase is pruned");
+    git(repo.as_path(), &["add", ".planning/phases/1.10/CONTEXT.md"]);
+    commit(repo.as_path(), "docs: phase is pruned");
     let answer = history_answer(&root, &view(vec![]), "amberfalcon", &mut history::Git);
     assert!(answer.incomplete.is_empty(), "{:?}", answer.incomplete);
     assert_eq!(answer.total, 1);
@@ -430,8 +437,8 @@ fn residue_preserves_label_origin_and_absence_of_invented_history() {
 #[test]
 fn unborn_shallow_and_failed_blob_reads_state_incomplete_coverage() {
     let dir = temp();
-    git(dir.path(), &["init", "-q"]);
-    let root = dir.path().join(".planning");
+    let repo = repository(dir.path());
+    let root = repo.as_path().join(".planning");
     put(&root, "PROJECT.md", "livefalcon evidence");
     let unborn = history_answer(&root, &view(vec![]), "livefalcon", &mut history::Git);
     assert_eq!(unborn.total, 1);
@@ -441,15 +448,15 @@ fn unborn_shallow_and_failed_blob_reads_state_incomplete_coverage() {
             .iter()
             .any(|r| r.contains("history incomplete"))
     );
-    git(dir.path(), &["add", ".planning/PROJECT.md"]);
-    commit(dir.path(), "docs: initial evidence exists");
+    git(repo.as_path(), &["add", ".planning/PROJECT.md"]);
+    commit(repo.as_path(), "docs: initial evidence exists");
     put(
         &root,
         "phases/1/SUMMARY.md",
         "oldfalcon historical evidence",
     );
-    git(dir.path(), &["add", ".planning/phases/1/SUMMARY.md"]);
-    commit(dir.path(), "docs: historical evidence exists");
+    git(repo.as_path(), &["add", ".planning/phases/1/SUMMARY.md"]);
+    commit(repo.as_path(), "docs: historical evidence exists");
     let clone = temp();
     git(
         clone.path(),
@@ -457,7 +464,7 @@ fn unborn_shallow_and_failed_blob_reads_state_incomplete_coverage() {
             "clone",
             "--quiet",
             "--depth=1",
-            &format!("file://{}", dir.path().display()),
+            &format!("file://{}", repo.as_path().display()),
             "shallow",
         ],
     );
@@ -497,20 +504,20 @@ fn unborn_shallow_and_failed_blob_reads_state_incomplete_coverage() {
 #[tokio::test]
 async fn current_decline_suppresses_git_filed_and_store_identity_but_not_independent_prose() {
     let dir = temp();
-    git(dir.path(), &["init", "-q"]);
-    let root = dir.path().join(".planning");
+    let repo = repository(dir.path());
+    let root = repo.as_path().join(".planning");
     put(
         &root,
         "FILED.md",
         "# Filed\n- 2026-09-06 github owner/repo abcdef: declinedfalcon formerly filed\n",
     );
-    git(dir.path(), &["add", ".planning/FILED.md"]);
-    commit(dir.path(), "docs: filed finding is retained");
+    git(repo.as_path(), &["add", ".planning/FILED.md"]);
+    commit(repo.as_path(), "docs: filed finding is retained");
     let service = factory().first_touch(&root).await.unwrap();
     let before = service.request(Operation::Read).await.unwrap();
     let held = before.recall_items().iter().next().unwrap().clone();
-    git(dir.path(), &["add", ".planning/items.jsonl"]);
-    commit(dir.path(), "feat: structured finding is retained");
+    git(repo.as_path(), &["add", ".planning/items.jsonl"]);
+    commit(repo.as_path(), "feat: structured finding is retained");
     assert_eq!(
         history_answer(&root, &before, "declinedfalcon", &mut history::Git).total,
         1
@@ -542,7 +549,8 @@ async fn current_decline_suppresses_git_filed_and_store_identity_but_not_indepen
 #[tokio::test]
 async fn production_clones_share_import_writer_and_invalidate_warm_recall() {
     let dir = temp();
-    let root = dir.path().join(".planning");
+    let repo = repository(dir.path());
+    let root = repo.as_path().join(".planning");
     put(&root, "PROJECT.md", "ownerfalcon authored prose");
     let server = crate::server::CadenceServer::with_factory(factory());
     let clone = server.clone();
@@ -615,18 +623,17 @@ async fn production_clones_share_import_writer_and_invalidate_warm_recall() {
         1
     );
     // A checkout changes reachable history and must change the next answer.
-    git(dir.path(), &["init", "-q"]);
     put(&root, "phases/1/CONTEXT.md", "checkoutfalcon history");
-    git(dir.path(), &["add", ".planning/phases/1/CONTEXT.md"]);
-    let old = commit(dir.path(), "docs: checkout history exists");
+    git(repo.as_path(), &["add", ".planning/phases/1/CONTEXT.md"]);
+    let old = commit(repo.as_path(), "docs: checkout history exists");
     fs::remove_file(root.join("phases/1/CONTEXT.md")).unwrap();
-    git(dir.path(), &["add", ".planning/phases/1/CONTEXT.md"]);
-    commit(dir.path(), "docs: historical document is pruned");
+    git(repo.as_path(), &["add", ".planning/phases/1/CONTEXT.md"]);
+    commit(repo.as_path(), "docs: historical document is pruned");
     let history = server.recall(&root, "checkoutfalcon", None).await.unwrap();
     assert!(
         matches!(&history.results[0].provenance,Provenance::Document {commit:Some(sha),..} if sha == &old)
     );
-    git(dir.path(), &["checkout", "--quiet", &old]);
+    git(repo.as_path(), &["checkout", "--quiet", &old]);
     let checked_out = clone.recall(&root, "checkoutfalcon", None).await.unwrap();
     assert_eq!(checked_out.total, 1);
     assert!(matches!(
@@ -959,13 +966,14 @@ async fn recall_restart_child() {
 fn restart_fixture() -> tempfile::TempDir {
     use std::io::Write;
     let dir = temp();
-    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let repo = repository(dir.path());
+    let source_repo = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .parent()
         .unwrap();
     let archive = Command::new("git")
-        .current_dir(repo)
+        .current_dir(source_repo)
         .args(["archive", "v3.7.12", ".planning"])
         .stdin(Stdio::null())
         .output()
@@ -977,7 +985,7 @@ fn restart_fixture() -> tempfile::TempDir {
     );
     let mut tar = Command::new("tar")
         .args(["-x", "-C"])
-        .arg(dir.path())
+        .arg(repo.as_path())
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
@@ -989,14 +997,14 @@ fn restart_fixture() -> tempfile::TempDir {
     assert!(tar.wait().unwrap().success());
     for name in ["config.json", "STATE.md", "FILED.md", "DECLINED.md"] {
         let frozen = Command::new("git")
-            .current_dir(repo)
+            .current_dir(source_repo)
             .args(["show", &format!("v3.7.12:.planning/{name}")])
             .stdin(Stdio::null())
             .output()
             .unwrap();
         assert!(frozen.status.success());
         assert_eq!(
-            fs::read(dir.path().join(".planning").join(name)).unwrap(),
+            fs::read(repo.as_path().join(".planning").join(name)).unwrap(),
             frozen.stdout
         );
     }
@@ -1006,7 +1014,7 @@ fn restart_fixture() -> tempfile::TempDir {
         "state.json",
         "config.v4.json",
     ] {
-        assert!(!dir.path().join(".planning").join(name).exists());
+        assert!(!repo.as_path().join(".planning").join(name).exists());
     }
     dir
 }
@@ -1019,6 +1027,7 @@ fn run_restart_child(fixture: &Path, stage: &str) -> RestartEvidence {
             "--nocapture",
         ])
         .current_dir(fixture)
+        .env("GNUPGHOME", signing::home(fixture))
         .env("CADENCE_RECALL_FIXTURE", fixture)
         .env("CADENCE_RECALL_STAGE", stage)
         .env("CADENCE_GLOBAL_CONFIG", fixture.join("global/config.json"))
@@ -1038,12 +1047,12 @@ fn run_restart_child(fixture: &Path, stage: &str) -> RestartEvidence {
 #[test]
 fn ac7_and_ac2_survive_real_import_warm_declines_and_two_process_restarts() {
     let dir = restart_fixture();
-    let root = dir.path().join(".planning");
+    let repo = dir.path().join("repo");
+    let root = repo.as_path().join(".planning");
     let originals: Vec<_> = ["config.json", "STATE.md", "FILED.md", "DECLINED.md"]
         .into_iter()
         .map(|name| (name, fs::read(root.join(name)).unwrap()))
         .collect();
-    git(dir.path(), &["init", "-q"]);
     put(
         &root,
         RESTART_DOC,
@@ -1053,7 +1062,7 @@ fn ac7_and_ac2_survive_real_import_warm_declines_and_two_process_restarts() {
     // FILED bytes before automatic import. Both provenance claims are exact.
     put(&root, "FILED.md", RESTART_LEDGER);
     git(
-        dir.path(),
+        repo.as_path(),
         &[
             "add",
             ".planning/FILED.md",
@@ -1061,12 +1070,12 @@ fn ac7_and_ac2_survive_real_import_warm_declines_and_two_process_restarts() {
         ],
     );
     let filed_commit = commit(
-        dir.path(),
+        repo.as_path(),
         "docs: earlier filed identities and authored context exist",
     );
     assert_eq!(
         git(
-            dir.path(),
+            repo.as_path(),
             &["show", &format!("{filed_commit}:.planning/FILED.md")]
         ),
         RESTART_LEDGER.trim()
@@ -1081,9 +1090,9 @@ fn ac7_and_ac2_survive_real_import_warm_declines_and_two_process_restarts() {
     )
     .unwrap();
 
-    let first = run_restart_child(dir.path(), "first");
-    let restart = run_restart_child(dir.path(), "restart");
-    let confirm = run_restart_child(dir.path(), "confirm");
+    let first = run_restart_child(repo.as_path(), "first");
+    let restart = run_restart_child(repo.as_path(), "restart");
+    let confirm = run_restart_child(repo.as_path(), "confirm");
     assert_eq!(
         (first.generation, restart.generation, confirm.generation),
         (5, 6, 6)
@@ -1105,7 +1114,7 @@ fn ac7_and_ac2_survive_real_import_warm_declines_and_two_process_restarts() {
     assert_eq!(first.mixed_after, restart.mixed_before);
     assert_eq!(restart.mixed_after, confirm.mixed_before);
     let history = git(
-        dir.path(),
+        repo.as_path(),
         &[
             "show",
             &format!(

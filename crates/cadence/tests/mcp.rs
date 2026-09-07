@@ -13,6 +13,9 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, fs, path::Path};
 
+#[path = "support/signing.rs"]
+mod signing;
+
 /// A tiny JSON-RPC-over-stdio client for the spawned `cadence serve` process.
 struct Client {
     child: Child,
@@ -30,7 +33,15 @@ impl Client {
     }
 
     fn spawn_in(args: &[&str], cwd: &Path) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_cadence"))
+        Self::spawn_in_with_keyring(args, cwd, None)
+    }
+
+    fn spawn_in_with_keyring(args: &[&str], cwd: &Path, gnupg_home: Option<&Path>) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cadence"));
+        if let Some(home) = gnupg_home {
+            command.env("GNUPGHOME", home);
+        }
+        let mut child = command
             .current_dir(cwd)
             .args(args)
             .env("CADENCE_GLOBAL_CONFIG", "")
@@ -555,7 +566,9 @@ fn tool_schemas_malformed_objects_reach_cadence_and_protocol_errors_stay_distinc
 }
 
 struct Fixture {
-    temp: tempfile::TempDir,
+    _temp: tempfile::TempDir,
+    root: std::path::PathBuf,
+    signing_key: String,
 }
 
 struct AllowFixture;
@@ -570,6 +583,7 @@ fn git(root: &Path, args: &[&str]) -> String {
         .arg("-C")
         .arg(root)
         .args(args)
+        .env("GNUPGHOME", signing::home(root))
         .stdin(Stdio::null())
         .output()
         .unwrap();
@@ -603,8 +617,13 @@ fn canonical(value: &Value) -> Value {
 
 impl Fixture {
     fn new(plans: &[&[&str]]) -> Self {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("repo");
+        let signing_key = signing::generate(&root);
         let fixture = Self {
-            temp: tempfile::tempdir().unwrap(),
+            _temp: temp,
+            root,
+            signing_key,
         };
         let root = fixture.root();
         fs::create_dir_all(root.join(".planning/phases/6")).unwrap();
@@ -629,7 +648,8 @@ impl Fixture {
             ("user.name", "John Crenshaw"),
             ("user.email", "john@jcrenshaw.dev"),
             ("gpg.format", "openpgp"),
-            ("user.signingkey", "693AB15F91734B0C"),
+            ("gpg.program", "gpg"),
+            ("user.signingkey", fixture.signing_key.as_str()),
             ("commit.gpgsign", "true"),
         ] {
             git(root, &["config", "--local", key, value]);
@@ -659,11 +679,15 @@ impl Fixture {
     }
 
     fn root(&self) -> &Path {
-        self.temp.path()
+        &self.root
     }
 
     fn client(&self) -> Client {
-        let mut client = isolated_client(self.root());
+        let mut client = Client::spawn_in_with_keyring(
+            &["serve", "--project-root", self.root().to_str().unwrap()],
+            Path::new(env!("CARGO_MANIFEST_DIR")),
+            Some(&signing::home(self.root())),
+        );
         client.handshake();
         client
     }
@@ -1279,9 +1303,13 @@ fn execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans() {
         let task_id = format!("T{}", index + 1);
         assert!(object.ends_with(&format!("feat(6): complete {task_id}")));
         git(fixture.root(), &["verify-commit", sha]);
+        let signature = git(fixture.root(), &["show", "-s", "--format=%G? %GK", sha]);
+        let (status, key_id) = signature.split_once(' ').unwrap();
+        assert_eq!(status, "G");
+        assert_eq!(key_id, fixture.signing_key);
         assert_eq!(
-            git(fixture.root(), &["show", "-s", "--format=%G? %GK", sha]),
-            "G 693AB15F91734B0C"
+            key_id,
+            git(fixture.root(), &["config", "--local", "user.signingkey"])
         );
         git(
             fixture.root(),
@@ -1333,7 +1361,11 @@ fn execute_restart_root_binding_and_version_remain_isolated() {
     let alias_temp = tempfile::tempdir().unwrap();
     let alias = alias_temp.path().join("project-link");
     std::os::unix::fs::symlink(fixture.root(), &alias).unwrap();
-    let mut explicit = isolated_client(&alias);
+    let mut explicit = Client::spawn_in_with_keyring(
+        &["serve", "--project-root", alias.to_str().unwrap()],
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        Some(&signing::home(fixture.root())),
+    );
     explicit.handshake();
     let before = fixture.read().snapshot;
     assert_eq!(
@@ -1355,7 +1387,11 @@ fn execute_restart_root_binding_and_version_remain_isolated() {
     let first = fixture.query(&mut explicit);
     let pid = explicit.child.id();
     assert!(explicit.finish().success());
-    let mut discovered = Client::spawn_in(&["serve"], fixture.root());
+    let mut discovered = Client::spawn_in_with_keyring(
+        &["serve"],
+        fixture.root(),
+        Some(&signing::home(fixture.root())),
+    );
     discovered.handshake();
     assert_ne!(discovered.child.id(), pid);
     assert_eq!(fixture.query(&mut discovered), first);
