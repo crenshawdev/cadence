@@ -1,3 +1,4 @@
+pub mod boundary;
 pub mod dispatch;
 pub mod model;
 pub mod patch;

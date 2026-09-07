@@ -30,7 +30,7 @@ use cadence::{
         writer::{Operation, View},
     },
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -39,43 +39,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "outcome", rename_all = "kebab-case")]
-pub enum Response {
-    Dispatch {
-        dispatch: Box<ActiveDispatch>,
-        prompt: String,
-    },
-    NextPlan {
-        phase: u32,
-        plan: u32,
-    },
-    Complete {
-        phase: u32,
-    },
-    JudgmentStop {
-        phase: u32,
-        dispatch_id: String,
-        blocker_ids: Vec<String>,
-    },
-    Refused {
-        phase: u32,
-        code: String,
-        reason: String,
-    },
-}
-
-impl Response {
-    fn label(&self) -> String {
-        match self {
-            Self::Dispatch { .. } => "dispatch".into(),
-            Self::NextPlan { .. } => "next-plan".into(),
-            Self::Complete { .. } => "complete".into(),
-            Self::JudgmentStop { .. } => "judgment-stop".into(),
-            Self::Refused { code, .. } => format!("refused:{code}"),
-        }
-    }
-}
+pub use cadence::execution::boundary::Response;
 
 #[derive(Clone)]
 struct Plans {

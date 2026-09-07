@@ -946,3 +946,36 @@ fn phase_six_binary_acceptance_inventory_runs_registered_evidence() {
         run();
     }
 }
+
+#[test]
+fn execution_service_conversion_is_public_before_receipt_creation() {
+    use cadence::{
+        envelope::Envelope,
+        execution::boundary::{PreparedAnswer, Receipt},
+    };
+    let answer = PreparedAnswer::new(
+        Response::Refused {
+            phase: 6,
+            code: "invalid-phase".into(),
+            reason: "phase must be positive".into(),
+        }
+        .into_envelope(),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&answer.envelope).unwrap(),
+        serde_json::json!({
+            "status":"refused","code":"invalid-phase","reason":"phase must be positive"
+        })
+    );
+    assert!(matches!(
+        answer.receipt,
+        Receipt::Compact {
+            envelope: Envelope::Refused { .. }
+        }
+    ));
+    assert_eq!(
+        answer.response_digest,
+        "6914d5f0a8f7869ca24286a3432df51d4114d9f9f3163293e2d0be6f8f1148c7"
+    );
+}
