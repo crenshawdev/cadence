@@ -1134,7 +1134,7 @@ fn dispatch_response(active: &ActiveDispatch, plan: &ExecutionPlan) -> Response 
 }
 
 fn render_prompt(dispatch: &ActiveDispatch) -> String {
-    let operational = json!({
+    let mut operational = json!({
         "schema": dispatch.schema,
         "dispatch_id": dispatch.id,
         "expected_execution_version": dispatch.expected_execution_version,
@@ -1147,6 +1147,10 @@ fn render_prompt(dispatch: &ActiveDispatch) -> String {
         "policy": dispatch.policy,
         "base_sha": dispatch.base_sha,
     });
+    // Preserve the original prompt bytes for outstanding exact-file dispatches.
+    if !dispatch.directories.is_empty() {
+        operational["directories"] = json!(dispatch.directories);
+    }
     format!(
         "Cadence native execution dispatch\n\nOperational input:\n{}\n\nExecutor patch schema:\n{}\n\nInstructions:\nComplete tasks in listed order. Use one distinct signed commit per completed task. Run each task's exact verification commands and the suite. Return exactly one executor patch matching this schema. Stop at the first blocker and mark all later tasks not-run.\n\nOpaque plan body ({} UTF-8 bytes):\n{}",
         serde_json::to_string_pretty(&operational).expect("operational fields serialize"),

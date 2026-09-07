@@ -19,6 +19,8 @@ pub struct ExecutionPlan {
     pub plan: u32,
     pub requirements: Vec<String>,
     pub files: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub directories: Vec<String>,
     pub schema: u32,
     pub suite: String,
     pub tasks: Vec<TaskSpec>,
@@ -66,6 +68,8 @@ pub struct ActiveDispatch {
     pub tasks: Vec<TaskSpec>,
     pub suite: String,
     pub files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub directories: Vec<String>,
     pub policy: DispatchPolicy,
     pub base_sha: String,
     pub prompt_bytes: u64,

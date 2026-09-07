@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 use sha2::{Digest, Sha256};
 
+use super::lease::covers;
 use super::model::{EXECUTION_SCHEMA, ExecutionPlan, TaskSpec};
 
 pub const MAX_DOCUMENT_BYTES: usize = 1_048_576;
@@ -44,6 +45,8 @@ struct Frontmatter {
     plan: Spanned<u32>,
     requirements: Vec<String>,
     files: Vec<String>,
+    #[serde(default)]
+    directories: Vec<String>,
     execution: ExecutionFields,
 }
 
@@ -61,6 +64,8 @@ struct FingerprintPlan<'a> {
     plan: u32,
     requirements: &'a [String],
     files: &'a [String],
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    directories: &'a [String],
     schema: u32,
     suite: &'a str,
     tasks: &'a [TaskSpec],
@@ -74,6 +79,7 @@ impl<'a> From<&'a ExecutionPlan> for FingerprintPlan<'a> {
             plan: plan.plan,
             requirements: &plan.requirements,
             files: &plan.files,
+            directories: &plan.directories,
             schema: plan.schema,
             suite: &plan.suite,
             tasks: &plan.tasks,
@@ -148,23 +154,27 @@ pub fn parse_plan(
         ));
     }
     validate_fields(&raw.requirements, "requirements")?;
-    if raw.files.len() > MAX_FIELDS {
+    if raw.files.len().saturating_add(raw.directories.len()) > MAX_FIELDS {
         return Err(PlanError::new(
             "field-bound",
-            format!("files contains more than {MAX_FIELDS} entries"),
+            format!("files and directories contain more than {MAX_FIELDS} total entries"),
         ));
     }
-    let files = raw
-        .files
-        .iter()
-        .map(|path| normalize_lease_path(path))
-        .collect::<Result<Vec<_>, _>>()?;
-    let unique_files = files.iter().collect::<BTreeSet<_>>();
-    if unique_files.len() != files.len() {
+    let files = normalize_declarations(&raw.files, "files")?;
+    let directories = normalize_declarations(&raw.directories, "directories")?;
+    if files.is_empty() && directories.is_empty() {
         return Err(PlanError::new(
-            "duplicate-path",
-            "files contains duplicate normalized paths",
+            "empty-lease",
+            "files and directories must declare a nonempty total lease",
         ));
+    }
+    for path in files.iter().chain(&directories) {
+        if !covers(&files, &directories, path) {
+            return Err(PlanError::new(
+                "invalid-lease",
+                "declaration is not covered",
+            ));
+        }
     }
     validate_command(&raw.execution.suite, "suite")?;
     validate_tasks(&raw.execution.tasks)?;
@@ -174,6 +184,7 @@ pub fn parse_plan(
         plan: raw.plan.value,
         requirements: raw.requirements,
         files,
+        directories,
         schema: raw.execution.schema,
         suite: raw.execution.suite,
         tasks: raw.execution.tasks,
@@ -394,6 +405,29 @@ fn validate_command(command: &str, name: &str) -> Result<(), PlanError> {
         ));
     }
     Ok(())
+}
+
+fn normalize_declarations(values: &[String], field: &str) -> Result<Vec<String>, PlanError> {
+    let paths = values
+        .iter()
+        .map(|path| {
+            if field == "files" && path.ends_with(['/', '\\']) {
+                return Err(PlanError::new(
+                    "invalid-path",
+                    "files rejects trailing separators; declare directory coverage in directories",
+                ));
+            }
+            normalize_lease_path(path)
+                .map_err(|error| PlanError::new(error.code, format!("{field}: {}", error.detail)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if paths.iter().collect::<BTreeSet<_>>().len() != paths.len() {
+        return Err(PlanError::new(
+            "duplicate-path",
+            format!("{field} contains duplicate normalized paths"),
+        ));
+    }
+    Ok(paths)
 }
 
 fn normalize_lease_path(input: &str) -> Result<String, PlanError> {

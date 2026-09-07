@@ -72,6 +72,7 @@ pub fn build_dispatch(
         tasks: plan.tasks.clone(),
         suite: plan.suite.clone(),
         files: plan.files.clone(),
+        directories: plan.directories.clone(),
         policy: DispatchPolicy {
             rung: ExecutorRung::Fixed,
             branch: BranchPolicy::Current,
