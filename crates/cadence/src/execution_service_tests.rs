@@ -16,16 +16,23 @@ use cadence::{
         ExecutorPatch, PATCH_SCHEMA, PatchKind, PlanDisposition, TaskOutcome,
         VerificationDisposition, VerificationReceipt,
     },
-    store::writer::Operation,
+    store::{
+        filesystem::Stage,
+        model::{Decision, DecisionRecord},
+        transaction::INTENT,
+        writer::Operation,
+    },
 };
 use std::{
     fs,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 const OUTPUT_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -568,5 +575,307 @@ fn blocked_patch_persists_judgment_stop_without_dispatching_more_work() {
             expected
         );
         assert_eq!(server.query_execution(&fixture.root, 6).await, expected);
+    });
+}
+
+fn restart_barrier(name: &str) -> ! {
+    println!("EXECUTION_BARRIER:{name}");
+    std::io::stdout().flush().unwrap();
+    loop {
+        std::thread::park();
+    }
+}
+
+fn child_patch() -> ExecutorPatch {
+    serde_json::from_str(&std::env::var("CADENCE_EXECUTION_PATCH").unwrap()).unwrap()
+}
+
+#[test]
+fn execution_restart_child() {
+    let Some(root) = std::env::var_os("CADENCE_EXECUTION_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root);
+    let phase: u32 = std::env::var("CADENCE_EXECUTION_PHASE")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let mode = std::env::var("CADENCE_EXECUTION_MODE").unwrap();
+    runtime().block_on(async {
+        match mode.as_str() {
+            "before-admission" => restart_barrier("before-admission"),
+            "dispatch-lost" => {
+                let server = CadenceServer::with_factory(factory());
+                assert!(matches!(
+                    server.query_execution(&root, phase).await,
+                    Response::Dispatch { .. }
+                ));
+                restart_barrier("dispatch-confirmed");
+            }
+            "apply-lost" => {
+                let server = CadenceServer::with_factory(factory());
+                assert!(!matches!(
+                    server
+                        .apply_executor_patch(&root, phase, child_patch())
+                        .await,
+                    Response::Refused { .. }
+                ));
+                restart_barrier("patch-confirmed");
+            }
+            "summary-partial" => {
+                let armed = Arc::new(AtomicBool::new(false));
+                let probe_armed = armed.clone();
+                let factory = factory().with_probe(Arc::new(move |stage, path| {
+                    if probe_armed.load(Ordering::SeqCst)
+                        && stage == Stage::Confirmation
+                        && path.ends_with("state.json")
+                    {
+                        restart_barrier("summary-installed");
+                    }
+                    Ok(())
+                }));
+                let server = CadenceServer::with_factory(factory);
+                armed.store(true, Ordering::SeqCst);
+                let _ = server
+                    .apply_executor_patch(&root, phase, child_patch())
+                    .await;
+                panic!("summary barrier was not reached");
+            }
+            "read-query" => {
+                let server = CadenceServer::with_factory(factory());
+                println!(
+                    "EXECUTION_RESULT {}",
+                    serde_json::to_string(&server.query_execution(&root, phase).await).unwrap()
+                );
+            }
+            "read-apply" => {
+                let server = CadenceServer::with_factory(factory());
+                println!(
+                    "EXECUTION_RESULT {}",
+                    serde_json::to_string(
+                        &server
+                            .apply_executor_patch(&root, phase, child_patch())
+                            .await
+                    )
+                    .unwrap()
+                );
+            }
+            other => panic!("unknown execution child mode: {other}"),
+        }
+    });
+}
+
+fn execution_child(root: &Path, mode: &str, patch: Option<&ExecutorPatch>) -> Command {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "server::execution_service_tests::execution_restart_child",
+            "--nocapture",
+        ])
+        .env("CADENCE_EXECUTION_ROOT", root)
+        .env("CADENCE_EXECUTION_PHASE", "6")
+        .env("CADENCE_EXECUTION_MODE", mode)
+        .stdin(Stdio::null());
+    if let Some(patch) = patch {
+        command.env(
+            "CADENCE_EXECUTION_PATCH",
+            serde_json::to_string(patch).unwrap(),
+        );
+    } else {
+        command.env_remove("CADENCE_EXECUTION_PATCH");
+    }
+    command
+}
+
+fn kill_execution_child(root: &Path, mode: &str, barrier: &str, patch: Option<&ExecutorPatch>) {
+    let mut child = execution_child(root, mode, patch)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let expected = format!("EXECUTION_BARRIER:{barrier}");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let line = line.unwrap();
+            if line == expected {
+                let _ = sender.send(());
+                return;
+            }
+        }
+    });
+    let reached = receiver.recv_timeout(Duration::from_secs(10));
+    child.kill().unwrap();
+    let status = child.wait().unwrap();
+    reader.join().unwrap();
+    assert!(reached.is_ok(), "execution child missed {barrier}");
+    assert!(!status.success());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
+    }
+}
+
+fn execution_child_result(root: &Path, mode: &str, patch: Option<&ExecutorPatch>) -> Response {
+    let output = execution_child(root, mode, patch).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    serde_json::from_str(
+        stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("EXECUTION_RESULT "))
+            .expect("fresh execution child returned no result"),
+    )
+    .unwrap()
+}
+
+fn boundary_count(root: &Path) -> usize {
+    fs::read_to_string(root.join("decisions.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str::<DecisionRecord>(line).unwrap())
+        .filter(|record| matches!(record.decision, Decision::Boundary { .. }))
+        .count()
+}
+
+#[test]
+fn execution_restart_dispatch_recovery_distinguishes_pre_admission() {
+    runtime().block_on(async {
+        let not_admitted = fixture(&[(&["src/a.rs"], &["T1"], "pre-admission body\n")]);
+        let server = CadenceServer::with_factory(factory());
+        accept(&server, &not_admitted).await;
+        drop(server);
+        kill_execution_child(
+            &not_admitted.root,
+            "before-admission",
+            "before-admission",
+            None,
+        );
+        assert_eq!(boundary_count(&not_admitted.root), 0);
+        let Response::Dispatch { dispatch, .. } =
+            execution_child_result(&not_admitted.root, "read-query", None)
+        else {
+            panic!("fresh process did not admit the first dispatch")
+        };
+        assert_eq!(dispatch.expected_execution_version, 1);
+        assert_eq!(boundary_count(&not_admitted.root), 1);
+
+        let admitted = fixture(&[(&["src/a.rs"], &["T1"], "persisted body 日本語\n")]);
+        let server = CadenceServer::with_factory(factory());
+        accept(&server, &admitted).await;
+        drop(server);
+        kill_execution_child(&admitted.root, "dispatch-lost", "dispatch-confirmed", None);
+        assert_eq!(boundary_count(&admitted.root), 1);
+        let Response::Dispatch { dispatch, prompt } =
+            execution_child_result(&admitted.root, "read-query", None)
+        else {
+            panic!("fresh process did not recover the dispatch")
+        };
+        assert_eq!(boundary_count(&admitted.root), 1);
+        assert_eq!(dispatch.expected_execution_version, 1);
+        assert_eq!(dispatch.plan, 1);
+        assert_eq!(dispatch.tasks[0].id, "T1");
+        assert_eq!(dispatch.body, "persisted body 日本語\n");
+        assert_eq!(
+            dispatch.base_sha,
+            run(&admitted.project, &["rev-parse", "HEAD"])
+        );
+        assert_eq!(prompt.len() as u64, dispatch.prompt_bytes);
+    });
+}
+
+#[test]
+fn execution_restart_lost_apply_replays_one_immutable_transition() {
+    runtime().block_on(async {
+        for plan_count in [1, 2] {
+            let specs: Vec<(&[&str], &[&str], &str)> = if plan_count == 1 {
+                vec![(&["src/a.rs"], &["T1"], "one plan\n")]
+            } else {
+                vec![
+                    (&["src/a.rs"], &["T1"], "first plan\n"),
+                    (&["src/b.rs"], &["T2"], "second plan\n"),
+                ]
+            };
+            let fixture = fixture(&specs);
+            let server = CadenceServer::with_factory(factory());
+            accept(&server, &fixture).await;
+            let dispatch = dispatch(&server, &fixture).await;
+            drop(server);
+            let sha = commit(&fixture, "lost", "feat: complete T1", true);
+            let patch = complete_patch(&dispatch, &[&sha]);
+            kill_execution_child(&fixture.root, "apply-lost", "patch-confirmed", Some(&patch));
+            let decisions = fs::read(fixture.root.join("decisions.jsonl")).unwrap();
+            let summary = fs::read(fixture.root.join("phases/6/SUMMARY.md")).unwrap();
+            let response = execution_child_result(&fixture.root, "read-apply", Some(&patch));
+            assert_eq!(
+                response,
+                if plan_count == 1 {
+                    Response::Complete { phase: 6 }
+                } else {
+                    Response::NextPlan { phase: 6, plan: 2 }
+                }
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("decisions.jsonl")).unwrap(),
+                decisions
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("phases/6/SUMMARY.md")).unwrap(),
+                summary
+            );
+            assert_eq!(
+                String::from_utf8(summary)
+                    .unwrap()
+                    .matches("| 1 | T1 | completed")
+                    .count(),
+                1
+            );
+        }
+    });
+}
+
+#[test]
+fn execution_restart_repairs_summary_before_final_state_confirmation() {
+    runtime().block_on(async {
+        let fixture = fixture(&[(&["src/a.rs"], &["T1"], "summary recovery\n")]);
+        let server = CadenceServer::with_factory(factory());
+        accept(&server, &fixture).await;
+        let dispatch = dispatch(&server, &fixture).await;
+        drop(server);
+        let sha = commit(&fixture, "summary", "feat: complete T1", true);
+        let patch = complete_patch(&dispatch, &[&sha]);
+        kill_execution_child(
+            &fixture.root,
+            "summary-partial",
+            "summary-installed",
+            Some(&patch),
+        );
+        assert!(fixture.root.join(INTENT).exists());
+        let installed = fs::read(fixture.root.join("phases/6/SUMMARY.md")).unwrap();
+        assert!(String::from_utf8_lossy(&installed).contains(&sha));
+        assert_eq!(
+            execution_child_result(&fixture.root, "read-apply", Some(&patch)),
+            Response::Complete { phase: 6 }
+        );
+        assert!(!fixture.root.join(INTENT).exists());
+        assert_eq!(
+            fs::read(fixture.root.join("phases/6/SUMMARY.md")).unwrap(),
+            installed
+        );
+        assert_eq!(
+            String::from_utf8(installed)
+                .unwrap()
+                .matches("| 1 | T1 | completed")
+                .count(),
+            1
+        );
     });
 }

@@ -337,17 +337,69 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
                 )
                 .await;
             }
-            return record_observation(
-                &session,
-                &view,
+            let Response::Dispatch {
+                dispatch: returned, ..
+            } = &response
+            else {
+                return record_observation(
+                    &session,
+                    &view,
+                    phase,
+                    BoundaryTool::CadenceQuery,
+                    "query-next",
+                    &raw_request,
+                    response,
+                    Some(active.id.clone()),
+                )
+                .await;
+            };
+            if active.expected_execution_version != occurrence.version || occurrence.version == 0 {
+                return record_refusal(
+                    &session,
+                    &view,
+                    phase,
+                    BoundaryTool::CadenceQuery,
+                    "query-next",
+                    &raw_request,
+                    "invalid-active-dispatch",
+                    "active dispatch execution version is inconsistent",
+                    Some(active.id.clone()),
+                )
+                .await;
+            }
+            let mut original_candidate = returned.as_ref().clone();
+            original_candidate.expected_execution_version = occurrence.version - 1;
+            let decision = boundary(
                 phase,
                 BoundaryTool::CadenceQuery,
                 "query-next",
                 &raw_request,
-                response,
+                &response,
                 Some(active.id.clone()),
-            )
-            .await;
+                Some(active.prompt_bytes),
+            );
+            let written = match session
+                .request(Operation::AdmitExecution {
+                    expected_generation: view.snapshot.generation,
+                    expected_integrity: view.snapshot.integrity.clone(),
+                    operation_id: format!("execution-dispatch:{}", active.id),
+                    plan_set_fingerprint: plans.fingerprint.clone(),
+                    dispatch: original_candidate,
+                    decision,
+                })
+                .await
+            {
+                Ok(written) => written,
+                Err(error) => return store_refusal(phase, error),
+            };
+            if !stored_dispatch(&written, phase, returned) {
+                return refused(
+                    phase,
+                    "dispatch-not-confirmed",
+                    "the writer did not confirm the replayed dispatch",
+                );
+            }
+            return response;
         }
     }
 

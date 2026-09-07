@@ -1,6 +1,9 @@
 use std::{
     collections::BTreeMap,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    process::{Command, Stdio},
+    time::Duration,
 };
 
 use cadence::execution::dispatch::build_dispatch;
@@ -638,4 +641,157 @@ fn transition_257_persists_one_terminal_log_bound_and_later_calls_replay_it() {
             bytes
         );
     });
+}
+
+fn operation_from_patch(view: &View, patch: ExecutorPatch) -> Operation {
+    Operation::ApplyExecutionPatch {
+        expected_generation: view.snapshot.generation,
+        expected_integrity: view.snapshot.integrity.clone(),
+        operation_id: "patch-6-1".into(),
+        commit_paths: BTreeMap::from([
+            (COMMIT_1.into(), vec!["src/one.rs".into()]),
+            (COMMIT_2.into(), vec!["src/two.rs".into()]),
+        ]),
+        decision: boundary(
+            BoundaryTool::CadenceApply,
+            "executor",
+            "accepted",
+            Some(patch.dispatch_id.clone()),
+            None,
+            "patch-6-1",
+        ),
+        patch,
+        render_version: SUMMARY_RENDER_VERSION,
+        complete_phase: false,
+    }
+}
+
+fn execution_store_barrier() -> ! {
+    println!("EXECUTION_STORE_BARRIER");
+    std::io::stdout().flush().unwrap();
+    loop {
+        std::thread::park();
+    }
+}
+
+#[test]
+fn execution_store_restart_child() {
+    let Some(project) = std::env::var_os("CADENCE_EXECUTION_STORE_ROOT") else {
+        return;
+    };
+    let project = PathBuf::from(project);
+    let patch: ExecutorPatch =
+        serde_json::from_str(&std::env::var("CADENCE_EXECUTION_STORE_PATCH").unwrap()).unwrap();
+    let mode = std::env::var("CADENCE_EXECUTION_STORE_MODE").unwrap();
+    runtime().block_on(async {
+        let store = if mode == "produce" {
+            open_with_probe(&project, |stage, path| {
+                if stage == Stage::Confirmation && path.ends_with(STATE) {
+                    execution_store_barrier();
+                }
+                Ok(())
+            })
+            .await
+        } else {
+            open(&project).await
+        };
+        let view = store.request(Operation::ReadVerified).await.unwrap();
+        let result = store
+            .request(operation_from_patch(&view, patch))
+            .await
+            .unwrap();
+        assert_eq!(execution(&result).occurrences["6"].receipts.len(), 1);
+        println!(
+            "EXECUTION_STORE_RESULT {}",
+            json!({
+                "pid": std::process::id(),
+                "plans": execution(&result).occurrences["6"].plans.len(),
+                "decisions": result.decisions.len(),
+            })
+        );
+    });
+}
+
+fn execution_store_child(project: &Path, mode: &str, patch: &ExecutorPatch) -> Command {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", "execution_store_restart_child", "--nocapture"])
+        .env("CADENCE_EXECUTION_STORE_ROOT", project)
+        .env("CADENCE_EXECUTION_STORE_MODE", mode)
+        .env(
+            "CADENCE_EXECUTION_STORE_PATCH",
+            serde_json::to_string(patch).unwrap(),
+        )
+        .stdin(Stdio::null());
+    command
+}
+
+#[test]
+fn real_kill_after_summary_install_recovers_final_state_and_one_receipt() {
+    let root = tempfile::tempdir().unwrap();
+    prepare_root(root.path());
+    let patch = runtime().block_on(async {
+        let store = open(root.path()).await;
+        let (view, dispatch) = seed_and_dispatch(&store).await;
+        let patch = complete_patch(&dispatch);
+        assert_eq!(view.decisions.len(), 1);
+        patch
+    });
+    let mut child = execution_store_child(root.path(), "produce", &patch)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let producer_pid = child.id();
+    let stdout = child.stdout.take().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if line.unwrap() == "EXECUTION_STORE_BARRIER" {
+                let _ = sender.send(());
+                return;
+            }
+        }
+    });
+    assert!(receiver.recv_timeout(Duration::from_secs(10)).is_ok());
+    child.kill().unwrap();
+    let status = child.wait().unwrap();
+    reader.join().unwrap();
+    assert!(!status.success());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
+    }
+    assert!(planning(root.path()).join(INTENT).exists());
+    let installed = std::fs::read(planning(root.path()).join("phases/6/SUMMARY.md")).unwrap();
+
+    let output = execution_store_child(root.path(), "recover", &patch)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let result: Value = serde_json::from_str(
+        stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("EXECUTION_STORE_RESULT "))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_ne!(result["pid"], producer_pid);
+    assert_eq!(result["plans"], 1);
+    assert_eq!(result["decisions"], 2);
+    assert!(!planning(root.path()).join(INTENT).exists());
+    assert_eq!(
+        std::fs::read(planning(root.path()).join("phases/6/SUMMARY.md")).unwrap(),
+        installed
+    );
+    let summary = String::from_utf8(installed).unwrap();
+    assert_eq!(summary.matches(COMMIT_1).count(), 1);
+    assert_eq!(summary.matches(COMMIT_2).count(), 1);
 }
