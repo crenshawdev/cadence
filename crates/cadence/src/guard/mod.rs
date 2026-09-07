@@ -9,7 +9,7 @@ use std::{
 };
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub const MAX_INPUT_BYTES: u64 = 65_536;
 

@@ -879,3 +879,70 @@ fn execution_restart_repairs_summary_before_final_state_confirmation() {
         );
     });
 }
+
+#[test]
+fn phase_six_binary_acceptance_inventory_runs_registered_evidence() {
+    // This is the binary shard of the inventory. The integration-store shard
+    // supplies AC8 because Rust test executables cannot call across crates.
+    let rows: [(&str, &str, fn()); 9] = [
+        (
+            "AC2",
+            "server::execution_service_tests::resident_selects_overlap_graph_durably_and_ignores_report_bodies",
+            resident_selects_overlap_graph_durably_and_ignores_report_bodies,
+        ),
+        (
+            "AC4",
+            "server::execution_service_tests::signed_commits_apply_in_strict_order_and_paths_survive_replay",
+            signed_commits_apply_in_strict_order_and_paths_survive_replay,
+        ),
+        (
+            "AC5",
+            "server::execution_service_tests::missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse",
+            missing_unsigned_reused_reordered_bad_and_mismatched_commits_refuse,
+        ),
+        (
+            "AC6",
+            "server::execution_service_tests::execution_restart_dispatch_recovery_distinguishes_pre_admission",
+            execution_restart_dispatch_recovery_distinguishes_pre_admission,
+        ),
+        (
+            "AC6",
+            "server::execution_service_tests::execution_restart_lost_apply_replays_one_immutable_transition",
+            execution_restart_lost_apply_replays_one_immutable_transition,
+        ),
+        (
+            "AC6",
+            "server::execution_service_tests::execution_restart_repairs_summary_before_final_state_confirmation",
+            execution_restart_repairs_summary_before_final_state_confirmation,
+        ),
+        (
+            "AC7 deterministic guard",
+            "guard::tests::guard_denies_owned_outputs_through_every_path_spelling",
+            crate::guard::tests::guard_denies_owned_outputs_through_every_path_spelling,
+        ),
+        (
+            "AC7 deterministic guard",
+            "guard::tests::guard_fails_closed_for_malformed_ambiguous_and_oversized_write_events",
+            crate::guard::tests::guard_fails_closed_for_malformed_ambiguous_and_oversized_write_events,
+        ),
+        (
+            "AC7 deterministic guard",
+            "guard::tests::guard_allows_unowned_source_paths_inside_and_outside_planning",
+            crate::guard::tests::guard_allows_unowned_source_paths_inside_and_outside_planning,
+        ),
+    ];
+    let listing = Command::new(std::env::current_exe().unwrap())
+        .arg("--list")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    for (criterion, name, run) in rows {
+        assert!(
+            listing.lines().any(|line| line == format!("{name}: test")),
+            "{criterion} evidence is not registered: {name}"
+        );
+        run();
+    }
+}

@@ -1,3 +1,7 @@
+//! Store shard of the executable phase-6 acceptance inventory.
+//!
+//! The inventory runs deterministic persistence and log-bound evidence. Real
+//! host behavior and model-produced work remain PLAN-2 UAT obligations.
 use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader, Write},
@@ -794,4 +798,44 @@ fn real_kill_after_summary_install_recovers_final_state_and_one_receipt() {
     let summary = String::from_utf8(installed).unwrap();
     assert_eq!(summary.matches(COMMIT_1).count(), 1);
     assert_eq!(summary.matches(COMMIT_2).count(), 1);
+}
+
+#[test]
+fn phase_six_store_acceptance_inventory_runs_registered_evidence() {
+    let rows: [(&str, &str, fn()); 4] = [
+        (
+            "AC4",
+            "accepted_patch_and_derived_summary_survive_reopen",
+            accepted_patch_and_derived_summary_survive_reopen,
+        ),
+        (
+            "AC5",
+            "refusal_changes_only_decisions_generation_and_integrity",
+            refusal_changes_only_decisions_generation_and_integrity,
+        ),
+        (
+            "AC6",
+            "real_kill_after_summary_install_recovers_final_state_and_one_receipt",
+            real_kill_after_summary_install_recovers_final_state_and_one_receipt,
+        ),
+        (
+            "AC8 log-bound",
+            "transition_257_persists_one_terminal_log_bound_and_later_calls_replay_it",
+            transition_257_persists_one_terminal_log_bound_and_later_calls_replay_it,
+        ),
+    ];
+    let listing = Command::new(std::env::current_exe().unwrap())
+        .arg("--list")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    for (criterion, name, run) in rows {
+        assert!(
+            listing.lines().any(|line| line == format!("{name}: test")),
+            "{criterion} evidence is not registered: {name}"
+        );
+        run();
+    }
 }

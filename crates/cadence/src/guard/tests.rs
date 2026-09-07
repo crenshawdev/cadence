@@ -78,7 +78,7 @@ fn denied(bytes: &[u8]) -> Value {
 }
 
 #[test]
-fn guard_denies_owned_outputs_through_every_path_spelling() {
+pub(crate) fn guard_denies_owned_outputs_through_every_path_spelling() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path();
     let planning = project.join(".planning");
@@ -119,7 +119,7 @@ fn guard_denies_owned_outputs_through_every_path_spelling() {
 }
 
 #[test]
-fn guard_fails_closed_for_malformed_ambiguous_and_oversized_write_events() {
+pub(crate) fn guard_fails_closed_for_malformed_ambiguous_and_oversized_write_events() {
     let temp = tempfile::tempdir().unwrap();
     let cwd = temp.path();
     for bytes in [
@@ -149,7 +149,7 @@ fn guard_fails_closed_for_malformed_ambiguous_and_oversized_write_events() {
 }
 
 #[test]
-fn guard_allows_unowned_source_paths_inside_and_outside_planning() {
+pub(crate) fn guard_allows_unowned_source_paths_inside_and_outside_planning() {
     let temp = tempfile::tempdir().unwrap();
     let project = temp.path();
     fs::create_dir_all(project.join(".planning/phases/6")).unwrap();
