@@ -17,6 +17,10 @@ pub enum Command {
         scope: cadence::evidence::Scope,
         override_id: String,
     },
+    CheckerApplicability {
+        scope: cadence::evidence::Scope,
+        checker_id: String,
+    },
     Submit {
         operation_id: String,
         record: Box<Record>,
@@ -34,6 +38,8 @@ pub struct Recovery {
     pub current: Vec<Record>,
     pub history: Vec<Record>,
     pub permission: Option<cadence::evidence::authority::Permission>,
+    pub checker_applicability: Option<cadence::evidence::authority::CheckerApplicability>,
+    pub material_observations: cadence::evidence::material::Observations,
 }
 
 impl Recovery {
@@ -63,6 +69,8 @@ fn recover(view: &View) -> Result<Recovery> {
             .filter_map(|decision| persistence::decode_history(decision).transpose())
             .collect::<Result<_>>()?,
         permission: None,
+        checker_applicability: None,
+        material_observations: Default::default(),
     })
 }
 
@@ -108,7 +116,9 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
             ));
         }
     }
-    if let Command::Permission { scope, .. } = &command {
+    if let Command::Permission { scope, .. } | Command::CheckerApplicability { scope, .. } =
+        &command
+    {
         scope.validate()?;
         if Path::new(&scope.planning_root) != root
             || root.parent() != Some(Path::new(&scope.project))
@@ -133,6 +143,25 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
                 &scope,
                 &override_id,
             ));
+            Ok(recovered)
+        }
+        Command::CheckerApplicability { scope, checker_id } => {
+            let mut recovered = recover(&before)?;
+            let materials =
+                cadence::evidence::material::basis(&recovered.current, &scope, &checker_id)?;
+            let observations = tokio::task::spawn_blocking(move || {
+                observe_material(&root, &materials, &mut |p| std::fs::read(p))
+            })
+            .await
+            .map_err(|_| Error::Closed)?;
+            recovered.checker_applicability =
+                Some(cadence::evidence::authority::checker_applicability(
+                    &recovered.current,
+                    &scope,
+                    &checker_id,
+                    &observations,
+                )?);
+            recovered.material_observations = observations;
             Ok(recovered)
         }
         Command::Submit {
@@ -177,4 +206,32 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
         }
         Command::InvokeOverride { .. } => unreachable!("normalized invocation"),
     }
+}
+
+/// A failed read remains a failed observation, including when an older pass exists.
+pub fn observe_material(
+    root: &Path,
+    materials: &[cadence::evidence::checker::CheckedMaterial],
+    read: &mut impl FnMut(&Path) -> std::io::Result<Vec<u8>>,
+) -> cadence::evidence::material::Observations {
+    use cadence::evidence::material::Observation;
+    materials
+        .iter()
+        .map(|material| {
+            let path = Path::new(&material.path);
+            let observation = if path.is_absolute()
+                || path
+                    .components()
+                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
+            {
+                Observation::Failed("invalid relative material path".into())
+            } else {
+                match read(&root.join(path)) {
+                    Ok(bytes) => Observation::Read(cadence::store::model::digest(&bytes)),
+                    Err(error) => Observation::Failed(format!("{:?}: {error}", error.kind())),
+                }
+            };
+            (material.path.clone(), observation)
+        })
+        .collect()
 }

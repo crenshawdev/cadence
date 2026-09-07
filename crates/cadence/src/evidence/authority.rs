@@ -64,6 +64,64 @@ pub fn permission(records: &[Record], scope: &Scope, override_id: &str) -> Permi
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckerApplicability {
+    pub freshness: super::material::Freshness,
+    pub verdict_applicable: bool,
+    pub continuation_allowed: bool,
+    pub revision_spent: bool,
+    pub override_id: Option<String>,
+}
+
+pub fn checker_applicability(
+    records: &[Record],
+    scope: &Scope,
+    checker_id: &str,
+    observed: &super::material::Observations,
+) -> Result<CheckerApplicability> {
+    use super::{
+        checker::Disposition,
+        material::{self, Freshness},
+        overrides::{Bypass, Meaning},
+    };
+    let check = material::checker(records, scope, checker_id)?;
+    let freshness = material::compare(&material::basis(records, scope, checker_id)?, observed);
+    let override_id = records.iter().find_map(|r| {
+        if r.scope != *scope {
+            return None;
+        }
+        let Fact::Override(o) = &r.fact else {
+            return None;
+        };
+        let Meaning::Bypass {
+            target:
+                Bypass::Result {
+                    checker_id: target,
+                    material,
+                    ..
+                },
+        } = &o.meaning
+        else {
+            return None;
+        };
+        (target == checker_id
+            && permission(records, scope, &o.id).active()
+            && material::compare(material, observed) == Freshness::Current)
+            .then(|| o.id.clone())
+    });
+    let verdict_applicable = freshness == Freshness::Current;
+    Ok(CheckerApplicability {
+        continuation_allowed: (verdict_applicable && check.disposition == Disposition::Pass)
+            || override_id.is_some(),
+        freshness,
+        verdict_applicable,
+        override_id,
+        revision_spent: records
+            .iter()
+            .any(|r| r.scope == *scope && matches!(&r.fact, Fact::Checker(c) if c.revision_spent)),
+    })
+}
+
 pub(crate) fn validate_transition(
     records: &BTreeMap<String, Record>,
     record: &Record,

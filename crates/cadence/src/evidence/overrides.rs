@@ -27,6 +27,7 @@ pub enum Bypass {
     Result {
         checker_id: String,
         disposition: Disposition,
+        material: Vec<super::checker::CheckedMaterial>,
     },
 }
 
@@ -103,8 +104,25 @@ impl Override {
             }
             Meaning::Bypass { target } => match target {
                 Bypass::Skipped { check } => nonblank("skipped check", check)?,
-                Bypass::Result { checker_id, .. } => {
-                    nonblank("bypassed checker result", checker_id)?
+                Bypass::Result {
+                    checker_id,
+                    material,
+                    ..
+                } => {
+                    nonblank("bypassed checker result", checker_id)?;
+                    let mut paths = BTreeSet::new();
+                    if material.is_empty() {
+                        return Err(Error::Invalid("bypass lacks authorized material".into()));
+                    }
+                    for item in material {
+                        nonblank("authorized material path", &item.path)?;
+                        if !paths.insert(&item.path)
+                            || item.content_digest.len() != 64
+                            || !item.content_digest.bytes().all(|b| b.is_ascii_hexdigit())
+                        {
+                            return Err(Error::Invalid("invalid authorized material".into()));
+                        }
+                    }
                 }
             },
             Meaning::PausedNext { sentence } => {
@@ -156,20 +174,35 @@ pub(crate) fn validate_submission(
         }
     }
     if let Meaning::Bypass {
-        target: Bypass::Result {
-            checker_id,
-            disposition,
-        },
+        target:
+            Bypass::Result {
+                checker_id,
+                disposition,
+                material,
+            },
     } = &value.meaning
-        && !records.values().any(|r| {
+    {
+        if !records.values().any(|r| {
             r.scope == record.scope
                 && matches!(&r.fact,
             Fact::Checker(c) if &c.id == checker_id && &c.disposition == disposition)
-        })
-    {
-        return Err(Error::Invalid(
-            "bypass must preserve its actual checker outcome".into(),
-        ));
+        }) {
+            return Err(Error::Invalid(
+                "bypass must preserve its actual checker outcome".into(),
+            ));
+        }
+        let basis = super::material::basis(
+            &records.values().cloned().collect::<Vec<_>>(),
+            &record.scope,
+            checker_id,
+        )?;
+        if basis.iter().map(|m| &m.path).collect::<BTreeSet<_>>()
+            != material.iter().map(|m| &m.path).collect()
+        {
+            return Err(Error::Invalid(
+                "bypass must identify the full affected material set".into(),
+            ));
+        }
     }
     Ok(())
 }

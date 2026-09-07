@@ -3,6 +3,7 @@ pub mod authority;
 pub mod checker;
 pub mod checkpoint;
 pub mod gates;
+pub mod material;
 pub mod overrides;
 pub mod persistence;
 pub mod results;

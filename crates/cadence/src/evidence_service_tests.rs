@@ -1165,6 +1165,12 @@ fn four_overrides_share_submission_and_durable_readback() {
                     target: Bypass::Result {
                         checker_id: "failed".into(),
                         disposition: CheckDisposition::Fail,
+                        material: vec![CheckedMaterial {
+                            path: "phases/5/PLAN-1.md".into(),
+                            content_digest: cadence::store::model::digest(
+                                b"actual observed plan content",
+                            ),
+                        }],
                     },
                 },
             ),
@@ -1225,6 +1231,10 @@ fn four_overrides_share_submission_and_durable_readback() {
             target: Bypass::Result {
                 checker_id: "failed".into(),
                 disposition: CheckDisposition::Pass,
+                material: vec![CheckedMaterial {
+                    path: "phases/5/PLAN-1.md".into(),
+                    content_digest: cadence::store::model::digest(b"actual observed plan content"),
+                }],
             },
         };
         assert!(
@@ -1749,5 +1759,286 @@ fn active_override_cannot_suppress_lifecycle_conflict() {
                 .current
                 .contains(&value)
         );
+    });
+}
+
+use cadence::evidence::{
+    authority::CheckerApplicability,
+    material::{self, Freshness, Observation},
+};
+fn observed_material(root: &Path, paths: &[&str]) -> Vec<CheckedMaterial> {
+    paths
+        .iter()
+        .map(|path| CheckedMaterial {
+            path: (*path).into(),
+            content_digest: cadence::store::model::digest(&std::fs::read(root.join(path)).unwrap()),
+        })
+        .collect()
+}
+async fn checker_permission(
+    server: &CadenceServer,
+    root: &Path,
+    scope: &Scope,
+    checker_id: &str,
+) -> CheckerApplicability {
+    server
+        .evidence(
+            root,
+            Command::CheckerApplicability {
+                scope: scope.clone(),
+                checker_id: checker_id.into(),
+            },
+        )
+        .await
+        .unwrap()
+        .checker_applicability
+        .unwrap()
+}
+fn material_override(
+    root: &Path,
+    id: &str,
+    check: &str,
+    materials: Vec<CheckedMaterial>,
+) -> Record {
+    override_record(
+        root,
+        id,
+        Meaning::Bypass {
+            target: Bypass::Result {
+                checker_id: check.into(),
+                disposition: CheckDisposition::Pass,
+                material: materials,
+            },
+        },
+    )
+}
+async fn spent_revision(server: &CadenceServer, root: &Path) -> Record {
+    let mut initial = checker(
+        root,
+        "initial",
+        "## ISSUES FOUND",
+        vec![finding(1, Severity::Blocker)],
+    );
+    let Fact::Checker(c) = &mut initial.fact else {
+        unreachable!()
+    };
+    c.checked_material = observed_material(root, &["phases/5/PLAN-1.md", "phases/5/CONTEXT.md"]);
+    submit(server, root, "initial", initial).await.unwrap();
+    let mut revised = checker(root, "revised", "## VERIFICATION PASSED", vec![]);
+    let Fact::Checker(c) = &mut revised.fact else {
+        unreachable!()
+    };
+    c.checked_material = observed_material(root, &["phases/5/PLAN-1.md"]);
+    c.attempt = Attempt::Revision {
+        previous_check: "initial".into(),
+        previous_blockers: vec![finding(1, Severity::Blocker)],
+        diff: "-missing proof\n+proof\n".into(),
+    };
+    c.revision_spent = true;
+    submit(server, root, "revised", revised.clone())
+        .await
+        .unwrap();
+    revised
+}
+
+#[test]
+fn changed_material_needs_fresh_verdict_or_exact_override_without_revision_refund() {
+    let root = process_fixture();
+    std::fs::write(root.path().join("phases/5/CONTEXT.md"), "locked decision").unwrap();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        let revised = spent_revision(&server, root.path()).await;
+        let scope = revised.scope.clone();
+        let old_override = material_override(
+            root.path(),
+            "old-material",
+            "revised",
+            observed_material(root.path(), &["phases/5/PLAN-1.md", "phases/5/CONTEXT.md"]),
+        );
+        submit(&server, root.path(), "old-material", old_override)
+            .await
+            .unwrap();
+        let lifecycle = server.lifecycle(root.path()).await.unwrap();
+        let memo = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap()
+            .snapshot
+            .data["derivation"]
+            .clone();
+        drop(server);
+        let server = CadenceServer::with_factory(factory());
+        let current = checker_permission(&server, root.path(), &scope, "revised").await;
+        assert!(
+            current.verdict_applicable && current.continuation_allowed && current.revision_spent
+        );
+        std::fs::write(
+            root.path().join("phases/5/PLAN-1.md"),
+            "same filename, changed body",
+        )
+        .unwrap();
+        let changed = checker_permission(&server, root.path(), &scope, "revised").await;
+        assert_eq!(changed.freshness, Freshness::Changed);
+        assert!(
+            !changed.verdict_applicable && !changed.continuation_allowed && changed.revision_spent
+        );
+        assert_eq!(server.lifecycle(root.path()).await.unwrap(), lifecycle);
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap()
+                .snapshot
+                .data["derivation"],
+            memo
+        );
+        assert!(
+            server
+                .evidence(root.path(), Command::Read)
+                .await
+                .unwrap()
+                .history
+                .contains(&revised)
+        );
+        let mut unrelated = checker(root.path(), "revised", "## VERIFICATION PASSED", vec![]);
+        unrelated.scope.occurrence = "another-occurrence".into();
+        let Fact::Checker(c) = &mut unrelated.fact else {
+            unreachable!()
+        };
+        c.checked_material =
+            observed_material(root.path(), &["phases/5/PLAN-1.md", "phases/5/CONTEXT.md"]);
+        submit(&server, root.path(), "unrelated-check", unrelated.clone())
+            .await
+            .unwrap();
+        let mut wrong = material_override(
+            root.path(),
+            "wrong-occurrence",
+            "revised",
+            observed_material(root.path(), &["phases/5/PLAN-1.md", "phases/5/CONTEXT.md"]),
+        );
+        wrong.scope = unrelated.scope;
+        submit(&server, root.path(), "wrong-occurrence", wrong)
+            .await
+            .unwrap();
+        assert!(
+            !checker_permission(&server, root.path(), &scope, "revised")
+                .await
+                .continuation_allowed
+        );
+        let mut fresh = checker(root.path(), "fresh", "## VERIFICATION PASSED", vec![]);
+        let Fact::Checker(c) = &mut fresh.fact else {
+            unreachable!()
+        };
+        c.checked_material =
+            observed_material(root.path(), &["phases/5/PLAN-1.md", "phases/5/CONTEXT.md"]);
+        c.revision_spent = true;
+        submit(&server, root.path(), "fresh", fresh.clone())
+            .await
+            .unwrap();
+        let result = checker_permission(&server, root.path(), &scope, "fresh").await;
+        assert!(result.continuation_allowed && result.verdict_applicable && result.revision_spent);
+        let explicit = material_override(
+            root.path(),
+            "changed-work",
+            "revised",
+            observed_material(root.path(), &["phases/5/PLAN-1.md", "phases/5/CONTEXT.md"]),
+        );
+        submit(&server, root.path(), "changed-work", explicit.clone())
+            .await
+            .unwrap();
+        drop(server);
+        let server = CadenceServer::with_factory(factory());
+        let allowed = checker_permission(&server, root.path(), &scope, "revised").await;
+        assert!(
+            !allowed.verdict_applicable && allowed.continuation_allowed && allowed.revision_spent
+        );
+        assert_eq!(allowed.override_id.as_deref(), Some("changed-work"));
+        let before = server
+            .store(root.path(), Operation::ReadVerified)
+            .await
+            .unwrap();
+        let mut refund = fresh.clone();
+        let Fact::Checker(c) = &mut refund.fact else {
+            unreachable!()
+        };
+        c.id = "refund".into();
+        c.revision_spent = false;
+        assert!(
+            submit(&server, root.path(), "refund", refund)
+                .await
+                .is_err()
+        );
+        let mut second = revised.clone();
+        let Fact::Checker(c) = &mut second.fact else {
+            unreachable!()
+        };
+        c.id = "second-revision".into();
+        assert!(
+            submit(&server, root.path(), "second-revision", second)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap(),
+            before
+        );
+        std::fs::write(root.path().join("phases/5/PLAN-1.md"), "another edit").unwrap();
+        for id in ["initial", "revised", "fresh"] {
+            let result = checker_permission(&server, root.path(), &scope, id).await;
+            assert!(!result.continuation_allowed && result.revision_spent);
+        }
+        std::fs::remove_file(root.path().join("phases/5/CONTEXT.md")).unwrap();
+        let failed = server
+            .evidence(
+                root.path(),
+                Command::CheckerApplicability {
+                    scope: scope.clone(),
+                    checker_id: "revised".into(),
+                },
+            )
+            .await
+            .unwrap();
+        let result = failed.checker_applicability.unwrap();
+        assert_eq!(result.freshness, Freshness::Unavailable);
+        assert!(!result.continuation_allowed && result.revision_spent);
+        assert!(matches!(
+            failed.material_observations["phases/5/CONTEXT.md"],
+            Observation::Failed(_)
+        ));
+        assert!(failed.history.contains(&revised) && failed.history.contains(&explicit));
+    });
+}
+
+#[test]
+fn narrowed_revision_keeps_initial_observations_and_read_failures_never_approve() {
+    let root = process_fixture();
+    let context = root.path().join("phases/5/CONTEXT.md");
+    std::fs::write(&context, "original context").unwrap();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        let revised = spent_revision(&server,root.path()).await;
+        assert!(checker_permission(&server,root.path(),&revised.scope,"revised").await.continuation_allowed);
+        let recovered = server.evidence(root.path(),Command::Read).await.unwrap();
+        let basis = material::basis(&recovered.current,&revised.scope,"revised").unwrap();
+        assert_eq!(basis.len(),2);
+        let Fact::Checker(c) = &revised.fact else { unreachable!() };
+        assert_eq!(c.checked_material.len(),1,"revision did not reread the full input set");
+        assert!(matches!(&c.attempt,Attempt::Revision { previous_blockers,diff,.. } if previous_blockers.len() == 1 && diff == "-missing proof\n+proof\n"));
+        std::fs::write(&context,"changed outside narrowed revision").unwrap();
+        let changed = checker_permission(&server,root.path(),&revised.scope,"revised").await;
+        assert_eq!(changed.freshness,Freshness::Changed);
+        assert!(!changed.continuation_allowed && changed.revision_spent);
+        std::fs::write(&context,"original context").unwrap();
+        let injected = super::evidence_service::observe_material(root.path(),&basis,&mut |_| Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied,"injected read denial")));
+        assert!(injected.values().all(|o| matches!(o,Observation::Failed(s) if s.contains("PermissionDenied"))));
+        let result = cadence::evidence::authority::checker_applicability(&recovered.current,&revised.scope,"revised",&injected).unwrap();
+        assert_eq!(result.freshness,Freshness::Unavailable);
+        assert!(!result.verdict_applicable && !result.continuation_allowed && result.revision_spent);
+        drop(server);
+        let server = CadenceServer::with_factory(factory());
+        assert!(checker_permission(&server,root.path(),&revised.scope,"revised").await.revision_spent);
     });
 }
