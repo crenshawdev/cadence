@@ -67,7 +67,16 @@ jobs:
     # the Node matrix rather than instead of it: both halves ship for now.
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 is load-bearing, not tidiness. Sixteen tests read the
+      # frozen reference straight out of git - `git show v3.7.12:<path>` in
+      # config/tests.rs and import/tests.rs, and `git archive v3.7.12` for the
+      # .planning extraction fixture. A shallow checkout has no tags, so every
+      # one of them fails with "fatal: not a valid object name: v3.7.12" while
+      # passing locally. The node-test job already fetches full history for the
+      # same reason.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       # Installed by name, not left to rustup's auto-install: rustup 1.28
       # stopped installing the toolchain a rust-toolchain.toml names on first
