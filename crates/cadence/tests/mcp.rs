@@ -488,3 +488,606 @@ fn tool_schemas_malformed_objects_reach_cadence_and_protocol_errors_stay_distinc
     assert!(decisions.contains("missing-arguments"));
     assert!(decisions.contains("invalid-patch"));
 }
+
+struct Fixture {
+    temp: tempfile::TempDir,
+}
+
+struct AllowFixture;
+impl cadence::store::Policy for AllowFixture {
+    fn validate(&mut self, _: &cadence::store::MutationContext<'_>) -> cadence::store::Result<()> {
+        Ok(())
+    }
+}
+
+fn git(root: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+fn hash(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn canonical(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, value)| (key.clone(), canonical(value)))
+                .collect::<std::collections::BTreeMap<_, _>>()
+                .into_iter()
+                .collect(),
+        ),
+        Value::Array(array) => Value::Array(array.iter().map(canonical).collect()),
+        _ => value.clone(),
+    }
+}
+
+impl Fixture {
+    fn new(plans: &[&[&str]]) -> Self {
+        let fixture = Self {
+            temp: tempfile::tempdir().unwrap(),
+        };
+        let root = fixture.root();
+        fs::create_dir_all(root.join(".planning/phases/6")).unwrap();
+        fs::create_dir(root.join("src")).unwrap();
+        fs::write(root.join("src/shared.txt"), "initial\n").unwrap();
+        fs::write(root.join(".gitignore"), ".planning/state.json\n.planning/items.jsonl\n.planning/decisions.jsonl\n.planning/config.v4.json\n.planning/phases/6/SUMMARY.md\n").unwrap();
+        fs::write(
+            root.join(".planning/ROADMAP.md"),
+            "## Phases\n- [ ] **Phase 6: Native execution**\n",
+        )
+        .unwrap();
+        for (index, tasks) in plans.iter().enumerate() {
+            let rows = tasks
+                .iter()
+                .map(|task| format!("    - id: {task}\n      verify: [\"printf {task}\"]\n"))
+                .collect::<String>();
+            fs::write(root.join(format!(".planning/phases/6/PLAN-{}.md", index + 1)),
+                format!("---\nphase: 6\nplan: {}\nrequirements: [AC6]\nfiles: [src/shared.txt]\nexecution:\n  schema: 1\n  suite: printf suite\n  tasks:\n{rows}---\nChange the shared source for these tasks.\n", index + 1)).unwrap();
+        }
+        git(root, &["init", "-q"]);
+        for (key, value) in [
+            ("user.name", "John Crenshaw"),
+            ("user.email", "john@jcrenshaw.dev"),
+            ("gpg.format", "openpgp"),
+            ("user.signingkey", "693AB15F91734B0C"),
+            ("commit.gpgsign", "true"),
+        ] {
+            git(root, &["config", "--local", key, value]);
+        }
+        git(
+            root,
+            &[
+                "add",
+                "src/shared.txt",
+                ".planning/ROADMAP.md",
+                ".planning/phases/6",
+                ".gitignore",
+            ],
+        );
+        git(
+            root,
+            &["commit", "-q", "-m", "feat(6): initialize native fixture"],
+        );
+        // Initialize through the real public boundary. Continuation authority is
+        // fixture input, seeded below through the store, not a service shortcut.
+        let mut client = fixture.client();
+        let answer = envelope(&missing_call(&mut client, "cadence_query"));
+        fixture.assert_decision(&answer, "cadence_query", &Value::Null);
+        assert!(client.finish().success());
+        fixture.seed_authority();
+        fixture
+    }
+
+    fn root(&self) -> &Path {
+        self.temp.path()
+    }
+
+    fn client(&self) -> Client {
+        let mut client = isolated_client(self.root());
+        client.handshake();
+        client
+    }
+
+    fn read(&self) -> cadence::store::writer::View {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let store = cadence::store::writer::Store::open(
+                    cadence::store::filesystem::Filesystem::new(self.root().join(".planning"))
+                        .unwrap(),
+                    AllowFixture,
+                )
+                .await
+                .unwrap();
+                store
+                    .request(cadence::store::writer::Operation::ReadVerified)
+                    .await
+                    .unwrap()
+            })
+    }
+
+    fn seed_authority(&self) {
+        use cadence::{
+            evidence::{Record, persistence},
+            store::{
+                filesystem::Filesystem,
+                transaction::Transaction,
+                writer::{Operation, Store},
+            },
+        };
+        let root = self.root();
+        let planning = root.join(".planning");
+        let mut record = json!({"version":1,"scope":{
+            "project":root,"planning_root":planning,"cycle":"live","occurrence":"phase-6-execution",
+            "phase":"6","plan":"native-execution","report":"phases/6/SUMMARY.md"},
+            "fact":{"kind":"gate","value":{"id":"fixture-progress","purpose":"progress","checkpoint_id":null,
+                "question":"Continue?","need":"Execution authority","options":[],"state":{"status":"unanswered"}}}});
+        tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+            let store = Store::open(Filesystem::new(&planning).unwrap(), AllowFixture).await.unwrap();
+            for (index, state) in [json!({"status":"unanswered"}), json!({"status":"answered","value":{
+                "question_id":"fixture-progress","actual_response":"Proceed","selected_option":null,
+                "adjustment":null,"disposition":"approve","authorization_id":"fixture-authorization"}})].into_iter().enumerate() {
+                record["fact"]["value"]["state"] = state;
+                let native: Record = serde_json::from_value(record.clone()).unwrap();
+                let view = store.request(Operation::ReadVerified).await.unwrap();
+                let id = format!("fixture-authority-{index}");
+                store.request(Operation::Transact(Transaction { id: id.clone(), items: vec![],
+                    decisions: vec![persistence::history(&id, &native).unwrap()],
+                    snapshot: Some(persistence::project(&view.snapshot.data, &native).unwrap()), external: vec![] })).await.unwrap();
+            }
+        });
+    }
+
+    fn assert_decision(&self, answer: &Value, tool: &str, raw: &Value) {
+        let tool_tag = if tool == "cadence_query" {
+            "cadence-query"
+        } else {
+            "cadence-apply"
+        };
+        let operation = if tool == "cadence_query" {
+            "execute-next"
+        } else {
+            "executor"
+        };
+        let request_digest = hash(
+            &serde_json::to_vec(&json!(["execution-request-v1", tool_tag, operation, raw]))
+                .unwrap(),
+        );
+        let view = self.read();
+        let digest = hash(&serde_json::to_vec(&canonical(answer)).unwrap());
+        let expected = if answer["status"] == "ok" {
+            answer["outcome"].as_str().unwrap().to_string()
+        } else {
+            format!(
+                "{}:{}",
+                answer["status"].as_str().unwrap(),
+                answer["code"].as_str().unwrap()
+            )
+        };
+        let matches = view
+            .decisions
+            .iter()
+            .filter_map(|record| match &record.decision {
+                cadence::store::model::Decision::BoundaryV1(record)
+                    if record.boundary.response_digest == digest
+                        && (record.terminal
+                            || (record.boundary.request_digest == request_digest
+                                && serde_json::to_value(record.boundary.tool).unwrap()
+                                    == tool_tag)) =>
+                {
+                    Some(record)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matches.len(),
+            1,
+            "expected exactly one decision for {answer}"
+        );
+        assert_eq!(matches[0].boundary.outcome, expected);
+        if answer["outcome"] == "dispatch" {
+            assert_eq!(
+                matches[0].boundary.subject_id.as_deref(),
+                answer["dispatch"]["id"].as_str()
+            );
+            assert_eq!(
+                answer["prompt"].as_str().unwrap().len() as u64,
+                answer["dispatch"]["prompt_bytes"].as_u64().unwrap()
+            );
+        } else {
+            assert!(
+                serde_json::to_vec(answer).unwrap().len() <= 16384,
+                "compact envelope bound"
+            );
+            assert!(answer.get("prompt").is_none() && answer.get("body").is_none());
+            if answer["status"] != "ok" {
+                assert!(answer["reason"].as_str().unwrap().len() <= 1024);
+            }
+        }
+    }
+
+    fn call(&self, client: &mut Client, name: &str, input: Value) -> Value {
+        let answer = envelope(&client.tools_call(30, name, input.clone()));
+        self.assert_decision(&answer, name, &input);
+        answer
+    }
+
+    fn query(&self, client: &mut Client) -> Value {
+        self.call(
+            client,
+            "cadence_query",
+            json!({"operation":"execute-next","phase":6}),
+        )
+    }
+
+    fn semantic_bytes(&self) -> (Vec<u8>, Option<Vec<u8>>) {
+        (
+            serde_json::to_vec(&self.read().snapshot.data["execution"]).unwrap(),
+            fs::read(self.root().join(".planning/phases/6/SUMMARY.md")).ok(),
+        )
+    }
+
+    fn refuse(&self, client: &mut Client, input: Value, code: &str) {
+        let before = self.semantic_bytes();
+        let answer = self.call(client, "cadence_apply", input);
+        assert_eq!(answer["status"], "refused");
+        assert_eq!(answer["code"], code);
+        assert_eq!(self.semantic_bytes(), before);
+    }
+
+    fn complete_patch(&self, dispatch: &Value) -> Value {
+        let mut tasks = vec![];
+        for task in dispatch["tasks"].as_array().unwrap() {
+            let id = task["id"].as_str().unwrap();
+            fs::write(
+                self.root().join("src/shared.txt"),
+                format!("completed {id}\n"),
+            )
+            .unwrap();
+            let commands = task["verify"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|command| {
+                    let output = Command::new("sh")
+                        .args(["-c", command.as_str().unwrap()])
+                        .current_dir(self.root())
+                        .stdin(Stdio::null())
+                        .output()
+                        .unwrap();
+                    assert!(output.status.success());
+                    let mut bytes = output.stdout;
+                    bytes.extend(output.stderr);
+                    json!({"command":command,"exit_code":0,"output_digest":hash(&bytes)})
+                })
+                .collect::<Vec<_>>();
+            git(self.root(), &["add", "src/shared.txt"]);
+            git(
+                self.root(),
+                &["commit", "-q", "-m", &format!("feat(6): complete {id}")],
+            );
+            let sha = git(self.root(), &["rev-parse", "HEAD"]);
+            tasks.push(json!({"status":"completed","task_id":id,"commit":sha,
+                "verification":{"disposition":"passed","commands":commands},"evidence":[{"kind":"commit","sha":sha}]}));
+        }
+        let output = Command::new("sh")
+            .args(["-c", dispatch["suite"].as_str().unwrap()])
+            .current_dir(self.root())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        json!({"schema":1,"kind":"executor","dispatch_id":dispatch["id"],
+            "expected_execution_version":dispatch["expected_execution_version"],"outcome":"complete",
+            "tasks":tasks,"deviations":[],"blockers":[]})
+    }
+}
+
+#[test]
+fn execution_calls_confirm_dispatch_completion_and_refused_patch_semantics() {
+    let fixture = Fixture::new(&[&["T1"]]);
+    let mut client = fixture.client();
+    let first = fixture.query(&mut client);
+    assert_eq!(first["outcome"], "dispatch");
+    let patch = fixture.complete_patch(&first["dispatch"]);
+    let mut malformed = patch.clone();
+    malformed.as_object_mut().unwrap().remove("tasks");
+    fixture.refuse(&mut client, malformed, "invalid-patch");
+    let mut foreign = patch.clone();
+    foreign["dispatch_id"] = json!("foreign");
+    fixture.refuse(&mut client, foreign, "foreign-dispatch");
+    let mut stale = patch.clone();
+    stale["expected_execution_version"] = json!(999);
+    fixture.refuse(&mut client, stale, "stale-execution");
+    let mut schema = patch.clone();
+    schema["schema"] = json!(2);
+    fixture.refuse(&mut client, schema, "unsupported-patch-schema");
+    let plan_path = fixture.root().join(".planning/phases/6/PLAN-1.md");
+    let original = fs::read(&plan_path).unwrap();
+    let mut changed = original.clone();
+    changed.extend_from_slice(b"Changed controlling plan.\n");
+    fs::write(&plan_path, changed).unwrap();
+    fixture.refuse(&mut client, patch.clone(), "plan-set-changed");
+    fs::write(&plan_path, original).unwrap();
+    let sha = patch["tasks"][0]["commit"].as_str().unwrap();
+    git(
+        fixture.root(),
+        &[
+            "checkout",
+            "-q",
+            "--detach",
+            first["dispatch"]["base_sha"].as_str().unwrap(),
+        ],
+    );
+    fixture.refuse(&mut client, patch.clone(), "git-order");
+    git(fixture.root(), &["checkout", "-q", "--detach", sha]);
+    let complete = fixture.call(&mut client, "cadence_apply", patch.clone());
+    assert_eq!(
+        complete,
+        json!({"status":"ok","outcome":"complete","phase":6})
+    );
+    assert_eq!(fixture.call(&mut client, "cadence_apply", patch), complete);
+    assert_eq!(fixture.query(&mut client), complete);
+    assert!(client.finish().success());
+}
+
+#[test]
+fn execution_calls_confirm_blocked_judgment_stop() {
+    let fixture = Fixture::new(&[&["T1", "T2"]]);
+    let mut client = fixture.client();
+    let dispatch = fixture.query(&mut client)["dispatch"].clone();
+    let answer = fixture.call(&mut client, "cadence_apply", json!({"schema":1,"kind":"executor",
+        "dispatch_id":dispatch["id"],"expected_execution_version":dispatch["expected_execution_version"],
+        "outcome":"blocked","tasks":[{"status":"blocked","task_id":"T1","blocker_id":"B1"},
+            {"status":"not-run","task_id":"T2"}],"deviations":[],
+        "blockers":[{"id":"B1","text":"Needs a decision","evidence":[{"kind":"criterion","id":"AC6"}]}]}));
+    assert_eq!(
+        answer,
+        json!({"status":"ok","outcome":"judgment-stop","phase":6,
+        "dispatch_id":dispatch["id"],"blocker_ids":["B1"]})
+    );
+    assert_eq!(fixture.query(&mut client), answer);
+    assert!(client.finish().success());
+}
+
+#[test]
+fn execution_calls_store_failure_never_acknowledges_a_refusal() {
+    let fixture = Fixture::new(&[&["T1"]]);
+    let mut client = fixture.client();
+    fixture.query(&mut client);
+    let before = fixture.semantic_bytes();
+    let intent = fixture.root().join(".planning/.store-intent.json");
+    fs::create_dir(&intent).unwrap();
+    let response = client.tools_call(31, "cadence_apply", json!({"unexpected":"field"}));
+    assert_eq!(response["error"]["code"], -32603);
+    assert_eq!(response["error"]["data"]["failure"], "store");
+    assert!(response.get("result").is_none());
+    assert!(
+        !response
+            .to_string()
+            .contains(fixture.root().to_str().unwrap())
+    );
+    fs::remove_dir(intent).unwrap();
+    assert_eq!(fixture.semantic_bytes(), before);
+    let retry = client.tools_call(32, "cadence_apply", json!({"unexpected":"field"}));
+    assert_eq!(retry["error"]["code"], -32603);
+    assert!(client.finish().success());
+    let mut replacement = fixture.client();
+    fixture.refuse(
+        &mut replacement,
+        json!({"unexpected":"field"}),
+        "invalid-patch",
+    );
+    assert!(replacement.finish().success());
+}
+
+#[test]
+fn execution_calls_log_bound_replay_preserves_terminal_bytes() {
+    let fixture = Fixture::new(&[&["T1"]]);
+    let mut client = fixture.client();
+    let dispatch = fixture.query(&mut client);
+    for index in 0..260 {
+        let answer = fixture.call(
+            &mut client,
+            "cadence_apply",
+            json!({"dispatch_id":dispatch["dispatch"]["id"],"invalid":index}),
+        );
+        if answer["code"] == "log-bound" {
+            break;
+        }
+        assert_eq!(answer["code"], "invalid-patch");
+    }
+    let terminal = fixture.query(&mut client);
+    assert_eq!(
+        terminal,
+        json!({"status":"refused","code":"log-bound",
+        "reason":"the boundary scope reached its 256-transition limit"})
+    );
+    let before = fs::read(fixture.root().join(".planning/decisions.jsonl")).unwrap();
+    let state = fs::read(fixture.root().join(".planning/state.json")).unwrap();
+    assert!(client.finish().success());
+    let mut replacement = fixture.client();
+    assert_eq!(fixture.query(&mut replacement), terminal);
+    assert_eq!(
+        fixture.call(
+            &mut replacement,
+            "cadence_apply",
+            json!({"dispatch_id":dispatch["dispatch"]["id"]})
+        ),
+        terminal
+    );
+    assert_eq!(
+        fs::read(fixture.root().join(".planning/decisions.jsonl")).unwrap(),
+        before
+    );
+    assert_eq!(
+        fs::read(fixture.root().join(".planning/state.json")).unwrap(),
+        state
+    );
+    assert!(replacement.finish().success());
+}
+
+fn markdown_parts(relative: &str) -> (Value, String) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let text = fs::read_to_string(root.join(relative)).unwrap();
+    let rest = text.strip_prefix("---\n").unwrap();
+    let (frontmatter, body) = rest.split_once("\n---\n").unwrap();
+    (
+        serde_saphyr::from_str(frontmatter).unwrap(),
+        body.to_owned(),
+    )
+}
+
+#[test]
+fn skill_contract_matches_wire_patch_and_direct_tool_permissions() {
+    let (skill, main) = markdown_parts("skills/cad-execute/SKILL.md");
+    let (contract, executor) = markdown_parts("skills/cad-executor-contract/SKILL.md");
+    let (agent, fixed) = markdown_parts("agents/cad-executor.md");
+    assert_eq!(skill["name"], "cad-execute");
+    assert_eq!(
+        skill["allowed-tools"],
+        json!([
+            "mcp__cadence__cadence_query",
+            "mcp__cadence__cadence_apply",
+            "Task"
+        ])
+    );
+    assert_eq!(contract["name"], "cad-executor-contract");
+    assert_eq!(contract["user-invocable"], false);
+    assert_eq!(agent["name"], "cad-executor");
+    assert_eq!(agent["skills"], json!(["cad-executor-contract"]));
+    assert_eq!(
+        agent["tools"]
+            .as_str()
+            .unwrap()
+            .split(", ")
+            .collect::<Vec<_>>(),
+        [
+            "Read",
+            "Write",
+            "Edit",
+            "Bash",
+            "Grep",
+            "Glob",
+            "LSP",
+            "mcp__excerpt__excerpt_read",
+            "mcp__excerpt__excerpt_search"
+        ]
+    );
+    let process = main
+        .split_once("<process>")
+        .unwrap()
+        .1
+        .split_once("</process>")
+        .unwrap()
+        .0;
+    assert_eq!(
+        process
+            .lines()
+            .filter(|line| line.starts_with(|c: char| c.is_ascii_digit()))
+            .count(),
+        5
+    );
+    let query = process.find("mcp__cadence__cadence_query").unwrap();
+    let task = process.find("Task").unwrap();
+    let apply = process.find("mcp__cadence__cadence_apply").unwrap();
+    assert!(query < task && task < apply);
+    for token in [
+        "cad-executor",
+        "unchanged",
+        "exactly the returned prompt",
+        "field-for-field",
+        "refused",
+        "unknown",
+        "not-applicable",
+        "judgment-stop",
+        "complete",
+        "next-plan",
+    ] {
+        assert!(main.contains(token), "missing loop token {token}");
+    }
+    for token in [
+        "signed",
+        "task ID",
+        "suite",
+        "completed",
+        "blocked",
+        "not-run",
+        ".planning/",
+        "rung: fixed",
+        "branch: current",
+        "reviews: disabled",
+        "one JSON object",
+    ] {
+        assert!(executor.contains(token), "missing executor token {token}");
+    }
+    let patch_text = executor
+        .split_once("<patch-shape>\n")
+        .unwrap()
+        .1
+        .split_once("\n</patch-shape>")
+        .unwrap()
+        .0;
+    let patch: Value = serde_json::from_str(patch_text).unwrap();
+    let mut client = Client::spawn();
+    client.handshake();
+    let listing = client.tools_list(2);
+    let schema = &listing["result"]["tools"][2]["inputSchema"];
+    assert!(schema_accepts(schema, schema, &patch));
+    let mut paths = vec![];
+    inspect_schema_objects(schema, schema, &patch, "", &mut paths);
+    assert_eq!(paths.len(), 13);
+    assert_eq!(
+        patch.as_object().unwrap().keys().collect::<BTreeSet<_>>(),
+        schema_fixture()
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<BTreeSet<_>>()
+    );
+    assert!(client.finish().success());
+    for text in [
+        &main,
+        &executor,
+        &fixed,
+        &skill.to_string(),
+        &contract.to_string(),
+        &agent.to_string(),
+    ] {
+        for forbidden in [
+            ".mjs",
+            "node ",
+            "reports/",
+            "STATE.md",
+            "SUMMARY.md",
+            "cadence serve",
+            "cadence query",
+            "cadence apply",
+            "worktree",
+            "AskUserQuestion",
+            "ToolSearch",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "forbidden contract channel {forbidden}"
+            );
+        }
+    }
+}
