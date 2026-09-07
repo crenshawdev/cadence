@@ -199,6 +199,10 @@ mod resident {
     use crate::server::evidence_service::{self, Command, Recovery};
 
     enum Request {
+        Pause {
+            input: cadence::pause::Input,
+            reply: oneshot::Sender<Result<crate::server::pause_service::Response>>,
+        },
         NextAction {
             root: PathBuf,
             reply: oneshot::Sender<
@@ -346,6 +350,12 @@ mod resident {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
+                        Request::Pause { input, reply } => {
+                            let result =
+                                crate::server::pause_service::execute(&factory, input, &driver)
+                                    .await;
+                            let _ = reply.send(result);
+                        }
                         Request::NextAction { root, reply } => {
                             let result =
                                 crate::server::next_action_service::query(&factory, &root, &driver)
@@ -415,6 +425,18 @@ mod resident {
                     command,
                     reply,
                 })
+                .await
+                .map_err(|_| Error::Closed)?;
+            completion.await.map_err(|_| Error::Closed)?
+        }
+
+        pub async fn pause(
+            &self,
+            input: cadence::pause::Input,
+        ) -> Result<crate::server::pause_service::Response> {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::Pause { input, reply })
                 .await
                 .map_err(|_| Error::Closed)?;
             completion.await.map_err(|_| Error::Closed)?

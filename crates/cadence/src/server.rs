@@ -38,6 +38,13 @@ pub mod next_action_service;
 #[path = "next_action_service_tests.rs"]
 mod next_action_service_tests;
 
+#[allow(dead_code)]
+#[path = "pause_service.rs"]
+pub mod pause_service;
+#[cfg(test)]
+#[path = "pause_service_tests.rs"]
+mod pause_service_tests;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -70,6 +77,12 @@ pub struct CadenceServer {
 
 #[allow(dead_code)]
 impl CadenceServer {
+    pub async fn pause(
+        &self,
+        input: cadence::pause::Input,
+    ) -> cadence::store::Result<pause_service::Response> {
+        self.service.pause(input).await
+    }
     pub async fn next_action(
         &self,
         root: &std::path::Path,

@@ -1,4 +1,5 @@
 //! Pause captures work separately from the durable evidence and Git mutations.
+pub mod branch;
 pub mod git;
 
 use crate::{
