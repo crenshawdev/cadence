@@ -1155,7 +1155,12 @@ fn terminal_response(phase: u32, terminal: &TerminalOutcome) -> Response {
 fn dispatch_response(active: &ActiveDispatch, plan: &ExecutionPlan) -> Response {
     let mut dispatch = active.clone();
     dispatch.body = plan.body.clone();
-    let prompt = render_prompt(&dispatch);
+    let mut prompt = render_prompt(&dispatch);
+    if prompt.len() as u64 != dispatch.prompt_bytes {
+        // Outstanding dispatches retain the exact known historical renderer.
+        // The existing confirmed boundary also verifies its public answer digest.
+        prompt = render_prompt_version(&dispatch, false);
+    }
     if prompt.len() as u64 != dispatch.prompt_bytes {
         return refused(
             dispatch.phase,
@@ -1170,6 +1175,15 @@ fn dispatch_response(active: &ActiveDispatch, plan: &ExecutionPlan) -> Response 
 }
 
 fn render_prompt(dispatch: &ActiveDispatch) -> String {
+    render_prompt_version(dispatch, true)
+}
+
+fn render_prompt_version(dispatch: &ActiveDispatch, lease_instructions: bool) -> String {
+    let guidance = if lease_instructions {
+        "\nThe lease has zero exemptions: all reported commit paths and the whole staged set must be covered by files or directories, including both rename endpoints, new files, lockfiles and reports. A repairable mistake within this lease is not a blocker; correct it and rerun the required verification. If an undeclared-files refusal occurs, stop execution, preserve the rejected SHAs and request operator-controlled repair. Cadence leaves Git and the index untouched and the dispatch open. Do not push, reset, amend, revert or force-push automatically. After operator repair, resubmit a corrected full patch with the same dispatch ID and execution version, within the unchanged lease and plan fingerprint. An undeclared necessary file requires an operator planning correction; changing the lease or body cannot repair this active dispatch."
+    } else {
+        ""
+    };
     let mut operational = json!({
         "schema": dispatch.schema,
         "dispatch_id": dispatch.id,
@@ -1188,9 +1202,10 @@ fn render_prompt(dispatch: &ActiveDispatch) -> String {
         operational["directories"] = json!(dispatch.directories);
     }
     format!(
-        "Cadence native execution dispatch\n\nOperational input:\n{}\n\nExecutor patch schema:\n{}\n\nInstructions:\nComplete tasks in listed order. Use one distinct signed commit per completed task. Run each task's exact verification commands and the suite. Return exactly one executor patch matching this schema. Stop at the first blocker and mark all later tasks not-run.\n\nOpaque plan body ({} UTF-8 bytes):\n{}",
+        "Cadence native execution dispatch\n\nOperational input:\n{}\n\nExecutor patch schema:\n{}\n\nInstructions:\nComplete tasks in listed order. Use one distinct signed commit per completed task. Run each task's exact verification commands and the suite. Return exactly one executor patch matching this schema. Stop at the first blocker and mark all later tasks not-run.{}\n\nOpaque plan body ({} UTF-8 bytes):\n{}",
         serde_json::to_string_pretty(&operational).expect("operational fields serialize"),
         serde_json::to_string_pretty(&patch_schema()).expect("patch schema serializes"),
+        guidance,
         dispatch.body.len(),
         dispatch.body,
     )

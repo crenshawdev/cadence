@@ -30,14 +30,20 @@ verification receipts to be `passed` with exit code 0 and evidence references.
 Do not invent verification results or substitute a different command.
 
 Run the supplied suite once before returning. On the successful path, run it
-before committing the final task. A failed verification, suite or commit is a
-blocker for the current task, not a completed task.
+before committing the final task. A failed verification, suite or commit cannot
+complete the current task; repair an in-lease mistake and verify again. An
+unresolvable failure is a blocker.
 
 Create one distinct signed conventional commit per completed task, in task
 order. Include that task ID as a separate token in the subject, for example
 `feat(6): complete T1`. Use the project's author and signing configuration.
 Record the full commit SHA. If signing fails, stop task work; never replace the
 required signed commit with an unsigned commit. Do not push.
+
+A mistake repairable within the dispatched lease is not a blocker: correct it
+and rerun the required verification. A blocker is an obstacle you cannot resolve
+within that lease, including an unsatisfiable criterion, a needed undeclared
+file or a genuine plan/code contradiction.
 
 At the first blocker, stop task work. Preserve the completed prefix, emit one
 `blocked` row naming its blocker, and mark every later task `not-run`. Include
@@ -46,6 +52,27 @@ has `outcome: "blocked"`; a successful patch has `outcome: "complete"`, all task
 completed and an empty blockers array. Include every dispatched task exactly
 once in its original order. Keep deviations and blockers as your judgment text;
 the parent passes them to the binary without interpreting them.
+
+The source lease has zero exemptions. `files` covers exact paths; `directories`
+covers directory roots and their descendants at path-component boundaries.
+Declare new files before creating them. Every reported commit path and the whole
+staged set must be covered, including both rename endpoints, lockfiles and
+reports. Executors cannot supply their own Git-observed paths in the patch.
+
+If patch application returns `undeclared-files`, stop execution, preserve the
+rejected SHAs and request operator-controlled repair. The commits already exist
+in Git and were not removed or accepted as execution evidence. Cadence leaves
+the index untouched. Do not push, reset, amend, revert or force-push automatically.
+The operator may repair or split offending local history into signed in-lease
+task commits, or repair the index for staged-only violations. In-lease commits
+do not require history repair merely because the index was refused.
+
+The dispatch remains open for a corrected full patch with the same dispatch ID
+and execution version. Resubmission must retain the unchanged lease and plan
+fingerprint, preserve task order, and satisfy all existing signature, ancestry,
+subject and verification rules. Changing the lease or plan body requires an
+operator planning correction and remains a changed-plan refusal for this active
+dispatch; no reset, cancellation or automatic history rewrite is available.
 </process>
 
 <return>

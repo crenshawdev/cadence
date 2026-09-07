@@ -19,3 +19,11 @@ allowed-tools:
 The binary is the only continuation authority. Keep no local execution state,
 inspect no project files and construct no alternate recovery path. This slice
 has no operator-answer round trip. A fresh invocation starts with step 1.
+
+For `undeclared-files`, the same display-and-stop rule applies. Show the binary's
+reason, including the rejected-commit or staged-index disposition, without
+interpreting paths, granting the executor an MCP tool or inventing a repair
+loop. The operator controls any repair. A later invocation can query the same
+open dispatch and submit a corrected full patch field-for-field; neither the
+lease nor its fingerprint expands on retry. Never rewrite Git history or the
+index to make a refused patch pass.

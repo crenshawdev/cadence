@@ -1330,3 +1330,173 @@ fn lease_refusal_intent_recovery_preserves_evidence_and_rejects_forged_coverage(
         }
     }
 }
+
+#[test]
+fn public_corrected_signed_full_patch_recovers_same_dispatch_after_operator_history_repair() {
+    let fixture = Fixture::new("files: [src/a.rs]");
+    let dispatch = wire_dispatch(&fixture);
+    let rejected = task_commit(&fixture, &["outside.txt"]);
+    assert_wire_lease_refusal(&fixture, &dispatch, &rejected, &["outside.txt".into()], &[]);
+    let refusal = fixture.read().decisions.last().unwrap().clone();
+    let mut client = fixture.client();
+    let query = client.query();
+    assert_eq!(query["dispatch"], dispatch);
+    for text in [
+        "zero exemptions",
+        "operator-controlled repair",
+        "same dispatch ID and execution version",
+        "unchanged lease",
+    ] {
+        assert!(query["prompt"].as_str().unwrap().contains(text));
+    }
+    let plan = fixture.root.join(".planning/phases/7/PLAN-1.md");
+    let original = fs::read_to_string(&plan).unwrap();
+    for changed in [
+        original.replace("files: [src/a.rs]", "files: [src/a.rs, outside.txt]"),
+        format!("{original}Changed body\n"),
+    ] {
+        fs::write(&plan, changed).unwrap();
+        let answer = client.call("cadence_apply", wire_patch(&dispatch, &rejected));
+        assert_eq!(answer["code"], "plan-set-changed", "{answer}");
+        fs::write(&plan, &original).unwrap();
+    }
+    assert_eq!(
+        client.call("cadence_apply", wire_patch(&dispatch, &rejected))["code"],
+        "undeclared-files"
+    );
+    client.finish();
+
+    // The fixture operator controls this disposable, unpublished repository.
+    // Keep the rejected object reachable while replacing its local history.
+    fixture.git(&["update-ref", "refs/fixture/rejected", &rejected]);
+    fixture.git(&["reset", "--hard", dispatch["base_sha"].as_str().unwrap()]);
+    let corrected = task_commit(&fixture, &["src/a.rs"]);
+    assert_ne!(corrected, rejected);
+    fixture.git(&["verify-commit", &corrected]);
+    fixture.git(&["cat-file", "-e", &rejected]);
+    let mut client = fixture.client();
+    assert_eq!(client.query()["dispatch"], dispatch);
+    assert_eq!(
+        client.call("cadence_apply", wire_patch(&dispatch, &rejected))["code"],
+        "git-order"
+    );
+    let accepted = client.call("cadence_apply", wire_patch(&dispatch, &corrected));
+    assert_eq!(accepted["outcome"], "complete", "{accepted}");
+    client.finish();
+    let view = fixture.read();
+    assert!(view.decisions.contains(&refusal));
+    let occurrence = &view.snapshot.data["execution"]["occurrences"]["7"];
+    assert_eq!(occurrence["plans"][0]["tasks"][0]["commit"], corrected);
+    assert_eq!(
+        occurrence["plans"][0]["commit_paths"],
+        json!({corrected.as_str(): ["src/a.rs"]})
+    );
+    assert!(
+        !serde_json::to_string(occurrence)
+            .unwrap()
+            .contains(&rejected)
+    );
+    assert_eq!(fixture.git(&["rev-parse", "HEAD"]), corrected);
+    assert_eq!(fs::read_to_string(plan).unwrap(), original);
+}
+
+#[test]
+fn public_staged_only_operator_repair_accepts_original_in_lease_commit() {
+    let fixture = Fixture::new("files: [src/a.rs]");
+    let dispatch = wire_dispatch(&fixture);
+    let sha = task_commit(&fixture, &["src/a.rs"]);
+    fs::write(
+        fixture.root.join("Cargo.lock"),
+        "staged dependency change\n",
+    )
+    .unwrap();
+    fixture.git(&["add", "Cargo.lock"]);
+    let answer = assert_wire_lease_refusal(&fixture, &dispatch, &sha, &[], &["Cargo.lock".into()]);
+    let reason = answer["reason"].as_str().unwrap();
+    assert!(reason.contains("repair the staged index"));
+    assert!(!reason.contains("repair or split"));
+    let refusal = fixture.read().decisions.last().unwrap().clone();
+    fixture.git(&["restore", "--staged", "Cargo.lock"]);
+    let mut client = fixture.client();
+    assert_eq!(client.query()["dispatch"], dispatch);
+    let accepted = client.call("cadence_apply", wire_patch(&dispatch, &sha));
+    assert_eq!(accepted["outcome"], "complete", "{accepted}");
+    client.finish();
+    assert!(fixture.read().decisions.contains(&refusal));
+    assert_eq!(fixture.git(&["rev-parse", "HEAD"]), sha);
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("Cargo.lock")).unwrap(),
+        "staged dependency change\n"
+    );
+}
+
+#[test]
+fn historical_exact_file_prompt_reconstructs_with_original_admitted_answer_digest() {
+    use cadence::{
+        envelope::Envelope,
+        execution::{
+            boundary::{BoundaryScope, BoundaryV1, PreparedAnswer, Success},
+            model::BoundaryTool,
+        },
+        store::writer::BoundaryChange,
+    };
+    let fixture = Fixture::new("files: [src/a.rs]");
+    let plan = plan("files: [src/a.rs]");
+    let set = plan_set_fingerprint(std::slice::from_ref(&plan)).unwrap();
+    let mut candidate =
+        build_dispatch(&plan, &set, 0, &fixture.git(&["rev-parse", "HEAD"]), 1).unwrap();
+    let mut returned = candidate.clone();
+    returned.expected_execution_version = 1;
+    // Independently spell the pre-lease-instructions operational fields and text.
+    let operational = json!({"schema":1,"dispatch_id":returned.id,"expected_execution_version":1,
+        "phase":7,"plan":1,"requirements":["AC3"],"files":["src/a.rs"],"suite":"printf suite",
+        "tasks":[{"id":"T1","verify":["printf T1"]}],"policy":{"rung":"fixed","branch":"current","reviews":"disabled"},"base_sha":returned.base_sha});
+    let prompt = format!(
+        "Cadence native execution dispatch\n\nOperational input:\n{}\n\nExecutor patch schema:\n{}\n\nInstructions:\nComplete tasks in listed order. Use one distinct signed commit per completed task. Run each task's exact verification commands and the suite. Return exactly one executor patch matching this schema. Stop at the first blocker and mark all later tasks not-run.\n\nOpaque plan body (10 UTF-8 bytes):\nTask body\n",
+        serde_json::to_string_pretty(&operational).unwrap(),
+        serde_json::to_string_pretty(&cadence::execution::model::patch_schema()).unwrap()
+    );
+    candidate.prompt_bytes = prompt.len() as u64;
+    returned.prompt_bytes = candidate.prompt_bytes;
+    let answer = PreparedAnswer::new(Envelope::Ok(Success::Dispatch {
+        dispatch: Box::new(returned),
+        prompt,
+    }))
+    .unwrap();
+    let request = digest(&serde_json::to_vec(&json!(["execution-request-v1","cadence-query","execute-next",{"operation":"execute-next","phase":7}])).unwrap());
+    let decision = BoundaryV1::new(
+        BoundaryScope::Execution { phase: 7 },
+        BoundaryTool::CadenceQuery,
+        "execute-next".into(),
+        request,
+        Some(candidate.id.clone()),
+        &answer,
+    );
+    runtime().block_on(async {
+        let store = open(&fixture.root).await;
+        let view = store.request(Operation::ReadVerified).await.unwrap();
+        store
+            .request(Operation::BoundaryV1 {
+                expected_generation: view.snapshot.generation,
+                expected_integrity: view.snapshot.integrity,
+                operation_id: "historical-prompt".into(),
+                decision,
+                change: Box::new(BoundaryChange::Dispatch {
+                    plan_set_fingerprint: set,
+                    dispatch: candidate,
+                }),
+            })
+            .await
+            .unwrap();
+    });
+    let before = fixture.read();
+    for _ in 0..2 {
+        let mut client = fixture.client();
+        assert_eq!(
+            client.query(),
+            serde_json::to_value(&answer.envelope).unwrap()
+        );
+        client.finish();
+        assert_eq!(fixture.read(), before);
+    }
+}
