@@ -248,6 +248,32 @@ Plan shape: multiple plans, same phase; record types land before the selector th
   misses unfinished work elsewhere, verifies undispatched gap plans, or
   opens a new cycle before queue triage or an interrupted close is resolved.
 
+- D-14 (The gate reviews authored material, never the binary's own receipts):
+  The commit-side risk gate reads the material a person or a model authored. It
+  does not read the store's own records of what happened. `items.jsonl`,
+  `decisions.jsonl` and `state.json` (`crates/cadence/src/store/model.rs:9-11`)
+  are receipts the binary writes, they live inside the working tree
+  (`crates/cadence/src/store/filesystem.rs:48`), and they are transaction
+  participants on every write
+  (`crates/cadence/src/store/writer.rs:328-333`), so reviewing them means
+  recording the review dirties the tree that was just reviewed and the gate
+  never terminates. They fall outside the read by this rule rather than by
+  three more filename entries, so a later store participant is covered without
+  a second ruling. The owner rejected a storage destination outside the git
+  participant set, which would change the store protocol and widen the file
+  lease to solve what precedent already answers, and rejected disabling the
+  gate. Accepted cost, stated: a destructive command quoted inside an operator
+  answer or pause note reaches `decisions.jsonl` ungated
+  (`cadence-core/bin/lib/risk-diff.mjs:150`). That is the cost already accepted
+  for reviewer text, and the gate exists for destructive CHANGES rather than
+  destructive QUOTES. Evidence: the identical loop is documented and already
+  solved once for four filename shapes under `.planning/phases/` at
+  `cadence-core/references/risk-surface.md:37-42`, whose stated reason is a
+  docs commit landing a finding that quoted a destructive command and
+  "re-tripped the very gate that produced the finding". Ruled by John,
+  2026-09-07, on the PLAN-4 task 3 checkpoint. If wrong: a destructive change
+  smuggled into a store record commits without review.
+
 ## Acceptance criteria
 
 - [ ] AC1: Kill the process while it is stopped at a checkpoint. A fresh
