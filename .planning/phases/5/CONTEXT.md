@@ -96,7 +96,7 @@ Plan shape: multiple plans, same phase; record types land before the selector th
   Evidence: `cadence-core/workflows/execute.md:25`;
   `cadence-core/workflows/plan.md:29`;
   `cadence-core/references/triage-gate.md:111`;
-  `.codex-analysis/phase-5-context-analysis.md:235`. If wrong: a later run
+  `.codex-analysis/phase-5-context-analysis.md:236`. If wrong: a later run
   silently inherits an old exception, or a restart needlessly asks again for
   permission already given to the still-pending occurrence.
 - D-04 (Pause keeps its git guarantee): A dirty-tree pause stages exactly
