@@ -1500,3 +1500,140 @@ fn historical_exact_file_prompt_reconstructs_with_original_admitted_answer_diges
         assert_eq!(fixture.read(), before);
     }
 }
+
+#[test]
+fn native_guidance_and_phase_seven_roadmap_match_parser_without_migrating_history() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let planner = fs::read_to_string(root.join("skills/cad-planner-contract/SKILL.md")).unwrap();
+    let checker =
+        fs::read_to_string(root.join("skills/cad-plan-checker-contract/SKILL.md")).unwrap();
+    for contract in [&planner, &checker] {
+        for token in [
+            "zero exemptions",
+            "covers()",
+            "trailing separator",
+            "exact paths",
+            "directories",
+            "patch",
+            "rename endpoints",
+            "schema: 1",
+            "suite",
+            "verify",
+            "fingerprint",
+            "256",
+        ] {
+            assert!(contract.contains(token), "missing contract token {token}");
+        }
+        assert!(!contract.contains("lease-check"));
+    }
+    let example = planner
+        .split_once("```yaml\n")
+        .unwrap()
+        .1
+        .split_once("\n```")
+        .unwrap()
+        .0;
+    let admitted = parse_plan(example.as_bytes(), 7, 1).unwrap();
+    assert_eq!(admitted.files, ["Cargo.lock"]);
+    assert_eq!(admitted.directories, ["src"]);
+    assert!(covers(
+        &admitted.files,
+        &admitted.directories,
+        "src/shared.txt"
+    ));
+    assert!(!covers(
+        &admitted.files,
+        &admitted.directories,
+        "src-other/shared.txt"
+    ));
+    let bad = example.replace("files: [Cargo.lock]", "files: [src/]");
+    let error = parse_plan(bad.as_bytes(), 7, 1).unwrap_err();
+    assert!(error.detail.contains("files"));
+    let roadmap = fs::read_to_string(root.join(".planning/ROADMAP.md")).unwrap();
+    let phase = roadmap
+        .split_once("### Phase 7:")
+        .unwrap()
+        .1
+        .split_once("### Phase 8:")
+        .unwrap()
+        .0;
+    for token in [
+        "zero exemptions",
+        "reported-commit paths",
+        "patch time",
+        "whole staged set",
+        "rename endpoints",
+        "overlap-derived ordering",
+        "Write/Edit",
+        "Bash",
+        "phase 6",
+        "Wrappers",
+        "substitutions",
+        "planning/core.mjs:650",
+        "lib/risk-diff.mjs:391",
+    ] {
+        assert!(phase.contains(token), "missing roadmap token {token}");
+    }
+    for old in [
+        "lockfile and report exceptions",
+        "every commit passes through",
+        "before any skill that commits",
+        "Delete the pairwise",
+        "planning/core.mjs:519-524",
+    ] {
+        assert!(!phase.contains(old), "stale roadmap claim {old}");
+    }
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        output.stdout
+    };
+    let historical = String::from_utf8(git(&[
+        "ls-tree",
+        "-r",
+        "--name-only",
+        START,
+        "--",
+        ".planning/phases/2/",
+    ]))
+    .unwrap();
+    let plans = historical
+        .lines()
+        .filter(|path| {
+            Path::new(path)
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("PLAN")
+        })
+        .collect::<Vec<_>>();
+    assert!(!plans.is_empty());
+    for path in plans {
+        assert_eq!(
+            fs::read(root.join(path)).unwrap(),
+            git(&["show", &format!("{START}:{path}")])
+        );
+    }
+    let old_roadmap =
+        String::from_utf8(git(&["show", &format!("{START}:.planning/ROADMAP.md")])).unwrap();
+    let phase12 = |text: &str| {
+        text.split_once("### Phase 12:")
+            .unwrap()
+            .1
+            .split_once("### Phase 13:")
+            .unwrap()
+            .0
+            .to_owned()
+    };
+    assert_eq!(phase12(&roadmap), phase12(&old_roadmap));
+}

@@ -13,6 +13,33 @@ component boundaries: `src` covers `src/a.rs`, never `src-other/a.rs`.
 There are zero exemptions, including new files, dependency lockfiles and legacy
 reports. Declare every necessary path before dispatch.
 
+## Native plan grammar and ordering
+
+Frontmatter requires positive canonical `phase` and `plan`, `requirements`,
+`files`, and `execution`; only `directories` is optional. `execution` contains
+`schema: 1`, a nonempty `suite` command and ordered `tasks` with unique `id` and
+nonempty `verify` command lists. The planner contract includes a parser-tested
+complete example. Unknown keys, malformed fields and empty total leases refuse.
+
+`files` is an exact-path list and rejects a trailing slash or backslash before
+normalization, naming the `files` field. Directory roots may have a trailing
+separator. Other existing declaration normalization is retained. Duplicate
+normalized declarations within a field and more than 256 combined declarations
+refuse. `files: []` is accepted only when directories supplies a nonempty lease.
+Declaration admission does not check whether a path exists.
+
+The graph applies `covers()` in both directions over exact files and directory
+roots. Directory/file and nested-directory overlap create prerequisite edges
+from the lower plan number to the higher number. Transitive readiness and the
+deterministic lower-number selection remain; textual prefix collisions and
+exact-file descendants do not create overlap. This ordering remains native
+execution behavior without reviving a parallel-safety interview.
+
+Historical phase-2 PLAN files remain unchanged. Their directory-shaped `files`
+entries are historical records; deliberate replanning is required for future
+native execution. Existing exact-file dispatch identities and accepted receipts
+are preserved, without inserting directory defaults into historical hashes.
+
 ## Refusal and operator recovery
 
 An `undeclared-files` answer refuses the entire patch, including any completed

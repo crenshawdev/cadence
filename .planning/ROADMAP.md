@@ -652,17 +652,16 @@ expected versions, and allow free text only where judgment belongs.
 
 ### Phase 7: The commit rail and the risk gates
 
-**Goal.** The one surviving hook and the gates every commit passes through exist
-before any skill that commits.
+**Goal.** Add the bounded Bash commit/push arm and enforce source leases at
+patch application. The native Write/Edit ownership guard and the executor's
+signed task commits already shipped in phase 6; this phase complements both.
 
-**It is here because sixteen skills consume it.** A falsification pass found
-this as the roadmap's single worst ordering defect: `cad-new-project`,
-`cad-adopt`, `cad-phase`, `cad-context`, `cad-plan`, `cad-execute`, `cad-task`,
-`cad-verify`, `cad-coverage`, `cad-pause`, `cad-capture`, `cad-land`,
-`cad-milestone`, `cad-undo`, `cad-debug` and `cad-spike` all commit or gate
-through it. The contract is not cosmetic - it can ask, refuse or abort on a
-protected branch (`references/git-guard.md:6-20`) - so a cluster whose
-acceptance ran without it would pass while the behavior was simply absent.
+**Sixteen skills consume these gates.** The Bash detector covers simple command
+segments whose first command is `git` or a path ending `/git`. Wrappers and
+substitutions are outside its coverage; branch observation uses hook cwd rather
+than following `-C` targets or earlier checkouts. It does not promise universal
+commit coverage. Protected-branch policy can ask or refuse on this bounded arm.
+The already-shipped Write/Edit guard continues protecting binary-owned state.
 
 **`git-guard` stays a hook and cannot be anything else.** It is a `PreToolUse`
 gate that returns a DECISION synchronously on a Bash command, guarding the one
@@ -673,17 +672,21 @@ protected", so it needs no transport to the server.
 
 **The risk gates come with it**, because they sit on the same path and the same
 consumers: `risk-check` over a commit range, `detect-surfaces`, and the lease.
-Source-scope enforcement survives the loss of parallel execution - the lease
-catches a staged file outside the plan's declared scope, includes both sides of
-a rename, and protects exactly the source work the binary-writes rule leaves
-outside its ownership (`planning/lease-check.mjs:32-37`). Delete the pairwise
-overlap check and the concurrency narration; keep declared-scope enforcement,
-unprovable-lease refusal, byte-exact pathname handling and the intentional
-lockfile and report exceptions.
+Source-scope enforcement compares every patch's reported-commit paths and the
+whole staged set against the admitted lease at patch time, including both
+rename endpoints. `files` declares exact paths; optional `directories` declares
+roots and descendants by path-component boundary. A trailing separator in files
+is refused. One `covers()` predicate serves admission, retained native
+overlap-derived ordering and patch enforcement. There are zero exemptions:
+new files, dependency lockfiles and reports must all be covered. Undeclared or
+unprovable observations refuse the whole patch while retaining byte-exact Git
+path handling. The commits remain in Git, the index is untouched, and the
+dispatch stays open for operator-controlled repair and a corrected full patch
+under the unchanged lease; no automatic history rewrite occurs.
 
 **Two open GitHub issues land here**, and both are range-identity defects:
 `GH-229`, where a caller hands the check a `HEAD..HEAD` range and the record
-reads as a completed clean check (`planning/core.mjs:519-524`, with the
+reads as a completed clean check (`planning/core.mjs:650` and `lib/risk-diff.mjs:391`, with the
 no-commit skip at `workflows/execute.md:338-346` and
 `workflows/task.md:154-164`), and `GH-248`, where receipts are stored ref-only
 and require a head/base pair while a staged record has no head
