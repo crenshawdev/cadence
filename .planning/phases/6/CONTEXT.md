@@ -317,6 +317,42 @@ PLAN-1 -> PLAN-2. There is no parallel plan pair.
   and its own phase. It is out of scope by a named reason, not by oversight.
   If wrong: a future reader treats content equivalence as an identity guarantee
   and builds a security claim on top of it.
+- D-29 (The frozen v3 self-verify does not lint the 4.0 skill tree): PLAN-2
+  Task 6's "preserve the frozen reference checks" means `cadence-core/` stays
+  byte-identical to `v3.7.12` and its own tests still run for the frozen tree's
+  sake. It does NOT mean v3's `self-verify` grammar must pass over skills the
+  4.0 rearchitecture deliberately rewrote. Ruled by John, 2026-09-07, on the
+  Node-suite regression found auditing PLAN-2 tasks 1-4.
+  **What broke:** after task 3 (`d082ff9a`) rewrote the executor contract,
+  `TMPDIR=/tmp node --test` went from exit 0 to exit 1 with exactly 16 failures,
+  confined to three files - `deferred-reads.test.mjs` (5),
+  `prose-agreement.test.mjs` (8) and `self-verify.test.mjs` (3). Every other
+  Node test file still exits 0, verified by running the suite with those three
+  excluded. Ten of the sixteen name `skills/cad-executor-contract/SKILL.md`
+  directly in their failure detail; the rest assert the same grammar indirectly.
+  Baseline was proven green by re-running the three files at `ac08af5a` in a
+  throwaway worktree, so this was introduced here and is not pre-existing.
+  **Why it cannot be satisfied as written:** the deferred-read register is a
+  hardcoded table at `cadence-core/bin/lib/deferred-reads.mjs:216-223` that
+  scans the LIVE `skills/<skill>/SKILL.md` and requires that file to carry a
+  `${CLAUDE_PLUGIN_ROOT}` Read sentence for `references/worktree-executor.md`
+  and `references/lean-build.md`. That table sits inside the frozen tree, which
+  the same task's Verify forbids editing, and its own comment (`:158`) says the
+  rows are meant to stay byte-identical forever.
+  **Why we did not just re-add the sentences:** `worktree-executor.md` states in
+  its own header that it applies only in worktree mode and "none of them applies
+  on the sequential path", while the 4.0 contract fixes `rung: fixed; branch:
+  current` and disables parallel execution. Re-adding it would put an
+  instruction to read worktree rules into a shipped contract two lines after
+  that contract makes worktree mode impossible - a falsehood in a user-facing
+  file, written to satisfy a linter.
+  **What we give up, stated plainly:** the frozen suite no longer acts as a
+  regression signal over `skills/`. Changes to the 4.0 skill tree are covered by
+  the Rust suite and by review, not by v3's grammar.
+  **What would reopen this:** porting the deferred-read grammar into the Rust
+  binary, so the 4.0 tree gets an equivalent check it can actually satisfy.
+  If wrong: a real breakage in a 4.0 skill ships because nothing lints that tree
+  and nobody notices the v3 check stopped covering it.
 
 ## Acceptance criteria
 
