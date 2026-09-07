@@ -1078,3 +1078,532 @@ fn scoped_budgets_admit_256_plus_terminal_and_reopen_never_grows_either_scope() 
     });
     }
 }
+
+fn recovery_operation(view: &View, case: &str, patch: Option<&ExecutorPatch>) -> Operation {
+    let (decision, change) = match case {
+        "dispatch" => {
+            let plan = native_plan();
+            let set = plan_set_fingerprint(std::slice::from_ref(&plan)).unwrap();
+            let candidate = build_dispatch(&plan, &set, 0, BASE, 512).unwrap();
+            let mut returned = candidate.clone();
+            returned.expected_execution_version = 1;
+            (
+                scoped_answer(
+                    BoundaryScope::Execution { phase: 6 },
+                    BoundaryTool::CadenceQuery,
+                    "recovery-dispatch",
+                    Envelope::Ok(Success::Dispatch {
+                        dispatch: Box::new(returned),
+                        prompt: "x".repeat(512),
+                    }),
+                    Some(candidate.id.clone()),
+                ),
+                BoundaryChange::Dispatch {
+                    plan_set_fingerprint: set,
+                    dispatch: candidate,
+                },
+            )
+        }
+        "patch" => {
+            let patch = patch.unwrap().clone();
+            (
+                scoped_answer(
+                    BoundaryScope::Execution { phase: 6 },
+                    BoundaryTool::CadenceApply,
+                    "recovery-patch",
+                    Envelope::Ok(Success::Complete { phase: 6 }),
+                    Some(patch.dispatch_id.clone()),
+                ),
+                BoundaryChange::Patch {
+                    patch,
+                    commit_paths: BTreeMap::from([
+                        (COMMIT_1.into(), vec!["src/one.rs".into()]),
+                        (COMMIT_2.into(), vec!["src/two.rs".into()]),
+                    ]),
+                    render_version: SUMMARY_RENDER_VERSION,
+                    complete_phase: true,
+                },
+            )
+        }
+        "refusal" | "terminal" => (
+            scoped_refusal(BoundaryScope::RootRefusal, "recovery-refusal"),
+            BoundaryChange::Observe,
+        ),
+        _ => panic!("unknown recovery operation: {case}"),
+    };
+    scoped_operation(view, "recovery-operation", decision, change)
+}
+
+fn recovery_template(case: &str) -> (tempfile::TempDir, Option<ExecutorPatch>) {
+    let root = tempfile::tempdir().unwrap();
+    prepare_root(root.path());
+    let patch = runtime().block_on(async {
+        let store = open(root.path()).await;
+        if case == "patch" {
+            let (_, dispatch, _) = scoped_dispatch(&store).await;
+            Some(complete_patch(&dispatch))
+        } else {
+            let mut view = store
+                .request(Operation::RewriteSnapshot(seed_data()))
+                .await
+                .unwrap();
+            if case == "terminal" {
+                for i in 0..256 {
+                    let id = format!("pre-terminal-{i}");
+                    let decision = scoped_refusal(BoundaryScope::RootRefusal, &id);
+                    view = store
+                        .request(scoped_operation(
+                            &view,
+                            &id,
+                            decision,
+                            BoundaryChange::Observe,
+                        ))
+                        .await
+                        .unwrap();
+                }
+            }
+            None
+        }
+    });
+    std::fs::write(
+        planning(root.path()).join("phases/6/SUMMARY.md"),
+        b"prior summary\n",
+    )
+    .unwrap();
+    (root, patch)
+}
+
+fn copy_recovery_template(source: &Path) -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    prepare_root(root.path());
+    for name in ["items.jsonl", DECISIONS, STATE, "phases/6/SUMMARY.md"] {
+        std::fs::copy(
+            planning(source).join(name),
+            planning(root.path()).join(name),
+        )
+        .unwrap();
+    }
+    root
+}
+
+fn recovery_bytes(root: &Path) -> [Vec<u8>; 4] {
+    ["items.jsonl", DECISIONS, STATE, "phases/6/SUMMARY.md"]
+        .map(|name| std::fs::read(planning(root).join(name)).unwrap())
+}
+
+fn assert_recovery_once(root: &Path, case: &str, before: &View, after: &View) {
+    assert_eq!(after.decisions.len(), before.decisions.len() + 1);
+    assert_eq!(after.snapshot.generation, before.snapshot.generation + 1);
+    for key in ["import", "lifecycle", "evidence", "pause", "arbitrary"] {
+        assert_eq!(after.snapshot.data[key], before.snapshot.data[key]);
+    }
+    if case == "patch" {
+        let execution = execution(after);
+        assert_eq!(execution.occurrences["6"].plans.len(), 1);
+        assert_eq!(execution.occurrences["6"].receipts.len(), 1);
+        let summary = std::fs::read_to_string(planning(root).join("phases/6/SUMMARY.md")).unwrap();
+        assert_eq!(summary.matches(COMMIT_1).count(), 1);
+        assert_eq!(summary.matches(COMMIT_2).count(), 1);
+    } else {
+        assert_eq!(
+            std::fs::read(planning(root).join("phases/6/SUMMARY.md")).unwrap(),
+            b"prior summary\n"
+        );
+    }
+    if matches!(case, "refusal" | "terminal") {
+        assert_eq!(after.snapshot.data, before.snapshot.data);
+    }
+    assert_eq!(
+        after.snapshot.operations.len(),
+        before.snapshot.operations.len() + usize::from(case != "terminal")
+    );
+    assert!(!planning(root).join(INTENT).exists());
+}
+
+#[test]
+fn scoped_intent_and_changed_participant_failures_never_acknowledge() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    for case in ["refusal", "dispatch", "patch", "terminal"] {
+        let (template, patch) = recovery_template(case);
+        let mut targets = vec![INTENT, DECISIONS, STATE, "intent-removal"];
+        if case == "patch" {
+            targets.push("SUMMARY.md");
+        }
+        for target in targets {
+            for stage in if target == "intent-removal" {
+                vec![Stage::DirectorySync]
+            } else {
+                vec![
+                    Stage::TemporarySync,
+                    Stage::Renamed,
+                    Stage::DirectorySync,
+                    Stage::Confirmation,
+                ]
+            } {
+                let root = copy_recovery_template(template.path());
+                runtime().block_on(async {
+                    let initial = open(root.path()).await;
+                    let before = initial.request(Operation::ReadVerified).await.unwrap();
+                    drop(initial);
+                    let hit = Arc::new(AtomicBool::new(false));
+                    let seen_hit = hit.clone();
+                    let mut renamed = String::new();
+                    let pending = planning(root.path()).join(INTENT);
+                    let failing = open_with_probe(root.path(), move |seen, path| {
+                        if seen == Stage::Renamed {
+                            renamed = path.file_name().unwrap().to_string_lossy().into_owned();
+                        }
+                        let matches = if target == "intent-removal" {
+                            renamed == STATE && !pending.exists()
+                        } else if stage == Stage::DirectorySync {
+                            renamed == target
+                        } else {
+                            target_matches(seen, path, target)
+                        };
+                        if seen == stage && matches {
+                            seen_hit.store(true, Ordering::SeqCst);
+                            Err(Error::Io("scoped failure injected".into()))
+                        } else {
+                            Ok(())
+                        }
+                    })
+                    .await;
+                    assert!(
+                        failing
+                            .request(recovery_operation(&before, case, patch.as_ref()))
+                            .await
+                            .is_err(),
+                        "acknowledged {case} {stage:?} {target}"
+                    );
+                    assert!(
+                        hit.load(Ordering::SeqCst),
+                        "missed {case} {stage:?} {target}"
+                    );
+                    drop(failing);
+                    let recovered = open(root.path()).await;
+                    let view = recovered.request(Operation::ReadVerified).await.unwrap();
+                    let result = recovered
+                        .request(recovery_operation(&view, case, patch.as_ref()))
+                        .await
+                        .unwrap();
+                    assert_recovery_once(root.path(), case, &before, &result);
+                    let bytes = recovery_bytes(root.path());
+                    assert_eq!(
+                        recovered
+                            .request(recovery_operation(&before, case, patch.as_ref()))
+                            .await
+                            .unwrap(),
+                        result
+                    );
+                    assert_eq!(recovery_bytes(root.path()), bytes);
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn scoped_recovery_resync_and_intent_removal_failures_never_acknowledge() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let (template, patch) = recovery_template("patch");
+    for target in [DECISIONS, STATE, "SUMMARY.md", INTENT] {
+        for stage in if target == INTENT {
+            vec![Stage::DirectorySync]
+        } else {
+            vec![
+                Stage::RecoverySync,
+                Stage::DirectorySync,
+                Stage::Confirmation,
+            ]
+        } {
+            let root = copy_recovery_template(template.path());
+            runtime().block_on(async {
+                let store = open_with_probe(root.path(), |stage, path| {
+                    if stage == Stage::Confirmation && path.ends_with(STATE) {
+                        Err(Error::Io("final confirmation injected".into()))
+                    } else {
+                        Ok(())
+                    }
+                })
+                .await;
+                let before = store.request(Operation::ReadVerified).await.unwrap();
+                assert!(
+                    store
+                        .request(recovery_operation(&before, "patch", patch.as_ref()))
+                        .await
+                        .is_err()
+                );
+                drop(store);
+                let installed = recovery_bytes(root.path());
+                let pending = std::fs::read(planning(root.path()).join(INTENT)).unwrap();
+                let root_path = planning(root.path());
+                let hit = Arc::new(AtomicBool::new(false));
+                let probe_hit = hit.clone();
+                let mut syncing = String::new();
+                let result = Store::open(
+                    Filesystem::new(&root_path)
+                        .unwrap()
+                        .with_probe(move |seen, path| {
+                            if seen == Stage::RecoverySync {
+                                syncing = path.file_name().unwrap().to_string_lossy().into_owned();
+                            }
+                            let matches = if target == INTENT {
+                                !root_path.join(INTENT).exists()
+                            } else if stage == Stage::DirectorySync {
+                                syncing == target
+                            } else {
+                                path.ends_with(target)
+                            };
+                            if seen == stage && matches {
+                                probe_hit.store(true, Ordering::SeqCst);
+                                Err(Error::Io("resync/removal injected".into()))
+                            } else {
+                                Ok(())
+                            }
+                        }),
+                    Allow,
+                )
+                .await;
+                assert!(result.is_err(), "acknowledged {stage:?} {target}");
+                assert!(hit.load(Ordering::SeqCst), "missed {stage:?} {target}");
+                assert_eq!(recovery_bytes(root.path()), installed);
+                if target != INTENT {
+                    assert_eq!(
+                        std::fs::read(planning(root.path()).join(INTENT)).unwrap(),
+                        pending
+                    );
+                }
+                let recovered = open(root.path()).await;
+                let view = recovered.request(Operation::ReadVerified).await.unwrap();
+                assert_recovery_once(root.path(), "patch", &before, &view);
+                assert_eq!(
+                    recovered
+                        .request(recovery_operation(&before, "patch", patch.as_ref()))
+                        .await
+                        .unwrap(),
+                    view
+                );
+                assert_eq!(recovery_bytes(root.path()), installed);
+            });
+        }
+    }
+}
+
+#[test]
+fn scoped_recovery_reloads_policy_before_any_participant_write() {
+    struct Reload(std::path::PathBuf);
+    impl Policy for Reload {
+        fn validate(&mut self, context: &MutationContext<'_>) -> Result<()> {
+            assert_eq!(context.operation, "recovery");
+            if std::fs::read(&self.0).unwrap() == b"deny" {
+                Err(Error::Policy("changed policy".into()))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    let (root, patch) = recovery_template("patch");
+    runtime().block_on(async {
+        let store = open_with_probe(root.path(), |stage, path| {
+            if stage == Stage::Confirmation && path.ends_with(INTENT) {
+                Err(Error::Io("intent confirmed failure".into()))
+            } else {
+                Ok(())
+            }
+        })
+        .await;
+        let view = store.request(Operation::ReadVerified).await.unwrap();
+        assert!(
+            store
+                .request(recovery_operation(&view, "patch", patch.as_ref()))
+                .await
+                .is_err()
+        );
+        drop(store);
+        let before = recovery_bytes(root.path());
+        let intent = std::fs::read(planning(root.path()).join(INTENT)).unwrap();
+        let policy = root.path().join("policy");
+        std::fs::write(&policy, b"deny").unwrap();
+        assert!(matches!(
+            Store::open(
+                Filesystem::new(planning(root.path())).unwrap(),
+                Reload(policy.clone())
+            )
+            .await,
+            Err(Error::Policy(_))
+        ));
+        assert_eq!(recovery_bytes(root.path()), before);
+        assert_eq!(
+            std::fs::read(planning(root.path()).join(INTENT)).unwrap(),
+            intent
+        );
+        std::fs::write(&policy, b"allow").unwrap();
+        let recovered = Store::open(
+            Filesystem::new(planning(root.path())).unwrap(),
+            Reload(policy),
+        )
+        .await
+        .unwrap();
+        let after = recovered.request(Operation::Read).await.unwrap();
+        assert_recovery_once(root.path(), "patch", &view, &after);
+    });
+}
+
+#[test]
+fn scoped_restart_child() {
+    let Some(root) = std::env::var_os("CADENCE_SCOPED_ROOT") else {
+        return;
+    };
+    let root = PathBuf::from(root);
+    let case = std::env::var("CADENCE_SCOPED_CASE").unwrap();
+    let barrier = std::env::var("CADENCE_SCOPED_BARRIER").unwrap();
+    let probe_barrier = barrier.clone();
+    runtime().block_on(async {
+        let store = open_with_probe(&root,move |stage,path| {
+            let name = format!("{stage:?}:{}",path.file_name().unwrap().to_string_lossy());
+            if name == probe_barrier {
+                println!("SCOPED_BARRIER:{name}");
+                std::io::stdout().flush().unwrap();
+                loop {std::thread::park();}
+            }
+            Ok(())
+        }).await;
+        let view = store.request(Operation::ReadVerified).await.unwrap();
+        let operation = recovery_operation(&view,&case,None);
+        let Operation::BoundaryV1 {decision,..} = &operation else {unreachable!()};
+        let decision = decision.clone();
+        let result = store.request(operation).await.unwrap();
+        let selected = confirmed_boundary(&result,&decision).unwrap();
+        let answer = selected.envelope(None).unwrap();
+        if barrier == "confirmed" {
+            println!("SCOPED_BARRIER:confirmed");
+            std::io::stdout().flush().unwrap();
+            loop {std::thread::park();}
+        }
+        println!("SCOPED_RESULT {}",json!({"answer":answer,"digest":selected.value.boundary.response_digest,"generation":result.snapshot.generation}));
+    });
+}
+
+fn scoped_child(root: &Path, case: &str, barrier: &str) -> Command {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", "scoped_restart_child", "--nocapture"])
+        .env("CADENCE_SCOPED_ROOT", root)
+        .env("CADENCE_SCOPED_CASE", case)
+        .env("CADENCE_SCOPED_BARRIER", barrier)
+        .stdin(Stdio::null());
+    command
+}
+
+fn scoped_kill(root: &Path, case: &str, barrier: &str) {
+    let mut child = scoped_child(root, case, barrier)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let expected = format!("SCOPED_BARRIER:{barrier}");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if line.unwrap() == expected {
+                let _ = sender.send(());
+                return;
+            }
+        }
+    });
+    let reached = receiver.recv_timeout(Duration::from_secs(10));
+    child.kill().unwrap();
+    let status = child.wait().unwrap();
+    reader.join().unwrap();
+    assert!(reached.is_ok(), "missed {case} {barrier}");
+    use std::os::unix::process::ExitStatusExt;
+    assert_eq!(status.signal(), Some(libc::SIGKILL));
+}
+
+fn scoped_read(root: &Path, case: &str) -> Value {
+    let output = scoped_child(root, case, "read").output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_str(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .find_map(|line| line.strip_prefix("SCOPED_RESULT "))
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn scoped_refusal_and_terminal_kills_recover_one_identical_answer_without_semantic_changes() {
+    for case in ["refusal", "terminal"] {
+        let (template, _) = recovery_template(case);
+        for barrier in [
+            "TemporarySynced:.store-intent.json",
+            "Renamed:.store-intent.json",
+            "Confirmation:.store-intent.json",
+            "Renamed:decisions.jsonl",
+            "Renamed:state.json",
+            "confirmed",
+        ] {
+            let root = copy_recovery_template(template.path());
+            let before = runtime().block_on(async {
+                open(root.path())
+                    .await
+                    .request(Operation::ReadVerified)
+                    .await
+                    .unwrap()
+            });
+            let bytes = recovery_bytes(root.path());
+            scoped_kill(root.path(), case, barrier);
+            if barrier == "TemporarySynced:.store-intent.json" {
+                assert_eq!(recovery_bytes(root.path()), bytes);
+                assert!(!planning(root.path()).join(INTENT).exists());
+            } else if barrier != "confirmed" {
+                assert!(planning(root.path()).join(INTENT).exists());
+            }
+            if matches!(barrier, "Renamed:decisions.jsonl" | "Renamed:state.json") {
+                scoped_kill(root.path(), case, "RecoverySync:decisions.jsonl");
+            }
+            let first = scoped_read(root.path(), case);
+            assert_eq!(
+                first["digest"],
+                digest(&independent_canonical(&first["answer"]))
+            );
+            assert_eq!(first["answer"]["status"], "refused");
+            assert_eq!(
+                first["answer"]["code"],
+                if case == "terminal" {
+                    "log-bound"
+                } else {
+                    "invalid-input"
+                }
+            );
+            let after = runtime().block_on(async {
+                open(root.path())
+                    .await
+                    .request(Operation::ReadVerified)
+                    .await
+                    .unwrap()
+            });
+            assert_recovery_once(root.path(), case, &before, &after);
+            let Decision::BoundaryV1(last) = &after.decisions.last().unwrap().decision else {
+                unreachable!()
+            };
+            assert_eq!(first["digest"], last.boundary.response_digest);
+            let stable = recovery_bytes(root.path());
+            assert_eq!(scoped_read(root.path(), case), first);
+            assert_eq!(recovery_bytes(root.path()), stable);
+        }
+    }
+}

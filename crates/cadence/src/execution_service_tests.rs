@@ -634,8 +634,8 @@ fn execution_restart_child() {
                 let probe_armed = armed.clone();
                 let factory = factory().with_probe(Arc::new(move |stage, path| {
                     if probe_armed.load(Ordering::SeqCst)
-                        && stage == Stage::Confirmation
-                        && path.ends_with("state.json")
+                        && stage == Stage::Renamed
+                        && path.ends_with("SUMMARY.md")
                     {
                         restart_barrier("summary-installed");
                     }
@@ -669,6 +669,33 @@ fn execution_restart_child() {
                     )
                     .unwrap()
                 );
+            }
+            mode if mode.contains('@') => {
+                let (request, barrier) = mode.split_once('@').unwrap();
+                let barrier = barrier.to_owned();
+                let probe_barrier = barrier.clone();
+                let factory = factory().with_probe(Arc::new(move |stage, path| {
+                    if probe_barrier
+                        == format!("{stage:?}:{}", path.file_name().unwrap().to_string_lossy())
+                    {
+                        restart_barrier(&probe_barrier);
+                    }
+                    Ok(())
+                }));
+                let server = CadenceServer::with_factory(factory);
+                let answer = if request == "apply" {
+                    server
+                        .apply_executor_patch(&root, child_patch())
+                        .await
+                        .unwrap()
+                } else {
+                    server.query_execution(&root, phase).await.unwrap()
+                };
+                if barrier == "confirmed" {
+                    println!("EXECUTION_CONFIRMED {}", actual_digest(&answer));
+                    restart_barrier("confirmed");
+                }
+                panic!("boundary was not reached: {barrier}");
             }
             other => panic!("unknown execution child mode: {other}"),
         }
@@ -852,6 +879,14 @@ fn execution_restart_lost_apply_replays_one_immutable_transition() {
                     .count(),
                 1
             );
+            disk_answer(&fixture.root, &response);
+            if plan_count == 2 {
+                let later = execution_child_result(&fixture.root, "read-query", None);
+                assert!(matches!(later, Envelope::Ok(Success::Dispatch { ref dispatch, .. }) if dispatch.plan == 2));
+                let before = ["state.json", "decisions.jsonl"].map(|name| fs::read(fixture.root.join(name)).unwrap());
+                assert_eq!(execution_child_result(&fixture.root, "read-apply", Some(&patch)), response);
+                assert_eq!(["state.json", "decisions.jsonl"].map(|name| fs::read(fixture.root.join(name)).unwrap()), before);
+            }
         }
     });
 }
@@ -891,6 +926,218 @@ fn execution_restart_repairs_summary_before_final_state_confirmation() {
                 .count(),
             1
         );
+    });
+}
+
+#[test]
+fn execution_restart_each_dispatch_and_patch_barrier_recovers_one_confirmed_answer() {
+    for request in ["query", "apply"] {
+        let mut barriers = vec![
+            "TemporarySynced:.store-intent.json",
+            "Renamed:.store-intent.json",
+            "Confirmation:.store-intent.json",
+            "Renamed:decisions.jsonl",
+            "Renamed:state.json",
+            "confirmed",
+        ];
+        if request == "apply" {
+            barriers.push("Renamed:SUMMARY.md");
+        }
+        for barrier in barriers {
+            let fixture = fixture(&[(&["src/a.rs"], &["T1"], "barrier body 日本語\n")]);
+            let patch = runtime().block_on(async {
+                let server = CadenceServer::with_factory(factory());
+                accept(&server, &fixture).await;
+                if request == "apply" {
+                    let dispatch = dispatch(&server, &fixture).await;
+                    let sha = commit(&fixture, "barrier", "feat: complete T1", true);
+                    Some(complete_patch(&dispatch, &[&sha]))
+                } else {
+                    None
+                }
+            });
+            let paths = [
+                "items.jsonl",
+                "decisions.jsonl",
+                "state.json",
+                "phases/6/SUMMARY.md",
+            ];
+            let before = paths.map(|name| fs::read(fixture.root.join(name)).ok());
+            let old_state: Value = serde_json::from_slice(before[2].as_ref().unwrap()).unwrap();
+            kill_execution_child(
+                &fixture.root,
+                &format!("{request}@{barrier}"),
+                barrier,
+                patch.as_ref(),
+            );
+            let pre_admission = barrier == "TemporarySynced:.store-intent.json";
+            if pre_admission {
+                assert!(!fixture.root.join(INTENT).exists());
+                assert_eq!(
+                    paths.map(|name| fs::read(fixture.root.join(name)).ok()),
+                    before
+                );
+            } else if barrier != "confirmed" {
+                assert!(fixture.root.join(INTENT).exists());
+            }
+            if barrier == "Renamed:SUMMARY.md" {
+                assert_eq!(
+                    fs::read(fixture.root.join("state.json")).unwrap(),
+                    *before[2].as_ref().unwrap()
+                );
+                let summary = fs::read_to_string(fixture.root.join("phases/6/SUMMARY.md")).unwrap();
+                let TaskOutcome::Completed { commit, .. } = &patch.as_ref().unwrap().tasks[0]
+                else {
+                    unreachable!()
+                };
+                assert!(summary.contains(commit));
+            }
+            if matches!(
+                barrier,
+                "Renamed:decisions.jsonl" | "Renamed:state.json" | "Renamed:SUMMARY.md"
+            ) {
+                // SUMMARY is the first patch participant; its rename precedes
+                // decisions as well as the final semantic snapshot.
+                let recovery = if barrier == "Renamed:SUMMARY.md" {
+                    "RecoverySync:SUMMARY.md"
+                } else {
+                    "RecoverySync:decisions.jsonl"
+                };
+                kill_execution_child(
+                    &fixture.root,
+                    &format!("{request}@{recovery}"),
+                    recovery,
+                    patch.as_ref(),
+                );
+                assert!(fixture.root.join(INTENT).exists());
+            }
+            let response = execution_child_result(
+                &fixture.root,
+                if request == "apply" {
+                    "read-apply"
+                } else {
+                    "read-query"
+                },
+                patch.as_ref(),
+            );
+            let record = disk_answer(&fixture.root, &response);
+            assert_eq!(
+                record["decision"]["boundary"]["response_digest"],
+                actual_digest(&response)
+            );
+            assert_eq!(
+                boundary_count(&fixture.root),
+                if request == "apply" { 2 } else { 1 }
+            );
+            let state: Value =
+                serde_json::from_slice(&fs::read(fixture.root.join("state.json")).unwrap())
+                    .unwrap();
+            for (key, value) in old_state["data"].as_object().unwrap() {
+                if !matches!(key.as_str(), "execution" | "lifecycle") {
+                    assert_eq!(state["data"][key], *value, "{key}");
+                }
+            }
+            assert!(!fixture.root.join(INTENT).exists());
+            let stable = paths.map(|name| fs::read(fixture.root.join(name)).ok());
+            assert_eq!(
+                execution_child_result(
+                    &fixture.root,
+                    if request == "apply" {
+                        "read-apply"
+                    } else {
+                        "read-query"
+                    },
+                    patch.as_ref()
+                ),
+                response
+            );
+            assert_eq!(
+                paths.map(|name| fs::read(fixture.root.join(name)).ok()),
+                stable
+            );
+        }
+    }
+}
+
+#[test]
+fn execution_restart_cross_format_failure_preserves_legacy_bytes_at_every_service_entry() {
+    runtime().block_on(async {
+        let fixture = fixture(&[(&["src/a.rs"], &["T1"], "old native record\n")]);
+        let server = CadenceServer::with_factory(factory());
+        accept(&server, &fixture).await;
+        let view = server
+            .store(&fixture.root, Operation::ReadVerified)
+            .await
+            .unwrap();
+        server
+            .store(
+                &fixture.root,
+                Operation::RecordExecutionRefusal {
+                    expected_generation: view.snapshot.generation,
+                    expected_integrity: view.snapshot.integrity,
+                    operation_id: "old-refusal".into(),
+                    decision: cadence::execution::model::BoundaryDecision {
+                        phase: 6,
+                        tool: BoundaryTool::CadenceQuery,
+                        operation: "execute-next".into(),
+                        request_digest: "a".repeat(64),
+                        outcome: "refused:invalid-plan".into(),
+                        subject_id: None,
+                        prompt_bytes: None,
+                        response_digest: "b".repeat(64),
+                    },
+                },
+            )
+            .await
+            .unwrap();
+        drop(server);
+        fs::write(
+            fixture.root.join("phases/6/SUMMARY.md"),
+            b"old summary stays exact\n",
+        )
+        .unwrap();
+        let paths = [
+            "items.jsonl",
+            "decisions.jsonl",
+            "state.json",
+            "phases/6/SUMMARY.md",
+        ];
+        let before = paths.map(|name| fs::read(fixture.root.join(name)).unwrap());
+        let patch = ExecutorPatch {
+            schema: 1,
+            kind: PatchKind::Executor,
+            dispatch_id: "old-dispatch".into(),
+            expected_execution_version: 1,
+            outcome: PlanDisposition::Complete,
+            tasks: vec![],
+            deviations: vec![],
+            blockers: vec![],
+        };
+        let server = CadenceServer::with_factory(factory());
+        assert_eq!(
+            server.query_execution(&fixture.root, 6).await,
+            Err(Failure::LegacyExecution)
+        );
+        assert_eq!(
+            server.apply_executor_patch(&fixture.root, patch).await,
+            Err(Failure::LegacyExecution)
+        );
+        assert_eq!(
+            server
+                .refuse_execution_arguments(
+                    &fixture.root,
+                    BoundaryTool::CadenceQuery,
+                    None,
+                    ValidationFailure::MissingArguments
+                )
+                .await,
+            Err(Failure::LegacyExecution)
+        );
+        assert_eq!(
+            paths.map(|name| fs::read(fixture.root.join(name)).unwrap()),
+            before
+        );
+        assert!(!fixture.root.join(INTENT).exists());
     });
 }
 
