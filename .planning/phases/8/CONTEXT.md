@@ -21,14 +21,14 @@ Already built, retained as dependencies and regression coverage:
   `crates/cadence/src/config/merge.rs:158`,
   `crates/cadence/src/config/tests.rs:6`).
 - Alias collapse toward repo and one versioned destination, with requested
-  write scope preserved (`crates/cadence/src/config/reload.rs:128`,
+  write scope preserved (`crates/cadence/src/config/reload.rs:134`,
   `crates/cadence/src/config/write.rs:19`,
-  `crates/cadence/src/config/tests.rs:766`).
+  `crates/cadence/src/config/tests.rs:772`).
 - Synchronous invalidation, including identity/byte rereads and refusal after
-  failed reload (`crates/cadence/src/config/reload.rs:120`,
-  `crates/cadence/src/config/reload.rs:128`,
-  `crates/cadence/src/config/tests.rs:387`,
-  `crates/cadence/src/config/tests.rs:477`).
+  failed reload (`crates/cadence/src/config/reload.rs:126`,
+  `crates/cadence/src/config/reload.rs:134`,
+  `crates/cadence/src/config/tests.rs:393`,
+  `crates/cadence/src/config/tests.rs:483`).
 - Fourteen frozen-schema leaf retirements: four `parallelization.*`, three
   `review.triggers.phase_diff.*`, `git.auto_close`, and six per-role
   `workflow.max_dispatch_tokens.*` leaves. Projection, absence of defaults,
@@ -47,10 +47,10 @@ project (D-52). Internal reads and single-key transactional writes exist; expose
 them and add the atomic batch the interview requires (D-50)
 (`crates/cadence/src/config/merge.rs:110`,
 `crates/cadence/src/import/mod.rs:223`,
-`crates/cadence/src/import/mod.rs:396`,
-`crates/cadence/src/import/mod.rs:502`,
-`crates/cadence/src/import/mod.rs:596`,
-`crates/cadence/src/import/mod.rs:616`).
+`crates/cadence/src/import/mod.rs:401`,
+`crates/cadence/src/import/mod.rs:509`,
+`crates/cadence/src/import/mod.rs:672`,
+`crates/cadence/src/import/mod.rs:692`).
 
 In, also: build the four absent capabilities: the shared roles/cost/floor
 interview; role model/rung resolution; the surviving review-policy and
@@ -83,7 +83,7 @@ layer; a startup-only snapshot or watcher as the correctness mechanism;
 state; legacy-file edits. These would contradict the existing merge/reload
 and byte-preservation contracts or D-48
 (`crates/cadence/src/config/mod.rs:1`,
-`crates/cadence/src/config/reload.rs:128`,
+`crates/cadence/src/config/reload.rs:134`,
 `docs/architecture/config-import.md:41`). Live provider discovery/setup,
 review delivery/adjudication, general execution, and landing behavior belong
 to their later work; this phase does not claim them on the strength of a
@@ -147,7 +147,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
   `cadence-core/workflows/config.md:416`). Rust array replacement already
   supplies the override, and explicit validation accepts arrays rather than
   null (`crates/cadence/src/config/merge.rs:34`,
-  `crates/cadence/src/config/reload.rs:186`,
+  `crates/cadence/src/config/reload.rs:192`,
   `crates/cadence/src/config/write.rs:97`). A repo `[]` deliberately stops
   inheriting future global waivers. This answer concerns the plan-time floor,
   not the actual-diff review's selected surfaces
@@ -181,8 +181,8 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
   `crates/cadence/src/config/write.rs:117`). Reuse synchronous refresh and
   admission/final policy validation; a failed reload makes controlling config
   unavailable rather than reviving cached permission
-  (`crates/cadence/src/config/reload.rs:120`,
-  `crates/cadence/src/config/reload.rs:229`). The fourteen dead leaves stay
+  (`crates/cadence/src/config/reload.rs:126`,
+  `crates/cadence/src/config/reload.rs:235`). The fourteen dead leaves stay
   absent from active values and defaults and remain unwritable
   (`crates/cadence/src/config/tests.rs:71`,
   `crates/cadence/src/config/write.rs:94`). If wrong: phase 8 duplicates
@@ -197,7 +197,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
   `docs/rationale/architecture-v4.md:243`). Extend the existing single-key
   transactional seam with an all-or-nothing validated batch; twelve calls to
   `set_config` are twelve transactions, not one interview write
-  (`crates/cadence/src/import/mod.rs:502`,
+  (`crates/cadence/src/import/mod.rs:509`,
   `crates/cadence/src/config/write.rs:116`,
   `crates/cadence/src/config/write.rs:172`,
   `cadence-core/workflows/config.md:431`). Accepted suggestion values use
@@ -206,7 +206,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
   from live validation: invalid preferences can be retained as import
   evidence, whereas unusable supported live values refuse
   (`crates/cadence/src/import/mod.rs:122`,
-  `crates/cadence/src/config/reload.rs:200`). If wrong: a failed interview
+  `crates/cadence/src/config/reload.rs:206`). If wrong: a failed interview
   partially saves choices, or markdown becomes a second configuration writer.
 
 - D-51 (One layer-aware roles interview): Carry six model questions, six
@@ -231,14 +231,14 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
 - D-52 (Finish global lifecycle without template copying): Reuse native
   first touch, which creates the planning root and writes projected repo
   settings (`crates/cadence/src/store/filesystem.rs:49`,
-  `crates/cadence/src/import/mod.rs:668`). Add creation of a legitimately
+  `crates/cadence/src/import/mod.rs:744`). Add creation of a legitimately
   missing global parent and reuse of an already-valid active global config
   by a new project. Preserve its bytes and source scope; distinguish shared
   global input from foreign partial repo outputs. Current first touch rejects
   either as "unrelated partial output", omits missing-parent global
   registration, and the writer requires that parent already exist
-  (`crates/cadence/src/import/mod.rs:596`,
-  `crates/cadence/src/import/mod.rs:616`,
+  (`crates/cadence/src/import/mod.rs:672`,
+  `crates/cadence/src/import/mod.rs:692`,
   `crates/cadence/src/config/write.rs:159`,
   `crates/cadence/src/store/filesystem.rs:119`). If wrong: the first machine
   interview cannot save, or configuring one project prevents initializing
@@ -305,7 +305,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
   (`crates/cadence/src/execution_service.rs:241`,
   `crates/cadence/src/execution_service.rs:304`,
   `crates/cadence/src/execution_service.rs:356`). Current config validation
-  still applies to resumed operations (`crates/cadence/src/import/mod.rs:402`).
+  still applies to resumed operations (`crates/cadence/src/import/mod.rs:407`).
   If wrong: history attributes a worker to settings it never received, or a
   requested effort becomes false proof of what the host actually used.
 
@@ -320,9 +320,9 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       This retains completed behavior, not a new implementation obligation
       (`crates/cadence/src/config/tests.rs:6`,
       `crates/cadence/src/config/tests.rs:71`,
-      `crates/cadence/src/config/tests.rs:387`,
-      `crates/cadence/src/config/tests.rs:536`,
-      `crates/cadence/src/config/tests.rs:766`).
+      `crates/cadence/src/config/tests.rs:393`,
+      `crates/cadence/src/config/tests.rs:542`,
+      `crates/cadence/src/config/tests.rs:772`).
 
 - [ ] AC2: Public config reads show stored/effective values, presence and
       source layer. A valid multi-key apply saves all answers in one durable
@@ -340,9 +340,9 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       new project reuses that active global config without refusing or
       changing its bytes. No unchosen schema defaults appear in stored repo
       settings, foreign partial repo outputs still refuse, and legacy source
-      bytes remain identical (`crates/cadence/src/import/mod.rs:596`,
-      `crates/cadence/src/import/mod.rs:616`,
-      `crates/cadence/src/import/mod.rs:668`,
+      bytes remain identical (`crates/cadence/src/import/mod.rs:672`,
+      `crates/cadence/src/import/mod.rs:692`,
+      `crates/cadence/src/import/mod.rs:744`,
       `crates/cadence/src/import/tests.rs:505`).
 
 - [ ] AC4: An observed ordinary roles interview obtains six model answers,
@@ -446,8 +446,8 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
 - **The roadmap's startup claim is factually wrong.** At the recorded HEAD,
   `.planning/ROADMAP.md:708` says "merged once at startup". `load()` resolves
   identities and rereads bytes BEFORE considering a cache hit, and session
-  config access calls refresh (`crates/cadence/src/config/reload.rs:128`,
-  `crates/cadence/src/import/mod.rs:396`). The working copy's line positions
+  config access calls refresh (`crates/cadence/src/config/reload.rs:134`,
+  `crates/cadence/src/import/mod.rs:401`). The working copy's line positions
   are changing; the quoted claim and HEAD citation identify the error without
   depending on the concurrent edit. No roadmap edit belongs to this context.
 
@@ -465,20 +465,31 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
 - **The invalidation assignment is already discharged.**
   `.planning/ROADMAP.md:723` assigns invalidation here, but failed refresh
   clears the current generation and final policy validation refreshes again
-  (`crates/cadence/src/config/reload.rs:120`,
-  `crates/cadence/src/config/reload.rs:229`). Existing assertions cover
+  (`crates/cadence/src/config/reload.rs:126`,
+  `crates/cadence/src/config/reload.rs:235`). Existing assertions cover
   unchanged size/time, rename, alias retarget, failed reads and policy changes
-  after admission (`crates/cadence/src/config/tests.rs:387`,
-  `crates/cadence/src/config/tests.rs:425`,
-  `crates/cadence/src/config/tests.rs:477`,
-  `crates/cadence/src/config/tests.rs:536`). New consumers must use the seam;
+  after admission (`crates/cadence/src/config/tests.rs:393`,
+  `crates/cadence/src/config/tests.rs:431`,
+  `crates/cadence/src/config/tests.rs:483`,
+  `crates/cadence/src/config/tests.rs:542`). New consumers must use the seam;
   its mechanism is not new phase-8 work.
+
+- **Nothing serializes two projects writing the shared global config.** The
+  store takes an exclusive `flock` on its own root directory inode
+  (`crates/cadence/src/store/filesystem.rs:157`), which serializes writers
+  within one planning root and cannot serialize across roots. Two projects
+  editing global settings can therefore race and silently overwrite an accepted
+  change. This phase's whole claim is that a saved setting reaches real
+  dispatch, and a setting that can vanish under a concurrent project undercuts
+  it. Not asked for by any decision or criterion here; name an owner before
+  planning, or state deliberately that concurrent global writes stay
+  unserialized.
 
 - **GH-256 ownership labels lag its behavioral assignment.** The issue body
   asks for null-as-default effort semantics, including a legacy `low` example;
-  its triage explicitly distinguishes absent/value/null. The later issue
-  comment and roadmap table still name phase 7, while the phase-8 detail
-  assigns the defect here ([GH-256](https://github.com/crenshawdev/cadence/issues/256),
+  its triage explicitly distinguishes absent/value/null. The GitHub issue's own
+  labels and a later comment still name phase 7; the roadmap table was corrected
+  to agree with the phase-8 detail that assigns the defect here ([GH-256](https://github.com/crenshawdev/cadence/issues/256),
   `.planning/ROADMAP.md:313`, `.planning/ROADMAP.md:718`,
   `cadence-core/bin/route.mjs:971`). Phase 8 owns it by the owner's instruction.
   Model reset is the explicit extension in D-45, not a claim that GH-256
@@ -488,13 +499,13 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
   Existing empty-root tests prove creation without a template, not a first
   global save or second-project reuse
   (`crates/cadence/src/import/tests.rs:615`). The rejection at
-  `crates/cadence/src/import/mod.rs:596`, omitted registration at
-  `crates/cadence/src/import/mod.rs:616` and parent requirement at
+  `crates/cadence/src/import/mod.rs:672`, omitted registration at
+  `crates/cadence/src/import/mod.rs:692` and parent requirement at
   `crates/cadence/src/store/filesystem.rs:119` establish the missing paths.
   AC3 must exercise them. The roadmap's template-copy sentence accurately
   describes its frozen workflow reference; it is not native initialization
   guidance (`.planning/ROADMAP.md:704`,
-  `crates/cadence/src/import/mod.rs:668`).
+  `crates/cadence/src/import/mod.rs:744`).
 
 - **Four host model aliases and question batching are historical evidence.**
   The frozen resolver lists `opus`, `sonnet`, `haiku`, `fable`; the workflow
