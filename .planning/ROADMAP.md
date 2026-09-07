@@ -342,7 +342,7 @@ settled:
 - [x] **Phase 3: The store and its queries** - the item store, the decisions log, the state snapshot, two-layer config, the `v3.7.12` import, and recall
 - [x] **Phase 4: Derivation and the internal spine** - phase state derived from disk, the evidence set enumerated, and a memo that makes disagreement a hard error
 - [x] **Phase 5: The evidence record and what comes next** - the facts routing depends on written down when they happen, and the binary selecting the next action from them
-- [ ] **Phase 6: The boundary and the execute slice** - the typed tool schema, typed refusals, and `/cad-execute` proven end to end through it
+- [x] **Phase 6: The boundary and the execute slice** - the typed tool schema, typed refusals, and `/cad-execute` proven end to end through it
 - [ ] **Phase 7: The commit rail and the risk gates** - `git-guard`, the protected-branch decision, the lease and the risk check: what sixteen skills commit through
 - [ ] **Phase 8: Config and routing** - two-layer effective config, the roles interview, retired-key migration, and `route resolve`
 - [ ] **Phase 9: The review and settlement subsystem** - triggers, reviewer dispatch, the provider arm, adjudication, deferred and filing: what a skill FIRES rather than implements

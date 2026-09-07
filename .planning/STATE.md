@@ -1,6 +1,6 @@
 # State
 
-Phase: 5 of 18 (The evidence record and what comes next)
+Phase: 6 of 18 (The boundary and the execute slice)
 Status: complete
-Next: phase 6
+Next: phase 7
 Updated: 2026-09-07
