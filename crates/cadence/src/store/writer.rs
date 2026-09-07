@@ -224,7 +224,19 @@ struct Writer<S: Storage, P: Policy> {
 
 impl<S: Storage, P: Policy> Writer<S, P> {
     fn open(mut storage: S, mut policy: P) -> Result<Self> {
+        let _ownership = storage.acquire()?;
         super::transaction::recover(&mut storage, &mut policy)?;
+        let (view, observed) = Self::observe(&mut storage)?;
+        Ok(Self {
+            storage,
+            policy,
+            observed,
+            view,
+            failed: None,
+        })
+    }
+
+    fn observe(storage: &mut S) -> Result<(View, BTreeMap<String, Observed>)> {
         let mut observed = BTreeMap::new();
         for name in [ITEMS, DECISIONS, STATE] {
             observed.insert(name.to_string(), storage.read(name)?);
@@ -253,22 +265,37 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 "boundary generation exceeds snapshot".into(),
             ));
         }
-        Ok(Self {
-            storage,
-            policy,
-            observed,
-            view: View {
+        Ok((
+            View {
                 items,
                 decisions,
                 snapshot,
             },
-            failed: None,
-        })
+            observed,
+        ))
     }
 
     fn execute(&mut self, operation: Operation) -> Result<View> {
         if let Some(error) = &self.failed {
             return Err(error.clone());
+        }
+        let _ownership = self.storage.acquire()?;
+        super::transaction::recover(&mut self.storage, &mut self.policy)?;
+        let (view, observed) = Self::observe(&mut self.storage)?;
+        if observed != self.observed {
+            if view.snapshot.generation <= self.view.snapshot.generation
+                || !view.items.starts_with(&self.view.items)
+                || !view.decisions.starts_with(&self.view.decisions)
+                || self.observed.iter().any(|(name, previous)| {
+                    observed[name].directory_identity != previous.directory_identity
+                })
+            {
+                return Err(Error::Conflict(
+                    "externally changed store generation".into(),
+                ));
+            }
+            self.view = view;
+            self.observed = observed;
         }
         match operation {
             Operation::BoundaryV1 {

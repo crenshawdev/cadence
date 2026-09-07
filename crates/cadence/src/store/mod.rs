@@ -56,6 +56,11 @@ pub struct Observed {
 /// and confirm must check the installed bytes before the writer acknowledges.
 pub trait Storage: Send + 'static {
     type Prepared;
+    /// Hold exclusive root ownership until the returned guard is dropped.
+    /// In-memory adapters already have one owner and need no additional lock.
+    fn acquire(&mut self) -> Result<Box<dyn Send>> {
+        Ok(Box::new(()))
+    }
     fn read(&mut self, target: &str) -> Result<Observed>;
     fn prepare(&mut self, target: &str, bytes: &[u8]) -> Result<Self::Prepared>;
     fn install(&mut self, prepared: &Self::Prepared) -> Result<()>;

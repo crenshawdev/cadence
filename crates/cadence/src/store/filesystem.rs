@@ -3,7 +3,8 @@ use super::{Error, Observed, Result, Storage};
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::MetadataExt;
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +153,34 @@ pub(crate) fn phase_summary_target(target: &str) -> Result<Option<u32>> {
 
 impl Storage for Filesystem {
     type Prepared = Prepared;
+
+    fn acquire(&mut self) -> Result<Box<dyn Send>> {
+        // Lock the directory inode: there is no removable lock file that could
+        // split cooperating writers into separate ownership domains.
+        let directory = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(&self.root)?;
+        loop {
+            // The descriptor remains owned by this File for the lock lifetime.
+            if unsafe { libc::flock(directory.as_raw_fd(), libc::LOCK_EX) } == 0 {
+                break;
+            }
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::Interrupted {
+                return Err(error.into());
+            }
+        }
+        let current = fs::symlink_metadata(&self.root)?;
+        let locked = directory.metadata()?;
+        if current.dev() != locked.dev() || current.ino() != locked.ino() {
+            return Err(Error::Conflict(
+                "store root changed while acquiring ownership".into(),
+            ));
+        }
+        // Closing the descriptor also releases ownership after an error or exit.
+        Ok(Box::new(directory))
+    }
 
     fn read(&mut self, target: &str) -> Result<Observed> {
         let target = self.target(target)?;
