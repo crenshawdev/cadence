@@ -67,3 +67,73 @@ Additional inspection concern, not an executed failure in this suite: `crates/ca
 Frozen check: `git diff --exit-code v3.7.12 -- cadence-core/` exited 0; output SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`. Frozen cadence-core bytes are clean.
 All changed source paths were checked against PLAN-1 files frontmatter, plus the owner’s explicit report path. The check found no undeclared path.
 Uncommitted Task 7 artifacts: `hooks/hooks.json`, `crates/cadence/tests/phase7_guard.rs`, `crates/cadence/tests/phase7_live.rs`, `docs/architecture/commit-rail.md`, `docs/validation/phase-7-live.md`. The run record is also uncommitted. No commit was created for the blocked task.
+
+## Continuation run: store repair and live-probe completion
+
+Initial HEAD: `e0db1ca1`; branch `cadence/binary-owns-process`. The prior record above is preserved. The owner explicitly authorizes this append and requires it to remain uncommitted; no other planning file is changed. The applicable contract is the repository's `skills/cad-executor-contract/SKILL.md`, not the older installed plugin contract (consulted initially). No configuration detection, delegation or extra review is used.
+
+Status: PLAN PARTIAL; P7-1-T1 regression repaired, P7-1-T7 pending.
+
+### Regression diagnosis and repair
+
+The store implementation was wrong; the boundary test remains unchanged. Task 1 moved recovery into every operation at `111f1e32:crates/cadence/src/store/writer.rs:287` but propagated errors without setting the resident writer's failed latch. The existing persist path at `e0db1ca1:crates/cadence/src/store/writer.rs:1022` latches commit failure. Recovery can itself install transaction participants (`crates/cadence/src/store/transaction.rs:583`), so its failure must also require a replacement owner. Removing the injected intent directory must not revive the resident: the unchanged boundary test explicitly requires another -32603 at `crates/cadence/tests/mcp.rs:1015` and then proves a replacement can record the refusal at lines 1017-1023.
+
+The same unconditional refresh also erased the distinction between Read and ReadVerified. The unchanged `crates/cadence/tests/store.rs:897` requires the prior confirmed view after foreign snapshot damage. Read now returns that cached view after checking the failed latch; verified reads and writes still lock, recover and observe before admission. Recovery failure now sets the same failed latch as commit failure. No unleased source or test was edited.
+
+Signed correction: `2701801ee9b1c3e7353322738c382b5bb82cda45`, `fix(store): retain failure and cached-read contracts P7-1-T1`, signature G. Only `crates/cadence/src/store/writer.rs` committed. Lease check passed, no deletions. Frozen check exited 0 with empty output.
+
+Prediction: unchanged MCP regression 1 passed, cached-read regression 1 passed, guard target 56 passed; typecheck exit 0 without diagnostics. Observed exactly those test results and typecheck exit 0 (npm emitted its two normal invocation notices).
+
+| Verification command | Exit | Output SHA-256 | Captured output |
+| --- | --- | --- | --- |
+| `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp execution_calls_store_failure_never_acknowledges_a_refusal` | 0 | `098538128b8ae4c634d93a59e241b5eec6a5f8252ecb27d3ec4655f71d9a84e1` | `/tmp/cadence-p7-resume-receipts/mcp-regression.log` |
+| `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test store checked_snapshot_verified_read_and_conditional_replacement` | 0 | `f55a030bf358456f2a87b8545b65e187e7bf4ecee8996029c6a380f75519b09a` | `/tmp/cadence-p7-resume-receipts/store-cached-read.log` |
+| `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase7_guard` | 0 | `57862ca351c6b48421d0eb3df35cf974b41f6cdb100e44a1671debea42040937` | `/tmp/cadence-p7-resume-receipts/P7-1-T1-verify.log` |
+| `TMPDIR=/tmp npx tsc -p tsconfig.ci.json` | 0 | `c66a12b6e1cf23424ff7c6a3454c7c2c71c6c44b2ff5ebe6b94d82fe6f3d7713` | `/tmp/cadence-p7-resume-receipts/typecheck.log` |
+
+### P7-1-T7: real-host proof
+
+Kept the previous native hook registration, manifest compatibility test, scanner/policy documentation and disposable fixture structure. Corrected `crates/cadence/tests/phase7_live.rs:322` to bind an unambiguous pending tool call to its hook_started identity and then join hook_response by hook_id and session; an intervening Read or another hook response cannot clear that match. Missing, unstarted or ambiguous evidence fails. Two ordinary tests cover that correlator and explicitly do not claim live evidence.
+
+The probe now also requires actual tool results (`phase7_live.rs:219`), joins durable records by host event identity plus command digest (`:240`), verifies input-specific diagnostics and torn-layer host reasons, checks protected main in the durable record, and captures confirmed state/items/decisions digests. Write and Edit require both native deny JSON and actual tool refusals with unchanged state bytes (`:601`). No criterion or assertion was weakened.
+
+Context7 current official host documentation confirmed zero-exit PreToolUse JSON and streamed hook lifecycle events (https://code.claude.com/docs/en/hooks, https://code.claude.com/docs/en/cli-reference). Installed help was rechecked. Registered Bash/Read/Write/Edit tools and default permission mode were read from each actual system init event. The exact PLAN-1 Notes invocation was used, with isolated settings/MCP paths and stdout plus stderr captured together. No debug-output inference or permission bypass was used.
+
+Prediction: 2 correlator tests pass, live test ignored in ordinary target; prescribed ignored live verify passes 11 cases. Observed: 2 passed / 1 ignored, then 1 live test passed in 166.31 seconds, all 11 cases completed. After that ordinary run, its two fixed event arrays were changed from Vec literals to arrays; the required full suite validates that final test source. No live-case logic changed after its invocation.
+
+- Correlator: `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase7_live`; exit 0; SHA-256 `c2afca02c0c8490bdd6d492a80c07800a92e308647261b78cea0c1336d5226c5`; `/tmp/cadence-p7-resume-receipts/live-correlator.log`.
+- P7-1-T7: `TMPDIR=/tmp RUSTC_WRAPPER= CADENCE_PHASE7_LIVE=guard cargo test -p cadence --test phase7_live -- --ignored --nocapture`; exit 0; SHA-256 `e7520f8c0cd5d164ff41142486ce1be60929a5e2fd21677f09a330256eeb453b`; `/tmp/cadence-p7-resume-receipts/P7-1-T7-verify.log`.
+
+Live host: Claude Code 2.1.263, Git 2.55.0. Captures: `/tmp/cadence-phase7-live/guard-run-yUJz4N`; versions, binary/help/settings/host-stream/store digests and before/after Git identities are recorded in `docs/validation/phase-7-live.md`.
+
+Observed against that real host:
+- Protected refuse produced native deny, a tool refusal, unchanged HEAD and a confirmed Deny record. Protected ask produced native ask, an unapproved tool result, unchanged HEAD and a confirmed Ask record. Configured pass executed a validly signed new commit.
+- Push produced native ask; the fixture-local bare remote's refs stayed unchanged. The unrelated printf ran successfully, returned silent hook stdout and created no decision log.
+- Git was deliberately removed only from the hook PATH. Default policy let the host's Bash Git command create a validly signed commit, with loud Git stderr and a confirmed FailurePass record naming Git.
+- Deliberately torn default config produced native ask and the defaults-versus-user-settings reason in both hook output and durable record. Readable refuse from the other layer retained deny through the tear with that reason appended.
+- Hard-fail on provably protected main denied with Git missing. A subsequent deliberate config tear plus missing Git also denied, recording both unavailable inputs. Neither command changed HEAD.
+- Write and Edit both reached the native guard, returned deny and actual tool refusals; state bytes stayed identical.
+
+All live operations targeted disposable repositories and a local bare remote under /tmp. Audit validation opened a fresh store after each host and hook process exited, confirming the persisted generation and record integrity. Hook ask is recorded as ask; no interactive approval or publication is claimed. AC1/AC2 live evidence is now complete for this plan. T7 commit remains pending the required full suite.
+
+### Required full suite and final disposition
+
+Prediction: every workspace target passes; Clippy exits 0 with warnings denied; fmt reports no differences. Observed: exact supplied chain exited 0. Workspace total 409 passed, 0 failed, 1 deliberately ignored real-host test (separately passed above). MCP target: 16 passed, including the unchanged persistent-failure assertion. Store target: 17 passed, including the unchanged cached-read assertion. Clippy finished successfully with `-D warnings`; fmt emitted no differences. Typecheck separately passed as recorded above.
+
+Command: `TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace && TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings && TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check`
+Exit: 0. Output SHA-256: `6d4a7fb1ce114eef4dbbbfafc1072f903b88780f230a5fa0285b008cf8f1f63a`. Captured output: `/tmp/cadence-p7-resume-receipts/full-suite.log`. One full-suite invocation this continuation, before the final task commit. No failed verification was bypassed or weakened.
+
+Final signed commits from this continuation:
+
+| Task | Status | Full commit SHA | Signature |
+| --- | --- | --- | --- |
+| P7-1-T1 regression correction | completed | `2701801ee9b1c3e7353322738c382b5bb82cda45` | G |
+| P7-1-T7 live-host proof | completed | `41f16a9cadfdcb4aa76d9b77ef47efc42ef19bb3` | G |
+
+Final gates matched prediction: only declared source files committed; original report bytes preserved as a prefix; no unexpected deletions or generated files; no boundary-test edits. `git diff --exit-code v3.7.12 -- cadence-core/` exited 0 with empty output (SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`). Final HEAD: `41f16a9cadfdcb4aa76d9b77ef47efc42ef19bb3`. Only this appended report remains modified and uncommitted. No push, git-config changes, dependency changes, extra agents or attribution were introduced.
+
+PLAN COMPLETE
+Plan: `.planning/phases/7/PLAN-1.md`
+Tasks: 7 of 7 satisfied; previously verified tasks retained, T1 regression corrected and T7 completed.
+Deviations: none to the settled decisions, lease or acceptance criteria.
+Open items: none within PLAN-1. Print-mode asks prove hook ask and withheld execution, not a human approval; the probe and validation document preserve that distinction.
