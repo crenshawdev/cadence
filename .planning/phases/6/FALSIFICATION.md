@@ -272,6 +272,14 @@ there.
   `.planning/phases/6/PLAN-2.md:42-46` and
   `.planning/phases/6/PLAN-2.md:91-95`).
 
+- **Do not promise byte preservation inside a rendered JSON snapshot.** The
+  draft called unrelated JSON "byte-for-byte at the value level", which has no
+  coherent meaning because the writer serializes a new snapshot on every
+  mutation (`crates/cadence/src/store/writer.rs:306-316`). PLAN-1 Task 2 now
+  requires exact preservation of unrelated values; byte identity remains the
+  separate requirement for a rejected patch's existing SUMMARY
+  (`.planning/phases/6/PLAN-1.md:95-99`).
+
 - **Do not let the UAT accidentally prove the JavaScript path.** Loading the
   repository plugin would also load three Node hook commands
   (`hooks/hooks.json:1-38`). PLAN-2 Task 5 now uses byte-checked temporary copies
