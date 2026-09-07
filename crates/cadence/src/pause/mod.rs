@@ -1,6 +1,8 @@
 //! Pause captures work separately from the durable evidence and Git mutations.
 pub mod branch;
 pub mod git;
+pub mod risk;
+pub mod risk_diff;
 
 use crate::{
     derivation::ValidatedIntake,
@@ -37,6 +39,7 @@ pub struct Capture {
     pub sentence: String,
     pub authorized: BTreeSet<PathBuf>,
     pub observed: git::Observation,
+    pub risk: Option<risk::Outcome>,
 }
 
 pub fn capture(input: Input, retained: Option<&ValidatedIntake>) -> Result<Capture> {
@@ -99,6 +102,7 @@ pub fn capture(input: Input, retained: Option<&ValidatedIntake>) -> Result<Captu
         sentence,
         authorized: input.authorized,
         observed,
+        risk: None,
     })
 }
 

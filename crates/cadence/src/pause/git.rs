@@ -1,11 +1,21 @@
 //! Git process boundary. Paths are OS strings, never shell commands or quoted text.
 use crate::store::{Error, Result};
 use std::{
+    collections::BTreeSet,
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Staged {
+    pub base: String,
+    pub index_id: String,
+    pub scope: Vec<PathBuf>,
+    pub authored: Vec<PathBuf>,
+    pub diff: Vec<u8>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Change {
@@ -165,5 +175,90 @@ pub fn observe(root: &Path) -> Result<Observation> {
         branch,
         index,
         changes,
+    })
+}
+
+fn paths(bytes: &[u8]) -> Result<Vec<PathBuf>> {
+    bytes
+        .split(|byte| *byte == 0)
+        .filter(|field| !field.is_empty())
+        .map(|field| {
+            let path = pathname(field)?;
+            super::validate_path(&path)?;
+            Ok(path)
+        })
+        .collect()
+}
+
+fn review_artifact(path: &Path) -> bool {
+    let parts: Vec<_> = path.components().collect();
+    if parts.len() != 4 || parts[0].as_os_str() != ".planning" || parts[1].as_os_str() != "phases" {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+    (name.starts_with("ADJUDICATION-") && name.ends_with(".json"))
+        || (name.starts_with("REVIEW-") && name.ends_with(".md"))
+        || matches!(name, "FINDINGS.json" | "verifier-findings.json")
+}
+
+pub fn index_id(root: &Path) -> Result<String> {
+    String::from_utf8(line(run(root, ["write-tree"])?))
+        .map_err(|_| Error::Invalid("invalid staged tree identity".into()))
+}
+
+/// Store receipts are supplied by provenance, not recognized by filename.
+pub fn staged(root: &Path, base: &str, receipts: &BTreeSet<PathBuf>) -> Result<Staged> {
+    let head = String::from_utf8(line(run(root, ["rev-parse", "--verify", "HEAD"])?))
+        .map_err(|_| Error::Invalid("invalid Git HEAD".into()))?;
+    let before = index_id(root)?;
+    let scope = paths(&run(
+        root,
+        [
+            "diff",
+            "--cached",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            base,
+            "--",
+        ],
+    )?)?;
+    let authored: Vec<_> = scope
+        .iter()
+        .filter(|path| !receipts.contains(*path) && !review_artifact(path))
+        .cloned()
+        .collect();
+    let diff = if authored.is_empty() {
+        Vec::new()
+    } else {
+        let mut args = vec![
+            std::ffi::OsString::from("diff"),
+            "--cached".into(),
+            "--no-ext-diff".into(),
+            "--no-textconv".into(),
+            "--no-renames".into(),
+            "--binary".into(),
+            "--unified=0".into(),
+            base.into(),
+            "--".into(),
+        ];
+        args.extend(authored.iter().map(|path| path.as_os_str().to_owned()));
+        run(root, args)?
+    };
+    if before != index_id(root)?
+        || head.as_bytes() != line(run(root, ["rev-parse", "--verify", "HEAD"])?)
+    {
+        return Err(Error::Conflict(
+            "staged material changed during risk observation".into(),
+        ));
+    }
+    Ok(Staged {
+        base: base.into(),
+        index_id: before,
+        scope,
+        authored,
+        diff,
     })
 }

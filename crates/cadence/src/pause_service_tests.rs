@@ -4,11 +4,23 @@ use cadence::{
     evidence::{
         self, Fact, Record, Scope,
         gates::{self, Gate, State},
+        overrides::Meaning,
+        results::{AcceptedResult, Reference},
     },
-    pause::{Input, Phase, git},
+    next_action::observations,
+    pause::{
+        Input, Phase, git,
+        risk::{self, Finding, Outcome, Review, Severity},
+        risk_diff,
+    },
 };
 use serde_json::{Value, json};
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Runtime::new().unwrap()
@@ -39,6 +51,9 @@ fn git_config(root: &Path, args: &[&str]) -> Vec<u8> {
     output.stdout
 }
 async fn fixture(policy: Value) -> tempfile::TempDir {
+    configured_fixture(json!({"git":policy})).await
+}
+async fn configured_fixture(config: Value) -> tempfile::TempDir {
     let temp = tempfile::tempdir().unwrap();
     assert!(temp.path().starts_with("/tmp"));
     let root = temp.path().join(".planning");
@@ -51,7 +66,7 @@ async fn fixture(policy: Value) -> tempfile::TempDir {
     fs::write(root.join("phases/1/PLAN.md"), "plan").unwrap();
     fs::write(
         root.join("config.json"),
-        serde_json::to_vec(&json!({"git":policy})).unwrap(),
+        serde_json::to_vec(&config).unwrap(),
     )
     .unwrap();
     git::run(temp.path(), ["init", "-b", "main"]).unwrap();
@@ -59,6 +74,17 @@ async fn fixture(policy: Value) -> tempfile::TempDir {
     git::run(temp.path(), ["add", "--", ".planning"]).unwrap();
     git_config(temp.path(), &["commit", "-m", "imported fixture"]);
     temp
+}
+async fn risk_fixture(consequence: &str, surfaces: Option<Value>) -> tempfile::TempDir {
+    let mut risk = json!({"gate":consequence});
+    if let Some(surfaces) = surfaces {
+        risk["surfaces"] = surfaces;
+    }
+    configured_fixture(json!({
+        "git":{"on_protected":"allow","integration_branch":"trunk"},
+        "review":{"triggers":{"risk_surface":risk}}
+    }))
+    .await
 }
 fn input(project: &Path, occurrence: &str) -> Input {
     Input {
@@ -89,6 +115,12 @@ fn waiting(response: Response, kind: &str) -> Gate {
     assert_eq!(gate.state, State::Unanswered);
     *gate
 }
+fn reviewing(response: Response) -> super::pause_service::RiskNeed {
+    let Response::Review(need) = response else {
+        panic!("expected risk review: {response:?}");
+    };
+    *need
+}
 async fn answer(project: &Path, request: &Input, mut gate: Gate, option: &str, name: Option<&str>) {
     gate.state = State::Answered(gates::Answer {
         question_id: gate.id.clone(),
@@ -116,6 +148,67 @@ async fn answer(project: &Path, request: &Input, mut gate: Gate, option: &str, n
         )
         .await
         .unwrap();
+}
+
+fn finding(severity: Severity) -> Finding {
+    Finding {
+        number: 1,
+        severity,
+        file: "work.sql".into(),
+        line: 1,
+        claim: "the destructive change can remove persisted data".into(),
+        fix: "replace it with a non-destructive migration".into(),
+    }
+}
+
+async fn review(
+    project: &Path,
+    request: &Input,
+    need: &super::pause_service::RiskNeed,
+    findings: Vec<Finding>,
+) {
+    let finding_record = format!(
+        ".planning/phases/1/REVIEW-risk_surface-pause-{}.md",
+        &need.fire.index_id[..12]
+    );
+    let body = Review {
+        version: 1,
+        fire: need.fire.clone(),
+        finding_record: finding_record.clone(),
+        findings,
+    };
+    server()
+        .evidence(
+            &project.join(".planning"),
+            Command::Submit {
+                operation_id: format!("review:{}:{}", request.scope.occurrence, need.fire.id),
+                record: Box::new(Record {
+                    version: evidence::VERSION,
+                    scope: request.scope.clone(),
+                    fact: Fact::AcceptedResult(AcceptedResult {
+                        id: need.fire.id.clone(),
+                        contract: risk::CONTRACT.into(),
+                        result: "reviewed".into(),
+                        evidence_text: serde_json::to_string(&body).unwrap(),
+                        references: vec![Reference::FileLine {
+                            file: finding_record,
+                            line: 1,
+                        }],
+                        checker_id: None,
+                    }),
+                }),
+            },
+        )
+        .await
+        .unwrap();
+}
+
+fn staged_request(project: &Path, occurrence: &str, body: &[u8]) -> Input {
+    fs::write(project.join("work.sql"), body).unwrap();
+    git::run(project, ["add", "--", "work.sql"]).unwrap();
+    let mut request = input(project, occurrence);
+    request.authorized.insert("work.sql".into());
+    request
 }
 
 #[test]
@@ -271,6 +364,422 @@ fn pause_unreadable_controlling_config_never_supplies_cached_permission() {
             git::run(temp.path(), ["rev-parse", "HEAD"]).unwrap(),
             before
         );
+    });
+}
+
+#[test]
+fn pause_risk_reads_the_staged_tree_and_preserves_checked_match_and_inconclusive_states() {
+    runtime().block_on(async {
+        let temp = risk_fixture("blocking", Some(json!(["destructive", "untrusted_input"]))).await;
+        let request = staged_request(
+            temp.path(),
+            "staged-risk",
+            b"const body = JSON.parse(request.body);\nDROP TABLE accounts;\n",
+        );
+        let before = git::run(temp.path(), ["rev-parse", "HEAD"]).unwrap();
+        let need = reviewing(server().pause(request).await.unwrap());
+        assert_eq!(need.fire.base.as_bytes(), &before[..before.len() - 1]);
+        assert!(need.fire.staged);
+        assert_eq!(need.fire.head_id, None);
+        assert_eq!(need.fire.index_id, git::index_id(temp.path()).unwrap());
+        assert_eq!(need.fire.scope, vec![PathBuf::from("work.sql")]);
+        assert_eq!(need.fire.authored, need.fire.scope);
+        assert!(need.fire.scan.checked);
+        assert!(!need.fire.scan.inconclusive);
+        assert_eq!(
+            need.fire
+                .scan
+                .matches
+                .iter()
+                .map(|matched| (matched.category.as_str(), matched.signal.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("destructive", "changed line: a DROP statement"),
+                ("untrusted_input", "changed line: a JSON.parse call"),
+            ]
+        );
+
+        let binary = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let request = staged_request(binary.path(), "binary-risk", b"\0\xff\0");
+        let need = reviewing(server().pause(request).await.unwrap());
+        assert!(need.fire.scan.checked);
+        assert!(need.fire.scan.inconclusive);
+        assert!(need.fire.scan.matches.is_empty());
+
+        let safe = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let request = staged_request(
+            safe.path(),
+            "safe-risk",
+            b"CREATE TABLE accounts(id int);\n",
+        );
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("a judged nonmatching staged change must clear");
+        };
+        assert!(matches!(capture.risk, Some(Outcome::Clear(fire))
+            if fire.scan.checked && fire.scan.matches.is_empty() && !fire.scan.inconclusive));
+    });
+}
+
+#[test]
+fn pause_risk_asks_for_unanswered_surfaces_and_persists_the_answer_before_review() {
+    runtime().block_on(async {
+        let temp = risk_fixture("blocking", None).await;
+        let request = staged_request(temp.path(), "scope-risk", b"DROP TABLE accounts;\n");
+        let head = git::run(temp.path(), ["rev-parse", "HEAD"]).unwrap();
+        let gate = waiting(
+            server().pause(request.clone()).await.unwrap(),
+            "risk-surfaces",
+        );
+        assert_eq!(git::run(temp.path(), ["rev-parse", "HEAD"]).unwrap(), head);
+        answer(temp.path(), &request, gate, "all", None).await;
+        assert!(matches!(
+            server().pause(request.clone()).await.unwrap(),
+            Response::Refused(reason) if reason.contains("recorded")
+        ));
+        let need = reviewing(server().pause(request).await.unwrap());
+        assert_eq!(need.fire.scan.categories, risk::CATEGORIES);
+        assert!(
+            need.fire
+                .scan
+                .matches
+                .iter()
+                .any(|matched| matched.category == "destructive")
+        );
+    });
+}
+
+#[test]
+fn pause_risk_excludes_binary_receipts_by_provenance_and_keeps_narrow_review_exclusions() {
+    runtime().block_on(async {
+        let temp = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let request = input(temp.path(), "receipt-risk");
+        let view = server()
+            .store(
+                &temp.path().join(".planning"),
+                cadence::store::writer::Operation::Read,
+            )
+            .await
+            .unwrap();
+        let record = AcceptedResult {
+            id: "quoted-command".into(),
+            contract: "fixture.result.v1".into(),
+            result: "observed".into(),
+            evidence_text: "The operator quoted DROP TABLE accounts".into(),
+            references: vec![Reference::Criterion { id: "AC6".into() }],
+            checker_id: None,
+        };
+        server()
+            .evidence(
+                &temp.path().join(".planning"),
+                Command::Submit {
+                    operation_id: "quoted-command".into(),
+                    record: Box::new(Record {
+                        version: evidence::VERSION,
+                        scope: request.scope.clone(),
+                        fact: Fact::AcceptedResult(record),
+                    }),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(view.snapshot.generation > 0);
+        git::run(
+            temp.path(),
+            [
+                "add",
+                "--",
+                ".planning/items.jsonl",
+                ".planning/decisions.jsonl",
+                ".planning/state.json",
+            ],
+        )
+        .unwrap();
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("binary receipts must not fire their own gate");
+        };
+        let Some(Outcome::Clear(fire)) = capture.risk else {
+            panic!("expected a completed clean risk observation");
+        };
+        assert_eq!(fire.scope.len(), 2);
+        assert!(fire.authored.is_empty());
+        assert!(fire.scan.empty);
+
+        let future = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        fs::write(
+            future.path().join("future-store-participant.jsonl"),
+            "DROP TABLE accounts\n",
+        )
+        .unwrap();
+        git::run(
+            future.path(),
+            ["add", "--", "future-store-participant.jsonl"],
+        )
+        .unwrap();
+        let staged = git::staged(
+            future.path(),
+            "HEAD",
+            &BTreeSet::from([PathBuf::from("future-store-participant.jsonl")]),
+        )
+        .unwrap();
+        assert_eq!(staged.scope.len(), 1);
+        assert!(staged.authored.is_empty());
+        assert!(
+            risk_diff::scan(
+                Some(&staged.diff),
+                &staged.authored,
+                &["destructive".into()]
+            )
+            .unwrap()
+            .empty
+        );
+
+        let review = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let artifact = review
+            .path()
+            .join(".planning/phases/1/REVIEW-risk_surface-fixture.md");
+        fs::write(&artifact, "DROP TABLE accounts\n").unwrap();
+        fs::create_dir(review.path().join(".planning/phases/1/nested")).unwrap();
+        fs::write(
+            review
+                .path()
+                .join(".planning/phases/1/nested/REVIEW-risk_surface-fixture.md"),
+            "DROP TABLE accounts\n",
+        )
+        .unwrap();
+        git::run(
+            review.path(),
+            [
+                "add",
+                "--",
+                ".planning/phases/1/REVIEW-risk_surface-fixture.md",
+                ".planning/phases/1/nested/REVIEW-risk_surface-fixture.md",
+            ],
+        )
+        .unwrap();
+        let staged = git::staged(review.path(), "HEAD", &BTreeSet::new()).unwrap();
+        assert_eq!(
+            staged.authored,
+            vec![PathBuf::from(
+                ".planning/phases/1/nested/REVIEW-risk_surface-fixture.md"
+            )]
+        );
+        assert!(
+            risk_diff::scan(
+                Some(&staged.diff),
+                &staged.authored,
+                &["destructive".into()]
+            )
+            .unwrap()
+            .matches
+            .iter()
+            .any(|matched| matched.category == "destructive")
+        );
+    });
+}
+
+#[test]
+fn pause_risk_consequences_use_only_recorded_contracted_results() {
+    runtime().block_on(async {
+        let off = risk_fixture("off", None).await;
+        let request = staged_request(off.path(), "off-risk", b"DROP TABLE accounts;\n");
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("off must skip review");
+        };
+        assert_eq!(capture.risk, Some(Outcome::Off));
+
+        let advisory = risk_fixture("advisory", Some(json!(["destructive"]))).await;
+        let request = staged_request(advisory.path(), "advisory-risk", b"DROP TABLE accounts;\n");
+        let need = reviewing(server().pause(request.clone()).await.unwrap());
+        review(
+            advisory.path(),
+            &request,
+            &need,
+            vec![finding(Severity::High)],
+        )
+        .await;
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("advisory must report and continue");
+        };
+        assert!(matches!(capture.risk, Some(Outcome::Advisory(_))));
+
+        let blocking = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let request = staged_request(blocking.path(), "blocking-clean", b"DROP TABLE accounts;\n");
+        let need = reviewing(server().pause(request.clone()).await.unwrap());
+        review(blocking.path(), &request, &need, Vec::new()).await;
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("recorded no-survivor result must clear blocking");
+        };
+        assert!(matches!(
+            capture.risk,
+            Some(Outcome::BlockingCleared(Review { findings, .. })) if findings.is_empty()
+        ));
+
+        let malformed = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let request = staged_request(
+            malformed.path(),
+            "malformed-risk",
+            b"DROP TABLE accounts;\n",
+        );
+        let need = reviewing(server().pause(request.clone()).await.unwrap());
+        server()
+            .evidence(
+                &malformed.path().join(".planning"),
+                Command::Submit {
+                    operation_id: "malformed-risk".into(),
+                    record: Box::new(Record {
+                        version: evidence::VERSION,
+                        scope: request.scope.clone(),
+                        fact: Fact::AcceptedResult(AcceptedResult {
+                            id: need.fire.id,
+                            contract: risk::CONTRACT.into(),
+                            result: "reviewed".into(),
+                            evidence_text: "not a contracted return".into(),
+                            references: vec![Reference::Criterion { id: "AC6".into() }],
+                            checker_id: None,
+                        }),
+                    }),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            server().pause(request).await.unwrap(),
+            Response::Refused(reason) if reason.contains("unusable")
+        ));
+    });
+}
+
+#[test]
+fn pause_deferred_review_is_visible_to_the_production_queue_observation() {
+    runtime().block_on(async {
+        let temp = risk_fixture("deferred", Some(json!(["destructive"]))).await;
+        let request = staged_request(temp.path(), "deferred-risk", b"DROP TABLE accounts;\n");
+        let need = reviewing(server().pause(request.clone()).await.unwrap());
+        review(
+            temp.path(),
+            &request,
+            &need,
+            vec![finding(Severity::Medium)],
+        )
+        .await;
+        let Response::Ready(capture) = server().pause(request).await.unwrap() else {
+            panic!("deferred review must allow the run");
+        };
+        let Some(Outcome::Deferred { queue, .. }) = capture.risk else {
+            panic!("deferred outcome missing");
+        };
+        let lifecycle = server()
+            .lifecycle(&temp.path().join(".planning"))
+            .await
+            .unwrap();
+        let observed = observations::capture(&temp.path().join(".planning"), &lifecycle).unwrap();
+        assert_eq!(observed.queue.members.len(), 1);
+        assert_eq!(observed.queue.members[0].path, queue);
+        assert_eq!(observed.queue.members[0].findings, 1);
+    });
+}
+
+#[test]
+fn pause_blocking_override_is_occurrence_scoped_and_rearm_is_capped_across_restart() {
+    runtime().block_on(async {
+        let overridden = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let request = staged_request(
+            overridden.path(),
+            "override-risk",
+            b"DROP TABLE accounts;\n",
+        );
+        let need = reviewing(server().pause(request.clone()).await.unwrap());
+        review(
+            overridden.path(),
+            &request,
+            &need,
+            vec![finding(Severity::Blocker)],
+        )
+        .await;
+        let gate = waiting(server().pause(request.clone()).await.unwrap(), "risk");
+        answer(
+            overridden.path(),
+            &request,
+            gate,
+            "override",
+            Some("the migration is intentionally destructive after backup"),
+        )
+        .await;
+        let Response::Ready(capture) = server().pause(request.clone()).await.unwrap() else {
+            panic!("recorded review override must authorize its occurrence");
+        };
+        let Some(Outcome::Overridden { override_id, .. }) = capture.risk else {
+            panic!("override outcome missing");
+        };
+        let recovery = server()
+            .evidence(&overridden.path().join(".planning"), Command::Read)
+            .await
+            .unwrap();
+        assert!(recovery.current.iter().any(|record| {
+            record.scope == request.scope
+                && matches!(&record.fact, Fact::Override(value)
+                    if value.id == override_id
+                    && matches!(&value.meaning, Meaning::Review(receipt)
+                        if receipt.head.starts_with("index:")
+                        && receipt.head != receipt.base))
+        }));
+
+        let rearmed = risk_fixture("blocking", Some(json!(["destructive"]))).await;
+        let request = staged_request(rearmed.path(), "rearm-risk", b"DROP TABLE accounts;\n");
+        let first = reviewing(server().pause(request.clone()).await.unwrap());
+        review(
+            rearmed.path(),
+            &request,
+            &first,
+            vec![finding(Severity::High)],
+        )
+        .await;
+        let gate = waiting(server().pause(request.clone()).await.unwrap(), "risk");
+        answer(rearmed.path(), &request, gate, "fix", None).await;
+        fs::write(
+            rearmed.path().join("work.sql"),
+            "CREATE TABLE accounts(id int);\n",
+        )
+        .unwrap();
+        git::run(rearmed.path(), ["add", "--", "work.sql"]).unwrap();
+        let second = reviewing(server().pause(request.clone()).await.unwrap());
+        assert_eq!(second.fire.round, 2);
+        assert_eq!(second.fire.base, first.fire.index_id);
+        assert!(
+            second
+                .fire
+                .scan
+                .matches
+                .iter()
+                .any(|matched| matched.signal == "changed line: a DROP statement")
+        );
+        review(
+            rearmed.path(),
+            &request,
+            &second,
+            vec![finding(Severity::High)],
+        )
+        .await;
+        let gate = waiting(server().pause(request.clone()).await.unwrap(), "risk");
+        assert!(!gate.options.iter().any(|option| option.id == "fix"));
+        let reopened = waiting(server().pause(request).await.unwrap(), "risk");
+        assert_eq!(reopened, gate);
+    });
+}
+
+#[test]
+fn pause_adjudicated_findings_wait_for_a_recorded_operator_disposition() {
+    runtime().block_on(async {
+        let temp = risk_fixture("adjudicated", Some(json!(["destructive"]))).await;
+        let request = staged_request(temp.path(), "adjudicated-risk", b"DROP TABLE accounts;\n");
+        let need = reviewing(server().pause(request.clone()).await.unwrap());
+        review(temp.path(), &request, &need, vec![finding(Severity::Low)]).await;
+        let gate = waiting(server().pause(request.clone()).await.unwrap(), "risk");
+        assert_eq!(gate.state, State::Unanswered);
+        assert!(matches!(
+            server().pause(request).await.unwrap(),
+            Response::Wait(_)
+        ));
     });
 }
 
