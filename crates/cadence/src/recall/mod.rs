@@ -241,7 +241,7 @@ mod resident {
         },
         Store {
             root: PathBuf,
-            operation: Operation,
+            operation: Box<Operation>,
             reply: oneshot::Sender<Result<View>>,
         },
         Recall {
@@ -424,7 +424,7 @@ mod resident {
                             reply,
                         } => {
                             let result = match factory.first_touch(&root).await {
-                                Ok(session) => session.request(operation).await,
+                                Ok(session) => session.request(*operation).await,
                                 Err(e) => Err(e),
                             };
                             let _ = reply.send(result);
@@ -524,7 +524,7 @@ mod resident {
             self.requests
                 .send(Request::Store {
                     root: root.into(),
-                    operation,
+                    operation: Box::new(operation),
                     reply,
                 })
                 .await

@@ -82,7 +82,7 @@ fn seed_data() -> Value {
 
 fn native_plan() -> cadence::execution::model::ExecutionPlan {
     parse_plan(
-        b"---\nphase: 6\nplan: 1\nrequirements: [AC4, AC5]\nfiles: [src/lib.rs]\nexecution:\n  schema: 1\n  suite: cargo test\n  tasks:\n    - id: T1\n      verify: [cargo test one]\n    - id: T2\n      verify: [cargo test two]\n---\nBuild the execution slice.\n",
+        b"---\nphase: 6\nplan: 1\nrequirements: [AC4, AC5]\nfiles: [src/lib.rs, src/one.rs, src/two.rs]\nexecution:\n  schema: 1\n  suite: cargo test\n  tasks:\n    - id: T1\n      verify: [cargo test one]\n    - id: T2\n      verify: [cargo test two]\n---\nBuild the execution slice.\n",
         6,
         1,
     )
@@ -190,6 +190,7 @@ fn complete_patch(dispatch: &ActiveDispatch) -> ExecutorPatch {
 
 fn apply_operation(view: &View, dispatch: &ActiveDispatch) -> Operation {
     Operation::ApplyExecutionPatch {
+        staged_paths: Vec::new(),
         expected_generation: view.snapshot.generation,
         expected_integrity: view.snapshot.integrity.clone(),
         operation_id: "patch-6-1".into(),
@@ -304,6 +305,7 @@ fn blocked_patch_persists_judgment_without_completing_the_plan() {
         };
         let blocked = store
             .request(Operation::ApplyExecutionPatch {
+                staged_paths: Vec::new(),
                 expected_generation: view.snapshot.generation,
                 expected_integrity: view.snapshot.integrity,
                 operation_id: "blocked-6-1".into(),
@@ -649,6 +651,7 @@ fn transition_257_persists_one_terminal_log_bound_and_later_calls_replay_it() {
 
 fn operation_from_patch(view: &View, patch: ExecutorPatch) -> Operation {
     Operation::ApplyExecutionPatch {
+        staged_paths: Vec::new(),
         expected_generation: view.snapshot.generation,
         expected_integrity: view.snapshot.integrity.clone(),
         operation_id: "patch-6-1".into(),
@@ -1011,7 +1014,7 @@ fn scoped_writer_confirms_dispatch_complete_blocked_and_observation_public_diges
             let decision = scoped_answer(BoundaryScope::Execution { phase:6 }, BoundaryTool::CadenceApply, "new-patch",
                 serde_json::from_value(expected.clone()).unwrap(), Some(dispatch.id.clone()));
             let commit_paths = if blocked { BTreeMap::new() } else { BTreeMap::from([(COMMIT_1.into(), vec!["src/one.rs".into()]),(COMMIT_2.into(), vec!["src/two.rs".into()])]) };
-            let change = BoundaryChange::Patch { patch, commit_paths, render_version:SUMMARY_RENDER_VERSION, complete_phase:!blocked };
+            let change = BoundaryChange::Patch { staged_paths: Vec::new(), patch, commit_paths, render_version:SUMMARY_RENDER_VERSION, complete_phase:!blocked };
             let applied = store.request(scoped_operation(&view, "new-patch", decision.clone(), change.clone())).await.unwrap();
             assert_disk_answer(root.path(), &applied, &decision, expected.clone());
             let old_summary = std::fs::read(planning(root.path()).join("phases/6/SUMMARY.md")).unwrap();
@@ -1064,7 +1067,7 @@ fn scoped_budgets_admit_256_plus_terminal_and_reopen_never_grows_either_scope() 
                 let mut candidate = if index == 0 && scope != BoundaryScope::RootRefusal { original.clone() }
                     else { scoped_refusal(scope.clone(), &format!("retry-{index}")) };
                 candidate.tool = if index % 2 == 0 { BoundaryTool::CadenceQuery } else { BoundaryTool::CadenceApply };
-                let change = if index == 3 { BoundaryChange::Patch { patch:complete_patch(&dispatch), commit_paths:BTreeMap::new(), render_version:SUMMARY_RENDER_VERSION, complete_phase:true } }
+                let change = if index == 3 { BoundaryChange::Patch { staged_paths: Vec::new(), patch:complete_patch(&dispatch), commit_paths:BTreeMap::new(), render_version:SUMMARY_RENDER_VERSION, complete_phase:true } }
                     else { BoundaryChange::Observe };
                 let replay = store.request(Operation::BoundaryV1 { expected_generation:0, expected_integrity:"changed".into(), operation_id:"new-dispatch".into(), decision:candidate.clone(), change:Box::new(change) }).await.unwrap();
                 assert_eq!(replay, terminal);
@@ -1115,6 +1118,7 @@ fn recovery_operation(view: &View, case: &str, patch: Option<&ExecutorPatch>) ->
                     Some(patch.dispatch_id.clone()),
                 ),
                 BoundaryChange::Patch {
+                    staged_paths: Vec::new(),
                     patch,
                     commit_paths: BTreeMap::from([
                         (COMMIT_1.into(), vec!["src/one.rs".into()]),

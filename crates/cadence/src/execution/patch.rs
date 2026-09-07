@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::dispatch::full_sha;
+use super::lease::covers;
 use super::model::{
     AppliedReceipt, Blocker, Deviation, EXECUTION_SCHEMA, EvidenceReference, ExecutionOccurrence,
     ExecutionSnapshot, ExecutorPatch, PATCH_SCHEMA, PlanDisposition, PlanOutcome, TaskOutcome,
@@ -15,6 +17,7 @@ use crate::store::model::digest;
 pub struct PatchError {
     pub code: &'static str,
     pub detail: String,
+    pub undeclared: Option<Box<UndeclaredPaths>>,
 }
 
 impl PatchError {
@@ -22,6 +25,7 @@ impl PatchError {
         Self {
             code,
             detail: detail.into(),
+            undeclared: None,
         }
     }
 }
@@ -46,6 +50,20 @@ pub struct PatchApplication {
     pub disposition: ApplicationDisposition,
     pub transition_id: String,
     pub outcome: PlanOutcome,
+    lease: Option<super::model::ActiveDispatch>,
+}
+
+/// Binary-owned observations, kept separate from the executor patch schema.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UndeclaredPaths {
+    pub schema: u32,
+    pub dispatch_id: String,
+    pub phase: u32,
+    pub plan: u32,
+    pub tasks: BTreeMap<String, String>,
+    pub committed: BTreeMap<String, Vec<String>>,
+    pub staged: Vec<String>,
 }
 
 pub fn parse_executor_patch(value: Value) -> Result<ExecutorPatch, PatchError> {
@@ -92,6 +110,7 @@ pub fn apply_executor_patch(
                 disposition: ApplicationDisposition::Replay,
                 transition_id: receipt.transition_id.clone(),
                 outcome: receipt.outcome.clone(),
+                lease: None,
             });
         }
         if occurrence
@@ -193,6 +212,7 @@ fn apply_to_occurrence(
         disposition: ApplicationDisposition::Applied,
         transition_id,
         outcome,
+        lease: Some(active.clone()),
     })
 }
 
@@ -202,6 +222,7 @@ fn apply_to_occurrence(
 pub fn attach_commit_paths(
     mut application: PatchApplication,
     commit_paths: &BTreeMap<String, Vec<String>>,
+    staged_paths: &[String],
 ) -> Result<PatchApplication, PatchError> {
     let expected = application
         .outcome
@@ -218,14 +239,18 @@ pub fn attach_commit_paths(
             "observed paths must name exactly the completed task commits",
         ));
     }
-    for paths in commit_paths.values() {
+    for paths in commit_paths
+        .values()
+        .map(Vec::as_slice)
+        .chain([staged_paths])
+    {
         if paths.iter().collect::<BTreeSet<_>>().len() != paths.len()
             || paths.windows(2).any(|pair| pair[0] > pair[1])
             || paths.iter().any(|path| !safe_relative_path(path))
         {
             return Err(PatchError::new(
                 "commit-path-set",
-                "observed commit paths must be unique sorted relative paths",
+                "observed committed and staged paths must be unique sorted relative paths",
             ));
         }
     }
@@ -237,6 +262,55 @@ pub fn attach_commit_paths(
             ));
         }
         return Ok(application);
+    }
+
+    let active = application.lease.as_ref().ok_or_else(|| {
+        PatchError::new("missing-lease", "application has no active dispatch lease")
+    })?;
+    let uncovered = |paths: &[String]| {
+        paths
+            .iter()
+            .filter(|path| !covers(&active.files, &active.directories, path))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let committed = commit_paths
+        .iter()
+        .filter_map(|(sha, paths)| {
+            let paths = uncovered(paths);
+            (!paths.is_empty()).then(|| (sha.clone(), paths))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let staged = uncovered(staged_paths);
+    if !committed.is_empty() || !staged.is_empty() {
+        let evidence = UndeclaredPaths {
+            schema: 1,
+            dispatch_id: active.id.clone(),
+            phase: active.phase,
+            plan: active.plan,
+            tasks: application
+                .outcome
+                .tasks
+                .iter()
+                .filter_map(|task| match task {
+                    TaskOutcome::Completed {
+                        task_id, commit, ..
+                    } => Some((task_id.clone(), commit.clone())),
+                    _ => None,
+                })
+                .collect(),
+            committed,
+            staged,
+        };
+        return Err(PatchError {
+            code: "undeclared-files",
+            detail: format!(
+                "paths outside the dispatch lease: {}",
+                serde_json::to_string(&evidence)
+                    .map_err(|error| PatchError::new("lease-encode", error.to_string()))?
+            ),
+            undeclared: Some(Box::new(evidence)),
+        });
     }
 
     application.outcome.commit_paths = commit_paths.clone();

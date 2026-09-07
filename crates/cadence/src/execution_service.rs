@@ -943,7 +943,7 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         };
         (paths, head)
     };
-    let application = match attach_commit_paths(application, &commit_paths) {
+    let application = match attach_commit_paths(application, &commit_paths, &[]) {
         Ok(value) => value,
         Err(error) => {
             return record_refusal(
@@ -1068,6 +1068,7 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
             BoundaryChange::Patch {
                 patch,
                 commit_paths,
+                staged_paths: Vec::new(),
                 render_version: SUMMARY_RENDER_VERSION,
                 complete_phase,
             },

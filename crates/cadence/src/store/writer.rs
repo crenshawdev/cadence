@@ -36,6 +36,8 @@ pub enum BoundaryChange {
     Patch {
         patch: ExecutorPatch,
         commit_paths: BTreeMap<String, Vec<String>>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        staged_paths: Vec<String>,
         render_version: u32,
         complete_phase: bool,
     },
@@ -80,6 +82,7 @@ pub enum Operation {
         operation_id: String,
         patch: ExecutorPatch,
         commit_paths: BTreeMap<String, Vec<String>>,
+        staged_paths: Vec<String>,
         decision: BoundaryDecision,
         render_version: u32,
         complete_phase: bool,
@@ -347,6 +350,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 operation_id,
                 patch,
                 commit_paths,
+                staged_paths,
                 decision,
                 render_version,
                 complete_phase,
@@ -356,6 +360,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 &operation_id,
                 patch,
                 commit_paths,
+                staged_paths,
                 decision,
                 render_version,
                 complete_phase,
@@ -612,6 +617,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             BoundaryChange::Patch {
                 patch,
                 commit_paths,
+                staged_paths,
                 render_version,
                 complete_phase,
             } => {
@@ -634,9 +640,12 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 let application =
                     cadence::execution::patch::apply_executor_patch(&next.snapshot.data, &patch)
                         .map_err(|error| Error::Invalid(error.to_string()))?;
-                let application =
-                    cadence::execution::patch::attach_commit_paths(application, &commit_paths)
-                        .map_err(|error| Error::Invalid(error.to_string()))?;
+                let application = cadence::execution::patch::attach_commit_paths(
+                    application,
+                    &commit_paths,
+                    &staged_paths,
+                )
+                .map_err(|error| Error::Invalid(error.to_string()))?;
                 if application.outcome.phase != phase
                     || application.disposition
                         == cadence::execution::patch::ApplicationDisposition::Replay
@@ -763,6 +772,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         operation_id: &str,
         patch: ExecutorPatch,
         commit_paths: BTreeMap<String, Vec<String>>,
+        staged_paths: Vec<String>,
         decision: BoundaryDecision,
         render_version: u32,
         complete_phase: bool,
@@ -773,14 +783,26 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         {
             return Err(Error::Invalid("invalid execution patch operation".into()));
         }
-        let fingerprint = operation_fingerprint(&(
-            "execution-patch",
-            &patch,
-            &commit_paths,
-            &decision,
-            render_version,
-            complete_phase,
-        ))?;
+        let fingerprint = if staged_paths.is_empty() {
+            operation_fingerprint(&(
+                "execution-patch",
+                &patch,
+                &commit_paths,
+                &decision,
+                render_version,
+                complete_phase,
+            ))?
+        } else {
+            operation_fingerprint(&(
+                "execution-patch-staged-v1",
+                &patch,
+                &commit_paths,
+                &staged_paths,
+                &decision,
+                render_version,
+                complete_phase,
+            ))?
+        };
         if let Some(view) = self.execution_replay(operation_id, &fingerprint, decision.phase)? {
             return Ok(view);
         }
@@ -797,9 +819,12 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let application =
             cadence::execution::patch::apply_executor_patch(&self.view.snapshot.data, &patch)
                 .map_err(|error| Error::Invalid(error.to_string()))?;
-        let application =
-            cadence::execution::patch::attach_commit_paths(application, &commit_paths)
-                .map_err(|error| Error::Invalid(error.to_string()))?;
+        let application = cadence::execution::patch::attach_commit_paths(
+            application,
+            &commit_paths,
+            &staged_paths,
+        )
+        .map_err(|error| Error::Invalid(error.to_string()))?;
         if application.disposition == cadence::execution::patch::ApplicationDisposition::Replay {
             self.revalidate()?;
             return Ok(self.view.clone());
