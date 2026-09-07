@@ -17,6 +17,7 @@ use serde_json::Value;
 use std::{
     num::NonZeroU32,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use cadence::envelope::Envelope;
@@ -257,12 +258,26 @@ impl PublicServer {
     }
 }
 
-fn tool(name: &'static str, description: &'static str, input: Value) -> Tool {
-    Tool::new(
+fn tool<Output: JsonSchema + 'static>(
+    name: &'static str,
+    description: &'static str,
+    input: Value,
+) -> Tool {
+    let mut tool = Tool::new(
         name,
         description,
         input.as_object().expect("derived object schema").clone(),
     )
+    .with_output_schema::<Output>();
+    // MCP hosts require an explicit object root. Tagged enums derive a root
+    // oneOf; keep its variants and constraints intact alongside the root type.
+    for schema in [
+        &mut tool.input_schema,
+        tool.output_schema.as_mut().expect("derived output schema"),
+    ] {
+        Arc::make_mut(schema).insert("type".into(), Value::String("object".into()));
+    }
+    tool
 }
 
 fn execution_result(answer: execution_service::Answer) -> Result<CallToolResponse, ErrorData> {
@@ -290,26 +305,23 @@ impl ServerHandler for PublicServer {
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
             tools: vec![
-                tool(
+                tool::<Envelope<VersionReport>>(
                     "cadence_version",
                     "Report this binary's version, OS and architecture without changing state.",
                     serde_json::to_value(schemars::schema_for!(VersionArguments))
                         .expect("version schema"),
-                )
-                .with_output_schema::<Envelope<VersionReport>>(),
-                tool(
+                ),
+                tool::<ExecutionEnvelope>(
                     "cadence_query",
                     "Ask for the next native execution dispatch in the bound project.",
                     serde_json::to_value(schemars::schema_for!(QueryArguments))
                         .expect("query schema"),
-                )
-                .with_output_schema::<ExecutionEnvelope>(),
-                tool(
+                ),
+                tool::<ExecutionEnvelope>(
                     "cadence_apply",
                     "Submit the executor patch for the bound project's active dispatch.",
                     patch_schema(),
-                )
-                .with_output_schema::<ExecutionEnvelope>(),
+                ),
             ],
             ..Default::default()
         })

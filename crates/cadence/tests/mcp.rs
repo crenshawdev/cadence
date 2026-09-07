@@ -206,6 +206,34 @@ fn tool_schemas_list_exactly_three_tools_with_output_schemas() {
 }
 
 #[test]
+fn tool_schemas_all_inputs_and_outputs_have_object_roots() {
+    let mut client = Client::spawn();
+    client.handshake();
+    let response = client.tools_list(2);
+    assert!(client.finish().success());
+    let tools = response["result"]["tools"]
+        .as_array()
+        .unwrap_or_else(|| panic!("result.tools is an array; response: {response}"));
+    assert!(
+        !tools.is_empty(),
+        "no advertised tools; response: {response}"
+    );
+    for tool in tools {
+        for field in ["inputSchema", "outputSchema"] {
+            let schema = tool
+                .get(field)
+                .unwrap_or_else(|| panic!("{} is missing {field}", tool["name"]));
+            assert_eq!(
+                schema.get("type"),
+                Some(&json!("object")),
+                "{}.{field} must have root type object; schema: {schema}",
+                tool["name"]
+            );
+        }
+    }
+}
+
+#[test]
 fn cadence_version_returns_an_ok_envelope_as_structured_content() {
     let mut client = Client::spawn();
     client.handshake();
