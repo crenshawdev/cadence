@@ -2,6 +2,7 @@ use super::{
     CadenceServer,
     derivation_service::{Driver, Event},
     evidence_service::Command,
+    pause_service::Response,
 };
 use crate::import::SessionFactory;
 use cadence::{
@@ -769,6 +770,196 @@ async fn instruction(server: &CadenceServer, root: &Path) -> String {
         .unwrap()
         .unwrap()
         .instruction()
+}
+
+#[test]
+fn committed_pause_is_selected_exactly_and_requires_scoped_acceptance() {
+    runtime().block_on(async {
+        for end in ["fulfilled", "superseded"] {
+            let temp = super::pause_service_tests::risk_fixture("off", None).await;
+            let project = temp.path();
+            let root = project.join(".planning");
+            let request = super::pause_service_tests::input(project, end);
+            let pause_server = CadenceServer::with_factory(factory());
+            let Response::Ready(capture) = pause_server.pause(request.clone()).await.unwrap()
+            else {
+                panic!("pause must commit before selection");
+            };
+            assert_eq!(capture.phase.identity, "1");
+            assert_eq!(capture.sentence, "verify the fix on the device");
+            drop(pause_server);
+
+            let reader = CadenceServer::with_factory(factory());
+            let selected = reader.next_action(&root).await.unwrap().unwrap();
+            assert!(matches!(selected, cadence::next_action::Action::Resume(_)));
+            assert_eq!(selected.instruction(), "verify the fix on the device");
+            assert_eq!(
+                super::next_action_service::continuation(
+                    &factory(),
+                    &root,
+                    &request.scope,
+                    &Driver::default(),
+                )
+                .await
+                .unwrap()
+                .decision,
+                Decision::AwaitAcceptance
+            );
+
+            let gate = progress_gate();
+            submit(
+                &reader,
+                &root,
+                "pause-acceptance-question",
+                Record {
+                    version: evidence::VERSION,
+                    scope: request.scope.clone(),
+                    fact: Fact::Gate(gate.clone()),
+                },
+            )
+            .await;
+            assert_eq!(
+                super::next_action_service::continuation(
+                    &factory(),
+                    &root,
+                    &request.scope,
+                    &Driver::default(),
+                )
+                .await
+                .unwrap()
+                .decision,
+                Decision::Wait(gate.clone())
+            );
+            let answer = answered(gate, gates::Disposition::Approve);
+            submit(
+                &reader,
+                &root,
+                "pause-acceptance-answer",
+                Record {
+                    version: evidence::VERSION,
+                    scope: request.scope.clone(),
+                    fact: Fact::Gate(answer.clone()),
+                },
+            )
+            .await;
+            assert!(matches!(
+                super::next_action_service::continuation(
+                    &factory(),
+                    &root,
+                    &request.scope,
+                    &Driver::default(),
+                )
+                .await
+                .unwrap()
+                .decision,
+                Decision::Continue {
+                    answer: Some(_),
+                    override_id: None,
+                    ..
+                }
+            ));
+
+            let occurrence = if end == "fulfilled" {
+                Occurrence::Fulfilled {
+                    completion: "device verification completed".into(),
+                }
+            } else {
+                Occurrence::Superseded {
+                    by: "replacement-work".into(),
+                }
+            };
+            submit(
+                &reader,
+                &root,
+                "pause-occurrence-end",
+                Record {
+                    version: evidence::VERSION,
+                    scope: request.scope.clone(),
+                    fact: Fact::Occurrence(occurrence.clone()),
+                },
+            )
+            .await;
+            assert_eq!(instruction(&reader, &root).await, "/cad-execute 1");
+            assert_eq!(
+                super::next_action_service::continuation(
+                    &factory(),
+                    &root,
+                    &request.scope,
+                    &Driver::default(),
+                )
+                .await
+                .unwrap()
+                .decision,
+                Decision::Ended(occurrence)
+            );
+            let recovery = reader.evidence(&root, Command::Read).await.unwrap();
+            assert!(recovery.history.iter().any(|record| {
+                record.scope == request.scope
+                    && matches!(&record.fact, Fact::Override(value)
+                        if value.id == "pause-resume"
+                        && matches!(&value.meaning, Meaning::PausedNext { sentence }
+                            if sentence == "verify the fix on the device"))
+            }));
+        }
+    });
+}
+
+#[test]
+fn stale_native_and_retained_legacy_pauses_remain_context_only() {
+    runtime().block_on(async {
+        let native = super::pause_service_tests::risk_fixture("off", None).await;
+        let mut request = super::pause_service_tests::input(native.path(), "stale-native");
+        request.scope.phase = "2".into();
+        let phase = request.phase.as_mut().unwrap();
+        phase.identity = "2".into();
+        phase.name = "Later work".into();
+        phase.provenance = "recorded later task".into();
+        let server = CadenceServer::with_factory(factory());
+        assert!(matches!(
+            server.pause(request.clone()).await.unwrap(),
+            Response::Ready(_)
+        ));
+        assert_eq!(instruction(&server, &native.path().join(".planning")).await, "/cad-execute 1");
+        assert!(server
+            .evidence(&native.path().join(".planning"), Command::Read)
+            .await
+            .unwrap()
+            .current
+            .iter()
+            .any(|record| record.scope == request.scope
+                && matches!(&record.fact, Fact::Override(value)
+                    if matches!(&value.meaning, Meaning::PausedNext { sentence }
+                        if sentence == "verify the fix on the device"))));
+
+        for phase in ["1", "2"] {
+            let legacy = fixture(&[LifecycleStatus::Planned]);
+            let root = legacy.path().join(".planning");
+            fs::write(
+                root.join("STATE.md"),
+                format!(
+                    "Phase: {phase} of 2 (Legacy work)\nStatus: paused\nNext: legacy exact action\nUpdated: 2026-09-06\n"
+                ),
+            )
+            .unwrap();
+            let server = CadenceServer::with_factory(factory());
+            assert_eq!(
+                instruction(&server, &root).await,
+                if phase == "1" {
+                    "legacy exact action"
+                } else {
+                    "/cad-execute 1"
+                }
+            );
+            let recovery = server.evidence(&root, Command::Read).await.unwrap();
+            assert!(!recovery.current.iter().any(|record| matches!(
+                &record.fact,
+                Fact::Override(value) if matches!(value.meaning, Meaning::PausedNext { .. })
+            )));
+            let view = server.store(&root, Operation::Read).await.unwrap();
+            assert_eq!(view.snapshot.data["cursor"]["next"], "legacy exact action");
+            assert_eq!(view.snapshot.data["derivation"]["intake"]["retired"], true);
+        }
+    });
 }
 
 #[test]

@@ -94,7 +94,7 @@ async fn configured_fixture(config: Value) -> tempfile::TempDir {
     git_config(temp.path(), &["commit", "-m", "imported fixture"]);
     temp
 }
-async fn risk_fixture(consequence: &str, surfaces: Option<Value>) -> tempfile::TempDir {
+pub(super) async fn risk_fixture(consequence: &str, surfaces: Option<Value>) -> tempfile::TempDir {
     let mut risk = json!({"gate":consequence});
     if let Some(surfaces) = surfaces {
         risk["surfaces"] = surfaces;
@@ -105,7 +105,7 @@ async fn risk_fixture(consequence: &str, surfaces: Option<Value>) -> tempfile::T
     }))
     .await
 }
-fn input(project: &Path, occurrence: &str) -> Input {
+pub(super) fn input(project: &Path, occurrence: &str) -> Input {
     Input {
         scope: Scope {
             project: project.to_str().unwrap().into(),
