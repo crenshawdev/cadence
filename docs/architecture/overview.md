@@ -104,3 +104,17 @@ binary reads it rather than trusting anyone's report.
 
 The dotted line is the one piece that decides without being asked: `git-guard`
 sits in front of a subagent's own git commands and answers allow or deny.
+
+## The pieces in detail
+
+One document per subsystem, written after its code existed rather than before.
+A box on the picture above with no document below it is not yet built.
+
+- [The MCP boundary](boundary.md) — the three tools, where validation actually
+  happens, the envelope vocabulary, and the two host constraints every
+  advertised schema has to satisfy
+- [The store](store.md) — single writer, transactional, crash recovery
+- [Derivation](derivation.md) — phase state computed from disk rather than stored
+- [Recall](recall.md) — ranking live prose and git history in one corpus
+- [Config and import](config-import.md) — the two-layer effective config and
+  first-touch import
