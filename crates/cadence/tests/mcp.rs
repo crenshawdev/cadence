@@ -26,7 +26,12 @@ impl Client {
     }
 
     fn spawn_with_args(args: &[&str]) -> Self {
+        Self::spawn_in(args, Path::new(env!("CARGO_MANIFEST_DIR")))
+    }
+
+    fn spawn_in(args: &[&str], cwd: &Path) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_cadence"))
+            .current_dir(cwd)
             .args(args)
             .env("CADENCE_GLOBAL_CONFIG", "")
             .stdin(Stdio::piped())
@@ -1090,4 +1095,227 @@ fn skill_contract_matches_wire_patch_and_direct_tool_permissions() {
             );
         }
     }
+}
+
+#[test]
+fn execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans() {
+    let fixture = Fixture::new(&[&["T1", "T2"], &["T3", "T4"]]);
+    let mut first_child = fixture.client();
+    let first_pid = first_child.child.id();
+    let first = fixture.query(&mut first_child);
+    assert_eq!(first["status"], "ok");
+    assert_eq!(first["outcome"], "dispatch");
+    assert_eq!(first["dispatch"]["plan"], 1);
+    assert_eq!(first["dispatch"]["files"], json!(["src/shared.txt"]));
+    assert_eq!(
+        first["dispatch"]["policy"],
+        json!({"rung":"fixed","branch":"current","reviews":"disabled"})
+    );
+    let original_bytes = serde_json::to_vec(&first).unwrap();
+    // Independently authored request: no ExecutorPatch or expected response type.
+    let missing_task = json!({"schema":1,"kind":"executor","dispatch_id":first["dispatch"]["id"],
+        "expected_execution_version":first["dispatch"]["expected_execution_version"],"outcome":"blocked",
+        "tasks":[{"status":"blocked","task_id":"T1","blocker_id":"B1"}],"deviations":[],
+        "blockers":[{"id":"B1","text":"Fixture stop","evidence":[{"kind":"criterion","id":"AC6"}]}]});
+    fixture.refuse(&mut first_child, missing_task.clone(), "task-set");
+    let mut foreign_state = missing_task.clone();
+    foreign_state["state"] = json!({"complete":true});
+    fixture.refuse(&mut first_child, foreign_state, "invalid-patch");
+    let mut wrong_dispatch = missing_task;
+    wrong_dispatch["dispatch_id"] = json!("another-dispatch");
+    fixture.refuse(&mut first_child, wrong_dispatch, "foreign-dispatch");
+    assert_eq!(
+        serde_json::to_vec(&fixture.query(&mut first_child)).unwrap(),
+        original_bytes
+    );
+    assert!(first_child.finish().success());
+
+    let mut second_child = fixture.client();
+    let second_pid = second_child.child.id();
+    assert_ne!(first_pid, second_pid);
+    assert_eq!(
+        serde_json::to_vec(&fixture.query(&mut second_child)).unwrap(),
+        original_bytes
+    );
+    let first_patch = fixture.complete_patch(&first["dispatch"]);
+    let next = fixture.call(&mut second_child, "cadence_apply", first_patch.clone());
+    assert_eq!(
+        next,
+        json!({"status":"ok","outcome":"next-plan","phase":6,"plan":2})
+    );
+    let first_summary = fs::read(fixture.root().join(".planning/phases/6/SUMMARY.md")).unwrap();
+    assert!(String::from_utf8_lossy(&first_summary).contains("Status: executing"));
+    assert!(second_child.finish().success());
+
+    let mut third_child = fixture.client();
+    let third_pid = third_child.child.id();
+    assert_ne!(third_pid, first_pid);
+    assert_ne!(third_pid, second_pid);
+    let second = fixture.query(&mut third_child);
+    assert_eq!(second["outcome"], "dispatch");
+    assert_eq!(second["dispatch"]["plan"], 2);
+    assert_eq!(second["dispatch"]["files"], first["dispatch"]["files"]);
+    assert_eq!(
+        second["dispatch"]["base_sha"],
+        first_patch["tasks"][1]["commit"]
+    );
+    assert_ne!(second["dispatch"]["id"], first["dispatch"]["id"]);
+    assert!(
+        second["dispatch"]["expected_execution_version"]
+            .as_u64()
+            .unwrap()
+            > first["dispatch"]["expected_execution_version"]
+                .as_u64()
+                .unwrap()
+    );
+    fixture.refuse(
+        &mut third_child,
+        json!({"dispatch_id":second["dispatch"]["id"],"state":{}}),
+        "invalid-patch",
+    );
+    assert_eq!(
+        fs::read(fixture.root().join(".planning/phases/6/SUMMARY.md")).unwrap(),
+        first_summary
+    );
+    assert_eq!(fixture.query(&mut third_child), second);
+    let second_patch = fixture.complete_patch(&second["dispatch"]);
+    let complete = fixture.call(&mut third_child, "cadence_apply", second_patch.clone());
+    assert_eq!(
+        complete,
+        json!({"status":"ok","outcome":"complete","phase":6})
+    );
+    assert_eq!(fixture.query(&mut third_child), complete);
+    assert!(third_child.finish().success());
+
+    let mut fourth_child = fixture.client();
+    assert!(![first_pid, second_pid, third_pid].contains(&fourth_child.child.id()));
+    assert_eq!(fixture.query(&mut fourth_child), complete);
+    assert!(fourth_child.finish().success());
+
+    let commits = first_patch["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(second_patch["tasks"].as_array().unwrap())
+        .map(|row| row["commit"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(commits.iter().collect::<BTreeSet<_>>().len(), 4);
+    let base = first["dispatch"]["base_sha"].as_str().unwrap();
+    assert_eq!(
+        git(
+            fixture.root(),
+            &["rev-list", "--reverse", &format!("{base}..HEAD")]
+        )
+        .lines()
+        .collect::<Vec<_>>(),
+        commits
+    );
+    let mut previous = base;
+    for (index, sha) in commits.iter().enumerate() {
+        let object = git(fixture.root(), &["cat-file", "-p", sha]);
+        assert!(object.contains("gpgsig -----BEGIN PGP SIGNATURE-----"));
+        assert!(object.contains(&format!("parent {previous}\n")));
+        assert!(object.contains("author John Crenshaw <john@jcrenshaw.dev>"));
+        let task_id = format!("T{}", index + 1);
+        assert!(object.ends_with(&format!("feat(6): complete {task_id}")));
+        git(fixture.root(), &["verify-commit", sha]);
+        assert_eq!(
+            git(fixture.root(), &["show", "-s", "--format=%G? %GK", sha]),
+            "G 693AB15F91734B0C"
+        );
+        git(
+            fixture.root(),
+            &["merge-base", "--is-ancestor", previous, sha],
+        );
+        assert_eq!(
+            git(
+                fixture.root(),
+                &["diff-tree", "--no-commit-id", "--name-only", "-r", sha]
+            ),
+            "src/shared.txt"
+        );
+        previous = sha;
+    }
+    let summary = fs::read_to_string(fixture.root().join(".planning/phases/6/SUMMARY.md")).unwrap();
+    assert!(summary.contains("Status: complete"));
+    let rows = summary
+        .lines()
+        .filter(|line| line.contains(" | completed | "))
+        .map(|line| line.split('|').map(str::trim).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 4);
+    for (index, row) in rows.iter().enumerate() {
+        assert_eq!(row[1], (index / 2 + 1).to_string());
+        assert_eq!(row[2], format!("T{}", index + 1));
+        assert_eq!(row[4], commits[index]);
+        assert_eq!(row[5], "passed");
+    }
+    let summary_shas = summary
+        .split(|c: char| !c.is_ascii_hexdigit())
+        .filter(|token| token.len() == 40)
+        .collect::<Vec<_>>();
+    assert_eq!(summary_shas, commits);
+    let view = fixture.read();
+    assert_eq!(
+        view.snapshot.data["execution"]["occurrences"]["6"]["plans"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn execute_restart_root_binding_and_version_remain_isolated() {
+    let fixture = Fixture::new(&[&["T1"]]);
+    let other = Fixture::new(&[&["T1"]]);
+    let other_before = other.read().snapshot;
+    let alias_temp = tempfile::tempdir().unwrap();
+    let alias = alias_temp.path().join("project-link");
+    std::os::unix::fs::symlink(fixture.root(), &alias).unwrap();
+    let mut explicit = isolated_client(&alias);
+    explicit.handshake();
+    let before = fixture.read().snapshot;
+    assert_eq!(
+        envelope(&explicit.tools_call(35, "cadence_version", json!({})))["status"],
+        "ok"
+    );
+    assert_eq!(
+        envelope(&missing_call(&mut explicit, "cadence_version"))["status"],
+        "refused"
+    );
+    assert_eq!(fixture.read().snapshot, before);
+    let rejected = fixture.call(
+        &mut explicit,
+        "cadence_query",
+        json!({"operation":"execute-next","phase":6,"project_root":other.root()}),
+    );
+    assert_eq!(rejected["status"], "refused");
+    assert_eq!(other.read().snapshot, other_before);
+    let first = fixture.query(&mut explicit);
+    let pid = explicit.child.id();
+    assert!(explicit.finish().success());
+    let mut discovered = Client::spawn_in(&["serve"], fixture.root());
+    discovered.handshake();
+    assert_ne!(discovered.child.id(), pid);
+    assert_eq!(fixture.query(&mut discovered), first);
+    assert!(discovered.finish().success());
+}
+
+// Phase 5's executable inventory retains this registration name. The version
+// entry remains unique; tool_schemas owns the complete three-tool inventory.
+#[test]
+fn tools_list_declares_exactly_cadence_version_with_an_output_schema() {
+    let mut client = Client::spawn();
+    client.handshake();
+    let response = client.tools_list(2);
+    let versions = response["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|tool| tool["name"] == "cadence_version")
+        .collect::<Vec<_>>();
+    assert_eq!(versions.len(), 1);
+    assert!(versions[0]["outputSchema"].is_object());
+    assert!(client.finish().success());
 }
