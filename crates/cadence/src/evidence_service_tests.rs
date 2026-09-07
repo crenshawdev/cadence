@@ -781,3 +781,316 @@ fn legacy_evidence_is_readable_without_native_acceptance() {
         );
     });
 }
+
+use std::{
+    io::{BufRead, BufReader, Write},
+    process::{Command as ProcessCommand, Stdio},
+    time::Duration,
+};
+fn process_fixture() -> tempfile::TempDir {
+    let root = fixture();
+    std::fs::create_dir_all(root.path().join("phases/5")).unwrap();
+    std::fs::write(root.path().join("phases/5/PLAN-1.md"), "# Evidence plan\n").unwrap();
+    std::fs::write(root.path().join("ROADMAP.md"), "## Phases\n- [x] **Phase 1: One**\n- [x] **Phase 2: Two**\n- [x] **Phase 3: Three**\n- [x] **Phase 4: Four**\n- [ ] **Phase 5: Evidence**\n").unwrap();
+    std::fs::write(root.path().join("STATE.md"), "Phase: 5 of 5 (Evidence)\nStatus: planned\nNext:  exact imported next\nUpdated: 2026-09-06\n").unwrap();
+    for phase in 1..5 {
+        let directory = root.path().join(format!("phases/{phase}"));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("SUMMARY.md"), "completed work").unwrap();
+        std::fs::write(directory.join("UAT.md"), "### 1. Done\nstatus: pass\n").unwrap();
+    }
+    root
+}
+fn process_barrier() {
+    println!("EVIDENCE_BARRIER");
+    std::io::stdout().flush().unwrap();
+    loop {
+        std::thread::park();
+    }
+}
+
+#[test]
+fn evidence_process_child() {
+    let Ok(root) = std::env::var("CADENCE_EVIDENCE_CHILD_ROOT") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    let mode = std::env::var("CADENCE_EVIDENCE_CHILD_MODE").unwrap();
+    runtime().block_on(async {
+        // The fresh reader consumes only the address, never producer payloads.
+        if mode == "read" || mode == "retry" {
+            let server = CadenceServer::with_factory(factory());
+            let initial = server.evidence(&root,Command::Read).await.unwrap();
+            let recovered = if mode == "retry" {
+                submit(&server,&root,"death-checkpoint",checkpoint(&root)).await.unwrap()
+            } else { initial.clone() };
+            let before_lifecycle = server.store(&root,Operation::ReadVerified).await.unwrap();
+            server.lifecycle(&root).await.unwrap();
+            let after = server.store(&root,Operation::ReadVerified).await.unwrap();
+            assert_eq!(before_lifecycle,after,"evidence must not invalidate or rewrite the lifecycle memo");
+            println!("EVIDENCE_RESULT {}",json!({"pid":std::process::id(),"initial":initial,"recovery":recovered,"data":after.snapshot.data,"generation":after.snapshot.generation,"operations":after.snapshot.operations}));
+            return;
+        }
+        let armed = Arc::new(AtomicBool::new(false)); let probe_armed = armed.clone();
+        let f = factory().with_probe(Arc::new(move |stage,path| {
+            if stage == Stage::Confirmation && path.ends_with("state.json") && probe_armed.load(Ordering::SeqCst) { process_barrier(); }
+            Ok(())
+        }));
+        let server = CadenceServer::with_factory(f);
+        server.lifecycle(&root).await.unwrap();
+        let before = server.store(&root,Operation::ReadVerified).await.unwrap();
+        let mut data = before.snapshot.data.clone(); data["arbitrary"] = json!(["keep exact",null,17]);
+        let baseline = server.store(&root,Operation::CompareRewriteSnapshot { expected_generation: before.snapshot.generation, expected_integrity: before.snapshot.integrity, data }).await.unwrap();
+        println!("EVIDENCE_BASELINE {}",json!({"pid":std::process::id(),"data":baseline.snapshot.data}));
+        std::io::stdout().flush().unwrap();
+        if mode == "never-recorded" { process_barrier(); }
+        if mode == "lost-reply" { armed.store(true,Ordering::SeqCst); }
+        if mode == "facts" {
+            for (id,raw,findings) in [
+                ("pass","## VERIFICATION PASSED",vec![]),
+                ("warnings","## ISSUES FOUND",vec![finding(1,Severity::Warning)]),
+                ("blockers","## ISSUES FOUND",vec![finding(1,Severity::Blocker)]),
+                ("mixed","## ISSUES FOUND",vec![finding(1,Severity::Warning),finding(2,Severity::Blocker)]),
+                ("unusable","  no marked return\n",vec![]),
+            ] { submit(&server,&root,id,checker(&root,id,raw,findings)).await.unwrap(); }
+            let mut revised = checker(&root,"revision","## VERIFICATION PASSED",vec![]);
+            let Fact::Checker(check) = &mut revised.fact else { panic!("checker") };
+            check.attempt = Attempt::Revision { previous_check: "mixed".into(), previous_blockers: vec![finding(2,Severity::Blocker)], diff: "-old\n+new\n".into() };
+            check.revision_spent = true;
+            check.checked_material[0].content_digest = cadence::store::model::digest(b"revised material");
+            submit(&server,&root,"revision",revised).await.unwrap();
+            let question = gate(&root,"answered",Purpose::Structural);
+            submit(&server,&root,"question",question.clone()).await.unwrap();
+            submit(&server,&root,"answer",answered(question,GateDisposition::Adjust)).await.unwrap();
+            submit(&server,&root,"unanswered",gate(&root,"unanswered",Purpose::Progress)).await.unwrap();
+        } else {
+            submit(&server,&root,"death-checkpoint",checkpoint(&root)).await.unwrap();
+        }
+        println!("EVIDENCE_ACK"); process_barrier();
+    });
+}
+
+fn process_command(root: &Path, mode: &str) -> ProcessCommand {
+    let mut command = ProcessCommand::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "server::evidence_service_tests::evidence_process_child",
+            "--nocapture",
+        ])
+        .env("CADENCE_EVIDENCE_CHILD_ROOT", root)
+        .env("CADENCE_EVIDENCE_CHILD_MODE", mode)
+        .stdin(Stdio::null());
+    command
+}
+fn killed_writer(root: &Path, mode: &str) -> serde_json::Value {
+    let mut child = process_command(root, mode)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let child_pid = child.id();
+    let stdout = child.stdout.take().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        let mut lines = Vec::new();
+        for line in BufReader::new(stdout).lines() {
+            let line = line.unwrap();
+            let barrier = line == "EVIDENCE_BARRIER";
+            lines.push(line);
+            if barrier {
+                let _ = sender.send(lines.clone());
+            }
+        }
+    });
+    let reached = receiver.recv_timeout(Duration::from_secs(10));
+    child.kill().unwrap();
+    let status = child.wait().unwrap();
+    reader.join().unwrap();
+    let lines = reached.expect("production evidence child must reach its barrier");
+    use std::os::unix::process::ExitStatusExt;
+    assert_eq!(status.signal(), Some(libc::SIGKILL));
+    assert_eq!(
+        lines.iter().any(|line| line == "EVIDENCE_ACK"),
+        matches!(mode, "checkpoint" | "facts")
+    );
+    let baseline: serde_json::Value = serde_json::from_str(
+        lines
+            .iter()
+            .find_map(|line| line.strip_prefix("EVIDENCE_BASELINE "))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(baseline["pid"], child_pid);
+    baseline
+}
+fn fresh_reader(root: &Path, mode: &str) -> serde_json::Value {
+    let output = process_command(root, mode).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_str(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .find_map(|line| line.strip_prefix("EVIDENCE_RESULT "))
+            .unwrap(),
+    )
+    .unwrap()
+}
+fn preserved_process_data(baseline: &serde_json::Value, read: &serde_json::Value) {
+    assert_ne!(baseline["pid"], read["pid"]);
+    for (key, value) in baseline["data"].as_object().unwrap() {
+        assert_eq!(&read["data"][key], value, "preserve {key}");
+    }
+    assert!(read["data"]["derivation"]["memo"].is_object());
+    assert!(read["data"]["import"].is_object());
+    assert!(
+        !read["data"]["source_evidence"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn ac1_checkpoint_survives_real_kill_and_address_only_fresh_reader() {
+    let root = process_fixture();
+    let baseline = killed_writer(root.path(), "checkpoint");
+    let read = fresh_reader(root.path(), "read");
+    preserved_process_data(&baseline, &read);
+    let recovery: Recovery = serde_json::from_value(read["recovery"].clone()).unwrap();
+    assert_eq!(recovery.current.len(), 1);
+    assert_eq!(recovery.history, recovery.current);
+    let Fact::Checkpoint(cp) = &recovery.current[0].fact else {
+        panic!("checkpoint")
+    };
+    assert_eq!(cp.checkpoint_type, CheckpointType::Structural);
+    assert_eq!(cp.task_number, 3);
+    assert_eq!(cp.task_name, "  tâche 日本語\t");
+    assert_eq!(
+        cp.need.as_bytes(),
+        b"\n  Keep this Need exactly.\r\n\t\xc2\xbfAjustar?  \n"
+    );
+    assert_eq!(cp.state, State::Unresolved);
+    assert_eq!(recovery.current[0].scope, checkpoint(root.path()).scope);
+}
+
+#[test]
+fn ac2_ac3_checker_and_gate_facts_survive_process_death() {
+    let root = process_fixture();
+    let baseline = killed_writer(root.path(), "facts");
+    let read = fresh_reader(root.path(), "read");
+    preserved_process_data(&baseline, &read);
+    let recovery: Recovery = serde_json::from_value(read["recovery"].clone()).unwrap();
+    assert_eq!(recovery.current.len(), 8);
+    assert_eq!(recovery.history.len(), 9);
+    for (id, raw, findings, disposition) in [
+        (
+            "pass",
+            "## VERIFICATION PASSED",
+            vec![],
+            CheckDisposition::Pass,
+        ),
+        (
+            "warnings",
+            "## ISSUES FOUND",
+            vec![finding(1, Severity::Warning)],
+            CheckDisposition::Pass,
+        ),
+        (
+            "blockers",
+            "## ISSUES FOUND",
+            vec![finding(1, Severity::Blocker)],
+            CheckDisposition::Fail,
+        ),
+        (
+            "mixed",
+            "## ISSUES FOUND",
+            vec![finding(1, Severity::Warning), finding(2, Severity::Blocker)],
+            CheckDisposition::Fail,
+        ),
+        (
+            "unusable",
+            "  no marked return\n",
+            vec![],
+            CheckDisposition::Unusable,
+        ),
+    ] {
+        let value = checker(root.path(), id, raw, findings);
+        assert!(recovery.current.contains(&value));
+        let Fact::Checker(check) = &value.fact else {
+            panic!("checker")
+        };
+        assert_eq!(check.disposition, disposition);
+    }
+    let revised = recovery
+        .current
+        .iter()
+        .find_map(|r| match &r.fact {
+            Fact::Checker(check) if check.id == "revision" => Some(check),
+            _ => None,
+        })
+        .unwrap();
+    assert!(revised.revision_spent);
+    assert_eq!(revised.disposition, CheckDisposition::Pass);
+    assert_eq!(
+        revised.attempt,
+        Attempt::Revision {
+            previous_check: "mixed".into(),
+            previous_blockers: vec![finding(2, Severity::Blocker)],
+            diff: "-old\n+new\n".into()
+        }
+    );
+    assert_eq!(
+        revised.checked_material[0].content_digest,
+        cadence::store::model::digest(b"revised material")
+    );
+    assert!(recovery.current.contains(&answered(
+        gate(root.path(), "answered", Purpose::Structural),
+        GateDisposition::Adjust
+    )));
+    assert!(
+        recovery
+            .current
+            .contains(&gate(root.path(), "unanswered", Purpose::Progress))
+    );
+    assert!(
+        recovery
+            .history
+            .contains(&gate(root.path(), "answered", Purpose::Structural))
+    );
+}
+
+#[test]
+fn admitted_lost_reply_retries_once_but_unrecorded_input_stays_absent() {
+    for (mode, recorded_before_retry) in [("lost-reply", 1), ("never-recorded", 0)] {
+        let root = process_fixture();
+        let baseline = killed_writer(root.path(), mode);
+        let read = fresh_reader(root.path(), "read");
+        preserved_process_data(&baseline, &read);
+        assert_eq!(
+            read["recovery"]["history"].as_array().unwrap().len(),
+            recorded_before_retry
+        );
+        let replay = fresh_reader(root.path(), "retry");
+        preserved_process_data(&baseline, &replay);
+        assert_eq!(
+            replay["initial"]["history"].as_array().unwrap().len(),
+            recorded_before_retry
+        );
+        assert_eq!(replay["recovery"]["history"].as_array().unwrap().len(), 1);
+        if recorded_before_retry == 1 {
+            assert_eq!(read["generation"], replay["generation"]);
+        } else {
+            assert!(read["generation"].as_u64().unwrap() < replay["generation"].as_u64().unwrap());
+        }
+        let twice = fresh_reader(root.path(), "retry");
+        assert_eq!(twice["recovery"], replay["recovery"]);
+        assert_eq!(twice["generation"], replay["generation"]);
+        assert_eq!(twice["operations"], replay["operations"]);
+    }
+}
