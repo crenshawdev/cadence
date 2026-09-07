@@ -284,6 +284,40 @@ PLAN-1 -> PLAN-2. There is no parallel plan pair.
   with a real migration obligation. If wrong: a future format change inherits
   this exemption by precedent rather than by argument.
 
+- D-28 (Recovery proves CONTENT, not file identity): Crash recovery admits a
+  pending participant when its bytes equal the intended bytes and its DIRECTORY
+  ancestry is unchanged. It does not compare installed-file identity, and it is
+  not going to. Unexpected bytes, changed directory ancestry and unknown or
+  tampered intent formats still refuse before recovery writes. Ruled by John,
+  2026-09-07, on PLAN-3's task 3 checkpoint.
+  **Why the criterion was contradictory:** PLAN-3 V5 asked that changed file
+  identities refuse while old pending intents still finish with old bytes. Those
+  cannot both hold. A `Participant` carries target, pre-write observation and
+  intended bytes and nothing else (`crates/cadence/src/store/transaction.rs:60`),
+  so an already-written old intent has no installed identity to compare against.
+  The acceptance test is bytes plus directory identity
+  (`crates/cadence/src/store/transaction.rs:225-227`), and that is exactly what
+  lets recovery recognise the writer's OWN completed rename. Removing it would
+  break the writer, not an attacker.
+  **What we are accepting, stated plainly rather than left implied:** an external
+  replacement inode holding identical bytes is admitted. Proven with a real
+  process, not by reading - kill the writer at the rename barrier, replace the
+  installed file with identical bytes in a different inode, run a reader;
+  recovery accepted it and wrote state. The outcome is the intended state, byte
+  for byte, so nothing downstream differs.
+  **Why that is acceptable here:** the store defends against crashes and races,
+  which it does. It is not a defence against a local attacker with write access
+  to `.planning/`, and it never was - such an attacker can write whatever they
+  like after recovery finishes. 4.0 also dropped cross-session concurrency by
+  decision, so the concurrent-writer case is out of scope by construction.
+  **What would reopen this:** a threat model where `.planning/` is writable by
+  something the operator does not trust. That needs a persisted prepared-identity
+  protocol surviving repeated recovery, a widened lease over
+  `crates/cadence/src/store/mod.rs` and `crates/cadence/src/store/filesystem.rs`,
+  and its own phase. It is out of scope by a named reason, not by oversight.
+  If wrong: a future reader treats content equivalence as an identity guarantee
+  and builds a security claim on top of it.
+
 ## Acceptance criteria
 
 - [ ] AC1: `tools/list` returns exactly `cadence_version`, `cadence_query` and
