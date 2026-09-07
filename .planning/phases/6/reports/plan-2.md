@@ -699,3 +699,176 @@ Closing audit recheck ACTUAL: every stated check passed, exit 0. The full
 prior report is retained, the full prior blocked UAT is preserved verbatim,
 only the report is modified/unstaged, and no untracked repository artifact
 exists. No push was performed. Final status remains CHECKPOINT: blocked.
+
+
+## Task 8 continuation from 2756546e - host-listed input schemas
+
+PLAN PARTIAL. Scope: Task 8 only; Tasks 5 and 6 are not executed.
+Starting HEAD: `2756546e63af23bbbbac3ddf9746a2a0bb0220eb`; branch
+`cadence/binary-owns-process`; initial worktree clean. Installed 3.7.12 executor
+contract applies with the explicit append-only report, final digest and D-29
+overrides. This existing report is appended, not rotated or committed.
+Evidence fixture: `/tmp/cadence-task8-3n0oqvpj`.
+
+PREDICTION before V8: the MCP integration command returns 15 passed, 0 failed,
+0 ignored, 0 filtered, exit 0. Every pre-existing schema, discriminator and
+refusal assertion remains unchanged; Task 7's general object-root test remains.
+The new general test rejects top-level oneOf/anyOf/allOf and requires properties
+for every returned input schema. Temporarily restoring the query union root
+will produce 0 passed, 1 failed, 14 filtered, exit 101, with
+`"cadence_query".inputSchema must not use top-level oneOf`; restoring the fix
+will make the named test pass (1 passed, 14 filtered, exit 0).
+The wire probe will list exactly three tools with root type object and
+properties, no top-level union, and query's required operation and phase.
+Claude Code 2.1.263, run noninteractively with explicit MCP and strict MCP
+configuration, will expose exactly three Cadence tools in its own init output,
+including cadence_query, without a skip message. A third host restriction
+will stop the task with the host's message.
+
+Implementation: promote the sole derived QueryArguments variant to the
+advertised root, retaining generated operation const, phase bounds, required
+fields and additionalProperties:false. Empty version input gains properties:{}
+at shared tool construction. Runtime deserialization, raw dispatch and executor
+patch schema are untouched. Additional query variants require a deliberate
+advertisement update; no generic union-flattening facility is added.
+
+Static-analysis discovery ACTUAL: installed config get workflow.lint_command
+returns null, exit 0; installed planning detect-commands returns
+`cargo clippy --all-targets -- -D warnings` and `npx tsc -p tsconfig.ci.json`,
+exit 0. Node children ignore unused stdin. Current Context7 Schemars and host
+CLI documentation consulted; installed host version/help both exit 0.
+
+### V8 ACTUAL
+
+- `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp`: 15 passed,
+  0 failed, 0 ignored, 0 filtered, exit 0 (30.14 seconds). The existing MCP
+  file minus the newly added test is byte-identical to starting HEAD, including
+  every schema/discriminator/refusal assertion and Task 7's object-root test.
+- Negative control actually run: temporarily wrapped the promoted query object
+  in a root oneOf. The named new test returned 0 passed, 1 failed, 14 filtered,
+  exit 101, reporting `"cadence_query".inputSchema must not use top-level oneOf`.
+  The failure printed the union and its generated operation const, phase,
+  required fields and additionalProperties:false. A finally block restored the
+  fixed source byte-for-byte. Full output: `negative-control.txt` in the fixture.
+- Restored named test: 1 passed, 0 failed, 14 filtered, exit 0.
+- `TMPDIR=/tmp RUSTC_WRAPPER= cargo build -p cadence`: exit 0.
+- Raw direct binary probe sent initialize, notifications/initialized and
+  tools/list to `cadence serve --project-root /tmp/cadence-task8-3n0oqvpj/fixture`.
+  Exactly 3 tools; server exit 0 after closing stdin. All six schema roots are
+  object; all three inputs have properties and none has a root union. Query
+  required is `["operation","phase"]`, operation const is `execute-next`, and
+  additionalProperties is false. Wire top-level input keys (sorted):
+
+```text
+cadence_version: ["$schema", "additionalProperties", "properties", "title", "type"]
+cadence_query: ["$schema", "additionalProperties", "properties", "required", "title", "type"]
+cadence_apply: ["$defs", "$schema", "additionalProperties", "properties", "required", "title", "type"]
+WIRE_EXIT=0
+```
+
+Real host ACTUAL: `2.1.263 (Claude Code)`, model alias opus resolved to
+`claude-opus-5`; exit 0, successful result, 2 turns, exactly 1 tool call. The
+command is preserved in fixture `host-command.json`; it uses `-p`,
+`--mcp-config /tmp/cadence-task8-3n0oqvpj/mcp-config.json`,
+`--strict-mcp-config`, isolated `--settings`, empty `--setting-sources`,
+`--no-session-persistence`, `--disable-slash-commands`, empty built-in `--tools`,
+`--permission-mode dontAsk`, `--output-format stream-json`, `--verbose`,
+`--debug-file`, and no ToolSearch. MCP config launches the built Rust binary
+directly, with no wrapper. Host's own system init output, projected to the
+relevant fields without changing their values:
+
+```json
+{
+  "type": "system",
+  "subtype": "init",
+  "tools": [
+    "mcp__cadence__cadence_apply",
+    "mcp__cadence__cadence_query",
+    "mcp__cadence__cadence_version"
+  ],
+  "mcp_servers": [
+    {
+      "name": "cadence",
+      "status": "connected"
+    }
+  ],
+  "model": "claude-opus-5"
+}
+```
+
+Host tool_use: `mcp__cadence__cadence_query` with exactly
+`{"operation":"execute-next","phase":6}`. The successful tool response is
+`refused:missing-roadmap`, expected for this deliberately empty planning
+fixture; no executor was requested or dispatched. The host debug output
+contains no `Skipping tool "cadence_` entry. No third restriction was observed.
+This proves Task 8's actual host exposure, not Tasks 5/6's executor/UAT loop.
+Evidence: fixture `host-output.jsonl`, `host-debug.log`, `host-stderr.txt`,
+`host-exit.txt`, `wire-transcript.json`, `wire-tools.json`, `wire-summary.txt`.
+Credentials were used only in child environment, never copied into evidence.
+All fixture child environments set CADENCE_GLOBAL_CONFIG empty; all Node
+children ignore unused stdin; host config, npm cache and evidence stay in this
+/tmp fixture. Only the wire server owned by this probe was awaited.
+
+Static checks ACTUAL: clippy `--all-targets -- -D warnings` exit 0;
+`cargo fmt --check` exit 0; `TMPDIR=/tmp npx tsc -p tsconfig.ci.json` exit 0.
+Every cargo invocation used `TMPDIR=/tmp RUSTC_WRAPPER=`.
+Preservation gates ACTUAL: `git diff --exit-code v3.7.12 -- cadence-core/`
+exit 0; `git diff --exit-code 2756546e --` all protected planning paths
+listed in the dispatch exit 0; `git diff --check` exit 0. The only changed
+paths are the two leased Rust files and this report append. No .mcp.json or
+new JS executable was added; .github/ is untouched.
+
+Deviations from V8 prediction: none. Open items in Task 8: none. The single
+query variant is promoted without a general multiple-operation schema adapter;
+the strict slice has one operation and V8 needs no broader mechanism.
+
+PREDICTION before the final post-commit regression suite: workspace Cargo tests
+return 349 passed, 0 failed, exit 0 (the supplied baseline 348 plus this one
+new general assertion test). The frozen Node suite is not a gate per D-29 and
+the explicit dispatch instruction. Full suite remains pending at this point.
+
+### Task 8 commit and final regression
+
+PLAN PARTIAL (final suite pending). Task 8 V8 satisfied; only Task 8 was
+executed in this dispatch.
+
+| Task | Commit | Note |
+|---|---|---|
+| 8 - Advertise an input schema the host will actually list | `313a8492dae2838d7e80851b94949031bca54090` | Derived query object promotion, explicit input properties and general regression assertion; V8 wire, negative control and real host proof passed. |
+
+Installed lease-check: ok:true, staged:2, declared:14, exit 0. Both staged
+paths match the narrower dispatch lease. Required preservation diffs and
+staged whitespace check were repeated immediately before commit, all exit 0.
+The atomic commit contains only server.rs and mcp.rs; this append remains
+uncommitted for the orchestrator, per the installed sequential report contract.
+
+Final suite ACTUAL: installed config get workflow.test_command returned null,
+exit 0, so the repository's Cargo workspace manifest selected
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace`. This was the one
+post-commit full-suite run. Result: 349 passed, 0 failed, 0 ignored, 0 filtered,
+exit 0, matching the prediction. Counts by target: lib 104; binary 147;
+derivation_consistency 6; derivation_inputs 12; evidence_store 4;
+execution_boundary_compat 9; execution_store 18; mcp 15; next_action 7;
+store 17; store_crash 10; doc tests 0. Full output: fixture
+`workspace-test.txt`; exit/count summary: `final-exits.json`. No Node test
+suite ran and no repair or second full-suite run was needed.
+
+Commit verified: `313a8492dae2838d7e80851b94949031bca54090`,
+`feat(6): advertise query inputs with object properties`; author AND committer
+John Crenshaw <john@jcrenshaw.dev>. `git verify-commit` exit 0, good signature;
+`%G? %GK` is `G 693AB15F91734B0C`. Post-commit deletion check empty, exit 0;
+no generated/untracked repository files. The prior report content remains an
+exact byte prefix, and only this report is dirty after the commit.
+
+PLAN PARTIAL: 6 of 8 tasks satisfied (1-4, 7, 8). This Task 8-only dispatch
+completed 1 of 1 authorized task and its final regression suite is green.
+Task 8 deviations: 0. Task 8 open items: 0. All V8 obligations are proved,
+including actual host exposure and direct query use. Tasks 5 and 6 remain
+unperformed here; live executor dispatch, executor commits/patches, guard UAT,
+process replacement and compaction claims are not newly proved. UAT.md and
+all other protected planning artifacts remain untouched.
+
+Final exits: MCP 0; negative control 101 (required failure); restored test 0;
+build 0; wire 0; host 0; clippy 0; fmt 0; tsc 0; workspace tests 0; lease 0;
+signature verification 0; preservation diffs 0. Report append is intentionally
+uncommitted under the installed sequential executor contract.
