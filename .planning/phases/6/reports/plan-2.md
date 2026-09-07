@@ -872,3 +872,78 @@ Final exits: MCP 0; negative control 101 (required failure); restored test 0;
 build 0; wire 0; host 0; clippy 0; fmt 0; tsc 0; workspace tests 0; lease 0;
 signature verification 0; preservation diffs 0. Report append is intentionally
 uncommitted under the installed sequential executor contract.
+
+## Off-roadmap: CI signing-key repair
+
+CHECKPOINT: structural. Tasks: 0 of 1. Commit: none; HEAD remains
+`99ebd554cb56837994d8a74b1c76fdf3e2790ba2`.
+
+The four personal-key coupling sites are confirmed. Recall tests compile in
+the binary unit-test target; MCP tests compile in a separate integration-test
+crate. No shared GPG fixture helper exists. Sharing one implementation needs
+`crates/cadence/tests/support/signing.rs`, imported with `#[path]` from both
+leased files. The dispatch explicitly requires stopping before a third-file
+edit, so no source changes or commits were made.
+
+Proposed helper: generate one unprotected ed25519 signing key non-interactively
+in a fixture-owned temporary GNUPGHOME beside its repository, return the long
+key ID, and supply that home to signing and verification subprocesses. Both
+fixtures would use that ID; MCP would retain verify-commit and assert status G
+and the configured key ID, with the author assertion unchanged.
+
+Verification: no Cargo, clippy, fmt, TypeScript, or empty-GNUPGHOME tests were
+run at this checkpoint. The reported 349-pass baseline is supplied by the
+dispatch, not newly proved. The four hardcoded-key matches remain. Before this
+append, .planning/ matched HEAD and cadence-core/ matched v3.7.12 (both diffs
+exit 0). No keyring or agent was accessed. This append follows the dispatch's
+specific reporting instruction as the sole exception to its .planning/ freeze
+and remains uncommitted under the installed sequential executor contract.
+
+Need: authorize the single additional helper file above; the other two source
+files remain within the existing lease. No manifest or production-file change
+is needed. Alternatives would duplicate key generation or pull unrelated test
+code across crate boundaries, contrary to the shared-helper intent.
+
+### Authorized three-file continuation
+
+TASK PARTIAL: 1 of 1 repair implemented; final workspace suite pending.
+Commit: `c050dd58b88e8347ff39af72a8a2975a81d30fa0` (`test: isolate signing fixtures with ephemeral GPG keys`).
+The user authorized `crates/cadence/tests/support/signing.rs`; the preceding
+structural checkpoint is resolved. Both test targets import that exact file via
+`#[path]`, with no shipped-library export. Each fixture owns sibling `repo/`
+and `gnupg/` directories; the helper creates an unprotected ed25519 signing key
+and returns its long ID. Git and signing-aware child processes receive the
+fixture home explicitly. MCP retains verify-commit, status G, configured-key
+identity, and the unchanged John Crenshaw author assertion.
+
+PREDICTION: recall 19 passed, MCP 15 passed, zero failures; static checks exit 0.
+ACTUAL: both targeted commands below exited 0, with those counts and no ignored
+tests. The ambient directory was empty before and after; generated keyrings
+were owned by the individual temporary fixtures.
+
+```sh
+TMPDIR=/tmp RUSTC_WRAPPER= GNUPGHOME=/tmp/cadence-signing-repair-y149koi4/empty cargo test -p cadence recall
+TMPDIR=/tmp RUSTC_WRAPPER= GNUPGHOME=/tmp/cadence-signing-repair-y149koi4/empty cargo test -p cadence --test mcp
+```
+
+Recall: binary 18 plus store 1; MCP: all 15, including signing and process
+restarts. Logs: `/tmp/cadence-signing-repair-y149koi4/recall.txt` and `mcp.txt`.
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings`,
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check`, and
+`TMPDIR=/tmp npx tsc -p tsconfig.ci.json </dev/null` each exited 0.
+The installed detect-commands returned those clippy/typecheck commands.
+`rg -n 693AB15F91734B0C crates/`: no output, exit 1 (no matches).
+
+Precommit: exactly three authorized source files staged individually; no phase
+lease gate applies to this off-roadmap task. Frozen cadence-core versus v3.7.12,
+protected planning files excluding this report, .github/, and whitespace checks
+passed. Commit used the explicitly required personal signing key and John
+Crenshaw author/committer identity, with no trailers. No push was performed.
+This receipt remains unstaged under the sequential executor contract.
+
+Final-suite PREDICTION: 349 passed, 0 failed, unchanged from the supplied baseline.
+The final workspace run will also use the empty ambient GNUPGHOME.
+
+Final-suite ACTUAL: `TMPDIR=/tmp RUSTC_WRAPPER= GNUPGHOME=/tmp/cadence-signing-repair-y149koi4/empty cargo test --workspace` exited 0: **349 passed, 0 failed, 0 ignored**, exactly the prediction and baseline. No tests were added, removed, or skipped. Counts by target: lib 104; binary 147; derivation_consistency 6; derivation_inputs 12; evidence_store 4; execution_boundary_compat 9; execution_store 18; MCP 15; next_action 7; store 17; store_crash 10; doc tests 0. Full log: `/tmp/cadence-signing-repair-y149koi4/workspace.txt`. Installed workflow.test_command was null; the user-requested Cargo workspace suite ran once after the commit.
+
+TASK COMPLETE: 1 of 1. The ambient proof directory remained completely empty through all three test runs. One signed commit contains exactly the three leased source files, with the required author/committer, no trailers, and no deletions. Fixture GPG operations used only temporary homes; the personal key was used only for the explicitly required repository commit signing. The only unstaged change is this receipt; its pre-dispatch bytes remain an exact prefix. Frozen cadence-core, all other planning files, and .github/ remain unchanged. No Node test suite ran. No remaining verification mismatches or repair open items; GitHub CI itself was not rerun or newly proved.
