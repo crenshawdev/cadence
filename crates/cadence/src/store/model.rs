@@ -74,6 +74,18 @@ pub enum Decision {
         reason: String,
         evidence: Evidence,
     },
+    Boundary {
+        phase: u32,
+        tool: String,
+        operation: String,
+        request_digest: String,
+        outcome: String,
+        subject_id: Option<String>,
+        store_generation: u64,
+        prompt_bytes: Option<u64>,
+        response_digest: String,
+        terminal: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,9 +214,39 @@ pub fn validate_decisions(records: &[DecisionRecord]) -> Result<()> {
             record.revision,
             revisions.get(&record.id).copied(),
         )?;
+        if let Decision::Boundary {
+            phase,
+            tool,
+            operation,
+            request_digest,
+            outcome,
+            subject_id,
+            prompt_bytes,
+            response_digest,
+            terminal,
+            ..
+        } = &record.decision
+            && (*phase == 0
+                || tool.trim().is_empty()
+                || operation.trim().is_empty()
+                || outcome.trim().is_empty()
+                || !is_digest(request_digest)
+                || !is_digest(response_digest)
+                || subject_id
+                    .as_ref()
+                    .is_some_and(|value| value.trim().is_empty())
+                || prompt_bytes.is_some_and(|value| value == 0)
+                || *terminal != (outcome == "log-bound"))
+        {
+            return Err(Error::Invalid("invalid boundary decision".into()));
+        }
         revisions.insert(&record.id, record.revision);
     }
     Ok(())
+}
+
+fn is_digest(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn validate_revision(version: u32, id: &str, revision: u64, previous: Option<u64>) -> Result<()> {

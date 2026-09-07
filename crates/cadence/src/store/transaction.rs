@@ -6,6 +6,23 @@ use std::collections::BTreeSet;
 
 pub const INTENT: &str = ".store-intent.json";
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) enum IntentKind {
+    Store,
+    ExecutionDispatch {
+        phase: u32,
+    },
+    ExecutionPatch {
+        phase: u32,
+        render_version: u32,
+        summary: bool,
+    },
+    ExecutionRefusal {
+        phase: u32,
+    },
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalChange {
     pub target: String,
@@ -49,6 +66,7 @@ pub(crate) struct Participant {
 #[derive(Serialize, Deserialize)]
 struct Intent {
     version: u32,
+    kind: IntentKind,
     participants: Vec<Participant>,
     integrity: String,
 }
@@ -57,6 +75,7 @@ impl Intent {
     fn digest(&self) -> Result<String> {
         Ok(model::digest(&serde_json::to_vec(&(
             self.version,
+            &self.kind,
             &self.participants,
         ))?))
     }
@@ -66,16 +85,56 @@ impl Intent {
             return Err(Error::Conflict("invalid operation intent integrity".into()));
         }
         let mut names = BTreeSet::new();
+        let mut summary_phase = None;
         for participant in &self.participants {
-            if !matches!(
+            let known = matches!(
                 participant.target.as_str(),
                 ITEMS | DECISIONS | STATE | "repo-config" | "global-config"
-            ) || !names.insert(participant.target.as_str())
+            );
+            let phase = super::filesystem::phase_summary_target(&participant.target)?;
+            if (!known && phase.is_none()) || !names.insert(participant.target.as_str()) {
+                return Err(Error::Invalid(
+                    "invalid or duplicate intent participant".into(),
+                ));
+            }
+            if let Some(phase) = phase
+                && summary_phase.replace(phase).is_some()
             {
                 return Err(Error::Invalid(
                     "invalid or duplicate intent participant".into(),
                 ));
             }
+        }
+        if self.participants.last().map(|value| value.target.as_str()) != Some(STATE) {
+            return Err(Error::Invalid(
+                "snapshot must be the final intent participant".into(),
+            ));
+        }
+        match self.kind {
+            IntentKind::Store if summary_phase.is_some() => {
+                return Err(Error::Invalid(
+                    "store intent cannot render a phase summary".into(),
+                ));
+            }
+            IntentKind::ExecutionDispatch { phase } | IntentKind::ExecutionRefusal { phase }
+                if phase == 0 || summary_phase.is_some() =>
+            {
+                return Err(Error::Invalid(
+                    "invalid execution intent participants".into(),
+                ));
+            }
+            IntentKind::ExecutionPatch {
+                phase,
+                render_version,
+                summary,
+            } if phase == 0
+                || render_version != cadence::execution::render::SUMMARY_RENDER_VERSION
+                || summary != summary_phase.is_some()
+                || summary_phase.is_some_and(|summary_phase| summary_phase != phase) =>
+            {
+                return Err(Error::Invalid("invalid execution render intent".into()));
+            }
+            _ => {}
         }
         let bytes = |name| {
             self.participants
@@ -88,8 +147,71 @@ impl Intent {
         let decisions = bytes(DECISIONS)?;
         model::validate_items(&model::parse_lines(items)?)?;
         model::validate_decisions(&model::parse_lines(decisions)?)?;
-        Snapshot::parse(bytes(STATE)?, items, decisions)
+        let snapshot = Snapshot::parse(bytes(STATE)?, items, decisions)?;
+        match self.kind {
+            IntentKind::ExecutionDispatch { phase } => {
+                let execution = execution_snapshot(&snapshot)?;
+                let occurrence =
+                    execution
+                        .occurrences
+                        .get(&phase.to_string())
+                        .ok_or_else(|| {
+                            Error::Invalid("dispatch intent lacks its execution occurrence".into())
+                        })?;
+                if occurrence.phase != phase || occurrence.active.is_none() {
+                    return Err(Error::Invalid("invalid dispatch intent projection".into()));
+                }
+            }
+            IntentKind::ExecutionPatch {
+                phase,
+                summary: true,
+                ..
+            } => {
+                let execution = execution_snapshot(&snapshot)?;
+                let rendered = cadence::execution::render::render_phase_summary(&execution, phase)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
+                let target = format!("phase-summary:{phase}");
+                if bytes(&target)? != rendered {
+                    return Err(Error::Invalid(
+                        "phase summary differs from the execution projection".into(),
+                    ));
+                }
+            }
+            IntentKind::Store
+            | IntentKind::ExecutionRefusal { .. }
+            | IntentKind::ExecutionPatch { summary: false, .. } => {}
+        }
+        if let IntentKind::ExecutionDispatch { phase }
+        | IntentKind::ExecutionPatch { phase, .. }
+        | IntentKind::ExecutionRefusal { phase } = self.kind
+        {
+            let decisions: Vec<DecisionRecord> = model::parse_lines(decisions)?;
+            if !decisions.iter().any(|record| {
+                matches!(
+                    record.decision,
+                    model::Decision::Boundary {
+                        phase: decision_phase,
+                        store_generation,
+                        ..
+                    } if decision_phase == phase && store_generation == snapshot.generation
+                )
+            }) {
+                return Err(Error::Invalid(
+                    "execution intent lacks its generation boundary decision".into(),
+                ));
+            }
+        }
+        Ok(snapshot)
     }
+}
+
+fn execution_snapshot(snapshot: &Snapshot) -> Result<cadence::execution::model::ExecutionSnapshot> {
+    let value = snapshot
+        .data
+        .get("execution")
+        .cloned()
+        .ok_or_else(|| Error::Invalid("execution intent lacks its projection".into()))?;
+    serde_json::from_value(value).map_err(Error::from)
 }
 
 fn validate_all<S: Storage>(
@@ -130,6 +252,7 @@ pub(crate) fn commit<S: Storage, P: Policy>(
     storage: &mut S,
     policy: &mut P,
     context: &MutationContext<'_>,
+    kind: IntentKind,
     participants: Vec<Participant>,
 ) -> Result<()> {
     if storage.read(INTENT)?.bytes.is_some() {
@@ -155,6 +278,7 @@ pub(crate) fn commit<S: Storage, P: Policy>(
     }
     let mut intent = Intent {
         version: VERSION,
+        kind,
         participants,
         integrity: String::new(),
     };

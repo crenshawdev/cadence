@@ -96,6 +96,13 @@ impl Filesystem {
         if let Some(path) = self.participants.get(target) {
             return Ok(path.clone());
         }
+        if let Some(phase) = phase_summary_target(target)? {
+            return Ok(self
+                .root
+                .join("phases")
+                .join(phase.to_string())
+                .join("SUMMARY.md"));
+        }
         if matches!(target, "repo-config" | "global-config") {
             return Err(Error::Invalid(
                 "config participant was not registered".into(),
@@ -122,6 +129,25 @@ impl Filesystem {
         self.participants.insert(name.to_string(), path);
         Ok(self)
     }
+}
+
+pub(crate) fn phase_summary_target(target: &str) -> Result<Option<u32>> {
+    let Some(value) = target.strip_prefix("phase-summary:") else {
+        return Ok(None);
+    };
+    if value.is_empty()
+        || value.starts_with('0')
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(Error::Invalid("invalid phase-summary target".into()));
+    }
+    let phase = value
+        .parse::<u32>()
+        .map_err(|_| Error::Invalid("invalid phase-summary target".into()))?;
+    if phase == 0 {
+        return Err(Error::Invalid("invalid phase-summary target".into()));
+    }
+    Ok(Some(phase))
 }
 
 impl Storage for Filesystem {

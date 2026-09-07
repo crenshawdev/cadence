@@ -1,3 +1,5 @@
+extern crate self as cadence;
+
 pub mod derivation;
 pub mod evidence;
 pub mod execution;

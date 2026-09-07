@@ -68,6 +68,7 @@ pub struct ActiveDispatch {
     pub policy: DispatchPolicy,
     pub base_sha: String,
     pub prompt_bytes: u64,
+    #[serde(default)]
     pub body: String,
 }
 
@@ -231,4 +232,24 @@ pub struct ExecutorPatch {
     pub tasks: Vec<TaskOutcome>,
     pub deviations: Vec<Deviation>,
     pub blockers: Vec<Blocker>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BoundaryTool {
+    CadenceQuery,
+    CadenceApply,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoundaryDecision {
+    pub phase: u32,
+    pub tool: BoundaryTool,
+    pub operation: String,
+    pub request_digest: String,
+    pub outcome: String,
+    pub subject_id: Option<String>,
+    pub prompt_bytes: Option<u64>,
+    pub response_digest: String,
 }
