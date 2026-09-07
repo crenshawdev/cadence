@@ -306,3 +306,48 @@ fn phase_six_core_acceptance_inventory_runs_registered_evidence() {
         run();
     }
 }
+
+// PLAN-3 repair inventory, alongside the unchanged PLAN-1 inventories.
+// The four harness shards collectively cover M1-M7. Each row is registered
+// and executed here; names alone cannot satisfy a repair obligation.
+#[test]
+fn phase_six_core_repair_inventory_runs_registered_evidence() {
+    let rows: [(&str, &str, fn()); 3] = [
+        (
+            "M1",
+            "execution::tests::patch_schema_all_variants_and_nested_field_inventories_match_deserialization",
+            patch_schema_all_variants_and_nested_field_inventories_match_deserialization,
+        ),
+        (
+            "M1",
+            "execution::tests::patch_schema_rejects_incorrect_union_tags_and_integer_types",
+            patch_schema_rejects_incorrect_union_tags_and_integer_types,
+        ),
+        (
+            "M1",
+            "execution::tests::patch_schema_keeps_structural_and_semantic_admission_separate",
+            patch_schema_keeps_structural_and_semantic_admission_separate,
+        ),
+    ];
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.0)
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from(["M1"])
+    );
+    let listing = std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("--list")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    for (criterion, name, run) in rows {
+        assert!(
+            listing.lines().any(|line| line == format!("{name}: test")),
+            "{criterion} repair evidence is not registered: {name}"
+        );
+        run();
+        println!("{criterion} repair evidence passed: {name}");
+    }
+}

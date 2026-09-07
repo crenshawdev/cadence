@@ -1607,3 +1607,63 @@ fn scoped_refusal_and_terminal_kills_recover_one_identical_answer_without_semant
         }
     }
 }
+
+// PLAN-3 repair inventory, alongside the unchanged PLAN-1 inventories.
+// The four harness shards collectively cover M1-M7. Each row is registered
+// and executed here; names alone cannot satisfy a repair obligation.
+#[test]
+fn phase_six_store_repair_inventory_runs_registered_evidence() {
+    let rows: [(&str, &str, fn()); 6] = [
+        (
+            "M3",
+            "scoped_budgets_admit_256_plus_terminal_and_reopen_never_grows_either_scope",
+            scoped_budgets_admit_256_plus_terminal_and_reopen_never_grows_either_scope,
+        ),
+        (
+            "M4",
+            "scoped_writer_confirms_dispatch_complete_blocked_and_observation_public_digests",
+            scoped_writer_confirms_dispatch_complete_blocked_and_observation_public_digests,
+        ),
+        (
+            "M7",
+            "scoped_intent_and_changed_participant_failures_never_acknowledge",
+            scoped_intent_and_changed_participant_failures_never_acknowledge,
+        ),
+        (
+            "M7",
+            "scoped_recovery_resync_and_intent_removal_failures_never_acknowledge",
+            scoped_recovery_resync_and_intent_removal_failures_never_acknowledge,
+        ),
+        (
+            "M7",
+            "scoped_recovery_reloads_policy_before_any_participant_write",
+            scoped_recovery_reloads_policy_before_any_participant_write,
+        ),
+        (
+            "M7",
+            "scoped_refusal_and_terminal_kills_recover_one_identical_answer_without_semantic_changes",
+            scoped_refusal_and_terminal_kills_recover_one_identical_answer_without_semantic_changes,
+        ),
+    ];
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.0)
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from(["M3", "M4", "M7"])
+    );
+    let listing = std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("--list")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    for (criterion, name, run) in rows {
+        assert!(
+            listing.lines().any(|line| line == format!("{name}: test")),
+            "{criterion} repair evidence is not registered: {name}"
+        );
+        run();
+        println!("{criterion} repair evidence passed: {name}");
+    }
+}

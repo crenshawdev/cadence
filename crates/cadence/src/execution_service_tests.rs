@@ -1672,3 +1672,68 @@ fn execution_service_oversized_judgment_refuses_before_patch_or_summary_mutation
         assert!(!fixture.root.join("phases/6/SUMMARY.md").exists());
     });
 }
+
+// PLAN-3 repair inventory, alongside the unchanged PLAN-1 inventories.
+// The four harness shards collectively cover M1-M7. Each row is registered
+// and executed here; names alone cannot satisfy a repair obligation.
+#[test]
+fn phase_six_service_repair_inventory_runs_registered_evidence() {
+    let rows: [(&str, &str, fn()); 7] = [
+        (
+            "M2",
+            "server::execution_service_tests::execution_service_malformed_arguments_confirm_root_refusals_without_semantic_work",
+            execution_service_malformed_arguments_confirm_root_refusals_without_semantic_work,
+        ),
+        (
+            "M4",
+            "server::execution_service_tests::execution_service_semantic_failures_confirm_but_log_config_and_queue_failures_do_not",
+            execution_service_semantic_failures_confirm_but_log_config_and_queue_failures_do_not,
+        ),
+        (
+            "M4",
+            "server::execution_service_tests::execution_service_terminal_precedes_observation_dispatch_and_new_or_replayed_patch",
+            execution_service_terminal_precedes_observation_dispatch_and_new_or_replayed_patch,
+        ),
+        (
+            "M5",
+            "server::execution_service_tests::execution_restart_lost_apply_replays_one_immutable_transition",
+            execution_restart_lost_apply_replays_one_immutable_transition,
+        ),
+        (
+            "M5",
+            "server::execution_service_tests::lifecycle_continuation_and_changed_plan_inputs_refuse_dispatch",
+            lifecycle_continuation_and_changed_plan_inputs_refuse_dispatch,
+        ),
+        (
+            "M6",
+            "server::execution_service_tests::execution_restart_cross_format_failure_preserves_legacy_bytes_at_every_service_entry",
+            execution_restart_cross_format_failure_preserves_legacy_bytes_at_every_service_entry,
+        ),
+        (
+            "M7",
+            "server::execution_service_tests::execution_restart_each_dispatch_and_patch_barrier_recovers_one_confirmed_answer",
+            execution_restart_each_dispatch_and_patch_barrier_recovers_one_confirmed_answer,
+        ),
+    ];
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.0)
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from(["M2", "M4", "M5", "M6", "M7"])
+    );
+    let listing = std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("--list")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    for (criterion, name, run) in rows {
+        assert!(
+            listing.lines().any(|line| line == format!("{name}: test")),
+            "{criterion} repair evidence is not registered: {name}"
+        );
+        run();
+        println!("{criterion} repair evidence passed: {name}");
+    }
+}

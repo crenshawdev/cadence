@@ -724,3 +724,58 @@ fn recovery_rejects_foreign_bytes_directory_ancestry_and_legacy_tampering_before
         }
     }
 }
+
+// PLAN-3 repair inventory, alongside the unchanged PLAN-1 inventories.
+// The four harness shards collectively cover M1-M7. Each row is registered
+// and executed here; names alone cannot satisfy a repair obligation.
+#[test]
+fn phase_six_compatibility_repair_inventory_runs_registered_evidence() {
+    let rows: [(&str, &str, fn()); 5] = [
+        (
+            "M6",
+            "legacy_record_snapshot_and_operation_receipt_encodings_round_trip_and_mix",
+            legacy_record_snapshot_and_operation_receipt_encodings_round_trip_and_mix,
+        ),
+        (
+            "M6",
+            "legacy_native_formats_read_but_cross_format_resume_fails_without_rewriting_bytes",
+            legacy_native_formats_read_but_cross_format_resume_fails_without_rewriting_bytes,
+        ),
+        (
+            "M6",
+            "legacy_each_pending_intent_recovers_original_bytes_once_after_repeated_process_death",
+            legacy_each_pending_intent_recovers_original_bytes_once_after_repeated_process_death,
+        ),
+        (
+            "M7",
+            "recovery_admits_identical_content_replacement_inode_under_original_directory_ancestry",
+            recovery_admits_identical_content_replacement_inode_under_original_directory_ancestry,
+        ),
+        (
+            "M7",
+            "recovery_rejects_foreign_bytes_directory_ancestry_and_legacy_tampering_before_any_write",
+            recovery_rejects_foreign_bytes_directory_ancestry_and_legacy_tampering_before_any_write,
+        ),
+    ];
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.0)
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from(["M6", "M7"])
+    );
+    let listing = std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("--list")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(listing.status.success());
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    for (criterion, name, run) in rows {
+        assert!(
+            listing.lines().any(|line| line == format!("{name}: test")),
+            "{criterion} repair evidence is not registered: {name}"
+        );
+        run();
+        println!("{criterion} repair evidence passed: {name}");
+    }
+}
