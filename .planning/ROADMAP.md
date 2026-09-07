@@ -299,12 +299,18 @@ The owner assigned GH-237, GH-239, GH-240, GH-250 and GH-251 to review work,
 so phase 10 owns them, resolving the earlier conflict between phase 8 in this
 table and phase 9 in the detail.
 
+Three further table cells disagreed with their own detail paragraphs and are
+corrected here. GH-229 and GH-248 are described inside the commit rail section
+and are planned there, not in the closed boundary phase. GH-256 is described
+inside config and routing, which is where the reset behaviour it asks for is
+settled.
+
 | Issue | Frozen defect site | Phase |
 |---|---|---|
 | GH-241 | `lib/trace.mjs:1752-1757` accepts any nonempty observed effort string, whitespace included | 3 |
-| GH-229 | `planning/core.mjs:519-524`, with the no-commit skip at `workflows/execute.md:338-346` and `workflows/task.md:154-164` | 6 |
-| GH-248 | `planning/risk-check.mjs:949-997` stores ref-only receipts needing a head/base pair; a staged record has no head (`:395-402`) | 6 |
-| GH-256 | `route.mjs:967-983` treats an explicit role-effort `null` as unset, against `config.schema.json:32-37` | 7 |
+| GH-229 | `planning/core.mjs:519-524`, with the no-commit skip at `workflows/execute.md:338-346` and `workflows/task.md:154-164` | 7 |
+| GH-248 | `planning/risk-check.mjs:949-997` stores ref-only receipts needing a head/base pair; a staged record has no head (`:395-402`) | 7 |
+| GH-256 | `route.mjs:967-983` treats an explicit role-effort `null` as unset, against `config.schema.json:32-37` | 8 |
 | GH-237 | `review-provider.mjs:1142-1148` zeroes one invalid Gemini output component when the other is usable | 10 |
 | GH-239 | `review-provider.mjs:1335-1350` exits on non-2xx before extracting usage | 10 |
 | GH-240 | `review-provider.mjs:988-989` accepts any finite nonnegative number, summed without a checked bound | 10 |
