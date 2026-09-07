@@ -1276,3 +1276,27 @@ fn hard_fail_reads_current_symbolic_head_through_real_worktree_gitdir() {
     assert_eq!(permission_output(&unknown), None);
     assert_eq!(latest_audit(&root).outcome, Outcome::FailurePass);
 }
+
+#[test]
+fn shipped_manifest_loads_both_native_arms_and_preserves_unrelated_hooks() {
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../../../hooks/hooks.json")).unwrap();
+    assert_eq!(
+        manifest["hooks"]["PreToolUse"][0]["matcher"],
+        "Bash|Write|Edit"
+    );
+    assert_eq!(
+        manifest["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+        "cadence guard"
+    );
+    let frozen = Command::new("git")
+        .args(["show", "v3.7.12:hooks/hooks.json"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(frozen.status.success());
+    let frozen: serde_json::Value = serde_json::from_slice(&frozen.stdout).unwrap();
+    for name in ["PostToolUse", "SubagentStop"] {
+        assert_eq!(manifest["hooks"][name], frozen["hooks"][name]);
+    }
+}
