@@ -947,3 +947,298 @@ The final workspace run will also use the empty ambient GNUPGHOME.
 Final-suite ACTUAL: `TMPDIR=/tmp RUSTC_WRAPPER= GNUPGHOME=/tmp/cadence-signing-repair-y149koi4/empty cargo test --workspace` exited 0: **349 passed, 0 failed, 0 ignored**, exactly the prediction and baseline. No tests were added, removed, or skipped. Counts by target: lib 104; binary 147; derivation_consistency 6; derivation_inputs 12; evidence_store 4; execution_boundary_compat 9; execution_store 18; MCP 15; next_action 7; store 17; store_crash 10; doc tests 0. Full log: `/tmp/cadence-signing-repair-y149koi4/workspace.txt`. Installed workflow.test_command was null; the user-requested Cargo workspace suite ran once after the commit.
 
 TASK COMPLETE: 1 of 1. The ambient proof directory remained completely empty through all three test runs. One signed commit contains exactly the three leased source files, with the required author/committer, no trailers, and no deletions. Fixture GPG operations used only temporary homes; the personal key was used only for the explicitly required repository commit signing. The only unstaged change is this receipt; its pre-dispatch bytes remain an exact prefix. Frozen cadence-core, all other planning files, and .github/ remain unchanged. No Node test suite ran. No remaining verification mismatches or repair open items; GitHub CI itself was not rerun or newly proved.
+
+## Tasks 5-6 continuation from 6131c3f6 - third live attempt
+
+PLAN PARTIAL. Starting HEAD `6131c3f6522f52b4637dc62301801981375680b8`,
+branch `cadence/binary-owns-process`, clean input tree. The installed 3.7.12
+executor contract was read in full; explicit dispatch instructions control the
+append-only report, narrow per-task leases, no Node test gate, signing and final
+return. Both prior blocked UAT records will be retained. Temporary fixture root:
+`/tmp/cadence-uat-20260907-thl6_rj2`; fixture Git repository is its `fixture/` child.
+Signing uses an ephemeral ed25519 key in sibling `gnupg/`, following the landed
+shared fixture helper; it does not use the personal key for fixture commits.
+
+Prerequisite PREDICTION before Verify: MCP 15 passed, 0 failed, exit 0; binary
+build exit 0. ACTUAL: `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test
+mcp` reported 15 passed, 0 failed, 0 ignored, 0 filtered, exit 0 (29.62s).
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo build -p cadence` exited 0. Logs are
+`evidence/mcp-prerequisite.log` and `evidence/build.log` under the fixture root.
+Installed config reports workflow.lint_command null; detect-commands reports
+clippy and TypeScript commands. Both Node subprocesses ignored unused stdin.
+
+Task 5 PREDICTION before live Verify: init lists all three Cadence tools with
+one connected direct Rust server, no plugins or ToolSearch; the requested
+malformed apply returns a typed refusal (record the actual arguments). Then two
+fixed-executor dispatches, source writes, given verify/suite command tool calls,
+two ordered signed task commits, lossless accepted patches, matching SUMMARY
+rows, and a real termination/resume between plan dispatches with distinct PIDs.
+Separate guard model: 3 Write denials, 3 Edit denials, 1 source Write allowance.
+No model-produced source, test prose, judgment prose or compaction causality is
+predicted or graded. Missing observations remain blocked or unverified.
+
+### First live execution: typed verification refusal
+
+ACTUAL: host 2.1.263 init exposes three of three Cadence tools, one connected
+server, plugins []; no ToolSearch. Boundary probe host PID 2899364/server
+2899401 exited 0; actual apply contained schema 0, empty dispatch ID, version
+0 and empty tasks, rather than the requested empty object. Cadence returned
+`refused/foreign-dispatch` successfully and persisted decision
+`ca12220c87a84c6794defdeee45f539d2532e48b9b09e3e9442cd9bc6c91a807`.
+
+First `/cad-execute 6` host PID 2900021/server 2900058 exited 0 in 4 turns.
+It made query, Agent and apply calls. The host emits Agent as its delegation
+spelling although init advertises Task; subagent_type was cad-executor, and the
+8025-byte prompt equalled the returned dispatch prompt. It made a source Edit,
+the given verify and suite Bash calls and signed T1 commit
+`8993d56bad224123dca976793e35695f944fbfce` (signature still pending independent
+closing inspection here). Apply returned `refused/verification`, not next-plan.
+The patch's task receipt list includes both the task verify command and suite;
+the dispatched task verify list has only one command. Production validation
+requires those lengths to match. No judgment/source/test prose is evaluated.
+The parent submitted the object unchanged and stopped; the next-plan kill
+trigger never fired. These PIDs do not prove replacement between dispatches.
+
+[deviation] Expected a first accepted patch; observed a typed verification
+refusal due to the extra suite receipt. A bounded resume uses the same exact
+`/cad-execute 6` invocation without patch repair or extra delegation context.
+PREDICTION before resumed Verify: persisted first dispatch replay, one fixed
+executor return with the dispatched task receipt inventory, accepted next-plan,
+then intentional termination of this fixture's server before the second plan.
+
+Bounded resume ACTUAL: host 2902122/server 2902162, host exit 0, 4 turns;
+identical dispatch and prompt, cad-executor delegated again, given verify/suite
+calls observed, same existing T1 commit reused, no extra commit. The parent
+submitted the returned object losslessly; apply again returned verification
+refusal because the task receipt array again included the separate suite.
+No next-plan response or intentional termination occurred.
+
+[deviation] The unassisted fixture did not elicit the validator's receipt
+inventory on either invocation. Final bounded fixture adaptation adds explicit
+body guidance consistent with the operational schema: verification.commands
+must exactly mirror task.verify; run suite separately without adding its receipt;
+return the JSON object without fences. This is extra fixture guidance, not a
+shipped skill/agent change or a parent patch repair. It cannot establish that
+the unchanged contract alone reliably elicits the inventory. Both failed
+invocations and their one signed source commit remain evidence, not discarded
+failures. Fresh fixture is `clarified-run/fixture` under the same temporary root.
+
+PREDICTION before final live Verify: the clarified fixture will produce two
+accepted executor patches with exact task receipt lists, one signed commit per
+task, genuine termination/resume between plans, and matching summary task SHAs.
+No repository artifact under test is modified for the fixture guidance.
+
+### Accepted first plan and actual termination
+
+Final fixture boundary host 2903814/server 2903856 exited 0, 2 turns, one
+malformed apply; `refused/invalid-patch`, decision
+`b1ffff4fea1779d3b479cc24983d5117e1d102d5f3860e7025606abedc465e37`.
+Final fixture execution host 2904010/server 2904048 reached first plan acceptance.
+The 8391-byte prompt was delegated exactly to cad-executor. Its final return was
+only JSON, with exactly the required top-level keys; the parent applied it
+field-for-field. First task commit `b8775abd2d479debb695d69ff4efc10a61a24538`
+has good signature `G FDCDE48A15225498`, required author, baseline as sole
+parent, only src/lib.rs changed, and empty commit body. SUMMARY independently
+names that one SHA and T1, with Status: executing. Wire/request/response hashes
+match exactly one stored decision for every observed call.
+
+Immediately after the next-plan response, the observer sent SIGTERM to its
+owned Rust server 2904048 and SIGINT to its owned host 2904010. Both were absent
+before resume. The host's process exit was 0 but stream result was
+error_during_execution, is_error true, 5 turns: this is the deliberate
+interruption, not a host restriction or a completed run. No second dispatch
+appears in that first stream. Resume starts the saved session with the same
+exact /cad-execute 6 prompt; fresh host 2905685/server 2905724, all three tools
+present. The between-plans receipt is evidence/between-plans-inspection.json
+under clarified-run; this is now an actual termination between dispatches.
+
+Static PREDICTION before Verify: clippy, fmt and TypeScript exit 0. ACTUAL:
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings`,
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check`, and
+`TMPDIR=/tmp npx tsc -p tsconfig.ci.json </dev/null` each exited 0. TypeScript's
+npm cache was scoped to the temporary fixture root. No Node test suite ran.
+
+### Task 5 completed live observations and commit gates
+
+ACTUAL: replacement server 2905724 dispatched plan 2 and accepted its patch as
+complete. Signed T2 commit `7b50c7abcdaf5ff4d6dedc3cda9a62ed77a31534` has T1
+`b8775abd2d479debb695d69ff4efc10a61a24538` as sole parent. Both verify with
+fixture key FDCDE48A15225498 and the required author, only src/lib.rs changed,
+empty commit bodies. Two exact binary prompts were delegated to cad-executor
+(8391/8394 bytes); both final returns are only the advertised JSON object and
+both apply arguments equal the corresponding object field-for-field. Exactly
+five matching boundary decisions plus two disclosed authority-stub records
+exist. SUMMARY has Status: complete, exactly T1/T2 and those two full SHAs once
+each. Four dispatched verify/suite command tool calls were observed; suite once
+per successful executor before its commit. Model output content is not graded.
+
+Guard ACTUAL: host 2906686/server 2906722, exit 0, 11 turns, 3 Reads, 3 protected
+Writes denied, 3 protected Edits denied, 1 source Write allowance. Seven hook
+responses all exit 0; six typed deny outputs with matching tool errors, then
+empty hook stdout/stderr and successful source Write. All three protected files
+existed and their before/after hashes match. Independent proof checks exit 0.
+All successful-fixture host/server PIDs are absent. No compaction occurred;
+causality remains INCONCLUSIVE and OQ-2 non-decision-bearing. No third host
+restriction appeared. UAT preserves the complete prior 35,414-byte input record
+verbatim, plus both current-dispatch receipt-refused invocations. Task 5 is
+satisfied with the explicit fixture-guidance limitation, not a first-try or
+unassisted-contract pass. Initial return also had commentary before its JSON;
+that failed exact-return observation remains recorded in UAT history.
+
+PREDICTION before Task 5 commit Verify: frozen cadence-core diff against
+v3.7.12 and all protected planning diffs against input HEAD are empty, exit 0;
+whitespace exit 0; lease ok:true for only UAT.md; signed commit uses John
+Crenshaw <john@jcrenshaw.dev> and key 693AB15F91734B0C, verification exit 0.
+
+PLAN PARTIAL: Task 5 committed; Task 6 and the final suite remain pending.
+
+| Task | Commit | Note |
+|---|---|---|
+| 5 - Actual host, executor and denial UAT | `804cf1c41a5765c7c7e2d8b5fb93eedf043626b5` | Real accepted two-plan execution, intentional server replacement, six protected Write/Edit denials, one source allowance; explicit fixture guidance and all failed attempts retained. |
+
+Task 5 commit-gate ACTUAL: preservation/whitespace diffs empty, exit 0; installed
+lease check ok:true, staged 1, declared 14, exit 0; only UAT.md committed.
+Signature verification exit 0, G 693AB15F91734B0C, author and committer John
+Crenshaw <john@jcrenshaw.dev>; no trailers, no deletions, no untracked artifacts.
+Only the existing report remains unstaged, as the sequential contract requires.
+
+### Task 6 evidence-map work
+
+The acceptance map will name executable machine tests, with live UAT used only
+for AC3/AC7 host/model clauses. Inspection found the existing wire tests did not
+directly pair legacy-only plan refusal with decimal/exponent phase input and
+unchanged execution state; add one focused public-boundary test for those AC2
+clauses. The MCP module documentation will explicitly disclaim host/model and
+later-phase proof. No product source or artifact under test changes.
+
+Task 6 PREDICTION before targeted Verify:
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp
+execution_calls_refuse_noninteger_phases_and_legacy_plans_without_dispatch`
+will report 1 passed, 0 failed, 15 filtered out, exit 0. Clippy, fmt and required
+TypeScript commands will exit 0. The one full-suite gate is deferred until after
+Task 6's commit, per the installed contract; exact Task 6 command
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence` covers this single-member
+workspace. Final prediction is 350 passed, 0 failed (supplied 349 plus one new
+wire test), exit 0. The final suite result will be appended here; no PLAN
+COMPLETE status is written before that result. No Node test gate is run.
+
+Task 6 targeted ACTUAL: 1 passed, 0 failed, 0 ignored, 15 filtered, exit 0,
+0.13s; all eight refusal cases ran in the new test through the public child
+boundary, with matching decisions and no execution/SUMMARY mutation. Clippy,
+fmt and TypeScript each exited 0. Full-suite gate is still pending.
+
+The UAT acceptance table now maps AC1-AC8 to registered machine tests and only
+AC3/AC7's live clauses to U1-U6. It separately names three-tool schemas, typed
+refusal persistence, fixed stubs, restart identity, lossless patch/state,
+renderer ownership and guard behavior. All later phase 7-9 and phase 11
+obligations are explicitly unimplemented, not inferred from this slice. The
+unassisted receipt limitation and unobserved compaction remain unverified.
+
+Preservation ACTUAL: frozen cadence-core diff against v3.7.12 empty, exit 0;
+protected planning diff against input HEAD empty, exit 0; whitespace exit 0.
+The exact rg executable search returned four existing golden-fixture .mjs paths,
+exit 0: build-fixtures.mjs and hooks/planning-inputs/project src/auth.mjs.
+Each is byte-identical to input HEAD; zero new or changed executable fixture
+paths. The added-path .mcp.json diff against v3.7.12 is empty, exit 0. No
+JavaScript executable or redirect was created by this phase continuation.
+The frozen-reference obligation is satisfied by the empty byte diff; no Node
+test suite or known-failure reinterpretation was used.
+
+PREDICTION before Task 6 commit Verify: only crates/cadence/tests/mcp.rs and
+UAT.md are staged, installed lease check ok:true; protected/frozen diffs and
+whitespace are empty; commit signature verification exits 0 with key
+693AB15F91734B0C and required author/committer. Full-suite prediction remains
+350 passed, 0 failed, exit 0, run once after commit; final status remains PARTIAL.
+
+PLAN PARTIAL: both authorized tasks committed; final suite still pending.
+
+| Task | Commit | Note |
+|---|---|---|
+| 5 - Actual host, executor and denial UAT | `804cf1c41a5765c7c7e2d8b5fb93eedf043626b5` | Recorded real two-plan loop/replacement/Write+Edit denials, explicit receipt guidance and complete attempt history. |
+| 6 - Close the phase boundary | `ba8b6e1ae92b147b5db25685d7b5421d460ad9a2` | Added public strict-query refusal test, explicit test limits and AC1-AC8 machine/live map; later-phase obligations remain unimplemented. |
+
+Task 6 commit-gate ACTUAL: lease ok:true, staged 2, declared 14, exit 0; only
+mcp.rs and UAT.md committed. Frozen/protected diffs repeated immediately before
+commit are empty, exit 0; whitespace exit 0. Signature verification exit 0,
+G 693AB15F91734B0C, author and committer John Crenshaw <john@jcrenshaw.dev>;
+no trailers, no deletions, no generated/untracked repository files. The report
+remains the only unstaged change; its original bytes remain an exact prefix.
+
+Final-suite PREDICTION before Verify: `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p
+cadence` returns 350 passed, 0 failed, 0 ignored, exit 0. This is the one
+post-commit full-suite run, also the exact Task 6 Cargo Verify for the
+single-member workspace. No second cargo test --workspace and no Node test
+suite will run. Actual final count/exit is pending below.
+
+Closing independent checks: every one of the 35 distinct test names in the AC
+map has an observed passing result in this dispatch's targeted/prerequisite
+or final-suite output; module aliases are resolved, not counted as tests.
+The complete prior UAT remains an exact suffix and the original report remains
+an exact prefix. No untracked repository files exist. Both fixture-owned GPG
+agent socket directories created under /run/user/1000 were removed using only
+their isolated GNUPGHOME settings; removal is recorded in
+`evidence/signing-cleanup.json`. No fixture keyring was used after cleanup.
+The temporary keyrings and evidence remain under the allowed /tmp fixture root.
+
+Concurrent branch observation: `e3643c5d34c9f97a097062f1819717aa86462e8c`
+(`docs: describe the MCP boundary and index the module docs`) appeared between
+Task 5 and Task 6. It changes only docs/architecture/boundary.md and overview.md,
+was not created by this dispatch, and was preserved. Task 6's parent is that
+commit; its own diff remains exactly the two leased files. The final suite runs
+on ba8b6e1a with those concurrent docs included. This is not an extra task commit.
+
+### Final suite ACTUAL and completion
+
+Installed config get workflow.test_command returned null, exit 0, so the Cargo
+workspace manifest and Task 6's exact command selected
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence`. CADENCE_GLOBAL_CONFIG was
+also explicitly empty in the test environment. This was the single post-commit
+full-suite run. ACTUAL: **350 passed, 0 failed, 0 ignored, 0 filtered, exit 0**,
+matching the prediction. Target counts: lib 104; binary 147;
+derivation_consistency 6; derivation_inputs 12; evidence_store 4;
+execution_boundary_compat 9; execution_store 18; MCP 16; next_action 7; store
+17; store_crash 10; doc tests 0. The binary target took 97.88s, execution_store
+253.14s, and MCP 29.81s; the long-running notices were not failures. Full output
+is `evidence/final-suite.log`, counts in `evidence/final-suite-counts.json` at
+the outer temporary root. No repair, repeat suite, Node test gate or push ran.
+
+PLAN COMPLETE
+Plan: `.planning/phases/6/PLAN-2.md`
+Tasks: 8 of 8 satisfied; this dispatch completed the final 2 of 2 (Tasks 5, 6).
+Commits created by this dispatch: `804cf1c41a5765c7c7e2d8b5fb93eedf043626b5`
+and `ba8b6e1ae92b147b5db25685d7b5421d460ad9a2`. The concurrent documentation
+commit between them is preserved and is not attributed to this dispatch.
+
+Deviations: 2 observed live mismatches, retained with their attempt evidence:
+(1) task receipt inventory included suite twice across two invocations, causing
+typed verification refusals; (2) the first executor return prefixed its JSON
+with commentary. The final fixture's disclosed plan-body guidance produced
+JSON-only returns with accepted inventories; no shipped contract was changed.
+The initial malformed probe's actual nonempty input is recorded separately;
+the final fixture observed the exact requested empty-object malformed call.
+No third host restriction appeared. Final machine/static/preservation/signing
+predictions all matched; Task 6's full command ran at the installed contract's
+post-commit suite site rather than spending a duplicate precommit full run.
+
+Open items: 9 explicit limits, not omitted task gates: unassisted receipt
+reliability; real compaction and causal tool-survival proof; phase 11 general
+attempt/checkpoint/SUMMARY/task/lease behavior, /cad-task and CONTEXT amendments;
+phase 7-9 commit/Bash/protected-branch/risk/routing/review rails; phase 17 cycle
+acceptance; phase 18 installed MCP/bootstrap/plugin wiring; product operator
+answer flow (authority was stubbed); D-27 cross-format execution resume remains
+unsupported; D-28 installed-file identity and hardware power-loss durability
+are unproved. No model source, test output or judgment prose is evaluated.
+These limits remain explicit in UAT. The current fixture proves all required
+live orchestration observations with the disclosed guidance, including real
+replacement 2904048 -> 2905724, three Write and three Edit denials, one source
+allowance, and ordered signed commits b8775abd2d479debb695d69ff4efc10a61a24538
+then 7b50c7abcdaf5ff4d6dedc3cda9a62ed77a31534.
+
+Final exits: prerequisite MCP 0 (15 passed); new targeted test 0 (1 passed);
+clippy/fmt/TypeScript 0 before each task commit; both lease checks 0;
+both signature verifications 0; frozen/protected comparisons 0; independent
+live-shape/guard checks 0; final full suite 0 (350 passed). The complete prior
+UAT record remains byte-preserved and this report retains its original byte
+prefix. Only the existing report append is intentionally uncommitted under the
+installed sequential executor contract. CI's supplied green baseline was not
+rerun or newly claimed; no push was performed.
