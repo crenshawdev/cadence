@@ -1509,3 +1509,245 @@ fn review_receipts_keep_two_ranges_one_answer_and_legacy_originals() {
         );
     });
 }
+
+use cadence::evidence::authority::{Occurrence, Permission};
+async fn permission(server: &CadenceServer, root: &Path, scope: &Scope, id: &str) -> Permission {
+    server
+        .evidence(
+            root,
+            Command::Permission {
+                scope: scope.clone(),
+                override_id: id.into(),
+            },
+        )
+        .await
+        .unwrap()
+        .permission
+        .unwrap()
+}
+fn terminal(grant: &Record, state: Occurrence) -> Record {
+    Record {
+        version: VERSION,
+        scope: grant.scope.clone(),
+        fact: Fact::Occurrence(state),
+    }
+}
+
+#[test]
+fn occurrence_permission_survives_restart_and_ends_only_by_scoped_transition() {
+    for state in [
+        Occurrence::Fulfilled {
+            completion: "resume finished at commit 1234567".into(),
+        },
+        Occurrence::Superseded {
+            by: "dispatch-5-2".into(),
+        },
+    ] {
+        let root = process_fixture();
+        runtime().block_on(async {
+            let server = CadenceServer::with_factory(factory());
+            let pause = override_record(
+                root.path(),
+                "pause",
+                Meaning::PausedNext {
+                    sentence: "  Resume this exact instruction 日本語\t".into(),
+                },
+            );
+            let review = override_record(
+                root.path(),
+                "review",
+                Meaning::Review(review_receipt("B", "C")),
+            );
+            submit(&server, root.path(), "pause", pause.clone())
+                .await
+                .unwrap();
+            submit(&server, root.path(), "review", review.clone())
+                .await
+                .unwrap();
+            assert_eq!(
+                permission(&server, root.path(), &pause.scope, "pause").await,
+                Permission::Pending,
+                "saving preservation leaves resume pending"
+            );
+            drop(server);
+            let server = CadenceServer::with_factory(factory());
+            assert!(
+                permission(&server, root.path(), &pause.scope, "pause")
+                    .await
+                    .active()
+            );
+            let mut later = pause.scope.clone();
+            later.occurrence = "dispatch-5-2".into();
+            assert_eq!(
+                permission(&server, root.path(), &later, "pause").await,
+                Permission::Absent
+            );
+            for field in ["phase", "plan", "report", "cycle"] {
+                let mut raw = serde_json::to_value(&pause.scope).unwrap();
+                raw[field] = json!("another");
+                assert!(
+                    !permission(
+                        &server,
+                        root.path(),
+                        &serde_json::from_value(raw).unwrap(),
+                        "pause"
+                    )
+                    .await
+                    .active()
+                );
+            }
+            let transition = terminal(&pause, state.clone());
+            let mut wrong = transition.clone();
+            wrong.scope.occurrence = "never-granted".into();
+            assert!(submit(&server, root.path(), "wrong", wrong).await.is_err());
+            submit(&server, root.path(), "end", transition.clone())
+                .await
+                .unwrap();
+            drop(server);
+            let server = CadenceServer::with_factory(factory());
+            let expected = match state {
+                Occurrence::Fulfilled { .. } => Permission::Fulfilled,
+                Occurrence::Superseded { .. } => Permission::Superseded,
+            };
+            assert_eq!(
+                permission(&server, root.path(), &pause.scope, "pause").await,
+                expected
+            );
+            assert!(
+                !permission(&server, root.path(), &review.scope, "review")
+                    .await
+                    .active()
+            );
+            let before = server
+                .store(root.path(), Operation::ReadVerified)
+                .await
+                .unwrap();
+            let replay = submit(&server, root.path(), "pause", pause.clone())
+                .await
+                .unwrap();
+            assert_eq!(
+                replay.history,
+                vec![pause.clone(), review.clone(), transition]
+            );
+            assert!(replay.current.contains(&pause));
+            assert_eq!(
+                replay.review_settlements(
+                    &review.scope,
+                    "B",
+                    "C",
+                    "execute",
+                    Some(&review.scope.plan)
+                ),
+                vec![&review]
+            );
+            assert!(
+                !permission(&server, root.path(), &pause.scope, "pause")
+                    .await
+                    .active()
+            );
+            assert!(
+                submit(
+                    &server,
+                    root.path(),
+                    "new-grant-old-work",
+                    override_record(
+                        root.path(),
+                        "new",
+                        Meaning::PausedNext {
+                            sentence: "same words".into()
+                        }
+                    )
+                )
+                .await
+                .is_err()
+            );
+            assert!(
+                submit(
+                    &server,
+                    root.path(),
+                    "second-transition",
+                    terminal(
+                        &pause,
+                        Occurrence::Fulfilled {
+                            completion: "again".into()
+                        }
+                    )
+                )
+                .await
+                .is_err()
+            );
+            assert_eq!(
+                server
+                    .store(root.path(), Operation::ReadVerified)
+                    .await
+                    .unwrap(),
+                before
+            );
+            let mut fresh = pause.clone();
+            fresh.scope = later;
+            submit(&server, root.path(), "fresh-answer", fresh.clone())
+                .await
+                .unwrap();
+            assert!(
+                permission(&server, root.path(), &fresh.scope, "pause")
+                    .await
+                    .active()
+            );
+            assert!(
+                !permission(&server, root.path(), &pause.scope, "pause")
+                    .await
+                    .active()
+            );
+        });
+    }
+}
+
+#[test]
+fn active_override_cannot_suppress_lifecycle_conflict() {
+    let root = process_fixture();
+    runtime().block_on(async {
+        let server = CadenceServer::with_factory(factory());
+        let value = override_record(
+            root.path(),
+            "pause",
+            Meaning::PausedNext {
+                sentence: "resume".into(),
+            },
+        );
+        submit(&server, root.path(), "pause", value.clone())
+            .await
+            .unwrap();
+        assert!(
+            permission(&server, root.path(), &value.scope, "pause")
+                .await
+                .active()
+        );
+        let path = root.path().join("ROADMAP.md");
+        let text = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("- [ ] **Phase 5", "- [x] **Phase 5");
+        std::fs::write(path, text).unwrap();
+        let error = server
+            .evidence(
+                root.path(),
+                Command::Permission {
+                    scope: value.scope.clone(),
+                    override_id: "pause".into(),
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error,Error::Conflict(ref detail) if detail.contains("StateConflict")),
+            "{error:?}"
+        );
+        assert!(
+            server
+                .evidence(root.path(), Command::Read)
+                .await
+                .unwrap()
+                .current
+                .contains(&value)
+        );
+    });
+}

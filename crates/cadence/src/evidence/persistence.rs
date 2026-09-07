@@ -80,6 +80,7 @@ pub fn decode_history(decision: &DecisionRecord) -> Result<Option<Record>> {
 
 fn validate_transition(records: &BTreeMap<String, Record>, record: &Record) -> Result<()> {
     use super::{Fact, checker::Attempt};
+    super::authority::validate_transition(records, record)?;
     if let Fact::Override(value) = &record.fact {
         super::overrides::validate_submission(records, record, value)?;
     }

@@ -13,6 +13,10 @@ use std::path::Path;
 #[derive(Clone, Debug)]
 pub enum Command {
     Read,
+    Permission {
+        scope: cadence::evidence::Scope,
+        override_id: String,
+    },
     Submit {
         operation_id: String,
         record: Box<Record>,
@@ -29,6 +33,7 @@ pub enum Command {
 pub struct Recovery {
     pub current: Vec<Record>,
     pub history: Vec<Record>,
+    pub permission: Option<cadence::evidence::authority::Permission>,
 }
 
 impl Recovery {
@@ -57,6 +62,7 @@ fn recover(view: &View) -> Result<Recovery> {
             .iter()
             .filter_map(|decision| persistence::decode_history(decision).transpose())
             .collect::<Result<_>>()?,
+        permission: None,
     })
 }
 
@@ -102,10 +108,33 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
             ));
         }
     }
+    if let Command::Permission { scope, .. } = &command {
+        scope.validate()?;
+        if Path::new(&scope.planning_root) != root
+            || root.parent() != Some(Path::new(&scope.project))
+        {
+            return Err(Error::Invalid(
+                "permission scope differs from selected root".into(),
+            ));
+        }
+        // Permission never masks the independent lifecycle/state conflict.
+        super::derivation_service::query(factory, &root, &Default::default())
+            .await
+            .map_err(|e| Error::Conflict(format!("lifecycle: {e:?}")))?;
+    }
     let session = factory.first_touch(&root).await?;
     let before = session.derivation_view().await?;
     match command {
         Command::Read => recover(&before),
+        Command::Permission { scope, override_id } => {
+            let mut recovered = recover(&before)?;
+            recovered.permission = Some(cadence::evidence::authority::permission(
+                &recovered.current,
+                &scope,
+                &override_id,
+            ));
+            Ok(recovered)
+        }
         Command::Submit {
             operation_id,
             record,

@@ -1,4 +1,5 @@
 //! Native routing facts. Pure validation and projection; no ambient observation.
+pub mod authority;
 pub mod checker;
 pub mod checkpoint;
 pub mod gates;
@@ -47,6 +48,7 @@ pub enum Fact {
     Gate(gates::Gate),
     AcceptedResult(results::AcceptedResult),
     Override(overrides::Override),
+    Occurrence(authority::Occurrence),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +70,7 @@ impl Record {
             Fact::Gate(value) => value.validate(),
             Fact::AcceptedResult(value) => value.validate(),
             Fact::Override(value) => value.validate(&self.scope),
+            Fact::Occurrence(value) => value.validate(&self.scope),
         }
     }
     pub fn key(&self) -> Result<String> {
@@ -77,6 +80,7 @@ impl Record {
             Fact::Gate(value) => ("gate", &value.id),
             Fact::AcceptedResult(value) => ("accepted_result", &value.id),
             Fact::Override(value) => ("override", &value.id),
+            Fact::Occurrence(_) => ("occurrence", &self.scope.occurrence),
         };
         Ok(crate::store::model::digest(&serde_json::to_vec(&(
             &self.scope,
