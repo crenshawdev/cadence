@@ -43,6 +43,22 @@ pub struct RiskNeed {
     pub fire: risk::Fire,
 }
 
+#[cfg(test)]
+fn pause_barrier(stage: &str) {
+    use std::io::Write as _;
+
+    if std::env::var("CADENCE_PAUSE_BARRIER").as_deref() == Ok(stage) {
+        println!("PAUSE_BARRIER:{stage}");
+        std::io::stdout().flush().expect("pause barrier flush");
+        loop {
+            std::thread::park();
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn pause_barrier(_: &str) {}
+
 fn policy(config: &Generation) -> Result<Policy> {
     let values = &config.effective.values;
     let string = |key| {
@@ -630,6 +646,7 @@ async fn finalize_pause<I: ConfigIo>(
         }
         verify_participants(root, planning, view, Some(&committed))?;
         git::require_clean(root)?;
+        pause_barrier("after-final-commit");
         return Ok(Response::Ready(Box::new(captured.clone())));
     }
 }
@@ -1047,6 +1064,7 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
         }
         let operation = format!("pause-resume:{}", record.key()?);
         view = session.commit_evidence(&view, &operation, &record).await?;
+        pause_barrier("after-record");
         return finalize_pause(
             &session,
             &mut view,
@@ -1148,6 +1166,7 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
                 .await
                 .map_err(|_| Error::Closed)??;
         ready.wip = Some(committed);
+        pause_barrier("after-wip");
     }
     if session.config()? != config {
         return Err(Error::Conflict(
@@ -1170,6 +1189,7 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
     let invocation: ResumeInvocation = serde_json::from_str(invocation)?;
     let operation = format!("pause-resume:{}", record.key()?);
     view = session.commit_evidence(&view, &operation, &record).await?;
+    pause_barrier("after-record");
     finalize_pause(
         &session,
         &mut view,

@@ -19,11 +19,14 @@ use serde_json::{Value, json};
 use std::{
     collections::BTreeSet,
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    process::{Command as ProcessCommand, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 fn runtime() -> tokio::runtime::Runtime {
@@ -1174,6 +1177,234 @@ fn pause_record_risk_identity_ignores_changed_binary_receipt_bytes() {
             git::run(root, ["show", &format!("HEAD:{note}")]).unwrap(),
             b"DROP TABLE only in authored documentation\n"
         );
+    });
+}
+
+fn recovery_input(project: &Path, occurrence: &str) -> Input {
+    let mut request = input(project, occurrence);
+    request.authorized.insert("device.bin".into());
+    request
+}
+
+#[test]
+fn pause_recovery_child() {
+    let Some(project) = std::env::var_os("CADENCE_PAUSE_RECOVERY_ROOT") else {
+        return;
+    };
+    let project = PathBuf::from(project);
+    let occurrence = std::env::var("CADENCE_PAUSE_RECOVERY_OCCURRENCE").unwrap();
+    let mode = std::env::var("CADENCE_PAUSE_RECOVERY_MODE").unwrap();
+    runtime().block_on(async {
+        if mode == "write" {
+            let result = server().pause(recovery_input(&project, &occurrence)).await;
+            println!(
+                "PAUSE_RESULT:{}",
+                json!({"pid":std::process::id(),"result":format!("{result:?}")})
+            );
+            return;
+        }
+        let request = recovery_input(&project, &occurrence);
+        let planning = project.join(".planning");
+        let service = server();
+        let action = service.next_action(&planning).await.unwrap().unwrap();
+        let permission = service
+            .evidence(
+                &planning,
+                Command::Permission {
+                    scope: request.scope.clone(),
+                    override_id: "pause-resume".into(),
+                },
+            )
+            .await
+            .unwrap();
+        let reason = permission.current.iter().find_map(|record| {
+            if record.scope == request.scope
+                && let Fact::Override(value) = &record.fact
+                && value.id == "pause-resume"
+            {
+                Some(value.reason.clone())
+            } else {
+                None
+            }
+        });
+        println!(
+            "PAUSE_RESULT:{}",
+            json!({
+                "pid":std::process::id(),
+                "instruction":action.instruction(),
+                "resume":matches!(action, cadence::next_action::Action::Resume(_)),
+                "permission":permission.permission,
+                "reason":reason,
+            })
+        );
+    });
+}
+
+fn kill_pause_child(project: &Path, occurrence: &str, barrier: &str) {
+    let mut child = ProcessCommand::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "server::pause_service_tests::pause_recovery_child",
+            "--nocapture",
+        ])
+        .env("CADENCE_PAUSE_RECOVERY_ROOT", project)
+        .env("CADENCE_PAUSE_RECOVERY_OCCURRENCE", occurrence)
+        .env("CADENCE_PAUSE_RECOVERY_MODE", "write")
+        .env("CADENCE_PAUSE_BARRIER", barrier)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let expected = format!("PAUSE_BARRIER:{barrier}");
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let line = line.unwrap();
+            if line == expected {
+                let _ = sender.send(());
+                return;
+            }
+        }
+    });
+    let reached = receiver.recv_timeout(Duration::from_secs(10));
+    child.kill().unwrap();
+    let status = child.wait().unwrap();
+    reader.join().unwrap();
+    assert!(reached.is_ok(), "pause child did not reach {barrier}");
+    assert!(!status.success());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
+    }
+}
+
+fn read_pause_child(project: &Path, occurrence: &str) -> Value {
+    let output = ProcessCommand::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "server::pause_service_tests::pause_recovery_child",
+            "--nocapture",
+        ])
+        .env("CADENCE_PAUSE_RECOVERY_ROOT", project)
+        .env("CADENCE_PAUSE_RECOVERY_OCCURRENCE", occurrence)
+        .env("CADENCE_PAUSE_RECOVERY_MODE", "read")
+        .env_remove("CADENCE_PAUSE_BARRIER")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = String::from_utf8(output.stdout).unwrap();
+    serde_json::from_str(
+        output
+            .lines()
+            .find_map(|line| line.strip_prefix("PAUSE_RESULT:"))
+            .expect("pause reader result"),
+    )
+    .unwrap()
+}
+
+#[test]
+fn pause_survives_process_loss_at_each_real_commit_boundary() {
+    runtime().block_on(async {
+        for barrier in ["after-wip", "after-record", "after-final-commit"] {
+            let temp = risk_fixture("off", None).await;
+            let project = temp.path();
+            let occurrence = format!("process-loss-{barrier}");
+            let request = recovery_input(project, &occurrence);
+            let before = String::from_utf8(git::run(project, ["rev-parse", "HEAD"]).unwrap())
+                .unwrap()
+                .trim()
+                .to_owned();
+            let source = b"\0device state\xff\n";
+            fs::write(project.join("device.bin"), source).unwrap();
+
+            kill_pause_child(project, &occurrence, barrier);
+            assert_eq!(
+                git::run(project, ["show", "HEAD:device.bin"]).unwrap(),
+                source
+            );
+            let count = String::from_utf8(
+                git::run(project, ["rev-list", "--count", &format!("{before}..HEAD")]).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                count.trim(),
+                if barrier == "after-final-commit" {
+                    "2"
+                } else {
+                    "1"
+                }
+            );
+            let partial = server()
+                .evidence(&project.join(".planning"), Command::Read)
+                .await
+                .unwrap();
+            assert_eq!(
+                partial.current.iter().any(|record| {
+                    record.scope == request.scope
+                        && matches!(&record.fact, Fact::Override(value)
+                            if value.id == "pause-resume")
+                }),
+                barrier != "after-wip"
+            );
+            if barrier == "after-record" {
+                assert!(
+                    !git::run(project, ["status", "--porcelain"])
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+
+            let Response::Ready(retried) = server().pause(request.clone()).await.unwrap() else {
+                panic!("fresh retry must complete {barrier}");
+            };
+            assert_eq!(retried.wip, None);
+            git::require_clean(project).unwrap();
+            let completed = String::from_utf8(
+                git::run(project, ["rev-list", "--count", &format!("{before}..HEAD")]).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(completed.trim(), "2");
+            let completed_head = git::run(project, ["rev-parse", "HEAD"]).unwrap();
+            assert!(matches!(
+                server().pause(request).await.unwrap(),
+                Response::Ready(_)
+            ));
+            assert_eq!(
+                git::run(project, ["rev-parse", "HEAD"]).unwrap(),
+                completed_head
+            );
+            let committed_view = server()
+                .store(
+                    &project.join(".planning"),
+                    cadence::store::writer::Operation::Read,
+                )
+                .await
+                .unwrap();
+            for (name, bytes) in
+                evidence::persistence::confirmed_participants(&committed_view).unwrap()
+            {
+                assert_eq!(
+                    git::run(project, ["show", &format!("HEAD:.planning/{name}")]).unwrap(),
+                    bytes
+                );
+            }
+
+            let reader = read_pause_child(project, &occurrence);
+            assert_ne!(reader["pid"], std::process::id());
+            assert_eq!(reader["instruction"], "verify the fix on the device");
+            assert_eq!(reader["resume"], true);
+            assert_eq!(reader["permission"], "pending");
+            assert_eq!(reader["reason"], "verify the fix on the device");
+        }
     });
 }
 
