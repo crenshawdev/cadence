@@ -234,6 +234,38 @@ fn tool_schemas_all_inputs_and_outputs_have_object_roots() {
 }
 
 #[test]
+fn tool_schemas_all_inputs_have_properties_without_root_unions() {
+    let mut client = Client::spawn();
+    client.handshake();
+    let response = client.tools_list(2);
+    assert!(client.finish().success());
+    let tools = response["result"]["tools"]
+        .as_array()
+        .unwrap_or_else(|| panic!("result.tools is an array; response: {response}"));
+    assert!(
+        !tools.is_empty(),
+        "no advertised tools; response: {response}"
+    );
+    for tool in tools {
+        let schema = tool
+            .get("inputSchema")
+            .unwrap_or_else(|| panic!("{} is missing inputSchema", tool["name"]));
+        for keyword in ["oneOf", "anyOf", "allOf"] {
+            assert!(
+                schema.get(keyword).is_none(),
+                "{}.inputSchema must not use top-level {keyword}; schema: {schema}",
+                tool["name"]
+            );
+        }
+        assert!(
+            schema.get("properties").is_some_and(Value::is_object),
+            "{}.inputSchema must carry properties; schema: {schema}",
+            tool["name"]
+        );
+    }
+}
+
+#[test]
 fn cadence_version_returns_an_ok_envelope_as_structured_content() {
     let mut client = Client::spawn();
     client.handshake();

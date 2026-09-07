@@ -225,6 +225,31 @@ enum QueryArguments {
     ExecuteNext { phase: NonZeroU32 },
 }
 
+fn query_schema() -> Value {
+    let mut schema =
+        serde_json::to_value(schemars::schema_for!(QueryArguments)).expect("query schema");
+    let root = schema.as_object_mut().expect("derived query schema object");
+    let mut variants = root
+        .remove("oneOf")
+        .expect("derived query variants")
+        .as_array()
+        .expect("query variants array")
+        .clone();
+    // Hosts reject input unions at the root. The strict slice has one query
+    // operation, so promoting its derived object preserves every constraint.
+    // Adding an operation requires an explicit advertised-schema decision.
+    assert_eq!(variants.len(), 1, "query schema requires one operation");
+    root.extend(
+        variants
+            .pop()
+            .unwrap()
+            .as_object()
+            .expect("query variant object")
+            .clone(),
+    );
+    schema
+}
+
 impl CadenceServer {
     pub fn bind_project(self, project: &Path) -> Result<PublicServer, std::io::Error> {
         Ok(PublicServer {
@@ -277,6 +302,10 @@ fn tool<Output: JsonSchema + 'static>(
     ] {
         Arc::make_mut(schema).insert("type".into(), Value::String("object".into()));
     }
+    // Empty structs omit properties in schemars; hosts still need the field.
+    Arc::make_mut(&mut tool.input_schema)
+        .entry("properties")
+        .or_insert_with(|| Value::Object(Default::default()));
     tool
 }
 
@@ -314,8 +343,7 @@ impl ServerHandler for PublicServer {
                 tool::<ExecutionEnvelope>(
                     "cadence_query",
                     "Ask for the next native execution dispatch in the bound project.",
-                    serde_json::to_value(schemars::schema_for!(QueryArguments))
-                        .expect("query schema"),
+                    query_schema(),
                 ),
                 tool::<ExecutionEnvelope>(
                     "cadence_apply",
