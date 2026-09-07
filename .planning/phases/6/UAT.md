@@ -1,3 +1,506 @@
+# Phase 6 PLAN-2 live UAT - observed with explicit fixture receipt guidance
+
+Run date: 2026-09-07. Repository `/code/cadence`, branch
+`cadence/binary-owns-process`, input HEAD
+`6131c3f6522f52b4637dc62301801981375680b8`.
+
+Task 5's required live shape was observed: two native plans, real fixed
+executors, source edits, dispatched verify/suite calls, two signed ordered task
+commits, lossless accepted patches, matching SUMMARY, real server replacement,
+three protected Write denials, three protected Edit denials and one source
+Write allowance. This required explicit receipt-inventory guidance in the
+fixture plan bodies. Two earlier invocations in this dispatch stopped on
+`refused/verification`; those observations are recorded below, and both prior
+host-blocked attempts are preserved verbatim at the end. No third host
+restriction appeared. Host exit 0 alone is never used as an execution pass.
+
+No assertion evaluates model-produced source, test output, judgment prose or
+compaction causality. The record proves observed orchestration shape, not
+reliability across arbitrary projects or prompts. Task 6's acceptance map and
+final suite receipt are separate from this Task 5 record.
+
+## Environment and exact inputs
+
+Temporary root: `/tmp/cadence-uat-20260907-thl6_rj2`. Successful fixture: `/tmp/cadence-uat-20260907-thl6_rj2/clarified-run/fixture`.
+The initial receipt-refused fixture remains `/tmp/cadence-uat-20260907-thl6_rj2/fixture`.
+All host streams, prompts, command arrays, inspection scripts and receipts are
+under these temporary roots. No fixture is in `/code/cadence`.
+The binary was built once with `TMPDIR=/tmp RUSTC_WRAPPER= cargo build -p
+cadence` (exit 0), then invoked directly from `/code/cadence/target/debug/cadence`.
+Binary SHA-256: `64210cefd4bb1ae96b1677c4886b137dd2f833eaabfdf490718a105e545a1642`.
+The same binary served both fixtures and all guard calls.
+
+| Component | Observed value |
+|---|---|
+
+| host | `2.1.263 (Claude Code)` |
+| cargo | `cargo 1.98.1 (797e8a9bc 2026-08-05) (Arch Linux rust 1:1.98.1-1.1)` |
+| rustc | `rustc 1.98.1 (48a229cea 2026-09-01) (Arch Linux rust 1:1.98.1-1.1)` |
+| node | `v26.8.1` |
+| git | `git version 2.55.0` |
+| gpg | `gpg (GnuPG) 2.4.9` |
+| Model | `--model opus`; every host init reports `claude-opus-5` |
+
+Every fixture child explicitly receives `CADENCE_GLOBAL_CONFIG=""`,
+`TMPDIR=/tmp`, `RUSTC_WRAPPER=""` and its fixture-local `GNUPGHOME`. Each fixture
+created its own unprotected ed25519 signing key noninteractively, following
+`crates/cadence/tests/support/signing.rs`; no personal key signed fixture
+commits. Git author and committer configuration is John Crenshaw
+<john@jcrenshaw.dev>. The successful fixture key's public ID is
+`FDCDE48A15225498`; the initial fixture used `D446E41606629175`.
+
+Host configuration and npm cache are inside the temporary root. Inherited
+`CLAUDE*` variables were removed before constructing the host environment.
+`CLAUDE_CONFIG_DIR` points to each run's `host-config/`;
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `DISABLE_AUTOUPDATER=1`,
+`ENABLE_TOOL_SEARCH=false`. Existing authentication was supplied in process
+memory, never written into this record or setup files. Unused host/Node stdin
+was DEVNULL. No repository plugin or frozen JavaScript hook was loaded; every
+init event reports `plugins: []`. Built-in host skills remained visible.
+
+The project contains a minimal Rust library and tests. Setup generated its
+lockfile with `TMPDIR=/tmp RUSTC_WRAPPER= cargo generate-lockfile --offline`
+(exit 0) before committing the baseline. Both plans lease exactly `src/lib.rs`.
+Their operational frontmatter is:
+
+```yaml
+phase: 6
+plan: 1
+requirements: [AC3, AC7]
+files: [src/lib.rs]
+execution:
+  schema: 1
+  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --offline"
+  tasks:
+    - id: T1
+      verify: ["TMPDIR=/tmp RUSTC_WRAPPER= cargo test --offline subtract_works"]
+```
+
+```yaml
+phase: 6
+plan: 2
+requirements: [AC3, AC7]
+files: [src/lib.rs]
+execution:
+  schema: 1
+  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --offline"
+  tasks:
+    - id: T2
+      verify: ["TMPDIR=/tmp RUSTC_WRAPPER= cargo test --offline multiply_works"]
+```
+
+The operator-authored bodies request the corresponding source addition and
+unit test, restrict the lease, require the supplied command prefixes, keep
+captured command bytes in sibling `evidence/`, require configured signing and
+forbid attribution notices, trailers, credential output and pushes. The final
+fixture adds this exact operational clarification, absent in the first fixture:
+
+> In the returned patch, each task verification.commands array must contain exactly its operational verify list, in order, with one receipt per listed command. Run the separately supplied suite, but do not append its receipt to verification.commands: the advertised patch has no separate suite-receipt field. Return the JSON object without code fences.
+
+This guidance is disclosed fixture input. It neither modifies the shipped
+contracts nor repairs a parent-submitted patch. The unchanged contract alone
+eliciting the right receipt inventory remains unverified; the two preceding
+invocations actually failed that observation.
+
+| Successful fixture input | SHA-256 |
+|---|---|
+
+| `.planning/phases/6/PLAN-1.md` | `ff556c18b36fe1b69f3e1a24239a315c27e6e93ee9384303f5363f59cad59099` |
+| `.planning/phases/6/PLAN-2.md` | `d95f9cfd1e26f20266f055e5c2987ca74443c39993c0e55d8c27e17ebf53568d` |
+
+Strict policy is exactly `rung: fixed; branch: current; reviews: disabled`.
+Continuation authority is explicitly stubbed through the production store by
+the temporary Rust helper `seed/src/main.rs`, using `AllowFixture` policy
+(`validate` returns `Ok(())`). It is not a model, server proxy or live
+operator-answer round trip. No execution dispatch is seeded.
+
+Its version-1 scope is project/planning-root of the corresponding fixture,
+cycle `live`, occurrence `phase-6-execution`, phase `6`, plan
+`native-execution`, report `phases/6/SUMMARY.md`. Gate fields are
+`id: fixture-progress`, `purpose: progress`, `checkpoint_id: null`,
+`question: Continue?`, `need: Execution authority`, `options: []`.
+The first state is `status: unanswered`; the second is `status: answered` with
+`question_id: fixture-progress`, `actual_response: Proceed`,
+`selected_option: null`, `adjustment: null`, `disposition: approve`,
+`authorization_id: fixture-authorization`. Applied transactions are
+`fixture-authority-0` and `fixture-authority-1`; corresponding decision IDs are
+`native-evidence:fixture-authority-0` and `native-evidence:fixture-authority-1`.
+The helper was built once using `TMPDIR=/tmp RUSTC_WRAPPER= cargo build
+--offline --manifest-path /tmp/cadence-uat-20260907-thl6_rj2/seed/Cargo.toml
+--target-dir /code/cadence/target`, exit 0, and invoked after each fixture's
+malformed-patch probe, exit 0 both times. It uses the current repository crate.
+
+Project-local skill and agent copies were compared byte-for-byte and by digest:
+
+| Repository path copied to matching `.claude/` path | SHA-256 |
+|---|---|
+
+| `skills/cad-execute/SKILL.md` | `ae4287825c25d772134cc3f7ce7fef6e5d2e242788d72528ded1330e107102cc` |
+| `skills/cad-executor-contract/SKILL.md` | `0e71134a6172988fdaf95b042e72a2b19e983973087ddaf26c6008e6d889e1d7` |
+| `agents/cad-executor.md` | `53d1bde82b501f8f954d9406ab1b1f64b3eacb709bdbd888bf9b0d96b4c507fb` |
+
+Exact successful fixture `conf/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "cadence": {
+      "command": "/code/cadence/target/debug/cadence",
+      "args": [
+        "serve",
+        "--project-root",
+        "/tmp/cadence-uat-20260907-thl6_rj2/clarified-run/fixture"
+      ],
+      "env": {
+        "CADENCE_GLOBAL_CONFIG": "",
+        "GNUPGHOME": "/tmp/cadence-uat-20260907-thl6_rj2/clarified-run/gnupg"
+      }
+    }
+  }
+}
+```
+
+Exact successful fixture `conf/settings.json`:
+
+```json
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeCoAuthoredBy": false,
+  "autoMemoryEnabled": false,
+  "enableAllProjectMcpServers": false,
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash",
+      "Grep",
+      "Glob",
+      "Task",
+      "Agent",
+      "Skill",
+      "mcp__cadence__cadence_query",
+      "mcp__cadence__cadence_apply",
+      "mcp__cadence__cadence_version"
+    ],
+    "defaultMode": "dontAsk"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/code/cadence/target/debug/cadence guard"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The MCP command launches the built binary directly as `cadence serve
+--project-root <fixture>`; the hook launches it directly as `cadence guard`.
+Python launches and observes only its own fixture children; no wrapper sits
+between the host and Rust. It watches the first accepted `next-plan` result,
+terminates that server, interrupts its host and resumes the same saved session.
+No unrelated process was inspected or signalled. `src/probe.txt` is an
+operator-authorized source target, ignored in the fixture's `.git/info/exclude`.
+
+## Commands, predictions and live observations
+
+All hosts ran from their fixture, with these common arguments (exact argument
+arrays are retained in `evidence/<mode>-command.json`):
+
+```text
+claude -p <prompt>
+  --mcp-config <run-root>/conf/mcp.json --strict-mcp-config
+  --settings <run-root>/conf/settings.json --setting-sources project
+  --model opus --effort high --permission-mode dontAsk
+  --output-format stream-json --verbose --include-hook-events
+  --forward-subagent-text
+```
+
+Execution prompt is exactly `/cad-execute 6`; the replacement invocation adds
+`--resume <saved-session-id>`, with the same prompt. There is no ToolSearch
+preamble, extra delegation context, plugin option or Cadence shell fallback.
+Host CLI help and current Context7 documentation were consulted; the stream's
+`system/init.tools` array is the direct host-listing evidence. No `--debug`
+assumption substitutes for it. Stdout and stderr are captured separately under
+`evidence/`; where merged shell logging is used, redirection is `> file 2>&1`.
+
+Prerequisite PREDICTION before Verify: MCP 15 passed, 0 failed, exit 0; binary
+build exit 0. ACTUAL: exactly 15 passed, 0 failed, 0 ignored, 0 filtered,
+exit 0, 29.62 seconds; build exit 0.
+
+Task 5 PREDICTION before live Verify: three host tools, a successful malformed
+refusal, two real executor dispatches with source changes, given verify/suite
+calls, signed task commits, accepted patches, matching SUMMARY, intentional
+replacement, six protected denials and one source allowance. ACTUAL: the first
+fixture stopped twice on receipt mismatch. After the explicitly recorded body
+clarification, all those orchestration observations occurred. See the failed
+invocation history below; it is not folded into a first-try pass.
+
+### U1 - direct host exposure and malformed refusal
+
+Every init event lists exactly `mcp__cadence__cadence_apply`,
+`mcp__cadence__cadence_query`, `mcp__cadence__cadence_version`, with one connected
+Cadence server and zero plugins. No Skipping diagnostic occurred in the captured
+streams/stderr. No ToolSearch call occurred. The successful fixture's real
+boundary model was asked to call `cadence_apply({})` exactly once; actual input
+was exactly `{}`. Tool-use ID `toolu_014vXd8nr7KfG18aMx6Lw3LJ` returned a
+successful `refused/invalid-patch` envelope, without `is_error`, and one durable
+matching decision. Boundary host exited 0, 2 turns, 1 tool call.
+
+### U2 - real fixed executors and lossless application
+
+The host advertises `Task` in init but emits delegation tool calls as `Agent`.
+Both calls select `subagent_type: cad-executor`; their prompts match the
+binary-returned prompt byte-for-byte, with 8,391 and 8,394 UTF-8 bytes.
+Neither parent invoked a filesystem/shell tool, wrote a report or submitted an
+alternate patch. Each executor's final text is exactly one JSON object, with
+keys `schema`, `kind`, `dispatch_id`, `expected_execution_version`, `outcome`,
+`tasks`, `deviations`, `blockers`. Independent object comparison to the apply
+arguments preserves all values and array order, including judgment fields.
+No meaning is assigned to judgment prose.
+
+| Plan | Delegation tool-use ID | Apply tool-use ID | Apply outcome |
+|---|---|---|---|
+
+| 1 | `toolu_01MwFGQfMQzXG35r6AsDd5f8` | `toolu_01DQeXevH3iuCqxkRrTQ8DQu` | next-plan |
+| 2 | `toolu_01Qb95nkbYyAtETVqjzRHjCo` | `toolu_018KqZzVFLHHRCZoVYdb1eYG` | complete |
+
+### U3 - source edits, command invocations and Git
+
+Child streams show source Edit calls on `src/lib.rs` for both plans, with
+successful guard passthrough and host results. The following Bash tool calls
+contain the exact dispatched commands, with output capture redirection. The
+suite was invoked once by each successful executor before its task commit.
+The record observes invocation and receipt shape only; it does not evaluate
+the model's source, test output or explanations.
+
+| Plan/mode | Command | Tool-use ID |
+|---|---|---|
+
+| execute | `TMPDIR=/tmp RUSTC_WRAPPER= cargo test --offline subtract_works` | `toolu_01FbduHjhZLfkdw2RKyN3tuu` |
+| execute | `TMPDIR=/tmp RUSTC_WRAPPER= cargo test --offline` | `toolu_014whCmUEN187SoWEUhVTyFU` |
+| resume2 | `TMPDIR=/tmp RUSTC_WRAPPER= cargo test --offline multiply_works` | `toolu_01MQSyHqaG3C7qq3FjCVAfrQ` |
+| resume2 | `TMPDIR=/tmp RUSTC_WRAPPER= cargo test --offline` | `toolu_01KZXttC24XZzG3kXDkvYj1X` |
+
+Independent Git reads (`rev-list`, `cat-file`, `verify-commit`, signature,
+parent, author and changed-path queries) establish exactly two task commits
+following baseline `c443ec2752503a4a9c07fb5bbc955a85b08f5bc1`.
+Both are signed `G FDCDE48A15225498`, authored John Crenshaw
+<john@jcrenshaw.dev>, have empty bodies and change only `src/lib.rs`.
+Their subjects are conventional `feat(6):` subjects containing the respective
+stable task ID as a separate token. T1's sole parent is baseline; T2's sole
+parent is T1. These are Git facts independent of the executor return.
+
+| Task | Full signed commit SHA |
+|---|---|
+
+| T1 | `b8775abd2d479debb695d69ff4efc10a61a24538` |
+| T2 | `7b50c7abcdaf5ff4d6dedc3cda9a62ed77a31534` |
+
+### U4 - real replacement between plan dispatches
+
+| Invocation | Host PID | Rust server PID | End |
+|---|---:|---:|---|
+| Malformed boundary | 2903814 | 2903856 | Normal host exit 0 |
+| First plan | 2904010 | 2904048 | Server SIGTERM immediately after next-plan; host SIGINT |
+| Same-session resume, second plan | 2905685 | 2905724 | Normal host exit 0, success, 4 turns |
+| Separate guard model | 2906686 | 2906722 | Normal host exit 0, success, 11 turns |
+
+**Replacement is real.** `execute.jsonl` ends after the accepted first patch
+and contains no second dispatch. Its process receipt records intentional
+SIGTERM of server 2904048. Both that PID and its host were absent before resume.
+The between-plans Git/SUMMARY inspection shows T1 accepted and Status: executing.
+`resume2-command.json` resumes the saved execution session (session identity
+compared independently, not reproduced here). Fresh server 2905724 returns plan
+2 with T1's SHA as dispatch base; its accepted patch returns complete.
+All eight owned PIDs were absent at closing inspection.
+
+The interrupted host's process exit is 0, but its stream result is
+`error_during_execution`, `is_error: true`, 5 turns. This is the deliberate
+interruption, not an unnoticed pass or a third host restriction. This proof is
+distinct from same-outstanding-dispatch replay in the initial refused fixture
+and from deterministic crash/replay tests.
+
+### U5 - independent state, decisions and SUMMARY
+
+`independent-inspection.json`, `between-plans-inspection.json` and `proof.json`
+under the successful run's evidence directory are independent filesystem/Git
+receipts. Five boundary records plus the two declared authority-stub records
+exist. For each live query/apply response, independent JSON hashing finds
+exactly one matching request/response digest in the decisions log. Request
+hashing preserves observed JSON key order; response hashing uses canonical JSON.
+No production response serializer or model narrative supplies expected values.
+
+| Outcome | Decision ID | Dispatch/subject ID | Store generation |
+|---|---|---|---:|
+
+| refused:invalid-patch | `b1ffff4fea1779d3b479cc24983d5117e1d102d5f3860e7025606abedc465e37` | `null` | 2 |
+| dispatch | `d73812c88499923cb9af55f20e4c7572dc639e268476c9eb86441dc42823a1b5` | `c63350f3f4d4f2f3d691e9dfff5f195266e1053dffb0f78ded1bce399738d5bc` | 5 |
+| next-plan | `6cad4f87c78e1d5c92d5bb10d59964f5e4397c78b5fe34ad2c5b62536a807f93` | `c63350f3f4d4f2f3d691e9dfff5f195266e1053dffb0f78ded1bce399738d5bc` | 6 |
+| dispatch | `b0b6e3f7eacbc2d08206a16e6dbca48d6edd2ec5a931d8431ddb143926f1f905` | `5ae5eb32aadaaeef064f51ce00dc74de51d077c4e5f8a345d5b18df5907f8b75` | 7 |
+| complete | `13e0f117e81a64e598c5fc2222127b5b3236fc8f4fa515c685dbcc109ced832e` | `5ae5eb32aadaaeef064f51ce00dc74de51d077c4e5f8a345d5b18df5907f8b75` | 8 |
+
+The final SUMMARY has `Status: complete`, exactly two task rows, T1 and T2,
+and exactly the two full Git SHAs above, once each and in order. It contains no
+third task SHA. Final SUMMARY SHA-256:
+`ec839a6aae8ceaf48b4dd1aeb777a9f6f58487d5ef16a09c1cfa699c3af87db2`.
+Its intermediate hash was
+`e22c699f6fc41be2428e21d720d13ef79e2213b6c65e59343d9aca055cad8ec1`.
+No model Write/Edit/Bash call targeted Cadence state or SUMMARY in the execution
+runs. The binary produced the store and rendered SUMMARY. Fixture Git status
+is clean; no report file was created.
+
+### U6 - actual Write and Edit denials
+
+Separate prompt grants Read/Write/Edit and explicitly requests Read context,
+then one Write per protected target, one Edit per protected target, and one
+source Write. It instructs continuing after each expected denial without Bash,
+other workarounds, agents or tool loading. Exact prompt is
+`evidence/guard-prompt.txt`. The real model made 3 Reads and 7 mutation attempts.
+
+Guard PREDICTION before Verify: 3 Write denials, 3 Edit denials, 1 source
+allowance, unchanged protected bytes. ACTUAL: all seven observations matched.
+Each denial's hook stdout has `permissionDecision: deny`, hook exit 0 and
+reason `Cadence owns <absolute target>; use the native execution boundary
+instead of Write/Edit`; each corresponding tool result is an error. The source
+case has empty hook stdout/stderr, exit 0 and a successful Write result. This
+is permission passthrough plus an actual write, not an explicit JSON allow.
+Hook events are joined in sequential stream order to tool attempts and their
+results; hook responses themselves do not expose a tool-use ID.
+
+| Tool/target | Tool-use ID | Hook ID | Result |
+|---|---|---|---|
+
+| Write `.planning/state.json` | `toolu_016banRo1WD2wgbasYF3g2kc` | `8e0a3c04-dc1f-4eb9-a470-5fe4d6022b74` | deny |
+| Write `.planning/decisions.jsonl` | `toolu_01FXBHnywtWKXraG3tSZe9P3` | `4a5cf538-36a2-47ef-b1a6-ec6de5b0ad44` | deny |
+| Write `.planning/phases/6/SUMMARY.md` | `toolu_014SBqFoRBHeG9PxU3K9yMHD` | `ff801067-2858-4a5a-b789-229c4577e4a2` | deny |
+| Edit `.planning/state.json` | `toolu_011dNrT9q2mUa4r3E3YR1dbT` | `9b43351c-e6eb-4a0e-b62b-fcb49294f31c` | deny |
+| Edit `.planning/decisions.jsonl` | `toolu_01EZsgkXkGA6ieLseh5ritoC` | `dbb5278d-f6f3-4eee-8ad6-8845e5ea46d6` | deny |
+| Edit `.planning/phases/6/SUMMARY.md` | `toolu_01Rfo9TwGJDvcxPFU8v8un7W` | `4e72ce2e-f265-4ee4-be07-2abad1c44c55` | deny |
+| Write `src/probe.txt` | `toolu_01YA3Fk5N6T4q272NRgvFCnt` | `20c4573e-c955-4efa-82ed-b9eacbb1aef2` | allowance |
+
+| Protected target | Identical before/after SHA-256 |
+|---|---|
+
+| `.planning/state.json` | `9743cd432cab2f7b3b01898f53d8c44792af1800db9b4e7a178ec00e25d70d1b` |
+| `.planning/decisions.jsonl` | `696fa178ddcbb64609bf80fef8b876cf1fba91d84fe731c7053d8f94f578764b` |
+| `.planning/phases/6/SUMMARY.md` | `ec839a6aae8ceaf48b4dd1aeb777a9f6f58487d5ef16a09c1cfa699c3af87db2` |
+
+Source probe exists at 12 bytes, SHA-256
+`8492103428ce00fc6d84bd1b91078ddbfa61db4c2569efe2222b600c1d371434`; its contents are not reproduced or evaluated.
+All protected targets existed before the attempts, including SUMMARY, so Edit
+was exercised against real files with prior Read context.
+
+### U7 - limits and live checklist
+
+| Obligation | Recorded outcome |
+|---|---|
+| Actual host/model, direct server/guard, exact copied artifacts | Observed, U1/environment |
+| Pre-load tools and malformed-patch refusal | Observed, U1; actual empty object in final fixture |
+| Fixed executor, exact dispatch prompt, no parent shell/report path | Observed, U2 |
+| Source changes, dispatched verify/suite calls, ordered signed task commits | Observed shape, U3 |
+| Advertised JSON-only return and field-for-field accepted patch | Observed in clarified fixture, U2 |
+| Intentional server replacement and same-session resume between plans | Observed, U4 |
+| Independent decisions and exact SUMMARY/full-SHA shape | Observed, U5 |
+| Three Write denials, three Edit denials, one source allowance | Observed, U6 |
+| Unassisted contract reliably elicits exact receipt inventory | Unverified; initial fixture refused twice |
+| Real compaction, before/after calls, distinguishable never-loaded control | Not observed; causality INCONCLUSIVE |
+
+Zero compaction events occurred. No before/after compaction sequence is invented.
+OQ-1 remains no preamble; the direct never-loaded calls succeeded. OQ-2 remains
+non-decision-bearing under D-25's failed negative control; successful calls
+cannot distinguish tool survival from load-state enforcement being absent.
+No assertion evaluates model-produced content. Hardware power-loss durability,
+installed-file identity, cross-format execution migration, product operator
+answer flow and installed release wiring are not established here.
+Phase 11 attempt history, checkpoints, general SUMMARY/task/lease behavior and
+phase 7-9 commit/Bash/routing/review rails remain unimplemented by this slice.
+
+Static PREDICTION before Verify: clippy, fmt and TypeScript exit 0. ACTUAL:
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings`,
+`TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check`, and
+`TMPDIR=/tmp npx tsc -p tsconfig.ci.json </dev/null` each exited 0.
+No Node test suite ran; D-29's frozen-reference obligation is the byte diff.
+Task 5 commit/lease/preservation receipts are appended to the existing report.
+
+## Current-dispatch history - two receipt-refused invocations
+
+These are actual model runs against the initial fixture, before the added plan
+body clarification. They are not host schema failures, accepted execution or
+replacement between plans.
+
+| Invocation | Host PID | Rust server PID | Actual |
+|---|---:|---:|---|
+| Initial boundary | 2899364 | 2899401 | Exit 0, 2 turns, 1 apply, refused/foreign-dispatch |
+| Initial /cad-execute 6 | 2900021 | 2900058 | Exit 0, 4 turns, query/Agent/apply, refused/verification |
+| Same-session bounded resume | 2902122 | 2902162 | Exit 0, 4 turns, query/Agent/apply, refused/verification |
+
+The initial boundary requested `{}`; actual input was
+`{"schema":0,"kind":"executor","dispatch_id":"","expected_execution_version":0,"outcome":"complete","tasks":[],"deviations":[],"blockers":[]}`.
+Only that actual nonempty malformed input is claimed for the initial probe.
+The two execution queries returned identical dispatch envelopes and identical
+8,025-byte prompts. The first executor made a source Edit, verify and suite
+Bash calls, and signed commit `8993d56bad224123dca976793e35695f944fbfce` after
+baseline `2f6ab4cafecb1b98ba645f2d0847cf13c151b880`. Independent Git verification
+reports `G D446E41606629175`, John Crenshaw <john@jcrenshaw.dev>, one parent,
+only `src/lib.rs` changed, empty commit body. The resumed executor reused this
+commit, invoked verify/suite again and created no second commit.
+
+Both patches had two command receipts in the T1 row (task verify plus suite),
+but operational task.verify contained one command. The validator refused both
+with code verification; each parent passed the returned JSON object unchanged
+and stopped. The first return also had commentary before the JSON object;
+the second was JSON-only. Exact-only return was therefore unverified on the
+first invocation. No test/source/judgment prose is reproduced or graded.
+Neither accepted a plan, rendered SUMMARY nor triggered intentional termination.
+This is actual same-dispatch replay across normally closed servers; it does not
+satisfy the separate between-plan replacement requirement.
+
+[deviation] Expected an accepted first patch and an exact JSON-only return;
+observed receipt mismatch twice and prefixed commentary on the first return.
+A final fresh fixture added the explicit inventory guidance quoted above.
+That successful observation does not erase this prompt/contract limitation.
+
+Initial fixture dispatch ID:
+`401acf35cf653c7fa8c5c0b762ca2738793f8bf539beed509edf2e6dcc3793cb`.
+Initial fixture decisions, independently matched to actual wire digests:
+
+| Outcome | Decision ID | Generation |
+|---|---|---:|
+
+| refused:foreign-dispatch | `ca12220c87a84c6794defdeee45f539d2532e48b9b09e3e9442cd9bc6c91a807` | 2 |
+| dispatch | `02d5fb0198435865642d5949a9dc742c1d07563ac9337a850f50a4e9725870ac` | 5 |
+| refused:verification | `cdfeba051908f1830ea9c9c4f3f429f07a505b95d59bd7cfe311f48ccac7c45e` | 6 |
+| refused:verification | `395dffd4f1699a56c232166088ec1bc30447ab3ad24ef8f781daf9c2b9e00adf` | 7 |
+
+Initial fixture authority transactions and scope use the exact stub above,
+with its own root. Full plan digests and Git/decision/command receipts are in
+`evidence/baseline.json` and `retry-inspection.json` at the outer temporary root.
+No initial-fixture guard attempt or compaction occurred. No accepted task or
+SUMMARY is claimed for that fixture. Its six owned host/server PIDs were absent
+at closing inspection.
+
+## Historical host-blocked attempts - preserved full prior record
+
+The complete input UAT follows verbatim. Its latest record is the second host
+block (query input oneOf filtering); its embedded prior record is the first
+host block (four missing object roots). Task 7 (`b6bff7a4`) and Task 8
+(`313a8492`) resolved those producer defects before this dispatch. Their old
+blocked/unverified statuses and PID caveats remain historical facts, not current
+claims. The current D-29 instruction controls the present run.
+
+---
+
 # Phase 6 PLAN-2 live UAT - blocked on query-schema filtering
 
 Run date: 2026-09-07. Repository `/code/cadence`, branch
