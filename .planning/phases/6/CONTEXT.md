@@ -253,6 +253,37 @@ PLAN-1 -> PLAN-2. There is no parallel plan pair.
   `.planning/ROADMAP.md:202-205`. If wrong: a mock certifies the very boundary
   under test, or a model's prose is mistaken for deterministic evidence.
 
+- D-27 (Cross-format execution resume is UNSUPPORTED, not migrated): A native
+  execution record written by an earlier 4.0 development build is not converted
+  to the new envelope-digest format. A new binary meeting one refuses as a
+  server/store failure and preserves the old bytes; it never fabricates a digest
+  or silently reinterprets a record. Ruled by John, 2026-09-07, on PLAN-3's
+  flagged assumption A. The conversion is not merely expensive, it is dishonest:
+  an old terminal holds only the digest of the literal string
+  `execution-log-bound:{phase}` (`crates/cadence/src/store/writer.rs:803,822`),
+  ordinary old decisions do not carry the response needed to reverse their
+  internal-response hash (`crates/cadence/src/store/model.rs:77`), and the old
+  active dispatch records a prompt byte count with no renderer or schema version
+  (`crates/cadence/src/execution/model.rs:56`) while replay refuses a length
+  mismatch (`crates/cadence/src/execution_service.rs:1062`). No conversion can
+  produce a digest of a public envelope from those inputs.
+  **What decided it:** the records this migration would serve exist nowhere.
+  Verified 2026-09-07 - `.planning/items.jsonl`, `.planning/decisions.jsonl` and
+  `.planning/state.json` are all absent from this repository, 4.0.0 has never
+  been tagged, and the format was invented three phases ago and has never left
+  this tree. Tests build stores in temporary directories and discard them.
+  **What this does NOT narrow, stated so a later reader cannot widen it:** the
+  v3 compatibility promise at `docs/rationale/architecture-v4.md:23-26` - that
+  the Rust server reads a `.planning/` directory from the milestone-close tree
+  unchanged, that new frontmatter fields are additive with defaults, and that
+  `cadence migrate` covers what cannot be. That promise is about v3 markdown
+  artifacts. This decision is about 4.0-dev-native store records. Two different
+  compatibility claims that share a directory. D-19, D-21 and D-22 are narrowed
+  only in this respect and remain otherwise authoritative. If 4.0.0 ships and a
+  user acquires native records, changing that format again is a new decision
+  with a real migration obligation. If wrong: a future format change inherits
+  this exemption by precedent rather than by argument.
+
 ## Acceptance criteria
 
 - [ ] AC1: `tools/list` returns exactly `cadence_version`, `cadence_query` and
