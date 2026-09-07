@@ -509,7 +509,17 @@ impl PlanGraph {
             .collect::<BTreeMap<_, _>>();
         for (index, left) in plans.iter().enumerate() {
             for right in &plans[index + 1..] {
-                if left.files.iter().any(|path| right.files.contains(path)) {
+                if left
+                    .files
+                    .iter()
+                    .chain(&left.directories)
+                    .any(|path| covers(&right.files, &right.directories, path))
+                    || right
+                        .files
+                        .iter()
+                        .chain(&right.directories)
+                        .any(|path| covers(&left.files, &left.directories, path))
+                {
                     let (before, after) = if left.plan < right.plan {
                         (left.plan, right.plan)
                     } else {

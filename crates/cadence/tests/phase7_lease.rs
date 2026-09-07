@@ -413,3 +413,79 @@ fn sole_production_coverage_definition_is_exercised() {
     // This revision anchors the historical records; later tasks assert their bytes.
     assert_eq!(START.len(), 40);
 }
+
+fn graph(leases: &[(u32, &str)]) -> cadence::execution::plan::PlanGraph {
+    let plans = leases
+        .iter()
+        .map(|(number, lease)| parse_plan(source(*number, lease).as_bytes(), 7, *number).unwrap())
+        .collect::<Vec<_>>();
+    cadence::execution::plan::PlanGraph::build(&plans).unwrap()
+}
+
+#[test]
+fn ac4_directory_and_descendant_file_require_lower_number_first_in_either_direction() {
+    use std::collections::BTreeSet;
+    // The exact AC4 pair must fail if ordering regresses to files.contains.
+    for (left, right) in [
+        ("files: []\ndirectories: [src/]", "files: [src/shared.txt]"),
+        ("files: [src/shared.txt]", "files: []\ndirectories: [src/]"),
+        (
+            "files: []\ndirectories: [src]",
+            "files: []\ndirectories: [src/nested]",
+        ),
+        (
+            "files: []\ndirectories: [src/nested]",
+            "files: []\ndirectories: [src]",
+        ),
+        (
+            "files: []\ndirectories: [src]",
+            "files: []\ndirectories: [src/]",
+        ),
+        ("files: [src]", "files: []\ndirectories: [src]"),
+    ] {
+        for leases in [[(1, left), (2, right)], [(2, right), (1, left)]] {
+            let graph = graph(&leases);
+            assert_eq!(graph.prerequisites(1), Some(&BTreeSet::new()));
+            assert_eq!(
+                graph.prerequisites(2),
+                Some(&BTreeSet::from([1])),
+                "{leases:?}"
+            );
+            assert_eq!(graph.ready(&BTreeSet::new()), [1]);
+            assert_eq!(graph.ready(&BTreeSet::from([1])), [2]);
+        }
+    }
+}
+
+#[test]
+fn overlap_readiness_remains_transitive_and_deterministic() {
+    use std::collections::BTreeSet;
+    let graph = graph(&[
+        (3, "files: []\ndirectories: [other/nested]"),
+        (2, "files: [src/shared.txt, other/nested/a.rs]"),
+        (1, "files: []\ndirectories: [src/]"),
+    ]);
+    assert_eq!(graph.prerequisites(2), Some(&BTreeSet::from([1])));
+    assert_eq!(graph.prerequisites(3), Some(&BTreeSet::from([2])));
+    assert_eq!(graph.ready(&BTreeSet::new()), [1]);
+    assert_eq!(graph.ready(&BTreeSet::from([1])), [2]);
+    assert_eq!(graph.ready(&BTreeSet::from([1, 2])), [3]);
+    assert_eq!(graph.next_ready(&BTreeSet::from([1, 2])), Some(3));
+}
+
+#[test]
+fn textual_prefixes_and_exact_files_never_create_recursive_overlap() {
+    use std::collections::BTreeSet;
+    let graph = graph(&[
+        (5, "files: []\ndirectories: [other]"),
+        (3, "files: [src-other/a.rs]"),
+        (1, "files: []\ndirectories: [src]"),
+        (2, "files: [exact]"),
+        (4, "files: [exact/child]"),
+    ]);
+    assert_eq!(graph.ready(&BTreeSet::new()), [1, 2, 3, 4, 5]);
+    assert_eq!(graph.next_ready(&BTreeSet::new()), Some(1));
+    for number in 1..=5 {
+        assert_eq!(graph.prerequisites(number), Some(&BTreeSet::new()));
+    }
+}
