@@ -22,6 +22,11 @@ pub enum Operation {
         expected_integrity: String,
         data: Value,
     },
+    CompareTransact {
+        expected_generation: u64,
+        expected_integrity: String,
+        transaction: super::transaction::Transaction,
+    },
     Transact(super::transaction::Transaction),
     AppendItem(ItemRecord),
     AppendDecision(DecisionRecord),
@@ -202,6 +207,19 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         if let Some(error) = &self.failed {
             return Err(error.clone());
         }
+        // Attempt preconditions are not logical transaction content. In particular,
+        // an acknowledged/recovered retry must be recognized before the stale gate.
+        let (operation, expected) = match operation {
+            Operation::CompareTransact {
+                expected_generation,
+                expected_integrity,
+                transaction,
+            } => (
+                Operation::Transact(transaction),
+                Some((expected_generation, expected_integrity)),
+            ),
+            other => (other, None),
+        };
         let mut next = self.view.clone();
         let mut external = Vec::new();
         let mut operations = next.snapshot.operations.clone();
@@ -240,6 +258,14 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                         ))
                     };
                 }
+                if let Some((generation, integrity)) = expected {
+                    self.revalidate()?;
+                    if generation != self.view.snapshot.generation
+                        || integrity != self.view.snapshot.integrity
+                    {
+                        return Err(Error::Conflict(STALE_SNAPSHOT.into()));
+                    }
+                }
                 operations.insert(transaction.id, fingerprint);
                 next.items.extend(transaction.items);
                 next.decisions.extend(
@@ -256,6 +282,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 external = transaction.external;
                 "transaction"
             }
+            Operation::CompareTransact { .. } => unreachable!("unwrapped above"),
             Operation::AppendItem(item) => {
                 next.items.push(item);
                 model::validate_items(&next.items)?;

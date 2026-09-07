@@ -452,6 +452,53 @@ impl<I: ConfigIo> Session<I> {
             .await
     }
 
+    /// Evidence owns only its namespace. Derivation retains its separate contract.
+    pub async fn commit_evidence(
+        &self,
+        expected: &View,
+        operation_id: &str,
+        record: &cadence::evidence::Record,
+    ) -> Result<View> {
+        use cadence::evidence::persistence;
+        self.config()?;
+        let decision = persistence::history(operation_id, record)?;
+        let current = self.store.request(Operation::ReadVerified).await?;
+        // Reconstructing the projection after another write changes attempt data,
+        // not the logical input. Recover its immutable receipt before projecting.
+        if let Some(prior) = current
+            .decisions
+            .iter()
+            .find(|prior| prior.id == decision.id)
+        {
+            return if prior == &decision {
+                Ok(current)
+            } else {
+                Err(Error::Conflict(
+                    "operation identity reused for different content".into(),
+                ))
+            };
+        }
+        if expected.snapshot.data.get("import") != Some(&serde_json::to_value(&self.manifest)?) {
+            return Err(Error::Invalid(
+                "evidence proposal must preserve import manifest".into(),
+            ));
+        }
+        let data = persistence::project(&expected.snapshot.data, record)?;
+        self.store
+            .request(Operation::CompareTransact {
+                expected_generation: expected.snapshot.generation,
+                expected_integrity: expected.snapshot.integrity.clone(),
+                transaction: Transaction {
+                    id: decision.id.clone(),
+                    items: Vec::new(),
+                    decisions: vec![decision],
+                    snapshot: Some(data),
+                    external: Vec::new(),
+                },
+            })
+            .await
+    }
+
     pub async fn set_config(&self, layer: Layer, key: &str, value: Value) -> Result<View> {
         write::ConfigWriter {
             root: self.root.clone(),
