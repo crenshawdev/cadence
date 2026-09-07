@@ -1,3 +1,38 @@
+PLAN PARTIAL
+Plan: .planning/phases/6/PLAN-3.md
+Tasks: 4 of 6
+| Task | Commit | Note |
+|---|---|---|
+| 1 - Generate the patch schema from its real domain types | `073226dd` | Derived the patch schema from the deserialized domain types, removed the handwritten producer, and added independent nested schema/deserialization and opaque UTF-8 prompt cases. Predicted both V1 test commands would exit 0, execute the named schema/prompt cases and report zero failures, and the source search would find no handwritten patch schema. All held: 40 library tests and 11 service tests passed. Clippy, formatting and TypeScript checks exited 0 before commit. |
+| 2 - Define the shared envelope and canonical receipt contract | `119dd749` | Shared the envelope through the library; defined tagged scope, versioned receipts, distinct failures, one terminal constructor, canonical bytes/digests and both size limits. Moved the legacy response representation without changing its persisted hash semantics. Predicted V2 would run 8 boundary tests and 12 service tests with zero failures; both held. Clippy, formatting and TypeScript checks exited 0 before commit. |
+| 3 - Persist scoped decisions and return the writer's actual answer | `7275271e` | Added immutable versioned boundary records and exact-decision intents, separate root and execution budgets, canonical terminal receipts, typed confirmation selection, legacy read preservation and intent rejection fixtures. Predicted V3 would report 12 store tests and 3 compatibility tests passed, zero failed; both initial and strengthened reruns held. The strengthened budget case covers both saturation orders and unchanged terminal replay after reopen. Clippy identified an enlarged operation payload; boxing it and updating its test constructors passed the third static-analysis attempt. Clippy, formatting and TypeScript exited 0 before commit. |
+| 4 - Make every service exit confirm or fail explicitly | `efe791c3` | Added resident malformed-argument refusal and phase-free apply entries, verified session and terminal lookup before semantic observations, read-only execution lifecycle/continuation checks, canonical confirmation on every service exit, and original-receipt replay after input revalidation. Predicted V4 would report 17 passed, zero failed. The first run reported 16 passed and one failed because the new fixture expected derivation-conflict instead of the existing state-conflict code; correcting that fixture and adding root-terminal coverage produced the predicted 17 passed, zero failed. Clippy, formatting and TypeScript exited 0 before commit. |
+Deviations: 1 historical structural contradiction, resolved by D-28 before this continuation. [deviation] V4 predicted 17 passed and zero failed; observed 16 passed and one failed. The fixture code oracle was corrected from derivation-conflict to state-conflict; the rerun passed 17. No acceptance criterion changed.
+Open items: none deferred. Tasks 5 and 6 remain outstanding. Public MCP registration, raw argument parsing and live UAT remain PLAN-2 obligations.
+
+Continuation starting HEAD: `6868afa740a3ec2511078fa8ca7a730e8fe0bc04`. The working tree was clean. D-27 and D-28 govern this continuation. No installed-file identity protocol or storage-interface expansion is introduced.
+
+Continuation evidence:
+- `node cadence-core/bin/planning.mjs detect-commands --root /code/cadence`: exit 0; lint and typecheck match the commands below.
+- Starting baseline `TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace`: exit 0; 312 passed, 0 failed (103 library, 139 binary, 70 integration, 0 doctests). Prediction of at least 299 passed and zero failed held.
+- Starting baseline and Task 3 precommit `TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings`, `TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check`, and `TMPDIR=/tmp npx tsc -p tsconfig.ci.json`: final exits 0.
+- `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test execution_store`: exit 0, 12 passed, 0 failed, on both runs; final run 188.85 seconds.
+- `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test execution_boundary_compat`: exit 0, 3 passed, 0 failed, on both runs.
+- `node cadence-core/bin/planning.mjs lease-check --phase 6 --plan 3`: exit 0, `ok:true`, seven staged paths.
+- `git log -1 --format='%h %G? %GK %an <%ae>'`: exit 0; `7275271e G 693AB15F91734B0C John Crenshaw <john@jcrenshaw.dev>`.
+- `git diff --diff-filter=D --name-only HEAD~1 HEAD`: exit 0, no output.
+- `git diff --exit-code 6868afa740a3ec2511078fa8ca7a730e8fe0bc04 -- cadence-core/ .planning/STATE.md .planning/ROADMAP.md .planning/REQUIREMENTS.md .planning/phases/1 .planning/phases/2 .planning/phases/3 .planning/phases/4 .planning/phases/5 .planning/phases/6/CONTEXT.md .planning/phases/6/PLAN-1.md .planning/phases/6/PLAN-2.md .planning/phases/6/FALSIFICATION.md .planning/phases/6/FALSIFICATION-3.md`: exit 0, no output before the Task 3 commit.
+
+Task 4 evidence:
+- `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence execution_service`: first exit 101, 16 passed, 1 failed; corrected rerun exit 0, 17 passed, 0 failed, 100.16 seconds.
+- `TMPDIR=/tmp target/debug/deps/cadence-b6965766d460fad3 --exact server::execution_service_tests::execution_service_semantic_failures_confirm_but_log_config_and_queue_failures_do_not --nocapture`: exit 101, 0 passed, 1 failed; confirmed the fixture mismatch was actual state-conflict versus expected derivation-conflict.
+- `TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings`: exit 0. The first formatting check requested one more formatting pass; final `TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check` and `TMPDIR=/tmp npx tsc -p tsconfig.ci.json` exited 0 before commit.
+- `node cadence-core/bin/planning.mjs lease-check --phase 6 --plan 3`: exit 0, `ok:true`, four staged paths.
+- `git log -1 --format='%h %G? %GK %an <%ae>'`: exit 0; `efe791c3 G 693AB15F91734B0C John Crenshaw <john@jcrenshaw.dev>`.
+- `git diff --diff-filter=D --name-only HEAD~1 HEAD`: exit 0, no output.
+
+Prior dispatch and checkpoint history, preserved verbatim below. Its proposed ruling and outstanding-task statements describe that earlier checkpoint; D-28 and the continuation record above supersede them.
+
 PLAN CHECKPOINT: structural
 Plan: .planning/phases/6/PLAN-3.md
 Tasks: 2 of 6
