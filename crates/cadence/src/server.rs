@@ -1,14 +1,23 @@
-//! The MCP server handler.
-//!
-//! `#[tool_handler(name = "cadence")]` is what makes the initialize response
-//! name the server `cadence` (D-09), which is the first half of every wire
-//! name a later subagent definition, `allowed-tools` block or hook matcher
-//! will hard-code as `mcp__cadence__<tool>`.
+//! Root-bound MCP adapter. Raw tool arguments are validated inside Cadence.
 
+use cadence::execution::{
+    boundary::ExecutionEnvelope,
+    model::{BoundaryTool, ExecutorPatch, patch_schema},
+};
 use rmcp::handler::server::wrapper::Json;
-use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, CallToolResult, Implementation, ListToolsResult,
+    PaginatedRequestParams, ServerCapabilities, ServerInfo, Tool,
+};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, ServerHandler};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::{
+    num::NonZeroU32,
+    path::{Path, PathBuf},
+};
 
 use cadence::envelope::Envelope;
 
@@ -70,15 +79,9 @@ pub struct VersionReport {
     pub arch: String,
 }
 
-/// The Cadence MCP server handler.
-///
-/// `Clone` because `#[tool_handler]` builds the tool router fresh from
-/// `Self::tool_router()` on each dispatch; any per-session state added later
-/// has to be a handle onto one shared thing rather than a copy of it, or a
-/// clone would answer from its own.
+/// One resident and one startup-bound planning root per public session.
 #[derive(Clone)]
 pub struct CadenceServer {
-    #[allow(dead_code)] // Called by internal clients until phase 5 registers tools.
     service: recall::Resident,
 }
 
@@ -176,7 +179,6 @@ impl CadenceServer {
     }
 }
 
-#[tool_router]
 impl CadenceServer {
     pub fn new() -> Self {
         let global = std::env::var_os("CADENCE_GLOBAL_CONFIG")
@@ -194,14 +196,6 @@ impl CadenceServer {
         ))
     }
 
-    #[tool(
-        name = "cadence_version",
-        description = "Report which cadence binary is serving this session: \
-            the version it was built at, and the operating system and CPU \
-            architecture it was built for. Answers `which release am I \
-            actually running` without leaving the session - the plugin's own \
-            version and the binary's are two separate things and can disagree."
-    )]
     async fn cadence_version(&self) -> Result<Json<Envelope<VersionReport>>, ErrorData> {
         // `Json` rather than a text block: the envelope is the answer, so it
         // rides `structuredContent` where a caller can branch on `status`
@@ -219,5 +213,155 @@ impl CadenceServer {
     }
 }
 
-#[tool_handler(name = "cadence")]
-impl ServerHandler for CadenceServer {}
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct VersionArguments {}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(tag = "operation", deny_unknown_fields)]
+enum QueryArguments {
+    #[serde(rename = "execute-next")]
+    ExecuteNext { phase: NonZeroU32 },
+}
+
+impl CadenceServer {
+    pub fn bind_project(self, project: &Path) -> Result<PublicServer, std::io::Error> {
+        Ok(PublicServer {
+            server: self,
+            root: std::fs::canonicalize(project)?.join(".planning"),
+        })
+    }
+}
+
+/// Startup configuration belongs to the public adapter, not internal resident clients.
+#[derive(Clone)]
+pub struct PublicServer {
+    server: CadenceServer,
+    root: PathBuf,
+}
+
+impl PublicServer {
+    async fn refuse_raw(
+        &self,
+        tool: BoundaryTool,
+        raw: Option<Value>,
+    ) -> execution_service::Answer {
+        let failure = if raw.is_none() {
+            execution_service::ValidationFailure::MissingArguments
+        } else {
+            execution_service::ValidationFailure::InvalidPatch
+        };
+        self.server
+            .refuse_execution_arguments(&self.root, tool, raw, failure)
+            .await
+    }
+}
+
+fn tool(name: &'static str, description: &'static str, input: Value) -> Tool {
+    Tool::new(
+        name,
+        description,
+        input.as_object().expect("derived object schema").clone(),
+    )
+}
+
+fn execution_result(answer: execution_service::Answer) -> Result<CallToolResponse, ErrorData> {
+    let envelope = answer.map_err(|failure| {
+        ErrorData::internal_error(
+            failure.to_string(),
+            Some(serde_json::json!({"failure": failure})),
+        )
+    })?;
+    let value = serde_json::to_value(envelope)
+        .map_err(|_| ErrorData::internal_error("execution envelope encoding is invalid", None))?;
+    Ok(CallToolResult::structured(value).into())
+}
+
+impl ServerHandler for PublicServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("cadence", env!("CARGO_PKG_VERSION")))
+    }
+
+    async fn list_tools(
+        &self,
+        _: Option<PaginatedRequestParams>,
+        _: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        Ok(ListToolsResult {
+            tools: vec![
+                tool(
+                    "cadence_version",
+                    "Report this binary's version, OS and architecture without changing state.",
+                    serde_json::to_value(schemars::schema_for!(VersionArguments))
+                        .expect("version schema"),
+                )
+                .with_output_schema::<Envelope<VersionReport>>(),
+                tool(
+                    "cadence_query",
+                    "Ask for the next native execution dispatch in the bound project.",
+                    serde_json::to_value(schemars::schema_for!(QueryArguments))
+                        .expect("query schema"),
+                )
+                .with_output_schema::<ExecutionEnvelope>(),
+                tool(
+                    "cadence_apply",
+                    "Submit the executor patch for the bound project's active dispatch.",
+                    patch_schema(),
+                )
+                .with_output_schema::<ExecutionEnvelope>(),
+            ],
+            ..Default::default()
+        })
+    }
+
+    // Do not implement get_tool or use Parameters<T>: schema listing is descriptive;
+    // every declared tool's arguments must reach this handler before validation.
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        _: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let raw = request.arguments.map(Value::Object);
+        match request.name.as_ref() {
+            "cadence_version" => {
+                let envelope = match raw
+                    .and_then(|value| serde_json::from_value::<VersionArguments>(value).ok())
+                {
+                    Some(_) => self.server.cadence_version().await?.0,
+                    None => Envelope::Refused {
+                        code: "invalid-arguments".into(),
+                        reason: "cadence_version requires an empty arguments object".into(),
+                    },
+                };
+                Ok(CallToolResult::structured(
+                    serde_json::to_value(envelope).expect("version envelope"),
+                )
+                .into())
+            }
+            "cadence_query" => {
+                let answer = match raw
+                    .clone()
+                    .and_then(|value| serde_json::from_value::<QueryArguments>(value).ok())
+                {
+                    Some(QueryArguments::ExecuteNext { phase }) => {
+                        self.server.query_execution(&self.root, phase.get()).await
+                    }
+                    None => self.refuse_raw(BoundaryTool::CadenceQuery, raw).await,
+                };
+                execution_result(answer)
+            }
+            "cadence_apply" => {
+                let answer = match raw
+                    .clone()
+                    .and_then(|value| serde_json::from_value::<ExecutorPatch>(value).ok())
+                {
+                    Some(patch) => self.server.apply_executor_patch(&self.root, patch).await,
+                    None => self.refuse_raw(BoundaryTool::CadenceApply, raw).await,
+                };
+                execution_result(answer)
+            }
+            _ => Err(ErrorData::invalid_params("unknown tool", None)),
+        }
+    }
+}

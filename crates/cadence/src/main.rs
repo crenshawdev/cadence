@@ -13,6 +13,9 @@ use rmcp::service::ServerInitializeError;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Bind public execution calls to this project directory.
+    #[arg(long, global = true)]
+    project_root: Option<std::path::PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -25,12 +28,15 @@ enum Command {
 
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
-    run_command(cli.command)
+    match cli.command {
+        Command::Serve => run_serve(cli.project_root),
+        other => run_command(other),
+    }
 }
 
 fn run_command(command: Command) -> std::process::ExitCode {
     match command {
-        Command::Serve => run_serve(),
+        Command::Serve => run_serve(None),
         Command::Guard => guard::run(),
     }
 }
@@ -40,10 +46,20 @@ fn run_command(command: Command) -> std::process::ExitCode {
 /// One process per session, shared by the main thread and every subagent, so
 /// the runtime is multi-threaded rather than current-thread: two dispatches
 /// can be in flight at once and neither may hold the other behind it.
-fn run_serve() -> std::process::ExitCode {
+fn run_serve(project_root: Option<std::path::PathBuf>) -> std::process::ExitCode {
+    let project = match project_root.map(Ok).unwrap_or_else(std::env::current_dir) {
+        Ok(project) => project,
+        Err(_) => return std::process::ExitCode::FAILURE,
+    };
     let runtime = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
     runtime.block_on(async {
-        let handler = server::CadenceServer::new();
+        let handler = match server::CadenceServer::new().bind_project(&project) {
+            Ok(handler) => handler,
+            Err(_) => {
+                eprintln!("cadence: project root is unavailable");
+                return std::process::ExitCode::FAILURE;
+            }
+        };
         let service = match handler.serve(rmcp::transport::stdio()).await {
             Ok(service) => service,
             // The host closed the pipe before it ever initialized - it quit
