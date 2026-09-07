@@ -1099,37 +1099,7 @@ fn render_prompt(dispatch: &ActiveDispatch) -> String {
     )
 }
 
-pub fn patch_schema() -> Value {
-    serde_json::from_str(PATCH_SCHEMA_JSON).expect("static patch schema is valid JSON")
-}
-
-const PATCH_SCHEMA_JSON: &str = r##"{
-  "type":"object",
-  "additionalProperties":false,
-  "required":["schema","kind","dispatch_id","expected_execution_version","outcome","tasks","deviations","blockers"],
-  "properties":{
-    "schema":{"const":1},
-    "kind":{"const":"executor"},
-    "dispatch_id":{"type":"string"},
-    "expected_execution_version":{"type":"integer","minimum":1},
-    "outcome":{"enum":["complete","blocked"]},
-    "tasks":{"type":"array","items":{"oneOf":[
-      {"type":"object","additionalProperties":false,"required":["status","task_id","commit","verification","evidence"],"properties":{"status":{"const":"completed"},"task_id":{"type":"string"},"commit":{"type":"string"},"verification":{"type":"object","additionalProperties":false,"required":["disposition","commands"],"properties":{"disposition":{"const":"passed"},"commands":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["command","exit_code","output_digest"],"properties":{"command":{"type":"string"},"exit_code":{"const":0},"output_digest":{"type":"string"}}}}}},"evidence":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/evidence"}}}},
-      {"type":"object","additionalProperties":false,"required":["status","task_id","blocker_id"],"properties":{"status":{"const":"blocked"},"task_id":{"type":"string"},"blocker_id":{"type":"string"}}},
-      {"type":"object","additionalProperties":false,"required":["status","task_id"],"properties":{"status":{"const":"not-run"},"task_id":{"type":"string"}}}
-    ]}},
-    "deviations":{"type":"array","items":{"$ref":"#/$defs/judgment"}},
-    "blockers":{"type":"array","items":{"$ref":"#/$defs/judgment"}}
-  },
-  "$defs":{
-    "evidence":{"oneOf":[
-      {"type":"object","additionalProperties":false,"required":["kind","sha"],"properties":{"kind":{"const":"commit"},"sha":{"type":"string"}}},
-      {"type":"object","additionalProperties":false,"required":["kind","path","line"],"properties":{"kind":{"const":"file-line"},"path":{"type":"string"},"line":{"type":"integer","minimum":1}}},
-      {"type":"object","additionalProperties":false,"required":["kind","id"],"properties":{"kind":{"const":"criterion"},"id":{"type":"string"}}}
-    ]},
-    "judgment":{"type":"object","additionalProperties":false,"required":["id","text","evidence"],"properties":{"id":{"type":"string"},"text":{"type":"string"},"evidence":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/evidence"}}}}
-  }
-}"##;
+pub use cadence::execution::model::patch_schema;
 
 async fn observe_plans(
     root: &Path,
@@ -1536,4 +1506,39 @@ fn stored_receipt(view: &View, phase: u32, dispatch_id: &str) -> bool {
         .ok()
         .and_then(|execution| execution.occurrences.get(&phase.to_string()).cloned())
         .is_some_and(|occurrence| occurrence.receipts.contains_key(dispatch_id))
+}
+
+#[cfg(test)]
+mod schema_tests {
+    use super::*;
+
+    #[test]
+    fn execution_service_prompt_contains_generated_schema_and_opaque_utf8_body() {
+        let source = b"---\nphase: 6\nplan: 1\nrequirements: [AC1]\nfiles: [src/a.rs]\nexecution:\n  schema: 1\n  suite: cargo test\n  tasks:\n    - id: T1\n      verify: [cargo test one]\n---\n";
+        let body = "opaque 日本語\n# unparsed heading\n";
+        let mut bytes = source.to_vec();
+        bytes.extend_from_slice(body.as_bytes());
+        let plan = parse_plan(&bytes, 6, 1).unwrap();
+        let mut dispatch = build_dispatch(&plan, &"a".repeat(64), 0, &"b".repeat(40), 1).unwrap();
+        let prompt = render_prompt(&dispatch);
+        dispatch.prompt_bytes = prompt.len() as u64;
+        assert_eq!(render_prompt(&dispatch).len() as u64, dispatch.prompt_bytes);
+        assert!(prompt.ends_with(body));
+        assert!(prompt.contains(&format!("Opaque plan body ({} UTF-8 bytes):", body.len())));
+        let schema = prompt
+            .split("Executor patch schema:\n")
+            .nth(1)
+            .unwrap()
+            .split("\n\nInstructions:")
+            .next()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(schema).unwrap(),
+            patch_schema()
+        );
+        assert_eq!(
+            patch_schema(),
+            serde_json::to_value(schemars::schema_for!(ExecutorPatch)).unwrap()
+        );
+    }
 }

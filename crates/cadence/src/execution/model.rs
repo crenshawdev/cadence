@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub const EXECUTION_SCHEMA: u32 = 1;
@@ -72,14 +73,14 @@ pub struct ActiveDispatch {
     pub body: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum VerificationDisposition {
     Passed,
     Failed,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CommandReceipt {
     pub command: String,
@@ -87,14 +88,14 @@ pub struct CommandReceipt {
     pub output_digest: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VerificationReceipt {
     pub disposition: VerificationDisposition,
     pub commands: Vec<CommandReceipt>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum EvidenceReference {
     Commit { sha: String },
@@ -102,7 +103,7 @@ pub enum EvidenceReference {
     Criterion { id: String },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Deviation {
     pub id: String,
@@ -110,7 +111,7 @@ pub struct Deviation {
     pub evidence: Vec<EvidenceReference>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Blocker {
     pub id: String,
@@ -118,7 +119,7 @@ pub struct Blocker {
     pub evidence: Vec<EvidenceReference>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "status", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum TaskOutcome {
     Completed {
@@ -146,7 +147,7 @@ impl TaskOutcome {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlanDisposition {
     Complete,
@@ -217,13 +218,13 @@ impl Default for ExecutionSnapshot {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum PatchKind {
     Executor,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutorPatch {
     pub schema: u32,
@@ -254,4 +255,9 @@ pub struct BoundaryDecision {
     pub subject_id: Option<String>,
     pub prompt_bytes: Option<u64>,
     pub response_digest: String,
+}
+
+/// The structural deserialization contract; semantic admission remains separate.
+pub fn patch_schema() -> serde_json::Value {
+    serde_json::to_value(schemars::schema_for!(ExecutorPatch)).expect("patch schema serializes")
 }
