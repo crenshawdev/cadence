@@ -425,10 +425,10 @@ impl cadence::store::Storage for Memory {
             .unwrap_or_else(|| observed(None)))
     }
     fn prepare(&mut self, target: &str, bytes: &[u8]) -> cadence::store::Result<Self::Prepared> {
-        if target == ".store-intent.json" {
-            if let Some(shared) = &self.changed_global {
-                *shared.lock().unwrap() = Some(b"{}".to_vec());
-            }
+        if target == ".store-intent.json"
+            && let Some(shared) = &self.changed_global
+        {
+            *shared.lock().unwrap() = Some(b"{}".to_vec());
         }
         Ok((target.into(), bytes.into()))
     }
@@ -455,12 +455,6 @@ impl cadence::store::Storage for Memory {
     }
     fn remove(&mut self, target: &str) -> cadence::store::Result<()> {
         self.files.remove(target);
-        Ok(())
-    }
-}
-struct Allow;
-impl cadence::store::Policy for Allow {
-    fn validate(&mut self, _: &cadence::store::MutationContext<'_>) -> cadence::store::Result<()> {
         Ok(())
     }
 }
@@ -502,7 +496,7 @@ async fn owned_writer_refuses_changed_non_destination_input() {
             files: Default::default(),
             changed_global: None,
         },
-        Allow,
+        cadence::store::writer::PlanningPolicy,
     )
     .await
     .unwrap();
@@ -524,7 +518,7 @@ async fn final_owned_validation_refuses_change_during_preparation() {
             files: Default::default(),
             changed_global: Some(shared.clone()),
         },
-        Allow,
+        cadence::store::writer::PlanningPolicy,
     )
     .await
     .unwrap();
@@ -775,5 +769,664 @@ fn surfaces_entry_is_separate_from_the_floor_interview() {
     assert_eq!(
         interview::entry(&["--surfaces".into()]),
         Ok(interview::Entry::Surfaces)
+    );
+}
+
+const STORED_DEFAULTS: &str = r#"{
+  "roles": {
+    "cad-planner": {
+      "model": null,
+      "effort": "high"
+    },
+    "cad-assumptions-analyzer": {
+      "model": null,
+      "effort": "high"
+    },
+    "cad-verifier": {
+      "model": null,
+      "effort": "high"
+    },
+    "cad-reviewer": {
+      "model": null,
+      "effort": "medium"
+    },
+    "cad-executor": {
+      "model": null,
+      "effort": "high"
+    },
+    "cad-plan-checker": {
+      "model": null,
+      "effort": "low"
+    }
+  },
+  "review": {
+    "triggers": {
+      "risk_surface": {
+        "waive_routing_floor": []
+      }
+    }
+  }
+}"#;
+
+type FileState =
+    std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, cadence::store::Observed>>>;
+#[derive(Clone)]
+struct Files(FileState);
+impl cadence::config::reload::ConfigIo for Files {
+    fn read(&mut self, path: &std::path::Path) -> cadence::store::Result<Input> {
+        let target = if path == std::path::Path::new("/global/config.v4.json") {
+            "global-config"
+        } else {
+            "repo-config"
+        };
+        Ok(Input {
+            identity: path.into(),
+            bytes: self
+                .0
+                .lock()
+                .unwrap()
+                .get(target)
+                .and_then(|file| file.bytes.clone()),
+            stamp: None,
+        })
+    }
+}
+type Replacements = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
+
+struct WritableFiles {
+    files: FileState,
+    replacements: Replacements,
+}
+impl cadence::store::Storage for WritableFiles {
+    type Prepared = (String, Vec<u8>);
+    fn read(&mut self, target: &str) -> cadence::store::Result<cadence::store::Observed> {
+        Ok(self
+            .files
+            .lock()
+            .unwrap()
+            .get(target)
+            .cloned()
+            .unwrap_or_else(|| observed(None)))
+    }
+    fn prepare(&mut self, target: &str, bytes: &[u8]) -> cadence::store::Result<Self::Prepared> {
+        Ok((target.into(), bytes.into()))
+    }
+    fn install(&mut self, file: &Self::Prepared) -> cadence::store::Result<()> {
+        self.files
+            .lock()
+            .unwrap()
+            .insert(file.0.clone(), observed(Some(&file.1)));
+        if matches!(file.0.as_str(), "global-config" | "repo-config") {
+            self.replacements.lock().unwrap().push(file.clone());
+        }
+        Ok(())
+    }
+    fn discard(&mut self, _: Self::Prepared) -> cadence::store::Result<()> {
+        Ok(())
+    }
+    fn confirm(
+        &mut self,
+        target: &str,
+        _: &[u8],
+    ) -> cadence::store::Result<cadence::store::Observed> {
+        self.read(target)
+    }
+    fn resync(
+        &mut self,
+        target: &str,
+        _: &[u8],
+    ) -> cadence::store::Result<cadence::store::Observed> {
+        self.read(target)
+    }
+    fn remove(&mut self, target: &str) -> cadence::store::Result<()> {
+        self.files.lock().unwrap().remove(target);
+        Ok(())
+    }
+}
+struct BatchFixture {
+    writer: cadence::config::write::ConfigWriter<Files>,
+    files: FileState,
+    replacements: Replacements,
+}
+async fn batch_fixture(global: Option<&str>, repo: Option<&str>) -> BatchFixture {
+    use cadence::config::reload::{ConfigPolicy, Paths, Reload};
+    let files: FileState = std::sync::Arc::new(std::sync::Mutex::new(
+        [
+            ("global-config".into(), observed(global.map(str::as_bytes))),
+            ("repo-config".into(), observed(repo.map(str::as_bytes))),
+        ]
+        .into(),
+    ));
+    let replacements = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let active = Paths {
+        global: Some("/global/config.v4.json".into()),
+        repo: "/project/.planning/config.v4.json".into(),
+    };
+    let config = std::sync::Arc::new(std::sync::Mutex::new(Reload::new(
+        active.clone(),
+        Files(files.clone()),
+    )));
+    let store = cadence::store::writer::Store::open(
+        WritableFiles {
+            files: files.clone(),
+            replacements: replacements.clone(),
+        },
+        ConfigPolicy {
+            config: config.clone(),
+            evaluate: cadence::config::planning_policy,
+        },
+    )
+    .await
+    .unwrap();
+    BatchFixture {
+        writer: cadence::config::write::ConfigWriter {
+            root: "/project/.planning".into(),
+            active,
+            store,
+            config,
+        },
+        files,
+        replacements,
+    }
+}
+
+#[tokio::test]
+async fn native_first_global_batch_returns_thirteen_keys_and_one_exact_replacement() {
+    let fixture = batch_fixture(None, None).await;
+    let output = fixture
+        .writer
+        .batch_observed(
+            Layer::Global,
+            &defaults(),
+            Some(Captured::from_generation(&generation(None, None, false))),
+            |target| Ok(fixture.files.lock().unwrap()[target].clone()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            output.changed_keys,
+            output.destination,
+            output.requested_layer,
+            output.view.snapshot.generation,
+            fixture.replacements.lock().unwrap().clone()
+        ),
+        (
+            vec![
+                "review.triggers.risk_surface.waive_routing_floor".into(),
+                "roles.cad-assumptions-analyzer.effort".into(),
+                "roles.cad-assumptions-analyzer.model".into(),
+                "roles.cad-executor.effort".into(),
+                "roles.cad-executor.model".into(),
+                "roles.cad-plan-checker.effort".into(),
+                "roles.cad-plan-checker.model".into(),
+                "roles.cad-planner.effort".into(),
+                "roles.cad-planner.model".into(),
+                "roles.cad-reviewer.effort".into(),
+                "roles.cad-reviewer.model".into(),
+                "roles.cad-verifier.effort".into(),
+                "roles.cad-verifier.model".into(),
+            ],
+            "/global/config.v4.json".into(),
+            Layer::Global,
+            1,
+            vec![("global-config".into(), STORED_DEFAULTS.as_bytes().to_vec())]
+        )
+    );
+}
+#[test]
+fn native_reopened_facts_return_all_thirteen_global_values_and_later_classification() {
+    let output = cadence::config_service::observed_facts(
+        &generation(
+            Some(serde_json::from_str(STORED_DEFAULTS).unwrap()),
+            None,
+            false,
+        ),
+        None,
+        Mode::Roles,
+    );
+    assert_eq!(
+        (
+            output.interview.first_run,
+            output.interview.target,
+            output
+                .interview
+                .subjects
+                .into_iter()
+                .map(|s| (s.key, s.current, s.source, s.present_global, s.present_repo))
+                .collect::<Vec<_>>()
+        ),
+        (
+            false,
+            Layer::Repo,
+            vec![
+                (
+                    "roles.cad-planner.model".into(),
+                    Value::Null,
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-planner.effort".into(),
+                    json!("high"),
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-assumptions-analyzer.model".into(),
+                    Value::Null,
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-assumptions-analyzer.effort".into(),
+                    json!("high"),
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-verifier.model".into(),
+                    Value::Null,
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-verifier.effort".into(),
+                    json!("high"),
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-reviewer.model".into(),
+                    Value::Null,
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-reviewer.effort".into(),
+                    json!("medium"),
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-executor.model".into(),
+                    Value::Null,
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-executor.effort".into(),
+                    json!("high"),
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-plan-checker.model".into(),
+                    Value::Null,
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "roles.cad-plan-checker.effort".into(),
+                    json!("low"),
+                    "global".into(),
+                    true,
+                    false
+                ),
+                (
+                    "review.triggers.risk_surface.waive_routing_floor".into(),
+                    json!([]),
+                    "global".into(),
+                    true,
+                    false
+                )
+            ]
+        )
+    );
+}
+#[test]
+fn native_later_answers_return_exactly_one_role_diff_with_existing_floor_pin() {
+    let input = generation(
+        Some(json!({"roles":{}})),
+        Some(json!({"review":{"triggers":{"risk_surface":{"waive_routing_floor":[]}}}})),
+        false,
+    );
+    let mut answers = defaults();
+    answers[9].value = json!("xhigh");
+    assert_eq!(
+        interview::answers(
+            &input,
+            Mode::Roles,
+            &Captured::from_generation(&input),
+            true,
+            Some(&answers)
+        ),
+        Ok((
+            Layer::Repo,
+            vec![Update {
+                key: "roles.cad-executor.effort".into(),
+                value: json!("xhigh")
+            }]
+        ))
+    );
+}
+#[tokio::test]
+async fn native_global_batch_keeps_repo_bytes_and_reports_literal_model_bytes() {
+    let fixture = batch_fixture(
+        None,
+        Some(r#"{ "roles": {"cad-executor": {"model": "repo-pin"}} }"#),
+    )
+    .await;
+    let output = fixture
+        .writer
+        .batch_observed(
+            Layer::Global,
+            &[Update {
+                key: "roles.cad-executor.model".into(),
+                value: json!("  \"model\" = 雪  "),
+            }],
+            None,
+            |target| Ok(fixture.files.lock().unwrap()[target].clone()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            output.requested_layer,
+            output.changed_keys,
+            fixture.files.lock().unwrap()["repo-config"].bytes.clone(),
+            fixture.replacements.lock().unwrap().clone()
+        ),
+        (
+            Layer::Global,
+            vec!["roles.cad-executor.model".into()],
+            Some(br#"{ "roles": {"cad-executor": {"model": "repo-pin"}} }"#.to_vec()),
+            vec![(
+                "global-config".into(),
+                r#"{
+  "roles": {
+    "cad-executor": {
+      "model": "  \"model\" = 雪  "
+    }
+  }
+}"#
+                .as_bytes()
+                .to_vec()
+            )]
+        )
+    );
+}
+#[tokio::test]
+async fn native_empty_protection_replaces_repo_waiver_and_preserves_diff_surfaces() {
+    let fixture=batch_fixture(Some(r#"{"review":{"triggers":{"risk_surface":{"waive_routing_floor":["secrets"]}}}}"#),Some(r#"{"review":{"triggers":{"risk_surface":{"waive_routing_floor":["auth"],"surfaces":["billing"]}}}}"#)).await;
+    let output = fixture
+        .writer
+        .batch_observed(
+            Layer::Repo,
+            &[Update {
+                key: "review.triggers.risk_surface.waive_routing_floor".into(),
+                value: json!([]),
+            }],
+            None,
+            |target| Ok(fixture.files.lock().unwrap()[target].clone()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            output.changed_keys,
+            fixture.replacements.lock().unwrap().clone()
+        ),
+        (
+            vec!["review.triggers.risk_surface.waive_routing_floor".into()],
+            vec![(
+                "repo-config".into(),
+                br#"{
+  "review": {
+    "triggers": {
+      "risk_surface": {
+        "waive_routing_floor": [],
+        "surfaces": [
+          "billing"
+        ]
+      }
+    }
+  }
+}"#
+                .to_vec()
+            )]
+        )
+    );
+}
+#[tokio::test]
+async fn native_identical_empty_pin_returns_no_replacement_or_generation_increment() {
+    let fixture = batch_fixture(
+        None,
+        Some(r#"{"review":{"triggers":{"risk_surface":{"waive_routing_floor":[]}}}}"#),
+    )
+    .await;
+    let output = fixture
+        .writer
+        .batch_observed(
+            Layer::Repo,
+            &[Update {
+                key: "review.triggers.risk_surface.waive_routing_floor".into(),
+                value: json!([]),
+            }],
+            None,
+            |_| panic!("no replacement observation for no-op"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            output.changed_keys,
+            output.view.snapshot.generation,
+            fixture.replacements.lock().unwrap().clone()
+        ),
+        (vec![], 0, vec![])
+    );
+}
+
+#[test]
+fn native_preserved_stakes_facts_return_originals_then_current_ordinary_subjects() {
+    let snapshot = json!({"import":{"sources":[]},"source_evidence":[
+        {"source":{"path":"/legacy/global/config.json","bytes":br#"{"stakes":"high"}"#.as_slice()},"generation":"ab5784f98d095e4860a25db0f7f9ff01b8c972d5861e2d3ecad63cd9eff8e0f4","label":"non_effective_original_source","layer":"global"},
+        {"source":{"path":"/legacy/repo/config.json","bytes":br#"{"stakes":{"unrecognized":["legacy",null]}}"#.as_slice()},"generation":"5fd3278951af4d3398df702908e3f21246a002e61cc56189fae95713dd66e391","label":"non_effective_original_source","layer":"repo"}
+    ]});
+    let output = cadence::config_service::observed_facts(
+        &generation(
+            None,
+            Some(json!({"roles":{"cad-executor":{"model":"current"}}})),
+            false,
+        ),
+        Some(&snapshot),
+        Mode::Roles,
+    );
+    assert_eq!(
+        (
+            serde_json::to_value(output.retirement).unwrap(),
+            output
+                .interview
+                .subjects
+                .into_iter()
+                .map(|s| (s.key, s.current, s.source))
+                .collect::<Vec<_>>()
+        ),
+        (
+            json!({"message":"The stakes level is retired. Ordinary role questions use current settings; no equivalent spending profile is inferred.","evidence":"available","originals":[
+                {"value":"high","layer":"global","path":"/legacy/global/config.json","global_alias":null,"origin":"preserved"},
+                {"value":{"unrecognized":["legacy",null]},"layer":"repo","path":"/legacy/repo/config.json","global_alias":null,"origin":"preserved"}
+            ]}),
+            vec![
+                (
+                    "roles.cad-planner.model".into(),
+                    Value::Null,
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-planner.effort".into(),
+                    json!("high"),
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-assumptions-analyzer.model".into(),
+                    Value::Null,
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-assumptions-analyzer.effort".into(),
+                    json!("high"),
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-verifier.model".into(),
+                    Value::Null,
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-verifier.effort".into(),
+                    json!("high"),
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-reviewer.model".into(),
+                    Value::Null,
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-reviewer.effort".into(),
+                    json!("medium"),
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-executor.model".into(),
+                    json!("current"),
+                    "repo".into()
+                ),
+                (
+                    "roles.cad-executor.effort".into(),
+                    json!("high"),
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-plan-checker.model".into(),
+                    Value::Null,
+                    "defaults".into()
+                ),
+                (
+                    "roles.cad-plan-checker.effort".into(),
+                    json!("low"),
+                    "defaults".into()
+                ),
+                (
+                    "review.triggers.risk_surface.waive_routing_floor".into(),
+                    Value::Null,
+                    "defaults".into()
+                )
+            ]
+        )
+    );
+}
+#[test]
+fn native_subjects_explain_all_six_role_purposes() {
+    assert_eq!(
+        interview::prepare(&generation(None, None, false), Mode::Roles)
+            .subjects
+            .into_iter()
+            .step_by(2)
+            .map(|s| s.purpose)
+            .collect::<Vec<_>>(),
+        vec![
+            "Plan implementation tasks",
+            "Analyze assumptions before planning",
+            "Verify completed work",
+            "Review changes",
+            "Implement planned tasks",
+            "Check plans before execution",
+            "Choose plan-time risk-floor protection"
+        ]
+    );
+}
+#[test]
+fn native_effort_subject_returns_default_and_literal_constraints() {
+    let output = interview::prepare(&generation(None, None, false), Mode::Roles);
+    assert_eq!(
+        (&output.subjects[1].default, &output.subjects[1].constraints),
+        (
+            &json!("high"),
+            &json!({"type":"enum","values":["low","medium","high","xhigh","max",null],"default":"high","disposition":"keep-resemantic"})
+        )
+    );
+}
+#[test]
+fn reordered_answers_return_exact_invalid() {
+    let input = generation(None, None, false);
+    let mut values = defaults();
+    values.swap(0, 1);
+    assert_eq!(
+        interview::answers(
+            &input,
+            Mode::Roles,
+            &Captured::from_generation(&input),
+            true,
+            Some(&values)
+        ),
+        Err(Error::Invalid(
+            "interview requires exactly thirteen ordered answers".into()
+        ))
+    );
+}
+#[test]
+fn explicit_global_acceptance_returns_all_thirteen_even_when_unchanged() {
+    let input = generation(
+        Some(serde_json::from_str(STORED_DEFAULTS).unwrap()),
+        None,
+        false,
+    );
+    assert_eq!(
+        interview::answers(
+            &input,
+            Mode::Global,
+            &Captured::from_generation(&input),
+            true,
+            Some(&defaults())
+        ),
+        Ok((Layer::Global, defaults()))
+    );
+}
+#[test]
+fn native_reopened_custom_model_has_exact_text_and_repo_source() {
+    let output = cadence::config_service::observed_facts(
+        &generation(
+            Some(json!({"roles":{}})),
+            Some(json!({"roles":{"cad-executor":{"model":"  \"model\" = 雪  "}}})),
+            false,
+        ),
+        None,
+        Mode::Roles,
+    );
+    assert_eq!(
+        (
+            output.interview.subjects[8].current.clone(),
+            output.interview.subjects[8].source.as_str(),
+            output.interview.subjects[8].stored_repo.clone()
+        ),
+        (
+            json!("  \"model\" = 雪  "),
+            "repo",
+            Some(json!("  \"model\" = 雪  "))
+        )
     );
 }

@@ -2,7 +2,7 @@
 pub mod interview;
 pub mod merge;
 pub mod reload;
-pub mod roles;
+pub use cadence::execution::model::roles;
 pub mod write;
 
 use serde::{Deserialize, Serialize};

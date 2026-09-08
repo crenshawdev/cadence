@@ -42,7 +42,7 @@ execution:
 
 ## Goal
 
-Users answer one layer-aware roles and floor interview backed by the native config service. This plan alone proves first-run persistence, later diffs, explicit empty protection and the shipped config skill's observed conversation.
+Users answer one layer-aware roles and floor interview backed by the native config service. This plan proves first-run persistence, later diffs, explicit empty protection and the shipped config skill's deterministic native contracts. Live conversation observation remains in MANUAL.md.
 
 ## Must be true when done
 
@@ -81,9 +81,9 @@ D-47, D-48, D-50, D-51 and D-52 bind this plan. Plans 1-2 provide facts, atomic 
 
 ### Task 3: Prove the ordinary interview against the binary (P8-3-T3)
 
-- **Files:** `crates/cadence/tests/phase8_interview.rs`
+- **Files:** `crates/cadence/tests/phase8_interview.rs`, `crates/cadence/src/config/write.rs` (filesystem observation seam for the production batch), `crates/cadence/src/config_service.rs` (facts from supplied generation and preserved evidence), `crates/cadence/src/config/mod.rs` (reuse the existing role module export after lint)
 - **Action:** Test the config interview through the binary's own native operations, with no host, no skill invocation and no model dispatch. Cover all thirteen subjects and their answers, current values shown with their source layers, first-run default acceptance, later unchanged and one-leaf changes, explicit global editing, a custom model string carrying literal spaces, quotes, equals and Unicode, and the explicit full-protection answer. Assert one accepted batch performs exactly one write, that reopening returns byte-identical values with correct provenance, and that the stakes-original case returns the retirement statement followed by the same ordinary questions. Construct question and answer payloads as fixtures and call the operations directly; a value must be carried through, never reconstructed. Extra writes, a substituted value or missing provenance is failure.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_interview` — proves the thirteen subjects, the single-write batch, byte-exact reopen with source layers, the literal custom model string, the full-protection answer and the stakes retirement statement. Each case asserts against independently encoded expected values, not a production serialization round trip.
+- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_interview` — ConfigWriter::batch_observed, supplied literal thirteen-answer updates and filesystem observations, returns thirteen named changed keys, Global destination, generation 1 and exactly one config replacement with independently encoded expected bytes. Separate calls prove explicit-global repo preservation, custom model bytes, [] replacement preserving actual-diff surfaces and identical [] no-op. config_service::observed_facts returns thirteen ordered values and exact source layers from independently encoded reopened inputs, including later-run classification and preserved stakes originals followed by the ordinary subjects. interview::answers returns a single changed role leaf when the selected floor pin already exists. Each test calls one production unit and makes one assertion on its returned value and observable write result; no save/reopen sequence or live host.
 
 ## Requirements mapping
 

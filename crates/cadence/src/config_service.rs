@@ -291,13 +291,21 @@ async fn session_facts<I: ConfigIo>(session: &Session<I>, mode: interview::Mode)
     let view = session
         .request(cadence::store::writer::Operation::Read)
         .await?;
+    Ok(observed_facts(&generation, Some(&view.snapshot.data), mode))
+}
+
+pub fn observed_facts(
+    generation: &Generation,
+    snapshot: Option<&Value>,
+    mode: interview::Mode,
+) -> Facts {
     let mut facts = if mode == interview::Mode::Roles {
-        facts(&generation)
+        facts(generation)
     } else {
-        interview_facts(&generation, mode)
+        interview_facts(generation, mode)
     };
-    facts.retirement = retirement(&generation, Some(&view.snapshot.data));
-    Ok(facts)
+    facts.retirement = retirement(generation, snapshot);
+    facts
 }
 
 pub fn refused(code: &str, reason: impl Into<String>) -> Envelope<Output> {

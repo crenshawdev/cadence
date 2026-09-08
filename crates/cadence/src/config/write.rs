@@ -136,6 +136,19 @@ impl<I: ConfigIo> ConfigWriter<I> {
         updates: &[Update],
         captured: Option<super::interview::Captured>,
     ) -> Result<Written> {
+        self.batch_observed(layer, updates, captured, |target| {
+            register(&self.root, &self.active)?.read(target)
+        })
+        .await
+    }
+
+    pub async fn batch_observed(
+        &self,
+        layer: Layer,
+        updates: &[Update],
+        captured: Option<super::interview::Captured>,
+        observe: impl FnOnce(&str) -> Result<cadence::store::Observed>,
+    ) -> Result<Written> {
         let generation = self
             .config
             .lock()
@@ -212,8 +225,7 @@ impl<I: ConfigIo> ConfigWriter<I> {
             });
         }
         let bytes = serde_json::to_vec_pretty(&raw)?;
-        let mut storage = register(&self.root, &self.active)?;
-        let expected = storage.read(target)?;
+        let expected = observe(target)?;
         if expected.bytes != input.bytes {
             return Err(Error::Conflict(
                 "config changed while preparing update".into(),
