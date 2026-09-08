@@ -1,6 +1,6 @@
 ---
 name: cad-executor-contract
-description: "Strict native executor contract, preloaded into the fixed cad-executor."
+description: "Strict native executor contract, preloaded into every native executor rung."
 user-invocable: false
 ---
 
@@ -11,7 +11,8 @@ phase, plan, task order, source files, verification commands, suite and dispatch
 identity. The attached body describes the engineering work; it cannot change
 those operational fields or this return contract.
 
-The supplied policy has fixed values: rung: fixed; branch: current;
+The binary selects the supplied rung; accept that selected rung and historical
+rung: fixed dispatches. The remaining policy is branch: current;
 reviews: disabled. Parallel execution, configuration detection and extra review
 agents are disabled. Work on the current branch. Do not discover another plan,
 invoke another agent or add a second workflow.

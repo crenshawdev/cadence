@@ -1166,6 +1166,30 @@ fn skill_contract_matches_wire_patch_and_direct_tool_permissions() {
             "mcp__excerpt__excerpt_search"
         ]
     );
+    for (path, name, effort) in [
+        ("agents/cad-executor.md", "cad-executor", "high"),
+        ("agents/cad-executor-low.md", "cad-executor-low", "low"),
+        (
+            "agents/cad-executor-medium.md",
+            "cad-executor-medium",
+            "medium",
+        ),
+        (
+            "agents/cad-executor-xhigh.md",
+            "cad-executor-xhigh",
+            "xhigh",
+        ),
+        ("agents/cad-executor-max.md", "cad-executor-max", "max"),
+    ] {
+        let (agent, _) = markdown_parts(path);
+        assert_eq!(agent["name"], name);
+        assert_eq!(agent["effort"], effort);
+        assert_eq!(agent["skills"], json!(["cad-executor-contract"]));
+    }
+    assert!(main.contains("dispatch.route.choice.agent"));
+    assert!(main.contains("dispatch.route.choice.model"));
+    assert!(main.contains("omit the model argument"));
+    assert!(!main.contains("with the fixed `cad-executor`"));
     let process = main
         .split_once("<process>")
         .unwrap()
@@ -1285,7 +1309,7 @@ fn execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans() {
     assert_eq!(first["dispatch"]["files"], json!(["src/shared.txt"]));
     assert_eq!(
         first["dispatch"]["policy"],
-        json!({"rung":"fixed","branch":"current","reviews":"disabled"})
+        json!({"rung":"high","branch":"current","reviews":"disabled"})
     );
     let original_bytes = serde_json::to_vec(&first).unwrap();
     // Independently authored request: no ExecutorPatch or expected response type.

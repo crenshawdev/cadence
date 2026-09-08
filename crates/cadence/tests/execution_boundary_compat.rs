@@ -833,3 +833,10 @@ fn lease_evidence_extension_preserves_old_preimage_and_validates_full_new_eviden
     invalid["lease_refusal"]["paths"]["staged"] = json!(["../outside"]);
     assert!(!validate(vec![wire_record(invalid, 1, false)]));
 }
+
+#[test]
+fn historical_fixed_dispatch_serialization_omits_route_data() {
+    const WIRE: &str = r#"{"schema":1,"id":"old-dispatch","expected_execution_version":1,"phase":6,"plan":1,"plan_fingerprint":"plan","plan_set_fingerprint":"plans","requirements":["AC4"],"tasks":[{"id":"T1","verify":["verify-T1"]}],"suite":"suite-command","files":["src/a.rs"],"policy":{"rung":"fixed","branch":"current","reviews":"disabled"},"base_sha":"1111111111111111111111111111111111111111","prompt_bytes":512,"body":""}"#;
+    let supplied: cadence::execution::model::ActiveDispatch = serde_json::from_str(WIRE).unwrap();
+    assert_eq!(serde_json::to_string(&supplied).unwrap(), WIRE);
+}

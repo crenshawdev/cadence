@@ -56,6 +56,7 @@ pub enum Failure {
     Closed,
     Confirmation,
     LegacyExecution,
+    RoutingEvidence,
     Encoding,
 }
 
@@ -67,6 +68,9 @@ impl std::fmt::Display for Failure {
             Self::Confirmation => "execution answer could not be confirmed",
             Self::LegacyExecution => "cross-format native execution resume is unsupported",
             Self::Encoding => "execution envelope encoding is invalid",
+            Self::RoutingEvidence => {
+                "execution dispatch routing evidence is unavailable or inconsistent"
+            }
         })
     }
 }
@@ -244,6 +248,8 @@ impl PreparedAnswer {
         }
         let receipt = match &envelope {
             Envelope::Ok(Success::Dispatch { dispatch, prompt }) => {
+                super::dispatch::validate_route_choice(dispatch)
+                    .map_err(|_| Failure::RoutingEvidence)?;
                 if dispatch.prompt_bytes != prompt.len() as u64 {
                     return Err(Failure::Encoding);
                 }

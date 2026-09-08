@@ -193,6 +193,14 @@ impl Intent {
                 if occurrence.phase != phase || occurrence.active.is_none() {
                     return Err(Error::Invalid("invalid dispatch intent projection".into()));
                 }
+                let active = occurrence.active.as_ref().unwrap();
+                if active.route.is_some()
+                    || active.policy.rung != cadence::execution::model::ExecutorRung::Fixed
+                {
+                    return Err(Error::Invalid(
+                        "routed dispatch requires current boundary admission".into(),
+                    ));
+                }
             }
             IntentKind::ExecutionPatch {
                 phase,
@@ -569,6 +577,7 @@ impl Intent {
                     .ok_or_else(|| {
                         Error::Invalid("dispatch intent lacks active dispatch".into())
                     })?;
+                super::writer::validate_routing(active, &records)?;
                 if active.phase != *phase
                     || value.terminal
                     || value.boundary.receipt

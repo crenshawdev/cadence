@@ -354,6 +354,39 @@ mod routing_inputs_tests {
     }
 
     #[test]
+    fn routing_inputs_captures_resolved_identities_and_exact_byte_digests() {
+        let mut supplied = generation();
+        supplied.repo.bytes = Some(b"{}".to_vec());
+        supplied.repo.stamp = Some((11, 22, 33));
+        supplied.global = Some(Input {
+            identity: "/global/config.v4.json".into(),
+            bytes: Some(Vec::new()),
+            stamp: None,
+        });
+        supplied.effective.global_intent = true;
+        assert_eq!(
+            routing_inputs(&supplied),
+            cadence::execution::model::ConfigInputs {
+                repo: cadence::execution::model::ConfigInput {
+                    identity: "/project/.planning/config.v4.json".into(),
+                    content: Some(
+                        "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a".into()
+                    ),
+                    stamp: Some((11, 22, 33)),
+                },
+                global: Some(cadence::execution::model::ConfigInput {
+                    identity: "/global/config.v4.json".into(),
+                    content: Some(
+                        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into()
+                    ),
+                    stamp: None,
+                }),
+                global_alias: true,
+            }
+        );
+    }
+
+    #[test]
     fn role_input_reads_six_schema_defaults_without_treating_effective_values_as_stored() {
         for (role, effort) in [
             ("cad-planner", "high"),
@@ -433,5 +466,18 @@ mod routing_inputs_tests {
                 value: json!("max")
             })
         );
+    }
+}
+
+pub fn routing_inputs(generation: &Generation) -> cadence::execution::model::ConfigInputs {
+    let capture = |input: &crate::config::reload::Input| cadence::execution::model::ConfigInput {
+        identity: input.identity.clone(),
+        content: input.bytes.as_deref().map(cadence::store::model::digest),
+        stamp: input.stamp,
+    };
+    cadence::execution::model::ConfigInputs {
+        repo: capture(&generation.repo),
+        global: generation.global.as_ref().map(capture),
+        global_alias: generation.effective.global_intent,
     }
 }

@@ -1,6 +1,7 @@
+pub use cadence::execution::model::{
+    RoleResolution as Resolution, RoleSelection as Selection, RoleStored as Stored,
+};
 use cadence::store::{Error, Result};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const ROLES: [&str; 6] = [
@@ -58,14 +59,6 @@ const AGENTS: [[&str; 5]; 6] = [
     ],
 ];
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Stored {
-    pub key: String,
-    pub layer: String,
-    pub value: Value,
-}
-
 #[derive(Clone, Debug)]
 pub struct Input {
     pub role: String,
@@ -78,35 +71,6 @@ pub struct Input {
     pub role_model: Option<Stored>,
     pub legacy_model: Option<Stored>,
     pub escalate_on_failure: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Selection {
-    pub kind: String,
-    pub key: String,
-    pub layer: String,
-    pub stored: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ignored_legacy: Option<Stored>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Resolution {
-    pub role: String,
-    pub agent: String,
-    pub rung: String,
-    pub starting_rung: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    pub effort_source: Selection,
-    pub model_source: Selection,
-    pub attempt: u32,
-    pub escalated: bool,
-    pub pinned: bool,
-    pub reasons: Vec<String>,
-    pub warnings: Vec<String>,
 }
 
 fn selection(
@@ -247,4 +211,10 @@ pub fn resolve(input: &Input) -> Result<Resolution> {
         reasons,
         warnings,
     })
+}
+
+pub fn agent_for(role: &str, rung: &str) -> Option<&'static str> {
+    let role = ROLES.iter().position(|candidate| *candidate == role)?;
+    let rung = RUNGS.iter().position(|candidate| *candidate == rung)?;
+    Some(AGENTS[role][rung])
 }

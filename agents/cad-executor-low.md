@@ -1,6 +1,6 @@
 ---
 name: cad-executor-low
-description: The `low` rung of `cad-executor`; `bin/route.mjs` picks it, not the user.
+description: The low native executor; executes the binary dispatch and returns its typed JSON patch.
 tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__excerpt__excerpt_read, mcp__excerpt__excerpt_search
 color: yellow
 effort: low

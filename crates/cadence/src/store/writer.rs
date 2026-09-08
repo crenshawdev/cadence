@@ -653,6 +653,9 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 dispatch,
             } => {
                 let phase = dispatch.phase;
+                if let Some(routing) = routing_decision(&dispatch)? {
+                    next.decisions.push(routing);
+                }
                 if decision.scope != (BoundaryScope::Execution { phase })
                     || decision.tool != BoundaryTool::CadenceQuery
                     || decision.receipt
@@ -797,6 +800,13 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         dispatch: ActiveDispatch,
         decision: BoundaryDecision,
     ) -> Result<View> {
+        if dispatch.route.is_some()
+            || dispatch.policy.rung != cadence::execution::model::ExecutorRung::Fixed
+        {
+            return Err(Error::Invalid(
+                "routed dispatch requires current boundary admission".into(),
+            ));
+        }
         if decision.phase != dispatch.phase
             || decision.subject_id.as_deref() != Some(dispatch.id.as_str())
             || decision.prompt_bytes != Some(dispatch.prompt_bytes)
@@ -1446,6 +1456,29 @@ pub fn require_current_execution(view: &View) -> std::result::Result<(), Failure
             }
         }
     }
+    if let Some(occurrences) = view
+        .snapshot
+        .data
+        .get("execution")
+        .and_then(|value| value.get("occurrences"))
+        .and_then(Value::as_object)
+    {
+        for occurrence in occurrences.values() {
+            if let Some(active) = occurrence.get("active").filter(|active| !active.is_null())
+                && (active.get("route").is_some_and(|route| !route.is_null())
+                    || matches!(
+                        active["policy"]["rung"].as_str(),
+                        Some("low" | "medium" | "high" | "xhigh" | "max")
+                    ))
+            {
+                let dispatch: ActiveDispatch =
+                    serde_json::from_value(active.clone()).map_err(|_| Failure::RoutingEvidence)?;
+                validate_routing(&dispatch, &view.decisions)
+                    .map_err(|_| Failure::RoutingEvidence)?;
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1526,4 +1559,63 @@ pub fn confirmed_boundary<'a>(
             _ => None,
         })
         .ok_or(Failure::Confirmation)
+}
+
+pub fn routing_decision(dispatch: &ActiveDispatch) -> Result<Option<DecisionRecord>> {
+    use super::model::{Decision, DecisionRecord, Evidence, Origin};
+    cadence::execution::dispatch::validate_route_choice(dispatch)
+        .map_err(|error| Error::Invalid(error.to_string()))?;
+    let Some(route) = &dispatch.route else {
+        return Ok(None);
+    };
+    let mut choice = serde_json::json!({"agent": route.choice.agent, "rung": route.choice.rung});
+    if let Some(model) = &route.choice.model {
+        choice["model"] = serde_json::json!(model);
+    }
+    Ok(Some(super::decisions::normalize(DecisionRecord {
+        version: 1,
+        id: format!("routing:{}", dispatch.id),
+        revision: 1,
+        origin: Origin {
+            source: "native-routing".into(),
+            original: Evidence::Missing,
+        },
+        decision: Decision::Routing {
+            choice: serde_json::to_string(&choice)?,
+            config_provenance: [
+                ("dispatch_id".into(), Evidence::Text(dispatch.id.clone())),
+                (
+                    "route".into(),
+                    Evidence::Text(serde_json::to_string(route)?),
+                ),
+            ]
+            .into(),
+            requested_effort: Evidence::Text(route.choice.rung.clone()),
+            observed_effort: Evidence::Missing,
+            receipt: Evidence::Missing,
+        },
+    })))
+}
+
+pub fn validate_routing(dispatch: &ActiveDispatch, records: &[DecisionRecord]) -> Result<()> {
+    if let Some(expected) = routing_decision(dispatch)?
+        && records
+            .iter()
+            .filter(|record| record.id == expected.id)
+            .collect::<Vec<_>>()
+            != [&expected]
+    {
+        return Err(Error::Invalid(
+            "dispatch lacks its exact routing decision".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub struct PlanningPolicy;
+
+impl Policy for PlanningPolicy {
+    fn validate(&mut self, _: &MutationContext<'_>) -> Result<()> {
+        Ok(())
+    }
 }

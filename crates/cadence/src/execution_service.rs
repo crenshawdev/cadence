@@ -11,7 +11,7 @@ use cadence::{
     derivation::{Cycle, LifecycleStatus},
     evidence::Scope,
     execution::{
-        dispatch::{admit_dispatch, build_dispatch},
+        dispatch::{admit_dispatch, build_routed_dispatch},
         model::{
             ActiveDispatch, BoundaryTool, ExecutionOccurrence, ExecutionPlan, ExecutionSnapshot,
             ExecutorPatch, PlanDisposition, TerminalOutcome,
@@ -603,24 +603,60 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
             .await;
         }
     };
-    let mut candidate =
-        match build_dispatch(plan, &plans.fingerprint, occurrence.version, &base_sha, 1) {
-            Ok(value) => value,
-            Err(error) => {
-                return record_refusal(
-                    &session,
-                    &view,
-                    phase,
-                    BoundaryTool::CadenceQuery,
-                    "query-next",
-                    &raw_request,
-                    error.code,
-                    error.detail,
-                    None,
-                )
-                .await;
-            }
-        };
+    let config = session.config().map_err(store_failure)?;
+    let choice = match super::config_service::resolve_role(
+        &config,
+        &super::config_service::RouteRequest {
+            role: "cad-executor".into(),
+            phase: std::num::NonZeroU32::new(phase),
+            plan: std::num::NonZeroU32::new(plan.plan),
+            attempt: None,
+        },
+    ) {
+        Ok(choice) => choice,
+        Err(error) => {
+            return record_refusal(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceQuery,
+                "query-next",
+                &raw_request,
+                "route-unavailable",
+                error.to_string(),
+                None,
+            )
+            .await;
+        }
+    };
+    let route = cadence::execution::model::DispatchRoute {
+        choice,
+        inputs: super::config_service::routing_inputs(&config),
+    };
+    let mut candidate = match build_routed_dispatch(
+        plan,
+        &plans.fingerprint,
+        occurrence.version,
+        &base_sha,
+        1,
+        route,
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            return record_refusal(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceQuery,
+                "query-next",
+                &raw_request,
+                error.code,
+                error.detail,
+                None,
+            )
+            .await;
+        }
+    };
     let (_, provisional) = match admit_dispatch(&occurrence, candidate.clone()) {
         Ok(value) => value,
         Err(error) => {
@@ -1263,6 +1299,18 @@ fn render_prompt_version(dispatch: &ActiveDispatch, lease_instructions: bool) ->
     } else {
         ""
     };
+    let operational = prompt_operational(dispatch);
+    format!(
+        "Cadence native execution dispatch\n\nOperational input:\n{}\n\nExecutor patch schema:\n{}\n\nInstructions:\nComplete tasks in listed order. Use one distinct signed commit per completed task. Run each task's exact verification commands and the suite. Return exactly one executor patch matching this schema. Stop at the first blocker and mark all later tasks not-run.{}\n\nOpaque plan body ({} UTF-8 bytes):\n{}",
+        serde_json::to_string_pretty(&operational).expect("operational fields serialize"),
+        serde_json::to_string_pretty(&patch_schema()).expect("patch schema serializes"),
+        guidance,
+        dispatch.body.len(),
+        dispatch.body,
+    )
+}
+
+fn prompt_operational(dispatch: &ActiveDispatch) -> Value {
     let mut operational = json!({
         "schema": dispatch.schema,
         "dispatch_id": dispatch.id,
@@ -1276,18 +1324,13 @@ fn render_prompt_version(dispatch: &ActiveDispatch, lease_instructions: bool) ->
         "policy": dispatch.policy,
         "base_sha": dispatch.base_sha,
     });
-    // Preserve the original prompt bytes for outstanding exact-file dispatches.
     if !dispatch.directories.is_empty() {
         operational["directories"] = json!(dispatch.directories);
     }
-    format!(
-        "Cadence native execution dispatch\n\nOperational input:\n{}\n\nExecutor patch schema:\n{}\n\nInstructions:\nComplete tasks in listed order. Use one distinct signed commit per completed task. Run each task's exact verification commands and the suite. Return exactly one executor patch matching this schema. Stop at the first blocker and mark all later tasks not-run.{}\n\nOpaque plan body ({} UTF-8 bytes):\n{}",
-        serde_json::to_string_pretty(&operational).expect("operational fields serialize"),
-        serde_json::to_string_pretty(&patch_schema()).expect("patch schema serializes"),
-        guidance,
-        dispatch.body.len(),
-        dispatch.body,
-    )
+    if let Some(route) = &dispatch.route {
+        operational["route"] = json!(route);
+    }
+    operational
 }
 
 pub use cadence::execution::model::patch_schema;
@@ -2196,7 +2239,14 @@ mod schema_tests {
         let mut bytes = source.to_vec();
         bytes.extend_from_slice(body.as_bytes());
         let plan = parse_plan(&bytes, 6, 1).unwrap();
-        let mut dispatch = build_dispatch(&plan, &"a".repeat(64), 0, &"b".repeat(40), 1).unwrap();
+        let mut dispatch = cadence::execution::dispatch::build_dispatch(
+            &plan,
+            &"a".repeat(64),
+            0,
+            &"b".repeat(40),
+            1,
+        )
+        .unwrap();
         let prompt = render_prompt(&dispatch);
         dispatch.prompt_bytes = prompt.len() as u64;
         assert_eq!(render_prompt(&dispatch).len() as u64, dispatch.prompt_bytes);
@@ -2216,6 +2266,30 @@ mod schema_tests {
         assert_eq!(
             patch_schema(),
             serde_json::to_value(schemars::schema_for!(ExecutorPatch)).unwrap()
+        );
+    }
+}
+
+#[cfg(test)]
+mod routing_prompt_tests {
+    use super::*;
+
+    #[test]
+    fn prompt_operational_returns_the_admitted_choice_verbatim() {
+        let route = json!({"choice":{"role":"cad-executor","agent":"cad-executor-xhigh","rung":"xhigh","starting_rung":"xhigh","model":"opus",
+            "effort_source":{"kind":"role","key":"roles.cad-executor.effort","layer":"repo","stored":"xhigh"},
+            "model_source":{"kind":"role","key":"roles.cad-executor.model","layer":"repo","stored":"opus"},
+            "attempt":1,"escalated":false,"pinned":false,"reasons":["fixture selection"],"warnings":[]},
+            "inputs":{"repo":{"identity":"/project/.planning/config.v4.json","content":null,"stamp":null},"global":null,"global_alias":false}});
+        let supplied: ActiveDispatch = serde_json::from_value(json!({"schema":1,"id":"dispatch-fixture","expected_execution_version":1,
+            "phase":8,"plan":1,"plan_fingerprint":"plan","plan_set_fingerprint":"plans","requirements":["AC10"],"tasks":[{"id":"T1","verify":["verify"]}],
+            "suite":"verify","files":["src/a.rs"],"policy":{"rung":"xhigh","branch":"current","reviews":"disabled"},
+            "route":route,"base_sha":"base","prompt_bytes":1,"body":"opaque fixture body"})).unwrap();
+        assert_eq!(
+            prompt_operational(&supplied),
+            json!({"schema":1,"dispatch_id":"dispatch-fixture","expected_execution_version":1,
+            "phase":8,"plan":1,"requirements":["AC10"],"files":["src/a.rs"],"suite":"verify","tasks":[{"id":"T1","verify":["verify"]}],
+            "policy":{"rung":"xhigh","branch":"current","reviews":"disabled"},"base_sha":"base","route":route})
         );
     }
 }

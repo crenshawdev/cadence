@@ -32,6 +32,11 @@ pub struct ExecutionPlan {
 #[serde(rename_all = "kebab-case")]
 pub enum ExecutorRung {
     Fixed,
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -71,6 +76,8 @@ pub struct ActiveDispatch {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub directories: Vec<String>,
     pub policy: DispatchPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<Box<DispatchRoute>>,
     pub base_sha: String,
     pub prompt_bytes: u64,
     #[serde(default)]
@@ -265,3 +272,66 @@ pub struct BoundaryDecision {
 pub fn patch_schema() -> serde_json::Value {
     serde_json::to_value(schemars::schema_for!(ExecutorPatch)).expect("patch schema serializes")
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RoleStored {
+    pub key: String,
+    pub layer: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RoleSelection {
+    pub kind: String,
+    pub key: String,
+    pub layer: String,
+    pub stored: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ignored_legacy: Option<RoleStored>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RoleResolution {
+    pub role: String,
+    pub agent: String,
+    pub rung: String,
+    pub starting_rung: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    pub effort_source: RoleSelection,
+    pub model_source: RoleSelection,
+    pub attempt: u32,
+    pub escalated: bool,
+    pub pinned: bool,
+    pub reasons: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigInput {
+    pub identity: std::path::PathBuf,
+    pub content: Option<String>,
+    pub stamp: Option<(u64, u64, u32)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigInputs {
+    pub repo: ConfigInput,
+    pub global: Option<ConfigInput>,
+    pub global_alias: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DispatchRoute {
+    pub choice: RoleResolution,
+    pub inputs: ConfigInputs,
+}
+
+#[path = "../config/roles.rs"]
+pub mod roles;

@@ -2072,3 +2072,46 @@ fn execution_service_risky_skill_sequence_refuses_missing_unfired_stale_and_rest
         assert!(matches!(refused, Envelope::Refused {reason,..} if reason.contains("Unchecked")));
     });
 }
+
+#[test]
+fn execution_query_returns_the_saved_executor_selection() {
+    runtime().block_on(async {
+        for (model, effort, agent) in [
+            (Some("sonnet"), "high", "cad-executor"),
+            (Some("opus"), "xhigh", "cad-executor-xhigh"),
+            (None, "high", "cad-executor"),
+        ] {
+            let fixture = fixture(&[(&["src/a.rs"], &["T1"], "routing fixture")]);
+            let server = CadenceServer::with_factory(factory());
+            accept(&server, &fixture).await;
+            let config_path = fixture.root.join("config.v4.json");
+            let mut config: serde_json::Value =
+                serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+            config["roles"] = serde_json::json!({
+                "cad-executor":{"model":model,"effort":effort}
+            });
+            fs::write(config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+            let answer = server.query_execution(&fixture.root, 6).await.unwrap();
+            let Envelope::Ok(Success::Dispatch { dispatch, .. }) = answer else {
+                panic!("expected dispatch, received {answer:?}");
+            };
+            let choice = &dispatch.route.as_ref().unwrap().choice;
+            assert_eq!(
+                (
+                    choice.agent.as_str(),
+                    choice.model.as_deref(),
+                    choice.rung.as_str(),
+                    choice.model_source.kind.as_str(),
+                    choice.model_source.layer.as_str()
+                ),
+                (
+                    agent,
+                    model,
+                    effort,
+                    if model.is_some() { "role" } else { "reset" },
+                    "repo"
+                )
+            );
+        }
+    });
+}
