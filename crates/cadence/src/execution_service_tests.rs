@@ -2115,3 +2115,549 @@ fn execution_query_returns_the_saved_executor_selection() {
         }
     });
 }
+
+// Hand-encoded admitted input and complete prompt; byte count and SHA-256
+// values were computed independently with Python JSON and hashlib.
+const GAP_ROUTE: &str = r###"{"choice":{"role":"cad-executor","agent":"cad-executor","rung":"high","starting_rung":"high","model":"sonnet","effort_source":{"kind":"role","key":"roles.cad-executor.effort","layer":"repo","stored":"high"},"model_source":{"kind":"role","key":"roles.cad-executor.model","layer":"repo","stored":"sonnet"},"attempt":1,"escalated":false,"pinned":false,"reasons":["fixture selection"],"warnings":[]},"inputs":{"repo":{"identity":"/project/.planning/config.v4.json","content":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","stamp":null},"global":null,"global_alias":false}}"###;
+const GAP_ACTIVE: &str = r###"{"schema":1,"id":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","expected_execution_version":1,"phase":8,"plan":1,"plan_fingerprint":"934e213e5a48ebf56a49125f7bfbabf698bebe138f69c0e723361e5f7d2d4813","plan_set_fingerprint":"42231de71cb569c15e88cd6eca33e3246282eb8d70e5462f10af99fd60ec3cff","requirements":["AC11"],"tasks":[{"id":"T1","verify":["verify"]}],"suite":"verify","files":["src/a.rs"],"policy":{"rung":"high","branch":"current","reviews":"disabled"},"route":{"choice":{"role":"cad-executor","agent":"cad-executor","rung":"high","starting_rung":"high","model":"sonnet","effort_source":{"kind":"role","key":"roles.cad-executor.effort","layer":"repo","stored":"high"},"model_source":{"kind":"role","key":"roles.cad-executor.model","layer":"repo","stored":"sonnet"},"attempt":1,"escalated":false,"pinned":false,"reasons":["fixture selection"],"warnings":[]},"inputs":{"repo":{"identity":"/project/.planning/config.v4.json","content":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","stamp":null},"global":null,"global_alias":false}},"base_sha":"3333333333333333333333333333333333333333","prompt_bytes":8772,"body":"Task body\n"}"###;
+const GAP_BOUNDARY: &str = r###"{"codec":1,"scope":{"scope":"execution","phase":8},"tool":"cadence-query","operation":"execute-next","request_digest":"4e8d529410aad81b01ee975c73d2933839b3b670e6f341d2496382de0f7ea764","outcome":"dispatch","subject_id":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","response_digest":"d417e9bb4aac25c2ff8e2b83416f8a66a66c48f14fa855d5fb17bb2a59c7c0ba","receipt":{"receipt":"dispatch","dispatch_id":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","prompt_bytes":8772}}"###;
+const GAP_BOUNDARY_ID: &str =
+    r###"f1d977a2435ea923c4380c679f194e5ccdc2e450060467bedbad3c6993830fb5"###;
+const GAP_PLAN_SET: &str =
+    r###"42231de71cb569c15e88cd6eca33e3246282eb8d70e5462f10af99fd60ec3cff"###;
+const GAP_ADMITTED_PROMPT: &str = r###"Cadence native execution dispatch
+
+Operational input:
+{
+  "schema": 1,
+  "dispatch_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "expected_execution_version": 1,
+  "phase": 8,
+  "plan": 1,
+  "requirements": [
+    "AC11"
+  ],
+  "files": [
+    "src/a.rs"
+  ],
+  "suite": "verify",
+  "tasks": [
+    {
+      "id": "T1",
+      "verify": [
+        "verify"
+      ]
+    }
+  ],
+  "policy": {
+    "rung": "high",
+    "branch": "current",
+    "reviews": "disabled"
+  },
+  "base_sha": "3333333333333333333333333333333333333333",
+  "route": {
+    "choice": {
+      "role": "cad-executor",
+      "agent": "cad-executor",
+      "rung": "high",
+      "starting_rung": "high",
+      "model": "sonnet",
+      "effort_source": {
+        "kind": "role",
+        "key": "roles.cad-executor.effort",
+        "layer": "repo",
+        "stored": "high"
+      },
+      "model_source": {
+        "kind": "role",
+        "key": "roles.cad-executor.model",
+        "layer": "repo",
+        "stored": "sonnet"
+      },
+      "attempt": 1,
+      "escalated": false,
+      "pinned": false,
+      "reasons": [
+        "fixture selection"
+      ],
+      "warnings": []
+    },
+    "inputs": {
+      "repo": {
+        "identity": "/project/.planning/config.v4.json",
+        "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "stamp": null
+      },
+      "global": null,
+      "global_alias": false
+    }
+  }
+}
+
+Executor patch schema:
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExecutorPatch",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "kind": {
+      "$ref": "#/$defs/PatchKind"
+    },
+    "dispatch_id": {
+      "type": "string"
+    },
+    "expected_execution_version": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "outcome": {
+      "$ref": "#/$defs/PlanDisposition"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TaskOutcome"
+      }
+    },
+    "deviations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Deviation"
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Blocker"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "dispatch_id",
+    "expected_execution_version",
+    "outcome",
+    "tasks",
+    "deviations",
+    "blockers"
+  ],
+  "$defs": {
+    "PatchKind": {
+      "type": "string",
+      "enum": [
+        "executor"
+      ]
+    },
+    "PlanDisposition": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "blocked"
+      ]
+    },
+    "TaskOutcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "type": "string"
+            },
+            "commit": {
+              "type": "string"
+            },
+            "verification": {
+              "$ref": "#/$defs/VerificationReceipt"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/EvidenceReference"
+              }
+            },
+            "status": {
+              "type": "string",
+              "const": "completed"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "task_id",
+            "commit",
+            "verification",
+            "evidence"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "type": "string"
+            },
+            "blocker_id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "blocked"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "task_id",
+            "blocker_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "not-run"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "task_id"
+          ]
+        }
+      ]
+    },
+    "VerificationReceipt": {
+      "type": "object",
+      "properties": {
+        "disposition": {
+          "$ref": "#/$defs/VerificationDisposition"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CommandReceipt"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "disposition",
+        "commands"
+      ]
+    },
+    "VerificationDisposition": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed"
+      ]
+    },
+    "CommandReceipt": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "exit_code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "output_digest": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "exit_code",
+        "output_digest"
+      ]
+    },
+    "EvidenceReference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "sha": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "commit"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "sha"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "file-line"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "path",
+            "line"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "criterion"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ]
+        }
+      ]
+    },
+    "Deviation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceReference"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "evidence"
+      ]
+    },
+    "Blocker": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceReference"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "evidence"
+      ]
+    }
+  }
+}
+
+Instructions:
+Complete tasks in listed order. Use one distinct signed commit per completed task. Run each task's exact verification commands and the suite. Return exactly one executor patch matching this schema. Stop at the first blocker and mark all later tasks not-run.
+The lease has zero exemptions: all reported commit paths and the whole staged set must be covered by files or directories, including both rename endpoints, new files, lockfiles and reports. A repairable mistake within this lease is not a blocker; correct it and rerun the required verification. If an undeclared-files refusal occurs, stop execution, preserve the rejected SHAs and request operator-controlled repair. Cadence leaves Git and the index untouched and the dispatch open. Do not push, reset, amend, revert or force-push automatically. After operator repair, resubmit a corrected full patch with the same dispatch ID and execution version, within the unchanged lease and plan fingerprint. An undeclared necessary file requires an operator planning correction; changing the lease or body cannot repair this active dispatch.
+
+Opaque plan body (10 UTF-8 bytes):
+Task body
+"###;
+
+const GAP_PLAN: &str = "---\nphase: 8\nplan: 1\nrequirements: [AC11]\nfiles: [src/a.rs]\nexecution:\n  schema: 1\n  suite: verify\n  tasks:\n    - id: T1\n      verify: [verify]\n---\nTask body\n";
+
+fn gap_hash(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn gap_query_tree(active: bool) -> tempfile::TempDir {
+    use serde_json::{Value, json};
+    let tree = tempfile::tempdir().unwrap();
+    let root = tree.path().join(".planning");
+    fs::create_dir_all(root.join("phases/8")).unwrap();
+    fs::write(
+        root.join("ROADMAP.md"),
+        "## Phases\n- [ ] **Phase 8: Config and routing**\n",
+    )
+    .unwrap();
+    fs::write(root.join("phases/8/PLAN-1.md"), GAP_PLAN).unwrap();
+    fs::write(root.join("config.v4.json"), b"{\"roles\":{\"cad-executor\":{\"model\":\"opus\",\"effort\":\"xhigh\"}},\"review\":{\"triggers\":{\"risk_surface\":{\"surfaces\":[]}}}}").unwrap();
+    let mut data = json!({"import":{"format":1,"complete":true,"source_generation":"fixture","sources":[],
+        "active":{"global":null,"repo":root.join("config.v4.json")},"created":[],"warnings":[]}});
+    let mut records = Vec::new();
+    // Explicitly persisted accepted continuation; no evidence service submission.
+    let scope = json!({"project":tree.path(),"planning_root":root,"cycle":"live","occurrence":"phase-8-execution",
+        "phase":"8","plan":"native-execution","report":"phases/8/SUMMARY.md"});
+    let accepted = json!({"version":1,"scope":scope,"fact":{"kind":"gate","value":{
+        "id":"accepted-fixture","purpose":"progress","checkpoint_id":null,"question":"Execute?","need":"Acceptance",
+        "options":[],"state":{"status":"answered","value":{"question_id":"accepted-fixture","actual_response":"Proceed",
+        "selected_option":null,"adjustment":null,"disposition":"approve","authorization_id":null}}}}});
+    let evidence_key =
+        gap_hash(&serde_json::to_vec(&json!([scope, "gate", "accepted-fixture"])).unwrap());
+    data["native_evidence"] = json!({evidence_key:accepted});
+    records.push(json!({"version":1,"id":"native-evidence:accepted-fixture","revision":1,
+        "origin":{"source":"cadence.native_evidence.v1","original":"missing"},
+        "decision":{"class":"gate","outcome":"cadence.native_evidence.v1","evidence":{"text":serde_json::to_string(&accepted).unwrap()}}}));
+    if active {
+        let admitted: Value = serde_json::from_str(GAP_ACTIVE).unwrap();
+        data["execution"] = json!({"schema":1,"occurrences":{"8":{"phase":8,"plan_set_fingerprint":GAP_PLAN_SET,
+            "version":1,"active":admitted,"plans":[],"terminal":null,"receipts":{}}}});
+        records.push(json!({"version":1,"id":"routing:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","revision":1,
+            "origin":{"source":"native-routing","original":"missing"},
+            "decision":{"class":"routing","choice":"{\"agent\":\"cad-executor\",\"rung\":\"high\",\"model\":\"sonnet\"}",
+                "config_provenance":{"dispatch_id":{"text":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"route":{"text":GAP_ROUTE}},
+                "requested_effort":{"text":"high"},"observed_effort":"missing","receipt":"missing"}}));
+        records.push(json!({"version":1,"id":GAP_BOUNDARY_ID,"revision":1,"origin":{"source":"execution-boundary-v1","original":"missing"},
+            "decision":{"class":"boundary_v1","boundary":serde_json::from_str::<Value>(GAP_BOUNDARY).unwrap(),"store_generation":1,"terminal":false}}));
+    }
+    let decisions = records
+        .into_iter()
+        .map(|record| serde_json::to_string(&record).unwrap() + "\n")
+        .collect::<String>();
+    let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    let mut snapshot = json!({"version":1,"generation":1,"items_digest":empty,"decisions_digest":gap_hash(decisions.as_bytes()),
+        "data":data,"operations":{},"integrity":""});
+    snapshot["integrity"] = json!(gap_hash(&serde_json::to_vec(&snapshot).unwrap()));
+    fs::write(
+        root.join("state.json"),
+        serde_json::to_vec(&snapshot).unwrap(),
+    )
+    .unwrap();
+    fs::write(root.join("decisions.jsonl"), decisions).unwrap();
+    fs::write(root.join("items.jsonl"), b"").unwrap();
+    tree
+}
+
+// Isolate PATH in a child test process, so the Git boundary cannot race another
+// test's environment. This executable supplies only the named HEAD observation.
+fn gap_query_child(test: &str) -> bool {
+    if std::env::var("CADENCE_GAP_QUERY_CHILD").as_deref() == Ok(test) {
+        return true;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let executables = tempfile::tempdir().unwrap();
+    let git = executables.path().join("git");
+    fs::write(&git, "#!/bin/sh\nif [ \"$1\" = -C ] && [ \"$3\" = rev-parse ] && [ \"$4\" = --verify ] && [ \"$5\" = HEAD ]; then\n  printf '%s\\n' 3333333333333333333333333333333333333333\nelse\n  exit 75\nfi\n").unwrap();
+    fs::set_permissions(git, fs::Permissions::from_mode(0o755)).unwrap();
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test, "--nocapture"])
+        .env_clear()
+        .env("CADENCE_GAP_QUERY_CHILD", test)
+        .env("PATH", executables.path())
+        .env("TMPDIR", "/tmp")
+        .stdin(Stdio::null())
+        .status()
+        .unwrap();
+    if !status.success() {
+        panic!("isolated query fixture failed: {status}");
+    }
+    false
+}
+
+#[test]
+fn phase8_gap_active_dispatch_returns_original_choice_under_new_config() {
+    if !gap_query_child(
+        "server::execution_service_tests::phase8_gap_active_dispatch_returns_original_choice_under_new_config",
+    ) {
+        return;
+    }
+    runtime().block_on(async {
+        let tree = gap_query_tree(true);
+        let root = tree.path().join(".planning");
+        let factory = SessionFactory::new(None, Arc::new(crate::config::planning_policy));
+        let driver = Driver::default();
+        let answer = execution_service::query(&factory, &root, 8, &driver).await;
+        let confirmed = answer.is_ok();
+        let Envelope::Ok(Success::Dispatch { dispatch, prompt }) = answer.unwrap() else {
+            panic!("expected confirmed active dispatch");
+        };
+        let choice = &dispatch.route.as_ref().unwrap().choice;
+        assert_eq!(
+            (
+                confirmed,
+                dispatch.id.as_str(),
+                choice.model.as_deref(),
+                choice.agent.as_str(),
+                choice.rung.as_str(),
+                prompt.as_bytes() == GAP_ADMITTED_PROMPT.as_bytes()
+            ),
+            (
+                true,
+                "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                Some("sonnet"),
+                "cad-executor",
+                "high",
+                true
+            )
+        );
+    });
+}
+
+#[test]
+fn phase8_gap_new_dispatch_returns_newer_choice() {
+    if !gap_query_child(
+        "server::execution_service_tests::phase8_gap_new_dispatch_returns_newer_choice",
+    ) {
+        return;
+    }
+    runtime().block_on(async {
+        let tree = gap_query_tree(false);
+        let root = tree.path().join(".planning");
+        let factory = SessionFactory::new(None, Arc::new(crate::config::planning_policy));
+        let driver = Driver::default();
+        let answer = execution_service::query(&factory, &root, 8, &driver).await;
+        let confirmed = answer.is_ok();
+        let Envelope::Ok(Success::Dispatch { dispatch, .. }) = answer.unwrap() else {
+            panic!("expected confirmed new dispatch");
+        };
+        let choice = &dispatch.route.as_ref().unwrap().choice;
+        assert_eq!(
+            (
+                confirmed,
+                choice.model.as_deref(),
+                choice.agent.as_str(),
+                choice.rung.as_str()
+            ),
+            (true, Some("opus"), "cad-executor-xhigh", "xhigh")
+        );
+    });
+}
