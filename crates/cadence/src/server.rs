@@ -224,6 +224,8 @@ struct VersionArguments {}
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "operation", deny_unknown_fields)]
 enum QueryArguments {
+    #[serde(rename = "detect-surfaces")]
+    DetectSurfaces { answered: Option<Vec<String>> },
     #[serde(rename = "execute-next")]
     ExecuteNext { phase: NonZeroU32 },
     #[serde(rename = "risk-status")]
@@ -253,6 +255,7 @@ enum ApplyOutput {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum QueryOutput {
+    Surfaces(Box<Envelope<cadence::rail::surfaces::Report>>),
     Execution(ExecutionEnvelope),
     Receipt(Box<Envelope<rail_service::ReceiptOutput>>),
 }
@@ -452,7 +455,7 @@ impl ServerHandler for PublicServer {
                 ),
                 tool::<QueryOutput>(
                     "cadence_query",
-                    "Query native execution or exact material risk status in the bound project.",
+                    "Query native execution, exact material risk status or structural surface evidence in the bound project.",
                     query_schema(),
                 ),
                 tool::<ApplyOutput>(
@@ -496,6 +499,11 @@ impl ServerHandler for PublicServer {
                 {
                     Some(QueryArguments::ExecuteNext { phase }) => {
                         self.server.query_execution(&self.root, phase.get()).await
+                    }
+                    Some(QueryArguments::DetectSurfaces { answered }) => {
+                        return structured_result(Ok(QueryOutput::Surfaces(Box::new(
+                            rail_service::detect_surfaces(&self.root, answered),
+                        ))));
                     }
                     Some(QueryArguments::RiskStatus {
                         scope,

@@ -454,11 +454,25 @@ fn pause_risk_reads_the_staged_tree_and_preserves_checked_match_and_inconclusive
 fn pause_risk_asks_for_unanswered_surfaces_and_persists_the_answer_before_review() {
     runtime().block_on(async {
         let temp = risk_fixture("blocking", None).await;
+        fs::create_dir(temp.path().join("auth")).unwrap();
+        let config_before = fs::read(temp.path().join(".planning/config.json")).unwrap();
         let request = staged_request(temp.path(), "scope-risk", b"DROP TABLE accounts;\n");
         let head = git::run(temp.path(), ["rev-parse", "HEAD"]).unwrap();
         let gate = waiting(
             server().pause(request.clone()).await.unwrap(),
             "risk-surfaces",
+        );
+        let structural = cadence::rail::surfaces::detect(temp.path(), None).unwrap();
+        assert!(gate.need.contains(&structural.options[0].reason));
+        assert!(gate.need.contains("directory auth/"));
+        assert!(
+            gate.options
+                .iter()
+                .any(|o| o.id == format!("surfaces:{}", structural.options[1].surfaces.join(",")))
+        );
+        assert_eq!(
+            fs::read(temp.path().join(".planning/config.json")).unwrap(),
+            config_before
         );
         assert_eq!(git::run(temp.path(), ["rev-parse", "HEAD"]).unwrap(), head);
         answer(temp.path(), &request, gate, "all", None).await;

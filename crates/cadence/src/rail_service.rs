@@ -212,6 +212,25 @@ pub fn refused<T>(code: &str, reason: &str) -> Envelope<T> {
     }
 }
 
+/// Structural discovery has no store/config prerequisite and cannot mutate either.
+pub fn detect_surfaces(
+    selected: &Path,
+    answered: Option<Vec<String>>,
+) -> Envelope<cadence::rail::surfaces::Report> {
+    let Some(project) = selected.parent() else {
+        return refused("no-root", "bound planning root has no project parent");
+    };
+    if let Some(values) = &answered
+        && let Err(error) = risk::validate_surfaces(values.clone())
+    {
+        return refused("invalid-surfaces", &error.to_string());
+    }
+    match cadence::rail::surfaces::detect(project, answered) {
+        Ok(report) => Envelope::Ok(report),
+        Err(error) => refused("no-root", &error.to_string()),
+    }
+}
+
 use cadence::rail::receipts;
 use cadence::store::writer::View;
 use schemars::JsonSchema;

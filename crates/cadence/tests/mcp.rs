@@ -1604,3 +1604,72 @@ fn risk_receipts_cross_stdio_restart_and_bind_current_staged_and_committed_mater
     }
     assert!(replacement.finish().success());
 }
+
+#[test]
+fn detect_surfaces_public_read_uses_bound_root_and_changes_no_config_or_rail_state() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join(".planning")).unwrap();
+    fs::write(
+        temp.path().join(".planning/config.json"),
+        b"torn configuration deliberately irrelevant",
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("package.json"),
+        br#"{"dependencies":{"stripe":"1","@grpc/grpc-js":"1"}}"#,
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("source.rs"),
+        b"passport DROP TABLE auth token",
+    )
+    .unwrap();
+    let mut client = isolated_client(temp.path());
+    client.handshake();
+    let query = json!({"operation":"detect-surfaces","answered":["auth"]});
+    let report = envelope(&client.tools_call(60, "cadence_query", query.clone()));
+    assert_eq!(report["status"], "ok");
+    assert_eq!(report["root"], temp.path().to_str().unwrap());
+    assert_eq!(report["evidenced"][0]["category"], "billing");
+    assert_eq!(report["evidenced"][1]["category"], "api_contract");
+    assert_eq!(report["unspeakable"], json!(["destructive"]));
+    assert_eq!(report["recommended"].as_array().unwrap().len(), 8);
+    assert_eq!(report["options"].as_array().unwrap().len(), 4);
+    fs::write(temp.path().join("source.rs"), b"entirely different").unwrap();
+    assert_eq!(
+        envelope(&client.tools_call(61, "cadence_query", query)),
+        report
+    );
+    for answered in [json!([]), json!(["auth", "typo"])] {
+        assert_eq!(
+            envelope(&client.tools_call(
+                62,
+                "cadence_query",
+                json!({"operation":"detect-surfaces","answered":answered})
+            ))["code"],
+            "invalid-surfaces"
+        );
+    }
+    // No state can be created even when effective configuration is unreadable.
+    assert_eq!(
+        fs::read(temp.path().join(".planning/config.json")).unwrap(),
+        b"torn configuration deliberately irrelevant"
+    );
+    for name in ["state.json", "decisions.jsonl", "items.jsonl"] {
+        assert!(!temp.path().join(".planning").join(name).exists());
+    }
+    assert!(client.finish().success());
+    // A caller-selected filesystem root is rejected by the strict operation.
+    fs::write(temp.path().join(".planning/config.json"), b"{}").unwrap();
+    let mut client = isolated_client(temp.path());
+    client.handshake();
+    assert_eq!(
+        envelope(&client.tools_call(
+            63,
+            "cadence_query",
+            json!({"operation":"detect-surfaces","root":"/"})
+        ))["status"],
+        "refused"
+    );
+    assert!(client.finish().success());
+}

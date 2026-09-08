@@ -170,22 +170,50 @@ pub enum Outcome {
     Adjudicated(Review),
 }
 
-pub fn surfaces_question(scope: &Scope) -> Result<Gate> {
+pub fn surfaces_question(
+    scope: &Scope,
+    structural: &crate::rail::surfaces::Report,
+) -> Result<Gate> {
     let identity = crate::store::model::digest(&serde_json::to_vec(&(
         &scope.project,
         "review.triggers.risk_surface.surfaces",
     ))?);
+    let mut options: Vec<_> = structural
+        .options
+        .iter()
+        .enumerate()
+        .map(|(index, choice)| OptionChoice {
+            id: if index == 0 {
+                "all".into()
+            } else {
+                format!("surfaces:{}", choice.surfaces.join(","))
+            },
+            text: format!("{}: {}", choice.surfaces.join(", "), choice.reason),
+        })
+        .collect();
+    options.extend([
+        OptionChoice {
+            id: "choose".into(),
+            text: "Use the supplied JSON category list".into(),
+        },
+        OptionChoice {
+            id: "abort".into(),
+            text: "Abort the pause".into(),
+        },
+    ]);
     Ok(Gate {
         id: format!("pause-risk-surfaces-{identity}"),
         purpose: Purpose::Decision,
         checkpoint_id: None,
         question: "Which risk surfaces should this project review?".into(),
-        need: "Choose all eight risk surfaces, provide a JSON array of selected category names, or abort. auth: auth/authz/sessions; migrations: DB schema/migrations; billing: money/billing/pricing; concurrency: concurrency/async/locking; destructive: destructive ops; secrets: secrets/crypto/keys; api_contract: public API/wire contracts; untrusted_input: untrusted-input parsing.".into(),
-        options: vec![
-            OptionChoice { id: "all".into(), text: "All eight categories (recommended)".into() },
-            OptionChoice { id: "choose".into(), text: "Use the supplied JSON category list".into() },
-            OptionChoice { id: "abort".into(), text: "Abort the pause".into() },
-        ],
+        need: format!(
+            "{} Silent: {}. Structurally unspeakable: {}. Warnings: {}. Choose an offered set, supply a JSON category list, or abort.",
+            structural.options[0].reason,
+            structural.silent.join(", "),
+            structural.unspeakable.join(", "),
+            structural.warnings.join("; ")
+        ),
+        options,
         state: State::Unanswered,
     })
 }

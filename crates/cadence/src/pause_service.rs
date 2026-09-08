@@ -221,6 +221,14 @@ fn surfaces_from_answer(gate: &Gate) -> Result<Option<Vec<String>>> {
                 .ok_or_else(|| Error::Invalid("risk surface choice lacks its JSON list".into()))?,
         )
         .map_err(|_| Error::Invalid("risk surface choice is not a JSON string array".into()))?,
+        Some(option)
+            if option.starts_with("surfaces:") && gate.options.iter().any(|o| o.id == option) =>
+        {
+            option["surfaces:".len()..]
+                .split(',')
+                .map(str::to_owned)
+                .collect()
+        }
         _ => {
             return Err(Error::Invalid(
                 "risk surface choice is not actionable".into(),
@@ -852,11 +860,12 @@ async fn risk_gate<I: ConfigIo>(
         return Ok(Response::Ready(Box::new(captured.clone())));
     }
     let Some(surfaces) = configured_surfaces(config)? else {
+        let structural = cadence::rail::surfaces::detect(root, None)?;
         let gate = recorded_gate(
             session,
             &captured.scope,
             view,
-            risk::surfaces_question(&captured.scope)?,
+            risk::surfaces_question(&captured.scope, &structural)?,
         )
         .await?;
         let Some(surfaces) = surfaces_from_answer(&gate)? else {
