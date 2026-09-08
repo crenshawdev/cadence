@@ -3,6 +3,8 @@ name: cad-verify
 description: "Verify a completed phase by conversational UAT - a persistent checklist that survives /clear, plus cross-phase and goal-backward passes"
 argument-hint: "[phase] [--sweep] [--deep]"
 allowed-tools:
+  - mcp__cadence__cadence_apply
+  - mcp__cadence__cadence_query
   - Read
   - Write
   - Edit
@@ -31,3 +33,15 @@ cad-verifier for a goal-backward check of what the code actually delivers.
 <process>
 Execute end-to-end.
 </process>
+
+<review_delivery>
+At review boundaries, follow the shared `cad-review-delivery` contract below
+with ordinary caller `verify`. Retain the actual plan/diff/staged target,
+wait for raw return and durable acknowledgment, and satisfy deferred enqueue
+before commit preparation, completion or further plan dispatch. This takes
+precedence over frozen review write/trace and gate instructions. Keep the rest
+of this workflow with its existing owner.
+Diagnosis uses the retained diagnosis specialist target; preserve the user’s fix selection.
+
+@${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
+</review_delivery>

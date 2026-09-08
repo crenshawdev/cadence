@@ -2241,6 +2241,36 @@ mod schema_tests {
     }
 }
 
+/// Grouped-tool handoff guard; execution envelopes and canonical receipts are
+/// unchanged. Reads include replayed terminal dispatches before exposing them.
+pub async fn review_handoff<I: ConfigIo + Clone + Sync>(
+    factory: &SessionFactory<I>,
+    root: &Path,
+    phase: Option<u32>,
+    dispatch: Option<&str>,
+) -> super::review_service::Answer {
+    let session = factory.first_touch(root).await?;
+    let phase = match phase {
+        Some(phase) => Some(phase),
+        None => match dispatch {
+            Some(id) => {
+                let view = session.derivation_view().await?;
+                dispatch_phase(&view, id).map_err(|e| Error::Invalid(e.to_string()))?
+            }
+            None => None,
+        },
+    };
+    match phase {
+        Some(phase) => {
+            super::review_service::pending_execution(session.review_store(), phase).await
+        }
+        None => Ok(Envelope::Ok(super::review_service::Output {
+            operation: "review-handoff".into(),
+            result: json!({"pending":false}),
+        })),
+    }
+}
+
 #[cfg(test)]
 mod routing_prompt_tests {
     use super::*;

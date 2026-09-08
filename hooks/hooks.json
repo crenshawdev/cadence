@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/subagent-trace.mjs\"",
+            "command": "cadence review-stop",
             "timeout": 10
           }
         ]

@@ -3,6 +3,8 @@ name: cad-decision-review
 description: "Adversarial refute-then-adjudicate pass over one load-bearing decision - a CONTEXT D-NN line or a PROJECT Key Decisions row - with per-objection rulings"
 argument-hint: "[path/to/decision doc]"
 allowed-tools:
+  - mcp__cadence__cadence_apply
+  - mcp__cadence__cadence_query
   - Read
   - Bash
   - Glob
@@ -40,8 +42,8 @@ invoking this skill is the user's call, not a mechanical handoff.
    row). If `$ARGUMENTS` is empty or ambiguous, ask (ask-user seam) for the
    path and the specific decision.
 
-2. **Run the workflow** end-to-end: refute (the review subsystem's reviewer
-   resolution), then adjudicate (Context7 + codebase grounding, per-objection
+2. **Admit specialist decision** with retained selected text and inline
+   context through cad-review-delivery. After durable delivery, adjudicate (Context7 + codebase grounding, per-objection
    ruling and amendments), then the qualitative cost report.
 
 3. **Present** the per-objection rulings, groundings, and amendments - or, on
@@ -52,3 +54,9 @@ invoking this skill is the user's call, not a mechanical handoff.
    amendment - this is a review, not an edit; the user decides what to change
    and does it themselves.
 </process>
+
+<review_delivery>
+At the review boundary follow cad-review-delivery for native retained admission, saved dispatch, unchanged raw return and durable acknowledgment. This contract takes precedence over frozen reviewer resolution, writes and lifecycle closes. Keep the remaining specialist/reporting workflow.
+
+@${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
+</review_delivery>

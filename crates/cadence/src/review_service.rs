@@ -68,6 +68,10 @@ pub enum Apply {
 }
 
 pub enum Command {
+    ExecutionHandoff {
+        phase: Option<u32>,
+        dispatch: Option<String>,
+    },
     Query(Query),
     Apply(Apply),
 }
@@ -549,6 +553,10 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
     let store = session.review_store();
     let mut clock = review::material_io::WallClock;
     match command {
+        Command::ExecutionHandoff { phase, dispatch } => {
+            super::execution_service::review_handoff(factory, root, phase, dispatch.as_deref())
+                .await
+        }
         Command::Query(query) => query_saved(store, query).await,
         Command::Apply(Apply::Observation { observation }) => output(
             "review-observation",
@@ -921,7 +929,7 @@ async fn next(store: &Store, fire: &str) -> Answer {
         persistence::update(store, &view, &format!("issue:{}", attempt.attempt), records).await?;
         return output(
             "review-next",
-            json!({"state":"dispatch","attempt":attempt,"admission":admission}),
+            json!({"state":"dispatch","dispatch":review::invoking::local_dispatch(&admission,&attempt),"attempt":attempt,"admission":admission}),
         );
     }
     let mut changed = false;
@@ -953,9 +961,7 @@ async fn next(store: &Store, fire: &str) -> Answer {
     )
 }
 
-#[cfg(test)]
-#[path = "review_service_tests.rs"]
-mod tests;
+
 
 pub async fn execute<I: ConfigIo + Clone + Sync>(
     factory: &SessionFactory<I>,
@@ -967,3 +973,32 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
         answer => answer,
     }
 }
+
+pub async fn pending_execution(store: &Store, phase: u32) -> Answer {
+    let view = persistence::read(store).await?;
+    let records = persistence::records(&view.snapshot.data)?;
+    for admission in collection::<Admission>(&records, "admissions")?
+        .into_values()
+        .filter(|a| {
+            a.caller == "execute"
+                && a.home.kind == HomeKind::Phase
+                && a.home.id == phase.to_string()
+        })
+    {
+        let answer = next(store, &admission.fire).await?;
+        if let Envelope::Ok(ref output) = answer {
+            let ready = matches!(output.result["action"].as_str(), Some("continue" | "off"))
+                || (output.result["action"] == "enqueue-before-continuation"
+                    && !output.result["deferred"].is_null());
+            if ready {
+                continue;
+            }
+        }
+        return Ok(answer);
+    }
+    output("review-handoff", json!({"pending":false}))
+}
+
+#[cfg(test)]
+#[path = "review_service_tests.rs"]
+mod tests;

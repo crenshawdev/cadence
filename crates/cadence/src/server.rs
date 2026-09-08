@@ -395,6 +395,28 @@ pub struct PublicServer {
 }
 
 impl PublicServer {
+    async fn review_handoff(
+        &self,
+        phase: Option<u32>,
+        dispatch: Option<String>,
+    ) -> Result<Option<Envelope<review_service::Output>>, ErrorData> {
+        let answer = self
+            .server
+            .service
+            .review(
+                &self.root,
+                review_service::Command::ExecutionHandoff { phase, dispatch },
+            )
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        if matches!(&answer, Envelope::Ok(output) if output.operation=="review-handoff" && output.result["pending"]==false)
+        {
+            Ok(None)
+        } else {
+            Ok(Some(answer))
+        }
+    }
+
     async fn refuse_raw(
         &self,
         tool: BoundaryTool,
@@ -650,7 +672,14 @@ impl ServerHandler for PublicServer {
                         ))));
                     }
                     Some(QueryArguments::ExecuteNext { phase }) => {
-                        self.server.query_execution(&self.root, phase.get()).await
+                        if let Some(review) = self.review_handoff(Some(phase.get()), None).await? {
+                            return structured_result(Ok(QueryOutput::Review(Box::new(review))));
+                        }
+                        let answer = self.server.query_execution(&self.root, phase.get()).await;
+                        if let Some(review) = self.review_handoff(Some(phase.get()), None).await? {
+                            return structured_result(Ok(QueryOutput::Review(Box::new(review))));
+                        }
+                        answer
                     }
                     Some(QueryArguments::DetectSurfaces { answered }) => {
                         return structured_result(Ok(QueryOutput::Surfaces(Box::new(
@@ -753,7 +782,17 @@ impl ServerHandler for PublicServer {
                         ))));
                     }
                     Some(ApplyArguments::Executor(patch)) => {
-                        self.server.apply_executor_patch(&self.root, patch).await
+                        let dispatch = patch.dispatch_id.clone();
+                        if let Some(review) =
+                            self.review_handoff(None, Some(dispatch.clone())).await?
+                        {
+                            return structured_result(Ok(ApplyOutput::Review(Box::new(review))));
+                        }
+                        let answer = self.server.apply_executor_patch(&self.root, patch).await;
+                        if let Some(review) = self.review_handoff(None, Some(dispatch)).await? {
+                            return structured_result(Ok(ApplyOutput::Review(Box::new(review))));
+                        }
+                        answer
                     }
                     Some(ApplyArguments::Rail(request)) => {
                         return rail_result(

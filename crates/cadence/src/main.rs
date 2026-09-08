@@ -1,6 +1,7 @@
 pub mod config;
 mod guard;
 pub mod import;
+mod review_hook;
 mod server;
 
 use clap::{Parser, Subcommand};
@@ -24,6 +25,8 @@ enum Command {
     Serve,
     /// Guard Bash Git commands and binary-owned Write/Edit outputs.
     Guard,
+    /// Observe an attributed reviewer stop without closing missing delivery.
+    ReviewStop,
 }
 
 fn main() -> std::process::ExitCode {
@@ -38,6 +41,7 @@ fn run_command(command: Command) -> std::process::ExitCode {
     match command {
         Command::Serve => run_serve(None),
         Command::Guard => guard::run(),
+        Command::ReviewStop => review_hook::run(),
     }
 }
 

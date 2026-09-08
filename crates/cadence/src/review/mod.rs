@@ -7,6 +7,7 @@ pub mod contract;
 pub mod deferred;
 pub mod forward;
 pub mod inventory;
+pub mod invoking;
 pub mod io;
 pub mod manifest;
 pub mod material;

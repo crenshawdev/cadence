@@ -3,6 +3,8 @@ name: cad-land
 description: "Land finished work - report git state, then ask the mechanism (push / MR or PR / tag / leave local). Never decides how you publish"
 argument-hint: "[base branch | defaults to git.base_branch]"
 allowed-tools:
+  - mcp__cadence__cadence_apply
+  - mcp__cadence__cadence_query
   - Read
   - Bash
   - Task
@@ -295,3 +297,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
   deferred finding is the one thing that stops it - on both arms, before either
   publishes anything.
 </guardrails>
+
+<review_delivery>
+Use review-deferred and review-consumer landing for modern obligations and risk_surface inventory. Raw findings never count as settled survivors; missing renderings never hide a modern fire. Frozen filename rules below apply only to historical records. Landing still requires explicit user authorization; no review delivery grants publishing permission. This boundary takes precedence over the frozen unattended arm.
+
+@${CLAUDE_PLUGIN_ROOT}/skills/cad-review-delivery/SKILL.md
+</review_delivery>
