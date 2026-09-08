@@ -30,6 +30,8 @@ pub(crate) enum IntentKind {
         phase: u32,
         decision_id: String,
         render_version: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        risk_basis: Option<Box<cadence::rail::risk::ExecutionBasis>>,
     },
     ExecutionDispatch {
         phase: u32,
@@ -355,6 +357,7 @@ impl Intent {
                 phase,
                 decision_id,
                 render_version,
+                ..
             } => {
                 if *render_version != cadence::execution::render::SUMMARY_RENDER_VERSION {
                     return Err(Error::Invalid("unsupported boundary render version".into()));
@@ -439,7 +442,9 @@ impl Intent {
                     return Err(Error::Invalid("dispatch intent receipt mismatch".into()));
                 }
             }
-            IntentKind::ExecutionPatchV1 { phase, .. } => {
+            IntentKind::ExecutionPatchV1 {
+                phase, risk_basis, ..
+            } => {
                 let execution = execution_snapshot(snapshot)?;
                 let occurrence =
                     execution
@@ -456,6 +461,40 @@ impl Intent {
                     .receipts
                     .get(subject)
                     .ok_or_else(|| Error::Invalid("patch intent lacks execution receipt".into()))?;
+                if let Some(basis) = risk_basis {
+                    let state = self
+                        .participants
+                        .iter()
+                        .find(|p| p.target == STATE)
+                        .unwrap();
+                    let old: Snapshot =
+                        serde_json::from_slice(state.expected.bytes.as_deref().ok_or_else(
+                            || Error::Invalid("execution basis lacks prior snapshot".into()),
+                        )?)?;
+                    let active = execution_snapshot(&old)?
+                        .occurrences
+                        .get(&phase.to_string())
+                        .and_then(|o| o.active.clone())
+                        .ok_or_else(|| {
+                            Error::Invalid("execution basis lacks prior dispatch".into())
+                        })?;
+                    let expected = cadence::rail::risk::ExecutionBasis::from_accepted(
+                        &active,
+                        &receipt.outcome,
+                    )
+                    .map_err(super::writer::rail_error)?;
+                    let projected =
+                        cadence::rail::risk::project_execution_basis(&old.data, &expected)
+                            .map_err(super::writer::rail_error)?;
+                    if **basis != expected
+                        || snapshot.data.get(cadence::rail::risk::EXECUTION_MATERIAL)
+                            != projected.get(cadence::rail::risk::EXECUTION_MATERIAL)
+                    {
+                        return Err(Error::Invalid(
+                            "execution basis differs from accepted material".into(),
+                        ));
+                    }
+                }
                 let answer_matches = match &value.boundary.receipt {
                     Receipt::Compact {
                         envelope:

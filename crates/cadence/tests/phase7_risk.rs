@@ -931,3 +931,199 @@ fn moving_refs_and_changing_staged_bytes_cannot_relabel_captured_objects() {
         .is_err()
     );
 }
+
+impl Repo {
+    fn execution() -> Self {
+        let repo = Self::new();
+        repo.write(".planning/phases/7/PLAN-1.md", b"---\nphase: 7\nplan: 1\nrequirements: [AC7]\nfiles: [work.txt]\nexecution:\n  schema: 1\n  suite: printf suite\n  tasks:\n    - id: T1\n      verify: [printf T1]\n    - id: T2\n      verify: [printf T2]\n---\nChange the declared work file.\n");
+        repo.commit(&[".planning/phases/7/PLAN-1.md"]);
+        repo.call(repo.request("bootstrap", "HEAD", "HEAD"));
+        let planning = repo.root.join(".planning");
+        let mut record = json!({"version":1,"scope":{"project":repo.root,"planning_root":planning,"cycle":"live","occurrence":"phase-7-execution","phase":"7","plan":"native-execution","report":"phases/7/SUMMARY.md"},"fact":{"kind":"gate","value":{"id":"fixture-progress","purpose":"progress","checkpoint_id":null,"question":"Continue?","need":"Execution authority","options":[],"state":{"status":"unanswered"}}}});
+        runtime().block_on(async {
+            let store = Store::open(Filesystem::new(&planning).unwrap(), Allow).await.unwrap();
+            for (index, state) in [json!({"status":"unanswered"}), json!({"status":"answered","value":{"question_id":"fixture-progress","actual_response":"Proceed","selected_option":null,"adjustment":null,"disposition":"approve","authorization_id":"fixture-authorization"}})].into_iter().enumerate() {
+                record["fact"]["value"]["state"] = state;
+                let native: cadence::evidence::Record = serde_json::from_value(record.clone()).unwrap();
+                let view = store.request(Operation::ReadVerified).await.unwrap(); let id = format!("fixture-authority-{index}");
+                store.request(Operation::Transact(store::transaction::Transaction { id: id.clone(), items: vec![], decisions: vec![cadence::evidence::persistence::history(&id, &native).unwrap()], snapshot: Some(cadence::evidence::persistence::project(&view.snapshot.data, &native).unwrap()), external: vec![] })).await.unwrap();
+            }
+        });
+        repo
+    }
+    fn dispatch(&self) -> Value {
+        let mut client = Client::new(&self.root);
+        let raw = client.call(
+            "cadence_query",
+            json!({"operation":"execute-next","phase":7}),
+        );
+        client.finish();
+        let answer = &raw["result"]["structuredContent"];
+        assert_eq!(answer["outcome"], "dispatch", "{raw}");
+        answer["dispatch"].clone()
+    }
+    fn complete_execution(&self, dispatch: &Value) -> Vec<String> {
+        let mut tasks = Vec::new();
+        let mut commits = Vec::new();
+        for (i, task) in ["T1", "T2"].into_iter().enumerate() {
+            self.write(
+                "work.txt",
+                format!("JSON.parse(accepted)\nordinary-{i}\n").as_bytes(),
+            );
+            let output = Command::new("printf")
+                .arg(task)
+                .stdin(Stdio::null())
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            self.git(&["add", "--", "work.txt"]);
+            self.git(&[
+                "commit",
+                "-q",
+                "-S",
+                "-m",
+                &format!("feat(7): fixture task {task}"),
+            ]);
+            let commit = self.git(&["rev-parse", "HEAD"]);
+            assert_eq!(self.git(&["log", "-1", "--format=%G?"]), "G");
+            tasks.push(json!({"status":"completed","task_id":task,"commit":commit,"verification":{"disposition":"passed","commands":[{"command":format!("printf {task}"),"exit_code":0,"output_digest":store::model::digest(&output.stdout)}]},"evidence":[{"kind":"commit","sha":commit}]}));
+            commits.push(commit);
+        }
+        let suite = Command::new("printf")
+            .arg("suite")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(suite.status.success());
+        let answer = self.call(json!({"schema":1,"kind":"executor","dispatch_id":dispatch["id"],"expected_execution_version":dispatch["expected_execution_version"],"outcome":"complete","tasks":tasks,"deviations":[],"blockers":[]}));
+        assert_eq!(answer["outcome"], "complete", "{answer}");
+        commits
+    }
+    fn execution_request(&self, id: &str, dispatch: &Value) -> Value {
+        json!({"operation":"risk-check","request_id":id,"scope":{"phase":7,"occurrence":"phase-7-execution","worker":"1"},"source":{"kind":"execution","plan":1,"dispatch_id":dispatch["id"]},"surfaces":null})
+    }
+}
+
+#[test]
+fn public_execution_source_uses_only_the_retained_dispatch_base_and_accepted_task_range() {
+    let repo = Repo::execution();
+    let dispatch = repo.dispatch();
+    let missing = repo.call(repo.execution_request("not-accepted", &dispatch));
+    assert_eq!(missing["code"], "missing-execution-material");
+    let commits = repo.complete_execution(&dispatch);
+    let before = repo.view();
+    let bases = risk::execution_bases(&before.snapshot.data).unwrap();
+    let basis = &bases[dispatch["id"].as_str().unwrap()];
+    assert_eq!(basis.base_id, dispatch["base_sha"].as_str().unwrap());
+    assert_eq!(basis.commits, commits);
+    assert!(before.snapshot.data["execution"]["occurrences"]["7"]["active"].is_null());
+    repo.write("later.txt", b"stripe\n");
+    let later = repo.commit(&["later.txt"]);
+    repo.write(
+        ".planning/phases/7/reports/plan-1.md",
+        format!("Invented base {later}; invented head {later}. DROP TABLE prose\n").as_bytes(),
+    );
+    let summary = fs::read(repo.root.join(".planning/phases/7/SUMMARY.md")).unwrap();
+    let answer = repo.call(repo.execution_request("execution-risk", &dispatch));
+    let scan = scan_of(&answer);
+    assert_eq!(
+        scan.matches
+            .iter()
+            .map(|m| m.category.as_str())
+            .collect::<Vec<_>>(),
+        ["untrusted_input"]
+    );
+    assert_eq!(
+        answer["observation"]["resolution"],
+        json!({"kind":"committed","base_id":dispatch["base_sha"],"head_id":commits.last().unwrap()})
+    );
+    assert_eq!(
+        answer["observation"]["source"],
+        json!({"kind":"execution","plan":1,"dispatch_id":dispatch["id"]})
+    );
+    assert_eq!(answer["observation"]["scope"]["plan"], 1);
+    assert_eq!(answer["observation"]["scope"]["worker"], "1");
+    let after = repo.view();
+    assert_eq!(
+        after.snapshot.data["execution"],
+        before.snapshot.data["execution"]
+    );
+    assert_eq!(
+        after.snapshot.data["native_evidence"],
+        before.snapshot.data["native_evidence"]
+    );
+    assert_eq!(
+        fs::read(repo.root.join(".planning/phases/7/SUMMARY.md")).unwrap(),
+        summary
+    );
+    repo.write(
+        ".planning/phases/7/reports/plan-1.md",
+        b"entirely different report and refs\n",
+    );
+    let second = repo.call(repo.execution_request("execution-risk-again", &dispatch));
+    assert_eq!(
+        second["observation"]["resolution"],
+        answer["observation"]["resolution"]
+    );
+    assert_eq!(second["observation"]["scan"], answer["observation"]["scan"]);
+    let before = repo.view();
+    for (pointer, value) in [
+        ("/scope/occurrence", json!("foreign")),
+        ("/source/plan", json!(2)),
+        ("/source/dispatch_id", json!("foreign")),
+        ("/scope/worker", json!("foreign")),
+    ] {
+        let mut input = repo.execution_request("foreign-risk", &dispatch);
+        *input.pointer_mut(pointer).unwrap() = value;
+        assert_eq!(repo.call(input)["status"], "refused");
+        assert_eq!(repo.view(), before);
+    }
+}
+
+#[test]
+fn pause_authored_tree_and_shared_diff_observe_identical_immutable_bytes() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    repo.write("work.txt", b"JSON.parse(authored)\n");
+    repo.write("receipt.json", b"DROP TABLE receipt\n");
+    repo.git(&["add", "--", "work.txt", "receipt.json"]);
+    let receipts = [PathBuf::from("receipt.json")].into_iter().collect();
+    let paused = cadence::pause::git::staged(&repo.root, &base, &receipts).unwrap();
+    assert_eq!(paused.authored, [PathBuf::from("work.txt")]);
+    let material = MaterialIdentity::Staged {
+        base_id: paused.base.clone(),
+        index_id: paused.index_id.clone(),
+    };
+    let shared =
+        cadence::rail::git::diff_selected(&repo.root, &material, &paused.authored).unwrap();
+    assert_eq!(shared.body, paused.diff);
+    assert_eq!(shared.paths, paused.authored);
+    let scan =
+        cadence::rail::git::scan(&repo.root, &material, &risk::CATEGORIES.map(str::to_owned))
+            .unwrap();
+    assert_eq!(
+        scan,
+        risk_diff::scan(
+            Some(&paused.diff),
+            &paused.authored,
+            &risk::CATEGORIES.map(str::to_owned)
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        scan.matches
+            .iter()
+            .map(|m| m.category.as_str())
+            .collect::<Vec<_>>(),
+        ["untrusted_input"]
+    );
+    repo.write("receipt.json", b"changed binary receipt\n");
+    repo.git(&["add", "--", "receipt.json"]);
+    let again = cadence::pause::git::staged(&repo.root, &base, &receipts).unwrap();
+    assert_eq!(again.index_id, paused.index_id);
+    assert_eq!(again.diff, paused.diff);
+    repo.write("work.txt", b"unrelated live worktree\n");
+    repo.git(&["add", "--", "work.txt"]);
+    let old = cadence::rail::git::diff_selected(&repo.root, &material, &paused.authored).unwrap();
+    assert_eq!(old.body, paused.diff);
+}

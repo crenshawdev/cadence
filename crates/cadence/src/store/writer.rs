@@ -679,7 +679,21 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                         "patch replay lacks its original operation".into(),
                     ));
                 }
-                next.snapshot.data = application.data;
+                let active = execution_snapshot(&next.snapshot.data)?
+                    .occurrences
+                    .get(&phase.to_string())
+                    .and_then(|o| o.active.clone())
+                    .ok_or_else(|| {
+                        Error::Invalid("accepted risk material lacks dispatch base".into())
+                    })?;
+                let basis = cadence::rail::risk::ExecutionBasis::from_accepted(
+                    &active,
+                    &application.outcome,
+                )
+                .map_err(rail_error)?;
+                next.snapshot.data =
+                    cadence::rail::risk::project_execution_basis(&application.data, &basis)
+                        .map_err(rail_error)?;
                 let mut execution = execution_snapshot(&next.snapshot.data)?;
                 if complete_phase {
                     let occurrence = execution
@@ -707,6 +721,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                     phase,
                     decision_id: id.clone(),
                     render_version,
+                    risk_basis: Some(Box::new(basis)),
                 }
             }
         };

@@ -107,8 +107,17 @@ pub struct ScopeSelection {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Source {
-    Committed { base: String, head: String },
-    Staged { base: String },
+    Committed {
+        base: String,
+        head: String,
+    },
+    Staged {
+        base: String,
+    },
+    Execution {
+        plan: NonZeroU32,
+        dispatch_id: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -270,8 +279,18 @@ impl Observation {
             (&self.source, &self.resolution),
             (Source::Committed { .. }, Resolution::Committed { .. })
                 | (Source::Staged { .. }, Resolution::Staged { .. })
+                | (Source::Execution { .. }, Resolution::Committed { .. })
         ) {
             return Err(Error::Invalid("source and resolution kinds differ".into()));
+        }
+        if let Source::Execution { plan, .. } = &self.source
+            && (self.scope.plan != Some(*plan)
+                || self.scope.worker.as_deref() != Some(plan.to_string().as_str())
+                || self.scope.occurrence != format!("phase-{}-execution", self.scope.phase))
+        {
+            return Err(Error::Invalid(
+                "execution observation scope mismatch".into(),
+            ));
         }
         let material = self.resolution.material();
         let no_range = material.as_ref().is_some_and(MaterialIdentity::no_range);
@@ -411,4 +430,117 @@ pub fn confirmed(view: &View, scope: &Scope, request_id: &str) -> Result<Option<
         ));
     }
     Ok(Some(record))
+}
+
+/// Captured from the admitted dispatch in the same transaction as its accepted
+/// patch. Completion clears `active`, so subsequent consumers need this basis.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionBasis {
+    pub version: u32,
+    pub phase: u32,
+    pub plan: u32,
+    pub dispatch_id: String,
+    pub plan_set_fingerprint: String,
+    pub plan_fingerprint: String,
+    pub base_id: String,
+    pub commits: Vec<String>,
+    pub transition_id: String,
+}
+
+pub const EXECUTION_MATERIAL: &str = "rail_execution_material";
+
+impl ExecutionBasis {
+    pub fn from_accepted(
+        active: &crate::execution::model::ActiveDispatch,
+        outcome: &crate::execution::model::PlanOutcome,
+    ) -> Result<Self> {
+        if active.id != outcome.dispatch_id
+            || active.phase != outcome.phase
+            || active.plan != outcome.plan
+        {
+            return Err(Error::Invalid(
+                "accepted material differs from dispatch".into(),
+            ));
+        }
+        let result = Self {
+            version: 1,
+            phase: active.phase,
+            plan: active.plan,
+            dispatch_id: active.id.clone(),
+            plan_set_fingerprint: active.plan_set_fingerprint.clone(),
+            plan_fingerprint: active.plan_fingerprint.clone(),
+            base_id: active.base_sha.clone(),
+            commits: completed_commits(outcome),
+            transition_id: outcome.transition_id.clone(),
+        };
+        result.validate()?;
+        Ok(result)
+    }
+    pub fn validate(&self) -> Result<()> {
+        if self.version != 1
+            || self.phase == 0
+            || self.plan == 0
+            || !valid_object_id(&self.base_id)
+            || self.commits.iter().any(|id| !valid_object_id(id))
+            || [
+                &self.dispatch_id,
+                &self.plan_set_fingerprint,
+                &self.plan_fingerprint,
+                &self.transition_id,
+            ]
+            .iter()
+            .any(|id| id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
+        {
+            return Err(Error::Invalid(
+                "invalid execution risk material basis".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub fn completed_commits(outcome: &crate::execution::model::PlanOutcome) -> Vec<String> {
+    outcome
+        .tasks
+        .iter()
+        .filter_map(|task| match task {
+            crate::execution::model::TaskOutcome::Completed { commit, .. } => Some(commit.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn execution_bases(data: &serde_json::Value) -> Result<BTreeMap<String, ExecutionBasis>> {
+    let Some(value) = data.get(EXECUTION_MATERIAL) else {
+        return Ok(BTreeMap::new());
+    };
+    let bases: BTreeMap<String, ExecutionBasis> = serde_json::from_value(value.clone())?;
+    for (key, basis) in &bases {
+        basis.validate()?;
+        if *key != basis.dispatch_id {
+            return Err(Error::Invalid("execution material key mismatch".into()));
+        }
+    }
+    Ok(bases)
+}
+
+pub fn project_execution_basis(
+    data: &serde_json::Value,
+    basis: &ExecutionBasis,
+) -> Result<serde_json::Value> {
+    basis.validate()?;
+    let mut bases = execution_bases(data)?;
+    if bases
+        .get(&basis.dispatch_id)
+        .is_some_and(|old| old != basis)
+    {
+        return Err(Error::Conflict("execution material identity reused".into()));
+    }
+    bases.insert(basis.dispatch_id.clone(), basis.clone());
+    let mut next = data.clone();
+    next.as_object_mut()
+        .ok_or_else(|| Error::Invalid("execution material snapshot is not an object".into()))?
+        .insert(EXECUTION_MATERIAL.into(), serde_json::to_value(bases)?);
+    Ok(next)
 }

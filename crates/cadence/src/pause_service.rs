@@ -19,8 +19,8 @@ use cadence::{
         branch::{self, Integration, Policy},
         git,
         risk::{self, CommitKind, Consequence, Outcome, Review},
-        risk_diff,
     },
+    rail::risk_diff,
     store::{Error, Result, writer::View},
 };
 use std::{

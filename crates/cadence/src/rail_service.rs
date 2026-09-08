@@ -83,7 +83,7 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         .parent()
         .ok_or_else(|| Error::Invalid("planning root lacks project".into()))?
         .to_path_buf();
-    let scope = Scope {
+    let mut scope = Scope {
         project: project.to_string_lossy().into_owned(),
         planning_root: root.to_string_lossy().into_owned(),
         cycle: "live".into(),
@@ -91,6 +91,37 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         phase: selection.phase,
         worker: selection.worker.clone(),
         plan: None,
+    };
+    let material_source = if let risk::Source::Execution { plan, dispatch_id } = source {
+        if selection
+            .worker
+            .as_deref()
+            .is_some_and(|worker| worker != plan.to_string())
+        {
+            return Ok(refused(
+                "invalid-scope",
+                "execution worker must name the selected plan",
+            ));
+        }
+        let material = match super::execution_service::risk_material(
+            &view,
+            &root,
+            selection.phase.get(),
+            &selection.occurrence,
+            plan.get(),
+            dispatch_id,
+        ) {
+            Ok(material) => material,
+            Err(reason) => return Ok(refused("missing-execution-material", &reason)),
+        };
+        scope.plan = Some(*plan);
+        scope.worker = Some(plan.to_string());
+        risk::Source::Committed {
+            base: material.base_id().into(),
+            head: material.tip_id().into(),
+        }
+    } else {
+        source.clone()
     };
     let request_digest = request.digest()?;
     if let Some(old) = risk::confirmed(&view, &scope, request_id)? {
@@ -105,7 +136,7 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
     }
     let source = source.clone();
     let observation = tokio::task::spawn_blocking(move || {
-        let (resolution, mut diagnostics) = git::resolve(&project, &source);
+        let (resolution, mut diagnostics) = git::resolve(&project, &material_source);
         let material = resolution.material();
         let scan = if material
             .as_ref()

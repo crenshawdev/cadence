@@ -2041,6 +2041,75 @@ async fn checked_continuation<I: ConfigIo + Clone + Sync>(
     Ok(selected)
 }
 
+/// An explicit assessment consumes accepted execution evidence, never report prose
+/// or a fresh HEAD. The base was retained atomically before completion cleared active.
+pub fn risk_material(
+    view: &View,
+    root: &Path,
+    phase: u32,
+    occurrence_id: &str,
+    plan: u32,
+    dispatch_id: &str,
+) -> Result<cadence::rail::risk::MaterialIdentity, String> {
+    use cadence::rail::risk;
+    require_current_execution(view).map_err(|error| error.to_string())?;
+    if occurrence_id != continuation_scope(root, phase).occurrence {
+        return Err("risk source names a foreign execution occurrence".into());
+    }
+    let execution = execution_snapshot(view)?;
+    let occurrence = execution
+        .occurrences
+        .get(&phase.to_string())
+        .ok_or("risk source lacks accepted execution material")?;
+    let receipt = occurrence
+        .receipts
+        .get(dispatch_id)
+        .ok_or("risk source lacks an accepted dispatch receipt")?;
+    let basis = risk::execution_bases(&view.snapshot.data)
+        .map_err(|error| error.to_string())?
+        .remove(dispatch_id)
+        .ok_or("risk source lacks a retained dispatch base")?;
+    if basis.phase != phase
+        || basis.plan != plan
+        || receipt.outcome.phase != phase
+        || receipt.outcome.plan != plan
+        || basis.plan_set_fingerprint != occurrence.plan_set_fingerprint
+        || basis.transition_id != receipt.transition_id
+        || receipt.outcome.transition_id != receipt.transition_id
+        || basis.commits != risk::completed_commits(&receipt.outcome)
+    {
+        return Err("risk source differs from accepted execution material".into());
+    }
+    let confirmed = view.decisions.iter().any(|record| match &record.decision {
+        cadence::store::model::Decision::BoundaryV1(value) => {
+            value.store_generation <= view.snapshot.generation
+                && value.boundary.tool == BoundaryTool::CadenceApply
+                && value.boundary.scope == (BoundaryScope::Execution { phase })
+                && value.boundary.subject_id.as_deref() == Some(dispatch_id)
+                && matches!(
+                    &value.boundary.receipt,
+                    Receipt::Compact {
+                        envelope: Envelope::Ok(_)
+                    }
+                )
+                && confirmed_boundary(view, &value.boundary).is_ok()
+        }
+        _ => false,
+    });
+    if !confirmed {
+        return Err("risk source lacks confirmed patch acceptance".into());
+    }
+    let head_id = basis
+        .commits
+        .last()
+        .cloned()
+        .ok_or("risk source has no accepted completed task commits")?;
+    Ok(risk::MaterialIdentity::Committed {
+        base_id: basis.base_id,
+        head_id,
+    })
+}
+
 #[cfg(test)]
 mod schema_tests {
     use super::*;

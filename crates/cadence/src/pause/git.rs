@@ -1,4 +1,5 @@
 //! Git process boundary. Paths are OS strings, never shell commands or quoted text.
+use crate::rail::{git as shared_git, risk::MaterialIdentity};
 use crate::store::{Error, Result};
 use std::{
     collections::BTreeSet,
@@ -216,8 +217,7 @@ fn review_artifact(path: &Path) -> bool {
 }
 
 pub fn index_id(root: &Path) -> Result<String> {
-    String::from_utf8(line(run(root, ["write-tree"])?))
-        .map_err(|_| Error::Invalid("invalid staged tree identity".into()))
+    shared_git::index_id(root)
 }
 
 struct TempIndex {
@@ -290,7 +290,12 @@ impl Drop for TempIndex {
     }
 }
 
-fn authored_index_id(root: &Path, base: &str, authored: &[PathBuf]) -> Result<String> {
+fn authored_index_id(
+    root: &Path,
+    base: &str,
+    captured_index: &str,
+    authored: &[PathBuf],
+) -> Result<String> {
     let index = TempIndex::create()?;
     index.run(root, ["read-tree", base], None)?;
     for path in authored {
@@ -306,9 +311,9 @@ fn authored_index_id(root: &Path, base: &str, authored: &[PathBuf]) -> Result<St
         let entry = run(
             root,
             [
-                OsStr::new("ls-files"),
-                OsStr::new("--stage"),
+                OsStr::new("ls-tree"),
                 OsStr::new("-z"),
+                OsStr::new(captured_index),
                 OsStr::new("--"),
                 path.as_os_str(),
             ],
@@ -323,53 +328,38 @@ fn authored_index_id(root: &Path, base: &str, authored: &[PathBuf]) -> Result<St
 
 /// Store receipts are supplied by provenance, not recognized by filename.
 pub fn staged(root: &Path, base: &str, receipts: &BTreeSet<PathBuf>) -> Result<Staged> {
-    let head = String::from_utf8(line(run(root, ["rev-parse", "--verify", "HEAD"])?))
-        .map_err(|_| Error::Invalid("invalid Git HEAD".into()))?;
+    let head = shared_git::resolve_commit(root, "HEAD")?;
+    let base = shared_git::resolve_comparison(root, base)?;
     let before = index_id(root)?;
-    let scope = paths(&run(
+    let scope = shared_git::changed_paths(
         root,
-        [
-            "diff",
-            "--cached",
-            "--name-only",
-            "-z",
-            "--no-renames",
-            base,
-            "--",
-        ],
-    )?)?;
+        &MaterialIdentity::Staged {
+            base_id: base.clone(),
+            index_id: before.clone(),
+        },
+    )?;
     let authored: Vec<_> = scope
         .iter()
         .filter(|path| !receipts.contains(*path) && !review_artifact(path))
         .cloned()
         .collect();
-    let authored_id = authored_index_id(root, base, &authored)?;
-    let diff = if authored.is_empty() {
-        Vec::new()
-    } else {
-        let mut args = vec![
-            std::ffi::OsString::from("diff"),
-            "--cached".into(),
-            "--no-ext-diff".into(),
-            "--no-textconv".into(),
-            "--no-renames".into(),
-            "--binary".into(),
-            "--unified=0".into(),
-            base.into(),
-            "--".into(),
-        ];
-        args.extend(authored.iter().map(|path| path.as_os_str().to_owned()));
-        run(root, args)?
-    };
-    if before != index_id(root)?
-        || head.as_bytes() != line(run(root, ["rev-parse", "--verify", "HEAD"])?)
-    {
+    let authored_id = authored_index_id(root, &base, &before, &authored)?;
+    let diff = shared_git::diff_selected(
+        root,
+        &MaterialIdentity::Staged {
+            base_id: base.clone(),
+            index_id: authored_id.clone(),
+        },
+        &authored,
+    )?
+    .body;
+    if before != index_id(root)? || head != shared_git::resolve_commit(root, "HEAD")? {
         return Err(Error::Conflict(
             "staged material changed during risk observation".into(),
         ));
     }
     Ok(Staged {
-        base: base.into(),
+        base,
         index_id: authored_id,
         scope,
         authored,
