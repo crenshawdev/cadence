@@ -1,0 +1,14 @@
+{
+  "advisory-pending": {"fire":"f1","gate":"advisory","delivery":"pending"},
+  "advisory-blocker": {"fire":"f1","gate":"advisory","delivery":"accepted","severity":"blocker","combination":"adjudicated"},
+  "off": {"gate":"off","delivery":"accepted","settlement":"pending"},
+  "advisory": {"gate":"advisory","delivery":"accepted","settlement":"pending"},
+  "deferred": {"gate":"deferred","delivery":"accepted","settlement":"pending"},
+  "blocking": {"gate":"blocking","delivery":"accepted","settlement":"pending"},
+  "adjudicated": {"gate":"adjudicated","delivery":"accepted","settlement":"pending"},
+  "match": {"gate":"blocking","observation":"match"},
+  "nonmatch": {"gate":"blocking","observation":"nonmatch"},
+  "inconclusive": {"gate":"blocking","observation":"inconclusive"},
+  "unanswered": {"gate":"blocking","observation":"unanswered"},
+  "unsettled": {"combination":"adjudicated","delivery":"usable-complete","settlement":null}
+}

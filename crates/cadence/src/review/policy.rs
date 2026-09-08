@@ -56,3 +56,87 @@ pub fn debug_review_request(policy: ResolvedOrdinary) -> OrdinaryRequest {
 pub fn verify_review_request(policy: ResolvedOrdinary) -> OrdinaryRequest {
     ordinary_request("verify", policy)
 }
+
+use super::model::{DeliveryState, Settlement};
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GateAction {
+    Off,
+    WaitForDelivery,
+    Continue,
+    EnqueueBeforeContinuation,
+    WaitForSettlement,
+}
+
+/// Accepted here means durably accepted. Severity and combination do not
+/// change delivery permission; settlement is a separate gate decision.
+pub fn delivery_permission(delivery: &DeliveryState) -> GateAction {
+    match delivery {
+        DeliveryState::Accepted | DeliveryState::AcceptedEmpty | DeliveryState::UsableComplete => {
+            GateAction::Continue
+        }
+        _ => GateAction::WaitForDelivery,
+    }
+}
+
+pub fn ordinary_gate_action(
+    gate: &Gate,
+    delivery: &DeliveryState,
+    settlement: &Settlement,
+) -> GateAction {
+    if *gate == Gate::Off {
+        return GateAction::Off;
+    }
+    if delivery_permission(delivery) == GateAction::WaitForDelivery {
+        return GateAction::WaitForDelivery;
+    }
+    match gate {
+        Gate::Off => GateAction::Off,
+        Gate::Advisory => GateAction::Continue,
+        Gate::Deferred => GateAction::EnqueueBeforeContinuation,
+        Gate::Blocking | Gate::Adjudicated => {
+            if *settlement == Settlement::Verified {
+                GateAction::Continue
+            } else {
+                GateAction::WaitForSettlement
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DetectorObservation {
+    Match,
+    Nonmatch,
+    Inconclusive,
+    Unanswered,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RiskAction {
+    Dispatch,
+    NoReview,
+    WaitForEvidence,
+    AskSurfaces,
+}
+
+pub fn risk_review_action(gate: &Gate, observation: &DetectorObservation) -> RiskAction {
+    if *gate == Gate::Off {
+        return RiskAction::NoReview;
+    }
+    match observation {
+        DetectorObservation::Match => RiskAction::Dispatch,
+        DetectorObservation::Nonmatch => RiskAction::NoReview,
+        DetectorObservation::Inconclusive => RiskAction::WaitForEvidence,
+        DetectorObservation::Unanswered => RiskAction::AskSurfaces,
+    }
+}
+
+/// Only an independently supplied settlement can change this state. Delivery
+/// is deliberately not evidence for a transition to Verified.
+pub fn settlement_state(settlement: Option<&Settlement>) -> Settlement {
+    settlement.cloned().unwrap_or(Settlement::Pending)
+}
