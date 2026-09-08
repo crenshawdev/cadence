@@ -26,9 +26,14 @@ that unit's own criteria, not by re-testing it through a caller.
 as a literal value, and any boundary that must be stubbed - filesystem, clock,
 subprocess, network. If you cannot write all three, it is not a criterion.
 
-**4. Isolation.** Stub at real boundaries only. Do not mock internal
-collaborators - that binds the test to call structure and breaks it on refactor.
-Deterministic internals are called for real.
+**4. Isolation.** Test functions and methods at the unit level against their
+inputs and return values. For a method, treat the receiver as an input:
+construct the struct in the state you need, call the method, assert on the
+return value or the mutated state. Do not write tests that walk the entire call
+chain. Where recursion exists, isolate it in a thin orchestrator and test that
+separately with a stubbed resolver. Add module-level tests only for the public
+surface of a module, and only where composition itself can fail; keep those few
+and thin, and never mirror unit coverage at module level.
 
 **5. Prose.** Never assert on model-generated text. If the input path includes a
 model call, the expected value cannot be fixed, and the criterion is malformed
@@ -41,6 +46,33 @@ not write a test for behaviour that has not been implemented.
 live host, a human eye, or a running system - it is not an acceptance criterion.
 Route it to the phase's manual checklist, `.planning/phases/<N>/MANUAL.md`. Do
 not write an end-to-end test to cover it.
+
+## Rule 4 was replaced on 2026-09-08, and it is not retrofitted
+
+Rule 4 previously read: "Stub at real boundaries only. Do not mock internal
+collaborators - that binds the test to call structure and breaks it on refactor.
+Deterministic internals are called for real." The owner replaced it with the
+text now standing above, and the replacement is narrower and more specific: the
+unit is a FUNCTION OR METHOD rather than a module, a method's receiver is an
+input to be constructed rather than a context to be arranged, no test walks the
+entire call chain, recursion is isolated behind a thin orchestrator with a
+stubbed resolver, and module-level tests exist only for a public surface where
+composition itself can fail.
+
+**It binds work authored from 2026-09-08 forward. Existing tests are NOT
+retrofitted** - the owner's instruction was "you do not have to go back and
+retrofit, use it moving forward." Phases 1 through 9 were built under the old
+rule 4 and stand as they are. Two known divergences in that older work, recorded
+so nobody mistakes them for the standard:
+
+- Seven self-recursive functions in `src/review/` - `persistence::{get, read,
+  confirm, contribute}`, `material_io::{read, now}`, `history::read` - have no
+  thin orchestrator and no stubbed resolver.
+- Several phase 9 test files carry unit coverage at module level rather than
+  keeping module tests few and thin: `phase9_policy` spans 11 distinct
+  functions, `phase9_material` 8.
+
+New work does not copy either shape.
 
 ## The test rules that fall out of them
 
