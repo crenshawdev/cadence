@@ -2,7 +2,7 @@
 
 use cadence::execution::{
     boundary::ExecutionEnvelope,
-    model::{BoundaryTool, ExecutorPatch, patch_schema},
+    model::{BoundaryTool, ExecutorPatch},
 };
 use rmcp::handler::server::wrapper::Json;
 use rmcp::model::{
@@ -61,6 +61,9 @@ pub mod execution_service;
 #[cfg(test)]
 #[path = "execution_service_tests.rs"]
 mod execution_service_tests;
+
+#[path = "rail_service.rs"]
+pub mod rail_service;
 
 /// What `cadence_version` reports on success.
 ///
@@ -225,29 +228,88 @@ enum QueryArguments {
     ExecuteNext { phase: NonZeroU32 },
 }
 
-fn query_schema() -> Value {
-    let mut schema =
-        serde_json::to_value(schemars::schema_for!(QueryArguments)).expect("query schema");
-    let root = schema.as_object_mut().expect("derived query schema object");
-    let mut variants = root
-        .remove("oneOf")
-        .expect("derived query variants")
-        .as_array()
-        .expect("query variants array")
-        .clone();
-    // Hosts reject input unions at the root. The strict slice has one query
-    // operation, so promoting its derived object preserves every constraint.
-    // Adding an operation requires an explicit advertised-schema decision.
-    assert_eq!(variants.len(), 1, "query schema requires one operation");
-    root.extend(
-        variants
-            .pop()
-            .unwrap()
-            .as_object()
-            .expect("query variant object")
-            .clone(),
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum ApplyArguments {
+    Executor(ExecutorPatch),
+    Rail(cadence::rail::risk::Apply),
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(untagged)]
+enum ApplyOutput {
+    Execution(ExecutionEnvelope),
+    Rail(Box<Envelope<cadence::rail::risk::Recorded>>),
+}
+
+/// Hosts require object properties at the root. Keep the strict derived variants
+/// in definitions; advertise their field union and common required fields here.
+/// Deserialization still validates the complete selected variant on every call.
+fn host_schema(mut schema: Value) -> Value {
+    fn objects(root: &Value, node: &Value, out: &mut Vec<Value>) {
+        if let Some(reference) = node.get("$ref").and_then(Value::as_str) {
+            objects(
+                root,
+                root.pointer(reference.strip_prefix('#').expect("local schema ref"))
+                    .expect("schema definition"),
+                out,
+            );
+        } else if let Some(variants) = node.get("oneOf").or_else(|| node.get("anyOf")) {
+            for variant in variants.as_array().expect("derived variants") {
+                objects(root, variant, out);
+            }
+        } else {
+            out.push(node.clone());
+        }
+    }
+    let mut variants = Vec::new();
+    objects(&schema, &schema, &mut variants);
+    let mut properties = serde_json::Map::new();
+    let mut required: Option<std::collections::BTreeSet<String>> = None;
+    for variant in &variants {
+        for (name, field) in variant["properties"].as_object().expect("object variant") {
+            match properties.get_mut(name) {
+                Some(old) if old != field => {
+                    *old = serde_json::json!({"anyOf":[old.clone(), field]})
+                }
+                Some(_) => {}
+                None => {
+                    properties.insert(name.clone(), field.clone());
+                }
+            }
+        }
+        let fields = variant
+            .get("required")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|v| v.as_str().expect("required name").to_owned())
+            .collect::<std::collections::BTreeSet<_>>();
+        required = Some(match required {
+            None => fields,
+            Some(old) => old.intersection(&fields).cloned().collect(),
+        });
+    }
+    let root = schema.as_object_mut().expect("schema object");
+    for keyword in ["oneOf", "anyOf", "allOf", "$ref"] {
+        root.remove(keyword);
+    }
+    root.insert("type".into(), Value::String("object".into()));
+    root.insert("properties".into(), Value::Object(properties));
+    root.insert(
+        "required".into(),
+        serde_json::to_value(required.unwrap_or_default()).expect("required fields"),
     );
+    root.insert("additionalProperties".into(), Value::Bool(false));
     schema
+}
+
+fn query_schema() -> Value {
+    host_schema(serde_json::to_value(schemars::schema_for!(QueryArguments)).expect("query schema"))
+}
+
+fn apply_schema() -> Value {
+    host_schema(serde_json::to_value(schemars::schema_for!(ApplyArguments)).expect("apply schema"))
 }
 
 impl CadenceServer {
@@ -316,9 +378,18 @@ fn execution_result(answer: execution_service::Answer) -> Result<CallToolRespons
             Some(serde_json::json!({"failure": failure})),
         )
     })?;
-    let value = serde_json::to_value(envelope)
+    let value = serde_json::to_value(ApplyOutput::Execution(envelope))
         .map_err(|_| ErrorData::internal_error("execution envelope encoding is invalid", None))?;
     Ok(CallToolResult::structured(value).into())
+}
+
+fn rail_result(answer: rail_service::Answer) -> Result<CallToolResponse, ErrorData> {
+    let envelope = answer.map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    Ok(CallToolResult::structured(
+        serde_json::to_value(ApplyOutput::Rail(Box::new(envelope)))
+            .map_err(|_| ErrorData::internal_error("rail answer encoding is invalid", None))?,
+    )
+    .into())
 }
 
 impl ServerHandler for PublicServer {
@@ -345,10 +416,10 @@ impl ServerHandler for PublicServer {
                     "Ask for the next native execution dispatch in the bound project.",
                     query_schema(),
                 ),
-                tool::<ExecutionEnvelope>(
+                tool::<ApplyOutput>(
                     "cadence_apply",
-                    "Submit the executor patch for the bound project's active dispatch.",
-                    patch_schema(),
+                    "Submit an executor patch or record a risk-check of immutable Git material.",
+                    apply_schema(),
                 ),
             ],
             ..Default::default()
@@ -394,9 +465,27 @@ impl ServerHandler for PublicServer {
             "cadence_apply" => {
                 let answer = match raw
                     .clone()
-                    .and_then(|value| serde_json::from_value::<ExecutorPatch>(value).ok())
+                    .and_then(|value| serde_json::from_value::<ApplyArguments>(value).ok())
                 {
-                    Some(patch) => self.server.apply_executor_patch(&self.root, patch).await,
+                    Some(ApplyArguments::Executor(patch)) => {
+                        self.server.apply_executor_patch(&self.root, patch).await
+                    }
+                    Some(ApplyArguments::Rail(request)) => {
+                        return rail_result(
+                            self.server.service.apply_rail(&self.root, request).await,
+                        );
+                    }
+                    None if raw
+                        .as_ref()
+                        .and_then(|v| v.get("operation"))
+                        .and_then(Value::as_str)
+                        == Some("risk-check") =>
+                    {
+                        return rail_result(Ok(rail_service::refused(
+                            "invalid-arguments",
+                            "risk-check arguments do not match the strict operation schema",
+                        )));
+                    }
                     None => self.refuse_raw(BoundaryTool::CadenceApply, raw).await,
                 };
                 execution_result(answer)

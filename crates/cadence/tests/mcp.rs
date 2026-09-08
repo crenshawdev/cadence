@@ -216,7 +216,13 @@ fn tool_schemas_list_exactly_three_tools_with_output_schemas() {
     let sample = schema_fixture();
     assert!(schema_accepts(patch, patch, &sample));
     let mut paths = vec![];
-    inspect_schema_objects(patch, patch, &sample, "", &mut paths);
+    inspect_schema_objects(
+        patch,
+        &patch["$defs"]["ExecutorPatch"],
+        &sample,
+        "",
+        &mut paths,
+    );
     assert_eq!(paths.len(), 13);
     assert!(client.finish().success());
 }
@@ -505,7 +511,13 @@ fn tool_schemas_malformed_objects_reach_cadence_and_protocol_errors_stay_distinc
         let mut paths = vec![String::new()];
         if index == 2 {
             paths.clear();
-            inspect_schema_objects(schema, schema, &sample, "", &mut paths);
+            inspect_schema_objects(
+                schema,
+                &schema["$defs"]["ExecutorPatch"],
+                &sample,
+                "",
+                &mut paths,
+            );
         }
         for path in paths {
             let object = sample.pointer(&path).unwrap().as_object().unwrap();
@@ -528,7 +540,15 @@ fn tool_schemas_malformed_objects_reach_cadence_and_protocol_errors_stay_distinc
             cases.push(extra);
             for case in cases {
                 assert!(
-                    !schema_accepts(schema, schema, &case),
+                    !schema_accepts(
+                        schema,
+                        if index == 2 {
+                            &schema["$defs"]["ExecutorPatch"]
+                        } else {
+                            schema
+                        },
+                        &case
+                    ),
                     "schema admitted {case}"
                 );
                 let answer = envelope(&client.tools_call(11, name, case));
@@ -1177,7 +1197,13 @@ fn skill_contract_matches_wire_patch_and_direct_tool_permissions() {
     let schema = &listing["result"]["tools"][2]["inputSchema"];
     assert!(schema_accepts(schema, schema, &patch));
     let mut paths = vec![];
-    inspect_schema_objects(schema, schema, &patch, "", &mut paths);
+    inspect_schema_objects(
+        schema,
+        &schema["$defs"]["ExecutorPatch"],
+        &patch,
+        "",
+        &mut paths,
+    );
     assert_eq!(paths.len(), 13);
     assert_eq!(
         patch.as_object().unwrap().keys().collect::<BTreeSet<_>>(),

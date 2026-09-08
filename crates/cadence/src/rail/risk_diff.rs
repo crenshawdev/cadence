@@ -2,16 +2,17 @@
 use crate::store::{Error, Result};
 use grep_matcher::Matcher;
 use grep_regex::RegexMatcher;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::PathBuf};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Match {
     pub category: String,
     pub signal: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Scan {
     pub checked: bool,
     pub categories: Vec<String>,

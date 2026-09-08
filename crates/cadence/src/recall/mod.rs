@@ -203,6 +203,11 @@ mod resident {
     };
 
     enum Request {
+        RailApply {
+            root: PathBuf,
+            request: Box<cadence::rail::risk::Apply>,
+            reply: oneshot::Sender<crate::server::rail_service::Answer>,
+        },
         Pause {
             input: cadence::pause::Input,
             reply: oneshot::Sender<Result<crate::server::pause_service::Response>>,
@@ -371,6 +376,15 @@ mod resident {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
+                        Request::RailApply {
+                            root,
+                            request,
+                            reply,
+                        } => {
+                            let result =
+                                crate::server::rail_service::apply(&factory, &root, *request).await;
+                            let _ = reply.send(result);
+                        }
                         Request::Pause { input, reply } => {
                             let result =
                                 crate::server::pause_service::execute(&factory, input, &driver)
@@ -459,6 +473,23 @@ mod resident {
                 // Accepted requests drain; canceled reply receivers cannot panic.
             });
             Self { requests }
+        }
+
+        pub async fn apply_rail(
+            &self,
+            root: &Path,
+            request: cadence::rail::risk::Apply,
+        ) -> crate::server::rail_service::Answer {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::RailApply {
+                    root: root.into(),
+                    request: Box::new(request),
+                    reply,
+                })
+                .await
+                .map_err(|_| Error::Closed)?;
+            completion.await.map_err(|_| Error::Closed)?
         }
 
         pub async fn evidence(&self, root: &Path, command: Command) -> Result<Recovery> {

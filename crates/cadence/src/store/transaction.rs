@@ -11,6 +11,9 @@ pub const INTENT: &str = ".store-intent.json";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum IntentKind {
+    RailObservation {
+        record: Box<cadence::rail::risk::Recorded>,
+    },
     GuardAudit {
         audit: super::writer::audit::Audit,
     },
@@ -196,7 +199,8 @@ impl Intent {
                     ));
                 }
             }
-            IntentKind::GuardAudit { .. }
+            IntentKind::RailObservation { .. }
+            | IntentKind::GuardAudit { .. }
             | IntentKind::BoundaryObservationV1 { .. }
             | IntentKind::ExecutionDispatchV1 { .. }
             | IntentKind::ExecutionPatchV1 { .. }
@@ -224,10 +228,69 @@ impl Intent {
                 ));
             }
         }
+        self.validate_rail_observation(&snapshot)?;
         self.validate_guard_audit(&snapshot)?;
         self.validate_boundary_v1(&snapshot, decisions, summary_phase)?;
         Ok(snapshot)
     }
+    fn validate_rail_observation(&self, snapshot: &Snapshot) -> Result<()> {
+        let IntentKind::RailObservation { record } = &self.kind else {
+            return Ok(());
+        };
+        record.validate().map_err(super::writer::rail_error)?;
+        if self.participants.len() != 3
+            || self
+                .participants
+                .iter()
+                .any(|p| !matches!(p.target.as_str(), ITEMS | DECISIONS | STATE))
+        {
+            return Err(Error::Invalid(
+                "rail observation cannot change external participants".into(),
+            ));
+        }
+        let participant = |name| self.participants.iter().find(|p| p.target == name).unwrap();
+        let items = participant(ITEMS);
+        let decisions = participant(DECISIONS);
+        let state = participant(STATE);
+        let old_items = items.expected.bytes.as_deref().unwrap_or_default();
+        let old_decisions = decisions.expected.bytes.as_deref().unwrap_or_default();
+        let old = match state.expected.bytes.as_deref() {
+            Some(bytes) => Snapshot::parse(bytes, old_items, old_decisions)?,
+            None if items.expected.bytes.is_none() && decisions.expected.bytes.is_none() => {
+                Snapshot::new(0, b"", b"", Value::Null)?
+            }
+            _ => {
+                return Err(Error::Invalid(
+                    "rail observation cannot adopt partial store".into(),
+                ));
+            }
+        };
+        let mut expected: Vec<DecisionRecord> = model::parse_lines(old_decisions)?;
+        expected.push(super::writer::rail_record(record)?);
+        if items.bytes != old_items
+            || decisions.bytes != model::render_lines(&expected)?
+            || old.generation.checked_add(1) != Some(snapshot.generation)
+            || record.confirmation.generation != snapshot.generation
+            || snapshot.operations != old.operations
+            || cadence::rail::risk::read(&old.data)
+                .map_err(super::writer::rail_error)?
+                .contains_key(
+                    &record
+                        .observation
+                        .key()
+                        .map_err(super::writer::rail_error)?,
+                )
+            || snapshot.data
+                != cadence::rail::risk::project(&old.data, record)
+                    .map_err(super::writer::rail_error)?
+        {
+            return Err(Error::Invalid(
+                "rail observation changed data outside its projection".into(),
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_guard_audit(&self, snapshot: &Snapshot) -> Result<()> {
         let IntentKind::GuardAudit { audit } = &self.kind else {
             return Ok(());

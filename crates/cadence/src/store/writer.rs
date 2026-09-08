@@ -44,6 +44,11 @@ pub enum BoundaryChange {
 }
 
 pub enum Operation {
+    RailObservation {
+        expected_generation: u64,
+        expected_integrity: String,
+        record: Box<cadence::rail::risk::Recorded>,
+    },
     GuardAudit(audit::Audit),
     BoundaryV1 {
         expected_generation: u64,
@@ -315,6 +320,11 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             self.observed = observed;
         }
         match operation {
+            Operation::RailObservation {
+                expected_generation,
+                expected_integrity,
+                record,
+            } => self.rail_observation(expected_generation, &expected_integrity, *record),
             Operation::GuardAudit(audit) => self.guard_audit(audit),
             Operation::BoundaryV1 {
                 expected_generation,
@@ -471,7 +481,8 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 next.snapshot.data = data;
                 "rewrite_snapshot"
             }
-            Operation::GuardAudit(..)
+            Operation::RailObservation { .. }
+            | Operation::GuardAudit(..)
             | Operation::BoundaryV1 { .. }
             | Operation::AdmitExecution { .. }
             | Operation::ApplyExecutionPatch { .. }
@@ -1008,6 +1019,45 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         Ok(())
     }
 
+    fn rail_observation(
+        &mut self,
+        generation: u64,
+        integrity: &str,
+        record: cadence::rail::risk::Recorded,
+    ) -> Result<View> {
+        use cadence::rail::risk;
+        record.validate().map_err(rail_error)?;
+        if let Some(old) = risk::read(&self.view.snapshot.data)
+            .map_err(rail_error)?
+            .remove(&record.observation.key().map_err(rail_error)?)
+        {
+            return if old == record && self.view.decisions.contains(&rail_record(&record)?) {
+                Ok(self.view.clone())
+            } else {
+                Err(Error::Conflict("rail request identity reused".into()))
+            };
+        }
+        self.check_expected(generation, integrity)?;
+        if record.confirmation.generation != self.next_generation()? {
+            return Err(Error::Invalid(
+                "rail confirmation generation mismatch".into(),
+            ));
+        }
+        let mut next = self.view.clone();
+        next.snapshot.data = risk::project(&next.snapshot.data, &record).map_err(rail_error)?;
+        next.decisions.push(rail_record(&record)?);
+        model::validate_decisions(&next.decisions)?;
+        self.persist(
+            next,
+            self.view.snapshot.operations.clone(),
+            Vec::new(),
+            "rail_observation",
+            super::transaction::IntentKind::RailObservation {
+                record: Box::new(record),
+            },
+        )
+    }
+
     fn guard_audit(&mut self, audit: audit::Audit) -> Result<View> {
         let record = audit.record()?;
         if let Some(prior) = self.view.decisions.iter().find(|r| r.id == record.id) {
@@ -1094,6 +1144,18 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         }
         Ok(())
     }
+}
+
+pub(super) fn rail_error(error: cadence::store::Error) -> Error {
+    Error::Invalid(error.to_string())
+}
+
+pub(super) fn rail_record(record: &cadence::rail::risk::Recorded) -> Result<DecisionRecord> {
+    // The process-crash target compiles the writer in its own module. Decode the
+    // shared record's wire shape just as the boundary adapter does for evidence.
+    Ok(serde_json::from_value(serde_json::to_value(
+        record.decision().map_err(rail_error)?,
+    )?)?)
 }
 
 enum BoundaryAdmission {
