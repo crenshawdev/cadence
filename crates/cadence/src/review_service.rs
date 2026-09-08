@@ -1,5 +1,8 @@
 //! Resident adapter for the independently implemented review units.
-use crate::config::{merge, reload::ConfigIo};
+use crate::config::{
+    merge,
+    reload::{ConfigIo, Generation},
+};
 use crate::import::SessionFactory;
 use cadence::envelope::Envelope;
 use cadence::review::{
@@ -82,6 +85,40 @@ pub struct Output {
     pub result: Value,
 }
 pub type Answer = Result<Envelope<Output>>;
+
+#[cfg(test)]
+struct Gap158AnswerStub {
+    calls: std::sync::Mutex<Vec<Value>>,
+    answer: std::sync::Mutex<Option<Envelope<Output>>>,
+}
+
+#[cfg(test)]
+tokio::task_local! {
+    static GAP158_EXECUTE_INNER_STUB: std::sync::Arc<Gap158AnswerStub>;
+    static GAP158_REVIEW_HANDOFF_STUB: std::sync::Arc<Gap158AnswerStub>;
+    static GAP158_ADMIT_STUB: std::sync::Arc<Gap158AnswerStub>;
+    static GAP158_ADMISSION_BOUNDARIES: std::sync::Arc<Gap158AdmissionBoundaries>;
+}
+
+#[cfg(test)]
+struct Gap158AdmissionBoundaries {
+    now: u64,
+    acquisitions: std::sync::Mutex<u64>,
+    committed: std::sync::Mutex<Option<Value>>,
+}
+
+#[cfg(test)]
+struct Gap158Clock;
+
+#[cfg(test)]
+impl review::io::Clock for Gap158Clock {
+    fn now(&mut self) -> u64 {
+        GAP158_ADMISSION_BOUNDARIES
+            .try_with(|boundaries| boundaries.now)
+            .unwrap_or_else(|_| review::io::Clock::now(&mut review::material_io::WallClock))
+    }
+}
+
 pub fn refused(reason: impl Into<String>) -> Envelope<Output> {
     Envelope::Refused {
         code: "invalid-review-operation".into(),
@@ -125,6 +162,16 @@ struct AdmissionRequest {
     decision: Option<review::targets::DecisionMaterial>,
     risk_observation: Option<String>,
 }
+
+pub(super) enum AdmissionResolution {
+    Refresh,
+    Supplied {
+        generation: Box<Generation>,
+        route: Box<super::config_service::Route>,
+        gate: Gate,
+    },
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HomeInput {
@@ -187,6 +234,7 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
     factory: &SessionFactory<I>,
     root: &Path,
     value: Value,
+    resolution: AdmissionResolution,
 ) -> Answer {
     let request = decode_admission(value)?;
     let session = factory.first_touch(root).await?;
@@ -204,26 +252,47 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
     }
     validate_paths(&request.target)?;
     let minimalism = request.specialist == Some(Specialist::Minimalism);
-    let generation = if minimalism {
-        None
-    } else {
-        Some(session.config()?)
+    let (generation, route, supplied_gate, refresh) = match resolution {
+        AdmissionResolution::Refresh => {
+            let generation = if minimalism {
+                None
+            } else {
+                Some(session.config()?)
+            };
+            let route = generation
+                .as_ref()
+                .map(|generation| {
+                    super::config_service::route_at(
+                        generation,
+                        &super::config_service::RouteRequest {
+                            role: "cad-reviewer".into(),
+                            phase: request.phase,
+                            plan: request.plan,
+                            attempt: None,
+                        },
+                        root,
+                    )
+                })
+                .transpose()?;
+            (generation, route, None, true)
+        }
+        AdmissionResolution::Supplied {
+            generation,
+            route,
+            gate,
+        } => {
+            if request.caller != "execute"
+                || request.trigger != Some(review::policy::OrdinaryTrigger::Diff)
+                || request.specialist.is_some()
+                || !matches!(&request.target, Target::CommittedRange { .. })
+            {
+                return Err(Error::Invalid(
+                    "supplied resolution requires execute diff handoff".into(),
+                ));
+            }
+            (Some(*generation), Some(*route), Some(gate), false)
+        }
     };
-    let route = generation
-        .as_ref()
-        .map(|generation| {
-            super::config_service::route_at(
-                generation,
-                &super::config_service::RouteRequest {
-                    role: "cad-reviewer".into(),
-                    phase: request.phase,
-                    plan: request.plan,
-                    attempt: None,
-                },
-                root,
-            )
-        })
-        .transpose()?;
     let sequence = records["occurrence_sequence"]
         .as_u64()
         .unwrap_or(0)
@@ -254,7 +323,10 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             .triggers
             .get(&name)
             .ok_or_else(|| Error::Policy("unknown review trigger".into()))?;
-        let gate: Gate = serde_json::from_value(json!(policy.gate))?;
+        let gate: Gate = match supplied_gate.clone() {
+            Some(gate) => gate,
+            None => serde_json::from_value(json!(policy.gate))?,
+        };
         let selected = Selection {
             mode: serde_json::from_value(json!(route.policy.mode))?,
             choices: policy.reviewers.clone(),
@@ -322,7 +394,40 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
         let mut git = review::material_io::SourceGit {
             root: project_root.into(),
         };
+        #[cfg(test)]
+        let mut clock = Gap158Clock;
+        #[cfg(not(test))]
         let mut clock = review::material_io::WallClock;
+        #[cfg(test)]
+        let supplied_material = GAP158_ADMISSION_BOUNDARIES
+            .try_with(|boundaries| {
+                *boundaries.acquisitions.lock().unwrap() += 1;
+                (
+                    Manifest {
+                        manifest: manifest_id.clone(),
+                        fire: fire.clone(),
+                        contract: Contract::current(),
+                        target: request.target.clone(),
+                        entries: vec![],
+                    },
+                    persistence::MaterialStorage::default(),
+                )
+            })
+            .ok();
+        #[cfg(test)]
+        let (manifest, storage) = match supplied_material {
+            Some(material) => material,
+            None => acquire_target(
+                &fire,
+                &manifest_id,
+                &request.target,
+                request.decision.as_ref(),
+                &mut source,
+                &mut git,
+                &mut clock,
+            )?,
+        };
+        #[cfg(not(test))]
         let (manifest, storage) = acquire_target(
             &fire,
             &manifest_id,
@@ -471,10 +576,29 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             },
             &mut clock,
         )?;
-        if let Some(generation) = &generation
+        if refresh
+            && let Some(generation) = &generation
             && session.config()? != *generation
         {
             return Err(Error::Conflict("review routing inputs changed".into()));
+        }
+        #[cfg(test)]
+        if let Ok(committed) = GAP158_ADMISSION_BOUNDARIES.try_with(|boundaries| {
+            let data = transaction
+                .snapshot
+                .clone()
+                .unwrap_or_else(|| view.snapshot.data.clone());
+            *boundaries.committed.lock().unwrap() = Some(data.clone());
+            let mut committed = view.clone();
+            committed.snapshot.data = data;
+            committed
+        }) {
+            return commit_admission(
+                contribution,
+                std::future::ready(Ok(committed)),
+                admission::acknowledge_admission,
+            )
+            .await;
         }
         commit_admission(
             contribution,
@@ -714,17 +838,45 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
     root: &Path,
     command: Command,
 ) -> Answer {
-    if let Command::Apply(Apply::Admit { request }) = command {
-        return admit(factory, root, request).await;
-    }
+    let command = match command {
+        Command::Apply(Apply::Admit { request }) => {
+            #[cfg(test)]
+            if let Ok(Some(answer)) = GAP158_ADMIT_STUB.try_with(|stub| {
+                stub.calls.lock().unwrap().push(json!({
+                    "caller":request["caller"],
+                    "resolution":"refresh"
+                }));
+                stub.answer.lock().unwrap().take()
+            }) {
+                return Ok(answer);
+            }
+            return admit(factory, root, request, AdmissionResolution::Refresh).await;
+        }
+        Command::ExecutionHandoff { phase, dispatch } => {
+            #[cfg(test)]
+            if let Ok(Some(answer)) = GAP158_REVIEW_HANDOFF_STUB.try_with(|stub| {
+                stub.calls
+                    .lock()
+                    .unwrap()
+                    .push(json!({"phase":phase,"dispatch":dispatch}));
+                stub.answer.lock().unwrap().take()
+            }) {
+                return Ok(answer);
+            }
+            return super::execution_service::review_handoff(
+                factory,
+                root,
+                phase,
+                dispatch.as_deref(),
+            )
+            .await;
+        }
+        command => command,
+    };
     let session = factory.first_touch(root).await?;
     let store = session.review_store();
     let mut clock = review::material_io::WallClock;
     match command {
-        Command::ExecutionHandoff { phase, dispatch } => {
-            super::execution_service::review_handoff(factory, root, phase, dispatch.as_deref())
-                .await
-        }
         Command::Query(query) => query_saved(store, root, query).await,
         Command::Apply(Apply::Observation { observation }) => output(
             "review-observation",
@@ -858,6 +1010,7 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
             output("review-material-append", entry)
         }
         Command::Apply(Apply::Admit { .. }) => unreachable!(),
+        Command::ExecutionHandoff { .. } => unreachable!(),
     }
 }
 
@@ -1229,7 +1382,21 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
     root: &Path,
     command: Command,
 ) -> Answer {
-    match execute_inner(factory, root, command).await {
+    #[cfg(test)]
+    let inner = match GAP158_EXECUTE_INNER_STUB.try_with(|stub| {
+        let caller = match &command {
+            Command::Apply(Apply::Admit { request }) => request["caller"].clone(),
+            _ => Value::Null,
+        };
+        stub.calls.lock().unwrap().push(json!({"caller":caller}));
+        stub.answer.lock().unwrap().take()
+    }) {
+        Ok(Some(answer)) => Ok(answer),
+        _ => execute_inner(factory, root, command).await,
+    };
+    #[cfg(not(test))]
+    let inner = execute_inner(factory, root, command).await;
+    match inner {
         Err(Error::Invalid(reason)) => Ok(refused(reason)),
         answer => answer,
     }
@@ -1347,6 +1514,258 @@ mod gap151_adapter_tests {
         ] {
             assert_eq!(execution_continuation(&delivery), expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod gap158_service_tests {
+    use super::*;
+    use std::{fs, path::PathBuf, sync::Arc};
+
+    fn factory() -> SessionFactory {
+        SessionFactory::new(None, Arc::new(|_, _| Ok(())))
+    }
+
+    fn fixture() -> (tempfile::TempDir, PathBuf) {
+        let tree = tempfile::tempdir().unwrap();
+        let root = tree.path().join(".planning");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("config.v4.json"), b"{}").unwrap();
+        let data = json!({"import":{"format":1,"complete":true,"source_generation":"fixture",
+            "sources":[],"active":{"global":null,"repo":root.join("config.v4.json")},
+            "created":[],"warnings":[]}});
+        let snapshot = cadence::store::model::Snapshot::new(1, b"", b"", data).unwrap();
+        fs::write(root.join("state.json"), snapshot.render().unwrap()).unwrap();
+        fs::write(root.join("items.jsonl"), b"").unwrap();
+        fs::write(root.join("decisions.jsonl"), b"").unwrap();
+        (tree, root)
+    }
+
+    fn request(caller: &str) -> Value {
+        json!({"replay_key":"k1","caller":caller,"trigger":"diff","specialist":null,
+            "project":"p1","cycle":"c1","home":{"kind":"phase","id":"9"},
+            "discriminator":"occ1","phase":9,"plan":8,"anchor":"t1","round":1,
+            "target":{"kind":"committed-range","base":"b1","head":"h1"}})
+    }
+
+    fn resolution() -> (Generation, super::super::config_service::Route) {
+        let repo = json!({
+            "roles":{"cad-reviewer":{"model":"opus","effort":"xhigh"}},
+            "review":{"triggers":{"diff":{"gate":"advisory"}}}
+        });
+        let generation = Generation {
+            number: 7,
+            global: None,
+            repo: crate::config::reload::Input {
+                identity: "/captured/config.v4.json".into(),
+                bytes: None,
+                stamp: None,
+            },
+            effective: merge::merge(None, Some(repo), false),
+        };
+        let route = super::super::config_service::resolve_route(
+            &generation,
+            &super::super::config_service::RouteRequest {
+                role: "cad-reviewer".into(),
+                phase: NonZeroU32::new(9),
+                plan: NonZeroU32::new(8),
+                attempt: None,
+            },
+        )
+        .unwrap();
+        (generation, route)
+    }
+
+    fn envelope(operation: &str, result: Value) -> Envelope<Output> {
+        Envelope::Ok(Output {
+            operation: operation.into(),
+            result,
+        })
+    }
+
+    fn stub(operation: &str, result: Value) -> Arc<Gap158AnswerStub> {
+        Arc::new(Gap158AnswerStub {
+            calls: std::sync::Mutex::new(vec![]),
+            answer: std::sync::Mutex::new(Some(envelope(operation, result))),
+        })
+    }
+
+    #[tokio::test]
+    async fn gap158_ac152_supplied_admission_persists_exact_gate_and_route() {
+        let (_tree, root) = fixture();
+        let factory = factory();
+        factory.first_touch(&root).await.unwrap();
+        fs::write(root.join("config.v4.json"), b"{").unwrap();
+        let (generation, route) = resolution();
+        assert_eq!(route.choice.agent, "cad-reviewer-xhigh");
+        let boundaries = Arc::new(Gap158AdmissionBoundaries {
+            now: 100,
+            acquisitions: std::sync::Mutex::new(0),
+            committed: std::sync::Mutex::new(None),
+        });
+        let result = GAP158_ADMISSION_BOUNDARIES
+            .scope(
+                boundaries.clone(),
+                admit(
+                    &factory,
+                    &root,
+                    request("execute"),
+                    AdmissionResolution::Supplied {
+                        generation: Box::new(generation),
+                        route: Box::new(route),
+                        gate: Gate::Advisory,
+                    },
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"ok","operation":"review-admit","result":{
+                "fire":"f1","attempt":"f1-a1","replayed":false}})
+        );
+        assert_eq!(*boundaries.acquisitions.lock().unwrap(), 1);
+        let committed = boundaries.committed.lock().unwrap().clone().unwrap();
+        assert_eq!(
+            json!({
+                "gate":committed["review"]["admissions"]["f1"]["gate"],
+                "routing":committed["review"]["admissions"]["f1"]["routing"]
+            }),
+            json!({"gate":"advisory","routing":{
+                "answer":"cad-reviewer-xhigh","evidence":"route:f1"}})
+        );
+        assert_eq!(committed["review"]["replays"]["k1"]["admitted_at"], 100);
+    }
+
+    #[tokio::test]
+    async fn gap158_ac153_public_admission_returns_stub_without_session() {
+        let admission = stub("review-admit", json!("ordinary"));
+        let result = GAP158_ADMIT_STUB
+            .scope(
+                admission,
+                execute_inner(
+                    &factory(),
+                    Path::new("/gap158-forbidden"),
+                    Command::Apply(Apply::Admit {
+                        request: json!({"caller":"manual-plan"}),
+                    }),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"ok","operation":"review-admit","result":"ordinary"})
+        );
+    }
+
+    #[tokio::test]
+    async fn gap158_ac154_saved_replay_precedes_unusable_resolution() {
+        let (_tree, root) = fixture();
+        let factory = factory();
+        let session = factory.first_touch(&root).await.unwrap();
+        let view = persistence::read(session.review_store()).await.unwrap();
+        let mut records = persistence::records(&view.snapshot.data).unwrap();
+        persistence::insert(
+            &mut records,
+            "replays",
+            "k1",
+            &json!({"fire":"f1","attempt":"a1"}),
+        )
+        .unwrap();
+        persistence::update(session.review_store(), &view, "gap158-replay", records)
+            .await
+            .unwrap();
+        fs::write(root.join("config.v4.json"), b"{").unwrap();
+        let result = admit(
+            &factory,
+            &root,
+            request("manual-plan"),
+            AdmissionResolution::Refresh,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"ok","operation":"review-admit","result":{
+                "fire":"f1","attempt":"a1","replayed":true}})
+        );
+    }
+
+    #[tokio::test]
+    async fn gap158_ac155_execute_passes_task_caller_to_execute_inner() {
+        let inner = stub("review-admit", json!("inner"));
+        let result = GAP158_EXECUTE_INNER_STUB
+            .scope(
+                inner.clone(),
+                execute(
+                    &factory(),
+                    Path::new("/gap158-forbidden"),
+                    Command::Apply(Apply::Admit {
+                        request: json!({"caller":"task"}),
+                    }),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"ok","operation":"review-admit","result":"inner"})
+        );
+        assert_eq!(*inner.calls.lock().unwrap(), vec![json!({"caller":"task"})]);
+    }
+
+    #[tokio::test]
+    async fn gap158_ac156_execute_inner_passes_dispatch_to_review_handoff() {
+        let handoff = stub("review-handoff", json!("outer"));
+        let result = GAP158_REVIEW_HANDOFF_STUB
+            .scope(
+                handoff.clone(),
+                execute_inner(
+                    &factory(),
+                    Path::new("/gap158-forbidden"),
+                    Command::ExecutionHandoff {
+                        phase: None,
+                        dispatch: Some("d1".into()),
+                    },
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"ok","operation":"review-handoff","result":"outer"})
+        );
+        assert_eq!(
+            *handoff.calls.lock().unwrap(),
+            vec![json!({"phase":null,"dispatch":"d1"})]
+        );
+    }
+
+    #[tokio::test]
+    async fn gap158_ac157_execute_inner_selects_refresh_admission() {
+        let admission = stub("review-admit", json!("ordinary"));
+        let result = GAP158_ADMIT_STUB
+            .scope(
+                admission.clone(),
+                execute_inner(
+                    &factory(),
+                    Path::new("/gap158-forbidden"),
+                    Command::Apply(Apply::Admit {
+                        request: json!({"caller":"manual-plan"}),
+                    }),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"ok","operation":"review-admit","result":"ordinary"})
+        );
+        assert_eq!(
+            *admission.calls.lock().unwrap(),
+            vec![json!({"caller":"manual-plan","resolution":"refresh"})]
+        );
     }
 }
 

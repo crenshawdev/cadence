@@ -2254,6 +2254,24 @@ enum ExecutionReviewDecision {
     },
 }
 
+#[cfg(test)]
+struct Gap158AdmissionStub {
+    calls: std::sync::Mutex<Vec<Value>>,
+    answer: std::sync::Mutex<Option<Envelope<super::review_service::Output>>>,
+}
+
+#[cfg(test)]
+struct Gap158MaterialStub {
+    calls: std::sync::Mutex<Vec<Value>>,
+    material: std::sync::Mutex<Option<cadence::rail::risk::MaterialIdentity>>,
+}
+
+#[cfg(test)]
+tokio::task_local! {
+    static GAP158_ADMISSION_STUB: std::sync::Arc<Gap158AdmissionStub>;
+    static GAP158_MATERIAL_STUB: std::sync::Arc<Gap158MaterialStub>;
+}
+
 fn execution_review_decision(
     completed: Option<Value>,
     gate: Option<cadence::review::model::Gate>,
@@ -2324,11 +2342,13 @@ pub async fn review_handoff<I: ConfigIo + Clone + Sync>(
                 &session.derivation_view().await?.snapshot.data,
             )?;
             let saved = records.get("replays").and_then(|r| r.get(&key));
+            let mut supplied = None;
             let decision = if saved.is_some() {
                 execution_review_decision(None, None, saved)?
             } else {
+                let generation = session.config()?;
                 let route = super::config_service::route_at(
-                    &session.config()?,
+                    &generation,
                     &super::config_service::RouteRequest {
                         role: "cad-reviewer".into(),
                         phase: std::num::NonZeroU32::new(phase),
@@ -2343,6 +2363,30 @@ pub async fn review_handoff<I: ConfigIo + Clone + Sync>(
                     .get("diff")
                     .ok_or_else(|| Error::Policy("missing diff policy".into()))?;
                 let gate = serde_json::from_value(json!(policy.gate))?;
+                if gate == cadence::review::model::Gate::Off {
+                    continue;
+                }
+                #[cfg(test)]
+                let material = match GAP158_MATERIAL_STUB.try_with(|stub| {
+                    stub.calls.lock().unwrap().push(json!({
+                        "phase":phase,
+                        "plan":receipt.outcome.plan,
+                        "dispatch":receipt.dispatch_id
+                    }));
+                    stub.material.lock().unwrap().take()
+                }) {
+                    Ok(Some(material)) => material,
+                    _ => risk_material(
+                        &view,
+                        root,
+                        phase,
+                        &scope.occurrence,
+                        receipt.outcome.plan,
+                        &receipt.dispatch_id,
+                    )
+                    .map_err(Error::Invalid)?,
+                };
+                #[cfg(not(test))]
                 let material = risk_material(
                     &view,
                     root,
@@ -2363,13 +2407,56 @@ pub async fn review_handoff<I: ConfigIo + Clone + Sync>(
                     "project":scope.project,"cycle":scope.cycle,"home":{"kind":"phase","id":phase.to_string()},
                     "discriminator":scope.occurrence,"phase":phase,"plan":receipt.outcome.plan,
                     "anchor":receipt.transition_id,"round":1,"target":{"kind":"committed-range","base":base_id,"head":head_id}});
+                supplied = Some((generation, route));
                 execution_review_decision(Some(request), Some(gate), None)?
             };
             let fire = match decision {
                 ExecutionReviewDecision::Skip => continue,
                 ExecutionReviewDecision::Replay { fire, .. } => fire,
-                ExecutionReviewDecision::Admit { request, .. } => {
-                    let answer = super::review_service::admit(factory, root, request).await?;
+                ExecutionReviewDecision::Admit { request, gate } => {
+                    let (generation, route) = supplied.take().ok_or_else(|| {
+                        Error::Invalid("missing execution review resolution".into())
+                    })?;
+                    #[cfg(test)]
+                    let stubbed = GAP158_ADMISSION_STUB
+                        .try_with(|stub| {
+                            stub.calls.lock().unwrap().push(json!({
+                                "gate":gate,
+                                "routing":{"answer":route.choice.agent}
+                            }));
+                            stub.answer.lock().unwrap().take()
+                        })
+                        .ok()
+                        .flatten();
+                    #[cfg(test)]
+                    let answer = match stubbed {
+                        Some(answer) => answer,
+                        None => {
+                            super::review_service::admit(
+                                factory,
+                                root,
+                                request,
+                                super::review_service::AdmissionResolution::Supplied {
+                                    generation: Box::new(generation),
+                                    route: Box::new(route),
+                                    gate,
+                                },
+                            )
+                            .await?
+                        }
+                    };
+                    #[cfg(not(test))]
+                    let answer = super::review_service::admit(
+                        factory,
+                        root,
+                        request,
+                        super::review_service::AdmissionResolution::Supplied {
+                            generation: Box::new(generation),
+                            route: Box::new(route),
+                            gate,
+                        },
+                    )
+                    .await?;
                     match answer {
                         Envelope::Ok(output) if output.result["fire"].is_string() => {
                             output.result["fire"].as_str().unwrap().to_owned()
@@ -2461,6 +2548,121 @@ mod gap151_boundary_tests {
             execution_review_decision(Some(json!({"dispatch":"d1"})), Some(Gate::Off), None)
                 .unwrap(),
             ExecutionReviewDecision::Skip
+        );
+    }
+}
+
+#[cfg(test)]
+mod gap158_execution_tests {
+    use super::*;
+    use crate::import::SessionFactory;
+    use std::{fs, path::PathBuf, sync::Arc};
+
+    fn factory() -> SessionFactory {
+        SessionFactory::new(None, Arc::new(|_, _| Ok(())))
+    }
+
+    fn answer(operation: &str, result: Value) -> Envelope<super::super::review_service::Output> {
+        Envelope::Ok(super::super::review_service::Output {
+            operation: operation.into(),
+            result,
+        })
+    }
+
+    fn stub(operation: &str, result: Value) -> Arc<Gap158AdmissionStub> {
+        Arc::new(Gap158AdmissionStub {
+            calls: std::sync::Mutex::new(vec![]),
+            answer: std::sync::Mutex::new(Some(answer(operation, result))),
+        })
+    }
+
+    fn material() -> Arc<Gap158MaterialStub> {
+        Arc::new(Gap158MaterialStub {
+            calls: std::sync::Mutex::new(vec![]),
+            material: std::sync::Mutex::new(Some(
+                cadence::rail::risk::MaterialIdentity::Committed {
+                    base_id: "b1".into(),
+                    head_id: "h1".into(),
+                },
+            )),
+        })
+    }
+
+    fn fixture(gate: &str) -> (tempfile::TempDir, PathBuf) {
+        let tree = tempfile::tempdir().unwrap();
+        let root = tree.path().join(".planning");
+        fs::create_dir_all(&root).unwrap();
+        let config = json!({
+            "roles":{"cad-reviewer":{"model":"opus","effort":"xhigh"}},
+            "review":{"triggers":{"diff":{"gate":gate}}}
+        });
+        fs::write(
+            root.join("config.v4.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        let data = json!({
+            "import":{"format":1,"complete":true,"source_generation":"fixture","sources":[],
+                "active":{"global":null,"repo":root.join("config.v4.json")},"created":[],"warnings":[]},
+            "execution":{"schema":1,"occurrences":{"9":{"phase":9,"plan_set_fingerprint":"plans",
+                "version":1,"active":null,"plans":[],"terminal":null,"receipts":{"d1":{
+                    "dispatch_id":"d1","request_digest":"request","transition_id":"t1",
+                    "outcome":{"dispatch_id":"d1","phase":9,"plan":8,"disposition":"complete",
+                        "tasks":[],"deviations":[],"blockers":[],"commit_paths":{},"transition_id":"t1"}
+                }}}}}
+        });
+        let snapshot = cadence::store::model::Snapshot::new(1, b"", b"", data).unwrap();
+        fs::write(root.join("state.json"), snapshot.render().unwrap()).unwrap();
+        fs::write(root.join("items.jsonl"), b"").unwrap();
+        fs::write(root.join("decisions.jsonl"), b"").unwrap();
+        (tree, root)
+    }
+
+    #[tokio::test]
+    async fn gap158_ac151_off_handoff_skips_before_material() {
+        let (_tree, root) = fixture("off");
+        let material = material();
+        let admission = stub("review-admit", json!("forbidden"));
+        let result = GAP158_MATERIAL_STUB
+            .scope(
+                material.clone(),
+                GAP158_ADMISSION_STUB.scope(
+                    admission.clone(),
+                    review_handoff(&factory(), &root, Some(9), Some("d1")),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"ok","operation":"review-handoff","result":{"pending":false}})
+        );
+        assert!(material.calls.lock().unwrap().is_empty());
+        assert!(admission.calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn gap158_ac158_handoff_supplies_captured_resolution_to_admit() {
+        let (_tree, root) = fixture("advisory");
+        let material = material();
+        let admission = stub("review-admit", json!("resolution-sentinel"));
+        let result = GAP158_MATERIAL_STUB
+            .scope(
+                material,
+                GAP158_ADMISSION_STUB.scope(
+                    admission.clone(),
+                    review_handoff(&factory(), &root, Some(9), Some("d1")),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            json!({"status":"ok","operation":"review-admit","result":"resolution-sentinel"})
+        );
+        assert_eq!(
+            *admission.calls.lock().unwrap(),
+            vec![json!({"gate":"advisory","routing":{"answer":"cad-reviewer-xhigh"}})]
         );
     }
 }
