@@ -309,6 +309,28 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
   If wrong: history attributes a worker to settings it never received, or a
   requested effort becomes false proof of what the host actually used.
 
+- D-84 (AC16's refusal is best-effort at the hook boundary, and its limit is
+  stated rather than promised away): The config-write denial covers the attempt
+  the PreToolUse hook can actually see - ordinary paths, relative and absolute
+  spellings, dot segments, aliases and symlinked parents that resolve at check
+  time. The lexical-normalization hole IS in scope and is a defect to fix:
+  `crates/cadence/src/guard/mod.rs:162` rewrites backslashes and `:172`
+  normalizes lexically before resolving, so `jump/../config.v4.json` with
+  `jump` a symlink collapses to a path that was never the real target, and a
+  POSIX file literally named `raw\alias` becomes a different path entirely.
+  What is OUT of scope is the time-of-check/time-of-use window: `guard::run`
+  resolves, exits SUCCESS, and the host writes afterward
+  (`crates/cadence/src/guard/mod.rs:99`), so a symlink retargeted in between
+  evades it and no check that runs beside the write rather than owning it can
+  close that. Closing it would mean routing the write through the binary, which
+  is a larger rearchitecture than these four gap closures and is not authorized
+  here. So: fix the resolution defect, do NOT claim an unconditional guarantee,
+  and record the window as a known limit in the plan and in
+  `.planning/phases/8/MANUAL.md`. Ruled by the owner 2026-09-08 after the
+  blocking plan review on PLAN-6.
+  If wrong: AC16 reads as a security guarantee the code does not deliver, and
+  the next verify pass catches it as a gap exactly as this one did.
+
 ## Acceptance criteria
 
 - [ ] AC2: Public config reads show stored/effective values, presence and

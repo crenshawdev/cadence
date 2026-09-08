@@ -18,3 +18,11 @@ to stand in for them.
       The binary side — schemas returned, dispatch admitted, prompt emitted
       byte-exact — is asserted by tests; only the host's honouring of it is here.
       (Routed from PLAN-5; relates to AC10.)
+
+- [ ] **Config refusal: known TOCTOU limit.** Acknowledge that AC16 is
+      best-effort at the PreToolUse hook boundary: `guard::run` resolves the
+      target and exits SUCCESS before the host writes
+      (`crates/cadence/src/guard/mod.rs:99`). A symlink retargeted in that
+      interval can evade refusal. Closing this window is out of scope; this
+      entry records the limit and requires no test or attempt to close it.
+      (Routed from PLAN-6; relates to AC16 and D-84.)
