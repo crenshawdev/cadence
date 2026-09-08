@@ -4,3 +4,4 @@ pub mod git;
 pub mod receipts;
 pub mod risk;
 pub mod risk_diff;
+pub mod surfaces;
