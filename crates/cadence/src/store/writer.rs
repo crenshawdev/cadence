@@ -47,7 +47,13 @@ pub enum BoundaryChange {
     },
 }
 
+pub type InputCheck = Box<dyn FnMut() -> Result<()> + Send>;
+
 pub enum Operation {
+    CheckedTransact {
+        check: InputCheck,
+        transaction: Option<super::transaction::Transaction>,
+    },
     RailReceipt {
         expected_generation: u64,
         expected_integrity: String,
@@ -235,9 +241,23 @@ fn finish_reply(
     let _ = reply.send(result);
 }
 
+struct CheckedPolicy<P> {
+    policy: P,
+    check: Option<InputCheck>,
+}
+
+impl<P: Policy> Policy for CheckedPolicy<P> {
+    fn validate(&mut self, context: &MutationContext<'_>) -> Result<()> {
+        if let Some(check) = &mut self.check {
+            check()?;
+        }
+        self.policy.validate(context)
+    }
+}
+
 struct Writer<S: Storage, P: Policy> {
     storage: S,
-    policy: P,
+    policy: CheckedPolicy<P>,
     view: View,
     observed: BTreeMap<String, Observed>,
     failed: Option<Error>,
@@ -250,7 +270,10 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let (view, observed) = Self::observe(&mut storage)?;
         Ok(Self {
             storage,
-            policy,
+            policy: CheckedPolicy {
+                policy,
+                check: None,
+            },
             observed,
             view,
             failed: None,
@@ -329,6 +352,18 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             self.observed = observed;
         }
         match operation {
+            Operation::CheckedTransact {
+                mut check,
+                transaction,
+            } => {
+                check()?;
+                self.policy.check = Some(check);
+                let result = self.execute_store(
+                    transaction.map_or(Operation::ReadVerified, Operation::Transact),
+                );
+                self.policy.check = None;
+                result
+            }
             Operation::RailReceipt {
                 expected_generation,
                 expected_integrity,
@@ -495,7 +530,8 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 next.snapshot.data = data;
                 "rewrite_snapshot"
             }
-            Operation::RailReceipt { .. }
+            Operation::CheckedTransact { .. }
+            | Operation::RailReceipt { .. }
             | Operation::RailObservation { .. }
             | Operation::GuardAudit(..)
             | Operation::BoundaryV1 { .. }

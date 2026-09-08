@@ -505,6 +505,18 @@ mod resident {
             Self { requests }
         }
 
+        pub async fn config_interview(
+            &self,
+            root: &Path,
+            mode: crate::config::interview::Mode,
+        ) -> crate::server::config_service::Answer {
+            self.config(
+                root,
+                crate::server::config_service::Command::Interview(mode),
+            )
+            .await
+        }
+
         pub async fn config(
             &self,
             root: &Path,

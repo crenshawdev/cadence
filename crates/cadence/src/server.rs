@@ -236,6 +236,10 @@ enum QueryArguments {
     },
     #[serde(rename = "config-facts")]
     ConfigFacts {},
+    #[serde(rename = "config-interview")]
+    ConfigInterview {
+        mode: crate::config::interview::Mode,
+    },
     #[serde(rename = "detect-surfaces")]
     DetectSurfaces { answered: Option<Vec<String>> },
     #[serde(rename = "execute-next")]
@@ -544,6 +548,25 @@ impl ServerHandler for PublicServer {
                             ),
                         ))));
                     }
+                    Some(QueryArguments::ConfigInterview { mode }) => {
+                        return structured_result(
+                            self.server
+                                .service
+                                .config_interview(&self.root, mode)
+                                .await
+                                .map(|answer| QueryOutput::Config(Box::new(answer))),
+                        );
+                    }
+                    None if raw.as_ref().and_then(|v| v["operation"].as_str())
+                        == Some("config-interview") =>
+                    {
+                        return structured_result(Ok(QueryOutput::Config(Box::new(
+                            config_service::refused(
+                                "invalid-arguments",
+                                "config-interview arguments do not match the strict operation schema",
+                            ),
+                        ))));
+                    }
                     Some(QueryArguments::ConfigFacts {}) => {
                         return structured_result(
                             self.server
@@ -620,13 +643,20 @@ impl ServerHandler for PublicServer {
                                 .map(|answer| ApplyOutput::Config(Box::new(answer))),
                         );
                     }
-                    None if raw.as_ref().and_then(|v| v["operation"].as_str())
-                        == Some("config-apply") =>
+                    None if raw
+                        .as_ref()
+                        .and_then(|v| v["operation"].as_str())
+                        .is_some_and(|operation| {
+                            matches!(operation, "config-apply" | "config-interview-apply")
+                        }) =>
                     {
                         return structured_result(Ok(ApplyOutput::Config(Box::new(
                             config_service::refused(
                                 "invalid-arguments",
-                                "config-apply arguments do not match the strict operation schema",
+                                format!(
+                                    "{} arguments do not match the strict operation schema",
+                                    raw.as_ref().unwrap()["operation"].as_str().unwrap()
+                                ),
                             ),
                         ))));
                     }

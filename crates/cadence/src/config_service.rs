@@ -1,6 +1,6 @@
 use crate::{
     config::{
-        self, Layer, merge,
+        self, Layer, interview, merge,
         reload::{ConfigIo, Generation},
         roles,
         write::Update,
@@ -21,6 +21,13 @@ use std::path::{Path, PathBuf};
 pub enum Apply {
     #[serde(rename = "config-apply")]
     Batch { layer: Layer, updates: Vec<Update> },
+    #[serde(rename = "config-interview-apply")]
+    Interview {
+        mode: interview::Mode,
+        captured: interview::Captured,
+        accepted: bool,
+        answers: Option<Vec<Update>>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
@@ -34,6 +41,7 @@ pub struct RouteRequest {
 
 pub enum Command {
     Facts,
+    Interview(interview::Mode),
     Route(RouteRequest),
     Apply(Apply),
 }
@@ -59,6 +67,7 @@ pub struct Facts {
     pub global_alias: bool,
     pub diagnostics: config::Diagnostics,
     pub retirement: Retirement,
+    pub interview: interview::Prepared,
 }
 
 #[derive(Debug, PartialEq, Serialize, JsonSchema)]
@@ -193,6 +202,8 @@ pub enum Output {
     Route { route: Box<roles::Resolution> },
     #[serde(rename = "config-facts")]
     Facts { facts: Facts },
+    #[serde(rename = "config-interview-apply")]
+    Unchanged { facts: Facts },
     #[serde(rename = "config-apply")]
     Applied {
         changed_keys: Vec<String>,
@@ -205,6 +216,10 @@ pub enum Output {
 pub type Answer = Result<Envelope<Output>>;
 
 pub fn facts(generation: &Generation) -> Facts {
+    interview_facts(generation, interview::Mode::Roles)
+}
+
+pub fn interview_facts(generation: &Generation, mode: interview::Mode) -> Facts {
     let effective = &generation.effective;
     Facts {
         keys: config::schema()
@@ -261,15 +276,16 @@ pub fn facts(generation: &Generation) -> Facts {
         global_alias: effective.global_intent,
         diagnostics: effective.diagnostics.clone(),
         retirement: retirement(generation, None),
+        interview: interview::prepare(generation, mode),
     }
 }
 
-async fn session_facts<I: ConfigIo>(session: &Session<I>) -> Result<Facts> {
+async fn session_facts<I: ConfigIo>(session: &Session<I>, mode: interview::Mode) -> Result<Facts> {
     let generation = session.config()?;
     let view = session
         .request(cadence::store::writer::Operation::Read)
         .await?;
-    let mut facts = facts(&generation);
+    let mut facts = interview_facts(&generation, mode);
     facts.retirement = retirement(&generation, Some(&view.snapshot.data));
     Ok(facts)
 }
@@ -324,20 +340,56 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
                 Err(error) => unavailable(&error),
             });
         }
-        Command::Facts => {
-            return Ok(match session_facts(&session).await {
+        Command::Interview(mode) => {
+            return Ok(match session_facts(&session, mode).await {
                 Ok(facts) => Envelope::Ok(Output::Facts { facts }),
                 Err(error) => unavailable(&error),
             });
         }
+        Command::Facts => {
+            return Ok(
+                match session_facts(&session, interview::Mode::Roles).await {
+                    Ok(facts) => Envelope::Ok(Output::Facts { facts }),
+                    Err(error) => unavailable(&error),
+                },
+            );
+        }
+        Command::Apply(Apply::Interview {
+            mode,
+            captured,
+            accepted,
+            answers,
+        }) => {
+            match session
+                .interview_config(mode, captured, accepted, answers.as_deref())
+                .await
+            {
+                Ok(Some(written)) => {
+                    session_facts(&session, interview::Mode::Roles)
+                        .await
+                        .map(|facts| Output::Applied {
+                            changed_keys: written.changed_keys,
+                            destination: written.destination,
+                            requested_layer: written.requested_layer,
+                            facts,
+                        })
+                }
+                Ok(None) => session_facts(&session, interview::Mode::Roles)
+                    .await
+                    .map(|facts| Output::Unchanged { facts }),
+                Err(error) => Err(error),
+            }
+        }
         Command::Apply(Apply::Batch { layer, updates }) => {
             match session.batch_config(layer, &updates).await {
-                Ok(written) => session_facts(&session).await.map(|facts| Output::Applied {
-                    changed_keys: written.changed_keys,
-                    destination: written.destination,
-                    requested_layer: written.requested_layer,
-                    facts,
-                }),
+                Ok(written) => session_facts(&session, interview::Mode::Roles)
+                    .await
+                    .map(|facts| Output::Applied {
+                        changed_keys: written.changed_keys,
+                        destination: written.destination,
+                        requested_layer: written.requested_layer,
+                        facts,
+                    }),
                 Err(error) => Err(error),
             }
         }

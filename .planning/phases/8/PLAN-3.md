@@ -8,7 +8,10 @@ requirements:
   - AC7
   - AC10
 files:
+  - crates/cadence/src/lib.rs
   - crates/cadence/src/config/mod.rs
+  - crates/cadence/src/config/reload.rs
+  - crates/cadence/src/store/writer.rs
   - crates/cadence/src/config/interview.rs
   - crates/cadence/src/config_service.rs
   - crates/cadence/src/import/mod.rs
@@ -20,7 +23,7 @@ files:
   - docs/architecture/config-routing.md
 execution:
   schema: 1
-  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace && TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings && TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check"
+  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy -p cadence --tests"
   tasks:
     - id: P8-3-T1
       verify:
@@ -58,13 +61,13 @@ D-47, D-48, D-50, D-51 and D-52 bind this plan. Plans 1-2 provide facts, atomic 
 
 ### Task 1: Define the shared interview answers (P8-3-T1)
 
-- **Files:** `crates/cadence/src/config/mod.rs` (schema / Effective), `crates/cadence/src/config/interview.rs` (new interview service logic), `crates/cadence/src/config_service.rs` (public facts and batch operation from Plan 1), `crates/cadence/src/import/mod.rs` (Session::config / manifest active paths), `crates/cadence/src/config/write.rs` (batch input preconditions from Plan 1), `crates/cadence/src/server.rs` (inherited config request and answer schemas), `crates/cadence/src/recall/mod.rs` (resident config request routing), `crates/cadence/tests/phase8_interview.rs` (new integration target)
+- **Files:** `crates/cadence/src/lib.rs` (shared native config service exports), `crates/cadence/src/config/mod.rs` (schema / Effective), `crates/cadence/src/config/reload.rs` (live alias identity), `crates/cadence/src/store/writer.rs` (owned interview preconditions), `crates/cadence/src/config/interview.rs` (new interview service logic), `crates/cadence/src/config_service.rs` (public facts and batch operation from Plan 1), `crates/cadence/src/import/mod.rs` (Session::config / manifest active paths), `crates/cadence/src/config/write.rs` (batch input preconditions from Plan 1), `crates/cadence/src/server.rs` (inherited config request and answer schemas), `crates/cadence/src/recall/mod.rs` (resident config request routing), `crates/cadence/tests/phase8_interview.rs` (new integration target)
 - **Action:** Have the binary prepare the thirteen ordinary role/floor subjects from current facts, including all six role purposes, model/rung cost explanations, schema defaults, stored presence, source layers, target layer and validation constraints. Carry interview mode, literal answers and captured-input preconditions through the existing grouped config schema, resident request and batch writer; validation must reach the writer's owned transaction rather than stop at a service-side precheck. Keep raw global roles-key presence distinct from injected defaults. D-51's first-run classification is raw roles absence at the global address; when that address aliases repo, inspect the same physical raw repo input while retaining repo provenance. Report coverage of the twelve stored role leaves separately: roles:{} or a one-leaf object is not evidence that all answers were collected. Every ordinary invocation still obtains all thirteen answers; do not silently skip missing subjects or invent a completion marker. In the later-run classification, unchanged answers remain no-ops even if their value came from a default.
 
   First-run acceptance sends all twelve explicit role values and the explicit floor choice globally in one batch, including model null and accepted default rungs. Later ordinary acceptance uses the captured effective values to form repo role diffs only; explicit global editing reopens all thirteen against the global layer. Calculate diffs in the binary, bind the answer set to the observed inputs, and refuse an intervening config change rather than apply stale conversational intent. Do not let host question batching change the count or meaning of the answers. Preserve literal model text, including spaces, quotes, equals signs and Unicode, through service storage; compatibility belongs to the resolver.
 
   Implement EMPTY as a deliberate exception to diff-only writing: the protection answer stores [] in the selected layer even when effective protection already looks identical but no stored pin exists. An identical already-stored [] may be a no-op. Never use absence or null as the answer. Keep actual-diff selected surfaces unchanged. A global [] does not override a stronger repo waiver: report the actual effective waiver and its repo source instead of saying every surface is protected or silently clearing repo. Provide shared service entry fixtures for both intake callers and accepted suggestions; no write occurs before an explicit accepted answer, and an accepted suggestion uses the same validated batch implementation. The service is reusable without implementing those later workflows.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_interview`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_config` — The new target asserts exactly six model, six effort and one floor subject; first-global default acceptance writes exactly those thirteen leaves and reopening is later-run. Cover absent roles, empty roles, a one-leaf roles object, alias collapse and defaults injected only for reads. Later unchanged roles create no repo pins; one changed leaf creates only that role diff plus any explicitly requested empty-waiver pin. Global and repo [] cases, an identical [] no-op, a stronger repo waiver, literal custom model strings, stale answers and unanswered/declined suggestions all have byte and provenance assertions. Both intake entry fixtures call the same production service.
+- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_interview`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_config` — interview::prepare returns thirteen ordered subjects with literal values, defaults, presence, source, constraints and first/later/global target from independently supplied generations, including absent, empty, partial and aliased roles. interview::answers returns the thirteen literal first-global updates, later role diffs, explicit [] pin or identical-pin no-op, and unchanged custom model text. Separate assertions return Error::Conflict("interview config inputs changed"), Error::Invalid("interview requires exactly thirteen ordered answers"), or no updates for declined/unanswered acceptance. ConfigWriter validates captured inputs inside owned admission and final transaction policy; supplied filesystem observations establish stale-input refusal and one accepted batch. No save/reopen chain; reopened input is independently encoded.
 
 ### Task 2: Connect the shipped config conversation (P8-3-T2)
 

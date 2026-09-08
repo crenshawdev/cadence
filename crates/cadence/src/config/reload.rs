@@ -134,6 +134,7 @@ impl<I: ConfigIo> Reload<I> {
     fn load(&mut self) -> Result<Generation> {
         let repo_id = identity(&self.paths.repo)?;
         let global_id = self.paths.global.as_deref().map(identity).transpose()?;
+        let alias = global_id.as_ref() == Some(&repo_id);
         let global = match global_id {
             Some(id) if id != repo_id => Some(self.io.read(&id)?),
             _ => None,
@@ -142,6 +143,7 @@ impl<I: ConfigIo> Reload<I> {
         if let Some(cached) = &self.current
             && cached.global == global
             && cached.repo == repo
+            && cached.effective.global_intent == alias
         {
             return Ok(cached.clone());
         }
@@ -157,7 +159,7 @@ impl<I: ConfigIo> Reload<I> {
                 .transpose()
         };
         let global_value = global.as_ref().map(parse).transpose()?.flatten();
-        let effective = merge::merge(global_value, parse(&repo)?, false);
+        let effective = merge::merge(global_value, parse(&repo)?, alias);
         validate_effective(&effective)?;
         self.number = self
             .number

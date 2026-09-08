@@ -596,6 +596,29 @@ impl<I: ConfigIo> Session<I> {
         .batch(layer, updates)
         .await
     }
+    pub async fn interview_config(
+        &self,
+        mode: config::interview::Mode,
+        captured: config::interview::Captured,
+        accepted: bool,
+        answers: Option<&[write::Update]>,
+    ) -> Result<Option<write::Written>> {
+        if !accepted || answers.is_none() {
+            return Ok(None);
+        }
+        let generation = self.config()?;
+        let (layer, updates) =
+            config::interview::answers(&generation, mode, &captured, accepted, answers)?;
+        write::ConfigWriter {
+            root: self.root.clone(),
+            active: self.manifest.active.clone(),
+            store: self.store.clone(),
+            config: self.config.clone(),
+        }
+        .batch_captured(layer, &updates, Some(captured))
+        .await
+        .map(Some)
+    }
     pub async fn capture_report(&self) -> Result<config::CaptureReport> {
         let current = self.config()?;
         let bound = merge::get(&current.effective.values, "planning.max_capture_bullets")

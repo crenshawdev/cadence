@@ -127,12 +127,25 @@ impl<I: ConfigIo> ConfigWriter<I> {
     }
 
     pub async fn batch(&self, layer: Layer, updates: &[Update]) -> Result<Written> {
+        self.batch_captured(layer, updates, None).await
+    }
+
+    pub async fn batch_captured(
+        &self,
+        layer: Layer,
+        updates: &[Update],
+        captured: Option<super::interview::Captured>,
+    ) -> Result<Written> {
         let generation = self
             .config
             .lock()
             .map_err(|_| Error::Policy("config unavailable".into()))?
             .refresh()
             .map_err(|error| Error::Policy(format!("config unavailable: {error}")))?;
+        if let Some(captured) = &captured {
+            captured.validate(&generation)?;
+        }
+        let check = captured.map(|captured| input_check(self.config.clone(), captured));
         let (target, path, input) = match layer {
             Layer::Repo => ("repo-config", &self.active.repo, &generation.repo),
             Layer::Global => {
@@ -183,7 +196,16 @@ impl<I: ConfigIo> ConfigWriter<I> {
         reload::validate_effective(&effective)?;
         if changed_keys.is_empty() {
             return Ok(Written {
-                view: self.store.request(Operation::Read).await?,
+                view: self
+                    .store
+                    .request(match check {
+                        Some(check) => Operation::CheckedTransact {
+                            check,
+                            transaction: None,
+                        },
+                        None => Operation::Read,
+                    })
+                    .await?,
                 changed_keys,
                 destination: path.clone(),
                 requested_layer: layer,
@@ -214,7 +236,14 @@ impl<I: ConfigIo> ConfigWriter<I> {
                 bytes,
             }],
         };
-        let view = self.store.request(Operation::Transact(transaction)).await?;
+        let operation = match check {
+            Some(check) => Operation::CheckedTransact {
+                check,
+                transaction: Some(transaction),
+            },
+            None => Operation::Transact(transaction),
+        };
+        let view = self.store.request(operation).await?;
         Ok(Written {
             view,
             changed_keys,
@@ -263,4 +292,17 @@ pub fn prepare_batch(
     }
     changed.sort();
     Ok((proposed, changed))
+}
+
+pub fn input_check<I: ConfigIo>(
+    shared: Shared<I>,
+    captured: super::interview::Captured,
+) -> cadence::store::writer::InputCheck {
+    Box::new(move || {
+        let generation = shared
+            .lock()
+            .map_err(|_| Error::Policy("config unavailable".into()))?
+            .refresh()?;
+        captured.validate(&generation)
+    })
 }
