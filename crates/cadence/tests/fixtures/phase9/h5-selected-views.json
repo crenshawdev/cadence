@@ -1,0 +1,13 @@
+{
+  "execute": {
+    "view": {"kind":"provisional-selected","revision":2,"fire":"f1","round":1,"originals":["o1"],"finding_ids":[{"original":"o1","index":0}],"fix":null,"adjudication":"adj1","rendering":null,"contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}},
+    "refuted": [{"original":"o1","index":1}]
+  },
+  "planned-task": {
+    "view": {"kind":"provisional-selected","revision":2,"fire":"f1","round":1,"originals":["o1"],"finding_ids":[{"original":"o1","index":0}],"fix":null,"adjudication":"adj1","rendering":null,"contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}},
+    "refuted": [{"original":"o1","index":1}]
+  },
+  "raw": {"kind":"raw","revision":2,"fire":"f1","round":1,"originals":["o1"],"finding_ids":[{"original":"o1","index":0},{"original":"o1","index":1}],"fix":null,"adjudication":null,"rendering":"REVIEW-risk_surface-1.md","contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}},
+  "provisional-selected": {"kind":"provisional-selected","revision":2,"fire":"f1","round":1,"originals":["o1"],"finding_ids":[{"original":"o1","index":0}],"fix":null,"adjudication":"adj1","rendering":null,"contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}},
+  "settled": {"kind":"settled","revision":2,"fire":"f1","round":1,"originals":["o1"],"finding_ids":[{"original":"o1","index":0}],"fix":"fix1","adjudication":"adj2","rendering":"ADJUDICATION-risk_surface-1.md","contract":{"schema":"review-1","interpretation":"H1-H5","validator":"H4-1"}}
+}
