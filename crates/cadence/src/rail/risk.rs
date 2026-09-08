@@ -89,6 +89,7 @@ pub struct ScopeSelection {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Source {
     Committed { base: String, head: String },
+    Staged { base: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

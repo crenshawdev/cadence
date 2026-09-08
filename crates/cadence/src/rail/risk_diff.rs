@@ -381,11 +381,22 @@ pub fn scan(body: Option<&[u8]>, paths: &[PathBuf], categories: &[String]) -> Re
         });
     }
     let (sets, mut inconclusive) = path_sets(paths);
-    let (lines, diff_unreadable) = match std::str::from_utf8(body) {
-        Ok(body) => changed_lines(body),
-        Err(_) => (Vec::new(), true),
-    };
-    inconclusive |= diff_unreadable;
+    // Preserve readable sections in a partially undecodable diff. Invalid lines
+    // are unavailable evidence, never decoded lossily into classifier input.
+    let mut undecodable = false;
+    let readable = body
+        .split(|b| *b == b'\n')
+        .map(|line| match std::str::from_utf8(line) {
+            Ok(line) => line,
+            Err(_) => {
+                undecodable = true;
+                ""
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let (lines, diff_unreadable) = changed_lines(&readable);
+    inconclusive |= diff_unreadable || undecodable || (body.is_empty() && !paths.is_empty());
     let mut matches = Vec::new();
     for category in &categories {
         if let Some(signal) = signal(category, &sets, &lines)? {

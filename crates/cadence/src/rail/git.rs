@@ -19,6 +19,10 @@ where
         .current_dir(root)
         .args(args)
         .env("GIT_OPTIONAL_LOCKS", "0")
+        .env_remove("GIT_LITERAL_PATHSPECS")
+        .env_remove("GIT_GLOB_PATHSPECS")
+        .env_remove("GIT_NOGLOB_PATHSPECS")
+        .env_remove("GIT_ICASE_PATHSPECS")
         .stdin(Stdio::null())
         .output()?;
     if !output.status.success() {
@@ -57,10 +61,20 @@ pub fn object_id(bytes: Vec<u8>) -> Result<String> {
     Ok(id.into())
 }
 
+pub fn index_id(root: &Path) -> Result<String> {
+    object_id(run(root, ["write-tree"])?)
+}
+
 pub fn resolve(root: &Path, source: &Source) -> (Resolution, Vec<String>) {
-    let Source::Committed { base, head } = source;
-    let base = resolve_commit(root, base);
-    let head = resolve_commit(root, head);
+    // Resolve independently, preserving whichever immutable endpoint is available.
+    let (base, head, index) = match source {
+        Source::Committed { base, head } => (
+            resolve_commit(root, base),
+            Some(resolve_commit(root, head)),
+            None,
+        ),
+        Source::Staged { base } => (resolve_commit(root, base), None, Some(index_id(root))),
+    };
     let mut diagnostics = Vec::new();
     let mut resolved = |name: &str, value: Result<String>| match value {
         Ok(id) => Some(id),
@@ -72,56 +86,83 @@ pub fn resolve(root: &Path, source: &Source) -> (Resolution, Vec<String>) {
     (
         Resolution {
             base_id: resolved("base", base),
-            head_id: resolved("head", head),
-            index_id: None,
+            head_id: head.and_then(|v| resolved("head", v)),
+            index_id: index.and_then(|v| resolved("index", v)),
         },
         diagnostics,
     )
 }
 
-pub fn scan(root: &Path, material: &MaterialIdentity, surfaces: &[String]) -> Result<Scan> {
-    let paths = run(
-        root,
-        [
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-renames",
-            "--name-only",
-            "-z",
-            material.base_id(),
-            material.tip_id(),
-            "--",
-        ],
-    )?;
-    let paths = paths
+/// The four frozen reviewer-text shapes; these never change source lease coverage.
+pub const REVIEWER_TEXT_PATHSPECS: [&str; 4] = [
+    ":(top,exclude).planning/phases/*/ADJUDICATION-*.json",
+    ":(top,exclude).planning/phases/*/REVIEW-*.md",
+    ":(top,exclude).planning/phases/*/FINDINGS.json",
+    ":(top,exclude).planning/phases/*/verifier-findings.json",
+];
+
+pub struct Diff {
+    pub paths: Vec<PathBuf>,
+    pub body: Vec<u8>,
+}
+
+pub fn diff(root: &Path, material: &MaterialIdentity) -> Result<Diff> {
+    let common = [
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-renames",
+        "--color=never",
+        "--ignore-submodules=none",
+    ];
+    let arguments = |format: &[&str]| {
+        let mut args = common.to_vec();
+        args.extend_from_slice(format);
+        args.extend([material.base_id(), material.tip_id(), "--"]);
+        args.extend(REVIEWER_TEXT_PATHSPECS);
+        args.into_iter()
+            .map(std::ffi::OsString::from)
+            .collect::<Vec<_>>()
+    };
+    // --no-renames reports a rename as a deletion plus an addition. Both ends
+    // are classified, with NUL records avoiding Git's display quoting entirely.
+    let names = run(root, arguments(&["--name-only", "-z"]))?;
+    if !names.is_empty() && names.last() != Some(&0) {
+        return Err(Error::Invalid("unterminated Git pathname record".into()));
+    }
+    let paths = names
         .split(|b| *b == 0)
         .filter(|p| !p.is_empty())
         .map(|p| {
             #[cfg(unix)]
             {
                 use std::os::unix::ffi::OsStrExt;
-                PathBuf::from(OsStr::from_bytes(p))
+                Ok(PathBuf::from(OsStr::from_bytes(p)))
             }
             #[cfg(not(unix))]
             {
-                PathBuf::from(String::from_utf8_lossy(p).into_owned())
+                std::str::from_utf8(p)
+                    .map(PathBuf::from)
+                    .map_err(|_| Error::Invalid("Git path is undecodable".into()))
             }
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
     let body = run(
         root,
-        [
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-renames",
+        arguments(&[
             "--binary",
             "--unified=0",
-            material.base_id(),
-            material.tip_id(),
-            "--",
-        ],
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            "--output-indicator-new=+",
+            "--output-indicator-old=-",
+            "--output-indicator-context= ",
+        ]),
     )?;
-    risk_diff::scan(Some(&body), &paths, surfaces)
+    Ok(Diff { paths, body })
+}
+
+pub fn scan(root: &Path, material: &MaterialIdentity, surfaces: &[String]) -> Result<Scan> {
+    let diff = diff(root, material)?;
+    risk_diff::scan(Some(&diff.body), &diff.paths, surfaces)
 }

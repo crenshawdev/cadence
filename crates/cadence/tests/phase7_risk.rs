@@ -384,3 +384,392 @@ fn public_persistence_failure_never_returns_a_recorded_success() {
     fs::remove_dir(repo.root.join(".planning").join(INTENT)).unwrap();
     assert_eq!(repo.view(), before);
 }
+
+fn scan_of(answer: &Value) -> risk_diff::Scan {
+    assert_eq!(answer["status"], "ok", "{answer}");
+    serde_json::from_value(answer["observation"]["scan"].clone()).unwrap()
+}
+
+#[test]
+fn real_added_and_removed_lines_classify_all_eight_categories_in_table_order() {
+    let repo = Repo::new();
+    let cases = [
+        ("auth", "jwt.verify(token)"),
+        ("migrations", "ALTER TABLE example"),
+        ("billing", "stripe"),
+        ("concurrency", "Mutex"),
+        ("destructive", "DROP TABLE example"),
+        ("secrets", "APP_SECRET=value"),
+        ("api_contract", "router.get('/example')"),
+        ("untrusted_input", "JSON.parse(input)"),
+    ];
+    for (category, line) in cases {
+        let base = repo.git(&["rev-parse", "HEAD"]);
+        repo.write("work.txt", format!("{line}\n").as_bytes());
+        let head = repo.commit(&["work.txt"]);
+        let scan = scan_of(&repo.call(repo.request(&format!("add-{category}"), &base, &head)));
+        assert!(scan.checked && !scan.inconclusive && !scan.empty);
+        assert!(
+            scan.matches
+                .iter()
+                .any(|m| m.category == category && m.signal.starts_with("changed line:")),
+            "{scan:?}"
+        );
+        repo.write("work.txt", b"ordinary\n");
+        let removed = repo.commit(&["work.txt"]);
+        let scan =
+            scan_of(&repo.call(repo.request(&format!("remove-{category}"), &head, &removed)));
+        assert!(
+            scan.matches.iter().any(|m| m.category == category),
+            "{scan:?}"
+        );
+    }
+}
+
+#[test]
+fn real_paths_keep_unicode_spaces_tabs_extensions_and_both_rename_endpoints() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    let paths = [
+        "auth/naïve space\tfile.txt",
+        "migrations/change.txt",
+        "billing/tariff.txt",
+        "workers/one.txt",
+        "unicode/ключ space\tname.key",
+        "wire/example.proto",
+    ];
+    for path in paths {
+        repo.write(path, b"ordinary\n");
+    }
+    let head = repo.commit(&paths);
+    let scan = scan_of(&repo.call(repo.request("paths", &base, &head)));
+    assert_eq!(
+        scan.matches
+            .iter()
+            .map(|m| m.category.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "auth",
+            "migrations",
+            "billing",
+            "concurrency",
+            "secrets",
+            "api_contract"
+        ]
+    );
+    assert!(
+        scan.matches
+            .iter()
+            .all(|m| !m.signal.starts_with("changed line"))
+    );
+    repo.git(&["mv", "auth/naïve space\tfile.txt", "renamed.txt"]);
+    repo.git(&["commit", "-q", "-S", "-m", "feat(7): fixture rename"]);
+    let renamed = repo.git(&["rev-parse", "HEAD"]);
+    let scan = scan_of(&repo.call(repo.request("rename", &head, &renamed)));
+    assert_eq!(scan.matches[0].category, "auth");
+    let material = MaterialIdentity::Committed {
+        base_id: head,
+        head_id: renamed,
+    };
+    let diff = cadence::rail::git::diff(&repo.root, &material).unwrap();
+    assert_eq!(
+        diff.paths,
+        vec![
+            PathBuf::from("auth/naïve space\tfile.txt"),
+            PathBuf::from("renamed.txt")
+        ]
+    );
+}
+
+#[test]
+fn unchanged_context_is_not_changed_content_in_a_real_diff() {
+    let repo = Repo::new();
+    repo.write("work.txt", b"DROP TABLE context\nold\n");
+    let base = repo.commit(&["work.txt"]);
+    repo.write("work.txt", b"DROP TABLE context\nnew\n");
+    let head = repo.commit(&["work.txt"]);
+    let scan = scan_of(&repo.call(repo.request("context", &base, &head)));
+    assert!(scan.checked && !scan.inconclusive && scan.matches.is_empty());
+}
+
+#[test]
+fn only_the_four_reviewer_pathspecs_exclude_material_and_planning_prose_is_scanned() {
+    let repo = Repo::new();
+    for (n, name) in [
+        "ADJUDICATION-fixture.json",
+        "REVIEW-fixture.md",
+        "FINDINGS.json",
+        "verifier-findings.json",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let base = repo.git(&["rev-parse", "HEAD"]);
+        let path = format!(".planning/phases/7/{name}");
+        repo.write(&path, b"DROP TABLE example\n");
+        let head = repo.commit(&[&path]);
+        let scan = scan_of(&repo.call(repo.request(&format!("exclude-{n}"), &base, &head)));
+        assert!(
+            scan.checked && scan.empty && !scan.inconclusive && scan.matches.is_empty(),
+            "{name}: {scan:?}"
+        );
+    }
+    for (n, path) in [
+        ".planning/phases/7/PLAN-3.md",
+        ".planning/phases/7/CONTEXT.md",
+        ".planning/phases/7/reports/plan-3.md",
+        "docs/REVIEW-fixture.md",
+        "Cargo.lock",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let base = repo.git(&["rev-parse", "HEAD"]);
+        repo.write(path, b"DROP TABLE example\n");
+        let head = repo.commit(&[path]);
+        let scan = scan_of(&repo.call(repo.request(&format!("included-{n}"), &base, &head)));
+        assert!(
+            scan.matches.iter().any(|m| m.category == "destructive"),
+            "{path}: {scan:?}"
+        );
+    }
+}
+
+#[test]
+fn binary_gitlink_and_undecodable_material_are_inconclusive_without_hiding_readable_matches() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    repo.write("binary", b"\0\xff\0");
+    let binary = repo.commit(&["binary"]);
+    let scan = scan_of(&repo.call(repo.request("binary", &base, &binary)));
+    assert!(scan.checked && scan.inconclusive && !scan.empty);
+    repo.git(&[
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        &format!("160000,{base},module"),
+    ]);
+    repo.git(&["commit", "-q", "-S", "-m", "feat(7): fixture gitlink"]);
+    let link = repo.git(&["rev-parse", "HEAD"]);
+    let scan = scan_of(&repo.call(repo.request("gitlink", &binary, &link)));
+    assert!(scan.checked && scan.inconclusive && !scan.empty);
+    repo.write(".gitattributes", b"undecodable diff\n");
+    repo.write("undecodable", b"line\xff\n");
+    repo.write("work.txt", b"JSON.parse(input)\n");
+    let bad = repo.commit(&[".gitattributes", "undecodable", "work.txt"]);
+    let scan = scan_of(&repo.call(repo.request("undecodable", &link, &bad)));
+    assert!(
+        scan.checked
+            && scan.inconclusive
+            && scan.matches.iter().any(|m| m.category == "untrusted_input")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_git_paths_remain_unreadable_evidence_instead_of_lossy_clean_paths() {
+    use std::os::unix::ffi::OsStrExt;
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    let name = std::ffi::OsStr::from_bytes(b"bad-\xff");
+    fs::write(repo.root.join(name), b"ordinary\n").unwrap();
+    let output = Command::new("git")
+        .current_dir(&repo.root)
+        .args([
+            std::ffi::OsStr::new("add"),
+            std::ffi::OsStr::new("--"),
+            name,
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    repo.git(&["commit", "-q", "-S", "-m", "feat(7): fixture byte path"]);
+    let head = repo.git(&["rev-parse", "HEAD"]);
+    let scan = scan_of(&repo.call(repo.request("byte-path", &base, &head)));
+    assert!(scan.checked && scan.inconclusive && !scan.empty);
+}
+
+#[test]
+fn external_diff_and_textconv_are_disabled_for_names_and_patch_body() {
+    use std::os::unix::fs::PermissionsExt;
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    let helper = repo._temp.path().join("helper");
+    let sentinel = repo._temp.path().join("helper-ran");
+    fs::write(
+        &helper,
+        format!(
+            "#!/bin/sh\ntouch '{}'\nprintf 'DROP TABLE fabricated\\n'\n",
+            sentinel.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+    repo.git(&[
+        "config",
+        "--local",
+        "diff.external",
+        helper.to_str().unwrap(),
+    ]);
+    repo.git(&[
+        "config",
+        "--local",
+        "diff.probe.textconv",
+        helper.to_str().unwrap(),
+    ]);
+    repo.git(&["config", "--local", "color.ui", "always"]);
+    repo.write(".gitattributes", b"work.txt diff=probe\n");
+    repo.write("work.txt", b"JSON.parse(input)\n");
+    let head = repo.commit(&[".gitattributes", "work.txt"]);
+    let scan = scan_of(&repo.call(repo.request("helpers", &base, &head)));
+    assert!(!sentinel.exists());
+    assert!(!scan.inconclusive);
+    assert_eq!(
+        scan.matches
+            .iter()
+            .map(|m| m.category.as_str())
+            .collect::<Vec<_>>(),
+        ["untrusted_input"]
+    );
+}
+
+#[test]
+fn failed_ref_and_blob_reads_record_unchecked_observations_with_partial_endpoints() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    repo.write("work.txt", b"JSON.parse(input)\n");
+    let head = repo.commit(&["work.txt"]);
+    for (id, left, right, expected) in [
+        (
+            "bad-base",
+            "missing",
+            head.as_str(),
+            json!({"base_id":null,"head_id":head,"index_id":null}),
+        ),
+        (
+            "bad-head",
+            base.as_str(),
+            "missing",
+            json!({"base_id":base,"head_id":null,"index_id":null}),
+        ),
+    ] {
+        let answer = repo.call(repo.request(id, left, right));
+        let scan = scan_of(&answer);
+        assert!(!scan.checked && scan.inconclusive && !scan.empty && scan.matches.is_empty());
+        assert_eq!(answer["observation"]["resolution"], expected);
+    }
+    let blob = repo.git(&["rev-parse", "HEAD:work.txt"]);
+    fs::remove_file(
+        repo.root
+            .join(".git/objects")
+            .join(&blob[..2])
+            .join(&blob[2..]),
+    )
+    .unwrap();
+    let answer = repo.call(repo.request("bad-blob", &base, &head));
+    let scan = scan_of(&answer);
+    assert!(!scan.checked && scan.inconclusive && !scan.empty);
+    assert_eq!(answer["observation"]["resolution"]["head_id"], head);
+    assert!(
+        !answer["observation"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(risk::read(&repo.view().snapshot.data).unwrap().len(), 3);
+}
+
+#[test]
+fn strict_scope_source_and_surface_validation_refuse_without_a_scan_or_policy_change() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    repo.write("work.txt", b"JSON.parse(input)\n");
+    let head = repo.commit(&["work.txt"]);
+    let request = repo.request("valid", &base, &head);
+    repo.call(request.clone());
+    let before = repo.view();
+    for (pointer, value) in [
+        ("/scope/phase", json!(0)),
+        ("/scope/phase", json!(999)),
+        ("/scope/worker", json!("../foreign")),
+        ("/scope/occurrence", json!("")),
+        ("/source", json!({"kind":"staged","base":base,"head":head})),
+        ("/surfaces", json!([])),
+        ("/surfaces", json!(["auth", "auth"])),
+        ("/surfaces", json!(["unknown"])),
+    ] {
+        let mut input = request.clone();
+        input["request_id"] = json!("invalid");
+        *input.pointer_mut(pointer).unwrap() = value;
+        assert_eq!(repo.call(input)["status"], "refused");
+        assert_eq!(repo.view(), before);
+    }
+    let config = repo.root.join(".planning/config.v4.json");
+    let mut value: Value = serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+    value["review"]["triggers"]["risk_surface"]["surfaces"] = Value::Null;
+    fs::write(&config, serde_json::to_vec(&value).unwrap()).unwrap();
+    let mut input = request;
+    input["request_id"] = json!("explicit");
+    assert_eq!(repo.call(input.clone())["code"], "unanswered-surfaces");
+    let bytes = fs::read(&config).unwrap();
+    input["surfaces"] = json!(["auth"]);
+    let scan = scan_of(&repo.call(input.clone()));
+    assert!(scan.checked && scan.matches.is_empty());
+    assert_eq!(scan.categories, ["auth"]);
+    assert_eq!(fs::read(&config).unwrap(), bytes);
+    let recorded = repo.view();
+    fs::write(&config, b"{").unwrap();
+    input["request_id"] = json!("torn");
+    assert_eq!(repo.call(input)["status"], "refused");
+    fs::write(&config, bytes).unwrap();
+    assert_eq!(repo.view(), recorded);
+}
+
+#[test]
+fn staged_scan_reads_the_captured_index_instead_of_unstaged_worktree_bytes() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    repo.write("work.txt", b"DROP TABLE staged\n");
+    repo.git(&["add", "--", "work.txt"]);
+    let index = repo.git(&["write-tree"]);
+    repo.write("work.txt", b"JSON.parse(unstaged)\n");
+    let mut request = repo.request("staged", &base, "HEAD");
+    request["source"] = json!({"kind":"staged","base":base});
+    request["scope"]["worker"] = json!("3");
+    let answer = repo.call(request);
+    let scan = scan_of(&answer);
+    assert!(scan.checked && !scan.inconclusive && !scan.empty);
+    assert_eq!(
+        scan.matches
+            .iter()
+            .map(|m| m.category.as_str())
+            .collect::<Vec<_>>(),
+        ["destructive"]
+    );
+    assert_eq!(
+        answer["observation"]["resolution"],
+        json!({"base_id":base,"head_id":null,"index_id":index})
+    );
+    assert_eq!(answer["observation"]["scope"]["worker"], "3");
+}
+
+#[test]
+fn unreadable_index_records_unchecked_staged_observation_with_resolved_base() {
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    let index_path = repo.root.join(".git/index");
+    let bytes = fs::read(&index_path).unwrap();
+    fs::write(&index_path, b"bad-index").unwrap();
+    let mut request = repo.request("bad-index", &base, "HEAD");
+    request["source"] = json!({"kind":"staged","base":base});
+    let answer = repo.call(request);
+    let scan = scan_of(&answer);
+    assert!(!scan.checked && scan.inconclusive && !scan.empty);
+    assert_eq!(
+        answer["observation"]["resolution"],
+        json!({"base_id":base,"head_id":null,"index_id":null})
+    );
+    fs::write(index_path, bytes).unwrap();
+    assert_eq!(risk::read(&repo.view().snapshot.data).unwrap().len(), 1);
+}

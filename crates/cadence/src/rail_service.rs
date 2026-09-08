@@ -50,7 +50,9 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
     }
     let session = match factory.first_touch(&root).await {
         Ok(session) => session,
-        Err(Error::Policy(reason)) => return Ok(refused("config-unavailable", &reason)),
+        Err(error) if factory.guard_config(&root).is_err() => {
+            return Ok(refused("config-unavailable", &error.to_string()));
+        }
         Err(error) => return Err(error),
     };
     let config = match session.config() {
