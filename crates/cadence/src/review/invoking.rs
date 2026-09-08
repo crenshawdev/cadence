@@ -48,3 +48,33 @@ pub fn local_dispatch(admission: &Admission, attempt: &Attempt) -> LocalDispatch
         ),
     }
 }
+
+#[cfg(test)]
+mod gap155_dispatch_tests {
+    use super::super::model::RequestedVoice;
+    use super::*;
+    use serde_json::{Value, json};
+    #[test]
+    fn gap155_minimalism_dispatch_omits_absent_override() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/phase9/h1-admission.json"
+        ))
+        .unwrap();
+        let mut admission: Admission = serde_json::from_value(fixture["H"].clone()).unwrap();
+        admission.specialist = Some(Specialist::Minimalism);
+        admission.trigger = None;
+        admission.gate = None;
+        let mut attempt: Attempt = serde_json::from_value(fixture["a1"].clone()).unwrap();
+        attempt.requested = RequestedVoice {
+            agent: "cad-reviewer".into(),
+            model: None,
+            effort: None,
+            routing: None,
+            selection_evidence: "minimalism:m1".into(),
+        };
+        let dispatch = serde_json::to_value(local_dispatch(&admission, &attempt)).unwrap();
+        assert_eq!(dispatch["agent"], json!("cad-reviewer"));
+        assert_eq!(dispatch["local"], true);
+        assert!(!dispatch.as_object().unwrap().contains_key("model"));
+    }
+}

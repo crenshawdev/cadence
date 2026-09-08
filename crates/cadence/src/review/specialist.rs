@@ -17,6 +17,10 @@ pub fn minimalism_request(
     retained: &Manifest,
     _ordinary_routing: &Routing,
 ) -> Result<MinimalismRequest, &'static str> {
+    minimalism_selection(retained)
+}
+
+pub fn minimalism_selection(retained: &Manifest) -> Result<MinimalismRequest, &'static str> {
     match retained.target {
         Target::NamedFile { .. } | Target::Directory { .. } | Target::PhaseRange { .. } => {
             Ok(MinimalismRequest {
@@ -28,4 +32,15 @@ pub fn minimalism_request(
         }
         _ => Err("unsupported-minimalism-target"),
     }
+}
+
+pub fn minimalism_voice(retained: &Manifest) -> Result<super::model::RequestedVoice, &'static str> {
+    let request = minimalism_selection(retained)?;
+    Ok(super::model::RequestedVoice {
+        agent: "cad-reviewer".into(),
+        model: None,
+        effort: None,
+        routing: request.ordinary_routing,
+        selection_evidence: format!("minimalism:{}", request.target),
+    })
 }

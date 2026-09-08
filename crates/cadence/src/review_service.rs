@@ -203,17 +203,27 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
         );
     }
     validate_paths(&request.target)?;
-    let generation = session.config()?;
-    let route = super::config_service::route_at(
-        &generation,
-        &super::config_service::RouteRequest {
-            role: "cad-reviewer".into(),
-            phase: request.phase,
-            plan: request.plan,
-            attempt: None,
-        },
-        root,
-    )?;
+    let minimalism = request.specialist == Some(Specialist::Minimalism);
+    let generation = if minimalism {
+        None
+    } else {
+        Some(session.config()?)
+    };
+    let route = generation
+        .as_ref()
+        .map(|generation| {
+            super::config_service::route_at(
+                generation,
+                &super::config_service::RouteRequest {
+                    role: "cad-reviewer".into(),
+                    phase: request.phase,
+                    plan: request.plan,
+                    attempt: None,
+                },
+                root,
+            )
+        })
+        .transpose()?;
     let sequence = records["occurrence_sequence"]
         .as_u64()
         .unwrap_or(0)
@@ -227,11 +237,17 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
         id: request.home.id.clone(),
         occurrence: String::new(),
     };
-    let routing = Routing {
+    let routing = route.as_ref().map(|route| Routing {
         answer: route.choice.agent.clone(),
         evidence: format!("route:{fire}"),
-    };
+    });
     let (gate, trigger, selection, saved_routing) = if let Some(trigger) = &request.trigger {
+        let route = route
+            .as_ref()
+            .ok_or_else(|| Error::Policy("ordinary routing unavailable".into()))?;
+        let routing = routing
+            .as_ref()
+            .ok_or_else(|| Error::Policy("ordinary routing unavailable".into()))?;
         let name = serde_json::to_value(trigger)?.as_str().unwrap().to_owned();
         let policy = route
             .policy
@@ -287,7 +303,11 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             &request,
             root,
             &view,
-            &route.policy.surfaces,
+            &route
+                .as_ref()
+                .ok_or_else(|| Error::Policy("ordinary routing unavailable".into()))?
+                .policy
+                .surfaces,
         )?)
     } else {
         None
@@ -313,10 +333,6 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             &mut clock,
         )?;
         match request.specialist {
-            Some(Specialist::Minimalism) => {
-                review::specialist::minimalism_request(&manifest, &routing)
-                    .map_err(|e| Error::Invalid(e.into()))?;
-            }
             Some(Specialist::Decision) if !matches!(manifest.target, Target::Decision { .. }) => {
                 return Err(Error::Invalid("decision target required".into()));
             }
@@ -330,35 +346,33 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             .iter()
             .enumerate()
             .map(|(index, choice)| {
-                let local = choice == "claude-subagent" || choice == "base";
-                let model = if local {
-                    route.choice.model.clone()
-                } else {
-                    trigger
+                let requested = requested_voice(request.specialist.as_ref(), &manifest, || {
+                    let route = route
                         .as_ref()
-                        .and_then(|trigger| route.policy.triggers.get(trigger))
-                        .and_then(|policy| {
-                            merge::get(
-                                &generation.effective.values,
-                                &format!("review.providers.{choice}.tiers.{}", policy.tier),
-                            )
-                            .and_then(Value::as_str)
-                            .map(str::to_owned)
-                        })
-                };
-                Attempt {
-                    attempt: format!("{fire}-a{}", index + 1),
-                    fire: fire.clone(),
-                    occurrence: String::new(),
-                    round: request.round,
-                    slot: choice.clone(),
-                    fallback_for: None,
-                    view: MaterialView {
-                        view: format!("{fire}-v{}", index + 1),
-                        manifest: manifest_id.clone(),
-                        entries: manifest.entries.iter().map(|e| e.entry.clone()).collect(),
-                    },
-                    requested: RequestedVoice {
+                        .ok_or_else(|| Error::Policy("ordinary routing unavailable".into()))?;
+                    let generation = generation.as_ref().ok_or_else(|| {
+                        Error::Policy("ordinary configuration unavailable".into())
+                    })?;
+                    let routing = routing
+                        .as_ref()
+                        .ok_or_else(|| Error::Policy("ordinary routing unavailable".into()))?;
+                    let local = choice == "claude-subagent" || choice == "base";
+                    let model = if local {
+                        route.choice.model.clone()
+                    } else {
+                        trigger
+                            .as_ref()
+                            .and_then(|trigger| route.policy.triggers.get(trigger))
+                            .and_then(|policy| {
+                                merge::get(
+                                    &generation.effective.values,
+                                    &format!("review.providers.{choice}.tiers.{}", policy.tier),
+                                )
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                            })
+                    };
+                    Ok(RequestedVoice {
                         agent: if choice == "base" {
                             "cad-reviewer".into()
                         } else if local {
@@ -370,7 +384,21 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
                         effort: Some(route.choice.rung.clone()),
                         routing: saved_routing.clone(),
                         selection_evidence: routing.evidence.clone(),
+                    })
+                })?;
+                Ok(Attempt {
+                    attempt: format!("{fire}-a{}", index + 1),
+                    fire: fire.clone(),
+                    occurrence: String::new(),
+                    round: request.round,
+                    slot: choice.clone(),
+                    fallback_for: None,
+                    view: MaterialView {
+                        view: format!("{fire}-v{}", index + 1),
+                        manifest: manifest_id.clone(),
+                        entries: manifest.entries.iter().map(|e| e.entry.clone()).collect(),
                     },
+                    requested,
                     observed_host: None,
                     observed_model: None,
                     launch: None,
@@ -386,9 +414,9 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
                         currency: None,
                     },
                     contract: Contract::current(),
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         let admitted = Admission {
             fire: fire.clone(),
             replay_key: request.replay_key,
@@ -418,7 +446,18 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
         };
         let mut transaction = persistence::transaction(&view, &format!("admit:{fire}"));
         let mut data = records;
-        persistence::insert(&mut data, "routes", &routing.evidence, &route)?;
+        if let (Some(routing), Some(route)) = (&routing, &route) {
+            persistence::insert(&mut data, "routes", &routing.evidence, route)?;
+        } else {
+            let selected = review::specialist::minimalism_selection(&manifest)
+                .map_err(|e| Error::Invalid(e.into()))?;
+            persistence::insert(
+                &mut data,
+                "specialist_requests",
+                &format!("minimalism:{}", manifest.manifest),
+                &selected,
+            )?;
+        }
         persistence::contribute(&view, &mut transaction, data)?;
         let contribution = admission::contribute_admission(
             &view,
@@ -432,7 +471,9 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             },
             &mut clock,
         )?;
-        if session.config()? != generation {
+        if let Some(generation) = &generation
+            && session.config()? != *generation
+        {
             return Err(Error::Conflict("review routing inputs changed".into()));
         }
         commit_admission(
@@ -443,6 +484,18 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
         .await
     })
     .await
+}
+
+fn requested_voice(
+    specialist: Option<&Specialist>,
+    manifest: &Manifest,
+    ordinary: impl FnOnce() -> Result<RequestedVoice>,
+) -> Result<RequestedVoice> {
+    if specialist == Some(&Specialist::Minimalism) {
+        return review::specialist::minimalism_voice(manifest)
+            .map_err(|e| Error::Invalid(e.into()));
+    }
+    ordinary()
 }
 
 pub async fn admit_with_policy<F: std::future::Future<Output = Answer>>(
@@ -1436,5 +1489,44 @@ mod gap154_composition_tests {
             "action":"ask-surfaces","gate":"blocking","fire":null,"dispatch":null}})
         );
         assert_eq!(calls.get(), 0);
+    }
+}
+
+#[cfg(test)]
+mod gap155_voice_tests {
+    use super::*;
+    #[test]
+    fn gap155_minimalism_ignores_pinned_and_failed_ordinary_routes() {
+        let manifest = Manifest {
+            manifest: "m1".into(),
+            fire: "f1".into(),
+            contract: Contract::current(),
+            target: Target::NamedFile {
+                path: "a.rs".into(),
+                head: None,
+            },
+            entries: vec![],
+        };
+        for ordinary in [
+            Ok(RequestedVoice {
+                agent: "panel".into(),
+                model: Some("opus".into()),
+                effort: Some("high".into()),
+                routing: Some(Routing {
+                    answer: "panel".into(),
+                    evidence: "ordinary".into(),
+                }),
+                selection_evidence: "ordinary".into(),
+            }),
+            Err(Error::Policy("ordinary routing unavailable".into())),
+        ] {
+            let voice =
+                requested_voice(Some(&Specialist::Minimalism), &manifest, || ordinary).unwrap();
+            assert_eq!(
+                serde_json::to_value(voice).unwrap(),
+                json!({"agent":"cad-reviewer","model":null,"effort":null,
+                "routing":null,"selection_evidence":"minimalism:m1"})
+            );
+        }
     }
 }
