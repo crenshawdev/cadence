@@ -747,12 +747,13 @@ fn ac3_exclusions_real_files_metadata_order_snapshot_and_positive_controls() {
         "archive",
         "cursor",
     ] {
-        let before = rt.block_on(session.derivation_view()).unwrap();
-        let mut data = before.snapshot.data.clone();
-        data[field] = json!({"excluded":"changed"});
-        rt.block_on(replace(&session, data));
+        let path = root.path().join("state.json");
+        let before = std::fs::read(&path).unwrap();
+        let mut snapshot: Value = serde_json::from_slice(&before).unwrap();
+        snapshot["data"][field] = json!({"excluded":"changed"});
+        std::fs::write(&path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
         assert_eq!(production_key(root.path()), key, "snapshot {field}");
-        rt.block_on(replace(&session, before.snapshot.data));
+        std::fs::write(path, before).unwrap();
     }
     let before = rt.block_on(session.derivation_view()).unwrap();
     let mut data = before.snapshot.data.clone();

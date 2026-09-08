@@ -251,3 +251,7 @@ fn route_wire_rejects_noninteger_attempts_and_invalid_scope_without_coercion() {
         );
     }
 }
+
+#[allow(dead_code)]
+#[path = "../src/store/mod.rs"]
+mod production_store;

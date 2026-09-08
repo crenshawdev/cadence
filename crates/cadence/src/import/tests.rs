@@ -1370,7 +1370,7 @@ fn prepare_import_uses_active_roles_and_retains_conflicting_legacy_evidence() {
             Some(json!({"roles":{"cad-executor":{"model":"sonnet"}}})),
             json!([{
                 "source":{"path":"/fixture/global/config.json","bytes":original.as_slice()},
-                "generation":"4811eab5b9e5fb01dd97de0e9e9d7c06d57b6a84e0dc63bdce9a4fa8638e0884","label":"non_effective_original_source"
+                "generation":"4811eab5b9e5fb01dd97de0e9e9d7c06d57b6a84e0dc63bdce9a4fa8638e0884","label":"non_effective_original_source","layer":"global"
             }])
         )
     );
@@ -1430,6 +1430,189 @@ fn prepare_import_refuses_unusable_active_global_without_legacy_normalization() 
         prepare_import(root, &legacy, &active, &mut io, false).err(),
         Some(Error::Policy(
             "config unavailable: unusable roles.cad-executor.effort".into()
+        ))
+    );
+}
+
+#[test]
+fn snapshot_replacement_preserves_provenance_and_unrelated_namespaces() {
+    let previous = json!({"import":{"complete":true},"source_evidence":[{"original":[null,1]}],
+        "archive":{"path":"ARCHIVE.md"},"cursor":{"phase":8},"evidence":{"keep":1},
+        "derivation":{"keep":2},"execution":{"keep":3},"rail_receipts":{"keep":4}});
+    assert_eq!(
+        replace_current(&previous, json!({"new":"payload"})),
+        Ok(json!({
+            "import":{"complete":true},"source_evidence":[{"original":[null,1]}],
+            "archive":{"path":"ARCHIVE.md"},"cursor":{"phase":8},"evidence":{"keep":1},
+            "derivation":{"keep":2},"execution":{"keep":3},"rail_receipts":{"keep":4},
+            "current":{"new":"payload"}
+        }))
+    );
+}
+
+#[test]
+fn snapshot_replacement_keeps_wrapped_historical_evidence_at_its_original_location() {
+    assert_eq!(
+        replace_current(
+            &json!({"import":{"complete":true},
+        "current":{"source_evidence":[{"old":null}],"unrelated":[1,2]}}),
+            json!({"answer":13})
+        ),
+        Ok(
+            json!({"import":{"complete":true},"current":{"source_evidence":[{"old":null}],
+            "unrelated":[1,2],"current":{"answer":13}}})
+        )
+    );
+}
+
+struct SnapshotMemory(BTreeMap<String, cadence::store::Observed>);
+impl Storage for SnapshotMemory {
+    type Prepared = (String, Vec<u8>);
+    fn read(&mut self, target: &str) -> Result<cadence::store::Observed> {
+        Ok(self
+            .0
+            .get(target)
+            .cloned()
+            .unwrap_or(cadence::store::Observed {
+                bytes: None,
+                identity: "missing".into(),
+                directory_identity: "fixture".into(),
+            }))
+    }
+    fn prepare(&mut self, target: &str, bytes: &[u8]) -> Result<Self::Prepared> {
+        Ok((target.into(), bytes.into()))
+    }
+    fn install(&mut self, prepared: &Self::Prepared) -> Result<()> {
+        self.0.insert(
+            prepared.0.clone(),
+            cadence::store::Observed {
+                bytes: Some(prepared.1.clone()),
+                identity: "installed".into(),
+                directory_identity: "fixture".into(),
+            },
+        );
+        Ok(())
+    }
+    fn discard(&mut self, _: Self::Prepared) -> Result<()> {
+        Ok(())
+    }
+    fn confirm(&mut self, target: &str, _: &[u8]) -> Result<cadence::store::Observed> {
+        self.read(target)
+    }
+    fn resync(&mut self, target: &str, _: &[u8]) -> Result<cadence::store::Observed> {
+        self.read(target)
+    }
+    fn remove(&mut self, target: &str) -> Result<()> {
+        self.0.remove(target);
+        Ok(())
+    }
+}
+
+async fn snapshot_session() -> Session<SuppliedConfig> {
+    let active = Paths {
+        repo: "/fixture/project/.planning/config.v4.json".into(),
+        global: None,
+    };
+    let manifest: ImportManifest = serde_json::from_value(json!({"format":1,"complete":true,
+        "source_generation":"fixture","sources":[],"active":active,"created":[],"warnings":[]}))
+    .unwrap();
+    let snapshot = cadence::store::model::Snapshot::new(
+        7,
+        b"",
+        b"",
+        json!({
+            "import":manifest,"source_evidence":[{"preserved":[1,null]}],"cursor":{"phase":8},
+            "archive":{"available":true},"unrelated":{"keep":true}
+        }),
+    )
+    .unwrap();
+    let memory = SnapshotMemory(
+        [
+            (ITEMS, Vec::new()),
+            (DECISIONS, Vec::new()),
+            (STATE, snapshot.render().unwrap()),
+        ]
+        .into_iter()
+        .map(|(name, bytes)| {
+            (
+                name.into(),
+                cadence::store::Observed {
+                    bytes: Some(bytes),
+                    identity: "fixture".into(),
+                    directory_identity: "fixture".into(),
+                },
+            )
+        })
+        .collect(),
+    );
+    Session {
+        root: "/fixture/project/.planning".into(),
+        store: Store::open(memory, Allow).await.unwrap(),
+        config: Arc::new(Mutex::new(Reload::new(
+            active,
+            SuppliedConfig(BTreeMap::new()),
+        ))),
+        manifest,
+    }
+}
+
+#[tokio::test]
+async fn session_rewrite_returns_preserved_source_evidence() {
+    let session = snapshot_session().await;
+    assert_eq!(
+        session
+            .request(Operation::RewriteSnapshot(json!({"answer":13})))
+            .await
+            .map(|view| (
+                view.snapshot.generation,
+                view.snapshot.data["source_evidence"].clone(),
+                view.snapshot.data["current"].clone(),
+                view.snapshot.data["unrelated"].clone()
+            )),
+        Ok((
+            8,
+            json!([{"preserved":[1,null]}]),
+            json!({"answer":13}),
+            json!({"keep":true})
+        ))
+    );
+}
+
+#[tokio::test]
+async fn session_transaction_snapshot_returns_preserved_source_evidence() {
+    let session = snapshot_session().await;
+    assert_eq!(
+        session
+            .request(Operation::Transact(Transaction {
+                id: "snapshot-input".into(),
+                items: vec![],
+                decisions: vec![],
+                snapshot: Some(json!({"answer":13})),
+                external: vec![],
+            }))
+            .await
+            .map(|view| (
+                view.snapshot.generation,
+                view.snapshot.data["source_evidence"].clone(),
+                view.snapshot.data["current"].clone()
+            )),
+        Ok((8, json!([{"preserved":[1,null]}]), json!({"answer":13})))
+    );
+}
+
+#[tokio::test]
+async fn session_conditional_rewrite_returns_exact_stale_generation_refusal() {
+    let session = snapshot_session().await;
+    assert_eq!(
+        session
+            .request(Operation::CompareRewriteSnapshot {
+                expected_generation: 6,
+                expected_integrity: "stale-generation".into(),
+                data: json!({"answer":13}),
+            })
+            .await,
+        Err(Error::Conflict(
+            "conditional snapshot precondition changed".into()
         ))
     );
 }

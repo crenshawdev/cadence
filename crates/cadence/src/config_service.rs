@@ -5,7 +5,7 @@ use crate::{
         roles,
         write::Update,
     },
-    import::SessionFactory,
+    import::{Session, SessionFactory, SourceEvidence, SourceGuard},
 };
 use cadence::{
     envelope::Envelope,
@@ -58,6 +58,132 @@ pub struct Facts {
     pub repo: PathBuf,
     pub global_alias: bool,
     pub diagnostics: config::Diagnostics,
+    pub retirement: Retirement,
+}
+
+#[derive(Debug, PartialEq, Serialize, JsonSchema)]
+pub struct RetiredValue {
+    pub value: Value,
+    pub layer: Layer,
+    pub path: PathBuf,
+    pub global_alias: Option<PathBuf>,
+    pub origin: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, JsonSchema)]
+pub struct Retirement {
+    pub message: String,
+    pub originals: Vec<RetiredValue>,
+    pub evidence: String,
+}
+
+pub fn retirement(generation: &Generation, snapshot: Option<&Value>) -> Retirement {
+    let mut originals = Vec::new();
+    for (layer, raw, input) in [
+        (
+            Layer::Global,
+            &generation.effective.raw_global,
+            generation.global.as_ref(),
+        ),
+        (
+            Layer::Repo,
+            &generation.effective.raw_repo,
+            Some(&generation.repo),
+        ),
+    ] {
+        if let (Some(value), Some(input)) = (raw.as_ref().and_then(|raw| raw.get("stakes")), input)
+        {
+            originals.push(RetiredValue {
+                value: value.clone(),
+                layer,
+                path: input.identity.clone(),
+                global_alias: (layer == Layer::Repo && generation.effective.global_intent)
+                    .then(|| generation.repo.identity.clone()),
+                origin: "active".into(),
+            });
+        }
+    }
+    let mut evidence_available = false;
+    let mut evidence_invalid = false;
+    let mut current = snapshot;
+    let mut manifest = None;
+    while let Some(data) = current {
+        manifest = data.get("import").or(manifest);
+        if let Some(evidence) = data.get("source_evidence") {
+            match serde_json::from_value::<Vec<SourceEvidence>>(evidence.clone()) {
+                Ok(sources) => {
+                    evidence_available = true;
+                    let guards: Vec<SourceGuard> = manifest
+                        .and_then(|value| value.get("sources"))
+                        .cloned()
+                        .and_then(|value| serde_json::from_value(value).ok())
+                        .unwrap_or_default();
+                    for source in sources {
+                        if source.generation != source.source.generation() {
+                            evidence_invalid = true;
+                            continue;
+                        }
+                        let stored = guards
+                            .iter()
+                            .find(|guard| guard.path == Path::new(&source.source.path));
+                        let repo = guards.first();
+                        let layer = source.layer.or_else(|| {
+                            stored.map(|guard| {
+                                if repo.is_some_and(|repo| repo.identity == guard.identity) {
+                                    Layer::Repo
+                                } else {
+                                    Layer::Global
+                                }
+                            })
+                        });
+                        let Ok(raw) = serde_json::from_slice::<Value>(&source.source.bytes) else {
+                            evidence_invalid |= layer.is_some();
+                            continue;
+                        };
+                        let Some(value) = raw.get("stakes") else {
+                            continue;
+                        };
+                        let Some(layer) = layer else {
+                            evidence_invalid = true;
+                            continue;
+                        };
+                        let alias = source.global_alias.or_else(|| {
+                            (layer == Layer::Repo)
+                                .then(|| {
+                                    guards
+                                        .iter()
+                                        .find(|guard| {
+                                            repo.is_some_and(|repo| {
+                                                guard.identity == repo.identity
+                                                    && guard.path != repo.path
+                                            })
+                                        })
+                                        .map(|guard| guard.path.clone())
+                                })
+                                .flatten()
+                        });
+                        let original = RetiredValue {
+                            value: value.clone(),
+                            layer,
+                            path: source.source.path.into(),
+                            global_alias: alias,
+                            origin: "preserved".into(),
+                        };
+                        if !originals.contains(&original) {
+                            originals.push(original);
+                        }
+                    }
+                }
+                Err(_) => evidence_invalid = true,
+            }
+        }
+        current = data.get("current");
+    }
+    Retirement {
+        message: "The stakes level is retired. Ordinary role questions use current settings; no equivalent spending profile is inferred.".into(),
+        originals,
+        evidence: if evidence_available && !evidence_invalid { "available" } else { "unavailable" }.into(),
+    }
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -134,7 +260,18 @@ pub fn facts(generation: &Generation) -> Facts {
         repo: generation.repo.identity.clone(),
         global_alias: effective.global_intent,
         diagnostics: effective.diagnostics.clone(),
+        retirement: retirement(generation, None),
     }
+}
+
+async fn session_facts<I: ConfigIo>(session: &Session<I>) -> Result<Facts> {
+    let generation = session.config()?;
+    let view = session
+        .request(cadence::store::writer::Operation::Read)
+        .await?;
+    let mut facts = facts(&generation);
+    facts.retirement = retirement(&generation, Some(&view.snapshot.data));
+    Ok(facts)
 }
 
 pub fn refused(code: &str, reason: impl Into<String>) -> Envelope<Output> {
@@ -188,20 +325,18 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
             });
         }
         Command::Facts => {
-            return Ok(match session.config() {
-                Ok(generation) => Envelope::Ok(Output::Facts {
-                    facts: facts(&generation),
-                }),
+            return Ok(match session_facts(&session).await {
+                Ok(facts) => Envelope::Ok(Output::Facts { facts }),
                 Err(error) => unavailable(&error),
             });
         }
         Command::Apply(Apply::Batch { layer, updates }) => {
             match session.batch_config(layer, &updates).await {
-                Ok(written) => session.config().map(|generation| Output::Applied {
+                Ok(written) => session_facts(&session).await.map(|facts| Output::Applied {
                     changed_keys: written.changed_keys,
                     destination: written.destination,
                     requested_layer: written.requested_layer,
-                    facts: facts(&generation),
+                    facts,
                 }),
                 Err(error) => Err(error),
             }
@@ -479,5 +614,182 @@ pub fn routing_inputs(generation: &Generation) -> cadence::execution::model::Con
         repo: capture(&generation.repo),
         global: generation.global.as_ref().map(capture),
         global_alias: generation.effective.global_intent,
+    }
+}
+
+#[cfg(test)]
+mod retirement_tests {
+    use super::*;
+    use crate::config::reload::Input;
+    use serde_json::json;
+
+    fn generation() -> Generation {
+        Generation {
+            number: 1,
+            global: Some(Input {
+                identity: "/today/global/config.v4.json".into(),
+                bytes: None,
+                stamp: None,
+            }),
+            repo: Input {
+                identity: "/today/project/.planning/config.v4.json".into(),
+                bytes: None,
+                stamp: None,
+            },
+            effective: merge::merge(None, None, false),
+        }
+    }
+
+    fn source(path: &str, bytes: &[u8]) -> Value {
+        json!({"source":{"path":path,"bytes":bytes},
+            "generation":cadence::store::model::digest(bytes),"label":"non_effective_original_source"})
+    }
+
+    fn snapshot(bytes: &[u8]) -> Value {
+        json!({"import":{"sources":[
+            {"path":"/old/project/config.json","identity":"/old/project/config.json","content":null},
+            {"path":"/old/global/config.json","identity":"/old/global/config.json","content":null}
+        ]},"source_evidence":[source("/old/global/config.json", bytes)]})
+    }
+
+    macro_rules! exact_value {
+        ($name:ident, $bytes:literal, $expected:expr) => {
+            #[test]
+            fn $name() {
+                assert_eq!(
+                    retirement(&generation(), Some(&snapshot($bytes))).originals,
+                    vec![RetiredValue {
+                        value: $expected,
+                        layer: Layer::Global,
+                        path: "/old/global/config.json".into(),
+                        global_alias: None,
+                        origin: "preserved".into()
+                    }]
+                );
+            }
+        };
+    }
+    exact_value!(
+        retired_string_is_exact,
+        br#"{"stakes":"high"}"#,
+        json!("high")
+    );
+    exact_value!(
+        unknown_retired_string_is_exact,
+        br#"{"stakes":"unrecognized"}"#,
+        json!("unrecognized")
+    );
+    exact_value!(
+        retired_object_is_exact,
+        br#"{"stakes":{"unknown":[1,null]}}"#,
+        json!({"unknown":[1,null]})
+    );
+    exact_value!(retired_number_is_exact, br#"{"stakes":12.5}"#, json!(12.5));
+    exact_value!(retired_null_is_present, br#"{"stakes":null}"#, Value::Null);
+    exact_value!(
+        retired_array_is_exact,
+        br#"{"stakes":[1,"x",null]}"#,
+        json!([1, "x", null])
+    );
+    exact_value!(
+        retired_boolean_is_exact,
+        br#"{"stakes":false}"#,
+        json!(false)
+    );
+
+    #[test]
+    fn distinct_originals_keep_their_historical_layer_and_path() {
+        let mut snapshot = snapshot(br#"{"stakes":"global-original"}"#);
+        snapshot["source_evidence"]
+            .as_array_mut()
+            .unwrap()
+            .push(source(
+                "/old/project/config.json",
+                br#"{"stakes":{"repo":true}}"#,
+            ));
+        assert_eq!(retirement(&generation(), Some(&snapshot)), Retirement {
+            message: "The stakes level is retired. Ordinary role questions use current settings; no equivalent spending profile is inferred.".into(),
+            originals: vec![
+                RetiredValue { value: json!("global-original"), layer: Layer::Global, path: "/old/global/config.json".into(), global_alias: None, origin: "preserved".into() },
+                RetiredValue { value: json!({"repo":true}), layer: Layer::Repo, path: "/old/project/config.json".into(), global_alias: None, origin: "preserved".into() },
+            ], evidence: "available".into(),
+        });
+    }
+
+    #[test]
+    fn collapsed_original_is_shown_once_with_its_preserved_global_alias() {
+        let snapshot = json!({"import":{"sources":[
+            {"path":"/old/project/config.json","identity":"/old/project/config.json","content":null},
+            {"path":"/old/global-link.json","identity":"/old/project/config.json","content":null}
+        ]},"source_evidence":[source("/old/project/config.json", br#"{"stakes":null}"#)]});
+        assert_eq!(
+            retirement(&generation(), Some(&snapshot)).originals,
+            vec![RetiredValue {
+                value: Value::Null,
+                layer: Layer::Repo,
+                path: "/old/project/config.json".into(),
+                global_alias: Some("/old/global-link.json".into()),
+                origin: "preserved".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn wrapped_original_evidence_is_read_without_normalizing_the_snapshot() {
+        let snapshot =
+            json!({"import":{"sources":[]},"current":snapshot(br#"{"stakes":{"wrapped":true}}"#)});
+        assert_eq!(
+            retirement(&generation(), Some(&snapshot)).originals,
+            vec![RetiredValue {
+                value: json!({"wrapped":true}),
+                layer: Layer::Global,
+                path: "/old/global/config.json".into(),
+                global_alias: None,
+                origin: "preserved".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn missing_historical_evidence_is_unavailable_without_reconstructing_originals() {
+        assert_eq!(retirement(&generation(), Some(&json!({"import":{"complete":true}}))), Retirement {
+            message: "The stakes level is retired. Ordinary role questions use current settings; no equivalent spending profile is inferred.".into(),
+            originals: vec![], evidence: "unavailable".into(),
+        });
+    }
+
+    #[test]
+    fn active_raw_stakes_is_disclosed_without_becoming_preserved_evidence() {
+        let mut generation = generation();
+        generation.effective.raw_repo = Some(json!({"stakes":{"active":[1,null]}}));
+        assert_eq!(
+            retirement(&generation, None).originals,
+            vec![RetiredValue {
+                value: json!({"active":[1,null]}),
+                layer: Layer::Repo,
+                path: "/today/project/.planning/config.v4.json".into(),
+                global_alias: None,
+                origin: "active".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn damaged_source_evidence_is_unavailable() {
+        let mut snapshot = snapshot(br#"{"stakes":"original"}"#);
+        snapshot["source_evidence"][0]["generation"] = json!("wrong-digest");
+        assert_eq!(
+            retirement(&generation(), Some(&snapshot)).evidence,
+            "unavailable"
+        );
+    }
+    #[test]
+    fn original_with_lost_layer_identity_is_unavailable() {
+        let snapshot =
+            json!({"source_evidence":[source("/old/config.json", br#"{"stakes":"original"}"#)]});
+        assert_eq!(
+            retirement(&generation(), Some(&snapshot)).evidence,
+            "unavailable"
+        );
     }
 }

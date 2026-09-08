@@ -21,6 +21,10 @@ pub struct SourceEvidence {
     pub source: Source,
     pub generation: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<Layer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global_alias: Option<PathBuf>,
 }
 impl SourceEvidence {
     pub fn original(source: &Source) -> Self {
@@ -28,6 +32,8 @@ impl SourceEvidence {
             source: source.clone(),
             generation: source.generation(),
             label: "non_effective_original_source".into(),
+            layer: None,
+            global_alias: None,
         }
     }
 }
@@ -258,10 +264,19 @@ fn prepare_import<I: ConfigIo>(
                 guards.push(guard(path.clone(), input));
             }
             if let Some(bytes) = &input.bytes {
-                evidence.push(SourceEvidence::original(&Source {
+                let mut original = SourceEvidence::original(&Source {
                     path: path.display().to_string(),
                     bytes: bytes.clone(),
-                }));
+                });
+                original.layer = Some(if path == &legacy.repo {
+                    Layer::Repo
+                } else {
+                    Layer::Global
+                });
+                if path == &legacy.repo && global_identity.as_ref() == Some(&repo_identity) {
+                    original.global_alias = legacy.global.clone();
+                }
+                evidence.push(original);
             }
         }
     }
@@ -442,22 +457,35 @@ impl<I: ConfigIo> Session<I> {
             .map_err(|_| Error::Policy("config unavailable".into()))?
             .refresh()
     }
-    pub async fn request(&self, mut operation: Operation) -> Result<View> {
+    pub async fn request(&self, operation: Operation) -> Result<View> {
         // Queries refuse unavailable controlling config as well. Keep durable
         // import metadata through later cursor/snapshot changes.
         if !matches!(operation, Operation::GuardAudit(..)) {
             self.config()?;
         }
-        let wrap = |value: Value| json!({"import":self.manifest,"current":value});
-        match &mut operation {
-            Operation::RewriteSnapshot(value) => *value = wrap(std::mem::take(value)),
-            Operation::Transact(transaction) => {
-                if let Some(value) = transaction.snapshot.take() {
-                    transaction.snapshot = Some(wrap(value));
+        let operation = match operation {
+            Operation::RewriteSnapshot(value) => {
+                let current = self.store.request(Operation::ReadVerified).await?;
+                Operation::CompareRewriteSnapshot {
+                    expected_generation: current.snapshot.generation,
+                    expected_integrity: current.snapshot.integrity,
+                    data: replace_current(&current.snapshot.data, value)?,
                 }
             }
-            _ => {}
-        }
+            Operation::Transact(mut transaction) if transaction.snapshot.is_some() => {
+                let current = self.store.request(Operation::ReadVerified).await?;
+                transaction.snapshot = Some(replace_current(
+                    &current.snapshot.data,
+                    transaction.snapshot.take().unwrap(),
+                )?);
+                Operation::CompareTransact {
+                    expected_generation: current.snapshot.generation,
+                    expected_integrity: current.snapshot.integrity,
+                    transaction,
+                }
+            }
+            other => other,
+        };
         self.store.request(operation).await
     }
     pub async fn derivation_view(&self) -> Result<View> {
@@ -576,6 +604,29 @@ impl<I: ConfigIo> Session<I> {
         let view = self.store.request(Operation::Read).await?;
         Ok(config::capture_report(&view.items, bound))
     }
+}
+
+fn replace_current(previous: &Value, value: Value) -> Result<Value> {
+    let mut next = previous.clone();
+    let object = next
+        .as_object_mut()
+        .ok_or_else(|| Error::Invalid("session snapshot must be an object".into()))?;
+    if let Some(current) = object.get_mut("current")
+        && contains_provenance(current)
+    {
+        *current = replace_current(current, value)?;
+    } else {
+        object.insert("current".into(), value);
+    }
+    cadence::store::transaction::preserve_provenance(previous, &next)?;
+    Ok(next)
+}
+
+fn contains_provenance(value: &Value) -> bool {
+    ["import", "source_evidence", "archive", "cursor"]
+        .iter()
+        .any(|field| value.get(field).is_some())
+        || value.get("current").is_some_and(contains_provenance)
 }
 
 #[cfg(test)]

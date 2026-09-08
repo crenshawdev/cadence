@@ -54,6 +54,28 @@ pub(crate) enum IntentKind {
     },
 }
 
+impl IntentKind {
+    fn validate_provenance(&self, previous: &Value, proposed: &Value) -> Result<()> {
+        preserve_provenance(previous, proposed)
+    }
+}
+
+pub fn preserve_provenance(previous: &Value, proposed: &Value) -> Result<()> {
+    for field in ["import", "source_evidence"] {
+        if let Some(value) = previous.get(field)
+            && proposed.get(field) != Some(value)
+        {
+            return Err(Error::Invalid(format!(
+                "snapshot replacement changed provenance: {field}"
+            )));
+        }
+    }
+    if let Some(current) = previous.get("current") {
+        preserve_provenance(current, proposed.get("current").unwrap_or(&Value::Null))?;
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalChange {
     pub target: String,
@@ -190,6 +212,15 @@ impl Intent {
         model::validate_items(&model::parse_lines(items)?)?;
         model::validate_decisions(&model::parse_lines(decisions)?)?;
         let snapshot = Snapshot::parse(bytes(STATE)?, items, decisions)?;
+        if let Some(previous) = self
+            .participants
+            .last()
+            .and_then(|p| p.expected.bytes.as_deref())
+        {
+            let previous: Snapshot = serde_json::from_slice(previous)?;
+            self.kind
+                .validate_provenance(&previous.data, &snapshot.data)?;
+        }
         match self.kind.clone() {
             IntentKind::ExecutionDispatch { phase } => {
                 let execution = execution_snapshot(&snapshot)?;
@@ -872,4 +903,145 @@ pub(crate) fn recover<S: Storage, P: Policy>(storage: &mut S, policy: &mut P) ->
     }
     validate_all(storage, &intent.participants, true)?;
     storage.remove(INTENT)
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn kind(operation: &str) -> IntentKind {
+        let scope = json!({"project":"/project","planning_root":"/project/.planning","cycle":"live",
+            "occurrence":"one","phase":8,"worker":null,"plan":null});
+        let mut value = json!({"operation":operation});
+        match operation {
+            "store" => {}
+            "execution-dispatch" | "execution-refusal" => value["phase"] = json!(8),
+            "execution-dispatch-v1" => {
+                value["phase"] = json!(8);
+                value["decision_id"] = json!("dispatch");
+            }
+            "execution-patch" => {
+                value["phase"] = json!(8);
+                value["render_version"] = json!(1);
+                value["summary"] = json!(false);
+            }
+            "execution-patch-v1" => {
+                value["phase"] = json!(8);
+                value["decision_id"] = json!("patch");
+                value["render_version"] = json!(1);
+            }
+            "boundary-observation-v1" => {
+                value["scope"] = json!({"scope":"execution","phase":8});
+                value["decision_id"] = json!("observation");
+            }
+            "execution-finalize-risk-v1" => {
+                value["phase"] = json!(8);
+                value["decision_id"] = json!("finalization");
+                value["requirements"] = json!([]);
+            }
+            "guard-audit" => {
+                value["audit"] = json!({
+                    "event_id":"audit","command_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "cwd":"/project","project":"/project","verb":"commit","branch":null,"policy":null,
+                    "outcome":"ask","unavailable":[],"reason":"fixture"
+                })
+            }
+            "rail-observation" => {
+                value["record"] = json!({
+                    "observation":{"version":1,"request_id":"scan","request_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "scope":scope,"source":{"kind":"committed","base":"HEAD~1","head":"HEAD"},
+                        "resolution":{"kind":"committed","base_id":null,"head_id":null},
+                        "outcome":"no-range","surfaces":[],"scan":null,"diagnostics":[]},
+                    "confirmation":{"generation":1,"decision_id":"scan","observation_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+                })
+            }
+            "rail-receipt" => {
+                value["record"] = json!({
+                    "version":1,"fact":{"operation":"risk-fire","request_id":"fire","fire":{
+                        "id":"fire","binding":{"boundary":{"scope":scope,"run_id":"one","after_generation":0},
+                            "observation":{"generation":1,"decision_id":"scan","observation_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                            "material":{"kind":"committed","base_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","head_id":"cccccccccccccccccccccccccccccccccccccccc"},"surfaces":[]},
+                        "review_scope":[],"rearm_of":null}},
+                    "confirmation":{"generation":2,"decision_id":"fire","fact_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+                })
+            }
+            _ => unreachable!(),
+        }
+        serde_json::from_value(value).unwrap()
+    }
+
+    fn previous() -> Value {
+        json!({"import":{"complete":true},"source_evidence":[{"source":{"path":"/old/config.json","bytes":[123,125]}}],
+            "archive":{"available":true},"cursor":{"phase":8},"execution":{"old":true}})
+    }
+
+    macro_rules! variant {
+        ($good:ident, $bad:ident, $name:literal) => {
+            #[test]
+            fn $good() {
+                let proposed = json!({"import":{"complete":true},"source_evidence":[{"source":{"path":"/old/config.json","bytes":[123,125]}}],
+                    "archive":{"available":true},"cursor":{"phase":8},"execution":{"new":true}});
+                assert_eq!(kind($name).validate_provenance(&previous(), &proposed), Ok(()));
+            }
+            #[test]
+            fn $bad() {
+                let proposed = json!({"import":{"complete":true},"archive":{"available":true},"cursor":{"phase":8}});
+                assert_eq!(kind($name).validate_provenance(&previous(), &proposed),
+                    Err(Error::Invalid("snapshot replacement changed provenance: source_evidence".into())));
+            }
+        };
+    }
+    variant!(store_retains, store_refuses_loss, "store");
+    variant!(
+        dispatch_retains,
+        dispatch_refuses_loss,
+        "execution-dispatch"
+    );
+    variant!(patch_retains, patch_refuses_loss, "execution-patch");
+    variant!(refusal_retains, refusal_refuses_loss, "execution-refusal");
+    variant!(
+        dispatch_v1_retains,
+        dispatch_v1_refuses_loss,
+        "execution-dispatch-v1"
+    );
+    variant!(
+        patch_v1_retains,
+        patch_v1_refuses_loss,
+        "execution-patch-v1"
+    );
+    variant!(
+        observation_retains,
+        observation_refuses_loss,
+        "boundary-observation-v1"
+    );
+    variant!(
+        finalization_retains,
+        finalization_refuses_loss,
+        "execution-finalize-risk-v1"
+    );
+    variant!(audit_retains, audit_refuses_loss, "guard-audit");
+    variant!(
+        rail_observation_retains,
+        rail_observation_refuses_loss,
+        "rail-observation"
+    );
+    variant!(
+        rail_receipt_retains,
+        rail_receipt_refuses_loss,
+        "rail-receipt"
+    );
+
+    #[test]
+    fn wrapped_evidence_cannot_be_dropped_by_a_flattened_replacement() {
+        assert_eq!(
+            preserve_provenance(
+                &json!({"import":{"complete":true},"current":{"source_evidence":[{"exact":[1,null]}]}}),
+                &json!({"import":{"complete":true},"source_evidence":[{"exact":[1,null]}]})
+            ),
+            Err(Error::Invalid(
+                "snapshot replacement changed provenance: source_evidence".into()
+            ))
+        );
+    }
 }
