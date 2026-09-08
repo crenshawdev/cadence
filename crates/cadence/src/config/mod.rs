@@ -92,8 +92,8 @@ pub fn capture_report(records: &[cadence::store::model::ItemRecord], bound: u64)
 mod tests;
 
 pub(crate) fn planning_policy(
-    _: &cadence::store::MutationContext<'_>,
+    context: &cadence::store::MutationContext<'_>,
     _: &reload::Generation,
 ) -> cadence::store::Result<()> {
-    Ok(())
+    cadence::store::Policy::validate(&mut cadence::store::writer::PlanningPolicy, context)
 }

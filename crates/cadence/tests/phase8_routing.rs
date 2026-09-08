@@ -1,5 +1,4 @@
-#[path = "../src/config/roles.rs"]
-mod roles;
+use cadence::execution::model::roles;
 
 use roles::{Input, Stored, resolve};
 use serde_json::{Value, json};
