@@ -660,6 +660,102 @@ mod tests {
         }
     }
 
+    const GAP_REOPEN_CASES: [&str; 8] = [
+        "invalid-effort",
+        "retired-key",
+        "unknown-key",
+        "wrong-repo-scope",
+        "stale-destination-observation",
+        "stale-admission-token",
+        "transient-reload-denial",
+        "wrong-global-scope",
+    ];
+
+    async fn gap_reopen(alias: bool) -> (String, String, bool, Vec<u8>, Vec<u8>) {
+        let tree = tempfile::tempdir().unwrap();
+        let root = tree.path().join("project/.planning");
+        let global_legacy = tree.path().join("global/config.json");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(global_legacy.parent().unwrap()).unwrap();
+        let repo = root.join("config.v4.json");
+        let global = if alias {
+            repo.clone()
+        } else {
+            global_legacy.with_file_name("config.v4.json")
+        };
+        if alias {
+            std::fs::write(root.join("config.json"), b"{}").unwrap();
+            std::os::unix::fs::symlink(root.join("config.json"), &global_legacy).unwrap();
+        } else {
+            std::fs::write(&global, b"{\"roles\":{}}").unwrap();
+        }
+        // Independently persisted state, never output from a refusal invocation.
+        gap_persisted(
+            &root,
+            b"{\"roles\":{\"cad-executor\":{\"model\":\"opus\"}}}",
+            Some(&global),
+        );
+        let fresh_factory = SessionFactory::new(
+            Some(global_legacy),
+            std::sync::Arc::new(config::planning_policy),
+        );
+        let result = execute(&fresh_factory, &root, Command::Facts)
+            .await
+            .unwrap();
+        let facts = match result {
+            Envelope::Ok(Output::Facts { facts }) => facts,
+            other => panic!(
+                "unexpected facts: {}",
+                serde_json::to_string(&other).unwrap()
+            ),
+        };
+        let model = facts
+            .keys
+            .iter()
+            .find(|fact| fact.key == "roles.cad-executor.model")
+            .unwrap();
+        (
+            model.stored_repo.as_ref().unwrap().as_str().unwrap().into(),
+            model.source.clone(),
+            facts.global_alias,
+            std::fs::read(&repo).unwrap(),
+            std::fs::read(&global).unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn phase8_gap_reopened_refusal_reads_literal_bytes() {
+        for row in GAP_REOPEN_CASES {
+            let (model, _, _, repo, global) = gap_reopen(false).await;
+            assert_eq!(
+                (model, repo, global),
+                (
+                    "opus".to_owned(),
+                    b"{\"roles\":{\"cad-executor\":{\"model\":\"opus\"}}}".to_vec(),
+                    b"{\"roles\":{}}".to_vec()
+                ),
+                "{row}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn phase8_gap_reopened_alias_refusal_reads_literal_bytes() {
+        for row in GAP_REOPEN_CASES {
+            let (model, source, alias, physical, _) = gap_reopen(true).await;
+            assert_eq!(
+                (model, source, alias, physical),
+                (
+                    "opus".to_owned(),
+                    "repo".to_owned(),
+                    true,
+                    b"{\"roles\":{\"cad-executor\":{\"model\":\"opus\"}}}".to_vec()
+                ),
+                "{row}"
+            );
+        }
+    }
+
     #[test]
     fn facts_returns_literal_presence_and_default_source_from_supplied_generation() {
         let generation = Generation {

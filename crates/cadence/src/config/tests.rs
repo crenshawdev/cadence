@@ -1185,3 +1185,324 @@ fn batch_writer_failed_intent_sync_preserves_all_config_bytes() {
         assert_eq!(store_bytes(dir.path()), vec![None, None, None]);
     });
 }
+
+const GAP_REPO: &[u8] = b"{\"roles\":{\"cad-executor\":{\"model\":\"opus\"}}}";
+const GAP_GLOBAL: &[u8] = b"{\"roles\":{}}";
+
+#[derive(Clone, Copy, Debug)]
+enum GapRefusal {
+    InvalidEffort,
+    Retired,
+    Unknown,
+    RepoScope,
+    DestinationConflict,
+    AdmissionConflict,
+    ReloadDenied,
+    GlobalScope,
+}
+const GAP_REFUSALS: [GapRefusal; 8] = [
+    GapRefusal::InvalidEffort,
+    GapRefusal::Retired,
+    GapRefusal::Unknown,
+    GapRefusal::RepoScope,
+    GapRefusal::DestinationConflict,
+    GapRefusal::AdmissionConflict,
+    GapRefusal::ReloadDenied,
+    GapRefusal::GlobalScope,
+];
+impl GapRefusal {
+    fn expected(self) -> cadence::store::Error {
+        use cadence::store::Error;
+        match self {
+            Self::InvalidEffort => {
+                Error::Invalid("invalid value for roles.cad-executor.effort".into())
+            }
+            Self::Retired => Error::Invalid("retired config key git.auto_close".into()),
+            Self::Unknown => Error::Invalid("unknown config key stakes".into()),
+            Self::RepoScope => {
+                Error::Invalid("wrong config layer for workflow.test_command".into())
+            }
+            Self::DestinationConflict => {
+                Error::Conflict("config changed while preparing update".into())
+            }
+            Self::AdmissionConflict => {
+                Error::Conflict("pending participant changed: repo-config".into())
+            }
+            Self::ReloadDenied => {
+                Error::Policy("config unavailable: Io(\"fixture reload denied\")".into())
+            }
+            Self::GlobalScope => Error::Invalid("wrong config layer for git.forge_repo".into()),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct GapConfigIo {
+    repo: std::path::PathBuf,
+    refusal: GapRefusal,
+}
+impl reload::ConfigIo for GapConfigIo {
+    fn read(&mut self, path: &std::path::Path) -> cadence::store::Result<reload::Input> {
+        if matches!(self.refusal, GapRefusal::ReloadDenied) {
+            return Err(cadence::store::Error::Io("fixture reload denied".into()));
+        }
+        let mut input = reload::FileIo.read(path)?;
+        if path == self.repo && matches!(self.refusal, GapRefusal::DestinationConflict) {
+            input.bytes = Some(b"{}".to_vec());
+        }
+        Ok(input)
+    }
+}
+
+struct GapObservation {
+    error: cadence::store::Error,
+    before_repo: Vec<u8>,
+    after_repo: Vec<u8>,
+    before_global: Vec<u8>,
+    after_global: Vec<u8>,
+    replacements: Vec<std::path::PathBuf>,
+    global_replacements: Vec<std::path::PathBuf>,
+}
+
+// One batch invocation per row. The observer supplies a stale filesystem token
+// directly for admission conflict; no concurrent timing assumption is needed.
+async fn gap_refusal(row: GapRefusal, alias: bool) -> GapObservation {
+    use cadence::store::{Storage, filesystem::Stage, writer::Store};
+    use std::sync::{Arc, Mutex};
+    let tree = tempfile::tempdir().unwrap();
+    let root = tree.path().join("project/.planning");
+    let global_legacy = tree.path().join("global/config.json");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(global_legacy.parent().unwrap()).unwrap();
+    std::fs::write(root.join("config.json"), b"{}").unwrap();
+    if alias {
+        std::os::unix::fs::symlink(root.join("config.json"), &global_legacy).unwrap();
+    }
+    let active = write::active_paths(&reload::Paths {
+        repo: root.join("config.json"),
+        global: Some(global_legacy),
+    })
+    .unwrap();
+    std::fs::write(&active.repo, GAP_REPO).unwrap();
+    if !alias {
+        std::fs::write(active.global.as_ref().unwrap(), GAP_GLOBAL).unwrap();
+    }
+    let config = Arc::new(Mutex::new(reload::Reload::new(
+        active.clone(),
+        GapConfigIo {
+            repo: active.repo.clone(),
+            refusal: row,
+        },
+    )));
+    let replacements = Arc::new(Mutex::new(Vec::new()));
+    let seen = replacements.clone();
+    let storage = write::register(&root, &active)
+        .unwrap()
+        .with_probe(move |stage, path| {
+            if stage == Stage::Renamed
+                && path
+                    .file_name()
+                    .is_some_and(|name| name == "config.v4.json")
+            {
+                seen.lock().unwrap().push(path.to_path_buf());
+            }
+            Ok(())
+        });
+    let store = Store::open(
+        storage,
+        reload::ConfigPolicy {
+            config: config.clone(),
+            evaluate: super::planning_policy,
+        },
+    )
+    .await
+    .unwrap();
+    let writer = write::ConfigWriter {
+        root: root.clone(),
+        active: active.clone(),
+        store,
+        config,
+    };
+    let mut updates = vec![write::Update {
+        key: "roles.cad-executor.model".into(),
+        value: json!("sonnet"),
+    }];
+    let tail = match row {
+        GapRefusal::InvalidEffort => Some(("roles.cad-executor.effort", json!(7))),
+        GapRefusal::Retired => Some(("git.auto_close", json!(true))),
+        GapRefusal::Unknown => Some(("stakes", json!("high"))),
+        GapRefusal::RepoScope => Some(("workflow.test_command", json!("test"))),
+        GapRefusal::GlobalScope => Some(("git.forge_repo", json!("owner/repo"))),
+        _ => None,
+    };
+    if let Some((key, value)) = tail {
+        updates.push(write::Update {
+            key: key.into(),
+            value,
+        });
+    }
+    let layer = if matches!(row, GapRefusal::GlobalScope) {
+        Layer::Global
+    } else {
+        Layer::Repo
+    };
+    let before_repo = std::fs::read(&active.repo).unwrap();
+    let before_global = std::fs::read(active.global.as_ref().unwrap()).unwrap();
+    let result = writer
+        .batch_observed(layer, &updates, None, |target| {
+            let mut observed = write::register(&root, &active)?.read(target)?;
+            if matches!(row, GapRefusal::AdmissionConflict) {
+                observed.identity = "independently-stale-participant-token".into();
+            }
+            Ok(observed)
+        })
+        .await;
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("{row:?} unexpectedly admitted"),
+    };
+    let after_repo = std::fs::read(&active.repo).unwrap();
+    let after_global = std::fs::read(active.global.as_ref().unwrap()).unwrap();
+    let replacements = replacements.lock().unwrap().clone();
+    let global_replacements = replacements
+        .iter()
+        .filter(|path| Some(*path) == active.global.as_ref())
+        .cloned()
+        .collect();
+    GapObservation {
+        error,
+        before_repo,
+        after_repo,
+        before_global,
+        after_global,
+        replacements,
+        global_replacements,
+    }
+}
+
+#[tokio::test]
+async fn phase8_gap_batch_invalid_tail_preserves_literal_bytes() {
+    for row in [
+        GapRefusal::InvalidEffort,
+        GapRefusal::Retired,
+        GapRefusal::Unknown,
+        GapRefusal::RepoScope,
+    ] {
+        let result = gap_refusal(row, false).await;
+        assert_eq!(
+            (
+                result.error,
+                result.before_repo,
+                result.after_repo,
+                result.replacements
+            ),
+            (row.expected(), GAP_REPO.to_vec(), GAP_REPO.to_vec(), vec![]),
+            "{row:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn phase8_gap_batch_conflict_preserves_competing_bytes() {
+    let result = gap_refusal(GapRefusal::DestinationConflict, false).await;
+    assert_eq!(
+        (
+            result.error,
+            result.before_repo,
+            result.after_repo,
+            result.replacements
+        ),
+        (
+            cadence::store::Error::Conflict("config changed while preparing update".into()),
+            GAP_REPO.to_vec(),
+            GAP_REPO.to_vec(),
+            vec![]
+        )
+    );
+}
+
+#[tokio::test]
+async fn phase8_gap_batch_admission_conflict_preserves_competing_bytes() {
+    let result = gap_refusal(GapRefusal::AdmissionConflict, false).await;
+    assert_eq!(
+        (result.error, result.after_repo, result.replacements),
+        (
+            cadence::store::Error::Conflict("pending participant changed: repo-config".into()),
+            GAP_REPO.to_vec(),
+            vec![]
+        )
+    );
+}
+
+#[tokio::test]
+async fn phase8_gap_batch_failed_reload_preserves_literal_bytes() {
+    let result = gap_refusal(GapRefusal::ReloadDenied, false).await;
+    assert_eq!(
+        (
+            result.error,
+            result.before_repo,
+            result.after_repo,
+            result.replacements
+        ),
+        (
+            cadence::store::Error::Policy(
+                "config unavailable: Io(\"fixture reload denied\")".into()
+            ),
+            GAP_REPO.to_vec(),
+            GAP_REPO.to_vec(),
+            vec![]
+        )
+    );
+}
+
+#[tokio::test]
+async fn phase8_gap_batch_alias_refusal_preserves_single_destination() {
+    for row in GAP_REFUSALS {
+        let result = gap_refusal(row, true).await;
+        assert_eq!(
+            (
+                result.error,
+                result.before_repo,
+                result.after_repo,
+                result.replacements
+            ),
+            (row.expected(), GAP_REPO.to_vec(), GAP_REPO.to_vec(), vec![]),
+            "{row:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn phase8_gap_batch_global_scope_refuses_alias() {
+    let result = gap_refusal(GapRefusal::GlobalScope, true).await;
+    assert_eq!(
+        (
+            result.error,
+            result.before_repo,
+            result.after_repo,
+            result.replacements
+        ),
+        (
+            cadence::store::Error::Invalid("wrong config layer for git.forge_repo".into()),
+            GAP_REPO.to_vec(),
+            GAP_REPO.to_vec(),
+            vec![]
+        )
+    );
+}
+
+#[tokio::test]
+async fn phase8_gap_batch_refusal_preserves_distinct_global_bytes() {
+    for row in GAP_REFUSALS {
+        let result = gap_refusal(row, false).await;
+        assert_eq!(
+            (
+                result.before_global,
+                result.after_global,
+                result.global_replacements
+            ),
+            (GAP_GLOBAL.to_vec(), GAP_GLOBAL.to_vec(), vec![]),
+            "{row:?}"
+        );
+    }
+}
