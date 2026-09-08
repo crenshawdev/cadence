@@ -986,7 +986,7 @@ mod routing_admission_tests {
             ))),
             importing: Arc::new(Mutex::new(None)),
             io: InputIo,
-            evaluate: Arc::new(|_, _| Ok(())),
+            evaluate: Arc::new(crate::config::planning_policy),
         }
     }
 
@@ -1071,7 +1071,7 @@ mod routing_admission_tests {
             ))),
             importing: Arc::new(Mutex::new(None)),
             io: FileIo,
-            evaluate: Arc::new(|_, _| Ok(())),
+            evaluate: Arc::new(crate::config::planning_policy),
         };
         let storage = Filesystem::new(root.path())
             .unwrap()

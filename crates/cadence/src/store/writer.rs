@@ -1523,6 +1523,19 @@ pub fn require_current_execution(view: &View) -> std::result::Result<(), Failure
                     serde_json::from_value(active.clone()).map_err(|_| Failure::RoutingEvidence)?;
                 validate_routing(&dispatch, &view.decisions)
                     .map_err(|_| Failure::RoutingEvidence)?;
+                if !view.decisions.iter().any(|record| {
+                    matches!(&record.decision, model::Decision::BoundaryV1(value)
+                        if !value.terminal
+                            && value.store_generation <= view.snapshot.generation
+                            && value.boundary.scope == (BoundaryScope::Execution { phase: dispatch.phase })
+                            && value.boundary.tool == BoundaryTool::CadenceQuery
+                            && value.boundary.subject_id.as_ref() == Some(&dispatch.id)
+                            && value.boundary.receipt == (Receipt::Dispatch {
+                                dispatch_id: dispatch.id.clone(), prompt_bytes: dispatch.prompt_bytes
+                            }))
+                }) {
+                    return Err(Failure::RoutingEvidence);
+                }
             }
         }
     }

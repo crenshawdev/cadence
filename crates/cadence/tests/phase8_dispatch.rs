@@ -489,3 +489,317 @@ fn final_reload_rejects_independent_model_reset_and_waiver_changes() {
         );
     }
 }
+
+const EMPTY_STATE: &[u8] = br#"{"version":1,"generation":0,"items_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","decisions_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","data":{},"operations":{},"integrity":"e9756a2c9107069a015c009d174bacbc989df7121a7646ecc1a770afdfbf35bd"}"#;
+
+fn seed_empty(root: &std::path::Path) {
+    std::fs::write(root.join("state.json"), EMPTY_STATE).unwrap();
+    std::fs::write(root.join("items.jsonl"), b"").unwrap();
+    std::fs::write(root.join("decisions.jsonl"), b"").unwrap();
+}
+
+fn admission() -> cadence::store::writer::Operation {
+    use cadence::execution::{
+        boundary::{BoundaryScope, BoundaryV1},
+        model::BoundaryTool,
+    };
+    use cadence::store::writer::{BoundaryChange, Operation};
+    let mut candidate = dispatch();
+    candidate.expected_execution_version = 0;
+    Operation::BoundaryV1 {
+        expected_generation: 0,
+        expected_integrity: "e9756a2c9107069a015c009d174bacbc989df7121a7646ecc1a770afdfbf35bd"
+            .into(),
+        operation_id: "fixture-admission".into(),
+        decision: BoundaryV1 {
+            codec: 1,
+            scope: BoundaryScope::Execution { phase: 8 },
+            tool: BoundaryTool::CadenceQuery,
+            operation: "execute-next".into(),
+            request_digest: "4".repeat(64),
+            outcome: "dispatch".into(),
+            subject_id: Some(DISPATCH_ID.into()),
+            response_digest: "281a096470439f1147be2843416cd400f527c633d0b92704b50e4eec81b38b96"
+                .into(),
+            receipt: Receipt::Dispatch {
+                dispatch_id: DISPATCH_ID.into(),
+                prompt_bytes: 7,
+            },
+            lease_refusal: None,
+        },
+        change: Box::new(BoundaryChange::Dispatch {
+            plan_set_fingerprint: "2".repeat(64),
+            dispatch: candidate,
+        }),
+    }
+}
+
+#[test]
+fn each_routing_persistence_failure_returns_no_confirmed_admission() {
+    use cadence::store::{
+        Error,
+        filesystem::{Filesystem, Stage},
+        writer::{PlanningPolicy, Store},
+    };
+    for (stage, target, occurrence) in [
+        (Stage::Writing, "decisions.jsonl", 1),
+        (Stage::TemporarySync, ".store-intent.json", 1),
+        (Stage::Renamed, "decisions.jsonl", 1),
+        (Stage::Renamed, "state.json", 1),
+        (Stage::Confirmation, "state.json", 1),
+        (Stage::Confirmation, ".store-intent.json", 1),
+        (Stage::DirectorySync, "intent-removal", 1),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        seed_empty(root.path());
+        let mut seen = 0;
+        let intent_path = root.path().join(".store-intent.json");
+        let storage = Filesystem::new(root.path())
+            .unwrap()
+            .with_probe(move |at, path| {
+                let selected = match stage {
+                    Stage::TemporarySync => path.file_name().is_some_and(|name| {
+                        name.to_string_lossy().starts_with("..store-intent.json.")
+                    }),
+                    Stage::DirectorySync => !intent_path.exists(),
+                    _ => path.file_name().is_some_and(|name| name == target),
+                };
+                if at == stage && selected {
+                    seen += 1;
+                    if seen == occurrence {
+                        return Err(Error::Io("injected routing persistence failure".into()));
+                    }
+                }
+                Ok(())
+            });
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let store = Store::open(storage, PlanningPolicy).await.unwrap();
+            assert_eq!(
+                store.request(admission()).await,
+                Err(Error::Io("injected routing persistence failure".into()))
+            );
+        });
+    }
+}
+
+fn canonical_wire(value: &Value) -> Vec<u8> {
+    match value {
+        Value::Object(fields) => format!(
+            "{{{}}}",
+            fields
+                .iter()
+                .collect::<std::collections::BTreeMap<_, _>>()
+                .into_iter()
+                .map(|(key, value)| format!(
+                    "{}:{}",
+                    serde_json::to_string(key).unwrap(),
+                    String::from_utf8(canonical_wire(value)).unwrap()
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+        .into_bytes(),
+        Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(|value| String::from_utf8(canonical_wire(value)).unwrap())
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+        .into_bytes(),
+        _ => serde_json::to_vec(value).unwrap(),
+    }
+}
+
+fn wire_unit(defect: &str) -> (Vec<u8>, Vec<u8>, String) {
+    use cadence::store::model::digest;
+    let boundary = json!({"codec":1,"scope":{"scope":"execution","phase":8},"tool":"cadence-query","operation":"execute-next","request_digest":"4".repeat(64),"outcome":"dispatch","subject_id":DISPATCH_ID,"response_digest":"281a096470439f1147be2843416cd400f527c633d0b92704b50e4eec81b38b96","receipt":{"receipt":"dispatch","dispatch_id":DISPATCH_ID,"prompt_bytes":7}});
+    let boundary_id = digest(&canonical_wire(&json!(["boundary-envelope-v1", boundary])));
+    let mut routing = json!({"version":1,"id":format!("routing:{DISPATCH_ID}"),"revision":1,"origin":{"source":"native-routing","original":"missing"},"decision":{"class":"routing","choice":"{\"agent\":\"cad-executor\",\"rung\":\"high\",\"model\":\"sonnet\"}","config_provenance":{"dispatch_id":{"text":DISPATCH_ID},"route":{"text":ROUTE}},"requested_effort":{"text":"high"},"observed_effort":"missing","receipt":"missing"}});
+    match defect {
+        "effort" => routing["decision"]["requested_effort"] = json!({"text":"max"}),
+        "model" => {
+            routing["decision"]["choice"] =
+                json!("{\"agent\":\"cad-executor\",\"rung\":\"high\",\"model\":\"opus\"}")
+        }
+        "provenance" => routing["decision"]["config_provenance"]["route"] = json!({"text":"{}"}),
+        "observation" => routing["decision"]["observed_effort"] = json!({"text":"high"}),
+        "receipt" => routing["decision"]["receipt"] = json!({"text":"invented"}),
+        _ => {}
+    }
+    let mut records = if defect == "missing" {
+        String::new()
+    } else {
+        serde_json::to_string(&routing).unwrap() + "\n"
+    };
+    records.push_str(&(serde_json::to_string(&json!({"version":1,"id":boundary_id,"revision":1,"origin":{"source":"execution-boundary-v1","original":"missing"},"decision":{"class":"boundary_v1","boundary":boundary,"store_generation":1,"terminal":false}})).unwrap()+"\n"));
+    let active = json!({"schema":1,"id":DISPATCH_ID,"expected_execution_version":1,"phase":8,"plan":1,"plan_fingerprint":"1".repeat(64),"plan_set_fingerprint":"2".repeat(64),"requirements":["AC10"],"tasks":[{"id":"T1","verify":["verify"]}],"suite":"verify","files":["src/a.rs"],"policy":{"rung":"high","branch":"current","reviews":"disabled"},"route":serde_json::from_str::<Value>(ROUTE).unwrap(),"base_sha":"3".repeat(40),"prompt_bytes":7});
+    let mut state = json!({"version":1,"generation":1,"items_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","decisions_digest":digest(records.as_bytes()),"data":{"execution":{"schema":1,"occurrences":{"8":{"phase":8,"plan_set_fingerprint":"2".repeat(64),"version":1,"active":active,"plans":[],"terminal":null,"receipts":{}}}}},"operations":{},"integrity":""});
+    state["integrity"] = json!(digest(&serde_json::to_vec(&state).unwrap()));
+    (
+        records.into_bytes(),
+        serde_json::to_vec(&state).unwrap(),
+        boundary_id,
+    )
+}
+
+fn pending_unit(root: &std::path::Path, defect: &str, installed: usize) -> (Vec<u8>, Vec<u8>) {
+    use cadence::store::{Storage, filesystem::Filesystem, model::digest};
+    seed_empty(root);
+    let (decisions, state, id) = wire_unit(defect);
+    let mut fs = Filesystem::new(root).unwrap();
+    let participants = [("items.jsonl", Vec::new()), ("decisions.jsonl", decisions.clone()), ("state.json", state.clone())].into_iter().map(|(target, bytes)| {
+        let observed = fs.read(target).unwrap();
+        json!({"target":target,"expected":{"bytes":observed.bytes,"identity":observed.identity,"directory_identity":observed.directory_identity},"bytes":bytes})
+    }).collect::<Vec<_>>();
+    let kind = json!({"operation":"execution-dispatch-v1","phase":8,"decision_id":id});
+    let integrity = digest(&serde_json::to_vec(&json!([1, kind, participants])).unwrap());
+    std::fs::write(
+        root.join(".store-intent.json"),
+        serde_json::to_vec(
+            &json!({"version":1,"kind":kind,"participants":participants,"integrity":integrity}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    if installed >= 1 {
+        std::fs::write(root.join("decisions.jsonl"), &decisions).unwrap();
+    }
+    if installed >= 2 {
+        std::fs::write(root.join("state.json"), &state).unwrap();
+    }
+    (decisions, state)
+}
+
+#[test]
+fn recovery_returns_the_exact_unit_from_independent_interruption_states() {
+    use cadence::store::{
+        filesystem::Filesystem,
+        writer::{PlanningPolicy, Store},
+    };
+    for installed in [0, 1, 2] {
+        let root = tempfile::tempdir().unwrap();
+        let (decisions, state) = pending_unit(root.path(), "valid", installed);
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let answer = Store::open(Filesystem::new(root.path()).unwrap(), PlanningPolicy).await;
+            assert_eq!(
+                (
+                    answer.map(|_| ()),
+                    std::fs::read(root.path().join("decisions.jsonl")).unwrap(),
+                    std::fs::read(root.path().join("state.json")).unwrap(),
+                    root.path().join(".store-intent.json").exists()
+                ),
+                (Ok(()), decisions, state, false)
+            );
+        });
+    }
+}
+
+#[test]
+fn recovery_refuses_semantically_incomplete_units_even_with_recomputed_digests() {
+    use cadence::store::{
+        Error,
+        filesystem::Filesystem,
+        writer::{PlanningPolicy, Store},
+    };
+    for defect in [
+        "missing",
+        "effort",
+        "model",
+        "provenance",
+        "observation",
+        "receipt",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        pending_unit(root.path(), defect, 0);
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            assert_eq!(
+                Store::open(Filesystem::new(root.path()).unwrap(), PlanningPolicy)
+                    .await
+                    .map(|_| ()),
+                Err(Error::Invalid(
+                    "dispatch lacks its exact routing decision".into()
+                ))
+            );
+        });
+    }
+}
+
+#[test]
+fn replay_requires_the_matching_dispatch_boundary_in_addition_to_routing() {
+    use cadence::store::{
+        model::Snapshot,
+        writer::{View, require_current_execution},
+    };
+    let (records, state, _) = wire_unit("valid");
+    let mut view = View {
+        snapshot: serde_json::from_slice::<Snapshot>(&state).unwrap(),
+        items: vec![],
+        decisions: cadence::store::model::parse_lines(&records).unwrap(),
+    };
+    if let Decision::BoundaryV1(value) = &mut view.decisions[1].decision {
+        value.boundary.subject_id = Some("unrelated".into());
+    }
+    assert_eq!(
+        require_current_execution(&view),
+        Err(cadence::execution::boundary::Failure::RoutingEvidence)
+    );
+}
+
+#[test]
+fn replay_accepts_the_independently_persisted_historical_route_unit() {
+    use cadence::store::writer::{View, require_current_execution};
+    let (records, state, _) = wire_unit("valid");
+    let view = View {
+        snapshot: serde_json::from_slice(&state).unwrap(),
+        items: vec![],
+        decisions: cadence::store::model::parse_lines(&records).unwrap(),
+    };
+    assert_eq!(require_current_execution(&view), Ok(()));
+}
+
+#[test]
+fn duplicate_request_returns_the_single_previously_confirmed_routing_record() {
+    use cadence::store::{
+        filesystem::Filesystem,
+        model::digest,
+        writer::{PlanningPolicy, Store},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let (records, state, _) = wire_unit("valid");
+    let mut state: Value = serde_json::from_slice(&state).unwrap();
+    let boundary: Value =
+        serde_json::from_slice(records.split(|byte| *byte == b'\n').nth(1).unwrap()).unwrap();
+    let mut candidate = state["data"]["execution"]["occurrences"]["8"]["active"].clone();
+    candidate["expected_execution_version"] = json!(0);
+    candidate["body"] = json!("fixture");
+    state["operations"]["fixture-admission"] = json!(digest(&serde_json::to_vec(&json!(["boundary-operation-v1", boundary["decision"]["boundary"], {"Dispatch":{"plan_set_fingerprint":"2".repeat(64),"dispatch":candidate}}])).unwrap()));
+    state["integrity"] = json!("");
+    state["integrity"] = json!(digest(&serde_json::to_vec(&state).unwrap()));
+    std::fs::write(root.path().join("items.jsonl"), b"").unwrap();
+    std::fs::write(root.path().join("decisions.jsonl"), records).unwrap();
+    std::fs::write(
+        root.path().join("state.json"),
+        serde_json::to_vec(&state).unwrap(),
+    )
+    .unwrap();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(Filesystem::new(root.path()).unwrap(), PlanningPolicy)
+            .await
+            .unwrap();
+        let answer = store.request(admission()).await.unwrap();
+        assert_eq!(
+            (
+                answer.snapshot.generation,
+                answer
+                    .decisions
+                    .iter()
+                    .filter(|record| matches!(record.decision, Decision::Routing { .. }))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            ),
+            (1, vec![record()])
+        );
+    });
+}
