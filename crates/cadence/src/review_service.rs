@@ -777,7 +777,7 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
                 identity: serde_json::from_value(identity)?,
                 launch,
                 host_return,
-                raw: raw.map(|b| review::forward::forward_return(&b).submitted_bytes),
+                raw,
                 host_failure,
                 citations: serde_json::from_value(json!(citations))?,
             };
@@ -1256,10 +1256,10 @@ pub async fn pending_execution(store: &Store, phase: u32) -> Answer {
         })
     {
         let answer = next(store, &admission.fire).await?;
-        if let Envelope::Ok(ref output) = answer {
-            if execution_continuation(&output.result) == "continue" {
-                continue;
-            }
+        if let Envelope::Ok(ref output) = answer
+            && execution_continuation(&output.result) == "continue"
+        {
+            continue;
         }
         return Ok(answer);
     }

@@ -2,6 +2,7 @@ pub mod config;
 mod guard;
 pub mod import;
 mod review_hook;
+mod review_ingress;
 mod server;
 
 use clap::{Parser, Subcommand};
@@ -64,7 +65,9 @@ fn run_serve(project_root: Option<std::path::PathBuf>) -> std::process::ExitCode
                 return std::process::ExitCode::FAILURE;
             }
         };
-        let service = match handler.serve(rmcp::transport::stdio()).await {
+        let (transport, input_failed) =
+            review_ingress::InputTransport::new(tokio::io::stdin(), tokio::io::stdout());
+        let service = match handler.serve(transport).await {
             Ok(service) => service,
             // The host closed the pipe before it ever initialized - it quit
             // during startup, or spawned us to look and went away. That is
@@ -72,7 +75,11 @@ fn run_serve(project_root: Option<std::path::PathBuf>) -> std::process::ExitCode
             // panicking on it writes a stack-trace hint into the host's MCP
             // log for an ordinary shutdown. Exit quietly and let it be.
             Err(ServerInitializeError::ConnectionClosed(_) | ServerInitializeError::Cancelled) => {
-                return std::process::ExitCode::SUCCESS;
+                return if input_failed.load(std::sync::atomic::Ordering::Acquire) {
+                    std::process::ExitCode::FAILURE
+                } else {
+                    std::process::ExitCode::SUCCESS
+                };
             }
             // Everything else is a real failure to start and stays loud.
             Err(err) => panic!("failed to start MCP server on stdio: {err}"),
@@ -80,6 +87,10 @@ fn run_serve(project_root: Option<std::path::PathBuf>) -> std::process::ExitCode
         // Returns when the transport ends - which is what closing stdin does -
         // so the process exits with the session rather than outliving it.
         service.waiting().await.expect("MCP server task panicked");
-        std::process::ExitCode::SUCCESS
+        if input_failed.load(std::sync::atomic::Ordering::Acquire) {
+            std::process::ExitCode::FAILURE
+        } else {
+            std::process::ExitCode::SUCCESS
+        }
     })
 }

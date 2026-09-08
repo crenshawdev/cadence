@@ -743,27 +743,26 @@ impl ServerHandler for PublicServer {
                     .and_then(|v| v["operation"].as_str())
                     .is_some_and(|op| op.starts_with("review-"))
                 {
-                    let answer =
-                        match serde_json::from_value::<review_service::Apply>(raw.clone().unwrap())
+                    let answer = match serde_json::from_value::<review_service::Apply>(raw.unwrap())
+                    {
+                        Ok(review_service::Apply::Admit { request })
+                            if request["caller"] == "pause" =>
                         {
-                            Ok(review_service::Apply::Admit { request })
-                                if request["caller"] == "pause" =>
-                            {
-                                pause_service::modern_admission(
-                                    &self.server.service,
-                                    &self.root,
-                                    request,
-                                )
+                            pause_service::modern_admission(
+                                &self.server.service,
+                                &self.root,
+                                request,
+                            )
+                            .await
+                        }
+                        Ok(apply) => {
+                            self.server
+                                .service
+                                .review(&self.root, review_service::Command::Apply(apply))
                                 .await
-                            }
-                            Ok(apply) => {
-                                self.server
-                                    .service
-                                    .review(&self.root, review_service::Command::Apply(apply))
-                                    .await
-                            }
-                            Err(error) => Ok(review_service::refused(error.to_string())),
-                        };
+                        }
+                        Err(error) => Ok(review_service::refused(error.to_string())),
+                    };
                     return structured_result(
                         answer.map(|answer| ApplyOutput::Review(Box::new(answer))),
                     );
