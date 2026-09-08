@@ -145,3 +145,4 @@ The evidence record is [plan-1](reports/plan-1.md), [plan-2](reports/plan-2.md),
 | 7 | 5 | `1924bfe1` | fix(review): build the minimalism voice independently of ordinary routing |
 | 7 | 6 | `42fb7908` | fix(review): retain nested directory file membership and bytes |
 | 7 | 7 | `6873ea6b` | fix(review): bound raw returns before transport deserialization |
+| 8 | 1 | `ac2c76b1` | fix(9): carry review resolution P9-8-T1 |
