@@ -79,6 +79,11 @@ pub async fn record_observation(
     event: Observation,
     clock: &mut impl Clock,
 ) -> Result<ObservationReceipt> {
+    if event.kind == ObservationKind::LaunchFailure {
+        return Err(Error::Invalid(
+            "launch-failure-requires-return-identity".into(),
+        ));
+    }
     if event.observation.is_empty()
         || event.reference.is_empty()
         || event.reference.chars().count() > 4096
@@ -139,7 +144,9 @@ pub async fn record_observation(
             ObservationKind::Launch | ObservationKind::Return => {
                 attempt.state = AttemptState::ObservedRunning
             }
-            ObservationKind::Usage | ObservationKind::HostFacts => {}
+            ObservationKind::Usage
+            | ObservationKind::HostFacts
+            | ObservationKind::LaunchFailure => {}
         }
     }
     attempt.observations.push(event.observation.clone());

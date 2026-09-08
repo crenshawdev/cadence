@@ -55,9 +55,16 @@ quotations, newlines and Unicode. Escape it only for the tool's JSON transport;
 never parse/reserialize, summarize or filter the finding payload. Keep missing
 text null. Supply citation sidecars only when actually reported; otherwise use
 an empty citations array. Do not manufacture observed usage or empty success.
-For an unavailable provider (`dispatch.local:false`), report the actual failed
-launch/availability event through the observation/return boundary; never run
-that provider's request under a local voice. Phase 10 owns remote transport.
+For a definite failed launch or unavailable provider (`dispatch.local:false`),
+submit `review-return` with the issued attempt's full identity, launch null,
+host_return null, raw null, citations [], the actual reason in host_failure,
+and failure_event containing the actual event: kind `launch-failure`, its
+bounded observation ID/reference, attempt, observed_at, contract and observed
+usage. Unobserved launch, host_return, host and model fields stay null. This
+single submission records the observation and terminal failure together; do
+not submit it separately as review-observation. An uncertain stop or missing
+host facts alone is not definite failure. Never run an unavailable provider's
+request under a local voice. Phase 10 owns remote transport.
 
 WAIT for durable acknowledgment. A delivery-write-failed, conflict or refusal
 is not completion. Retry the identical return when appropriate, retaining its

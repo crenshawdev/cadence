@@ -48,7 +48,8 @@ pub enum Apply {
     #[serde(rename = "review-return")]
     Return {
         identity: Value,
-        launch: String,
+        launch: Option<String>,
+        failure_event: Option<Value>,
         host_return: Option<String>,
         raw: Option<String>,
         host_failure: Option<String>,
@@ -580,11 +581,37 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
         Command::Apply(Apply::Return {
             identity,
             launch,
+            failure_event,
             host_return,
             raw,
             host_failure,
             citations,
         }) => {
+            if let Some(event) = failure_event {
+                if launch.is_some()
+                    || host_return.is_some()
+                    || raw.is_some()
+                    || !citations.is_empty()
+                {
+                    return Err(Error::Invalid(
+                        "launch failure cannot carry return identity or raw findings".into(),
+                    ));
+                }
+                let submitted = review::returns::LaunchFailureSubmission {
+                    identity: serde_json::from_value(identity)?,
+                    event: serde_json::from_value(event)?,
+                    reason: host_failure.ok_or_else(|| {
+                        Error::Invalid("definite launch failure reason required".into())
+                    })?,
+                };
+                return match review::returns::accept_launch_failure(store, submitted, &mut clock)
+                    .await
+                {
+                    Ok(receipt) => output("review-return", receipt),
+                    Err(error) => output("review-return", error),
+                };
+            }
+            let launch = launch.ok_or_else(|| Error::Invalid("unobserved-host-launch".into()))?;
             let raw = raw
                 .map(|s| review::stream::read_return(s.as_bytes(), 4 * 1024 * 1024))
                 .transpose()

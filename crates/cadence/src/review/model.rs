@@ -291,6 +291,7 @@ pub struct Attempt {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ObservationKind {
+    LaunchFailure,
     Launch,
     Return,
     Interrupted,
