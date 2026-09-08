@@ -12,6 +12,8 @@
 //   - a wiring criterion's text does not name a caller, a callee and a literal
 //     value (two backticked identifiers, a call verb, and a literal),
 //   - a wiring AC is cited as a unit AC or vice versa in the same row.
+//   - a criterion in the frontmatter `requirements:` list is owned by no
+//     Coverage row (an out-of-scope criterion, rule 1).
 //
 // A wiring cell may read `trait:<Name>` for a trait-impl method, whose call site
 // is the trait dispatch rather than a by-name caller. The tree gate honours it.
@@ -52,6 +54,15 @@ function coverageRows(planText) {
     rows.push({ fn: cells[0].replace(/`/g, ""), unit: cells[1], wiring: cells[2] });
   }
   return rows;
+}
+
+function planRequirements(planText) {
+  // The plan's frontmatter declares which criteria it is responsible for.
+  const fm = planText.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) return null;
+  const sec = fm[1].match(/^requirements:\s*\n((?:\s*-\s*AC\d+\s*\n?)+)/m);
+  if (!sec) return null;
+  return [...new Set(sec[1].match(/AC\d+/g) || [])];
 }
 
 const ids = (cell) => (cell.match(/AC\d+/g) || []);
@@ -97,6 +108,18 @@ for (const plan of plans) {
       if (p.length) fail(plan, `${r.fn}: ${id} is not a wiring criterion (rule 8): ${p.join("; ")}`);
     }
   }
+  // Reverse direction (rule 9): every criterion the plan claims must be owned by
+  // a Coverage row. Without this, an out-of-scope criterion with no row passes.
+  const declared = planRequirements(text);
+  if (declared === null) {
+    fail(plan, "no `requirements:` list in the frontmatter (rule 9 reverse check)");
+  } else {
+    const owned = new Set(rows.flatMap((r) => [...ids(r.unit), ...ids(r.wiring)]));
+    const orphans = declared.filter((id) => !owned.has(id));
+    if (orphans.length)
+      fail(plan, `${orphans.join(", ")} declared in requirements but owned by no Coverage row (rule 9); either give it a row or drop it as out of scope (rule 1)`);
+  }
+
   if (!failures.some((f) => f.startsWith(path.relative(process.cwd(), plan))))
     console.log(`PASS ${path.relative(process.cwd(), plan)}: ${rows.length} functions, each with unit and wiring coverage`);
 }
