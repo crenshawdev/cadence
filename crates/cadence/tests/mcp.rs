@@ -386,7 +386,16 @@ fn schema_accepts(
     {
         return false;
     }
+    if let Some(types) = node.get("type").and_then(Value::as_array) {
+        return types.iter().any(|kind| {
+            let mut alternative = node.clone();
+            alternative["type"] = kind.clone();
+            schema_accepts(root, &alternative, value)
+        });
+    }
     match node.get("type").and_then(|value| value.as_str()) {
+        Some("null") => value.is_null(),
+        Some("boolean") => value.is_boolean(),
         Some("object") => value.as_object().is_some_and(|object| {
             let empty = serde_json::Map::new();
             let properties = node["properties"].as_object().unwrap_or(&empty);

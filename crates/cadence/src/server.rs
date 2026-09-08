@@ -227,6 +227,13 @@ struct VersionArguments {}
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "operation", deny_unknown_fields)]
 enum QueryArguments {
+    #[serde(rename = "route")]
+    Route {
+        role: String,
+        phase: Option<NonZeroU32>,
+        plan: Option<NonZeroU32>,
+        attempt: Option<NonZeroU32>,
+    },
     #[serde(rename = "config-facts")]
     ConfigFacts {},
     #[serde(rename = "detect-surfaces")]
@@ -463,7 +470,7 @@ impl ServerHandler for PublicServer {
                 ),
                 tool::<QueryOutput>(
                     "cadence_query",
-                    "Read supported configuration, native execution, exact material risk status or structural surface evidence in the bound project.",
+                    "Read supported configuration, role routing, native execution, exact material risk status or structural surface evidence in the bound project.",
                     query_schema(),
                 ),
                 tool::<ApplyOutput>(
@@ -505,6 +512,38 @@ impl ServerHandler for PublicServer {
                     .clone()
                     .and_then(|value| serde_json::from_value::<QueryArguments>(value).ok())
                 {
+                    Some(QueryArguments::Route {
+                        role,
+                        phase,
+                        plan,
+                        attempt,
+                    }) => {
+                        return structured_result(
+                            self.server
+                                .service
+                                .config(
+                                    &self.root,
+                                    config_service::Command::Route(config_service::RouteRequest {
+                                        role,
+                                        phase,
+                                        plan,
+                                        attempt,
+                                    }),
+                                )
+                                .await
+                                .map(|answer| QueryOutput::Config(Box::new(answer))),
+                        );
+                    }
+                    None if raw.as_ref().and_then(|value| value["operation"].as_str())
+                        == Some("route") =>
+                    {
+                        return structured_result(Ok(QueryOutput::Config(Box::new(
+                            config_service::refused(
+                                "invalid-arguments",
+                                "route arguments do not match the strict operation schema",
+                            ),
+                        ))));
+                    }
                     Some(QueryArguments::ConfigFacts {}) => {
                         return structured_result(
                             self.server
