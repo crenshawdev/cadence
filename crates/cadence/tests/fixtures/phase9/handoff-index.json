@@ -1,0 +1,383 @@
+{
+  "schema": "phase9-fixture-inventory-1",
+  "provenance": "independently authored compatibility fixtures; no native producer episode",
+  "contracts": {
+    "schema": "review-1",
+    "interpretation": "H1-H5",
+    "validator": "H4-1"
+  },
+  "identity_rules": {
+    "records": "IDs are local to each named case; equal IDs across independent cases do not merge them",
+    "original_finding": "original record ID plus zero-based array index",
+    "raw_content": "SHA-256 of exact saved raw bytes, independent of record ID",
+    "material_content": "SHA-256 of exact retained bytes; symbolic content labels in mapping-only cases are not digest evidence",
+    "queue": "member fire ID joins H1 admission, H2 manifest, H3 attempts and optional H4 originals; no rendering join",
+    "selected": "supplied views select original-finding IDs; they do not replace originals or originate a ruling"
+  },
+  "fixtures": [
+    {
+      "path": "h4-shapes.json",
+      "contracts": [
+        "H4-1"
+      ],
+      "cases": "empty, hundred, excess, envelope/finding fields, severities, missing/malformed",
+      "joins": [
+        "F positions -> original finding indices when admitted"
+      ],
+      "content": "literal returns and bounded repetition recipes",
+      "sha256": "94a9ef0f65f48e554e99c807302d880269379ad3b7711becd4ae5821a7771fed",
+      "bytes": 20410
+    },
+    {
+      "path": "h4-scalars.json",
+      "contracts": [
+        "H4-1"
+      ],
+      "cases": "Unicode field scalar limits, blank values, line bounds and lone surrogate",
+      "joins": [
+        "field and finding index -> validator diagnostic"
+      ],
+      "content": "literal scalar repetition and malformed return recipes",
+      "sha256": "57ff2c5a3bd862f6dec37e80b280ebf5b233193169b430f3bf18cd17ad065423",
+      "bytes": 3118
+    },
+    {
+      "path": "h4-stream.json",
+      "contracts": [
+        "H4-1"
+      ],
+      "cases": "4194304-byte acceptance and 4194305-byte rejection",
+      "joins": [
+        "envelope + padding -> exact bounded stream"
+      ],
+      "content": "fixed chunks; exact byte counts, not serialized production output",
+      "sha256": "92523eaad7d992bac835a6b22e4bea1f89af788cc629e31dd50fe91129f4c17f",
+      "bytes": 345
+    },
+    {
+      "path": "original-q.json",
+      "contracts": [
+        "H4-1"
+      ],
+      "cases": "Q quotation, newline, Unicode and array order",
+      "joins": [
+        "Q -> o1 -> o1:0,o1:1"
+      ],
+      "content": "exact UTF-8 return; matching saved Q in h4-originals.json",
+      "sha256": "b53e56f0d4ca02e52268d5d17401d35d44a9fd1a7ecd608aa77578055abc7a52",
+      "bytes": 184
+    },
+    {
+      "path": "material-snapshots.json",
+      "contracts": [
+        "H2",
+        "H1-H5"
+      ],
+      "cases": "committed range, staged tree, named file, missing/unavailable",
+      "joins": [
+        "b1:a.rs -> base old bytes",
+        "h1:a.rs or t1:a.rs -> head/snapshot new bytes"
+      ],
+      "content": "old/new literal byte strings; head null for uncommitted target",
+      "sha256": "d3f616f30dfae0ecbbe8cbef727711b294cb09ac10426b4332768db3949b699e",
+      "bytes": 647
+    },
+    {
+      "path": "material-read.json",
+      "contracts": [
+        "H2",
+        "H1-H5"
+      ],
+      "cases": "retained primary/supporting bytes, changed sources, frozen directory membership",
+      "joins": [
+        "e1 -> material-e1 -> old bytes",
+        "e3 -> material-e3 -> support bytes",
+        "a1/v1 -> supplied entries"
+      ],
+      "content": "saved entry content digests and literal retained bytes",
+      "sha256": "8488dd70ad6e965f895adcfba7f7e9530a7116abae96e0482209c17f68580f87",
+      "bytes": 1273
+    },
+    {
+      "path": "material-sides.json",
+      "contracts": [
+        "H2",
+        "H1-H5"
+      ],
+      "cases": "deleted/renamed source sides, missing/unavailable source, diff hunks",
+      "joins": [
+        "d1 diff line 4 -> e1 old.rs/base/2",
+        "d1 diff line 5 -> e2 new.rs/head/3"
+      ],
+      "content": "symbolic content IDs in mapping-only entries; record_rename and record_delete supply actual source/diff strings",
+      "sha256": "1f90309e61224795adef3baad4def5782309297f9ebb9785680e500c43b33629",
+      "bytes": 2942
+    },
+    {
+      "path": "material-context.json",
+      "contracts": [
+        "H2",
+        "H1-H5"
+      ],
+      "cases": "supporting delivery, later evidence, inline decision and diagnosis",
+      "joins": [
+        "f1 -> m1",
+        "e3 -> a1/v1 original-view",
+        "e4 -> later-evidence with no attempt",
+        "D-1 -> selected text and inline context",
+        "diagnosis -> e1 plus reported/cause text"
+      ],
+      "content": "retained support, counter and selected-decision strings",
+      "sha256": "a69f78fbd32abe57b3274fa4bf46abfd2b6334b0395f10c91e8eb083068e212c",
+      "bytes": 1000
+    },
+    {
+      "path": "policy-requests.json",
+      "contracts": [
+        "H1",
+        "H1-H5"
+      ],
+      "cases": "manual/automatic plan, task, execute, debug, verify and configured defaults",
+      "joins": [
+        "caller -> admitted gate/routing/home h1"
+      ],
+      "content": "supplied effective policy; no mutable configuration acquisition",
+      "sha256": "dae3ad97a89e4d0c4f727c9935c0a2146044ccff92eb3edf6f4adcebbe5c9270",
+      "bytes": 2263
+    },
+    {
+      "path": "policy-actions.json",
+      "contracts": [
+        "H1",
+        "H5",
+        "H1-H5"
+      ],
+      "cases": "advisory pending/blocker, all gates, risk observations, pending settlement",
+      "joins": [
+        "f1 -> supplied delivery and gate action"
+      ],
+      "content": "literal deterministic inputs; raw delivery never supplies settlement",
+      "sha256": "179a756fdb583ee8a017ea42949d28a1206df9245bc960da6e64e667a97d23b7",
+      "bytes": 940
+    },
+    {
+      "path": "selection-first.json",
+      "contracts": [
+        "H3",
+        "H4-1"
+      ],
+      "cases": "failed/pending/interrupted A, usable/empty success, exhausted/local fallback, observed/unknown usage",
+      "joins": [
+        "A -> a1",
+        "B -> a2",
+        "local -> a3"
+      ],
+      "content": "literal raw returns and unknown usage",
+      "sha256": "219bb7c974e1ba6a8a12455445a823aa670f42e25dc0eaddb371ab8a19f00b57",
+      "bytes": 2379
+    },
+    {
+      "path": "selection-panel.json",
+      "contracts": [
+        "H3",
+        "H4-1"
+      ],
+      "cases": "panel/adjudicated roster; pending, interrupted, success, failed and fallback states",
+      "joins": [
+        "required A -> primary a1",
+        "required B -> primary a2 and optional fallback a3"
+      ],
+      "content": "each required voice preserved; failures do not become empty voices",
+      "sha256": "2f292fd2c0a873408e49ab897f1b8841b226dcc4a127c962c262b8ec62edce07",
+      "bytes": 3087
+    },
+    {
+      "path": "specialist-requests.json",
+      "contracts": [
+        "H1",
+        "H2",
+        "H3",
+        "H1-H5"
+      ],
+      "cases": "minimalism file, directory and phase-range targets",
+      "joins": [
+        "m1 retained target -> base reviewer, ordinary routing null"
+      ],
+      "content": "supplied specialist request identities",
+      "sha256": "b6dfd519bda6926565d0174da59eab37d14bbb7bd8d87e83a2bd29474687717f",
+      "bytes": 2546
+    },
+    {
+      "path": "h1-admission.json",
+      "contracts": [
+        "H1",
+        "H2",
+        "H3",
+        "H1-H5",
+        "H4-1"
+      ],
+      "cases": "H, fresh/replay/sequence and changed current settings",
+      "joins": [
+        "k1 -> f1/occ1/a1",
+        "f1 -> h1 -> m1 -> e1 -> material-e1"
+      ],
+      "content": "retained bytes under saved material location; H is immutable",
+      "sha256": "26649b2b5b3ae04d1432c20604af25e2cd2bdadba2e9e5c25ac35367b40496c8",
+      "bytes": 2312
+    },
+    {
+      "path": "h3-bindings.json",
+      "contracts": [
+        "H1",
+        "H3",
+        "H1-H5",
+        "H4-1"
+      ],
+      "cases": "artifact/round mismatch, bound and accepted return ownership",
+      "joins": [
+        "f1/m1/round1 -> a1",
+        "launch1/return1 -> a1; cannot be reused for a2"
+      ],
+      "content": "requested model-A separate from unknown observed model",
+      "sha256": "a25c035dc8b22679472e1332e327aa25f09a6ce498a977e6aebb1cbd7e7f18a6",
+      "bytes": 2301
+    },
+    {
+      "path": "h3-observations.json",
+      "contracts": [
+        "H3",
+        "H4",
+        "H1-H5",
+        "H4-1"
+      ],
+      "cases": "accepted attempt, duplicate obs1, late obs2 and winner attempt",
+      "joins": [
+        "obs1,obs2 -> a1/o1",
+        "obs2 -> observed-A and input usage 7"
+      ],
+      "content": "append-only observations with original and closure unchanged",
+      "sha256": "d73d073cc1178f0e6590f1ef1ea5810c5ba75ba2a66bac4b9ac2e953d25ca8bc",
+      "bytes": 2489
+    },
+    {
+      "path": "h3-rosters.json",
+      "contracts": [
+        "H1",
+        "H3",
+        "H4",
+        "H1-H5",
+        "H4-1"
+      ],
+      "cases": "pending admission/host return, accepted A, pending/accepted B",
+      "joins": [
+        "f1 -> required A,B",
+        "A -> a1/o1",
+        "B -> a2/o2",
+        "original IDs -> h4-originals.json cases"
+      ],
+      "content": "saved roster and unknown/missing outcomes survive recovery",
+      "sha256": "74307d2ddeb030b36705ce0fc4fd15ba77b99863f2ea221686ad26508c9d1f97",
+      "bytes": 3459
+    },
+    {
+      "path": "h4-originals.json",
+      "contracts": [
+        "H4-1",
+        "H1-H5"
+      ],
+      "cases": "F, Q, empty, B-F and B-empty",
+      "joins": [
+        "a1/return1/m1/v1 -> o1",
+        "a2/return2/m1/v2 -> o2",
+        "citations -> original plus index"
+      ],
+      "content": "raw byte arrays, SHA-256 content IDs, exact parsed finding fields and saved acceptance",
+      "sha256": "36278f99ebfdd5f567cfa3905787860a33b3283afc276a8e1ff00855405690eb",
+      "bytes": 4186
+    },
+    {
+      "path": "h4-returns.json",
+      "contracts": [
+        "H1",
+        "H3",
+        "H4-1",
+        "H1-H5"
+      ],
+      "cases": "pending, F, Changed, accepted attempt, closure/original and sync failure",
+      "joins": [
+        "f1/m1/round1/a1/return1 -> o1",
+        "closure a1 -> accepted o1"
+      ],
+      "content": "literal return bytes with replay/conflict identity",
+      "sha256": "ce5726e82bebbfd65ecf9f3e16233a7db95252fcf840a1b8d32c546115f95dc6",
+      "bytes": 3278
+    },
+    {
+      "path": "h5-raw-views.json",
+      "contracts": [
+        "H1-H5",
+        "H4-1"
+      ],
+      "cases": "four raw consumer readers; specialist raw/empty/failed; pending/failed/accepted-empty completion",
+      "joins": [
+        "f1/occ1 -> m1/e1/material-old",
+        "a1/v1/return1 -> o1 -> o1:0",
+        "specialist failure -> original null"
+      ],
+      "content": "complete independent saved-record images, absent renderings, original raw bytes and content hashes",
+      "sha256": "df928482c13276318521b6817d7be1b0e1868f2d1e40fe688de817ff2440fc1d",
+      "bytes": 41278
+    },
+    {
+      "path": "h5-selected-views.json",
+      "contracts": [
+        "H5",
+        "H1-H5",
+        "H4-1"
+      ],
+      "cases": "execute/planned-task revision 2; raw/provisional-selected/settled slots",
+      "joins": [
+        "f1/round1/o1 -> selected o1:0",
+        "o1:1 refuted in supplied selection",
+        "adj1 -> provisional view with fix null; adj2/fix1 -> supplied settled slot"
+      ],
+      "content": "supplied typed values only; no phase-9 adjudication",
+      "sha256": "423f4ba8a6db1fc211404733b3402d647dd0014ab56c8c02f24bb17bbcdbed50",
+      "bytes": 1548
+    },
+    {
+      "path": "h5-inventories.json",
+      "contracts": [
+        "H5",
+        "H1-H5"
+      ],
+      "cases": "landing, milestone and advisory no-obligation",
+      "joins": [
+        "risk f1/1 -> unruled",
+        "risk f2/2 -> supplied adj2",
+        "plan f3 excluded from risk edge"
+      ],
+      "content": "REVIEW/ADJUDICATION filenames preserved separately from identity and explicit member",
+      "sha256": "2055a9512df5a50f4be73443e0bd2e320d127292fa665b453d53b989fb719519",
+      "bytes": 1407
+    },
+    {
+      "path": "h5-all-homes.json",
+      "contracts": [
+        "H1-H5",
+        "H4-1"
+      ],
+      "cases": "phase, task, root-inline, root-debug, root-diagnosis; sync failure; advisory/off no-write; replay/winner; enumeration with absent/present renderings",
+      "joins": [
+        "homes occ1 -> f1/h1 -> m1/a1/o1",
+        "enumeration phase f1 -> m1/a1/o1",
+        "enumeration task f2 -> m2/a2/o2",
+        "enumeration root-debug f3 -> m3/a3/o3",
+        "member f1 -> explicit initial unruled state, all references and enqueued_at"
+      ],
+      "content": "saved snapshots and deterministic commit observations; original material-old retained bytes remain available",
+      "sha256": "a0b75a2f00f789e6d5e59dbed09f59377956405eaf9b82c4c6bc3f63de4487d2",
+      "bytes": 128132
+    }
+  ]
+}
