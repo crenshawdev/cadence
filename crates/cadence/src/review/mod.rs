@@ -6,6 +6,7 @@ pub mod consumers;
 pub mod contract;
 pub mod deferred;
 pub mod forward;
+pub mod history;
 pub mod inventory;
 pub mod invoking;
 pub mod io;

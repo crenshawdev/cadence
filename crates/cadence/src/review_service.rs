@@ -557,7 +557,7 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
             super::execution_service::review_handoff(factory, root, phase, dispatch.as_deref())
                 .await
         }
-        Command::Query(query) => query_saved(store, query).await,
+        Command::Query(query) => query_saved(store, root, query).await,
         Command::Apply(Apply::Observation { observation }) => output(
             "review-observation",
             review::attempts::record_observation(
@@ -650,8 +650,16 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
     }
 }
 
-async fn query_saved(store: &Store, query: Query) -> Answer {
+async fn query_saved(store: &Store, root: &Path, query: Query) -> Answer {
     match query {
+        Query::Original { original } if original.starts_with("historical:") => {
+            historical_input(root, original.strip_prefix("historical:").unwrap())
+        }
+        Query::Consumer {
+            consumer,
+            attempt: Some(path),
+            supplied: None,
+        } if consumer == "historical-pause" => historical_input(root, &path),
         Query::Admission { fire } => output(
             "review-admission",
             admission::read_admission(store, &fire).await?,
@@ -961,8 +969,6 @@ async fn next(store: &Store, fire: &str) -> Answer {
     )
 }
 
-
-
 pub async fn execute<I: ConfigIo + Clone + Sync>(
     factory: &SessionFactory<I>,
     root: &Path,
@@ -997,6 +1003,19 @@ pub async fn pending_execution(store: &Store, phase: u32) -> Answer {
         return Ok(answer);
     }
     output("review-handoff", json!({"pending":false}))
+}
+
+fn historical_input(root: &Path, path: &str) -> Answer {
+    use review::history::{HistoricalFiles, HistoricalIo};
+    let raw = HistoricalFiles { root: root.into() }.read(path)?;
+    struct RetainedBytes(Vec<u8>);
+    impl HistoricalIo for RetainedBytes {
+        fn read(&mut self, _: &str) -> std::io::Result<Vec<u8>> {
+            Ok(self.0.clone())
+        }
+    }
+    let origin = review::history::read_pause_origin(&mut RetainedBytes(raw.clone()), path)?;
+    output("review-original", json!({"origin":origin,"raw_bytes":raw}))
 }
 
 #[cfg(test)]
