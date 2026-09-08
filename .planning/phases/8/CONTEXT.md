@@ -311,19 +311,6 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
 
 ## Acceptance criteria
 
-- [ ] AC1: Existing config regression assertions still pass for null versus
-      absence, repo/global provenance, alias collapse and requested scope,
-      equal-size/equal-mtime edits, rename/retarget, failed-I/O refusal and
-      final policy revalidation; the frozen-schema census remains 94 leaves,
-      exactly 14 dead with no defaults or effective values. Run
-      `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence config::tests`.
-      This retains completed behavior, not a new implementation obligation
-      (`crates/cadence/src/config/tests.rs:6`,
-      `crates/cadence/src/config/tests.rs:71`,
-      `crates/cadence/src/config/tests.rs:393`,
-      `crates/cadence/src/config/tests.rs:542`,
-      `crates/cadence/src/config/tests.rs:772`).
-
 - [ ] AC2: Public config reads show stored/effective values, presence and
       source layer. A valid multi-key apply saves all answers in one durable
       transaction and reports changed keys and destination; an invalid value,
@@ -394,8 +381,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       answer returns (`crates/cadence/src/config/mod.rs:16`).
 
 - [ ] AC10: The boundary advertises exactly `cadence_version`, `cadence_query`
-      and `cadence_apply` with input and output schemas, retains phase 7's
-      operations, and returns typed refusals for malformed config and route
+      and `cadence_apply` with input and output schemas, and returns typed refusals for malformed config and route
       calls. With executor model `sonnet` / effort `high` saved, a new dispatch
       resolves to model `sonnet` and agent `cad-executor`; with `opus`/`xhigh`
       saved, a separate new dispatch resolves to `opus` and

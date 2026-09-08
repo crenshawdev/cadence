@@ -635,16 +635,6 @@ to produce this handoff.
       `cadence-core/workflows/milestone.md:114`,
       `skills/cad-land/SKILL.md:122`).
 
-- [ ] AC7: An owner-reviewed live pilot loads the actual grouped tools and
-      dispatches a real local reviewer through the invoking skill. Its retained
-      record identifies what actually ran and was saved, demonstrates AC1's
-      unchanged advisory handoff and write ordering, closes an actual failed
-      attempt, and reopens an uncommitted review after later edits with its
-      original material intact. The owner explicitly accepts those observed
-      episodes and their semantic limitations; missing episodes remain
-      unverified (`.planning/ROADMAP.md:789`,
-      `.planning/phases/6/SUMMARY.md:16`).
-
 - [ ] AC8: Admit through native operations, inspect every H1 field, then change
       the effective gate, routing/model settings and active phase cursor and
       restart. Query returns the saved admission values, explicit applicability

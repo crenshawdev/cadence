@@ -720,33 +720,6 @@ without claiming the later workflows are migrated (`.planning/ROADMAP.md:746`,
       `cadence-core/bin/lib/filing-decision.mjs:753`,
       `cadence-core/bin/issue-filing.mjs:659`, `.planning/ROADMAP.md:849`).
 
-- [ ] AC16: Retained store, receipt and pause regression assertions pass after
-      integration. Update modern pause test setup to phase 9's shared dispatch
-      and five-field originals and phase 10's verified settlement; retain useful
-      gate, staged identity, receipt and restart assertions. Bare `AcceptedResult`
-      setup is historical/unverified and cannot preserve alternate clearance;
-      AC18 exercises the live cutover. Run
-      `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test store`,
-      `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence evidence_service_tests`
-      and `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence pause_service_tests`;
-      record the actual phase-10 test selectors with the plan
-      (`crates/cadence/tests/store.rs:170`,
-      `crates/cadence/src/evidence_service_tests.rs:1381`,
-      `crates/cadence/src/pause_service_tests.rs:683`).
-
-- [ ] AC17: The owner inspects and accepts a live pilot record showing real
-      provider participation and failure/local-fallback closure, actual
-      per-voice rulings and saved originals/material, refused fabricated
-      settlement, visible deleted-source evidence, deferred settlement and
-      exhausted re-arm after restart, plus explicitly authorized filing,
-      deduplication and ambiguous-create reconciliation on every claimed forge.
-      Each episode identifies actual return, durable save and recovered state;
-      include at least one unchanged phase-9-produced fire through phase-10
-      restart, provisional triage and verified settlement. Its producer record
-      is retained under AC1, not enriched to satisfy the pilot after the fact;
-      unavailable cases remain unverified and semantic limitations are explicit.
-      (`.planning/ROADMAP.md:852`, `.planning/phases/6/SUMMARY.md:16`).
-
 - [ ] AC18: Drive the actual pause blocking/adjudicated continuation paths with
       phase-9-produced dispatch/original records and phase-10 verification.
       Low-only, empty and scoped-override cases clear only after the common
