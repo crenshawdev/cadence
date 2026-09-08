@@ -83,14 +83,18 @@ pub fn resolve(root: &Path, source: &Source) -> (Resolution, Vec<String>) {
             None
         }
     };
-    (
-        Resolution {
-            base_id: resolved("base", base),
+    let base_id = resolved("base", base);
+    let resolution = match source {
+        Source::Committed { .. } => Resolution::Committed {
+            base_id,
             head_id: head.and_then(|v| resolved("head", v)),
+        },
+        Source::Staged { .. } => Resolution::Staged {
+            base_id,
             index_id: index.and_then(|v| resolved("index", v)),
         },
-        diagnostics,
-    )
+    };
+    (resolution, diagnostics)
 }
 
 /// The four frozen reviewer-text shapes; these never change source lease coverage.
@@ -107,6 +111,7 @@ pub struct Diff {
 }
 
 pub fn diff(root: &Path, material: &MaterialIdentity) -> Result<Diff> {
+    material.validate()?;
     let common = [
         "diff",
         "--no-ext-diff",

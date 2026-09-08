@@ -10,7 +10,7 @@ use cadence::{
     envelope::Envelope,
     rail::{
         git,
-        risk::{self, Apply, Observation, Recorded, Scope},
+        risk::{self, Apply, Observation, ObservationOutcome, Recorded, Scope},
     },
     store::{Error, Result, writer::Operation},
 };
@@ -106,15 +106,28 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
     let source = source.clone();
     let observation = tokio::task::spawn_blocking(move || {
         let (resolution, mut diagnostics) = git::resolve(&project, &source);
-        let scan = match resolution.material() {
-            Some(material) => match git::scan(&project, &material, &surfaces) {
-                Ok(scan) => scan,
-                Err(error) => {
-                    diagnostics.push(error.to_string());
-                    cadence::rail::risk_diff::scan(None, &[], &surfaces)?
-                }
-            },
-            None => cadence::rail::risk_diff::scan(None, &[], &surfaces)?,
+        let material = resolution.material();
+        let scan = if material
+            .as_ref()
+            .is_some_and(risk::MaterialIdentity::no_range)
+        {
+            None
+        } else {
+            Some(match material {
+                Some(material) => match git::scan(&project, &material, &surfaces) {
+                    Ok(scan) => scan,
+                    Err(error) => {
+                        diagnostics.push(error.to_string());
+                        cadence::rail::risk_diff::scan(None, &[], &surfaces)?
+                    }
+                },
+                None => cadence::rail::risk_diff::scan(None, &[], &surfaces)?,
+            })
+        };
+        let outcome = match &scan {
+            None => ObservationOutcome::NoRange,
+            Some(scan) if scan.checked => ObservationOutcome::Checked,
+            Some(_) => ObservationOutcome::Unchecked,
         };
         Ok::<_, Error>(Observation {
             version: 1,
@@ -123,6 +136,8 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
             scope,
             source,
             resolution,
+            outcome,
+            surfaces,
             scan,
             diagnostics,
         })

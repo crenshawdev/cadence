@@ -21,7 +21,26 @@ pub enum MaterialIdentity {
     Staged { base_id: String, index_id: String },
 }
 
+pub fn valid_object_id(id: &str) -> bool {
+    matches!(id.len(), 40 | 64)
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 impl MaterialIdentity {
+    pub fn validate(&self) -> Result<()> {
+        if !valid_object_id(self.base_id()) || !valid_object_id(self.tip_id()) {
+            return Err(Error::Invalid(
+                "material requires full immutable object IDs".into(),
+            ));
+        }
+        Ok(())
+    }
+    pub fn no_range(&self) -> bool {
+        matches!(self, Self::Committed { base_id, head_id } if base_id == head_id)
+    }
+
     pub fn base_id(&self) -> &str {
         match self {
             Self::Committed { base_id, .. } | Self::Staged { base_id, .. } => base_id,
@@ -142,27 +161,58 @@ pub fn validate_name(value: &str) -> Result<()> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Resolution {
-    pub base_id: Option<String>,
-    pub head_id: Option<String>,
-    pub index_id: Option<String>,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Resolution {
+    Committed {
+        base_id: Option<String>,
+        head_id: Option<String>,
+    },
+    Staged {
+        base_id: Option<String>,
+        index_id: Option<String>,
+    },
 }
 
 impl Resolution {
     pub fn material(&self) -> Option<MaterialIdentity> {
-        match (&self.base_id, &self.head_id, &self.index_id) {
-            (Some(base_id), Some(head_id), None) => Some(MaterialIdentity::Committed {
+        match self {
+            Self::Committed {
+                base_id: Some(base_id),
+                head_id: Some(head_id),
+            } => Some(MaterialIdentity::Committed {
                 base_id: base_id.clone(),
                 head_id: head_id.clone(),
             }),
-            (Some(base_id), None, Some(index_id)) => Some(MaterialIdentity::Staged {
+            Self::Staged {
+                base_id: Some(base_id),
+                index_id: Some(index_id),
+            } => Some(MaterialIdentity::Staged {
                 base_id: base_id.clone(),
                 index_id: index_id.clone(),
             }),
             _ => None,
         }
     }
+    pub fn validate(&self) -> Result<()> {
+        let (base, tip) = match self {
+            Self::Committed { base_id, head_id } => (base_id, head_id),
+            Self::Staged { base_id, index_id } => (base_id, index_id),
+        };
+        if base.iter().chain(tip).any(|id| !valid_object_id(id)) {
+            return Err(Error::Invalid(
+                "resolution contains a non-object identity".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ObservationOutcome {
+    Checked,
+    Unchecked,
+    NoRange,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -174,7 +224,9 @@ pub struct Observation {
     pub scope: Scope,
     pub source: Source,
     pub resolution: Resolution,
-    pub scan: Scan,
+    pub outcome: ObservationOutcome,
+    pub surfaces: Vec<String>,
+    pub scan: Option<Scan>,
     pub diagnostics: Vec<String>,
 }
 
@@ -212,16 +264,51 @@ impl Observation {
         {
             return Err(Error::Invalid("invalid rail observation identity".into()));
         }
-        validate_surfaces(self.scan.categories.clone())?;
-        if self.scan.checked && self.resolution.material().is_none() {
-            return Err(Error::Invalid(
-                "checked scan lacks immutable material".into(),
-            ));
+        validate_surfaces(self.surfaces.clone())?;
+        self.resolution.validate()?;
+        if !matches!(
+            (&self.source, &self.resolution),
+            (Source::Committed { .. }, Resolution::Committed { .. })
+                | (Source::Staged { .. }, Resolution::Staged { .. })
+        ) {
+            return Err(Error::Invalid("source and resolution kinds differ".into()));
         }
-        if !self.scan.checked && (!self.scan.inconclusive || self.scan.empty) {
-            return Err(Error::Invalid(
-                "unchecked observation cannot be clean".into(),
-            ));
+        let material = self.resolution.material();
+        let no_range = material.as_ref().is_some_and(MaterialIdentity::no_range);
+        match (&self.outcome, &self.scan) {
+            (ObservationOutcome::NoRange, None) if no_range => {}
+            (ObservationOutcome::Checked, Some(scan))
+                if !no_range && material.is_some() && scan.checked => {}
+            (ObservationOutcome::Unchecked, Some(scan))
+                if !no_range
+                    && !scan.checked
+                    && scan.inconclusive
+                    && !scan.empty
+                    && scan.matches.is_empty() => {}
+            _ => {
+                return Err(Error::Invalid(
+                    "observation outcome disagrees with material or scan".into(),
+                ));
+            }
+        }
+        if let Some(scan) = &self.scan {
+            if scan.categories != self.surfaces
+                || (scan.empty && (scan.inconclusive || !scan.matches.is_empty()))
+            {
+                return Err(Error::Invalid("invalid recorded classifier result".into()));
+            }
+            let mut prior = None;
+            for matched in &scan.matches {
+                let index = self
+                    .surfaces
+                    .iter()
+                    .position(|value| value == &matched.category)
+                    .ok_or_else(|| Error::Invalid("match outside selected surfaces".into()))?;
+                if prior.is_some_and(|old| old >= index) || matched.signal.is_empty() {
+                    return Err(Error::Invalid("invalid match ordering or signal".into()));
+                }
+                prior = Some(index);
+            }
         }
         Ok(())
     }
@@ -266,7 +353,12 @@ impl Recorded {
                 original: Evidence::Missing,
             },
             decision: Decision::Gate {
-                outcome: "risk-observed".into(),
+                outcome: if self.observation.outcome == ObservationOutcome::NoRange {
+                    "risk-skipped-no-range"
+                } else {
+                    "risk-observed"
+                }
+                .into(),
                 evidence: Evidence::Text(serde_json::to_string(self)?),
             },
         })

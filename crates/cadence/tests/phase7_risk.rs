@@ -290,7 +290,7 @@ fn public_range_records_exact_material_without_a_review_pass_and_replays_lost_re
     assert_eq!(answer["status"], "ok", "{answer}");
     assert_eq!(
         answer["observation"]["resolution"],
-        json!({"base_id":base,"head_id":head,"index_id":null})
+        json!({"kind":"committed","base_id":base,"head_id":head})
     );
     assert_eq!(
         answer["observation"]["scan"]["matches"][0]["category"],
@@ -645,13 +645,13 @@ fn failed_ref_and_blob_reads_record_unchecked_observations_with_partial_endpoint
             "bad-base",
             "missing",
             head.as_str(),
-            json!({"base_id":null,"head_id":head,"index_id":null}),
+            json!({"kind":"committed","base_id":null,"head_id":head}),
         ),
         (
             "bad-head",
             base.as_str(),
             "missing",
-            json!({"base_id":base,"head_id":null,"index_id":null}),
+            json!({"kind":"committed","base_id":base,"head_id":null}),
         ),
     ] {
         let answer = repo.call(repo.request(id, left, right));
@@ -749,7 +749,7 @@ fn staged_scan_reads_the_captured_index_instead_of_unstaged_worktree_bytes() {
     );
     assert_eq!(
         answer["observation"]["resolution"],
-        json!({"base_id":base,"head_id":null,"index_id":index})
+        json!({"kind":"staged","base_id":base,"index_id":index})
     );
     assert_eq!(answer["observation"]["scope"]["worker"], "3");
 }
@@ -768,8 +768,166 @@ fn unreadable_index_records_unchecked_staged_observation_with_resolved_base() {
     assert!(!scan.checked && scan.inconclusive && !scan.empty);
     assert_eq!(
         answer["observation"]["resolution"],
-        json!({"base_id":base,"head_id":null,"index_id":null})
+        json!({"kind":"staged","base_id":base,"index_id":null})
     );
     fs::write(index_path, bytes).unwrap();
     assert_eq!(risk::read(&repo.view().snapshot.data).unwrap().len(), 1);
+}
+
+#[test]
+fn no_commit_range_is_distinct_from_excluded_commits_empty_staging_and_zero_net_diff() {
+    let repo = Repo::new();
+    let original = repo.git(&["rev-parse", "HEAD"]);
+    repo.git(&["branch", "same-commit", "HEAD"]);
+    let mut no_ranges = Vec::new();
+    for (id, base, head) in [("same", "HEAD", "HEAD"), ("aliases", "same-commit", "HEAD")] {
+        let answer = repo.call(repo.request(id, base, head));
+        assert_eq!(answer["status"], "ok", "{answer}");
+        assert_eq!(answer["observation"]["outcome"], "no-range");
+        assert!(answer["observation"]["scan"].is_null());
+        assert_eq!(
+            answer["observation"]["resolution"],
+            json!({"kind":"committed","base_id":original,"head_id":original})
+        );
+        no_ranges.push(
+            answer["confirmation"]["decision_id"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        );
+    }
+    repo.write(
+        ".planning/phases/7/REVIEW-only.md",
+        b"DROP TABLE excluded\n",
+    );
+    let excluded = repo.commit(&[".planning/phases/7/REVIEW-only.md"]);
+    assert_ne!(excluded, original);
+    let answer = repo.call(repo.request("excluded-commits", &original, &excluded));
+    assert_eq!(answer["observation"]["outcome"], "checked");
+    let scan = scan_of(&answer);
+    assert!(scan.checked && scan.empty && !scan.inconclusive);
+    let mut staged = repo.request("empty-staged", &excluded, "HEAD");
+    staged["source"] = json!({"kind":"staged","base":excluded});
+    let answer = repo.call(staged);
+    let scan = scan_of(&answer);
+    assert_eq!(answer["observation"]["outcome"], "checked");
+    assert!(scan.checked && scan.empty && !scan.inconclusive);
+    let resolution = &answer["observation"]["resolution"];
+    assert_eq!(resolution["kind"], "staged");
+    assert!(resolution.get("head_id").is_none());
+    assert_eq!(
+        resolution["index_id"],
+        repo.git(&["rev-parse", "HEAD^{tree}"])
+    );
+    repo.git(&[
+        "commit",
+        "-q",
+        "-S",
+        "--allow-empty",
+        "-m",
+        "feat(7): fixture empty commit",
+    ]);
+    let empty_commit = repo.git(&["rev-parse", "HEAD"]);
+    let answer = repo.call(repo.request("empty-commit", &excluded, &empty_commit));
+    let scan = scan_of(&answer);
+    assert!(scan.checked && scan.empty && !scan.inconclusive);
+    assert_eq!(answer["observation"]["outcome"], "checked");
+    let view = repo.view();
+    let records = risk::read(&view.snapshot.data).unwrap();
+    assert_eq!(records.len(), 5);
+    for id in no_ranges {
+        let record = &records[&id];
+        assert_eq!(
+            record.observation.outcome,
+            risk::ObservationOutcome::NoRange
+        );
+        assert!(record.observation.scan.is_none());
+        assert!(
+            matches!(&record.decision().unwrap().decision, store::model::Decision::Gate { outcome, .. } if outcome == "risk-skipped-no-range")
+        );
+        let mut false_clean = record.observation.clone();
+        false_clean.outcome = risk::ObservationOutcome::Checked;
+        false_clean.scan = Some(risk_diff::scan(Some(b""), &[], &false_clean.surfaces).unwrap());
+        assert!(false_clean.validate().is_err());
+    }
+}
+
+#[test]
+fn moving_refs_and_changing_staged_bytes_cannot_relabel_captured_objects() {
+    use cadence::rail::git;
+    let repo = Repo::new();
+    let base = repo.git(&["rev-parse", "HEAD"]);
+    repo.write("work.txt", b"DROP TABLE committed\n");
+    let first = repo.commit(&["work.txt"]);
+    repo.git(&["branch", "moving", &first]);
+    let (resolved, diagnostics) = git::resolve(
+        &repo.root,
+        &risk::Source::Committed {
+            base: base.clone(),
+            head: "moving".into(),
+        },
+    );
+    assert!(diagnostics.is_empty());
+    repo.write("work.txt", b"JSON.parse(newer)\n");
+    let second = repo.commit(&["work.txt"]);
+    repo.git(&["update-ref", "refs/heads/moving", &second]);
+    let material = resolved.material().unwrap();
+    assert_eq!(material.tip_id(), first);
+    let scan = git::scan(&repo.root, &material, &risk::CATEGORIES.map(str::to_owned)).unwrap();
+    assert_eq!(
+        scan.matches
+            .iter()
+            .map(|m| m.category.as_str())
+            .collect::<Vec<_>>(),
+        ["destructive"]
+    );
+    repo.write("work.txt", b"Mutex staged-first\n");
+    repo.git(&["add", "--", "work.txt"]);
+    let source = risk::Source::Staged { base: base.clone() };
+    let (old, diagnostics) = git::resolve(&repo.root, &source);
+    assert!(diagnostics.is_empty());
+    repo.write("work.txt", b"jwt.verify(staged_second)\n");
+    repo.git(&["add", "--", "work.txt"]);
+    let (new, diagnostics) = git::resolve(&repo.root, &source);
+    assert!(diagnostics.is_empty());
+    assert_ne!(
+        old.material().unwrap().tip_id(),
+        new.material().unwrap().tip_id()
+    );
+    let scan = git::scan(
+        &repo.root,
+        &old.material().unwrap(),
+        &risk::CATEGORIES.map(str::to_owned),
+    )
+    .unwrap();
+    assert_eq!(
+        scan.matches
+            .iter()
+            .map(|m| m.category.as_str())
+            .collect::<Vec<_>>(),
+        ["concurrency"]
+    );
+    let scan = git::scan(
+        &repo.root,
+        &new.material().unwrap(),
+        &risk::CATEGORIES.map(str::to_owned),
+    )
+    .unwrap();
+    assert_eq!(
+        scan.matches
+            .iter()
+            .map(|m| m.category.as_str())
+            .collect::<Vec<_>>(),
+        ["auth"]
+    );
+    assert!(
+        git::diff(
+            &repo.root,
+            &MaterialIdentity::Committed {
+                base_id: base,
+                head_id: "moving".into()
+            }
+        )
+        .is_err()
+    );
 }
