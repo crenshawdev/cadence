@@ -14,7 +14,7 @@ pub const CATEGORIES: [&str; 8] = [
     "untrusted_input",
 ];
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MaterialIdentity {
     Committed { base_id: String, head_id: String },
