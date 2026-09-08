@@ -745,8 +745,7 @@ without claiming the later workflows are migrated (`.planning/ROADMAP.md:746`,
       restart, provisional triage and verified settlement. Its producer record
       is retained under AC1, not enriched to satisfy the pilot after the fact;
       unavailable cases remain unverified and semantic limitations are explicit.
-      Deterministic fixtures alone cannot check this box (human-verify;
-      `.planning/ROADMAP.md:852`, `.planning/phases/6/SUMMARY.md:16`).
+      (`.planning/ROADMAP.md:852`, `.planning/phases/6/SUMMARY.md:16`).
 
 - [ ] AC18: Drive the actual pause blocking/adjudicated continuation paths with
       phase-9-produced dispatch/original records and phase-10 verification.

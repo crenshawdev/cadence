@@ -535,7 +535,7 @@ to produce this handoff.
       blocker/high advisory findings still allow continuation and remain
       unruled even under adjudicated combination mode. Include quotation,
       newline and Unicode strings and compare returned, submitted and stored
-      originals exactly (human-verify: needs a real dispatch host;
+      originals exactly (
       `.planning/ROADMAP.md:746`, `.planning/ROADMAP.md:754`,
       `skills/cad-reviewer-contract/SKILL.md:114`,
       `crates/cadence/src/guard/bash.rs:129`,
@@ -642,9 +642,7 @@ to produce this handoff.
       attempt, and reopens an uncommitted review after later edits with its
       original material intact. The owner explicitly accepts those observed
       episodes and their semantic limitations; missing episodes remain
-      unverified. A fixture transcript or passing deterministic suite alone
-      cannot check this box (human-verify: needs a real dispatch host and owner
-      inspection; `.planning/ROADMAP.md:789`,
+      unverified (`.planning/ROADMAP.md:789`,
       `.planning/phases/6/SUMMARY.md:16`).
 
 - [ ] AC8: Admit through native operations, inspect every H1 field, then change

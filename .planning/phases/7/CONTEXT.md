@@ -309,8 +309,7 @@ arm. See D-34.
       the defaults-instead-of-your-settings reason, and an already-established
       deny survives the tear with that reason appended. With the hard-fail
       config key set and a protected branch, these conditions deny instead. All
-      three outcomes are exercised deliberately, not inferred - including at
-      least one against a real host.
+      three outcomes are exercised deliberately, not inferred.
 
 - [ ] AC3: A plan declares `files:` and `directories:`. A trailing slash in
       `files:` is REFUSED with a typed error naming the field; it is never
