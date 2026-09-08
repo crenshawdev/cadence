@@ -354,7 +354,7 @@ settled:
 - [x] **Phase 4: Derivation and the internal spine** - phase state derived from disk, the evidence set enumerated, and a memo that makes disagreement a hard error
 - [x] **Phase 5: The evidence record and what comes next** - the facts routing depends on written down when they happen, and the binary selecting the next action from them
 - [x] **Phase 6: The boundary and the execute slice** - the typed tool schema, typed refusals, and `/cad-execute` proven end to end through it
-- [ ] **Phase 7: The commit rail and the risk gates** - `git-guard`, the protected-branch decision, the lease and the risk check: what sixteen skills commit through
+- [x] **Phase 7: The commit rail and the risk gates** - `git-guard`, the protected-branch decision, the lease and the risk check: what sixteen skills commit through
 - [ ] **Phase 8: Config and routing** - two-layer effective config, the roles interview, retired-key migration, and `route resolve`
 - [ ] **Phase 9: Review delivery and identity** - raw reviewer returns persisted by the binary, shared gate settings, first usable review, and durable snapshot identity
 - [ ] **Phase 10: Review evidence verification** - verified settlement, the provider and filing arms with their five repairs, deferred settlement and durable triage re-arm
