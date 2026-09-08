@@ -255,7 +255,7 @@ pub enum DeliveryState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestedVoice {
     pub agent: String,
-    pub model: String,
+    pub model: Option<String>,
     pub effort: Option<String>,
     pub routing: Option<Routing>,
     pub selection_evidence: String,
