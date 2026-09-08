@@ -156,3 +156,124 @@ fn first_usage_spent_cost() {
         json!({"cost":"0.02","currency":"USD"})
     );
 }
+
+fn panel_input(name: &str) -> Value {
+    let inputs: Value =
+        serde_json::from_str(include_str!("fixtures/phase9/selection-panel.json")).unwrap();
+    inputs[name].clone()
+}
+
+#[test]
+fn panel_roster_panel_ac118() {
+    let input = serde_json::from_value(panel_input("panel")).unwrap();
+    assert_eq!(
+        selection::dispatch_roster(&input).required_requests,
+        ["A", "B"]
+    );
+}
+
+#[test]
+fn panel_roster_adjudicated_ac119() {
+    let input = serde_json::from_value(panel_input("adjudicated")).unwrap();
+    assert_eq!(
+        selection::dispatch_roster(&input).required_requests,
+        ["A", "B"]
+    );
+}
+
+#[test]
+fn panel_pending_ac120() {
+    let input = panel_input("pending");
+    let roster = serde_json::from_value(input["roster"].clone()).unwrap();
+    let slots = serde_json::from_value(input["slots"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::delivery_completion(&roster, &slots)).unwrap(),
+        json!("incomplete")
+    );
+}
+
+#[test]
+fn panel_interrupted_ac121() {
+    let input = panel_input("interrupted");
+    let roster = serde_json::from_value(input["roster"].clone()).unwrap();
+    let slots = serde_json::from_value(input["slots"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::delivery_completion(&roster, &slots)).unwrap(),
+        json!("incomplete")
+    );
+}
+
+#[test]
+fn panel_success_ac122() {
+    let input = panel_input("success");
+    let roster = serde_json::from_value(input["roster"].clone()).unwrap();
+    let slots = serde_json::from_value(input["slots"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::delivery_completion(&roster, &slots)).unwrap(),
+        json!("usable-complete")
+    );
+}
+
+#[test]
+fn panel_failed_no_fallback_ac123() {
+    let input = panel_input("failed-no-fallback");
+    let roster = serde_json::from_value(input["roster"].clone()).unwrap();
+    let slots = serde_json::from_value(input["slots"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::delivery_completion(&roster, &slots)).unwrap(),
+        json!("complete-with-failure")
+    );
+}
+
+#[test]
+fn panel_failed_fallback_success_ac124() {
+    let input = panel_input("failed-fallback-success");
+    let roster = serde_json::from_value(input["roster"].clone()).unwrap();
+    let slots = serde_json::from_value(input["slots"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::delivery_completion(&roster, &slots)).unwrap(),
+        json!("usable-complete")
+    );
+}
+
+#[test]
+fn panel_failed_fallback_failed_ac125() {
+    let input = panel_input("failed-fallback-failed");
+    let roster = serde_json::from_value(input["roster"].clone()).unwrap();
+    let slots = serde_json::from_value(input["slots"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::delivery_completion(&roster, &slots)).unwrap(),
+        json!("complete-with-failure")
+    );
+}
+
+#[test]
+fn panel_missing_b_missing_slot() {
+    let input = panel_input("missing-b");
+    let roster = serde_json::from_value(input["roster"].clone()).unwrap();
+    let slots = serde_json::from_value(input["slots"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::delivery_completion(&roster, &slots)).unwrap(),
+        json!("incomplete")
+    );
+}
+
+#[test]
+fn panel_fallback_pending_fallback_wait() {
+    let input = panel_input("fallback-pending");
+    let roster = serde_json::from_value(input["roster"].clone()).unwrap();
+    let slots = serde_json::from_value(input["slots"].clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::delivery_completion(&roster, &slots)).unwrap(),
+        json!("incomplete")
+    );
+}
+
+#[test]
+fn panel_roster_preserves_per_slot_fallbacks() {
+    let input = serde_json::from_value(panel_input("panel")).unwrap();
+    assert_eq!(
+        serde_json::to_value(selection::dispatch_roster(&input).fallbacks).unwrap(),
+        json!({"A":null,"B":"local"})
+    );
+}

@@ -92,3 +92,82 @@ pub fn attempt_usage(attempt: &AttemptOutcome) -> Usage {
         currency: None,
     })
 }
+
+use super::model::{CompletionRule, SelectionMode};
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct RequiredSlot {
+    pub voice: String,
+    pub fallback: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PanelAdmission {
+    pub combination: SelectionMode,
+    pub slots: Vec<RequiredSlot>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DispatchRoster {
+    pub required_requests: Vec<String>,
+    pub fallbacks: BTreeMap<String, Option<String>>,
+    pub completion: CompletionRule,
+}
+
+/// Both panel and adjudicated delivery freeze the complete supplied roster.
+/// Combination affects later interpretation, never which required slots remain.
+pub fn dispatch_roster(admission: &PanelAdmission) -> DispatchRoster {
+    DispatchRoster {
+        required_requests: admission
+            .slots
+            .iter()
+            .map(|slot| slot.voice.clone())
+            .collect(),
+        fallbacks: admission
+            .slots
+            .iter()
+            .map(|slot| (slot.voice.clone(), slot.fallback.clone()))
+            .collect(),
+        completion: CompletionRule::AllRequiredTerminal,
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SlotOutcome {
+    pub primary: AttemptOutcome,
+    pub fallback: Option<AttemptOutcome>,
+}
+
+/// Missing, running or interrupted required work keeps delivery incomplete.
+/// Failure is terminal only after the slot's admitted fallback is exhausted.
+pub fn delivery_completion(
+    roster: &DispatchRoster,
+    slots: &BTreeMap<String, SlotOutcome>,
+) -> Completion {
+    let mut completion = Completion::UsableComplete;
+    for voice in &roster.required_requests {
+        let Some(slot) = slots.get(voice) else {
+            return Completion::Incomplete;
+        };
+        let mut state = outcome(&slot.primary);
+        if state == Completion::CompleteWithFailure {
+            let Some(fallback_rule) = roster.fallbacks.get(voice) else {
+                // An absent rule is unknown, not an admitted no-fallback rule.
+                return Completion::Incomplete;
+            };
+            if fallback_rule.is_some() {
+                state = slot
+                    .fallback
+                    .as_ref()
+                    .map(outcome)
+                    .unwrap_or(Completion::Incomplete);
+            }
+        }
+        match state {
+            Completion::Incomplete => return Completion::Incomplete,
+            Completion::CompleteWithFailure => completion = Completion::CompleteWithFailure,
+            Completion::UsableComplete => {}
+        }
+    }
+    completion
+}
