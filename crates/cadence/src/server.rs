@@ -68,6 +68,9 @@ pub mod rail_service;
 #[path = "config_service.rs"]
 pub mod config_service;
 
+#[path = "review_service.rs"]
+pub mod review_service;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -257,6 +260,7 @@ enum QueryArguments {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyArguments {
+    Review(review_service::Apply),
     Config(config_service::Apply),
     Executor(ExecutorPatch),
     Rail(cadence::rail::risk::Apply),
@@ -266,6 +270,7 @@ enum ApplyArguments {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyOutput {
+    Review(Box<Envelope<review_service::Output>>),
     Config(Box<Envelope<config_service::Output>>),
     Execution(ExecutionEnvelope),
     Rail(Box<Envelope<cadence::rail::risk::Recorded>>),
@@ -275,6 +280,7 @@ enum ApplyOutput {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum QueryOutput {
+    Review(Box<Envelope<review_service::Output>>),
     Config(Box<Envelope<config_service::Output>>),
     Surfaces(Box<Envelope<cadence::rail::surfaces::Report>>),
     Execution(ExecutionEnvelope),
@@ -349,6 +355,22 @@ fn query_schema() -> Value {
     let mut strict = schema.clone();
     strict.as_object_mut().unwrap().remove("$defs");
     schema["$defs"]["QueryArguments"] = strict;
+    let review =
+        serde_json::to_value(schemars::schema_for!(review_service::Query)).expect("review schema");
+    for (name, value) in review
+        .get("$defs")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        schema["$defs"][name] = value.clone();
+    }
+    let mut variant = review;
+    variant.as_object_mut().unwrap().remove("$defs");
+    schema["oneOf"]
+        .as_array_mut()
+        .expect("query variants")
+        .push(variant);
     host_schema(schema)
 }
 
@@ -514,6 +536,26 @@ impl ServerHandler for PublicServer {
                 .into())
             }
             "cadence_query" => {
+                if raw
+                    .as_ref()
+                    .and_then(|v| v["operation"].as_str())
+                    .is_some_and(|op| op.starts_with("review-"))
+                {
+                    let answer =
+                        match serde_json::from_value::<review_service::Query>(raw.clone().unwrap())
+                        {
+                            Ok(query) => {
+                                self.server
+                                    .service
+                                    .review(&self.root, review_service::Command::Query(query))
+                                    .await
+                            }
+                            Err(error) => Ok(review_service::refused(error.to_string())),
+                        };
+                    return structured_result(
+                        answer.map(|answer| QueryOutput::Review(Box::new(answer))),
+                    );
+                }
                 let answer = match raw
                     .clone()
                     .and_then(|value| serde_json::from_value::<QueryArguments>(value).ok())
@@ -651,10 +693,39 @@ impl ServerHandler for PublicServer {
                 structured_result(Ok(QueryOutput::Execution(envelope)))
             }
             "cadence_apply" => {
+                if raw
+                    .as_ref()
+                    .and_then(|v| v["operation"].as_str())
+                    .is_some_and(|op| op.starts_with("review-"))
+                {
+                    let answer =
+                        match serde_json::from_value::<review_service::Apply>(raw.clone().unwrap())
+                        {
+                            Ok(apply) => {
+                                self.server
+                                    .service
+                                    .review(&self.root, review_service::Command::Apply(apply))
+                                    .await
+                            }
+                            Err(error) => Ok(review_service::refused(error.to_string())),
+                        };
+                    return structured_result(
+                        answer.map(|answer| ApplyOutput::Review(Box::new(answer))),
+                    );
+                }
                 let answer = match raw
                     .clone()
                     .and_then(|value| serde_json::from_value::<ApplyArguments>(value).ok())
                 {
+                    Some(ApplyArguments::Review(request)) => {
+                        return structured_result(
+                            self.server
+                                .service
+                                .review(&self.root, review_service::Command::Apply(request))
+                                .await
+                                .map(|answer| ApplyOutput::Review(Box::new(answer))),
+                        );
+                    }
                     Some(ApplyArguments::Config(request)) => {
                         return structured_result(
                             self.server

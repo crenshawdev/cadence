@@ -225,10 +225,42 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
     let paused = pause(&view)?;
     let task_root = root.clone();
     let lifecycle = checked.answer().clone();
-    let observed =
+    let mut observed =
         tokio::task::spawn_blocking(move || observations::capture(&task_root, &lifecycle))
             .await
             .map_err(|_| store_error(Error::Closed))??;
+    let modern = cadence::review::deferred::enumerate_deferred(session.review_store())
+        .await
+        .map_err(store_error)?;
+    let records =
+        cadence::review::persistence::records(&view.snapshot.data).map_err(store_error)?;
+    let mut members = Vec::new();
+    let mut unreadable = Vec::new();
+    for member in modern.members {
+        let address = std::path::PathBuf::from(format!("review:{}", member.member));
+        let input = cadence::review::consumers::deferred_enqueue_input(
+            session.review_store(),
+            &member.references.attempt,
+        )
+        .await;
+        match input {
+            Ok(input) => {
+                if input.findings.is_none() {
+                    unreadable.push(address.clone());
+                }
+                members.push(observations::QueueMember {
+                    path: address,
+                    phase: input.admission.home.id,
+                    trigger: input.admission.trigger.unwrap_or_default(),
+                    discriminator: input.admission.discriminator,
+                    round: input.admission.round,
+                    findings: input.findings.map_or(0, |findings| findings.len()),
+                });
+            }
+            Err(_) => unreadable.push(address),
+        }
+    }
+    observations::include_reviews(&mut observed.queue, members.clone(), unreadable.clone());
     let answer = next_action::select(checked.answer(), &observed, paused.as_ref(), skip);
     #[cfg(test)]
     {
@@ -241,7 +273,8 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
     }
     let task_driver = driver.clone();
     tokio::task::spawn_blocking(move || {
-        let current = observations::capture(&root, checked.answer())?;
+        let mut current = observations::capture(&root, checked.answer())?;
+        observations::include_reviews(&mut current.queue, members, unreadable);
         let lifecycle = derivation::capture_inputs(&root, (task_driver.artifacts)().as_mut())?;
         if current != observed || &lifecycle != checked.capture() {
             return Err(DerivationError::InputsChanged);
@@ -251,6 +284,10 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
     .await
     .map_err(|_| store_error(Error::Closed))??;
     let latest = session.derivation_view().await.map_err(store_error)?;
+    if cadence::review::persistence::records(&latest.snapshot.data).map_err(store_error)? != records
+    {
+        return Err(DerivationError::InputsChanged);
+    }
     if latest.snapshot != view.snapshot || session.config().map_err(store_error)? != config {
         return Err(DerivationError::InputsChanged);
     }

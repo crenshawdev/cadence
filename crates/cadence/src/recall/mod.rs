@@ -203,6 +203,11 @@ mod resident {
     };
 
     enum Request {
+        Review {
+            root: PathBuf,
+            command: Box<crate::server::review_service::Command>,
+            reply: oneshot::Sender<crate::server::review_service::Answer>,
+        },
         Config {
             root: PathBuf,
             command: crate::server::config_service::Command,
@@ -386,6 +391,16 @@ mod resident {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
+                        Request::Review {
+                            root,
+                            command,
+                            reply,
+                        } => {
+                            let result =
+                                crate::server::review_service::execute(&factory, &root, *command)
+                                    .await;
+                            let _ = reply.send(result);
+                        }
                         Request::Config {
                             root,
                             command,
@@ -503,6 +518,23 @@ mod resident {
                 // Accepted requests drain; canceled reply receivers cannot panic.
             });
             Self { requests }
+        }
+
+        pub async fn review(
+            &self,
+            root: &Path,
+            command: crate::server::review_service::Command,
+        ) -> crate::server::review_service::Answer {
+            let (reply, receive) = oneshot::channel();
+            self.requests
+                .send(Request::Review {
+                    root: root.into(),
+                    command: Box::new(command),
+                    reply,
+                })
+                .await
+                .map_err(|_| Error::Closed)?;
+            receive.await.map_err(|_| Error::Closed)?
         }
 
         pub async fn config_interview(

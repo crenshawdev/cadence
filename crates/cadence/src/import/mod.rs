@@ -470,6 +470,12 @@ pub struct Session<I: ConfigIo = FileIo> {
     manifest: ImportManifest,
 }
 impl<I: ConfigIo> Session<I> {
+    /// Saved review operations read admitted policy; the writer still validates
+    /// current controlling inputs before every conditional mutation.
+    pub fn review_store(&self) -> &Store {
+        &self.store
+    }
+
     pub fn import_manifest(&self) -> &ImportManifest {
         &self.manifest
     }

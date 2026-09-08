@@ -65,6 +65,15 @@ impl Queue {
     }
 }
 
+/// Modern queue identity comes from the saved all-home index, independently of
+/// historical filename/sibling filtering in `queue`.
+pub fn include_reviews(queue: &mut Queue, members: Vec<QueueMember>, unreadable: Vec<PathBuf>) {
+    queue.members.extend(members);
+    queue.unreadable.extend(unreadable);
+    queue.unreadable.sort();
+    queue.unreadable.dedup();
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Observations {
     pub reports: Vec<(PhaseId, Vec<Report>)>,
