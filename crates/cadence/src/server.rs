@@ -234,6 +234,8 @@ enum QueryArguments {
         plan: Option<NonZeroU32>,
         attempt: Option<NonZeroU32>,
     },
+    #[serde(rename = "config-entry")]
+    ConfigEntry { tokens: Vec<String> },
     #[serde(rename = "config-facts")]
     ConfigFacts {},
     #[serde(rename = "config-interview")]
@@ -564,6 +566,25 @@ impl ServerHandler for PublicServer {
                             config_service::refused(
                                 "invalid-arguments",
                                 "config-interview arguments do not match the strict operation schema",
+                            ),
+                        ))));
+                    }
+                    Some(QueryArguments::ConfigEntry { tokens }) => {
+                        return structured_result(
+                            self.server
+                                .service
+                                .config(&self.root, config_service::Command::Entry(tokens))
+                                .await
+                                .map(|answer| QueryOutput::Config(Box::new(answer))),
+                        );
+                    }
+                    None if raw.as_ref().and_then(|v| v["operation"].as_str())
+                        == Some("config-entry") =>
+                    {
+                        return structured_result(Ok(QueryOutput::Config(Box::new(
+                            config_service::refused(
+                                "invalid-arguments",
+                                "config-entry arguments do not match the strict operation schema",
                             ),
                         ))));
                     }

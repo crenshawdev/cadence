@@ -41,6 +41,7 @@ pub struct RouteRequest {
 
 pub enum Command {
     Facts,
+    Entry(Vec<String>),
     Interview(interview::Mode),
     Route(RouteRequest),
     Apply(Apply),
@@ -198,6 +199,11 @@ pub fn retirement(generation: &Generation, snapshot: Option<&Value>) -> Retireme
 #[derive(Serialize, JsonSchema)]
 #[serde(tag = "operation")]
 pub enum Output {
+    #[serde(rename = "config-entry")]
+    Entry {
+        entry: interview::Entry,
+        facts: Facts,
+    },
     #[serde(rename = "route")]
     Route { route: Box<roles::Resolution> },
     #[serde(rename = "config-facts")]
@@ -285,7 +291,11 @@ async fn session_facts<I: ConfigIo>(session: &Session<I>, mode: interview::Mode)
     let view = session
         .request(cadence::store::writer::Operation::Read)
         .await?;
-    let mut facts = interview_facts(&generation, mode);
+    let mut facts = if mode == interview::Mode::Roles {
+        facts(&generation)
+    } else {
+        interview_facts(&generation, mode)
+    };
     facts.retirement = retirement(&generation, Some(&view.snapshot.data));
     Ok(facts)
 }
@@ -302,6 +312,17 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
     root: &Path,
     command: Command,
 ) -> Answer {
+    let entry = if let Command::Entry(tokens) = &command {
+        match interview::entry(tokens) {
+            Ok(interview::Entry::ReviewUnavailable { reason }) => {
+                return Ok(refused("review-setup-unavailable", reason));
+            }
+            Ok(entry) => Some(entry),
+            Err(error) => return Ok(refused("invalid-config", error.to_string())),
+        }
+    } else {
+        None
+    };
     let unavailable = |error: &dyn std::fmt::Display| {
         let paths = factory
             .active_config_paths(root)
@@ -327,6 +348,17 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
         Err(error) => return Ok(unavailable(&error)),
     };
     let result = match command {
+        Command::Entry(_) => {
+            let entry = entry.expect("entry prepared before session acquisition");
+            let mode = match entry {
+                interview::Entry::Roles { mode } => mode,
+                _ => interview::Mode::Roles,
+            };
+            return Ok(match session_facts(&session, mode).await {
+                Ok(facts) => Envelope::Ok(Output::Entry { entry, facts }),
+                Err(error) => unavailable(&error),
+            });
+        }
         Command::Route(request) => {
             let generation = match session.config() {
                 Ok(generation) => generation,

@@ -538,3 +538,242 @@ async fn final_owned_validation_refuses_change_during_preparation() {
         Err(Error::Conflict("interview config inputs changed".into()))
     );
 }
+
+#[test]
+fn entry_preparation_retains_every_named_mode() {
+    use interview::Entry;
+    assert_eq!(
+        [
+            vec![],
+            vec!["--roles"],
+            vec!["--roles", "--global"],
+            vec!["--surfaces"],
+            vec!["--review"],
+            vec!["--review", "redetect"]
+        ]
+        .into_iter()
+        .map(
+            |tokens| interview::entry(&tokens.into_iter().map(str::to_string).collect::<Vec<_>>())
+                .unwrap()
+        )
+        .collect::<Vec<_>>(),
+        vec![
+            Entry::Knobs,
+            Entry::Roles { mode: Mode::Roles },
+            Entry::Roles { mode: Mode::Global },
+            Entry::Surfaces,
+            Entry::ReviewUnavailable {
+                reason:
+                    "Native live-provider setup is unavailable until the review-delivery phase."
+                        .into()
+            },
+            Entry::ReviewUnavailable {
+                reason:
+                    "Native live-provider setup is unavailable until the review-delivery phase."
+                        .into()
+            }
+        ]
+    );
+}
+#[test]
+fn token_parser_preserves_literal_model_text_null_effort_and_empty_array() {
+    assert_eq!(
+        interview::entry(&[
+            "roles.cad-executor.model=  \"vendor model\" = 雪  ".into(),
+            "roles.cad-executor.effort=null".into(),
+            "review.triggers.risk_surface.waive_routing_floor=[]".into(),
+        ])
+        .unwrap(),
+        interview::Entry::Values {
+            layer: Layer::Repo,
+            updates: vec![
+                Update {
+                    key: "roles.cad-executor.model".into(),
+                    value: json!("  \"vendor model\" = 雪  ")
+                },
+                Update {
+                    key: "roles.cad-executor.effort".into(),
+                    value: Value::Null
+                },
+                Update {
+                    key: "review.triggers.risk_surface.waive_routing_floor".into(),
+                    value: json!([])
+                }
+            ]
+        }
+    );
+}
+#[test]
+fn token_parser_accepts_unquoted_named_rung() {
+    assert_eq!(
+        interview::entry(&["roles.cad-executor.effort=xhigh".into()]).unwrap(),
+        interview::Entry::Values {
+            layer: Layer::Repo,
+            updates: vec![Update {
+                key: "roles.cad-executor.effort".into(),
+                value: json!("xhigh")
+            }]
+        }
+    );
+}
+#[test]
+fn token_parser_rejects_unknown_flag() {
+    assert_eq!(
+        interview::entry(&["--unknown".into()]),
+        Err(Error::Invalid(
+            "config entry requires key=value tokens".into()
+        ))
+    );
+}
+#[test]
+fn grouped_apply_decodes_exact_literal_answer_fields() {
+    let output:cadence::config_service::Apply=serde_json::from_value(json!({
+        "operation":"config-interview-apply","mode":"global","accepted":true,
+        "captured":{"repo":{"identity":"/repo/config.v4.json","content":null,"stamp":null},"global":null,"global_alias":true},
+        "answers":[{"key":"roles.cad-executor.model","value":"  \"model\" = 雪  "},{"key":"roles.cad-executor.effort","value":null},{"key":"review.triggers.risk_surface.waive_routing_floor","value":[]}]
+    })).unwrap();
+    assert_eq!(
+        match output {
+            cadence::config_service::Apply::Interview {
+                mode,
+                captured,
+                accepted,
+                answers,
+            } => (mode, captured, accepted, answers),
+            _ => panic!("interview expected"),
+        },
+        (
+            Mode::Global,
+            interview::Captured {
+                repo: interview::Input {
+                    identity: "/repo/config.v4.json".into(),
+                    content: None,
+                    stamp: None
+                },
+                global: None,
+                global_alias: true
+            },
+            true,
+            Some(vec![
+                Update {
+                    key: "roles.cad-executor.model".into(),
+                    value: json!("  \"model\" = 雪  ")
+                },
+                Update {
+                    key: "roles.cad-executor.effort".into(),
+                    value: Value::Null
+                },
+                Update {
+                    key: "review.triggers.risk_surface.waive_routing_floor".into(),
+                    value: json!([])
+                }
+            ])
+        )
+    );
+}
+#[test]
+fn literal_relay_updates_prepare_identical_native_stored_values() {
+    assert_eq!(
+        cadence::config::write::prepare_batch(
+            Layer::Repo,
+            &json!({}),
+            &[
+                Update {
+                    key: "roles.cad-executor.model".into(),
+                    value: json!("  \"model\" = 雪  ")
+                },
+                Update {
+                    key: "roles.cad-executor.effort".into(),
+                    value: Value::Null
+                },
+                Update {
+                    key: "review.triggers.risk_surface.waive_routing_floor".into(),
+                    value: json!([])
+                }
+            ]
+        )
+        .unwrap()
+        .0,
+        json!({"roles":{"cad-executor":{"model":"  \"model\" = 雪  ","effort":null}},"review":{"triggers":{"risk_surface":{"waive_routing_floor":[]}}}})
+    );
+}
+#[derive(Clone)]
+struct NoReads;
+impl cadence::config::reload::ConfigIo for NoReads {
+    fn read(&mut self, _: &std::path::Path) -> cadence::store::Result<Input> {
+        panic!("review preparation must not open settings")
+    }
+}
+#[tokio::test]
+async fn review_entry_returns_native_unavailable_before_session_acquisition() {
+    let factory = cadence::import::SessionFactory::with_io(
+        None,
+        NoReads,
+        std::sync::Arc::new(cadence::config::planning_policy),
+    );
+    assert_eq!(
+        serde_json::to_value(
+            cadence::config_service::execute(
+                &factory,
+                std::path::Path::new("/project/.planning"),
+                cadence::config_service::Command::Entry(vec!["--review".into(), "redetect".into()])
+            )
+            .await
+            .unwrap()
+        )
+        .unwrap(),
+        json!({"status":"refused","code":"review-setup-unavailable","reason":"Native live-provider setup is unavailable until the review-delivery phase."})
+    );
+}
+#[test]
+fn invalid_live_input_check_returns_named_error_without_write() {
+    let shared = std::sync::Arc::new(std::sync::Mutex::new(Some(
+        br#"{"roles":{"cad-executor":{"effort":"invalid"}}}"#.to_vec(),
+    )));
+    assert_eq!(
+        captured_check(shared)(),
+        Err(Error::Policy(
+            "config unavailable: unusable roles.cad-executor.effort".into()
+        ))
+    );
+}
+#[test]
+fn shipped_skill_allows_only_grouped_tools_and_host_questions() {
+    assert_eq!(
+        include_str!("../../../skills/cad-config/SKILL.md")
+            .lines()
+            .filter_map(|line| line.strip_prefix("  - "))
+            .collect::<Vec<_>>(),
+        vec![
+            "mcp__cadence__cadence_query",
+            "mcp__cadence__cadence_apply",
+            "AskUserQuestion"
+        ]
+    );
+}
+#[test]
+fn shipped_skill_has_no_frozen_execution_or_individual_setter_path() {
+    let skill = include_str!("../../../skills/cad-config/SKILL.md");
+    assert_eq!(
+        [
+            "cadence-core/",
+            "route.mjs",
+            "config.json",
+            "set_config",
+            "  - Bash",
+            "  - Write",
+            "  - Edit"
+        ]
+        .into_iter()
+        .filter(|token| skill.contains(token))
+        .collect::<Vec<_>>(),
+        Vec::<&str>::new()
+    );
+}
+#[test]
+fn surfaces_entry_is_separate_from_the_floor_interview() {
+    assert_eq!(
+        interview::entry(&["--surfaces".into()]),
+        Ok(interview::Entry::Surfaces)
+    );
+}

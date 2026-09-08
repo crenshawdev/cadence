@@ -216,3 +216,70 @@ pub fn answers(
     }
     Ok((prepared.target, updates))
 }
+
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum Entry {
+    Knobs,
+    Roles { mode: Mode },
+    Surfaces,
+    ReviewUnavailable { reason: String },
+    Values { layer: Layer, updates: Vec<Update> },
+}
+
+pub fn entry(tokens: &[String]) -> Result<Entry> {
+    let words = tokens.iter().map(String::as_str).collect::<Vec<_>>();
+    match words.as_slice() {
+        [] => return Ok(Entry::Knobs),
+        ["--roles"] => return Ok(Entry::Roles { mode: Mode::Roles }),
+        ["--roles", "--global"] => return Ok(Entry::Roles { mode: Mode::Global }),
+        ["--surfaces"] => return Ok(Entry::Surfaces),
+        ["--review"] | ["--review", "redetect"] => {
+            return Ok(Entry::ReviewUnavailable {
+                reason:
+                    "Native live-provider setup is unavailable until the review-delivery phase."
+                        .into(),
+            });
+        }
+        _ => (),
+    }
+    let (layer, tokens) = if words.first() == Some(&"--global") {
+        (Layer::Global, &words[1..])
+    } else {
+        (Layer::Repo, words.as_slice())
+    };
+    if tokens.is_empty() {
+        return Err(Error::Invalid(
+            "config entry requires key=value tokens".into(),
+        ));
+    }
+    let mut updates = Vec::new();
+    for token in tokens {
+        let (key, text) = token
+            .split_once('=')
+            .ok_or_else(|| Error::Invalid("config entry requires key=value tokens".into()))?;
+        let spec = schema()
+            .get(key)
+            .ok_or_else(|| Error::Invalid(format!("unknown config key {key}")))?;
+        let value = if text == "null" {
+            Value::Null
+        } else if matches!(spec["type"].as_str(), Some("string" | "string_or_null"))
+            || (spec["type"] == "enum"
+                && spec["values"]
+                    .as_array()
+                    .is_some_and(|allowed| allowed.contains(&Value::String(text.into()))))
+        {
+            Value::String(text.into())
+        } else {
+            serde_json::from_str(text)
+                .map_err(|_| Error::Invalid(format!("invalid value for {key}")))?
+        };
+        validate_update(layer, key, &value)?;
+        updates.push(Update {
+            key: key.into(),
+            value,
+        });
+    }
+    super::write::prepare_batch(layer, &serde_json::json!({}), &updates)?;
+    Ok(Entry::Values { layer, updates })
+}
