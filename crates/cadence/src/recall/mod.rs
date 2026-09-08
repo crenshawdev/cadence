@@ -203,6 +203,11 @@ mod resident {
     };
 
     enum Request {
+        RailReceipt {
+            root: PathBuf,
+            command: Box<crate::server::rail_service::ReceiptCommand>,
+            reply: oneshot::Sender<crate::server::rail_service::ReceiptAnswer>,
+        },
         RailApply {
             root: PathBuf,
             request: Box<cadence::rail::risk::Apply>,
@@ -376,6 +381,16 @@ mod resident {
                 let mut caches = BTreeMap::<PathBuf, Option<Cached>>::new();
                 while let Some(request) = receiver.recv().await {
                     match request {
+                        Request::RailReceipt {
+                            root,
+                            command,
+                            reply,
+                        } => {
+                            let result =
+                                crate::server::rail_service::receipt(&factory, &root, *command)
+                                    .await;
+                            let _ = reply.send(result);
+                        }
                         Request::RailApply {
                             root,
                             request,
@@ -473,6 +488,23 @@ mod resident {
                 // Accepted requests drain; canceled reply receivers cannot panic.
             });
             Self { requests }
+        }
+
+        pub async fn rail_receipt(
+            &self,
+            root: &Path,
+            command: crate::server::rail_service::ReceiptCommand,
+        ) -> crate::server::rail_service::ReceiptAnswer {
+            let (reply, completion) = oneshot::channel();
+            self.requests
+                .send(Request::RailReceipt {
+                    root: root.into(),
+                    command: Box::new(command),
+                    reply,
+                })
+                .await
+                .map_err(|_| Error::Closed)?;
+            completion.await.map_err(|_| Error::Closed)?
         }
 
         pub async fn apply_rail(

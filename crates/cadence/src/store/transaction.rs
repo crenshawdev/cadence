@@ -11,6 +11,14 @@ pub const INTENT: &str = ".store-intent.json";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum IntentKind {
+    ExecutionFinalizeRiskV1 {
+        phase: u32,
+        decision_id: String,
+        requirements: Vec<cadence::rail::receipts::Requirement>,
+    },
+    RailReceipt {
+        record: Box<cadence::rail::receipts::RecordedFact>,
+    },
     RailObservation {
         record: Box<cadence::rail::risk::Recorded>,
     },
@@ -201,7 +209,9 @@ impl Intent {
                     ));
                 }
             }
-            IntentKind::RailObservation { .. }
+            IntentKind::ExecutionFinalizeRiskV1 { .. }
+            | IntentKind::RailReceipt { .. }
+            | IntentKind::RailObservation { .. }
             | IntentKind::GuardAudit { .. }
             | IntentKind::BoundaryObservationV1 { .. }
             | IntentKind::ExecutionDispatchV1 { .. }
@@ -230,11 +240,132 @@ impl Intent {
                 ));
             }
         }
+        self.validate_rail_receipt(&snapshot)?;
+        self.validate_risk_finalization(&snapshot)?;
         self.validate_rail_observation(&snapshot)?;
         self.validate_guard_audit(&snapshot)?;
         self.validate_boundary_v1(&snapshot, decisions, summary_phase)?;
         Ok(snapshot)
     }
+    fn validate_risk_finalization(&self, snapshot: &Snapshot) -> Result<()> {
+        let IntentKind::ExecutionFinalizeRiskV1 {
+            phase,
+            decision_id,
+            requirements,
+        } = &self.kind
+        else {
+            return Ok(());
+        };
+        if self.participants.len() != 4
+            || self.participants.iter().any(|p| {
+                !matches!(p.target.as_str(), ITEMS | DECISIONS | STATE)
+                    && p.target != format!("phase-summary:{phase}")
+            })
+        {
+            return Err(Error::Invalid(
+                "invalid risk finalization participants".into(),
+            ));
+        }
+        let participant = |name| {
+            self.participants
+                .iter()
+                .find(|p| p.target == name)
+                .ok_or_else(|| Error::Invalid("finalization lacks participant".into()))
+        };
+        let state = participant(STATE)?;
+        let items = participant(ITEMS)?;
+        let decisions = participant(DECISIONS)?;
+        let old = Snapshot::parse(
+            state
+                .expected
+                .bytes
+                .as_deref()
+                .ok_or_else(|| Error::Invalid("finalization lacks prior state".into()))?,
+            items.expected.bytes.as_deref().unwrap_or_default(),
+            decisions.expected.bytes.as_deref().unwrap_or_default(),
+        )?;
+        let expected = cadence::rail::receipts::finalize_execution(&old.data, *phase, requirements)
+            .map_err(super::writer::rail_error)?;
+        let records: Vec<DecisionRecord> = model::parse_lines(&decisions.bytes)?;
+        let mut old_records: Vec<DecisionRecord> =
+            model::parse_lines(decisions.expected.bytes.as_deref().unwrap_or_default())?;
+        let decision = records
+            .iter()
+            .find(|r| &r.id == decision_id)
+            .ok_or_else(|| Error::Invalid("finalization lacks decision".into()))?;
+        if !matches!(&decision.decision, model::Decision::BoundaryV1(value)
+            if value.store_generation == snapshot.generation && !value.terminal
+                && value.boundary.tool == cadence::execution::model::BoundaryTool::CadenceQuery
+                && value.boundary.receipt == (Receipt::Compact { envelope:Envelope::Ok(Success::Complete {phase:*phase}) }))
+        {
+            return Err(Error::Invalid("invalid risk finalization decision".into()));
+        }
+        old_records.push(decision.clone());
+        if snapshot.data != expected
+            || old.generation.checked_add(1) != Some(snapshot.generation)
+            || items.bytes != items.expected.bytes.as_deref().unwrap_or_default()
+            || decisions.bytes != model::render_lines(&old_records)?
+        {
+            return Err(Error::Invalid(
+                "risk finalization changed data outside its projection".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_rail_receipt(&self, snapshot: &Snapshot) -> Result<()> {
+        let IntentKind::RailReceipt { record } = &self.kind else {
+            return Ok(());
+        };
+        record.validate().map_err(super::writer::rail_error)?;
+        if self.participants.len() != 3
+            || self
+                .participants
+                .iter()
+                .any(|p| !matches!(p.target.as_str(), ITEMS | DECISIONS | STATE))
+        {
+            return Err(Error::Invalid(
+                "rail receipt cannot change external participants".into(),
+            ));
+        }
+        let participant = |name| self.participants.iter().find(|p| p.target == name).unwrap();
+        let items = participant(ITEMS);
+        let decisions = participant(DECISIONS);
+        let state = participant(STATE);
+        let old_items = items.expected.bytes.as_deref().unwrap_or_default();
+        let old_decisions = decisions.expected.bytes.as_deref().unwrap_or_default();
+        let old = match state.expected.bytes.as_deref() {
+            Some(bytes) => Snapshot::parse(bytes, old_items, old_decisions)?,
+            None if items.expected.bytes.is_none() && decisions.expected.bytes.is_none() => {
+                Snapshot::new(0, b"", b"", Value::Null)?
+            }
+            _ => {
+                return Err(Error::Invalid(
+                    "rail receipt cannot adopt partial store".into(),
+                ));
+            }
+        };
+        let mut expected: Vec<DecisionRecord> = model::parse_lines(old_decisions)?;
+        expected.push(super::writer::rail_fact_record(record)?);
+        if items.bytes != old_items
+            || decisions.bytes != model::render_lines(&expected)?
+            || old.generation.checked_add(1) != Some(snapshot.generation)
+            || record.confirmation.generation != snapshot.generation
+            || snapshot.operations != old.operations
+            || cadence::rail::receipts::read(&old.data)
+                .map_err(super::writer::rail_error)?
+                .contains_key(&record.fact.key().map_err(super::writer::rail_error)?)
+            || snapshot.data
+                != cadence::rail::receipts::project(&old.data, record)
+                    .map_err(super::writer::rail_error)?
+        {
+            return Err(Error::Invalid(
+                "rail receipt changed data outside its projection".into(),
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_rail_observation(&self, snapshot: &Snapshot) -> Result<()> {
         let IntentKind::RailObservation { record } = &self.kind else {
             return Ok(());
@@ -352,6 +483,13 @@ impl Intent {
                 BoundaryScope::Execution { phase: *phase },
                 decision_id,
                 false,
+            ),
+            IntentKind::ExecutionFinalizeRiskV1 {
+                phase, decision_id, ..
+            } => (
+                BoundaryScope::Execution { phase: *phase },
+                decision_id,
+                true,
             ),
             IntentKind::ExecutionPatchV1 {
                 phase,
@@ -496,6 +634,16 @@ impl Intent {
                     }
                 }
                 let answer_matches = match &value.boundary.receipt {
+                    Receipt::Compact {
+                        envelope: Envelope::Refused { code, .. },
+                    } => {
+                        code == "risk-pending"
+                            && risk_basis.is_some()
+                            && occurrence.terminal.is_none()
+                            && occurrence.active.is_none()
+                            && receipt.outcome.disposition
+                                == cadence::execution::model::PlanDisposition::Complete
+                    }
                     Receipt::Compact {
                         envelope:
                             Envelope::Ok(Success::Complete {

@@ -226,6 +226,12 @@ struct VersionArguments {}
 enum QueryArguments {
     #[serde(rename = "execute-next")]
     ExecuteNext { phase: NonZeroU32 },
+    #[serde(rename = "risk-status")]
+    RiskStatus {
+        scope: cadence::rail::risk::ScopeSelection,
+        source: cadence::rail::risk::Source,
+        surfaces: Option<Vec<String>>,
+    },
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -233,6 +239,7 @@ enum QueryArguments {
 enum ApplyArguments {
     Executor(ExecutorPatch),
     Rail(cadence::rail::risk::Apply),
+    Receipt(cadence::rail::receipts::Apply),
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -240,6 +247,14 @@ enum ApplyArguments {
 enum ApplyOutput {
     Execution(ExecutionEnvelope),
     Rail(Box<Envelope<cadence::rail::risk::Recorded>>),
+    Receipt(Box<Envelope<rail_service::ReceiptOutput>>),
+}
+
+#[derive(Serialize, JsonSchema)]
+#[serde(untagged)]
+enum QueryOutput {
+    Execution(ExecutionEnvelope),
+    Receipt(Box<Envelope<rail_service::ReceiptOutput>>),
 }
 
 /// Hosts require object properties at the root. Keep the strict derived variants
@@ -305,7 +320,12 @@ fn host_schema(mut schema: Value) -> Value {
 }
 
 fn query_schema() -> Value {
-    host_schema(serde_json::to_value(schemars::schema_for!(QueryArguments)).expect("query schema"))
+    let mut schema =
+        serde_json::to_value(schemars::schema_for!(QueryArguments)).expect("query schema");
+    let mut strict = schema.clone();
+    strict.as_object_mut().unwrap().remove("$defs");
+    schema["$defs"]["QueryArguments"] = strict;
+    host_schema(schema)
 }
 
 fn apply_schema() -> Value {
@@ -392,6 +412,25 @@ fn rail_result(answer: rail_service::Answer) -> Result<CallToolResponse, ErrorDa
     .into())
 }
 
+fn receipt_result(answer: rail_service::ReceiptAnswer) -> Result<CallToolResponse, ErrorData> {
+    structured_result(answer.map(|envelope| ApplyOutput::Receipt(Box::new(envelope))))
+}
+
+fn query_receipt_result(
+    answer: rail_service::ReceiptAnswer,
+) -> Result<CallToolResponse, ErrorData> {
+    structured_result(answer.map(|envelope| QueryOutput::Receipt(Box::new(envelope))))
+}
+
+fn structured_result<T: Serialize>(
+    answer: cadence::store::Result<T>,
+) -> Result<CallToolResponse, ErrorData> {
+    let envelope = answer.map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    let value = serde_json::to_value(envelope)
+        .map_err(|_| ErrorData::internal_error("rail answer encoding is invalid", None))?;
+    Ok(CallToolResult::structured(value).into())
+}
+
 impl ServerHandler for PublicServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
@@ -411,14 +450,14 @@ impl ServerHandler for PublicServer {
                     serde_json::to_value(schemars::schema_for!(VersionArguments))
                         .expect("version schema"),
                 ),
-                tool::<ExecutionEnvelope>(
+                tool::<QueryOutput>(
                     "cadence_query",
-                    "Ask for the next native execution dispatch in the bound project.",
+                    "Query native execution or exact material risk status in the bound project.",
                     query_schema(),
                 ),
                 tool::<ApplyOutput>(
                     "cadence_apply",
-                    "Submit an executor patch or record a risk-check of immutable Git material.",
+                    "Submit an executor patch, risk-check, contracted risk fire or consequence.",
                     apply_schema(),
                 ),
             ],
@@ -458,9 +497,40 @@ impl ServerHandler for PublicServer {
                     Some(QueryArguments::ExecuteNext { phase }) => {
                         self.server.query_execution(&self.root, phase.get()).await
                     }
+                    Some(QueryArguments::RiskStatus {
+                        scope,
+                        source,
+                        surfaces,
+                    }) => {
+                        return query_receipt_result(
+                            self.server
+                                .service
+                                .rail_receipt(
+                                    &self.root,
+                                    rail_service::ReceiptCommand::Status(
+                                        cadence::rail::receipts::Query {
+                                            scope,
+                                            source,
+                                            surfaces,
+                                        },
+                                    ),
+                                )
+                                .await,
+                        );
+                    }
+                    None if raw.as_ref().and_then(|v| v["operation"].as_str())
+                        == Some("risk-status") =>
+                    {
+                        return query_receipt_result(Ok(rail_service::refused(
+                            "invalid-arguments",
+                            "risk-status arguments do not match the strict operation schema",
+                        )));
+                    }
                     None => self.refuse_raw(BoundaryTool::CadenceQuery, raw).await,
                 };
-                execution_result(answer)
+                let envelope = answer
+                    .map_err(|failure| ErrorData::internal_error(failure.to_string(), None))?;
+                structured_result(Ok(QueryOutput::Execution(envelope)))
             }
             "cadence_apply" => {
                 let answer = match raw
@@ -474,6 +544,27 @@ impl ServerHandler for PublicServer {
                         return rail_result(
                             self.server.service.apply_rail(&self.root, request).await,
                         );
+                    }
+                    Some(ApplyArguments::Receipt(request)) => {
+                        return receipt_result(
+                            self.server
+                                .service
+                                .rail_receipt(
+                                    &self.root,
+                                    rail_service::ReceiptCommand::Submit(request),
+                                )
+                                .await,
+                        );
+                    }
+                    None if matches!(
+                        raw.as_ref().and_then(|v| v["operation"].as_str()),
+                        Some("risk-fire" | "risk-consequence")
+                    ) =>
+                    {
+                        return receipt_result(Ok(rail_service::refused(
+                            "invalid-arguments",
+                            "risk receipt arguments do not match the strict operation schema",
+                        )));
                     }
                     None if raw
                         .as_ref()

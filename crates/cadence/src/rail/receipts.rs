@@ -360,3 +360,271 @@ pub fn validate_history(records: &[Recorded], fires: &[Fire], receipts: &[Receip
 fn invalid(message: &str) -> Error {
     Error::Invalid(message.into())
 }
+
+pub const NAMESPACE: &str = "rail_receipts";
+const MARKER: &str = "cadence.rail.receipt.v1";
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Query {
+    pub scope: risk::ScopeSelection,
+    pub source: risk::Source,
+    pub surfaces: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Report {
+    pub requirement: Requirement,
+    pub assessment: Status,
+    pub current_observation: Option<Recorded>,
+    pub review_scope: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "operation", deny_unknown_fields)]
+pub enum Apply {
+    #[serde(rename = "risk-fire")]
+    Fire { request_id: String, fire: Box<Fire> },
+    #[serde(rename = "risk-consequence")]
+    Consequence {
+        request_id: String,
+        receipt: Box<Receipt>,
+    },
+}
+
+impl Apply {
+    pub fn request_id(&self) -> &str {
+        match self {
+            Self::Fire { request_id, .. } | Self::Consequence { request_id, .. } => request_id,
+        }
+    }
+    pub fn fire(&self) -> &Fire {
+        match self {
+            Self::Fire { fire, .. } => fire,
+            Self::Consequence { receipt, .. } => &receipt.fire,
+        }
+    }
+    pub fn key(&self) -> Result<String> {
+        Ok(format!(
+            "rail-receipt-{}",
+            crate::store::model::digest(&serde_json::to_vec(&(
+                &self.fire().binding.boundary.scope,
+                self.request_id()
+            ))?)
+        ))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FactConfirmation {
+    pub generation: u64,
+    pub decision_id: String,
+    pub fact_digest: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RecordedFact {
+    pub version: u32,
+    pub fact: Apply,
+    pub confirmation: FactConfirmation,
+}
+
+impl RecordedFact {
+    pub fn new(fact: Apply, generation: u64) -> Result<Self> {
+        risk::validate_name(fact.request_id())?;
+        if generation <= fact.fire().binding.observation.generation {
+            return Err(invalid("receipt must follow its observation"));
+        }
+        let confirmation = FactConfirmation {
+            generation,
+            decision_id: fact.key()?,
+            fact_digest: crate::store::model::digest(&serde_json::to_vec(&fact)?),
+        };
+        Ok(Self {
+            version: 1,
+            fact,
+            confirmation,
+        })
+    }
+    pub fn validate(&self) -> Result<()> {
+        if *self != Self::new(self.fact.clone(), self.confirmation.generation)? {
+            return Err(invalid("invalid receipt confirmation identity"));
+        }
+        Ok(())
+    }
+    pub fn decision(&self) -> Result<crate::store::model::DecisionRecord> {
+        use crate::store::model::{Decision, DecisionRecord, Evidence, Origin, VERSION};
+        self.validate()?;
+        Ok(DecisionRecord {
+            version: VERSION,
+            id: self.confirmation.decision_id.clone(),
+            revision: 1,
+            origin: Origin {
+                source: MARKER.into(),
+                original: Evidence::Missing,
+            },
+            decision: Decision::Gate {
+                outcome: match self.fact {
+                    Apply::Fire { .. } => "risk-fired",
+                    Apply::Consequence { .. } => "risk-consequence",
+                }
+                .into(),
+                evidence: Evidence::Text(serde_json::to_string(self)?),
+            },
+        })
+    }
+}
+
+pub fn read(data: &serde_json::Value) -> Result<std::collections::BTreeMap<String, RecordedFact>> {
+    let Some(value) = data.get(NAMESPACE) else {
+        return Ok(Default::default());
+    };
+    let records: std::collections::BTreeMap<String, RecordedFact> =
+        serde_json::from_value(value.clone())?;
+    for (key, record) in &records {
+        record.validate()?;
+        if *key != record.fact.key()? {
+            return Err(invalid("receipt key mismatch"));
+        }
+    }
+    Ok(records)
+}
+
+pub fn history(data: &serde_json::Value) -> Result<(Vec<Recorded>, Vec<Fire>, Vec<Receipt>)> {
+    let observations = risk::read(data)?.into_values().collect::<Vec<_>>();
+    let mut fires = Vec::new();
+    let mut receipts = Vec::new();
+    for record in read(data)?.into_values() {
+        match record.fact {
+            Apply::Fire { fire, .. } => fires.push(*fire),
+            Apply::Consequence { receipt, .. } => receipts.push(*receipt),
+        }
+    }
+    validate_history(&observations, &fires, &receipts)?;
+    Ok((observations, fires, receipts))
+}
+
+pub fn confirmed_history(view: &crate::store::writer::View) -> Result<()> {
+    for record in risk::read(&view.snapshot.data)?.values() {
+        if record.confirmation.generation > view.snapshot.generation
+            || !view.decisions.contains(&record.decision()?)
+        {
+            return Err(invalid("scan lacks confirmed durable history"));
+        }
+    }
+    for record in read(&view.snapshot.data)?.values() {
+        if record.confirmation.generation > view.snapshot.generation
+            || !view.decisions.contains(&record.decision()?)
+        {
+            return Err(invalid("receipt lacks confirmed durable history"));
+        }
+    }
+    history(&view.snapshot.data)?;
+    Ok(())
+}
+
+pub fn project(data: &serde_json::Value, record: &RecordedFact) -> Result<serde_json::Value> {
+    record.validate()?;
+    let mut records = read(data)?;
+    let key = record.fact.key()?;
+    if records.get(&key).is_some_and(|old| old != record) {
+        return Err(Error::Conflict("receipt request identity reused".into()));
+    }
+    // Ordering matters: a consequence cannot retroactively invent its fire, and a
+    // re-armed fire cannot invent its original re-arm authorization.
+    let (_, fires, _) = history(data)?;
+    if let Apply::Consequence { receipt, .. } = &record.fact {
+        let fire = fires
+            .iter()
+            .find(|f| **f == receipt.fire)
+            .ok_or_else(|| invalid("consequence names an unknown fire"))?;
+        receipt.validate(fire)?;
+    }
+    records.insert(key, record.clone());
+    let mut next = data.clone();
+    next.as_object_mut()
+        .ok_or_else(|| invalid("receipt snapshot is not an object"))?
+        .insert(NAMESPACE.into(), serde_json::to_value(records)?);
+    history(&next)?;
+    Ok(next)
+}
+
+pub fn assess(wanted: &Requirement, data: &serde_json::Value) -> Result<Status> {
+    let (records, fires, receipts) = history(data)?;
+    status(wanted, &records, &fires, &receipts)
+}
+
+/// Conditional finalization only changes the terminal field. Accepted task and
+/// patch receipts remain immutable, including their original pending answer.
+pub fn finalize_execution(
+    data: &serde_json::Value,
+    phase: u32,
+    requirements: &[Requirement],
+) -> Result<serde_json::Value> {
+    use crate::execution::model::{ExecutionSnapshot, PlanDisposition, TerminalOutcome};
+    let mut execution: ExecutionSnapshot = serde_json::from_value(
+        data.get("execution")
+            .ok_or_else(|| invalid("finalization lacks execution evidence"))?
+            .clone(),
+    )?;
+    let occurrence = execution
+        .occurrences
+        .get_mut(&phase.to_string())
+        .ok_or_else(|| invalid("finalization lacks an execution occurrence"))?;
+    if occurrence.active.is_some()
+        || occurrence.terminal.is_some()
+        || occurrence.plans.is_empty()
+        || occurrence
+            .plans
+            .iter()
+            .any(|p| p.disposition != PlanDisposition::Complete)
+        || requirements.len() != occurrence.plans.len()
+    {
+        return Err(invalid(
+            "finalization requires exactly all accepted complete plans",
+        ));
+    }
+    let bases = risk::execution_bases(data)?;
+    let mut seen = BTreeSet::new();
+    for outcome in &occurrence.plans {
+        let requirement = requirements
+            .iter()
+            .find(|r| r.boundary.run_id == outcome.dispatch_id)
+            .ok_or_else(|| invalid("finalization lacks a completed material requirement"))?;
+        if !seen.insert(&requirement.boundary.run_id) {
+            return Err(invalid("duplicate finalization requirement"));
+        }
+        let basis = bases
+            .get(&outcome.dispatch_id)
+            .ok_or_else(|| invalid("finalization lacks accepted material identity"))?;
+        let scope = &requirement.boundary.scope;
+        let expected = MaterialIdentity::Committed {
+            base_id: basis.base_id.clone(),
+            head_id: basis.commits.last().unwrap_or(&basis.base_id).clone(),
+        };
+        if scope.phase.get() != phase
+            || scope.plan.map(|p| p.get()) != Some(outcome.plan)
+            || scope.worker.as_deref() != Some(outcome.plan.to_string().as_str())
+            || scope.cycle != "live"
+            || scope.occurrence != format!("phase-{phase}-execution")
+            || basis.phase != phase
+            || basis.plan != outcome.plan
+            || basis.plan_set_fingerprint != occurrence.plan_set_fingerprint
+            || basis.transition_id != outcome.transition_id
+            || basis.commits != risk::completed_commits(outcome)
+            || requirement.material != expected
+            || !assess(requirement, data)?.permits_continuation
+        {
+            return Err(invalid("current completed material is not settled"));
+        }
+    }
+    occurrence.terminal = Some(TerminalOutcome::Complete { phase });
+    let mut next = data.clone();
+    next.as_object_mut()
+        .ok_or_else(|| invalid("execution snapshot is not an object"))?
+        .insert("execution".into(), serde_json::to_value(execution)?);
+    Ok(next)
+}

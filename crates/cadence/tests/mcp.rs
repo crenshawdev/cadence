@@ -363,6 +363,13 @@ fn schema_accepts(
     value: &serde_json::Value,
 ) -> bool {
     let node = resolve_schema(root, node);
+    if let Some(variants) = node.get("anyOf") {
+        return variants
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|variant| schema_accepts(root, variant, value));
+    }
     if let Some(variants) = node.get("oneOf") {
         return variants
             .as_array()
@@ -544,6 +551,8 @@ fn tool_schemas_malformed_objects_reach_cadence_and_protocol_errors_stay_distinc
                         schema,
                         if index == 2 {
                             &schema["$defs"]["ExecutorPatch"]
+                        } else if index == 1 {
+                            &schema["$defs"]["QueryArguments"]
                         } else {
                             schema
                         },
@@ -1476,4 +1485,122 @@ fn tools_list_declares_exactly_cadence_version_with_an_output_schema() {
     assert_eq!(versions.len(), 1);
     assert!(versions[0]["outputSchema"].is_object());
     assert!(client.finish().success());
+}
+
+#[test]
+fn risk_receipts_cross_stdio_restart_and_bind_current_staged_and_committed_material() {
+    let fixture = Fixture::new(&[&["T1"]]);
+    let root = fixture.root();
+    let base = git(root, &["rev-parse", "HEAD"]);
+    fs::write(root.join("src/shared.txt"), "jwt.verify(token)\n").unwrap();
+    git(root, &["add", "src/shared.txt"]);
+    let mut client = fixture.client();
+    let scope = json!({"phase":6,"occurrence":"receipt-fixture","worker":null});
+    let source = json!({"kind":"staged","base":base});
+    let scan = envelope(&client.tools_call(20,"cadence_apply",json!({"operation":"risk-check","request_id":"staged-one","scope":scope,"source":source,"surfaces":["auth"]})));
+    assert_eq!(scan["status"], "ok");
+    assert!(scan["observation"]["resolution"]["head_id"].is_null());
+    let query =
+        json!({"operation":"risk-status","scope":scope,"source":source,"surfaces":["auth"]});
+    let report = envelope(&client.tools_call(21, "cadence_query", query.clone()));
+    assert_eq!(report["assessment"]["state"], "unfired");
+    assert_eq!(report["assessment"]["permits_continuation"], false);
+    let fire = json!({"id":"staged-fire","binding":{
+        "boundary":report["requirement"]["boundary"],"material":report["requirement"]["material"],
+        "surfaces":["auth"],"observation":scan["confirmation"]},
+        "review_scope":["src/shared.txt"],"rearm_of":null});
+    let fire_request = json!({"operation":"risk-fire","request_id":"fire-request","fire":fire});
+    let fired = envelope(&client.tools_call(22, "cadence_apply", fire_request.clone()));
+    assert_eq!(fired["status"], "ok", "{fired}");
+    let pending = envelope(&client.tools_call(23, "cadence_query", query.clone()));
+    assert_eq!(pending["assessment"]["state"], "pending");
+    let receipt = json!({"id":"staged-receipt","fire":fire,"consequence":{"kind":"gate-pass","evidence_id":"contracted-fixture-review"}});
+    let request = json!({"operation":"risk-consequence","request_id":"consequence-request","receipt":receipt});
+    let settled = envelope(&client.tools_call(24, "cadence_apply", request.clone()));
+    assert_eq!(settled["status"], "ok", "{settled}");
+    let before = fixture.read();
+    assert_eq!(
+        envelope(&client.tools_call(25, "cadence_apply", request.clone())),
+        settled
+    );
+    assert_eq!(
+        envelope(&client.tools_call(26, "cadence_apply", fire_request)),
+        fired
+    );
+    assert_eq!(fixture.read(), before);
+    let mut changed = request.clone();
+    changed["receipt"]["consequence"]["evidence_id"] = json!("different");
+    assert_eq!(
+        envelope(&client.tools_call(27, "cadence_apply", changed))["code"],
+        "request-reused"
+    );
+    assert_eq!(fixture.read(), before);
+    assert!(client.finish().success());
+    let mut replacement = fixture.client();
+    let report = envelope(&replacement.tools_call(28, "cadence_query", query.clone()));
+    assert_eq!(report["assessment"]["state"], "settled");
+    assert_eq!(report["assessment"]["permits_continuation"], true);
+    fs::write(root.join("src/shared.txt"), "jwt.verify(other_token)\n").unwrap();
+    git(root, &["add", "src/shared.txt"]);
+    let report = envelope(&replacement.tools_call(29, "cadence_query", query.clone()));
+    assert_eq!(report["assessment"]["state"], "stale");
+    let mut stale = request.clone();
+    stale["request_id"] = json!("different-staged-bytes");
+    assert_eq!(
+        envelope(&replacement.tools_call(30, "cadence_apply", stale))["code"],
+        "stale-receipt"
+    );
+    git(
+        root,
+        &[
+            "commit",
+            "-q",
+            "-S",
+            "-m",
+            "feat(7): receipt fixture material",
+        ],
+    );
+    let head = git(root, &["rev-parse", "HEAD"]);
+    let committed = json!({"kind":"committed","base":base,"head":head});
+    let scan = envelope(&replacement.tools_call(31,"cadence_apply",json!({"operation":"risk-check","request_id":"committed-one","scope":scope,"source":committed,"surfaces":["auth"]})));
+    assert_eq!(scan["status"], "ok");
+    let mut committed_query = query;
+    committed_query["source"] = committed;
+    let report = envelope(&replacement.tools_call(32, "cadence_query", committed_query.clone()));
+    assert_eq!(report["assessment"]["state"], "unfired");
+    let mut committed_fire = fire;
+    committed_fire["id"] = json!("committed-fire");
+    committed_fire["binding"]["material"] = report["requirement"]["material"].clone();
+    committed_fire["binding"]["observation"] = scan["confirmation"].clone();
+    assert_eq!(envelope(&replacement.tools_call(33,"cadence_apply",json!({"operation":"risk-fire","request_id":"committed-fire-request","fire":committed_fire})))["status"],"ok");
+    assert_eq!(envelope(&replacement.tools_call(34,"cadence_apply",json!({"operation":"risk-consequence","request_id":"committed-receipt-request","receipt":{"id":"committed-receipt","fire":committed_fire,"consequence":{"kind":"override","reason":"Accept this fixture occurrence and material"}}})))["status"],"ok");
+    assert_eq!(
+        envelope(&replacement.tools_call(35, "cadence_query", committed_query.clone()))["assessment"]
+            ["state"],
+        "settled"
+    );
+    committed_query["source"]["base"] = json!(head);
+    let report = envelope(&replacement.tools_call(36, "cadence_query", committed_query));
+    assert_eq!(report["assessment"]["state"], "stale");
+    assert_eq!(report["assessment"]["permits_continuation"], false);
+    for (name, input) in [
+        (
+            "cadence_query",
+            json!({"operation":"risk-status","scope":scope,"source":{"kind":"staged","base":base,"head":"HEAD"}}),
+        ),
+        (
+            "cadence_apply",
+            json!({"operation":"risk-fire","request_id":"malformed","fire":null}),
+        ),
+        (
+            "cadence_apply",
+            json!({"operation":"risk-consequence","request_id":"malformed","receipt":{"prose":"PASS"}}),
+        ),
+    ] {
+        assert_eq!(
+            envelope(&replacement.tools_call(37, name, input))["code"],
+            "invalid-arguments"
+        );
+    }
+    assert!(replacement.finish().success());
 }

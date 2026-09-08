@@ -414,3 +414,412 @@ fn malformed_unknown_short_identity_and_prose_receipts_refuse() {
     value["binding"]["material"]["head_id"] = Value::Null;
     assert!(serde_json::from_value::<Fire>(value).is_err());
 }
+
+use cadence::{
+    envelope::Envelope,
+    execution::{
+        boundary::{BoundaryScope, BoundaryV1, PreparedAnswer, Success},
+        dispatch::build_dispatch,
+        model::{ActiveDispatch, BoundaryTool, ExecutorPatch},
+        plan::{parse_plan, plan_set_fingerprint},
+    },
+    store::{
+        self,
+        filesystem::{Filesystem, Stage},
+        transaction::INTENT,
+        writer::{BoundaryChange, Operation, Store, View},
+    },
+};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::Path,
+    process::{Command, Stdio},
+};
+
+struct Allow;
+impl store::Policy for Allow {
+    fn validate(&mut self, _: &store::MutationContext<'_>) -> store::Result<()> {
+        Ok(())
+    }
+}
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
+}
+async fn open(path: &Path) -> Store {
+    Store::open(Filesystem::new(path).unwrap(), Allow)
+        .await
+        .unwrap()
+}
+
+#[test]
+fn receipt_confirmation_failure_replays_once_after_recovery_without_changing_execution() {
+    for (stage, target) in [
+        (Stage::Renamed, INTENT),
+        (Stage::Renamed, "decisions.jsonl"),
+        (Stage::Confirmation, "state.json"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        runtime().block_on(async {
+            let initial = open(dir.path()).await;
+            let seed = json!({"execution":{"preserve":true},"other":[1,2]});
+            let view = initial
+                .request(Operation::RewriteSnapshot(seed.clone()))
+                .await
+                .unwrap();
+            let record = observation(view.snapshot.generation + 1, true);
+            let view = initial
+                .request(Operation::RailObservation {
+                    expected_generation: view.snapshot.generation,
+                    expected_integrity: view.snapshot.integrity,
+                    record: Box::new(record.clone()),
+                })
+                .await
+                .unwrap();
+            let request = receipts::Apply::Fire {
+                request_id: "fire-request".into(),
+                fire: Box::new(fire(&record)),
+            };
+            let fact = receipts::RecordedFact::new(request, view.snapshot.generation + 1).unwrap();
+            let broken = Store::open(
+                Filesystem::new(dir.path())
+                    .unwrap()
+                    .with_probe(move |at, path| {
+                        if at == stage && path.file_name().is_some_and(|name| name == target) {
+                            return Err(store::Error::Io(
+                                "injected receipt confirmation failure".into(),
+                            ));
+                        }
+                        Ok(())
+                    }),
+                Allow,
+            )
+            .await
+            .unwrap();
+            let operation = || Operation::RailReceipt {
+                expected_generation: view.snapshot.generation,
+                expected_integrity: view.snapshot.integrity.clone(),
+                record: Box::new(fact.clone()),
+            };
+            assert!(broken.request(operation()).await.is_err());
+            assert!(broken.request(operation()).await.is_err());
+            let replacement = open(dir.path()).await;
+            let recovered = replacement.request(operation()).await.unwrap();
+            assert_eq!(recovered.snapshot.data["execution"], seed["execution"]);
+            assert_eq!(recovered.snapshot.data["other"], seed["other"]);
+            assert_eq!(
+                recovered.decisions,
+                vec![record.decision().unwrap(), fact.decision().unwrap()]
+            );
+            assert_eq!(replacement.request(operation()).await.unwrap(), recovered);
+            receipts::confirmed_history(&recovered).unwrap();
+            assert_eq!(
+                receipts::assess(&wanted(&record), &recovered.snapshot.data)
+                    .unwrap()
+                    .state,
+                State::Pending
+            );
+        });
+    }
+}
+
+fn boundary(
+    tool: BoundaryTool,
+    id: &str,
+    subject: Option<String>,
+    answer: Envelope<Success>,
+) -> BoundaryV1 {
+    BoundaryV1::new(
+        BoundaryScope::Execution { phase: 7 },
+        tool,
+        match tool {
+            BoundaryTool::CadenceQuery => "execute-next",
+            BoundaryTool::CadenceApply => "executor",
+        }
+        .into(),
+        cadence::store::model::digest(id.as_bytes()),
+        subject,
+        &PreparedAnswer::new(answer).unwrap(),
+    )
+}
+fn operation(view: &View, id: &str, decision: BoundaryV1, change: BoundaryChange) -> Operation {
+    Operation::BoundaryV1 {
+        expected_generation: view.snapshot.generation,
+        expected_integrity: view.snapshot.integrity.clone(),
+        operation_id: id.into(),
+        decision,
+        change: Box::new(change),
+    }
+}
+async fn dispatch_fixture(store: &Store) -> (View, ActiveDispatch) {
+    let view = store
+        .request(Operation::RewriteSnapshot(json!({"other":{"keep":true}})))
+        .await
+        .unwrap();
+    let plan = parse_plan(b"---\nphase: 7\nplan: 4\nrequirements: [AC10]\nfiles: [auth/login.rs]\nexecution:\n  schema: 1\n  suite: printf suite\n  tasks:\n    - id: T1\n      verify: [printf T1]\n---\nChange auth.\n",7,4).unwrap();
+    let set = plan_set_fingerprint(std::slice::from_ref(&plan)).unwrap();
+    let candidate = build_dispatch(&plan, &set, 0, &"b".repeat(40), 1).unwrap();
+    let mut dispatch = candidate.clone();
+    dispatch.expected_execution_version = 1;
+    let decision = boundary(
+        BoundaryTool::CadenceQuery,
+        "dispatch",
+        Some(candidate.id.clone()),
+        Envelope::Ok(Success::Dispatch {
+            dispatch: Box::new(dispatch.clone()),
+            prompt: "x".into(),
+        }),
+    );
+    let view = store
+        .request(operation(
+            &view,
+            "dispatch",
+            decision,
+            BoundaryChange::Dispatch {
+                plan_set_fingerprint: set,
+                dispatch: candidate,
+            },
+        ))
+        .await
+        .unwrap();
+    (view, dispatch)
+}
+fn patch(dispatch: &ActiveDispatch) -> ExecutorPatch {
+    serde_json::from_value(json!({"schema":1,"kind":"executor","dispatch_id":dispatch.id,"expected_execution_version":dispatch.expected_execution_version,
+        "outcome":"complete","tasks":[{"status":"completed","task_id":"T1","commit":"c".repeat(40),
+            "verification":{"disposition":"passed","commands":[{"command":"printf T1","exit_code":0,"output_digest":"a".repeat(64)}]},
+            "evidence":[{"kind":"criterion","id":"AC10"}]}],"deviations":[],"blockers":[]})).unwrap()
+}
+async fn pending_patch(
+    store: &Store,
+    view: &View,
+    dispatch: &ActiveDispatch,
+) -> store::Result<View> {
+    let answer = Envelope::Refused {
+        code: "risk-pending".into(),
+        reason: "Task evidence accepted; continuation refused pending risk settlement for plan 4"
+            .into(),
+    };
+    let decision = boundary(
+        BoundaryTool::CadenceApply,
+        "pending-patch",
+        Some(dispatch.id.clone()),
+        answer,
+    );
+    store
+        .request(operation(
+            view,
+            "pending-patch",
+            decision,
+            BoundaryChange::Patch {
+                patch: patch(dispatch),
+                commit_paths: BTreeMap::from([("c".repeat(40), vec!["auth/login.rs".into()])]),
+                staged_paths: vec![],
+                render_version: cadence::execution::render::SUMMARY_RENDER_VERSION,
+                complete_phase: false,
+            },
+        ))
+        .await
+}
+
+#[test]
+fn pending_task_evidence_survives_process_kill_and_finalization_rechecks_current_evidence() {
+    const CHILD: &str = "CADENCE_RECEIPT_CRASH_ROOT";
+    if let Some(root) = std::env::var_os(CHILD) {
+        runtime().block_on(async {
+            let path = Path::new(&root);
+            let initial = open(path).await;
+            let (view, dispatch) = dispatch_fixture(&initial).await;
+            let broken = Store::open(
+                Filesystem::new(path).unwrap().with_probe(|stage, path| {
+                    if stage == Stage::Renamed
+                        && path
+                            .file_name()
+                            .is_some_and(|name| name == "decisions.jsonl")
+                    {
+                        // The intent is durable and the snapshot is still old. Abrupt
+                        // process death exercises replacement recovery, not an Err path.
+                        unsafe {
+                            libc::kill(libc::getpid(), libc::SIGKILL);
+                        }
+                    }
+                    Ok(())
+                }),
+                Allow,
+            )
+            .await
+            .unwrap();
+            pending_patch(&broken, &view, &dispatch).await.unwrap();
+            panic!("process did not die at the required boundary");
+        });
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("phases/7")).unwrap();
+    let child = Command::new(std::env::current_exe().unwrap()).args(["--exact","pending_task_evidence_survives_process_kill_and_finalization_rechecks_current_evidence","--nocapture"])
+        .env(CHILD,dir.path()).stdin(Stdio::null()).output().unwrap();
+    use std::os::unix::process::ExitStatusExt;
+    assert_eq!(
+        child.status.signal(),
+        Some(libc::SIGKILL),
+        "{}",
+        String::from_utf8_lossy(&child.stdout)
+    );
+    assert!(dir.path().join(INTENT).exists());
+    runtime().block_on(async {
+        let replacement = open(dir.path()).await;
+        let mut view = replacement.request(Operation::ReadVerified).await.unwrap();
+        let occurrence = &view.snapshot.data["execution"]["occurrences"]["7"];
+        assert!(occurrence["terminal"].is_null());
+        assert!(occurrence["active"].is_null());
+        assert_eq!(occurrence["plans"][0]["tasks"][0]["commit"], "c".repeat(40));
+        let dispatch_id = occurrence["plans"][0]["dispatch_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(
+            cadence::rail::risk::execution_bases(&view.snapshot.data).unwrap()[&dispatch_id]
+                .base_id,
+            "b".repeat(40)
+        );
+        let pending_data = view.snapshot.data.clone();
+        let record = edit(&observation(view.snapshot.generation + 1, false), |r| {
+            r["scope"]["occurrence"] = json!("phase-7-execution");
+            r["scope"]["plan"] = json!(4);
+            r["source"] = json!({"kind":"execution","plan":4,"dispatch_id":dispatch_id});
+        });
+        let requirement = Requirement {
+            boundary: Boundary {
+                scope: record.observation.scope.clone(),
+                run_id: dispatch_id,
+                after_generation: 2,
+            },
+            material: record.observation.resolution.material().unwrap(),
+            surfaces: record.observation.surfaces.clone(),
+        };
+        let finalize = |view: &View| {
+            operation(
+                view,
+                "finalize",
+                boundary(
+                    BoundaryTool::CadenceQuery,
+                    "finalize",
+                    None,
+                    Envelope::Ok(Success::Complete { phase: 7 }),
+                ),
+                BoundaryChange::FinalizeRisk {
+                    phase: 7,
+                    requirements: vec![requirement.clone()],
+                },
+            )
+        };
+        assert!(replacement.request(finalize(&view)).await.is_err());
+        assert_eq!(
+            replacement
+                .request(Operation::ReadVerified)
+                .await
+                .unwrap()
+                .snapshot
+                .data,
+            pending_data
+        );
+        view = replacement
+            .request(Operation::RailObservation {
+                expected_generation: view.snapshot.generation,
+                expected_integrity: view.snapshot.integrity.clone(),
+                record: Box::new(record.clone()),
+            })
+            .await
+            .unwrap();
+        assert!(replacement.request(finalize(&view)).await.is_err());
+        let fired = Fire {
+            id: "native-fire".into(),
+            binding: Binding::new(requirement.boundary.clone(), &record).unwrap(),
+            review_scope: vec!["auth/login.rs".into()],
+            rearm_of: None,
+        };
+        for fact in [
+            receipts::Apply::Fire {
+                request_id: "native-fire".into(),
+                fire: Box::new(fired.clone()),
+            },
+            receipts::Apply::Consequence {
+                request_id: "native-outcome".into(),
+                receipt: Box::new(Receipt {
+                    id: "native-receipt".into(),
+                    fire: fired,
+                    consequence: Consequence::GatePass {
+                        evidence_id: "fixture-review".into(),
+                    },
+                }),
+            },
+        ] {
+            let record = receipts::RecordedFact::new(fact, view.snapshot.generation + 1).unwrap();
+            view = replacement
+                .request(Operation::RailReceipt {
+                    expected_generation: view.snapshot.generation,
+                    expected_integrity: view.snapshot.integrity.clone(),
+                    record: Box::new(record),
+                })
+                .await
+                .unwrap();
+        }
+        let ready = finalize(&view);
+        // The same settled snapshot can finalize after process replacement;
+        // immutable accepted patches and receipt facts are retained verbatim.
+        let success = tempfile::tempdir().unwrap();
+        fs::create_dir_all(success.path().join("phases/7")).unwrap();
+        for path in [
+            "state.json",
+            "items.jsonl",
+            "decisions.jsonl",
+            "phases/7/SUMMARY.md",
+        ] {
+            fs::copy(dir.path().join(path), success.path().join(path)).unwrap();
+        }
+        let fresh = open(success.path()).await;
+        let completed = fresh.request(finalize(&view)).await.unwrap();
+        assert_eq!(
+            completed.snapshot.data["execution"]["occurrences"]["7"]["terminal"],
+            json!({"status":"complete","phase":7})
+        );
+        let mut expected = view.snapshot.data.clone();
+        expected["execution"]["occurrences"]["7"]["terminal"] =
+            completed.snapshot.data["execution"]["occurrences"]["7"]["terminal"].clone();
+        assert_eq!(completed.snapshot.data, expected);
+        assert_eq!(
+            open(success.path())
+                .await
+                .request(Operation::ReadVerified)
+                .await
+                .unwrap(),
+            completed
+        );
+        let changed = edit(&observation(view.snapshot.generation + 1, false), |r| {
+            r["scope"] = serde_json::to_value(&requirement.boundary.scope).unwrap();
+            r["source"] = serde_json::to_value(&record.observation.source).unwrap();
+            r["resolution"]["head_id"] = json!("e".repeat(40));
+        });
+        let view = replacement
+            .request(Operation::RailObservation {
+                expected_generation: view.snapshot.generation,
+                expected_integrity: view.snapshot.integrity,
+                record: Box::new(changed),
+            })
+            .await
+            .unwrap();
+        assert!(replacement.request(ready).await.is_err());
+        assert!(replacement.request(finalize(&view)).await.is_err());
+        assert!(
+            replacement
+                .request(Operation::ReadVerified)
+                .await
+                .unwrap()
+                .snapshot
+                .data["execution"]["occurrences"]["7"]["terminal"]
+                .is_null()
+        );
+    });
+}

@@ -29,6 +29,10 @@ pub const STALE_SNAPSHOT: &str = "conditional snapshot precondition changed";
 #[derive(Clone, Debug, Serialize)]
 pub enum BoundaryChange {
     Observe,
+    FinalizeRisk {
+        phase: u32,
+        requirements: Vec<cadence::rail::receipts::Requirement>,
+    },
     Dispatch {
         plan_set_fingerprint: String,
         dispatch: ActiveDispatch,
@@ -44,6 +48,11 @@ pub enum BoundaryChange {
 }
 
 pub enum Operation {
+    RailReceipt {
+        expected_generation: u64,
+        expected_integrity: String,
+        record: Box<cadence::rail::receipts::RecordedFact>,
+    },
     RailObservation {
         expected_generation: u64,
         expected_integrity: String,
@@ -320,6 +329,11 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             self.observed = observed;
         }
         match operation {
+            Operation::RailReceipt {
+                expected_generation,
+                expected_integrity,
+                record,
+            } => self.rail_receipt(expected_generation, &expected_integrity, *record),
             Operation::RailObservation {
                 expected_generation,
                 expected_integrity,
@@ -481,7 +495,8 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 next.snapshot.data = data;
                 "rewrite_snapshot"
             }
-            Operation::RailObservation { .. }
+            Operation::RailReceipt { .. }
+            | Operation::RailObservation { .. }
             | Operation::GuardAudit(..)
             | Operation::BoundaryV1 { .. }
             | Operation::AdmitExecution { .. }
@@ -596,6 +611,39 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         let mut next = self.view.clone();
         let mut participants = Vec::new();
         let kind = match change {
+            BoundaryChange::FinalizeRisk {
+                phase,
+                requirements,
+            } => {
+                if decision.scope != (BoundaryScope::Execution { phase })
+                    || decision.tool != BoundaryTool::CadenceQuery
+                    || decision.receipt
+                        != (Receipt::Compact {
+                            envelope: Envelope::Ok(Success::Complete { phase }),
+                        })
+                {
+                    return Err(Error::Invalid("invalid risk finalization boundary".into()));
+                }
+                next.snapshot.data = cadence::rail::receipts::finalize_execution(
+                    &next.snapshot.data,
+                    phase,
+                    &requirements,
+                )
+                .map_err(rail_error)?;
+                let execution = execution_snapshot(&next.snapshot.data)?;
+                let target = format!("phase-summary:{phase}");
+                participants.push(super::transaction::Participant {
+                    expected: self.storage.read(&target)?,
+                    target,
+                    bytes: cadence::execution::render::render_phase_summary(&execution, phase)
+                        .map_err(|e| Error::Invalid(e.to_string()))?,
+                });
+                super::transaction::IntentKind::ExecutionFinalizeRiskV1 {
+                    phase,
+                    decision_id: id.clone(),
+                    requirements,
+                }
+            }
             BoundaryChange::Observe => super::transaction::IntentKind::BoundaryObservationV1 {
                 scope: decision.scope.clone(),
                 decision_id: id.clone(),
@@ -649,15 +697,21 @@ impl<S: Storage, P: Policy> Writer<S, P> {
                 let BoundaryScope::Execution { phase } = decision.scope else {
                     return Err(Error::Invalid("patch lacks execution scope".into()));
                 };
+                let risk_pending = matches!(&decision.receipt, Receipt::Compact {
+                    envelope: Envelope::Refused { code, .. }
+                } if code == "risk-pending")
+                    && !complete_phase
+                    && patch.outcome == PlanDisposition::Complete;
                 if render_version != cadence::execution::render::SUMMARY_RENDER_VERSION
                     || decision.tool != BoundaryTool::CadenceApply
                     || decision.subject_id.as_ref() != Some(&patch.dispatch_id)
-                    || !matches!(
-                        &decision.receipt,
-                        Receipt::Compact {
-                            envelope: Envelope::Ok(_)
-                        }
-                    )
+                    || (!risk_pending
+                        && !matches!(
+                            &decision.receipt,
+                            Receipt::Compact {
+                                envelope: Envelope::Ok(_)
+                            }
+                        ))
                     || (complete_phase && patch.outcome != PlanDisposition::Complete)
                 {
                     return Err(Error::Invalid("invalid execution patch operation".into()));
@@ -1034,6 +1088,44 @@ impl<S: Storage, P: Policy> Writer<S, P> {
         Ok(())
     }
 
+    fn rail_receipt(
+        &mut self,
+        expected_generation: u64,
+        expected_integrity: &str,
+        record: cadence::rail::receipts::RecordedFact,
+    ) -> Result<View> {
+        use cadence::rail::receipts;
+        record.validate().map_err(rail_error)?;
+        if let Some(old) = receipts::read(&self.view.snapshot.data)
+            .map_err(rail_error)?
+            .remove(&record.fact.key().map_err(rail_error)?)
+        {
+            return if old == record && self.view.decisions.contains(&rail_fact_record(&record)?) {
+                Ok(self.view.clone())
+            } else {
+                Err(Error::Conflict("receipt request identity reused".into()))
+            };
+        }
+        self.check_expected(expected_generation, expected_integrity)?;
+        if record.confirmation.generation != self.next_generation()? {
+            return Err(Error::Invalid(
+                "receipt confirmation generation mismatch".into(),
+            ));
+        }
+        let mut next = self.view.clone();
+        next.snapshot.data = receipts::project(&next.snapshot.data, &record).map_err(rail_error)?;
+        next.decisions.push(rail_fact_record(&record)?);
+        self.persist(
+            next,
+            self.view.snapshot.operations.clone(),
+            Vec::new(),
+            "rail_receipt",
+            super::transaction::IntentKind::RailReceipt {
+                record: Box::new(record),
+            },
+        )
+    }
+
     fn rail_observation(
         &mut self,
         generation: u64,
@@ -1166,6 +1258,16 @@ pub(super) fn rail_error(error: cadence::store::Error) -> Error {
 }
 
 pub(super) fn rail_record(record: &cadence::rail::risk::Recorded) -> Result<DecisionRecord> {
+    // The process-crash target compiles the writer in its own module. Decode the
+    // shared record's wire shape just as the boundary adapter does for evidence.
+    Ok(serde_json::from_value(serde_json::to_value(
+        record.decision().map_err(rail_error)?,
+    )?)?)
+}
+
+pub(super) fn rail_fact_record(
+    record: &cadence::rail::receipts::RecordedFact,
+) -> Result<DecisionRecord> {
     // The process-crash target compiles the writer in its own module. Decode the
     // shared record's wire shape just as the boundary adapter does for evidence.
     Ok(serde_json::from_value(serde_json::to_value(
