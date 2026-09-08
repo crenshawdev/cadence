@@ -1284,6 +1284,64 @@ those fixture obligations; it does not create implementation/test files.
       "manifest":"m1", "attempt":"a1", "original":"o1"}`. Boundaries:
       filesystem: saved all-home inventory. (D-61; H5; former AC14).
 
+- [ ] AC151: Given completed receipt `d1`, no saved review binding, resolved
+      diff gate `off` and absent review-only material, `review_handoff` returns
+      `{"status":"ok","operation":"review-handoff","result":{"pending":false}}`.
+      Boundaries: filesystem: stub accepted execution and empty review records;
+      config/routing: stub gate `off`; forbid material and admission calls.
+      (C01, D-58; truth 158).
+
+- [ ] AC152: Given execute/diff request `k1`, supplied gate `advisory` and
+      supplied routing answer `cad-reviewer-xhigh`, `admit` returns
+      `{"status":"ok","operation":"review-admit","result":{"fire":"f1",
+      "attempt":"f1-a1","replayed":false}}` and the durable contribution is
+      `{"gate":"advisory","routing":{"answer":"cad-reviewer-xhigh",
+      "evidence":"route:f1"}}`. Boundaries: filesystem: stub empty records,
+      acquired material and successful contribution/commit; config/routing:
+      forbidden current read; clock: `100`. (C01, D-58; H1; truth 158).
+
+- [ ] AC153: Given public `Apply::Admit` input with caller `manual-plan` and
+      the admission boundary returning `{"status":"ok",
+      "operation":"review-admit","result":"ordinary"}`, `execute_inner`
+      returns exactly that value without opening a session first. Boundaries:
+      admission: stub ordinary refresh arm; filesystem/config: forbidden before
+      the stub. (D-58; truth 158).
+
+
+- [ ] AC154: Given saved replay `k1/f1/a1` and no usable current resolution,
+      `admit` returns `{"status":"ok","operation":"review-admit","result":{
+      "fire":"f1","attempt":"a1","replayed":true}}`. Boundaries:
+      filesystem: stub saved replay; config/routing/material: forbidden.
+      (D-58, D-61; H1; truth 158).
+
+- [ ] AC155: Given public admission input with `caller = "task"`, `execute`
+      calls the stubbed `execute_inner` once and passes `caller = "task"`;
+      `execute` returns `{"status":"ok","operation":"review-admit",
+      "result":"inner"}`. Boundaries: `execute_inner` stub returns the literal
+      result; filesystem, config and clock: forbidden. (D-58; truth 158).
+
+- [ ] AC156: Given handoff input with `dispatch = "d1"`, `execute_inner`
+      calls the stubbed `review_handoff` once and passes `dispatch = "d1"`;
+      `execute_inner` returns `{"status":"ok","operation":"review-handoff",
+      "result":"outer"}`. Boundaries: `review_handoff` stub returns the literal
+      result; filesystem, config and clock: forbidden. (C01, D-58; truth 158).
+
+- [ ] AC157: Given public admission input with `caller = "manual-plan"`,
+      `execute_inner` calls the stubbed `admit` once and passes
+      `resolution = "refresh"`; `execute_inner` returns
+      `{"status":"ok","operation":"review-admit","result":"ordinary"}`.
+      Boundaries: `admit` stub returns the literal result; filesystem, config
+      and clock: forbidden. (D-58; truth 158).
+
+- [ ] AC158: Given completed `dispatch = "d1"` and the captured execution
+      resolution, `review_handoff` calls the stubbed `admit` once and passes
+      `gate = "advisory"` and `routing.answer = "cad-reviewer-xhigh"`;
+      `review_handoff` returns `{"status":"ok","operation":"review-admit",
+      "result":"resolution-sentinel"}`. Boundaries: filesystem: stub accepted
+      execution and empty review records; config/routing: stub the one outer
+      answer; `admit` stub records the supplied resolution and returns the
+      literal result; clock: `100`. (C01, D-58; H1; truth 158).
+
 ## Flagged assumptions
 
 - **The unsplit count is historical; the brief's roadmap coordinates have
