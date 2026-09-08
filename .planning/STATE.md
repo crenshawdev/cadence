@@ -1,6 +1,6 @@
 # State
 
-Phase: 7 of 19 (The commit rail and the risk gates)
+Phase: 8 of 19 (Config and routing)
 Status: phase complete
-Next: /cad-execute 8
+Next: /cad-context 9
 Updated: 2026-09-08
