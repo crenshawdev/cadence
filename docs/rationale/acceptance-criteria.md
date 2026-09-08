@@ -10,7 +10,7 @@ is found phases later when something cannot pass. These rules are enforced at
 authoring time, in `/cad-context` when criteria are written and `/cad-plan` when
 verifies are written, rather than at audit time when the cost is already sunk.
 
-## The seven rules
+## The nine rules
 
 **1. Scope.** A phase's acceptance criteria test only the code that phase adds
 or modifies. Existing code is already covered by its own criteria. A phase that
@@ -31,9 +31,7 @@ inputs and return values. For a method, treat the receiver as an input:
 construct the struct in the state you need, call the method, assert on the
 return value or the mutated state. Do not write tests that walk the entire call
 chain. Where recursion exists, isolate it in a thin orchestrator and test that
-separately with a stubbed resolver. Add module-level tests only for the public
-surface of a module, and only where composition itself can fail; keep those few
-and thin, and never mirror unit coverage at module level.
+separately with a stubbed resolver.
 
 **5. Prose.** Never assert on model-generated text. If the input path includes a
 model call, the expected value cannot be fixed, and the criterion is malformed
@@ -46,6 +44,23 @@ not write a test for behaviour that has not been implemented.
 live host, a human eye, or a running system - it is not an acceptance criterion.
 Route it to the phase's manual checklist, `.planning/phases/<N>/MANUAL.md`. Do
 not write an end-to-end test to cover it.
+
+**8. Wiring.** Every production call site of a function the phase adds or
+modifies gets one criterion of its own. It names the caller, the callee, and
+the literal value that crosses between them. The callee is stubbed to record
+what it received; the caller runs for real from constructed state. The test
+crosses exactly one seam and asserts on what crossed it, never on the result
+of the chain beyond it. A function with no production call site has no wiring
+criterion and is refused at planning: it is either unwired or not needed.
+Rule 8 replaces the old module-level allowance in rule 4. There is no other
+test between a unit and MANUAL.md.
+
+**9. Coverage.** Before a plan is accepted, every function the phase adds has
+at least one unit criterion under rules 1 through 7 and one wiring criterion
+under rule 8, listed per function in the plan. A function missing either is
+refused when the plan is checked, not found at audit. A function the phase
+only modifies keeps its existing unit criteria and gains a wiring criterion
+for each call site the modification touches.
 
 ## Rule 4 was replaced on 2026-09-08, and it is not retrofitted
 
@@ -73,6 +88,30 @@ so nobody mistakes them for the standard:
   functions, `phase9_material` 8.
 
 New work does not copy either shape.
+
+## What a wiring criterion looks like
+
+The shape is caller, callee, value, in one sentence, with the callee stubbed.
+Phase 9's gap 158 as it should have been written:
+
+- [ ] Given a completed receipt `d1` with no saved review binding, and a
+      config read stubbed to return `diff = advisory`, route `R`, the
+      execution handoff calls `review_service::admit` once with a request
+      whose `gate = "advisory"` and `routing = R`. Boundaries: config read
+      stubbed; `admit` stubbed to record its argument.
+
+That fails on the shipped code, which built a request carrying neither field.
+It does not run admission, does not read the store, and does not start a
+process. Gap 154 could not have been written at all, because
+`risk_review_action` had no caller to name, so rule 8 refuses it at planning.
+
+A wiring criterion is not an end-to-end test. It crosses one seam. Two seams
+is a chain, and rule 2 still forbids it.
+
+Rule 9's per-function list is a `## Coverage` section in PLAN.md, one table
+row per function the phase adds or modifies: the function, the AC ids of its
+unit criteria, the AC ids of its wiring criteria. An empty cell is a refusal.
+The plan gate reads this table; it does not infer coverage from prose.
 
 ## The test rules that fall out of them
 
@@ -217,7 +256,7 @@ Audited across phases 8, 9 and 10 on 2026-09-08, 50 criteria:
 ## Where this binds in v4
 
 Phase 11 owns CONTEXT creation and PLAN authoring, so it owns enforcement: the
-binary validates a submitted criterion against rules 1 through 7 and returns a
+binary validates a submitted criterion against rules 1 through 9 and returns a
 typed refusal naming the rule and the missing element, rather than persisting it
 and leaving the defect for a later audit. The prompt the binary emits to the
 authoring agent carries these rules, which is the only way a subagent receives
