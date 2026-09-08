@@ -31,8 +31,14 @@ phase-range target; it has one base reviewer. Decision uses specialist decision,
 selected decision/text/context. Diagnosis uses specialist diagnosis, named
 source paths and reported/cause text. Keep the user's later fix selection.
 
-An off response has no dispatch. Otherwise call `cadence_query review-next`
-with the admitted fire. Follow only the returned saved dispatch. Invoke Task
+For risk_surface, use the actual risk scope occurrence as discriminator and
+supply risk_observation only as a saved risk-check request ID matching this
+scope, target and configured surface selection. A caller-selected scan result
+is not evidence. The binary checks confirmed records before retaining material.
+An off or no-review response has no dispatch. An ask-surfaces response requires
+the surface answer; wait-for-evidence requires a confirmed applicable scan.
+Neither response is successful delivery. Only a response with an admitted fire
+proceeds to `cadence_query review-next`. Follow only the returned saved dispatch. Invoke Task
 with dispatch.agent and exactly dispatch.prompt; pass dispatch.model only when
 present. Its absence means omit the model argument and inherit the session.
 Never resolve routing again, fan out FIRST choices or substitute another agent.

@@ -84,6 +84,10 @@ pub async fn modern_admission(
     let mut answer = resident
         .review(planning, Command::Apply(Apply::Admit { request }))
         .await?;
+    if matches!(&answer, Envelope::Ok(output) if matches!(output.result["action"].as_str(), Some("ask-surfaces" | "wait-for-evidence" | "no-review")))
+    {
+        return Ok(answer);
+    }
     if let Envelope::Ok(output) = &mut answer
         && let (Some(fire), Some(attempt)) = (
             output.result["fire"].as_str(),

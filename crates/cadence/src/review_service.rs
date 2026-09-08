@@ -123,6 +123,7 @@ struct AdmissionRequest {
     round: u64,
     target: Target,
     decision: Option<review::targets::DecisionMaterial>,
+    risk_observation: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -222,8 +223,8 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
     let manifest_id = format!("m{sequence}");
     let home_path = home_path(&request.home, &fire)?;
     let home = Home {
-        kind: request.home.kind,
-        id: request.home.id,
+        kind: request.home.kind.clone(),
+        id: request.home.id.clone(),
         occurrence: String::new(),
     };
     let routing = Routing {
@@ -261,12 +262,6 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             "pause" => review::policy::ordinary_request("pause", resolved),
             _ => return Err(Error::Invalid("unsupported ordinary caller".into())),
         };
-        if ordinary.policy.gate == Gate::Off {
-            return output(
-                "review-admit",
-                json!({"gate":"off","fire":null,"dispatch":null}),
-            );
-        }
         (
             Some(ordinary.policy.gate),
             Some(name),
@@ -285,154 +280,263 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             None,
         )
     };
-    let project_root = root
-        .parent()
-        .ok_or_else(|| Error::Invalid("project root unavailable".into()))?;
-    let mut source = review::material_io::SourceFiles {
-        root: project_root.into(),
+    let observed = if request.trigger == Some(review::policy::OrdinaryTrigger::RiskSurface)
+        && gate != Some(Gate::Off)
+    {
+        Some(admission_risk_observation(
+            &request,
+            root,
+            &view,
+            &route.policy.surfaces,
+        )?)
+    } else {
+        None
     };
-    let mut git = review::material_io::SourceGit {
-        root: project_root.into(),
-    };
-    let mut clock = review::material_io::WallClock;
-    let (manifest, storage) = acquire_target(
-        &fire,
-        &manifest_id,
-        &request.target,
-        request.decision.as_ref(),
-        &mut source,
-        &mut git,
-        &mut clock,
-    )?;
-    match request.specialist {
-        Some(Specialist::Minimalism) => {
-            review::specialist::minimalism_request(&manifest, &routing)
-                .map_err(|e| Error::Invalid(e.into()))?;
-        }
-        Some(Specialist::Decision) if !matches!(manifest.target, Target::Decision { .. }) => {
-            return Err(Error::Invalid("decision target required".into()));
-        }
-        Some(Specialist::Diagnosis) if !matches!(manifest.target, Target::Diagnosis { .. }) => {
-            return Err(Error::Invalid("diagnosis target required".into()));
-        }
-        _ => {}
-    }
-    let choices = selection.choices.clone();
-    let attempts = choices
-        .iter()
-        .enumerate()
-        .map(|(index, choice)| {
-            let local = choice == "claude-subagent" || choice == "base";
-            let model = if local {
-                route.choice.model.clone()
-            } else {
-                trigger
-                    .as_ref()
-                    .and_then(|trigger| route.policy.triggers.get(trigger))
-                    .and_then(|policy| {
-                        merge::get(
-                            &generation.effective.values,
-                            &format!("review.providers.{choice}.tiers.{}", policy.tier),
-                        )
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                    })
-            };
-            Attempt {
-                attempt: format!("{fire}-a{}", index + 1),
-                fire: fire.clone(),
-                occurrence: String::new(),
-                round: request.round,
-                slot: choice.clone(),
-                fallback_for: None,
-                view: MaterialView {
-                    view: format!("{fire}-v{}", index + 1),
-                    manifest: manifest_id.clone(),
-                    entries: manifest.entries.iter().map(|e| e.entry.clone()).collect(),
-                },
-                requested: RequestedVoice {
-                    agent: if choice == "base" {
-                        "cad-reviewer".into()
-                    } else if local {
-                        route.choice.agent.clone()
-                    } else {
-                        choice.clone()
-                    },
-                    model,
-                    effort: Some(route.choice.rung.clone()),
-                    routing: saved_routing.clone(),
-                    selection_evidence: routing.evidence.clone(),
-                },
-                observed_host: None,
-                observed_model: None,
-                launch: None,
-                host_return: None,
-                state: AttemptState::Intended,
-                failure: None,
-                original: None,
-                observations: vec![],
-                usage: Usage {
-                    input: None,
-                    output: None,
-                    cost: None,
-                    currency: None,
-                },
-                contract: Contract::current(),
+    admit_with_policy(request.trigger.clone(), gate.clone(), observed, || async {
+        let project_root = root
+            .parent()
+            .ok_or_else(|| Error::Invalid("project root unavailable".into()))?;
+        let mut source = review::material_io::SourceFiles {
+            root: project_root.into(),
+        };
+        let mut git = review::material_io::SourceGit {
+            root: project_root.into(),
+        };
+        let mut clock = review::material_io::WallClock;
+        let (manifest, storage) = acquire_target(
+            &fire,
+            &manifest_id,
+            &request.target,
+            request.decision.as_ref(),
+            &mut source,
+            &mut git,
+            &mut clock,
+        )?;
+        match request.specialist {
+            Some(Specialist::Minimalism) => {
+                review::specialist::minimalism_request(&manifest, &routing)
+                    .map_err(|e| Error::Invalid(e.into()))?;
             }
-        })
-        .collect();
-    let admitted = Admission {
-        fire: fire.clone(),
-        replay_key: request.replay_key,
-        scope: Scope {
-            project: request.project,
-            root: project_root.to_string_lossy().into(),
-            cycle: request.cycle,
-        },
-        home,
-        caller: request.caller,
-        trigger,
-        specialist: request.specialist,
-        discriminator: request.discriminator,
-        plan: request.plan.map(|n| n.to_string()),
-        anchor: request.anchor,
-        round: request.round,
-        artifact: manifest_id,
-        gate,
-        selection,
-        routing: saved_routing,
-        roster: Roster {
-            required: choices,
-            completion: CompletionRule::AllRequiredTerminal,
-        },
-        contract: Contract::current(),
-        settlement: Settlement::Pending,
-    };
-    let mut transaction = persistence::transaction(&view, &format!("admit:{fire}"));
-    let mut data = records;
-    persistence::insert(&mut data, "routes", &routing.evidence, &route)?;
-    persistence::contribute(&view, &mut transaction, data)?;
-    let contribution = admission::contribute_admission(
-        &view,
-        &mut transaction,
-        admission::PendingAdmission {
-            admission: admitted,
-            attempts,
-            manifest,
-            material: storage,
-            home_path,
-        },
-        &mut clock,
-    )?;
-    if session.config()? != generation {
-        return Err(Error::Conflict("review routing inputs changed".into()));
-    }
-    commit_admission(
-        contribution,
-        persistence::commit(store, &view, transaction),
-        admission::acknowledge_admission,
-    )
+            Some(Specialist::Decision) if !matches!(manifest.target, Target::Decision { .. }) => {
+                return Err(Error::Invalid("decision target required".into()));
+            }
+            Some(Specialist::Diagnosis) if !matches!(manifest.target, Target::Diagnosis { .. }) => {
+                return Err(Error::Invalid("diagnosis target required".into()));
+            }
+            _ => {}
+        }
+        let choices = selection.choices.clone();
+        let attempts = choices
+            .iter()
+            .enumerate()
+            .map(|(index, choice)| {
+                let local = choice == "claude-subagent" || choice == "base";
+                let model = if local {
+                    route.choice.model.clone()
+                } else {
+                    trigger
+                        .as_ref()
+                        .and_then(|trigger| route.policy.triggers.get(trigger))
+                        .and_then(|policy| {
+                            merge::get(
+                                &generation.effective.values,
+                                &format!("review.providers.{choice}.tiers.{}", policy.tier),
+                            )
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                        })
+                };
+                Attempt {
+                    attempt: format!("{fire}-a{}", index + 1),
+                    fire: fire.clone(),
+                    occurrence: String::new(),
+                    round: request.round,
+                    slot: choice.clone(),
+                    fallback_for: None,
+                    view: MaterialView {
+                        view: format!("{fire}-v{}", index + 1),
+                        manifest: manifest_id.clone(),
+                        entries: manifest.entries.iter().map(|e| e.entry.clone()).collect(),
+                    },
+                    requested: RequestedVoice {
+                        agent: if choice == "base" {
+                            "cad-reviewer".into()
+                        } else if local {
+                            route.choice.agent.clone()
+                        } else {
+                            choice.clone()
+                        },
+                        model,
+                        effort: Some(route.choice.rung.clone()),
+                        routing: saved_routing.clone(),
+                        selection_evidence: routing.evidence.clone(),
+                    },
+                    observed_host: None,
+                    observed_model: None,
+                    launch: None,
+                    host_return: None,
+                    state: AttemptState::Intended,
+                    failure: None,
+                    original: None,
+                    observations: vec![],
+                    usage: Usage {
+                        input: None,
+                        output: None,
+                        cost: None,
+                        currency: None,
+                    },
+                    contract: Contract::current(),
+                }
+            })
+            .collect();
+        let admitted = Admission {
+            fire: fire.clone(),
+            replay_key: request.replay_key,
+            scope: Scope {
+                project: request.project,
+                root: project_root.to_string_lossy().into(),
+                cycle: request.cycle,
+            },
+            home,
+            caller: request.caller,
+            trigger,
+            specialist: request.specialist,
+            discriminator: request.discriminator,
+            plan: request.plan.map(|n| n.to_string()),
+            anchor: request.anchor,
+            round: request.round,
+            artifact: manifest_id,
+            gate,
+            selection,
+            routing: saved_routing,
+            roster: Roster {
+                required: choices,
+                completion: CompletionRule::AllRequiredTerminal,
+            },
+            contract: Contract::current(),
+            settlement: Settlement::Pending,
+        };
+        let mut transaction = persistence::transaction(&view, &format!("admit:{fire}"));
+        let mut data = records;
+        persistence::insert(&mut data, "routes", &routing.evidence, &route)?;
+        persistence::contribute(&view, &mut transaction, data)?;
+        let contribution = admission::contribute_admission(
+            &view,
+            &mut transaction,
+            admission::PendingAdmission {
+                admission: admitted,
+                attempts,
+                manifest,
+                material: storage,
+                home_path,
+            },
+            &mut clock,
+        )?;
+        if session.config()? != generation {
+            return Err(Error::Conflict("review routing inputs changed".into()));
+        }
+        commit_admission(
+            contribution,
+            persistence::commit(store, &view, transaction),
+            admission::acknowledge_admission,
+        )
+        .await
+    })
     .await
+}
+
+pub async fn admit_with_policy<F: std::future::Future<Output = Answer>>(
+    trigger: Option<review::policy::OrdinaryTrigger>,
+    gate: Option<Gate>,
+    observation: Option<review::policy::DetectorObservation>,
+    admit: impl FnOnce() -> F,
+) -> Answer {
+    let policy =
+        review::policy::admission_policy(trigger.as_ref(), gate.as_ref(), observation.as_ref());
+    if policy.action != review::policy::RiskAction::Dispatch {
+        return output("review-admit", policy);
+    }
+    admit().await
+}
+
+fn admission_risk_observation(
+    request: &AdmissionRequest,
+    root: &Path,
+    view: &cadence::store::writer::View,
+    answer: &crate::config::policy::SurfaceAnswer,
+) -> Result<review::policy::DetectorObservation> {
+    use cadence::rail::risk;
+    use review::policy::DetectorObservation;
+    let surfaces = match answer {
+        crate::config::policy::SurfaceAnswer::Unanswered => {
+            return Ok(DetectorObservation::Unanswered);
+        }
+        crate::config::policy::SurfaceAnswer::Invalid { reason } => {
+            return Err(Error::Policy(reason.clone()));
+        }
+        crate::config::policy::SurfaceAnswer::Answered { categories } => categories,
+    };
+    let Some(phase) = request.phase else {
+        return if request.risk_observation.is_some() {
+            Err(Error::Invalid("foreign-risk-evidence".into()))
+        } else {
+            Ok(DetectorObservation::Inconclusive)
+        };
+    };
+    let material = match &request.target {
+        Target::CommittedRange { base, head } | Target::PhaseRange { base, head, .. } => {
+            risk::MaterialIdentity::Committed {
+                base_id: base.clone(),
+                head_id: head.clone(),
+            }
+        }
+        Target::StagedTree { base, index, .. } => risk::MaterialIdentity::Staged {
+            base_id: base.clone(),
+            index_id: index.clone(),
+        },
+        _ => return Ok(DetectorObservation::Inconclusive),
+    };
+    let scope = risk::Scope {
+        project: request.project.clone(),
+        planning_root: root.to_string_lossy().into(),
+        cycle: request.cycle.clone(),
+        occurrence: request.discriminator.clone(),
+        phase,
+        worker: request.plan.map(|n| n.to_string()),
+        plan: request.plan,
+    };
+    let records = risk::read(&view.snapshot.data)?;
+    let latest = records
+        .values()
+        .filter(|r| {
+            r.observation.scope == scope
+                && r.observation.surfaces == *surfaces
+                && r.observation.resolution.material().as_ref() == Some(&material)
+        })
+        .max_by_key(|r| r.confirmation.generation);
+    let selected = match &request.risk_observation {
+        Some(id) => {
+            let selected = records
+                .values()
+                .find(|r| r.observation.scope == scope && r.observation.request_id == *id);
+            if selected.is_none() && records.values().any(|r| r.observation.request_id == *id) {
+                return Err(Error::Invalid("foreign-risk-evidence".into()));
+            }
+            selected
+        }
+        None => latest,
+    };
+    let evidence = selected.map(|record| review::policy::RiskEvidence {
+        observation: &record.observation,
+        confirmed: risk::confirmed(view, &scope, &record.observation.request_id)
+            .ok()
+            .flatten()
+            .as_ref()
+            == Some(record),
+        current: latest.is_some_and(|latest| latest.confirmation == record.confirmation),
+    });
+    review::policy::detector_observation(&scope, &material, Some(surfaces), evidence)
+        .map_err(|e| Error::Invalid(e.into()))
 }
 
 async fn commit_admission<C, V>(
@@ -1296,5 +1400,41 @@ mod gap153_service_tests {
         assert!(authorize_material_read(&records, &attempt, &manifest, &entry).is_err());
         entry.entry = "e3".into();
         assert!(authorize_material_read(&records, &attempt, &manifest, &entry).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod gap154_composition_tests {
+    use super::*;
+    use std::cell::Cell;
+    #[tokio::test]
+    async fn gap154_public_risk_admission_asks_without_contribution() {
+        let calls = Cell::new(0);
+        let material = || {
+            calls.set(calls.get() + 1);
+            Ok::<_, Error>(json!("material-sentinel"))
+        };
+        let routing = |_| {
+            calls.set(calls.get() + 1);
+            Ok::<_, Error>(json!("routing-sentinel"))
+        };
+        let persistence = |_| {
+            calls.set(calls.get() + 1);
+            output("review-admit", json!({"fire":"forbidden"}))
+        };
+        let answer = admit_with_policy(
+            Some(review::policy::OrdinaryTrigger::RiskSurface),
+            Some(Gate::Blocking),
+            Some(review::policy::DetectorObservation::Unanswered),
+            || async { persistence(routing(material()?)?) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(answer).unwrap(),
+            json!({"status":"ok","operation":"review-admit","result":{
+            "action":"ask-surfaces","gate":"blocking","fire":null,"dispatch":null}})
+        );
+        assert_eq!(calls.get(), 0);
     }
 }
