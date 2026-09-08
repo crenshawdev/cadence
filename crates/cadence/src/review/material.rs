@@ -1,7 +1,8 @@
 //! Retained H2 records use the caller's durable store, never a material journal.
 use super::io::{Clock, GitIo, MaterialIo};
 use super::model::{
-    Availability, Contract, Manifest, MaterialEntry, MaterialProvenance, MaterialRole, Side, Target,
+    Availability, Contract, Manifest, MaterialEntry, MaterialProvenance, MaterialRole,
+    MaterialView, Side, Target,
 };
 use cadence::store::{Error, Result, Storage};
 use sha2::{Digest, Sha256};
@@ -130,6 +131,99 @@ pub fn read_material<S: Storage>(store: &mut S, entry: &MaterialEntry) -> Result
 
 pub fn material_matches(saved: &[u8], proposed: &[u8]) -> bool {
     saved == proposed
+}
+
+/// An entry ID allocated by the caller and exact newly acquired bytes. This is
+/// an operation input; the saved vocabulary remains MaterialEntry/Manifest.
+pub struct AdditionalMaterial {
+    pub entry: String,
+    pub role: MaterialRole,
+    pub path: Option<String>,
+    pub label: Option<String>,
+    pub side: Side,
+    pub acquisition: String,
+    pub bytes: Vec<u8>,
+}
+
+/// The caller supplies its actual delivery observation. Membership is checked
+/// here; acquisition does not fabricate host participation or edit that view.
+pub struct DeliveredMaterial<'a> {
+    pub attempt: &'a str,
+    pub view: &'a MaterialView,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct MaterialAppend {
+    pub manifest: String,
+    pub contract: Contract,
+    pub entry: MaterialEntry,
+}
+
+pub fn append_material<S: Storage>(
+    manifest: &Manifest,
+    additional: AdditionalMaterial,
+    delivered: Option<DeliveredMaterial<'_>>,
+    store: &mut S,
+    clock: &mut impl Clock,
+) -> Result<MaterialEntry> {
+    if additional.entry.is_empty()
+        || additional.acquisition.is_empty()
+        || (additional.path.is_none() && additional.label.is_none())
+    {
+        return Err(Error::Invalid("incomplete material acquisition".into()));
+    }
+    if manifest
+        .entries
+        .iter()
+        .any(|entry| entry.entry == additional.entry)
+    {
+        return Err(Error::Conflict(
+            "original material entry is immutable".into(),
+        ));
+    }
+    if let Some(binding) = &delivered {
+        if binding.attempt.is_empty()
+            || binding.view.view.is_empty()
+            || binding.view.manifest != manifest.manifest
+            || !binding.view.entries.contains(&additional.entry)
+        {
+            return Err(Error::Invalid(
+                "material not in supplied attempt view".into(),
+            ));
+        }
+    }
+    let mut saved = entry(
+        &manifest.manifest,
+        additional.path.as_deref().unwrap_or(""),
+        additional.side,
+        additional.role,
+        clock.now(),
+        additional.acquisition,
+    );
+    saved.entry = additional.entry;
+    saved.path = additional.path;
+    saved.label = additional.label;
+    match delivered {
+        Some(binding) => {
+            saved.provenance = MaterialProvenance::OriginalView;
+            saved.attempt = Some(binding.attempt.into());
+            saved.view = Some(binding.view.view.clone());
+        }
+        None => saved.provenance = MaterialProvenance::LaterEvidence,
+    }
+    retain_bytes(store, &mut saved, &additional.bytes)?;
+    saved.lines = super::manifest::line_map(&additional.bytes);
+    let key = format!(
+        "material-append-{}",
+        artifact_content_id(&serde_json::to_vec(&(&manifest.manifest, &saved.entry))?)
+    );
+    let append = MaterialAppend {
+        manifest: manifest.manifest.clone(),
+        contract: manifest.contract.clone(),
+        entry: saved.clone(),
+    };
+    retain_record(store, &key, &serde_json::to_vec(&append)?)?;
+    Ok(saved)
 }
 
 #[derive(Debug, PartialEq, Eq)]
