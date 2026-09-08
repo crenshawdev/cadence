@@ -6,6 +6,10 @@
 > Nothing this report claims rested on it, and its counts are unaffected.
 
 Outcome: blocked at P7-2-T3 (B1). Completed prefix: P7-2-T1 and P7-2-T2. P7-2-T4 through P7-2-T6 were not run.
+
+> **Resolution:** P7-2-T3 through P7-2-T6 were completed in later dispatches and
+> are committed (`dfdf339d`, `d7ffda84`, `3af58d1a`, `056afb81`).
+
 Initial branch: `cadence/binary-owns-process`; initial HEAD: `248bd8c668815e11c23e06cdc70c1d505eb82586`; initial tree clean excluding the concurrently owned `.codex-analysis/`, which was not inspected or changed.
 Final committed HEAD: `128921fa1bcdc4a93a863a3d0a4f96414776b8af`. Both task commits have valid GPG signatures (G), using the configured project author and signing configuration. No push.
 This report is the owner's explicit exact-path exception to the executor contract's report restriction. It is left uncommitted.

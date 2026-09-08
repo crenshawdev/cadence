@@ -1,6 +1,6 @@
 # State
 
-Phase: 6 of 18 (The boundary and the execute slice)
+Phase: 7 of 19 (The commit rail and the risk gates)
 Status: complete
-Next: phase 7
-Updated: 2026-09-07
+Next: phase 8
+Updated: 2026-09-08

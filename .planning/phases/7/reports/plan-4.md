@@ -16,6 +16,11 @@
 > by a person and asserted by no test in this repository.
 
 Outcome: blocked during P7-4-T2 after discovering B1 in the required T5 integration path.
+
+> **Resolution:** P7-4-T2 through P7-4-T5 were completed in later dispatches and
+> are committed (`d6861cdd`, `3fce4a93`, `ec0d9fd2`, `d34fb2eb`). P7-4-T6 was
+
+> deleted rather than completed; see the correction above.
 Completed prefix: P7-4-T1 only. T2 is incomplete and uncommitted; T3 through T6 were not started.
 Initial HEAD: `fd829f7864c17ea4ac000eae89992382ec8e0287`.
 Current committed HEAD: `7252a686ab921e8050559184b3fee00488602717`.

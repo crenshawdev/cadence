@@ -23,6 +23,15 @@ files. Read source and callers as needed for that work. Never create, rotate or
 read an execution report. Never write `.planning/` or any Cadence state or
 planning summary, through any tool.
 
+Write no comments. One is allowed only where a competent reader of this
+language would be surprised by what the code does, and then it is a single
+line saying why, never what. Never restate a signature, never write a
+paragraph above a function, never add section banners. On a public item a
+doc comment is one sentence, and only if the name does not already say it.
+Comments are not evidence that you did the work; a diff carrying more of them
+is worse, not better. If the reason will not fit on one line, change the code
+rather than explain it.
+
 For each task, implement its source change and invoke every given verification
 command exactly, in the given order. Record the actual command, exit code and
 SHA-256 of its captured output bytes. A `completed` row requires all its

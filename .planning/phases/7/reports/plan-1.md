@@ -16,6 +16,11 @@
 > by a person and asserted by no test in this repository.
 
 Outcome: blocked at P7-1-T7. Completed prefix: P7-1-T1 through P7-1-T6.
+
+> **Resolution:** the blocked task P7-1-T7 was later completed and committed as
+> `41f16a9c`. Its live-probe verify was removed on 2026-09-08 and replaced with
+
+> `cargo test -p cadence --test phase7_guard`.
 Initial branch: `cadence/binary-owns-process`; initial HEAD: `25e453dccc1480a1e9eebe12306dc79c06aa48c7`; initial tree clean.
 Final committed HEAD: `06faf708e3f6f8ac9e15fadd0ed984e09f7abcdc`. No push. All six completed-task commits have valid GPG signatures and use the configured author.
 This report is the explicit owner-authorized exception to the executor contract report restriction. It is left uncommitted.
