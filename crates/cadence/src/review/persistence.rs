@@ -165,3 +165,21 @@ impl Storage for MaterialStorage {
         Err(Error::Invalid("retained deletion forbidden".into()))
     }
 }
+
+pub async fn update(store: &Store, view: &View, name: &str, records: Value) -> Result<View> {
+    let mut transaction = transaction(view, name);
+    contribute(view, &mut transaction, records)?;
+    commit(store, view, transaction).await
+}
+
+pub fn terminal_count(records: &Value, attempt: &str) -> usize {
+    records
+        .get("closures")
+        .and_then(Value::as_object)
+        .map_or(0, |closures| {
+            closures
+                .values()
+                .filter(|closure| closure["attempt"] == attempt)
+                .count()
+        })
+}
