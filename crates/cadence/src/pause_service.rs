@@ -43,6 +43,64 @@ pub struct RiskNeed {
     pub fire: risk::Fire,
 }
 
+#[derive(serde::Serialize)]
+struct PauseDeliveryRequest<'a> {
+    fire: &'a str,
+    attempt: &'a str,
+    fields: [&'static str; 5],
+}
+
+fn pause_delivery_request(delivery: &risk::ModernDelivery) -> PauseDeliveryRequest<'_> {
+    PauseDeliveryRequest {
+        fire: &delivery.fire,
+        attempt: &delivery.attempt,
+        fields: ["file", "line", "severity", "claim", "failure_scenario"],
+    }
+}
+
+/// New pause admissions enter the same native producer boundary as other
+/// ordinary reviews. This does not grant historical raw-result clearance.
+pub async fn modern_admission(
+    resident: &super::recall::Resident,
+    planning: &Path,
+    request: serde_json::Value,
+) -> super::review_service::Answer {
+    use super::review_service::{Apply, Command};
+    use cadence::envelope::Envelope;
+    let target =
+        serde_json::from_value::<cadence::review::model::Target>(request["target"].clone());
+    if request["caller"] != "pause"
+        || request["trigger"] != "risk_surface"
+        || !request["specialist"].is_null()
+    {
+        return Ok(super::review_service::refused(
+            "modern pause requires the ordinary risk_surface trigger",
+        ));
+    }
+    match target.and_then(|target| risk::modern_target(&target).map_err(serde::de::Error::custom)) {
+        Ok(()) => {}
+        Err(error) => return Ok(super::review_service::refused(error.to_string())),
+    }
+    let mut answer = resident
+        .review(planning, Command::Apply(Apply::Admit { request }))
+        .await?;
+    if let Envelope::Ok(output) = &mut answer
+        && let (Some(fire), Some(attempt)) = (
+            output.result["fire"].as_str(),
+            output.result["attempt"].as_str(),
+        )
+    {
+        let delivery = risk::ModernDelivery {
+            fire: fire.into(),
+            attempt: attempt.into(),
+            findings: vec![],
+        };
+        output.result["delivery_request"] =
+            serde_json::to_value(pause_delivery_request(&delivery))?;
+    }
+    Ok(answer)
+}
+
 #[cfg(test)]
 fn pause_barrier(stage: &str) {
     use std::io::Write as _;
@@ -1227,3 +1285,7 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
     )
     .await
 }
+
+#[cfg(test)]
+#[path = "phase9_pause_tests.rs"]
+mod phase9_pause_tests;

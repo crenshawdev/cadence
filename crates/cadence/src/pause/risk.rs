@@ -12,6 +12,28 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::PathBuf};
 
 pub const CONTRACT: &str = "cadence.pause.risk-surface.v1";
+
+/// Native pause admissions retain authored staged material and use ordinary
+/// findings. The historical Review/CONTRACT decoder below remains separate.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModernDelivery {
+    pub fire: String,
+    pub attempt: String,
+    pub findings: Vec<crate::review::model::Finding>,
+}
+
+pub fn modern_target(target: &crate::review::model::Target) -> Result<()> {
+    match target {
+        crate::review::model::Target::StagedTree {
+            base,
+            index,
+            head: None,
+        } if !base.is_empty() && !index.is_empty() => Ok(()),
+        _ => Err(Error::Invalid(
+            "modern pause requires an authored staged target with null head".into(),
+        )),
+    }
+}
 use crate::rail::risk::MaterialIdentity;
 pub use crate::rail::risk::{CATEGORIES, validate_surfaces};
 

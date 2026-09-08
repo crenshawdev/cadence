@@ -730,6 +730,16 @@ impl ServerHandler for PublicServer {
                     let answer =
                         match serde_json::from_value::<review_service::Apply>(raw.clone().unwrap())
                         {
+                            Ok(review_service::Apply::Admit { request })
+                                if request["caller"] == "pause" =>
+                            {
+                                pause_service::modern_admission(
+                                    &self.server.service,
+                                    &self.root,
+                                    request,
+                                )
+                                .await
+                            }
                             Ok(apply) => {
                                 self.server
                                     .service
