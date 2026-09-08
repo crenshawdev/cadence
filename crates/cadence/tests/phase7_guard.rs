@@ -1296,7 +1296,18 @@ fn shipped_manifest_loads_both_native_arms_and_preserves_unrelated_hooks() {
         .unwrap();
     assert!(frozen.status.success());
     let frozen: serde_json::Value = serde_json::from_slice(&frozen.stdout).unwrap();
-    for name in ["PostToolUse", "SubagentStop"] {
-        assert_eq!(manifest["hooks"][name], frozen["hooks"][name]);
-    }
+    assert_eq!(
+        manifest["hooks"]["PostToolUse"],
+        frozen["hooks"]["PostToolUse"]
+    );
+    assert_eq!(
+        manifest["hooks"]["SubagentStop"],
+        serde_json::json!([{
+            "hooks": [{
+                "type": "command",
+                "command": "cadence review-stop",
+                "timeout": 10
+            }]
+        }])
+    );
 }
