@@ -1,5 +1,8 @@
 //! Source acquisition adapters. Retention is supplied separately as Storage.
-use super::io::{Clock, DirectoryObservation, GitIo, GitObservation, MaterialIo};
+use super::io::{
+    Clock, DirectoryMembers, DirectoryNode, DirectoryObservation, GitIo, GitObservation,
+    MaterialIo, NodeKind,
+};
 use super::model::Target;
 use cadence::rail::git;
 use cadence::store::{Error, Observed, Result};
@@ -24,12 +27,42 @@ fn identity(metadata: &fs::Metadata) -> String {
     )
 }
 
+impl SourceFiles {
+    fn checked_path(&self, relative: &str) -> Result<PathBuf> {
+        let relative = relative.strip_prefix("./").unwrap_or(relative);
+        if relative.is_empty()
+            || Path::new(relative).is_absolute()
+            || relative.contains('\\')
+            || (relative != "."
+                && relative
+                    .split('/')
+                    .any(|p| p.is_empty() || p == "." || p == ".."))
+        {
+            return Err(Error::Invalid("invalid source path".into()));
+        }
+        let mut path = self.root.clone();
+        for component in Path::new(relative).components() {
+            path.push(component);
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err(Error::Invalid("unsupported source symlink".into()));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(self.root.join(relative))
+    }
+}
+
 impl MaterialIo for SourceFiles {
     fn read(&mut self, path: &str) -> Result<Observed> {
-        let path = self.root.join(path);
+        let relative = path;
+        let path = self.checked_path(relative)?;
         let mut file = match fs::OpenOptions::new()
             .read(true)
-            .custom_flags(libc::O_NONBLOCK)
+            .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
             .open(&path)
         {
             Ok(file) => file,
@@ -53,6 +86,7 @@ impl MaterialIo for SourceFiles {
         {
             return Err(Error::Conflict("source changed during acquisition".into()));
         }
+        self.checked_path(relative)?;
         Ok(Observed {
             bytes: Some(bytes),
             identity: identity(&before),
@@ -61,23 +95,47 @@ impl MaterialIo for SourceFiles {
     }
 
     fn list(&mut self, path: &str) -> Result<DirectoryObservation> {
-        let path = self.root.join(path);
-        let before = fs::metadata(&path)?;
+        let observed = self.members(path)?;
+        Ok(DirectoryObservation {
+            identity: observed.identity,
+            members: observed.members.into_iter().map(|m| m.name).collect(),
+        })
+    }
+
+    fn members(&mut self, relative: &str) -> Result<DirectoryMembers> {
+        let path = self.checked_path(relative)?;
+        let before = fs::symlink_metadata(&path)?;
+        if !before.is_dir() {
+            return Err(Error::Invalid("source is not a directory".into()));
+        }
         let mut members = fs::read_dir(&path)?
             .map(|item| {
-                item?
+                let item = item?;
+                let name = item
                     .file_name()
                     .into_string()
-                    .map_err(|_| Error::Invalid("non-UTF-8 member".into()))
+                    .map_err(|_| Error::Invalid("non-UTF-8 member".into()))?;
+                let kind = item.file_type()?;
+                let kind = if kind.is_symlink() {
+                    NodeKind::Symlink
+                } else if kind.is_dir() {
+                    NodeKind::Directory
+                } else if kind.is_file() {
+                    NodeKind::File
+                } else {
+                    NodeKind::Special
+                };
+                Ok(DirectoryNode { name, kind })
             })
             .collect::<Result<Vec<_>>>()?;
         members.sort();
-        if identity(&before) != identity(&fs::metadata(&path)?) {
+        self.checked_path(relative)?;
+        if identity(&before) != identity(&fs::symlink_metadata(&path)?) {
             return Err(Error::Conflict(
                 "directory changed during acquisition".into(),
             ));
         }
-        Ok(DirectoryObservation {
+        Ok(DirectoryMembers {
             identity: identity(&before),
             members,
         })

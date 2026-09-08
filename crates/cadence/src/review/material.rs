@@ -260,12 +260,115 @@ pub fn read_directory_target<S: Storage>(
 }
 
 fn directory_member(path: &str, member: &str) -> Result<String> {
-    use std::path::{Component, Path};
-    let mut components = Path::new(member).components();
-    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+    if member.is_empty()
+        || member.contains('\\')
+        || member
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        || std::path::Path::new(member).is_absolute()
+    {
         return Err(Error::Invalid("invalid directory member".into()));
     }
-    Ok(Path::new(path).join(member).to_string_lossy().into_owned())
+    Ok(std::path::Path::new(path)
+        .join(member)
+        .to_string_lossy()
+        .into_owned())
+}
+
+#[derive(Debug)]
+struct DirectoryFiles {
+    files: Vec<String>,
+    directories: BTreeMap<String, super::io::DirectoryMembers>,
+}
+
+fn directory_files(
+    root: &str,
+    resolve: &mut impl FnMut(&str) -> Result<super::io::DirectoryMembers>,
+) -> Result<DirectoryFiles> {
+    use super::io::NodeKind;
+    let mut pending = vec![String::new()];
+    let mut directories = BTreeMap::new();
+    let mut files = std::collections::BTreeSet::new();
+    while let Some(relative) = pending.pop() {
+        let path = if relative.is_empty() {
+            root.into()
+        } else {
+            directory_member(root, &relative)?
+        };
+        if directories.contains_key(&path) {
+            continue;
+        }
+        let mut observed = resolve(&path)?;
+        observed.members.sort();
+        observed.members.dedup();
+        if observed
+            .members
+            .windows(2)
+            .any(|pair| pair[0].name == pair[1].name)
+        {
+            return Err(Error::Invalid("conflicting directory member types".into()));
+        }
+        for member in &observed.members {
+            if member.name.contains('/') {
+                return Err(Error::Invalid(
+                    "directory resolver returned a nonlocal member".into(),
+                ));
+            }
+            let child = directory_member(&relative, &member.name)?;
+            match member.kind {
+                NodeKind::File => {
+                    files.insert(child);
+                }
+                NodeKind::Directory => pending.push(child),
+                NodeKind::Symlink | NodeKind::Special => {
+                    return Err(Error::Invalid("unsupported directory node".into()));
+                }
+            }
+        }
+        directories.insert(path, observed);
+    }
+    Ok(DirectoryFiles {
+        files: files.into_iter().collect(),
+        directories,
+    })
+}
+
+fn acquire_directory_member<S: Storage>(
+    manifest: &str,
+    path: &str,
+    listing: &str,
+    observed: Result<cadence::store::Observed>,
+    store: &mut S,
+    acquired_at: u64,
+) -> Result<(MaterialEntry, Option<Vec<u8>>)> {
+    let mut saved = entry(
+        manifest,
+        path,
+        Side::Snapshot,
+        MaterialRole::Primary,
+        acquired_at,
+        listing.into(),
+    );
+    let bytes = match observed {
+        Ok(observed) => {
+            saved.acquisition = format!("{listing}:{}", observed.identity);
+            match observed.bytes {
+                Some(bytes) => {
+                    retain_bytes(store, &mut saved, &bytes)?;
+                    Some(bytes)
+                }
+                None => {
+                    saved.availability = Availability::Absent;
+                    None
+                }
+            }
+        }
+        Err(error) => {
+            saved.unavailable_reason = Some(error.to_string());
+            None
+        }
+    };
+    Ok((saved, bytes))
 }
 
 pub fn retain_directory<S: Storage>(
@@ -276,42 +379,59 @@ pub fn retain_directory<S: Storage>(
     store: &mut S,
     clock: &mut impl Clock,
 ) -> Result<RetainedMaterial> {
-    let mut listing = source.list(path)?;
-    listing.members.sort();
-    listing.members.dedup();
+    let tree = directory_files(path, &mut |path| source.members(path))?;
+    let acquisition = artifact_content_id(&serde_json::to_vec(&tree.directories)?);
     let mut result = empty(
         manifest,
         fire,
         Target::Directory {
             path: path.into(),
-            members: listing.members.clone(),
+            members: tree.files.clone(),
         },
     );
     let acquired_at = clock.now();
-    for member in &listing.members {
+    for member in &tree.files {
         let member_path = directory_member(path, member)?;
-        let mut saved = entry(
+        let observed = source.read(&member_path);
+        if let Ok(observed) = &observed
+            && observed.bytes.is_some()
+        {
+            let parent = std::path::Path::new(&member_path)
+                .parent()
+                .and_then(|p| p.to_str())
+                .ok_or_else(|| Error::Invalid("invalid member parent".into()))?;
+            if tree
+                .directories
+                .get(parent)
+                .is_none_or(|d| d.identity != observed.directory_identity)
+            {
+                return Err(Error::Conflict(
+                    "directory replaced during acquisition".into(),
+                ));
+            }
+        }
+        let (saved, bytes) = acquire_directory_member(
             manifest,
             &member_path,
-            Side::Snapshot,
-            MaterialRole::Primary,
+            &acquisition,
+            observed,
+            store,
             acquired_at,
-            listing.identity.clone(),
-        );
-        match source.read(&member_path) {
-            Ok(observed) => {
-                saved.acquisition = format!("{}:{}", listing.identity, observed.identity);
-                match observed.bytes {
-                    Some(bytes) => {
-                        retain_bytes(store, &mut saved, &bytes)?;
-                        result.contents.insert(saved.entry.clone(), bytes);
-                    }
-                    None => saved.availability = Availability::Absent,
-                }
-            }
-            Err(error) => saved.unavailable_reason = Some(error.to_string()),
+        )?;
+        if let Some(bytes) = bytes {
+            result.contents.insert(saved.entry.clone(), bytes);
         }
         result.manifest.entries.push(saved);
+    }
+    for (path, expected) in &tree.directories {
+        let mut current = source.members(path)?;
+        current.members.sort();
+        current.members.dedup();
+        if current != *expected {
+            return Err(Error::Conflict(
+                "directory replaced during acquisition".into(),
+            ));
+        }
     }
     save(store, result)
 }
@@ -556,5 +676,166 @@ mod gap153_append_tests {
         assert_eq!(entry.acquired_at, 100);
         assert_eq!(entry.attempt, None);
         assert_eq!(entry.view, None);
+    }
+}
+
+#[cfg(test)]
+mod gap156_tests {
+    use super::super::io::{DirectoryMembers, DirectoryNode, NodeKind};
+    use super::gap_material_support::*;
+    use super::*;
+    use cadence::store::Observed;
+    fn listing(identity: &str, members: &[(&str, NodeKind)]) -> DirectoryMembers {
+        DirectoryMembers {
+            identity: identity.into(),
+            members: members
+                .iter()
+                .map(|(name, kind)| DirectoryNode {
+                    name: (*name).into(),
+                    kind: kind.clone(),
+                })
+                .collect(),
+        }
+    }
+    #[test]
+    fn gap156_nested_enumeration_retains_only_sorted_files() {
+        let result = directory_files("src", &mut |path| {
+            Ok(match path {
+                "src" => listing(
+                    "root1",
+                    &[
+                        ("sub", NodeKind::Directory),
+                        ("a.rs", NodeKind::File),
+                        ("empty", NodeKind::Directory),
+                        ("a.rs", NodeKind::File),
+                    ],
+                ),
+                "src/sub" => listing(
+                    "sub1",
+                    &[("b.rs", NodeKind::File), ("deep", NodeKind::Directory)],
+                ),
+                "src/sub/deep" => listing("deep1", &[("c.rs", NodeKind::File)]),
+                "src/empty" => listing("empty1", &[]),
+                _ => panic!("unexpected resolver input"),
+            })
+        })
+        .unwrap();
+        assert_eq!(result.files, vec!["a.rs", "sub/b.rs", "sub/deep/c.rs"]);
+        assert_eq!(result.directories.len(), 4);
+    }
+    #[test]
+    fn gap156_nested_errors_and_symlinks_never_yield_partial_success() {
+        for failure in [
+            Error::Io("unreadable nested directory".into()),
+            Error::Conflict("replaced nested directory".into()),
+        ] {
+            let message = failure.to_string();
+            let mut failure = Some(failure);
+            let result = directory_files("src", &mut |path| {
+                if path == "src" {
+                    Ok(listing(
+                        "root1",
+                        &[("a.rs", NodeKind::File), ("sub", NodeKind::Directory)],
+                    ))
+                } else {
+                    Err(failure.take().unwrap())
+                }
+            });
+            assert_eq!(result.unwrap_err().to_string(), message);
+        }
+        let result = directory_files("src", &mut |_| {
+            Ok(listing("root1", &[("sub", NodeKind::Symlink)]))
+        });
+        assert_eq!(
+            result.unwrap_err(),
+            Error::Invalid("unsupported directory node".into())
+        );
+    }
+    #[test]
+    fn gap156_directory_member_accepts_nested_safe_components() {
+        assert_eq!(directory_member("src", "sub/b.rs").unwrap(), "src/sub/b.rs");
+        for member in [
+            "../b.rs",
+            "/b.rs",
+            "",
+            "sub/../b.rs",
+            "sub/./b.rs",
+            "sub//b.rs",
+            "sub/",
+            "./b.rs",
+        ] {
+            assert_eq!(
+                directory_member("src", member).unwrap_err(),
+                Error::Invalid("invalid directory member".into())
+            );
+        }
+    }
+    #[test]
+    fn gap156_single_member_acquisition_preserves_bytes_and_unavailability() {
+        let observed = Observed {
+            bytes: Some(b"old\n".to_vec()),
+            identity: "file1".into(),
+            directory_identity: "sub1".into(),
+        };
+        let (entry, bytes) = acquire_directory_member(
+            "m1",
+            "src/sub/b.rs",
+            "listing1",
+            Ok(observed),
+            &mut Saved::default(),
+            100,
+        )
+        .unwrap();
+        assert_eq!(entry.path.as_deref(), Some("src/sub/b.rs"));
+        assert_eq!(entry.availability, Availability::Available);
+        assert_eq!(bytes, Some(b"old\n".to_vec()));
+        assert_eq!(entry.acquired_at, 100);
+        let absent = Observed {
+            bytes: None,
+            identity: "absent".into(),
+            directory_identity: "sub1".into(),
+        };
+        let (entry, bytes) = acquire_directory_member(
+            "m1",
+            "src/sub/b.rs",
+            "listing1",
+            Ok(absent),
+            &mut Saved::default(),
+            100,
+        )
+        .unwrap();
+        assert_eq!(entry.availability, Availability::Absent);
+        assert_eq!(bytes, None);
+        let (entry, bytes) = acquire_directory_member(
+            "m1",
+            "src/sub/b.rs",
+            "listing1",
+            Err(Error::Io("unreadable".into())),
+            &mut Saved::default(),
+            100,
+        )
+        .unwrap();
+        assert_eq!(entry.availability, Availability::Unavailable);
+        assert_eq!(bytes, None);
+    }
+    #[test]
+    fn gap156_nested_retained_read_has_no_live_source() {
+        let h: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/phase9/h1-admission.json"
+        ))
+        .unwrap();
+        let mut manifest: Manifest = serde_json::from_value(h["m1"].clone()).unwrap();
+        manifest.target = Target::Directory {
+            path: "src".into(),
+            members: vec!["sub/b.rs".into()],
+        };
+        manifest.entries[0].path = Some("src/sub/b.rs".into());
+        let mut saved = Saved([("material-e1".into(), b"old\n".to_vec())].into());
+        let result = read_directory_target(&mut saved, &manifest).unwrap();
+        assert_eq!(result.members, vec!["sub/b.rs"]);
+        assert_eq!(
+            result.contents,
+            [("sub/b.rs".into(), b"old\n".to_vec())].into()
+        );
     }
 }
