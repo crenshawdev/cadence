@@ -102,6 +102,7 @@ pub async fn record_observation(
         return receipt(&records, &event, true);
     }
     let mut attempt: Attempt = persistence::get(&records, "attempts", &event.attempt)?;
+    records = contribute_delivery(&records, &attempt, &event)?;
     let bindings: BTreeMap<String, String> = records
         .get("host_returns")
         .cloned()
@@ -146,7 +147,8 @@ pub async fn record_observation(
             }
             ObservationKind::Usage
             | ObservationKind::HostFacts
-            | ObservationKind::LaunchFailure => {}
+            | ObservationKind::LaunchFailure
+            | ObservationKind::MaterialDelivery(_) => {}
         }
     }
     attempt.observations.push(event.observation.clone());
@@ -178,4 +180,172 @@ pub async fn record_observation(
         &event,
         false,
     )
+}
+
+fn delivery_key(attempt: &str, view: &str) -> String {
+    cadence::store::model::digest(&serde_json::to_vec(&(attempt, view)).expect("string pair"))
+}
+
+pub fn delivered_view(
+    records: &Value,
+    attempt: &Attempt,
+    view: &super::model::MaterialView,
+) -> Result<super::model::DeliveryRecord> {
+    let saved: super::model::DeliveryRecord = persistence::get(
+        records,
+        "deliveries",
+        &delivery_key(&attempt.attempt, &view.view),
+    )?;
+    let observation: Observation = persistence::get(records, "observations", &saved.observation)?;
+    if saved.attempt != attempt.attempt
+        || saved.delivery.fire != attempt.fire
+        || saved.delivery.view != *view
+        || view.manifest != attempt.view.manifest
+        || observation.attempt != attempt.attempt
+        || observation.kind != ObservationKind::MaterialDelivery(saved.delivery.clone())
+    {
+        return Err(Error::Invalid("unobserved material delivery".into()));
+    }
+    Ok(saved)
+}
+
+fn contribute_delivery(records: &Value, attempt: &Attempt, event: &Observation) -> Result<Value> {
+    use super::model::{DeliveryRecord, Manifest, MaterialEntry};
+    let ObservationKind::MaterialDelivery(delivery) = &event.kind else {
+        return Ok(records.clone());
+    };
+    let key = delivery_key(&attempt.attempt, &delivery.view.view);
+    let saved = DeliveryRecord {
+        observation: event.observation.clone(),
+        attempt: attempt.attempt.clone(),
+        delivery: delivery.clone(),
+    };
+    if let Some(prior) = records["deliveries"].get(&key) {
+        if *prior == serde_json::to_value(&saved)? {
+            return Ok(records.clone());
+        }
+        return Err(Error::Conflict("delivery membership is immutable".into()));
+    }
+    if event.attempt != attempt.attempt
+        || delivery.fire != attempt.fire
+        || delivery.view.manifest != attempt.view.manifest
+        || delivery.view.view.is_empty()
+        || (delivery.view.view == attempt.view.view && delivery.view != attempt.view)
+        || attempt.launch.is_none()
+        || records["issued"].get(&attempt.attempt).is_none()
+        || records["closures"].get(&attempt.attempt).is_some()
+        || matches!(
+            attempt.state,
+            AttemptState::Accepted | AttemptState::Failed | AttemptState::NotSelected
+        )
+        || delivery.view.entries.len() != delivery.contents.len()
+    {
+        return Err(Error::Invalid("ineligible material delivery".into()));
+    }
+    let manifest: Manifest = persistence::get(records, "manifests", &delivery.view.manifest)?;
+    if manifest.fire != attempt.fire {
+        return Err(Error::Invalid("foreign delivery manifest".into()));
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for id in &delivery.view.entries {
+        let appended: Option<MaterialEntry> = records["appended"]
+            .get(id)
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()?;
+        let entry = manifest
+            .entries
+            .iter()
+            .find(|e| &e.entry == id)
+            .or(appended.as_ref())
+            .ok_or_else(|| Error::Invalid("delivery entry is not retained".into()))?;
+        if !unique.insert(id)
+            || entry.content.as_ref() != delivery.contents.get(id)
+            || entry.content.is_none()
+        {
+            return Err(Error::Invalid("delivery content mismatch".into()));
+        }
+    }
+    let mut next = records.clone();
+    persistence::insert(&mut next, "deliveries", &key, &saved)?;
+    Ok(next)
+}
+
+#[cfg(test)]
+mod gap153_delivery_tests {
+    use super::super::model::{MaterialDelivery, MaterialView};
+    use super::*;
+    use serde_json::json;
+
+    fn input() -> (Value, Attempt, Observation) {
+        let h: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/phase9/h1-admission.json"
+        ))
+        .unwrap();
+        let mut attempt: Attempt = serde_json::from_value(h["a1"].clone()).unwrap();
+        attempt.launch = Some("launch1".into());
+        let event = Observation {
+            observation: "obs1".into(),
+            attempt: "a1".into(),
+            launch: None,
+            host_return: None,
+            kind: ObservationKind::MaterialDelivery(MaterialDelivery {
+                fire: "f1".into(),
+                view: MaterialView {
+                    view: "v1".into(),
+                    manifest: "m1".into(),
+                    entries: vec!["e1".into()],
+                },
+                contents: [(
+                    "e1".into(),
+                    "01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee".into(),
+                )]
+                .into(),
+            }),
+            reference: "event:1".into(),
+            observed_at: 1,
+            host: None,
+            model: None,
+            usage: attempt.usage.clone(),
+            contract: attempt.contract.clone(),
+        };
+        (
+            json!({"manifests":{"m1":h["m1"]},"issued":{"a1":true}}),
+            attempt,
+            event,
+        )
+    }
+    #[test]
+    fn gap153_delivery_contribution_records_exact_membership() {
+        let (records, attempt, event) = input();
+        let next = contribute_delivery(&records, &attempt, &event).unwrap();
+        let saved = &next["deliveries"][delivery_key("a1", "v1")];
+        assert_eq!(
+            saved["delivery"]["view"],
+            json!({"view":"v1","manifest":"m1","entries":["e1"]})
+        );
+        assert_eq!(saved["observation"], "obs1");
+        assert_eq!(records["deliveries"], Value::Null);
+    }
+    #[test]
+    fn gap153_delivery_duplicate_is_append_only_replay() {
+        let (mut records, attempt, event) = input();
+        let ObservationKind::MaterialDelivery(delivery) = &event.kind else {
+            unreachable!()
+        };
+        records["deliveries"] = json!({delivery_key("a1","v1"): {"observation":"obs1","attempt":"a1","delivery":delivery}});
+        records["closures"] = json!({"a1":{"terminal":"accepted"}});
+        assert_eq!(
+            contribute_delivery(&records, &attempt, &event).unwrap(),
+            records
+        );
+    }
+    #[test]
+    fn gap153_backdated_original_delivery_after_closure_refuses() {
+        let (mut records, mut attempt, event) = input();
+        records["closures"] = json!({"a1":{"terminal":"accepted","acknowledged_at":100}});
+        attempt.state = AttemptState::Accepted;
+        assert!(contribute_delivery(&records, &attempt, &event).is_err());
+        assert_eq!(records["deliveries"], Value::Null);
+    }
 }

@@ -291,6 +291,7 @@ pub struct Attempt {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ObservationKind {
+    MaterialDelivery(MaterialDelivery),
     LaunchFailure,
     Launch,
     Return,
@@ -298,6 +299,21 @@ pub enum ObservationKind {
     Usage,
     HostFacts,
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MaterialDelivery {
+    pub fire: String,
+    pub view: MaterialView,
+    pub contents: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeliveryRecord {
+    pub observation: String,
+    pub attempt: String,
+    pub delivery: MaterialDelivery,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Observation {
     pub observation: String,

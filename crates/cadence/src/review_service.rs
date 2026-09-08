@@ -649,22 +649,38 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
             let mut storage = persistence::MaterialStorage::from_records(&records)?;
             let supplied: Option<(String, MaterialView)> =
                 delivered.map(serde_json::from_value).transpose()?;
-            if let Some((attempt, material_view)) = &supplied {
+            let entry_id = format!(
+                "{manifest}-extra-{}",
+                cadence::store::model::digest(acquisition.as_bytes())
+            );
+            let original_delivery = if let Some((attempt, material_view)) = &supplied {
                 let bound: Attempt = persistence::get(&records, "attempts", attempt)?;
-                if bound.fire != saved.fire
-                    || bound.view.view != material_view.view
-                    || bound.launch.is_none()
+                validate_material_delivery(
+                    &records,
+                    &bound,
+                    &saved,
+                    material_view,
+                    &entry_id,
+                    &bytes,
+                )?
+            } else {
+                false
+            };
+            if let Some(prior) = records["appended"].get(&entry_id) {
+                let entry: MaterialEntry = serde_json::from_value(prior.clone())?;
+                if entry.acquisition != acquisition
+                    || entry.path != path
+                    || entry.label != label
+                    || entry.content.as_deref() != Some(&cadence::store::model::digest(&bytes))
                 {
-                    return Err(Error::Invalid("unobserved material delivery".into()));
+                    return Err(Error::Conflict("appended acquisition is immutable".into()));
                 }
+                return output("review-material-append", entry);
             }
             let entry = material::append_material(
                 &saved,
                 material::AdditionalMaterial {
-                    entry: format!(
-                        "{manifest}-extra-{}",
-                        cadence::store::model::digest(acquisition.as_bytes())
-                    ),
+                    entry: entry_id,
                     role: MaterialRole::Supporting,
                     path,
                     label,
@@ -674,6 +690,7 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
                 },
                 supplied
                     .as_ref()
+                    .filter(|_| original_delivery)
                     .map(|(attempt, view)| material::DeliveredMaterial { attempt, view }),
                 &mut storage,
                 &mut clock,
@@ -685,6 +702,54 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
         }
         Command::Apply(Apply::Admit { .. }) => unreachable!(),
     }
+}
+
+fn validate_material_delivery(
+    records: &Value,
+    attempt: &Attempt,
+    manifest: &Manifest,
+    supplied: &MaterialView,
+    entry: &str,
+    bytes: &[u8],
+) -> Result<bool> {
+    if attempt.fire != manifest.fire
+        || supplied.manifest != manifest.manifest
+        || (supplied.view == attempt.view.view && supplied != &attempt.view)
+    {
+        return Err(Error::Invalid("unobserved material delivery".into()));
+    }
+    let saved = review::attempts::delivered_view(records, attempt, supplied)?;
+    if !saved.delivery.view.entries.iter().any(|id| id == entry)
+        || saved.delivery.contents.get(entry) != Some(&cadence::store::model::digest(bytes))
+    {
+        return Err(Error::Invalid("delivered content mismatch".into()));
+    }
+    Ok(supplied == &attempt.view)
+}
+
+fn authorize_material_read(
+    records: &Value,
+    attempt: &Attempt,
+    manifest: &Manifest,
+    entry: &MaterialEntry,
+) -> Result<()> {
+    if manifest.fire != attempt.fire || manifest.manifest != attempt.view.manifest {
+        return Err(Error::Invalid("foreign material manifest".into()));
+    }
+    if attempt.view.entries.contains(&entry.entry) && manifest.entries.contains(entry) {
+        return Ok(());
+    }
+    for record in collection::<DeliveryRecord>(records, "deliveries")?.into_values() {
+        if record.attempt == attempt.attempt
+            && record.delivery.view.manifest == manifest.manifest
+            && record.delivery.view.entries.contains(&entry.entry)
+            && record.delivery.contents.get(&entry.entry) == entry.content.as_ref()
+        {
+            review::attempts::delivered_view(records, attempt, &record.delivery.view)?;
+            return Ok(());
+        }
+    }
+    Err(Error::Invalid("entry outside retained attempt view".into()))
 }
 
 async fn query_saved(store: &Store, root: &Path, query: Query) -> Answer {
@@ -734,11 +799,7 @@ async fn query_saved(store: &Store, root: &Path, query: Query) -> Answer {
                 .find(|e| e.entry == entry)
                 .or_else(|| appended.get(&entry))
                 .ok_or_else(|| Error::Invalid("unknown retained entry".into()))?;
-            if !attempt.view.entries.contains(&entry)
-                && saved.attempt.as_deref() != Some(&attempt.attempt)
-            {
-                return Err(Error::Invalid("entry outside retained attempt view".into()));
-            }
+            authorize_material_read(&records, &attempt, &manifest, saved)?;
             output(
                 "review-material",
                 json!({"entry":saved,"bytes":material::read_material(&mut persistence::MaterialStorage::from_records(&records)?,saved)?}),
@@ -1129,5 +1190,111 @@ mod gap151_adapter_tests {
         ] {
             assert_eq!(execution_continuation(&delivery), expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod gap153_service_tests {
+    use super::*;
+
+    fn input(view: &str, entry: &str) -> (Value, Attempt, Manifest, MaterialView) {
+        let h: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/phase9/h1-admission.json"))
+                .unwrap();
+        let mut attempt: Attempt = serde_json::from_value(h["a1"].clone()).unwrap();
+        attempt.state = AttemptState::Accepted;
+        attempt.launch = Some("launch1".into());
+        let manifest = serde_json::from_value(h["m1"].clone()).unwrap();
+        let supplied = MaterialView {
+            view: view.into(),
+            manifest: "m1".into(),
+            entries: vec![entry.into()],
+        };
+        let delivery = MaterialDelivery {
+            fire: "f1".into(),
+            view: supplied.clone(),
+            contents: [(entry.into(), cadence::store::model::digest(b"old\n"))].into(),
+        };
+        let key = cadence::store::model::digest(format!("[\"a1\",\"{view}\"]").as_bytes());
+        let event = Observation {
+            observation: "obs1".into(),
+            attempt: "a1".into(),
+            launch: None,
+            host_return: None,
+            kind: ObservationKind::MaterialDelivery(delivery.clone()),
+            reference: "event:1".into(),
+            observed_at: 100,
+            host: None,
+            model: None,
+            usage: attempt.usage.clone(),
+            contract: attempt.contract.clone(),
+        };
+        let records = json!({"deliveries":{key:{"observation":"obs1","attempt":"a1","delivery":delivery}},"observations":{"obs1":event},
+            "closures":{"a1":{"terminal":"accepted","acknowledged_at":100}}});
+        (records, attempt, manifest, supplied)
+    }
+    #[test]
+    fn gap153_forged_original_membership_refuses_without_mutation() {
+        let (records, attempt, manifest, mut supplied) = input("v1", "e1");
+        supplied.entries.push("e4".into());
+        let prior = records.clone();
+        assert!(
+            validate_material_delivery(&records, &attempt, &manifest, &supplied, "e4", b"old\n")
+                .is_err()
+        );
+        assert_eq!(records, prior);
+    }
+    #[test]
+    fn gap153_manifest_attempt_and_unrecorded_delivery_refuse() {
+        let (records, attempt, manifest, supplied) = input("v2", "e3");
+        let mut foreign = supplied.clone();
+        foreign.manifest = "foreign".into();
+        assert!(
+            validate_material_delivery(&records, &attempt, &manifest, &foreign, "e3", b"old\n")
+                .is_err()
+        );
+        let mut other = attempt.clone();
+        other.attempt = "a2".into();
+        assert!(
+            validate_material_delivery(&records, &other, &manifest, &supplied, "e3", b"old\n")
+                .is_err()
+        );
+        let mut absent = records.clone();
+        absent["deliveries"] = json!({});
+        assert!(
+            validate_material_delivery(&absent, &attempt, &manifest, &supplied, "e3", b"old\n")
+                .is_err()
+        );
+    }
+    #[test]
+    fn gap153_distinct_recorded_view_preserves_original() {
+        let (records, attempt, manifest, mut supplied) = input("v2", "e3");
+        assert!(
+            !validate_material_delivery(&records, &attempt, &manifest, &supplied, "e3", b"old\n")
+                .unwrap()
+        );
+        assert_eq!(
+            attempt.view,
+            MaterialView {
+                view: "v1".into(),
+                manifest: "m1".into(),
+                entries: vec!["e1".into()]
+            }
+        );
+        supplied.entries.push("e4".into());
+        assert!(
+            validate_material_delivery(&records, &attempt, &manifest, &supplied, "e3", b"old\n")
+                .is_err()
+        );
+    }
+    #[test]
+    fn gap153_read_requires_authoritative_delivered_membership() {
+        let (records, attempt, manifest, _) = input("v2", "e3");
+        let mut entry = manifest.entries[0].clone();
+        entry.entry = "e4".into();
+        entry.attempt = Some("a1".into());
+        assert!(authorize_material_read(&records, &attempt, &manifest, &entry).is_err());
+        entry.entry = "e3".into();
+        assert!(authorize_material_read(&records, &attempt, &manifest, &entry).is_ok());
     }
 }

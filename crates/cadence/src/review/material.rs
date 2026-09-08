@@ -145,8 +145,9 @@ pub struct AdditionalMaterial {
     pub bytes: Vec<u8>,
 }
 
-/// The caller supplies its actual delivery observation. Membership is checked
-/// here; acquisition does not fabricate host participation or edit that view.
+/// The service validates this original view against persisted delivery first.
+/// Membership is checked here; distinct later deliveries have their own saved
+/// records and do not change the provenance of an existing acquisition.
 pub struct DeliveredMaterial<'a> {
     pub attempt: &'a str,
     pub view: &'a MaterialView,
@@ -473,4 +474,87 @@ fn retain_git<S: Storage>(
     result.contents.insert(diff.entry.clone(), observed.diff);
     result.manifest.entries.push(diff);
     save(store, result)
+}
+
+#[cfg(test)]
+mod gap_material_support {
+    use super::*;
+    use cadence::store::Observed;
+    #[derive(Default)]
+    pub struct Saved(pub BTreeMap<String, Vec<u8>>);
+    impl Storage for Saved {
+        type Prepared = (String, Vec<u8>);
+        fn read(&mut self, key: &str) -> Result<Observed> {
+            Ok(Observed {
+                bytes: self.0.get(key).cloned(),
+                identity: "saved".into(),
+                directory_identity: "retained".into(),
+            })
+        }
+        fn prepare(&mut self, key: &str, bytes: &[u8]) -> Result<Self::Prepared> {
+            Ok((key.into(), bytes.into()))
+        }
+        fn install(&mut self, prepared: &Self::Prepared) -> Result<()> {
+            self.0.insert(prepared.0.clone(), prepared.1.clone());
+            Ok(())
+        }
+        fn discard(&mut self, _: Self::Prepared) -> Result<()> {
+            Ok(())
+        }
+        fn resync(&mut self, key: &str, bytes: &[u8]) -> Result<Observed> {
+            self.confirm(key, bytes)
+        }
+        fn remove(&mut self, key: &str) -> Result<()> {
+            self.0.remove(key);
+            Ok(())
+        }
+        fn confirm(&mut self, key: &str, bytes: &[u8]) -> Result<Observed> {
+            assert_eq!(self.0.get(key).map(Vec::as_slice), Some(bytes));
+            self.read(key)
+        }
+    }
+    pub struct FixedClock;
+    impl Clock for FixedClock {
+        fn now(&mut self) -> u64 {
+            100
+        }
+    }
+}
+#[cfg(test)]
+mod gap153_append_tests {
+    use super::gap_material_support::*;
+    use super::*;
+    #[test]
+    fn gap153_unobserved_append_is_later_evidence() {
+        let manifest = Manifest {
+            manifest: "m1".into(),
+            fire: "f1".into(),
+            contract: Contract::current(),
+            target: Target::NamedFile {
+                path: "a.rs".into(),
+                head: None,
+            },
+            entries: vec![],
+        };
+        let entry = append_material(
+            &manifest,
+            AdditionalMaterial {
+                entry: "e4".into(),
+                role: MaterialRole::Supporting,
+                path: Some("counter.rs".into()),
+                label: None,
+                side: Side::Snapshot,
+                acquisition: "acq1".into(),
+                bytes: b"counter\n".to_vec(),
+            },
+            None,
+            &mut Saved::default(),
+            &mut FixedClock,
+        )
+        .unwrap();
+        assert_eq!(entry.provenance, MaterialProvenance::LaterEvidence);
+        assert_eq!(entry.acquired_at, 100);
+        assert_eq!(entry.attempt, None);
+        assert_eq!(entry.view, None);
+    }
 }
