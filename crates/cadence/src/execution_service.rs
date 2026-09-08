@@ -2241,6 +2241,44 @@ mod schema_tests {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum ExecutionReviewDecision {
+    Skip,
+    Replay {
+        fire: String,
+        attempt: String,
+    },
+    Admit {
+        request: Value,
+        gate: cadence::review::model::Gate,
+    },
+}
+
+fn execution_review_decision(
+    completed: Option<Value>,
+    gate: Option<cadence::review::model::Gate>,
+    saved: Option<&Value>,
+) -> cadence::store::Result<ExecutionReviewDecision> {
+    if let Some(saved) = saved {
+        return Ok(ExecutionReviewDecision::Replay {
+            fire: saved["fire"]
+                .as_str()
+                .ok_or_else(|| Error::Invalid("invalid boundary fire".into()))?
+                .into(),
+            attempt: saved["attempt"]
+                .as_str()
+                .ok_or_else(|| Error::Invalid("invalid boundary attempt".into()))?
+                .into(),
+        });
+    }
+    match (completed, gate) {
+        (Some(request), Some(gate)) if gate != cadence::review::model::Gate::Off => {
+            Ok(ExecutionReviewDecision::Admit { request, gate })
+        }
+        _ => Ok(ExecutionReviewDecision::Skip),
+    }
+}
+
 /// Grouped-tool handoff guard; execution envelopes and canonical receipts are
 /// unchanged. Reads include replayed terminal dispatches before exposing them.
 pub async fn review_handoff<I: ConfigIo + Clone + Sync>(
@@ -2260,15 +2298,95 @@ pub async fn review_handoff<I: ConfigIo + Clone + Sync>(
             None => None,
         },
     };
-    match phase {
-        Some(phase) => {
-            super::review_service::pending_execution(session.review_store(), phase).await
-        }
-        None => Ok(Envelope::Ok(super::review_service::Output {
+    let Some(phase) = phase else {
+        return Ok(Envelope::Ok(super::review_service::Output {
             operation: "review-handoff".into(),
             result: json!({"pending":false}),
-        })),
+        }));
+    };
+    let view = session.derivation_view().await?;
+    let execution = execution_snapshot(&view).map_err(Error::Invalid)?;
+    if let Some(occurrence) = execution.occurrences.get(&phase.to_string()) {
+        for receipt in occurrence
+            .receipts
+            .values()
+            .filter(|r| r.outcome.disposition == PlanDisposition::Complete)
+        {
+            let scope = continuation_scope(root, phase);
+            let key = format!(
+                "execution-review:{}",
+                digest(&serde_json::to_vec(&json!({
+                    "scope":scope,"occurrence":occurrence.plan_set_fingerprint,
+                    "dispatch":receipt.dispatch_id,"transition":receipt.transition_id,"trigger":"diff","round":1
+                }))?)
+            );
+            let records = cadence::review::persistence::records(
+                &session.derivation_view().await?.snapshot.data,
+            )?;
+            let saved = records.get("replays").and_then(|r| r.get(&key));
+            let decision = if saved.is_some() {
+                execution_review_decision(None, None, saved)?
+            } else {
+                let route = super::config_service::route_at(
+                    &session.config()?,
+                    &super::config_service::RouteRequest {
+                        role: "cad-reviewer".into(),
+                        phase: std::num::NonZeroU32::new(phase),
+                        plan: std::num::NonZeroU32::new(receipt.outcome.plan),
+                        attempt: None,
+                    },
+                    root,
+                )?;
+                let policy = route
+                    .policy
+                    .triggers
+                    .get("diff")
+                    .ok_or_else(|| Error::Policy("missing diff policy".into()))?;
+                let gate = serde_json::from_value(json!(policy.gate))?;
+                let material = risk_material(
+                    &view,
+                    root,
+                    phase,
+                    &scope.occurrence,
+                    receipt.outcome.plan,
+                    &receipt.dispatch_id,
+                )
+                .map_err(Error::Invalid)?;
+                let cadence::rail::risk::MaterialIdentity::Committed { base_id, head_id } =
+                    material
+                else {
+                    return Err(Error::Invalid(
+                        "completed execution requires a committed range".into(),
+                    ));
+                };
+                let request = json!({"replay_key":key,"caller":"execute","trigger":"diff","specialist":null,
+                    "project":scope.project,"cycle":scope.cycle,"home":{"kind":"phase","id":phase.to_string()},
+                    "discriminator":scope.occurrence,"phase":phase,"plan":receipt.outcome.plan,
+                    "anchor":receipt.transition_id,"round":1,"target":{"kind":"committed-range","base":base_id,"head":head_id}});
+                execution_review_decision(Some(request), Some(gate), None)?
+            };
+            let fire = match decision {
+                ExecutionReviewDecision::Skip => continue,
+                ExecutionReviewDecision::Replay { fire, .. } => fire,
+                ExecutionReviewDecision::Admit { request, .. } => {
+                    let answer = super::review_service::admit(factory, root, request).await?;
+                    match answer {
+                        Envelope::Ok(output) if output.result["fire"].is_string() => {
+                            output.result["fire"].as_str().unwrap().to_owned()
+                        }
+                        Envelope::Ok(output) if output.result["gate"] == "off" => continue,
+                        answer => return Ok(answer),
+                    }
+                }
+            };
+            let answer = super::review_service::next(session.review_store(), &fire).await?;
+            if !matches!(&answer, Envelope::Ok(output) if super::review_service::execution_continuation(&output.result) == "continue")
+            {
+                return Ok(answer);
+            }
+        }
     }
+    super::review_service::pending_execution(session.review_store(), phase).await
 }
 
 #[cfg(test)]
@@ -2292,6 +2410,57 @@ mod routing_prompt_tests {
             json!({"schema":1,"dispatch_id":"dispatch-fixture","expected_execution_version":1,
             "phase":8,"plan":1,"requirements":["AC10"],"files":["src/a.rs"],"suite":"verify","tasks":[{"id":"T1","verify":["verify"]}],
             "policy":{"rung":"xhigh","branch":"current","reviews":"disabled"},"base_sha":"base","route":route})
+        );
+    }
+}
+
+#[cfg(test)]
+mod gap151_boundary_tests {
+    use super::*;
+    use cadence::review::model::Gate;
+
+    #[test]
+    fn gap151_completed_diff_requests_admission() {
+        let request = json!({"dispatch":"d1","caller":"execute","trigger":"diff","target":{"base":"b1","head":"h1"}});
+        let decision =
+            execution_review_decision(Some(request), Some(Gate::Advisory), None).unwrap();
+        let ExecutionReviewDecision::Admit { request, gate } = decision else {
+            panic!("admission required")
+        };
+        assert_eq!(gate, Gate::Advisory);
+        assert_eq!(
+            request,
+            json!({"dispatch":"d1","caller":"execute","trigger":"diff","target":{"base":"b1","head":"h1"}})
+        );
+    }
+
+    #[test]
+    fn gap151_replay_precedes_changed_policy_and_material() {
+        let saved = json!({"replay_key":"k1","fire":"f1","attempt":"a1"});
+        assert_eq!(
+            execution_review_decision(
+                Some(json!({"target":{"base":"other","head":"changed"}})),
+                Some(Gate::Off),
+                Some(&saved)
+            )
+            .unwrap(),
+            ExecutionReviewDecision::Replay {
+                fire: "f1".into(),
+                attempt: "a1".into()
+            }
+        );
+    }
+
+    #[test]
+    fn gap151_absent_artifact_and_fresh_off_admit_nothing() {
+        assert_eq!(
+            execution_review_decision(None, Some(Gate::Advisory), None).unwrap(),
+            ExecutionReviewDecision::Skip
+        );
+        assert_eq!(
+            execution_review_decision(Some(json!({"dispatch":"d1"})), Some(Gate::Off), None)
+                .unwrap(),
+            ExecutionReviewDecision::Skip
         );
     }
 }

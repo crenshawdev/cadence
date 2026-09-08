@@ -499,6 +499,25 @@ fn structured_result<T: Serialize>(
     Ok(CallToolResult::structured(value).into())
 }
 
+pub async fn execute_next_handler<R, E>(
+    mut review: impl FnMut() -> R,
+    execution: impl FnOnce() -> E,
+) -> Result<CallToolResponse, ErrorData>
+where
+    R: std::future::Future<Output = Result<Option<Envelope<review_service::Output>>, ErrorData>>,
+    E: std::future::Future<Output = execution_service::Answer>,
+{
+    if let Some(review) = review().await? {
+        return structured_result(Ok(QueryOutput::Review(Box::new(review))));
+    }
+    let answer = execution().await;
+    if let Some(review) = review().await? {
+        return structured_result(Ok(QueryOutput::Review(Box::new(review))));
+    }
+    let envelope = answer.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+    structured_result(Ok(QueryOutput::Execution(envelope)))
+}
+
 impl ServerHandler for PublicServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
@@ -672,14 +691,11 @@ impl ServerHandler for PublicServer {
                         ))));
                     }
                     Some(QueryArguments::ExecuteNext { phase }) => {
-                        if let Some(review) = self.review_handoff(Some(phase.get()), None).await? {
-                            return structured_result(Ok(QueryOutput::Review(Box::new(review))));
-                        }
-                        let answer = self.server.query_execution(&self.root, phase.get()).await;
-                        if let Some(review) = self.review_handoff(Some(phase.get()), None).await? {
-                            return structured_result(Ok(QueryOutput::Review(Box::new(review))));
-                        }
-                        answer
+                        return execute_next_handler(
+                            || self.review_handoff(Some(phase.get()), None),
+                            || self.server.query_execution(&self.root, phase.get()),
+                        )
+                        .await;
                     }
                     Some(QueryArguments::DetectSurfaces { answered }) => {
                         return structured_result(Ok(QueryOutput::Surfaces(Box::new(
@@ -847,5 +863,38 @@ impl ServerHandler for PublicServer {
             }
             _ => Err(ErrorData::invalid_params("unknown tool", None)),
         }
+    }
+}
+
+#[cfg(test)]
+mod gap151_handler_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn gap151_public_execute_next_prefers_owed_review() {
+        let response = execute_next_handler(
+            || async {
+                Ok(Some(Envelope::Ok(review_service::Output {
+                    operation: "review-next".into(),
+                    result: json!({"fire":"f1","attempt":"a1"}),
+                })))
+            },
+            || async {
+                Ok(Envelope::Refused {
+                    code: "execution-sentinel".into(),
+                    reason: "fixture".into(),
+                })
+            },
+        )
+        .await
+        .unwrap();
+        let CallToolResponse::Complete(result) = response else {
+            panic!("complete grouped response required")
+        };
+        assert_eq!(
+            result.structured_content.unwrap(),
+            json!({"status":"ok","operation":"review-next","result":{"fire":"f1","attempt":"a1"}})
+        );
     }
 }

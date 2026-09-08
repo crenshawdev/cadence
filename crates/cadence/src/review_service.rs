@@ -181,7 +181,7 @@ fn validate_paths(target: &Target) -> Result<()> {
     Ok(())
 }
 
-async fn admit<I: ConfigIo + Clone + Sync>(
+pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
     factory: &SessionFactory<I>,
     root: &Path,
     value: Value,
@@ -426,11 +426,21 @@ async fn admit<I: ConfigIo + Clone + Sync>(
     if session.config()? != generation {
         return Err(Error::Conflict("review routing inputs changed".into()));
     }
-    let committed = persistence::commit(store, &view, transaction).await?;
-    output(
-        "review-admit",
-        admission::acknowledge_admission(&committed, contribution)?,
+    commit_admission(
+        contribution,
+        persistence::commit(store, &view, transaction),
+        admission::acknowledge_admission,
     )
+    .await
+}
+
+async fn commit_admission<C, V>(
+    contribution: C,
+    commit: impl std::future::Future<Output = Result<V>>,
+    acknowledge: impl FnOnce(&V, C) -> Result<admission::AdmissionReply>,
+) -> Answer {
+    let committed = commit.await?;
+    output("review-admit", acknowledge(&committed, contribution)?)
 }
 
 fn acquire_target(
@@ -794,7 +804,7 @@ async fn query_saved(store: &Store, root: &Path, query: Query) -> Answer {
     }
 }
 
-async fn next(store: &Store, fire: &str) -> Answer {
+pub(super) async fn next(store: &Store, fire: &str) -> Answer {
     let view = persistence::read(store).await?;
     let mut records = persistence::records(&view.snapshot.data)?;
     let admission: Admission = persistence::get(&records, "admissions", fire)?;
@@ -980,6 +990,15 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
     }
 }
 
+pub(super) fn execution_continuation(delivery: &Value) -> &'static str {
+    match delivery["action"].as_str() {
+        Some("continue" | "off") => "continue",
+        Some("enqueue-before-continuation") if !delivery["deferred"].is_null() => "continue",
+        Some("wait-for-settlement") => "wait-for-settlement",
+        _ => "wait-for-delivery",
+    }
+}
+
 pub async fn pending_execution(store: &Store, phase: u32) -> Answer {
     let view = persistence::read(store).await?;
     let records = persistence::records(&view.snapshot.data)?;
@@ -993,10 +1012,7 @@ pub async fn pending_execution(store: &Store, phase: u32) -> Answer {
     {
         let answer = next(store, &admission.fire).await?;
         if let Envelope::Ok(ref output) = answer {
-            let ready = matches!(output.result["action"].as_str(), Some("continue" | "off"))
-                || (output.result["action"] == "enqueue-before-continuation"
-                    && !output.result["deferred"].is_null());
-            if ready {
+            if execution_continuation(&output.result) == "continue" {
                 continue;
             }
         }
@@ -1021,3 +1037,70 @@ fn historical_input(root: &Path, path: &str) -> Answer {
 #[cfg(test)]
 #[path = "review_service_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod gap151_adapter_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn gap151_commit_confirms_before_exposing_identity() {
+        let answer = commit_admission(("f1", "a1"), async { Ok(100) }, |saved, contribution| {
+            assert_eq!(*saved, 100);
+            Ok(admission::AdmissionReply::Admitted {
+                fire: contribution.0.into(),
+                attempt: contribution.1.into(),
+                replayed: false,
+            })
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(answer).unwrap(),
+            json!({"status":"ok","operation":"review-admit","result":{"fire":"f1","attempt":"a1","replayed":false}})
+        );
+    }
+
+    #[tokio::test]
+    async fn gap151_commit_failure_exposes_no_response() {
+        for failure in [
+            Error::Conflict("revision".into()),
+            Error::Invalid("sync failed".into()),
+        ] {
+            let answer =
+                commit_admission("contribution", async { Err::<(), _>(failure) }, |_, _| {
+                    panic!("unconfirmed acknowledgment")
+                })
+                .await;
+            assert!(answer.is_err());
+        }
+    }
+
+    #[test]
+    fn gap151_continuation_projects_delivery_responses() {
+        for (delivery, expected) in [
+            (json!({"state":"pending"}), "wait-for-delivery"),
+            (
+                json!({"action":"continue","delivery":"accepted","gate":"advisory"}),
+                "continue",
+            ),
+            (
+                json!({"action":"enqueue-before-continuation","deferred":null}),
+                "wait-for-delivery",
+            ),
+            (
+                json!({"action":"enqueue-before-continuation","deferred":{"fire":"f1"}}),
+                "continue",
+            ),
+            (
+                json!({"action":"wait-for-settlement","gate":"blocking"}),
+                "wait-for-settlement",
+            ),
+            (
+                json!({"action":"wait-for-settlement","gate":"adjudicated"}),
+                "wait-for-settlement",
+            ),
+        ] {
+            assert_eq!(execution_continuation(&delivery), expected);
+        }
+    }
+}
