@@ -12,16 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::PathBuf};
 
 pub const CONTRACT: &str = "cadence.pause.risk-surface.v1";
-pub const CATEGORIES: [&str; 8] = [
-    "auth",
-    "migrations",
-    "billing",
-    "concurrency",
-    "destructive",
-    "secrets",
-    "api_contract",
-    "untrusted_input",
-];
+use crate::rail::risk::MaterialIdentity;
+pub use crate::rail::risk::{CATEGORIES, validate_surfaces};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -55,6 +47,17 @@ pub struct Fire {
 }
 
 impl Fire {
+    /// Explicit adapter: historical fire serialization and its digest stay unchanged.
+    pub fn material(&self) -> Result<MaterialIdentity> {
+        if !self.staged || self.head_id.is_some() {
+            return Err(Error::Invalid("pause fire is not staged material".into()));
+        }
+        Ok(MaterialIdentity::Staged {
+            base_id: self.base.clone(),
+            index_id: self.index_id.clone(),
+        })
+    }
+
     pub fn new(
         scope: &Scope,
         commit_kind: CommitKind,
@@ -62,6 +65,10 @@ impl Fire {
         staged: &super::git::Staged,
         scan: Scan,
     ) -> Result<Self> {
+        let material = MaterialIdentity::Staged {
+            base_id: staged.base.clone(),
+            index_id: staged.index_id.clone(),
+        };
         let input = (
             scope,
             commit_kind,
@@ -79,10 +86,10 @@ impl Fire {
             ),
             commit_kind,
             round,
-            base: staged.base.clone(),
+            base: material.base_id().into(),
             staged: true,
             head_id: None,
-            index_id: staged.index_id.clone(),
+            index_id: material.tip_id().into(),
             scope: staged.scope.clone(),
             authored: staged.authored.clone(),
             scan,
@@ -230,16 +237,4 @@ pub fn disposition_question(review: &Review) -> Gate {
         options,
         state: State::Unanswered,
     }
-}
-
-pub fn validate_surfaces(values: Vec<String>) -> Result<Vec<String>> {
-    let mut unique = BTreeSet::new();
-    if values.is_empty()
-        || values
-            .iter()
-            .any(|value| !CATEGORIES.contains(&value.as_str()) || !unique.insert(value.clone()))
-    {
-        return Err(Error::Invalid("invalid risk surface answer".into()));
-    }
-    Ok(values)
 }

@@ -198,21 +198,7 @@ fn configured_surfaces(config: &Generation) -> Result<Option<Vec<String>>> {
             "missing effective risk_surface surfaces".into(),
         ));
     };
-    if value.is_null() {
-        return Ok(None);
-    }
-    let values = value
-        .as_array()
-        .ok_or_else(|| Error::Policy("invalid effective risk_surface surfaces".into()))?
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| Error::Policy("invalid effective risk surface".into()))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    risk::validate_surfaces(values).map(Some)
+    cadence::rail::risk::configured_surfaces(value)
 }
 
 fn surfaces_from_answer(gate: &Gate) -> Result<Option<Vec<String>>> {
