@@ -397,6 +397,33 @@ explicit authorization (`.planning/ROADMAP.md:1037`).
   (`.planning/ROADMAP.md:852`). If wrong: test-shaped JSON is reported as a
   real review, or a working serializer masks an unusable host boundary.
 
+- D-66 (Commit-time revalidation stands; the captured resolution governs the
+  decision, not the store's write contract): The execution boundary's captured
+  generation, route and gate are authoritative for deciding whether review is
+  owed and for what is written into the admission record. They do NOT exempt
+  the write from the store's standing invariant that no mutation lands against
+  changed controlling inputs. `persistence::commit` reaches writer `persist`
+  (`crates/cadence/src/store/writer.rs:1258`), which validates through
+  `SessionPolicy::validate_inputs` (`crates/cadence/src/import/mod.rs:453`) and
+  refreshes configuration from disk. A config change or an unreadable config
+  between capture and commit therefore refuses the admission. That refusal is
+  correct: it fails CLOSED, becoming a `Failure` rather than a skip
+  (`crates/cadence/src/execution_service.rs:1827`), so execution never
+  continues with review owed and unrecorded. This invariant predates plan 8 and
+  holds binary-wide; plan 8 did not introduce it and does not get to opt out of
+  it. Verification truth 159 is retired as a misstatement of the guarantee, and
+  AC152 is narrowed to the decision path accordingly. What is NOT permitted is
+  a test that proves the guarantee by skipping the commit: see D-67.
+
+- D-67 (A test seam may not replace the boundary the criterion is about): The
+  `#[cfg(test)]` seam in `admit` returned a fabricated committed view instead of
+  calling `persistence::commit`, so AC152 asserted that no current configuration
+  is read while never running the code that reads it. The test passed in a state
+  where release fails. A criterion asserting something about a boundary must
+  exercise that boundary; a seam may stub a collaborator the criterion is not
+  about, never the one it is. Verification truth 162 is upheld and the seam is
+  removed.
+
 ## HANDOFF — phase 9 must produce these artifacts for phase 10
 
 H1–H5 are the normative producer contract, refining D-58–D-64. They are logical
@@ -1296,9 +1323,12 @@ those fixture obligations; it does not create implementation/test files.
       `{"status":"ok","operation":"review-admit","result":{"fire":"f1",
       "attempt":"f1-a1","replayed":false}}` and the durable contribution is
       `{"gate":"advisory","routing":{"answer":"cad-reviewer-xhigh",
-      "evidence":"route:f1"}}`. Boundaries: filesystem: stub empty records,
-      acquired material and successful contribution/commit; config/routing:
-      forbidden current read; clock: `100`. (C01, D-58; H1; truth 158).
+      "evidence":"route:f1"}}`. Boundaries: filesystem: stub empty records and
+      acquired material, with durable persistence exercised for real;
+      config/routing: no current read on the decision path from replay lookup
+      to the built contribution; clock: `100`. The store's own commit-time
+      revalidation is outside this criterion and is governed by D-66.
+      (C01, D-58, D-66; H1; truth 158).
 
 - [ ] AC153: Given public `Apply::Admit` input with caller `manual-plan` and
       the admission boundary returning `{"status":"ok",
