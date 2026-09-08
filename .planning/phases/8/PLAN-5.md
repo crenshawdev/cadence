@@ -49,20 +49,20 @@ execution:
 
 ## Goal
 
-A saved model/rung choice reaches real dispatch through the shipped skill and remains accurately attributable after races, interruption and replay. This plan alone closes the final config-generation admission check and produces the required live-host evidence.
+A saved model/rung choice reaches real dispatch through the shipped skill and remains accurately attributable after races, interruption and replay. This plan closes the final config-generation admission check. Live-host consumption is routed to `.planning/phases/8/MANUAL.md` and is not an obligation here.
 
 ## Must be true when done
 
 - AC11/D-56: A genuinely new dispatch is admitted against the same config inputs that selected it; valid external edits during admission cannot leave a stale accepted choice.
 - AC11/D-56: Reopen and replay preserve an active dispatch's admitted route, exact prompt and matching durable routing evidence; new settings govern the next new dispatch.
 - AC11/D-56: Interrupted recording cannot expose an active route-bearing dispatch without its routing decision, and missing host effort/receipt evidence stays absent.
-- AC10/D-46: The actual cad-execute skill loads the three tools, consumes saved model/agent choices and relays exact prompt and patch bytes through real host calls.
+- AC10/D-46: The binary returns the three tool schemas, resolves a saved model/agent choice into an admitted dispatch, and emits the byte-exact prompt. Whether a host honours that resolution is not asserted here.
 - AC8/AC10: Installed rung files and actual requested parameters are verified separately from any observed host effort; no observation is inferred from frontmatter.
 - AC1/D-49: Existing config and phase 7 execution/lease/rail behavior remains covered by the full suite.
 
 ## Context
 
-D-45, D-46, D-49, D-53 and D-56 bind this plan. Use the routed dispatch from Plan 1, shared global ownership from Plan 2 and final policy bundle from Plan 4. Existing RoutingObserved/BeforeCommit probes, SessionPolicy and the writer's final prospective snapshot validation are the race seams. AC10 is a mandatory human-verify obligation.
+D-45, D-46, D-49, D-53 and D-56 bind this plan. Use the routed dispatch from Plan 1, shared global ownership from Plan 2 and final policy bundle from Plan 4. Existing RoutingObserved/BeforeCommit probes, SessionPolicy and the writer's final prospective snapshot validation are the race seams. AC10's host-consumption half is routed to `.planning/phases/8/MANUAL.md`; the binary-side resolution it names is asserted by this plan's tests.
 
 ## Tasks
 
@@ -108,7 +108,7 @@ Run after Plan 4; all preceding plans are transitively required through real fil
 
 The final admission comparison linearizes selection at the final validated inputs; common ownership protects that interval from cooperating Cadence writers. It does not claim to freeze arbitrary external filesystem editors forever. A later valid change is a new input for the next new dispatch, never retrospective authority to change an active one. Store generation alone cannot detect an external config edit, so a positive configuration identity/byte comparison is required.
 
-Authoring established that cargo, node and the host executables are on PATH, not that authentication, dispatch or host effort observation works. The real-host tasks remain human-verify when those capabilities are unavailable. Their ignored command paths must fail, not skip successfully, when their selected stage, required events or observed work are absent. The ordinary workspace suite excludes live tests and cannot close AC4's observed interview or AC10.
+This plan writes no live test. AC4's observed interview and AC10's host consumption are routed to `.planning/phases/8/MANUAL.md` under the Overflow rule; the ordinary workspace suite is not expected to close them and no ignored live command path is added to stand in for them.
 
 The suite is test --workspace, clippy --all-targets with warnings denied and fmt --check, with TMPDIR=/tmp and RUSTC_WRAPPER empty. No new dependencies or checked-in fixture directories are needed; all fixture artifacts remain embedded in leased test files or created under temporary test roots.
 
