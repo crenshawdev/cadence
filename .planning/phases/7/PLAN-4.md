@@ -13,6 +13,7 @@ files:
   - crates/cadence/src/rail/mod.rs
   - crates/cadence/tests/phase7_receipts.rs
   - crates/cadence/tests/phase7_risk.rs
+  - crates/cadence/tests/phase7_lease.rs
   - crates/cadence/src/rail_service.rs
   - crates/cadence/src/server.rs
   - crates/cadence/src/recall/mod.rs
