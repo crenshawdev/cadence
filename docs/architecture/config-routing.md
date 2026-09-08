@@ -127,3 +127,34 @@ review-dispatch policy; the bundle supplies routing facts only. A replay keeps
 its admitted model/rung, while a new dispatch and fresh public facts resolve
 current settings. Failed config reload still refuses through the existing
 synchronous validation seam.
+
+New dispatch admission compares the captured resolved input identities, exact
+byte digests, file stamps, presence and alias status after preparing participants
+and immediately before installing the durable intent. The production writer
+holds its root and shared config destination ownership through this check and
+confirmation. Generation numbers are diagnostic counters, not config identities.
+A changed input returns the typed unconfirmed failure `routing-inputs-changed`;
+no worker prompt or successful routing admission is returned, and the resident
+remains reusable because no intent was installed. Failed reload
+retains its controlling-policy refusal. A later query can select current inputs.
+
+A routed active dispatch needs its exact Routing decision and matching confirmed
+dispatch boundary. Recovery validates that join even when a supplied intent has
+consistent recomputed JSON digests. The stored model, mapped agent, requested
+rung, source settings and reason trail remain the historical admission facts.
+Recovery checks current config usability without comparing historical selection
+to new settings; valid edits affect the next new dispatch. Missing observed
+effort and receipt remain `Evidence::Missing`, never inferred from a requested
+rung or agent frontmatter. Admission persists the route and boundary in one intent, without a later
+standalone decision append.
+
+The binary assertions use separate saved-input fixtures for sonnet/high,
+opus/xhigh, and a model-only null reset retaining xhigh. They establish exact
+stored bytes, resolution sources and reasons, dispatch identities, atomic
+routing records and the prompt renderer's bytes for supplied dispatch/schema
+values, including its historical rendering. The service supplies the real
+executor patch schema to that same pure renderer; grouped schema assertions
+separately cover the three tools and malformed-call refusals. The shipped skill
+uses those binary parameters. Whether a host loads the skill, honours its model
+and agent choice, or preserves prompt/patch bytes remains the AC4/AC10 manual
+checklist work. These tests invoke no host or model.

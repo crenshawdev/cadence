@@ -1295,43 +1295,11 @@ fn render_prompt(dispatch: &ActiveDispatch) -> String {
 }
 
 fn render_prompt_version(dispatch: &ActiveDispatch, lease_instructions: bool) -> String {
-    let guidance = if lease_instructions {
-        "\nThe lease has zero exemptions: all reported commit paths and the whole staged set must be covered by files or directories, including both rename endpoints, new files, lockfiles and reports. A repairable mistake within this lease is not a blocker; correct it and rerun the required verification. If an undeclared-files refusal occurs, stop execution, preserve the rejected SHAs and request operator-controlled repair. Cadence leaves Git and the index untouched and the dispatch open. Do not push, reset, amend, revert or force-push automatically. After operator repair, resubmit a corrected full patch with the same dispatch ID and execution version, within the unchanged lease and plan fingerprint. An undeclared necessary file requires an operator planning correction; changing the lease or body cannot repair this active dispatch."
-    } else {
-        ""
-    };
-    let operational = prompt_operational(dispatch);
-    format!(
-        "Cadence native execution dispatch\n\nOperational input:\n{}\n\nExecutor patch schema:\n{}\n\nInstructions:\nComplete tasks in listed order. Use one distinct signed commit per completed task. Run each task's exact verification commands and the suite. Return exactly one executor patch matching this schema. Stop at the first blocker and mark all later tasks not-run.{}\n\nOpaque plan body ({} UTF-8 bytes):\n{}",
-        serde_json::to_string_pretty(&operational).expect("operational fields serialize"),
-        serde_json::to_string_pretty(&patch_schema()).expect("patch schema serializes"),
-        guidance,
-        dispatch.body.len(),
-        dispatch.body,
+    cadence::execution::render::render_dispatch_prompt(
+        dispatch,
+        &patch_schema(),
+        lease_instructions,
     )
-}
-
-fn prompt_operational(dispatch: &ActiveDispatch) -> Value {
-    let mut operational = json!({
-        "schema": dispatch.schema,
-        "dispatch_id": dispatch.id,
-        "expected_execution_version": dispatch.expected_execution_version,
-        "phase": dispatch.phase,
-        "plan": dispatch.plan,
-        "requirements": dispatch.requirements,
-        "files": dispatch.files,
-        "suite": dispatch.suite,
-        "tasks": dispatch.tasks,
-        "policy": dispatch.policy,
-        "base_sha": dispatch.base_sha,
-    });
-    if !dispatch.directories.is_empty() {
-        operational["directories"] = json!(dispatch.directories);
-    }
-    if let Some(route) = &dispatch.route {
-        operational["route"] = json!(route);
-    }
-    operational
 }
 
 pub use cadence::execution::model::patch_schema;
@@ -2276,6 +2244,7 @@ mod schema_tests {
 #[cfg(test)]
 mod routing_prompt_tests {
     use super::*;
+    use cadence::execution::render::prompt_operational;
 
     #[test]
     fn prompt_operational_returns_the_admitted_choice_verbatim() {

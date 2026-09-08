@@ -7,6 +7,7 @@ requirements:
   - AC10
   - AC11
 files:
+  - crates/cadence/src/execution/render.rs
   - crates/cadence/src/store/mod.rs
   - crates/cadence/src/config/tests.rs
   - crates/cadence/src/import/mod.rs
@@ -88,9 +89,9 @@ D-45, D-46, D-49, D-53 and D-56 bind this plan. Use the routed dispatch from Pla
 
 ### Task 3: Prove saved settings reach the dispatch decision (P8-5-T3)
 
-- **Files:** `crates/cadence/tests/phase8_dispatch.rs`, `crates/cadence/tests/mcp.rs` (grouped boundary / skill contract), `docs/architecture/config-routing.md` (saved settings reach dispatch / evidence limits)
+- **Files:** `crates/cadence/tests/phase8_dispatch.rs`, `crates/cadence/tests/mcp.rs` (grouped boundary / skill contract), `docs/architecture/config-routing.md` (saved settings reach dispatch / evidence limits), `crates/cadence/src/execution/render.rs` (pure dispatch renderer with supplied schema), `crates/cadence/src/execution_service.rs` (use the shared renderer), `crates/cadence/src/store/writer.rs` (keep a pre-intent changed-input refusal reusable)
 - **Action:** Test that saved configuration determines the dispatch decision, against the binary, with no host, no skill invocation and no Task call. Through native config apply save executor sonnet/high and assert the routing decision names sonnet and cad-executor. Save opus/xhigh before a separate new dispatch and assert opus and cad-executor-xhigh. Reset only model to null before a third genuinely new dispatch and assert the model parameter is omitted; re-reading the opus dispatch is not that check. For each case assert the admitted dispatch ID, the routing decision and its reason trail, and the byte-exact prompt the binary emits. Separately assert the boundary advertises exactly cadence_version, cadence_query and cadence_apply with their schemas, retains phase 7 operations, and returns typed refusals for malformed calls. Keep requested effort distinct from resolved effort. Document in `config-routing.md` what this proves and what it does not: it proves the binary's decision given a saved config, not that any consumer honours that decision.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_dispatch`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp` — proves each saved config yields its expected agent, model and rung, that a null model omits the parameter, and that the prompt and dispatch ID are exact. Three tools with schemas and typed malformed-call refusals still hold. A routing answer that matches only because the expectation was derived from the same code path does not pass.
+- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_dispatch`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp` — ConfigWriter::batch returns exact saved sonnet/high and opus/xhigh bytes, or changes only model to null while retaining xhigh, from separate filesystem fixtures. resolve_route returns literal role/model/effort sources and reasons from independently supplied saved generations. build_routed_dispatch returns the independently encoded dispatch ID; Store::request returns that admitted ID and its exact Routing record with requested effort and Missing observed effort/receipt. render_dispatch_prompt returns byte-exact current and historical prompt text for supplied dispatch/schema values, checked against independent literal digests and lengths. The existing MCP assertions retain exactly three tools with schemas, installed executor rungs, phase-7 operations and typed malformed-call refusals. No save/dispatch/replay chain, host or model output is used.
 
 ## Requirements mapping
 

@@ -803,3 +803,353 @@ fn duplicate_request_returns_the_single_previously_confirmed_routing_record() {
         );
     });
 }
+
+struct SavedCase {
+    model: Option<&'static str>,
+    rung: &'static str,
+    agent: &'static str,
+    stored: &'static str,
+    route: &'static str,
+    id: &'static str,
+    envelope_digest: &'static str,
+    prompt_receipts: [(&'static str, usize); 2],
+}
+const SAVED: [SavedCase; 3] = [
+    SavedCase {
+        model: Some("sonnet"),
+        rung: "high",
+        agent: "cad-executor",
+        stored: r#"{
+  "roles": {
+    "cad-executor": {
+      "model": "sonnet",
+      "effort": "high"
+    }
+  }
+}"#,
+        route: r#"{"choice":{"role":"cad-executor","agent":"cad-executor","rung":"high","starting_rung":"high","model":"sonnet","effort_source":{"kind":"role","key":"roles.cad-executor.effort","layer":"repo","stored":"high"},"model_source":{"kind":"role","key":"roles.cad-executor.model","layer":"repo","stored":"sonnet"},"attempt":1,"escalated":false,"pinned":false,"reasons":["roles.cad-executor.effort: role from repo; starting rung high","roles.cad-executor.model: role from repo; sonnet"],"warnings":[]},"inputs":{"repo":{"identity":"/project/.planning/config.v4.json","content":"26f39647895f5607ad04a8e5cad9e1fa67c304e1014fc5f74708fb7fbb8ad282","stamp":null},"global":null,"global_alias":false}}"#,
+        id: "fb5d0571637ee342cdc0b4719132195e477a085c9bc3d1c45d4f4d5f24ba07bd",
+        envelope_digest: "09bef897ac68287f18e233c562e3b194446ed5ffbc8ee639e0de2343235b5d13",
+        prompt_receipts: [
+            (
+                "de929ffa6d6d6138a86caa8a9bb65fcf44051dcd236aefe25d889c231b6e7f69",
+                2750,
+            ),
+            (
+                "2800e585c111c8a6f83829f65be01b6302064633046e3488c07b3eac3118bea0",
+                1917,
+            ),
+        ],
+    },
+    SavedCase {
+        model: Some("opus"),
+        rung: "xhigh",
+        agent: "cad-executor-xhigh",
+        stored: r#"{
+  "roles": {
+    "cad-executor": {
+      "model": "opus",
+      "effort": "xhigh"
+    }
+  }
+}"#,
+        route: r#"{"choice":{"role":"cad-executor","agent":"cad-executor-xhigh","rung":"xhigh","starting_rung":"xhigh","model":"opus","effort_source":{"kind":"role","key":"roles.cad-executor.effort","layer":"repo","stored":"xhigh"},"model_source":{"kind":"role","key":"roles.cad-executor.model","layer":"repo","stored":"opus"},"attempt":1,"escalated":false,"pinned":false,"reasons":["roles.cad-executor.effort: role from repo; starting rung xhigh","roles.cad-executor.model: role from repo; opus"],"warnings":[]},"inputs":{"repo":{"identity":"/project/.planning/config.v4.json","content":"37024e43a0630149ea71e1a283911411fab1287744e69195f688c55bccc023c4","stamp":null},"global":null,"global_alias":false}}"#,
+        id: "95bfd239172b542536fdc88fb2cd0ccaf0bb9d6d31e8c67442368e56e2c66cbc",
+        envelope_digest: "79d5d0b86fd5ec3880eeaf90c2bee0261794942c61d0717e2d350c0640cff994",
+        prompt_receipts: [
+            (
+                "3eda62c29397301e255bdedaa9d334f02b7db8370ccab5a3618ac0c176e0cb1f",
+                2755,
+            ),
+            (
+                "284f3476d0d8aaf7f796d414df4cf8ad7cbd05ba39a3bba466701b8eb5eb243c",
+                1922,
+            ),
+        ],
+    },
+    SavedCase {
+        model: None,
+        rung: "xhigh",
+        agent: "cad-executor-xhigh",
+        stored: r#"{
+  "roles": {
+    "cad-executor": {
+      "model": null,
+      "effort": "xhigh"
+    }
+  }
+}"#,
+        route: r#"{"choice":{"role":"cad-executor","agent":"cad-executor-xhigh","rung":"xhigh","starting_rung":"xhigh","effort_source":{"kind":"role","key":"roles.cad-executor.effort","layer":"repo","stored":"xhigh"},"model_source":{"kind":"reset","key":"roles.cad-executor.model","layer":"repo","stored":null},"attempt":1,"escalated":false,"pinned":false,"reasons":["roles.cad-executor.effort: role from repo; starting rung xhigh","roles.cad-executor.model: reset from repo; omit model; inherit session"],"warnings":[]},"inputs":{"repo":{"identity":"/project/.planning/config.v4.json","content":"0a500276235db1450dbb6d6ca088ddd8b7d794d72e91206892b7b89fefc66ba4","stamp":null},"global":null,"global_alias":false}}"#,
+        id: "afa483fa5f82bd58b20ef660b53ceac308f2b3fa1fed50e5f1cdde01e4bfcb77",
+        envelope_digest: "ffdb83adb016bd5927a0f563a2e4dcb40341cabc7714e1ef7c9a7aa076357516",
+        prompt_receipts: [
+            (
+                "64d42655ef3327ae191aeba744a3b40093add23c177e7cf1f4a9368ed0c2e6f3",
+                2755,
+            ),
+            (
+                "d84d87b60c0c525c6a18d167815d7d349a248aa41282a090da9381e61ac351dd",
+                1922,
+            ),
+        ],
+    },
+];
+
+#[test]
+fn native_config_batch_saves_each_spending_choice_without_a_dispatch_workflow() {
+    use cadence::{
+        config::{
+            Layer,
+            reload::{ConfigPolicy, FileIo, Paths, Reload},
+            write::{ConfigWriter, Update, register},
+        },
+        store::writer::Store,
+    };
+    use std::sync::{Arc, Mutex};
+    for case in &SAVED {
+        let root = tempfile::tempdir().unwrap();
+        let active = Paths {
+            repo: root.path().join("config.v4.json"),
+            global: None,
+        };
+        std::fs::write(
+            &active.repo,
+            if case.model.is_none() {
+                SAVED[1].stored
+            } else {
+                "{}"
+            },
+        )
+        .unwrap();
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let config = Arc::new(Mutex::new(Reload::new(active.clone(), FileIo)));
+            let store = Store::open(
+                register(root.path(), &active).unwrap(),
+                ConfigPolicy {
+                    config: config.clone(),
+                    evaluate: cadence::config::planning_policy,
+                },
+            )
+            .await
+            .unwrap();
+            let writer = ConfigWriter {
+                root: root.path().into(),
+                active: active.clone(),
+                store,
+                config,
+            };
+            let mut updates = vec![Update {
+                key: "roles.cad-executor.model".into(),
+                value: case.model.map_or(Value::Null, |model| json!(model)),
+            }];
+            if case.model.is_some() {
+                updates.push(Update {
+                    key: "roles.cad-executor.effort".into(),
+                    value: json!(case.rung),
+                });
+            }
+            let written = writer.batch(Layer::Repo, &updates).await.unwrap();
+            assert_eq!(
+                (
+                    written.requested_layer,
+                    written.changed_keys,
+                    written.view.snapshot.generation,
+                    std::fs::read(&written.destination).unwrap()
+                ),
+                (
+                    Layer::Repo,
+                    if case.model.is_some() {
+                        vec![
+                            "roles.cad-executor.effort".into(),
+                            "roles.cad-executor.model".into(),
+                        ]
+                    } else {
+                        vec!["roles.cad-executor.model".into()]
+                    },
+                    1,
+                    case.stored.as_bytes().to_vec()
+                )
+            );
+        });
+    }
+}
+
+#[test]
+fn saved_generation_resolves_literal_sources_resets_and_reason_trails() {
+    use cadence::{
+        config::{
+            merge,
+            reload::{Generation, Input},
+        },
+        config_service::{RouteRequest, resolve_route},
+    };
+    for case in &SAVED {
+        let supplied = Generation {
+            number: 8,
+            repo: Input {
+                identity: "/project/.planning/config.v4.json".into(),
+                bytes: Some(case.stored.as_bytes().to_vec()),
+                stamp: None,
+            },
+            global: None,
+            effective: merge::merge(
+                None,
+                Some(serde_json::from_str(case.stored).unwrap()),
+                false,
+            ),
+        };
+        let answer = resolve_route(
+            &supplied,
+            &RouteRequest {
+                role: "cad-executor".into(),
+                phase: None,
+                plan: None,
+                attempt: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(answer.choice).unwrap(),
+            serde_json::from_str::<Value>(case.route).unwrap()["choice"]
+        );
+    }
+}
+
+#[test]
+fn saved_route_builder_returns_independently_computed_dispatch_identities() {
+    for case in &SAVED {
+        let answer = build_routed_dispatch(
+            &plan(),
+            &"2".repeat(64),
+            0,
+            &"3".repeat(40),
+            7,
+            serde_json::from_str(case.route).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                answer.id.as_str(),
+                answer.route.as_ref().unwrap().choice.agent.as_str()
+            ),
+            (case.id, case.agent)
+        );
+    }
+}
+
+fn saved_dispatch(case: &SavedCase) -> ActiveDispatch {
+    let mut supplied = dispatch();
+    supplied.id = case.id.into();
+    supplied.policy.rung = if case.rung == "high" {
+        ExecutorRung::High
+    } else {
+        ExecutorRung::Xhigh
+    };
+    supplied.route = Some(Box::new(serde_json::from_str(case.route).unwrap()));
+    supplied
+}
+
+#[test]
+fn each_new_admission_returns_the_exact_saved_choice_and_missing_host_evidence() {
+    use cadence::store::{
+        filesystem::Filesystem,
+        writer::{BoundaryChange, Operation, PlanningPolicy, Store},
+    };
+    for case in &SAVED {
+        let root = tempfile::tempdir().unwrap();
+        seed_empty(root.path());
+        let mut supplied = saved_dispatch(case);
+        supplied.expected_execution_version = 0;
+        let mut operation = admission();
+        if let Operation::BoundaryV1 {
+            decision, change, ..
+        } = &mut operation
+        {
+            decision.subject_id = Some(case.id.into());
+            decision.response_digest = case.envelope_digest.into();
+            decision.receipt = Receipt::Dispatch {
+                dispatch_id: case.id.into(),
+                prompt_bytes: 7,
+            };
+            **change = BoundaryChange::Dispatch {
+                plan_set_fingerprint: "2".repeat(64),
+                dispatch: supplied,
+            };
+        }
+        let expected_choice = match case.model {
+            Some("sonnet") => r#"{"agent":"cad-executor","rung":"high","model":"sonnet"}"#,
+            Some("opus") => r#"{"agent":"cad-executor-xhigh","rung":"xhigh","model":"opus"}"#,
+            None => r#"{"agent":"cad-executor-xhigh","rung":"xhigh"}"#,
+            _ => unreachable!(),
+        };
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let store = Store::open(Filesystem::new(root.path()).unwrap(), PlanningPolicy)
+                .await
+                .unwrap();
+            let answer = store.request(operation).await.unwrap();
+            assert_eq!(
+                (
+                    answer.snapshot.data["execution"]["occurrences"]["8"]["active"]["id"].clone(),
+                    answer.decisions[0].clone()
+                ),
+                (
+                    json!(case.id),
+                    DecisionRecord {
+                        version: 1,
+                        id: format!("routing:{}", case.id),
+                        revision: 1,
+                        origin: Origin {
+                            source: "native-routing".into(),
+                            original: Evidence::Missing
+                        },
+                        decision: Decision::Routing {
+                            choice: expected_choice.into(),
+                            config_provenance: [
+                                ("dispatch_id".into(), Evidence::Text(case.id.into())),
+                                ("route".into(), Evidence::Text(case.route.into()))
+                            ]
+                            .into(),
+                            requested_effort: Evidence::Text(case.rung.into()),
+                            observed_effort: Evidence::Missing,
+                            receipt: Evidence::Missing
+                        }
+                    }
+                )
+            );
+        });
+    }
+}
+
+#[test]
+fn dispatch_renderer_matches_independent_exact_byte_oracles_for_both_renderings() {
+    for case in &SAVED {
+        for (lease, (expected_digest, expected_length)) in
+            [true, false].into_iter().zip(case.prompt_receipts)
+        {
+            let prompt = cadence::execution::render::render_dispatch_prompt(
+                &saved_dispatch(case),
+                &json!({"const":"supplied schema"}),
+                lease,
+            );
+            assert_eq!(
+                (
+                    cadence::store::model::digest(prompt.as_bytes()),
+                    prompt.len()
+                ),
+                (expected_digest.into(), expected_length)
+            );
+        }
+    }
+}
+
+#[test]
+fn saved_dispatch_envelope_matches_the_independently_encoded_answer_digest() {
+    for case in &SAVED {
+        let answer = PreparedAnswer::new(cadence::envelope::Envelope::Ok(Success::Dispatch {
+            dispatch: Box::new(saved_dispatch(case)),
+            prompt: "fixture".into(),
+        }))
+        .unwrap();
+        assert_eq!(answer.response_digest, case.envelope_digest);
+    }
+}

@@ -1283,7 +1283,9 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             intent_kind,
             participants,
         ) {
-            self.failed = Some(error.clone());
+            if error != Error::Conflict("routing inputs changed before admission".into()) {
+                self.failed = Some(error.clone());
+            }
             return Err(error);
         }
         for name in [ITEMS, DECISIONS, STATE] {
