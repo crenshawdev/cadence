@@ -397,3 +397,230 @@ fn global_resets_return_the_literal_reason_trail_with_ignored_repo_pins() {
         ]
     );
 }
+
+use cadence::config::{Layer, merge, policy};
+
+#[test]
+fn policy_defaults_return_only_the_three_surviving_trigger_rows() {
+    let result = policy::resolve(&merge::merge(None, None, false)).unwrap();
+    assert_eq!(
+        result.triggers,
+        [
+            (
+                "diff".into(),
+                policy::Trigger {
+                    gate: "off".into(),
+                    gate_source: None,
+                    reviewers: vec!["claude-subagent".into()],
+                    tier: "cheap".into(),
+                    effort: "minimal".into()
+                }
+            ),
+            (
+                "plan".into(),
+                policy::Trigger {
+                    gate: "advisory".into(),
+                    gate_source: None,
+                    reviewers: vec!["claude-subagent".into()],
+                    tier: "cheap".into(),
+                    effort: "low".into()
+                }
+            ),
+            (
+                "risk_surface".into(),
+                policy::Trigger {
+                    gate: "blocking".into(),
+                    gate_source: None,
+                    reviewers: vec!["claude-subagent".into()],
+                    tier: "cheap".into(),
+                    effort: "low".into()
+                }
+            ),
+        ]
+        .into()
+    );
+}
+
+#[test]
+fn policy_filters_each_trigger_at_its_own_tier() {
+    let supplied = json!({"review":{"reviewers":["openai","gemini","deepseek"],
+        "providers":{"openai":{"tiers":{"cheap":"cheap-model","balanced":" ","flagship":null}},"gemini":{"tiers":{"balanced":"balanced-model"}},"deepseek":{"tiers":{"flagship":"flagship-model"}}},
+        "triggers":{"diff":{"gate":"deferred","tier":"flagship","effort":"high"},"plan":{"gate":"advisory","tier":"balanced","effort":"medium"},"risk_surface":{"gate":"adjudicated","tier":"cheap","effort":"minimal"}}}});
+    let result = policy::resolve(&merge::merge(None, Some(supplied), false)).unwrap();
+    assert_eq!(
+        result.triggers,
+        [
+            (
+                "diff".into(),
+                policy::Trigger {
+                    gate: "deferred".into(),
+                    gate_source: Some(Layer::Repo),
+                    reviewers: vec!["deepseek".into()],
+                    tier: "flagship".into(),
+                    effort: "high".into()
+                }
+            ),
+            (
+                "plan".into(),
+                policy::Trigger {
+                    gate: "advisory".into(),
+                    gate_source: Some(Layer::Repo),
+                    reviewers: vec!["gemini".into()],
+                    tier: "balanced".into(),
+                    effort: "medium".into()
+                }
+            ),
+            (
+                "risk_surface".into(),
+                policy::Trigger {
+                    gate: "adjudicated".into(),
+                    gate_source: Some(Layer::Repo),
+                    reviewers: vec!["openai".into()],
+                    tier: "cheap".into(),
+                    effort: "minimal".into()
+                }
+            ),
+        ]
+        .into()
+    );
+}
+
+#[test]
+fn policy_names_every_missing_provider_setting_and_fallback() {
+    let supplied = json!({"review":{"reviewers":["openai"]}});
+    let result = policy::resolve(&merge::merge(None, Some(supplied), false)).unwrap();
+    assert_eq!((result.diagnostics, result.reasons[1..].to_vec()), (
+        vec!["diff: dropped openai; review.providers.openai.tiers.cheap has no nonblank model ID at tier cheap", "plan: dropped openai; review.providers.openai.tiers.cheap has no nonblank model ID at tier cheap", "risk_surface: dropped openai; review.providers.openai.tiers.cheap has no nonblank model ID at tier cheap"].into_iter().map(str::to_owned).collect::<Vec<_>>(),
+        vec!["diff: no configured reviewer qualifies at tier cheap; falling back to claude-subagent", "plan: no configured reviewer qualifies at tier cheap; falling back to claude-subagent", "risk_surface: no configured reviewer qualifies at tier cheap; falling back to claude-subagent"].into_iter().map(str::to_owned).collect::<Vec<_>>()));
+}
+
+#[test]
+fn policy_empty_reviewers_fall_back_to_the_subagent() {
+    let supplied = json!({"review":{"reviewers":[]}});
+    assert_eq!(
+        policy::resolve(&merge::merge(None, Some(supplied), false))
+            .unwrap()
+            .triggers["plan"]
+            .reviewers,
+        vec!["claude-subagent"]
+    );
+}
+
+#[test]
+fn policy_mixed_list_keeps_subagent_without_provider_configuration() {
+    let supplied = json!({"review":{"reviewers":["openai","claude-subagent"]}});
+    assert_eq!(
+        policy::resolve(&merge::merge(None, Some(supplied), false))
+            .unwrap()
+            .triggers["plan"]
+            .reviewers,
+        vec!["claude-subagent"]
+    );
+}
+
+#[test]
+fn policy_surface_answers_preserve_phase_seven_meanings() {
+    for (supplied, expected) in [
+        (json!({}), policy::SurfaceAnswer::Unanswered),
+        (
+            json!({"review":{"triggers":{"risk_surface":{"surfaces":null}}}}),
+            policy::SurfaceAnswer::Unanswered,
+        ),
+        (
+            json!({"review":{"triggers":{"risk_surface":{"surfaces":[]}}}}),
+            policy::SurfaceAnswer::Invalid {
+                reason: "Invalid(\"invalid risk surface answer\")".into(),
+            },
+        ),
+        (
+            json!({"review":{"triggers":{"risk_surface":{"surfaces":["auth","secrets"]}}}}),
+            policy::SurfaceAnswer::Answered {
+                categories: vec!["auth".into(), "secrets".into()],
+            },
+        ),
+    ] {
+        assert_eq!(
+            policy::resolve(&merge::merge(None, Some(supplied), false))
+                .unwrap()
+                .surfaces,
+            expected
+        );
+    }
+}
+
+#[test]
+fn policy_explicit_default_gate_retains_its_winning_layer() {
+    let supplied = json!({"review":{"triggers":{"plan":{"gate":"advisory"}}}});
+    assert_eq!(
+        policy::resolve(&merge::merge(Some(supplied), None, false))
+            .unwrap()
+            .triggers["plan"]
+            .gate_source,
+        Some(Layer::Global)
+    );
+}
+
+fn route_generation(repo: Value) -> cadence::config::reload::Generation {
+    cadence::config::reload::Generation {
+        number: 17,
+        global: None,
+        repo: cadence::config::reload::Input {
+            identity: "/project/.planning/config.v4.json".into(),
+            bytes: None,
+            stamp: None,
+        },
+        effective: merge::merge(None, Some(repo), false),
+    }
+}
+
+#[test]
+fn route_bundle_uses_the_supplied_generation_for_policy_and_spending() {
+    let generation = route_generation(
+        json!({"roles":{"cad-executor":{"model":"sonnet","effort":"xhigh"}},"review":{"triggers":{"plan":{"gate":"off"}}}}),
+    );
+    let result = cadence::config_service::resolve_route(
+        &generation,
+        &cadence::config_service::RouteRequest {
+            role: "cad-executor".into(),
+            phase: None,
+            plan: None,
+            attempt: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            result.generation,
+            result.choice.model,
+            result.choice.agent,
+            result.policy.triggers["plan"].gate.as_str(),
+            result.floor
+        ),
+        (
+            17,
+            Some("sonnet".into()),
+            "cad-executor-xhigh".into(),
+            "off",
+            "not computed: declared scope has not been read".into()
+        )
+    );
+}
+
+#[test]
+fn route_bundle_refuses_invalid_supported_policy() {
+    let generation = route_generation(json!({"review":{"triggers":{"plan":{"gate":"invalid"}}}}));
+    assert_eq!(
+        cadence::config_service::resolve_route(
+            &generation,
+            &cadence::config_service::RouteRequest {
+                role: "cad-executor".into(),
+                phase: None,
+                plan: None,
+                attempt: None
+            }
+        )
+        .unwrap_err()
+        .to_string(),
+        "Policy(\"config unavailable: unusable review.triggers.plan.gate\")"
+    );
+}

@@ -1,6 +1,7 @@
 //! Two persisted layers; defaults and migration evidence are never a layer.
 pub mod interview;
 pub mod merge;
+pub mod policy;
 pub mod reload;
 pub use cadence::execution::model::roles;
 pub mod write;

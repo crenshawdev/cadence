@@ -205,7 +205,7 @@ pub enum Output {
         facts: Facts,
     },
     #[serde(rename = "route")]
-    Route { route: Box<roles::Resolution> },
+    Route { route: Box<Route> },
     #[serde(rename = "config-facts")]
     Facts { facts: Facts },
     #[serde(rename = "config-interview-apply")]
@@ -372,7 +372,7 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
                 Ok(generation) => generation,
                 Err(error) => return Ok(unavailable(&error)),
             };
-            return Ok(match resolve_role(&generation, &request) {
+            return Ok(match resolve_route(&generation, &request) {
                 Ok(route) => Envelope::Ok(Output::Route {
                     route: Box::new(route),
                 }),
@@ -545,6 +545,27 @@ pub fn role_input(generation: &Generation, request: &RouteRequest) -> Result<rol
         escalate_on_failure: merge::get(&effective.values, "model.escalate_on_failure")
             .and_then(Value::as_bool)
             .ok_or_else(|| Error::Policy("retry policy unavailable".into()))?,
+    })
+}
+
+#[derive(Debug, PartialEq, Serialize, JsonSchema)]
+pub struct Route {
+    #[serde(flatten)]
+    pub choice: roles::Resolution,
+    pub generation: u64,
+    pub policy: config::policy::Policy,
+    pub floor: String,
+    pub deep_verification: bool,
+}
+
+pub fn resolve_route(generation: &Generation, request: &RouteRequest) -> Result<Route> {
+    let policy = config::policy::resolve(&generation.effective)?;
+    Ok(Route {
+        choice: resolve_role(generation, request)?,
+        generation: generation.number,
+        policy,
+        floor: "not computed: declared scope has not been read".into(),
+        deep_verification: false,
     })
 }
 

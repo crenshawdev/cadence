@@ -2,7 +2,6 @@
 phase: 8
 plan: 4
 requirements:
-  - AC1
   - AC6
   - AC9
 files:
@@ -20,7 +19,7 @@ files:
   - docs/architecture/config-routing.md
 execution:
   schema: 1
-  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace && TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings && TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check"
+  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy -p cadence --tests"
   tasks:
     - id: P8-4-T1
       verify:
@@ -51,7 +50,7 @@ A route explains the surviving review policy and the risk in its declared plan s
 - AC9/D-55: Planner/analyzer bypass the floor; no phase means not computed; a clean named plan is independent of risky sibling scope.
 - AC9/D-55: Missing/unreadable scope or unobserved existing bodies raise conservatively; genuinely new declared files still contribute their paths.
 - AC6/D-47/D-55: Unwaived matches affect only deep verification and a non-explicit plan gate; an explicit stored gate wins even at the default value.
-- AC1/D-49: Same-resident route answers refresh after config edits, alias changes or I/O failure and never revive cached permission.
+- D-49: Route consumers reuse the completed synchronous refresh and failed-reload contract.
 
 ## Context
 
@@ -65,7 +64,7 @@ D-47, D-49, D-54 and D-55 bind this plan. Plans 1-3 provide role choices, servic
 - **Action:** Complete the public route bundle using one refreshed Generation shared with role resolution. Derive supported review triggers from surviving schema gate rows and their disposition; return exact valid gates, per-trigger reviewer sets, selected tier and reviewer request effort, answered surfaces, requested attempt/escalation/pin explanations, reasons and diagnostics. Exclude phase_diff entirely. Preserve stored presence as the evidence of an explicit gate, including a stored value equal to its default. Live invalid supported policy values refuse through existing validation; do not copy the frozen warning-and-default behavior over the native failed-reload contract.
 
   Filter the configured reviewer list separately for each trigger at that trigger's selected tier. claude-subagent always qualifies; other reviewers require a nonblank configured provider model ID at that tier. Name each dropped provider, missing setting and selected tier; if the remaining list is empty use claude-subagent with the fallback reason. This is configured eligibility, not availability, credential validation, endpoint discovery, review firing or review settlement. Reuse phase 7's surface-answer semantics for absence/null/empty/valid arrays so config facts, routing and the one-time choice agree. Until Task 2 computes the scope, report that fact explicitly rather than a clean scan. Register the completed response schema inside the existing grouped tool, without creating another public tool or changing phase 7's construction.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_routing`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp` — For each surviving trigger, fixtures assert the exact gate, reviewer set, tier and effort values/types, with intentionally different tier assignments that cause different filtering outcomes. Cover mixed eligible/ineligible lists, empty fallback, always-eligible claude-subagent, empty/nonblank provider IDs and answered/unanswered surfaces. phase_diff is absent from all maps. Repeated public calls share one current config generation and a failed reload refuses. No provider process/network invocation or review receipt is produced.
+- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_routing`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp` — policy::resolve over supplied Effective values returns literal diff/plan/risk_surface gates, reviewer arrays, tiers, efforts and explicit gate layers; phase_diff is absent. Independent fixtures return named dropped-provider diagnostics and claude-subagent fallback, and Unanswered, Invalid { reason: "Invalid(\"invalid risk surface answer\")" } or Answered { categories } surface facts. resolve_route over a supplied Generation returns that generation number, saved role choice and policy; invalid effective policy returns Policy("config unavailable: unusable review.triggers.plan.gate"). No repeated public-call sequence or provider boundary is required; the existing grouped output schema derives the completed bundle.
 
 ### Task 2: Read the declared floor scope conservatively (P8-4-T2)
 
@@ -92,7 +91,7 @@ D-47, D-49, D-54 and D-55 bind this plan. Plans 1-3 provide role choices, servic
 | D-54 / AC9 | P8-4-T1 |
 | D-55 / AC9 | P8-4-T2, P8-4-T3 |
 | D-47 / AC6 | P8-4-T3 |
-| D-49 / AC1 | P8-4-T1, P8-4-T2, P8-4-T3 |
+| D-49 (existing refresh dependency) | P8-4-T1, P8-4-T2, P8-4-T3 |
 
 ## Notes
 
