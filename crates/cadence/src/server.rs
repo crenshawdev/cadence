@@ -65,6 +65,9 @@ mod execution_service_tests;
 #[path = "rail_service.rs"]
 pub mod rail_service;
 
+#[path = "config_service.rs"]
+pub mod config_service;
+
 /// What `cadence_version` reports on success.
 ///
 /// A struct rather than a bare string because an `ok` envelope's payload sits
@@ -196,7 +199,7 @@ impl CadenceServer {
         // dispatch policy are evaluated by their later operation surfaces.
         Self::with_factory(crate::import::SessionFactory::new(
             global,
-            std::sync::Arc::new(|_, _| Ok(())),
+            std::sync::Arc::new(crate::config::planning_policy),
         ))
     }
 
@@ -224,6 +227,8 @@ struct VersionArguments {}
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "operation", deny_unknown_fields)]
 enum QueryArguments {
+    #[serde(rename = "config-facts")]
+    ConfigFacts {},
     #[serde(rename = "detect-surfaces")]
     DetectSurfaces { answered: Option<Vec<String>> },
     #[serde(rename = "execute-next")]
@@ -239,6 +244,7 @@ enum QueryArguments {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyArguments {
+    Config(config_service::Apply),
     Executor(ExecutorPatch),
     Rail(cadence::rail::risk::Apply),
     Receipt(cadence::rail::receipts::Apply),
@@ -247,6 +253,7 @@ enum ApplyArguments {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyOutput {
+    Config(Box<Envelope<config_service::Output>>),
     Execution(ExecutionEnvelope),
     Rail(Box<Envelope<cadence::rail::risk::Recorded>>),
     Receipt(Box<Envelope<rail_service::ReceiptOutput>>),
@@ -255,6 +262,7 @@ enum ApplyOutput {
 #[derive(Serialize, JsonSchema)]
 #[serde(untagged)]
 enum QueryOutput {
+    Config(Box<Envelope<config_service::Output>>),
     Surfaces(Box<Envelope<cadence::rail::surfaces::Report>>),
     Execution(ExecutionEnvelope),
     Receipt(Box<Envelope<rail_service::ReceiptOutput>>),
@@ -455,12 +463,12 @@ impl ServerHandler for PublicServer {
                 ),
                 tool::<QueryOutput>(
                     "cadence_query",
-                    "Query native execution, exact material risk status or structural surface evidence in the bound project.",
+                    "Read supported configuration, native execution, exact material risk status or structural surface evidence in the bound project.",
                     query_schema(),
                 ),
                 tool::<ApplyOutput>(
                     "cadence_apply",
-                    "Submit an executor patch, risk-check, contracted risk fire or consequence.",
+                    "Apply an atomic config batch, executor patch, risk-check, contracted risk fire or consequence.",
                     apply_schema(),
                 ),
             ],
@@ -497,6 +505,25 @@ impl ServerHandler for PublicServer {
                     .clone()
                     .and_then(|value| serde_json::from_value::<QueryArguments>(value).ok())
                 {
+                    Some(QueryArguments::ConfigFacts {}) => {
+                        return structured_result(
+                            self.server
+                                .service
+                                .config(&self.root, config_service::Command::Facts)
+                                .await
+                                .map(|answer| QueryOutput::Config(Box::new(answer))),
+                        );
+                    }
+                    None if raw.as_ref().and_then(|v| v["operation"].as_str())
+                        == Some("config-facts") =>
+                    {
+                        return structured_result(Ok(QueryOutput::Config(Box::new(
+                            config_service::refused(
+                                "invalid-arguments",
+                                "config-facts arguments do not match the strict operation schema",
+                            ),
+                        ))));
+                    }
                     Some(QueryArguments::ExecuteNext { phase }) => {
                         self.server.query_execution(&self.root, phase.get()).await
                     }
@@ -545,6 +572,25 @@ impl ServerHandler for PublicServer {
                     .clone()
                     .and_then(|value| serde_json::from_value::<ApplyArguments>(value).ok())
                 {
+                    Some(ApplyArguments::Config(request)) => {
+                        return structured_result(
+                            self.server
+                                .service
+                                .config(&self.root, config_service::Command::Apply(request))
+                                .await
+                                .map(|answer| ApplyOutput::Config(Box::new(answer))),
+                        );
+                    }
+                    None if raw.as_ref().and_then(|v| v["operation"].as_str())
+                        == Some("config-apply") =>
+                    {
+                        return structured_result(Ok(ApplyOutput::Config(Box::new(
+                            config_service::refused(
+                                "invalid-arguments",
+                                "config-apply arguments do not match the strict operation schema",
+                            ),
+                        ))));
+                    }
                     Some(ApplyArguments::Executor(patch)) => {
                         self.server.apply_executor_patch(&self.root, patch).await
                     }

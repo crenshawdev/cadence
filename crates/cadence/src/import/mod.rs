@@ -516,6 +516,20 @@ impl<I: ConfigIo> Session<I> {
         .set(layer, key, value)
         .await
     }
+    pub async fn batch_config(
+        &self,
+        layer: Layer,
+        updates: &[write::Update],
+    ) -> Result<write::Written> {
+        write::ConfigWriter {
+            root: self.root.clone(),
+            active: self.manifest.active.clone(),
+            store: self.store.clone(),
+            config: self.config.clone(),
+        }
+        .batch(layer, updates)
+        .await
+    }
     pub async fn capture_report(&self) -> Result<config::CaptureReport> {
         let current = self.config()?;
         let bound = merge::get(&current.effective.values, "planning.max_capture_bullets")
@@ -558,6 +572,13 @@ impl SessionFactory<FileIo> {
     }
 }
 impl<I: ConfigIo + Clone> SessionFactory<I> {
+    pub fn active_config_paths(&self, root: &Path) -> Result<Paths> {
+        write::active_paths(&Paths {
+            repo: root.join("config.json"),
+            global: self.global.clone(),
+        })
+    }
+
     pub fn guard_config(&self, root: &Path) -> Result<Generation> {
         let legacy = Paths {
             repo: root.join("config.json"),

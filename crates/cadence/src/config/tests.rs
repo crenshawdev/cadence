@@ -934,3 +934,254 @@ fn native_guard_hard_fail_is_separate_from_the_frozen_key_census() {
         Some(&json!(false))
     );
 }
+
+#[test]
+fn batch_preparation_preserves_unknown_values_and_distinguishes_absent_null() {
+    use write::{Update, prepare_batch};
+    let updates = [
+        Update {
+            key: "roles.cad-executor.model".into(),
+            value: Value::Null,
+        },
+        Update {
+            key: "roles.cad-executor.effort".into(),
+            value: json!("xhigh"),
+        },
+    ];
+    assert_eq!(
+        prepare_batch(Layer::Repo, &json!({"unknown":{"saved":7}}), &updates).unwrap(),
+        (
+            json!({"unknown":{"saved":7},"roles":{"cad-executor":{"model":null,"effort":"xhigh"}}}),
+            vec![
+                "roles.cad-executor.effort".to_string(),
+                "roles.cad-executor.model".to_string()
+            ]
+        )
+    );
+}
+
+#[test]
+fn batch_preparation_returns_literal_refusals_for_invalid_tail_and_duplicates() {
+    use write::{Update, prepare_batch};
+    for (key, value, reason) in [
+        (
+            "roles.cad-executor.effort",
+            json!("impossible"),
+            "invalid value for roles.cad-executor.effort",
+        ),
+        ("stakes", json!("high"), "unknown config key stakes"),
+        (
+            "git.auto_close",
+            json!(true),
+            "retired config key git.auto_close",
+        ),
+        (
+            "workflow.test_command",
+            json!("test"),
+            "wrong config layer for workflow.test_command",
+        ),
+        (
+            "roles.cad-executor.model",
+            Value::Null,
+            "duplicate config key roles.cad-executor.model",
+        ),
+    ] {
+        let updates = [
+            Update {
+                key: "roles.cad-executor.model".into(),
+                value: json!("sonnet"),
+            },
+            Update {
+                key: key.into(),
+                value,
+            },
+        ];
+        assert_eq!(
+            prepare_batch(Layer::Repo, &json!({}), &updates),
+            Err(cadence::store::Error::Invalid(reason.into()))
+        );
+    }
+}
+
+#[test]
+fn batch_preparation_empty_and_identical_stored_values_return_no_changes() {
+    use write::{Update, prepare_batch};
+    assert_eq!(
+        prepare_batch(Layer::Repo, &json!({"a":1}), &[]).unwrap(),
+        (json!({"a":1}), vec![])
+    );
+    assert_eq!(
+        prepare_batch(
+            Layer::Repo,
+            &json!({"roles":{"cad-executor":{"model":null}}}),
+            &[Update {
+                key: "roles.cad-executor.model".into(),
+                value: Value::Null
+            }]
+        )
+        .unwrap(),
+        (json!({"roles":{"cad-executor":{"model":null}}}), vec![])
+    );
+}
+
+#[test]
+fn batch_writer_persists_one_destination_with_literal_null_and_unknown_evidence() {
+    use cadence::store::writer::Store;
+    use write::Update;
+    let dir = tempfile::tempdir().unwrap();
+    let active = config_paths(dir.path());
+    std::fs::write(&active.repo, br#"{"unknown":{"saved":7}}"#).unwrap();
+    let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+        active.clone(),
+        reload::FileIo,
+    )));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(
+            write::register(dir.path(), &active).unwrap(),
+            reload::ConfigPolicy {
+                config: config.clone(),
+                evaluate: super::planning_policy,
+            },
+        )
+        .await
+        .unwrap();
+        let writer = write::ConfigWriter {
+            root: dir.path().into(),
+            active: active.clone(),
+            store,
+            config,
+        };
+        let written = writer
+            .batch(
+                Layer::Repo,
+                &[
+                    Update {
+                        key: "roles.cad-executor.model".into(),
+                        value: Value::Null,
+                    },
+                    Update {
+                        key: "roles.cad-executor.effort".into(),
+                        value: json!("xhigh"),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            written.changed_keys,
+            ["roles.cad-executor.effort", "roles.cad-executor.model"]
+        );
+        assert_eq!(written.requested_layer, Layer::Repo);
+        assert_eq!(written.destination, active.repo);
+        assert_eq!(
+            std::fs::read(&active.repo).unwrap(),
+            br#"{
+  "unknown": {
+    "saved": 7
+  },
+  "roles": {
+    "cad-executor": {
+      "model": null,
+      "effort": "xhigh"
+    }
+  }
+}"#
+        );
+        assert!(!active.global.unwrap().exists());
+    });
+}
+
+#[test]
+fn batch_writer_refuses_stale_observation_without_installing_any_answer() {
+    use cadence::store::{Error, writer::Store};
+    #[derive(Clone)]
+    struct Observed;
+    impl reload::ConfigIo for Observed {
+        fn read(&mut self, path: &std::path::Path) -> cadence::store::Result<reload::Input> {
+            Ok(reload::Input {
+                identity: path.into(),
+                bytes: (path.file_name().unwrap() == "repo.json").then(|| b"{}".to_vec()),
+                stamp: None,
+            })
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let active = config_paths(dir.path());
+    let foreign = br#"{"roles":{"cad-executor":{"model":"opus"}}}"#;
+    std::fs::write(&active.repo, foreign).unwrap();
+    let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+        active.clone(),
+        Observed,
+    )));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let store = Store::open(write::register(dir.path(), &active).unwrap(), reload::ConfigPolicy { config: config.clone(), evaluate: super::planning_policy }).await.unwrap();
+        let writer = write::ConfigWriter { root: dir.path().into(), active: active.clone(), store, config };
+        let result = writer.batch(Layer::Repo, &[
+            write::Update { key: "roles.cad-executor.model".into(), value: json!("sonnet") },
+            write::Update { key: "roles.cad-executor.effort".into(), value: json!("xhigh") },
+        ]).await;
+        assert!(matches!(result, Err(Error::Conflict(reason)) if reason == "config changed while preparing update"));
+        assert_eq!(std::fs::read(&active.repo).unwrap(), foreign);
+        assert_eq!(store_bytes(dir.path()), vec![None, None, None]);
+    });
+}
+
+#[test]
+fn batch_writer_failed_intent_sync_preserves_all_config_bytes() {
+    use cadence::store::{Error, filesystem::Stage, writer::Store};
+    let dir = tempfile::tempdir().unwrap();
+    let active = config_paths(dir.path());
+    std::fs::write(&active.repo, b"{}").unwrap();
+    let config = std::sync::Arc::new(std::sync::Mutex::new(reload::Reload::new(
+        active.clone(),
+        reload::FileIo,
+    )));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let storage = write::register(dir.path(), &active)
+            .unwrap()
+            .with_probe(|stage, path| {
+                if stage == Stage::TemporarySync
+                    && path.file_name().is_some_and(|name| {
+                        name.to_string_lossy().starts_with("..store-intent.json.")
+                    })
+                {
+                    Err(Error::Io("fixture intent sync".into()))
+                } else {
+                    Ok(())
+                }
+            });
+        let store = Store::open(
+            storage,
+            reload::ConfigPolicy {
+                config: config.clone(),
+                evaluate: super::planning_policy,
+            },
+        )
+        .await
+        .unwrap();
+        let writer = write::ConfigWriter {
+            root: dir.path().into(),
+            active: active.clone(),
+            store,
+            config,
+        };
+        let result = writer
+            .batch(
+                Layer::Repo,
+                &[
+                    write::Update {
+                        key: "roles.cad-executor.model".into(),
+                        value: json!("sonnet"),
+                    },
+                    write::Update {
+                        key: "roles.cad-executor.effort".into(),
+                        value: json!("xhigh"),
+                    },
+                ],
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Io(reason)) if reason == "fixture intent sync"));
+        assert_eq!(std::fs::read(&active.repo).unwrap(), b"{}");
+        assert_eq!(store_bytes(dir.path()), vec![None, None, None]);
+    });
+}

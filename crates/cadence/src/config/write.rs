@@ -114,13 +114,25 @@ pub struct ConfigWriter<I: ConfigIo> {
 
 impl<I: ConfigIo> ConfigWriter<I> {
     pub async fn set(&self, layer: Layer, key: &str, value: Value) -> Result<View> {
-        // Request intent controls the scope guard even when the addresses alias.
-        validate_update(layer, key, &value)?;
+        Ok(self
+            .batch(
+                layer,
+                &[Update {
+                    key: key.into(),
+                    value,
+                }],
+            )
+            .await?
+            .view)
+    }
+
+    pub async fn batch(&self, layer: Layer, updates: &[Update]) -> Result<Written> {
         let generation = self
             .config
             .lock()
             .map_err(|_| Error::Policy("config unavailable".into()))?
-            .refresh()?;
+            .refresh()
+            .map_err(|error| Error::Policy(format!("config unavailable: {error}")))?;
         let (target, path, input) = match layer {
             Layer::Repo => ("repo-config", &self.active.repo, &generation.repo),
             Layer::Global => {
@@ -154,7 +166,29 @@ impl<I: ConfigIo> ConfigWriter<I> {
             .map(serde_json::from_slice)
             .transpose()?
             .unwrap_or_else(|| json!({}));
-        merge::set(&mut raw, key, value);
+        let (proposed, changed_keys) = prepare_batch(layer, &raw, updates)?;
+        raw = proposed;
+        let effective = match target {
+            "repo-config" => merge::merge(
+                generation.effective.raw_global.clone(),
+                Some(raw.clone()),
+                generation.effective.global_intent,
+            ),
+            _ => merge::merge(
+                Some(raw.clone()),
+                generation.effective.raw_repo.clone(),
+                generation.effective.global_intent,
+            ),
+        };
+        reload::validate_effective(&effective)?;
+        if changed_keys.is_empty() {
+            return Ok(Written {
+                view: self.store.request(Operation::Read).await?,
+                changed_keys,
+                destination: path.clone(),
+                requested_layer: layer,
+            });
+        }
         let bytes = serde_json::to_vec_pretty(&raw)?;
         let mut storage = register(&self.root, &self.active)?;
         let expected = storage.read(target)?;
@@ -180,6 +214,53 @@ impl<I: ConfigIo> ConfigWriter<I> {
                 bytes,
             }],
         };
-        self.store.request(Operation::Transact(transaction)).await
+        let view = self.store.request(Operation::Transact(transaction)).await?;
+        Ok(Written {
+            view,
+            changed_keys,
+            destination: path.clone(),
+            requested_layer: layer,
+        })
     }
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Update {
+    pub key: String,
+    pub value: Value,
+}
+
+pub struct Written {
+    pub view: View,
+    pub changed_keys: Vec<String>,
+    pub destination: PathBuf,
+    pub requested_layer: Layer,
+}
+
+pub fn prepare_batch(
+    layer: Layer,
+    raw: &Value,
+    updates: &[Update],
+) -> Result<(Value, Vec<String>)> {
+    let mut keys = std::collections::BTreeSet::new();
+    for update in updates {
+        validate_update(layer, &update.key, &update.value)?;
+        if !keys.insert(&update.key) {
+            return Err(Error::Invalid(format!(
+                "duplicate config key {}",
+                update.key
+            )));
+        }
+    }
+    let mut proposed = raw.clone();
+    let mut changed = Vec::new();
+    for update in updates {
+        if merge::get(raw, &update.key) != Some(&update.value) {
+            merge::set(&mut proposed, &update.key, update.value.clone());
+            changed.push(update.key.clone());
+        }
+    }
+    changed.sort();
+    Ok((proposed, changed))
 }

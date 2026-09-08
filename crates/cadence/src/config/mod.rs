@@ -30,28 +30,28 @@ pub fn schema() -> &'static BTreeMap<String, Value> {
         .get_or_init(|| serde_json::from_str(include_str!("schema.json")).expect("embedded schema"))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Layer {
     Global,
     Repo,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Diagnostic {
     pub layer: Layer,
     pub key: String,
     pub reason: String,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Diagnostics {
     pub scope: Vec<Diagnostic>,
     pub invalid_layer: Vec<Diagnostic>,
     pub migration: Vec<Diagnostic>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Effective {
     pub raw_global: Option<Value>,
     pub raw_repo: Option<Value>,
@@ -89,3 +89,10 @@ pub fn capture_report(records: &[cadence::store::model::ItemRecord], bound: u64)
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn planning_policy(
+    _: &cadence::store::MutationContext<'_>,
+    _: &reload::Generation,
+) -> cadence::store::Result<()> {
+    Ok(())
+}
