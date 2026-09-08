@@ -533,215 +533,1160 @@ without claiming the later workflows are migrated (`.planning/ROADMAP.md:746`,
 
 ## Acceptance criteria
 
-- [ ] AC1: Begin with the unchanged restartable store and artifact inventory
-      produced by phase 9 AC15's own native admission, observation, return and
-      enqueue code paths. Record the producer revision/commands and compare
-      inventory hashes before opening it with phase 10. No fixture-seeded
-      records, caller reconstruction or backfill may supply required H1–H5
-      fields. Change gate/routing/model settings and the active phase cursor,
-      then reopen with phase 10 and inspect committed, staged, named diff/file
-      and specialist artifacts in phase/task/root homes. Saved policy, roster,
-      model requests/host observations, source mappings, originals and exact
-      occurrence/round joins remain intact. Phase-9 accepted boundary originals
-      retain their bytes, IDs and admission status under the recorded contract.
-      Remove a required artifact from an isolated copy: settlement refuses and
-      the obligation remains visible. Delivery alone leaves settlement pending
-      (`.planning/ROADMAP.md:762`, `.planning/ROADMAP.md:775`,
+These are specifications for unimplemented phase work, not pending checks for
+code expected to exist already. Function names below name the proposed unit;
+they do not require public test APIs or particular module placement. Test each
+unit directly, including its stated durable output. Call deterministic internal
+collaborators for real. Stub only the listed I/O boundaries, including setup;
+filesystem images are stub inputs, not instructions to start a process. No
+criterion calls a model. Fixed finding prose is authored input data.
+
+Each result is a literal value or a named field of that unit's returned record.
+JSON `null` denotes explicit absence. Scalar/byte-limit inputs use the stated
+number of literal characters or bytes, not a production serializer. Boundary
+caps and deadlines supplied in examples are test inputs, not new product
+defaults. A forbidden boundary means the unit must not access it. References
+marked "former AC" retain the old numbering; AC references in the unchanged
+scope, decisions, HANDOFF and assumptions also retain their historical meaning.
+
+Fixture F is the literal finding
+`{"file":"a.rs","line":1,"severity":"high","claim":"C","failure_scenario":"S"}`.
+Q is a hand-authored UTF-8 return: a findings envelope containing, in order, F
+with claim `quote: \"\n雪` (a quotation mark, newline and Unicode scalar),
+then unchanged F. Its original ID is `o1`, its validator is `H4-1`, and its
+finding IDs are `o1:0` and `o1:1`. No serializer under test supplies expected
+bytes. Other named variants state their changed fields in the criterion.
+
+H is a hand-authored saved admission with these literal fields:
+
+```json
+{"fire":"f1","replay_key":"k1",
+ "scope":{"project":"p1","root":"r1","cycle":"c1"},
+ "home":{"kind":"task","id":"h1","occurrence":"occ1"},
+ "caller":"task","trigger":"risk_surface","specialist":null,
+ "discriminator":"d1","plan":null,"anchor":null,"round":1,
+ "artifact":"m1","gate":"deferred",
+ "selection":{"mode":"single","choices":["A","B"],"fallback":"local"},
+ "routing":{"answer":"local","evidence":"route1"},
+ "roster":{"required":["A"],"completion":"all-required-terminal"},
+ "contract":{"schema":"review-1","interpretation":"H1-H5",
+             "validator":"H4-1"},"settlement":"pending"}
+```
+
+Its material `m1` retains `e1`, path `a.rs`, snapshot bytes `old\n`, with
+line 1 mapped to bytes 0..3. Its attempt `a1` requests `model-A`; observed model
+is null, launch is `launch1`, return is `return1`, view is `v1`. Successful
+variants bind original `o1` containing F to that attempt. Roster variants name
+their additional attempts explicitly. A queued variant has member `f1`.
+
+Every phase-9 record input below is read from a COMMITTED FIXTURE owned and
+committed by phase 9. Load its literal bytes through the filesystem stub when
+the tested unit performs I/O; supply decoded fixture values directly to pure
+units. Never invoke phase-9 admission, dispatch, return or enqueue to prepare a
+test. Do not mock those internal collaborators when phase-10 code calls them.
+This inverts former AC1, AC2, AC3, AC5, AC6, AC11, AC18 and AC19. The preserved
+scope's historical producer-run/fixture prohibition does not govern these
+criteria. The unchanged producer-run evidence belongs to phase 9 MANUAL.
+
+Fixture C is the committed carry closure with originals `["o1","o2"]`, voices
+`["A","B"]`, retained entries `["e1","e2"]`, selection `["v1:2"]`, lineage
+`{"parent":"f1","child":"f2","root":"root1"}`, allowance `"spent"` and
+receipts `["s1","override1"]`. It includes each referenced record and its
+retained bytes, not just this inventory. Original `o1` is F; `o2` is an empty
+successful child return. Entry e2 retains fix bytes `new\n`.
+
+A mechanically valid settlement input means an authored matching fire,
+occurrence, round, attempt and original-finding ID, with F copied exactly and
+one disposition per original. Its fixed Git observation resolves fix `abc123`
+to commit `0123456789012345678901234567890123456789`; material references use
+the fixture's retained side and line. Refuted variants supply retained counter
+entry e3 containing `support\n`. Scoped overrides name o1:0, round 1 and reason
+`Accepted risk`. Empty variants have a fully successful empty roster and no
+rulings. These inputs establish mechanical identity only. Whether a fix works,
+a refutation is persuasive or a deletion is desirable remains manual judgment.
+
+- [ ] AC1: Given committed H fixture and current gate `off`, model `model-B`,
+      phase cursor `99`, `open_review` returns `{"gate":"deferred",
+      "routing":{"answer":"local", "evidence":"route1"},
+      "home":{"kind":"task", "id":"h1", "occurrence":"occ1"}, "round":1,
+      "artifact":"m1", "required_roster":["A"], "requested_model":"model-A",
+      "observed_model":null, "schema":"review-1", "validator":"H4-1"}`.
+      Boundaries: filesystem: committed fixture bytes, forbid
+      current-config/cursor reads. (D-70; H1-H5; former AC1;
+      `.planning/ROADMAP.md:762`, `.planning/ROADMAP.md:775`,
       `.planning/ROADMAP.md:801`).
 
-- [ ] AC2: Reuse phase 9 H4's validator and unchanged AC11 accepted store.
-      Every phase-9 accepted boundary return remains shape-admissible without
-      rewritten originals when read by phase 10; evidence refusal is reported
-      separately. Run the same matrix through local/provider admission,
-      settlement, deferred and minimalism paths: accept empty findings and
-      boundary-length Unicode text; refuse whitespace-only fields, unknown
-      fields, 101 findings, over-limit strings/bytes and invalid/unsafe lines;
-      preserve accepted strings byte-for-byte without normalization.
-      Oversized return and aggregate settlement streams stop at the documented
-      byte budget before unbounded accumulation/parsing. An unknown historical
-      contract stays readable as unverified with a diagnostic and an explicit
-      linked-review recovery route, without a fabricated dispatch or clearance
-      (`cadence-core/bin/review-provider.mjs:885`,
+- [ ] AC2: Given committed `committed-range` fixture at `m1`, `open_review`
+      returns `artifact_kind = "committed-range"`. Boundaries: filesystem:
+      committed fixture. (D-70; H2; former AC1).
+
+- [ ] AC3: Given committed `staged-tree` fixture at `m1`, `open_review`
+      returns `artifact_kind = "staged-tree"`. Boundaries: filesystem:
+      committed fixture. (D-70; H2; former AC1).
+
+- [ ] AC4: Given committed `named-diff` fixture at `m1`, `open_review`
+      returns `artifact_kind = "named-diff"`. Boundaries: filesystem:
+      committed fixture. (D-70; H2; former AC1).
+
+- [ ] AC5: Given committed `named-file` fixture at `m1`, `open_review`
+      returns `artifact_kind = "named-file"`. Boundaries: filesystem:
+      committed fixture. (D-70; H2; former AC1).
+
+- [ ] AC6: Given committed `minimalism-file` fixture at `m1`, `open_review`
+      returns `artifact_kind = "minimalism-file"`. Boundaries: filesystem:
+      committed fixture. (D-70; H2; former AC1).
+
+- [ ] AC7: Given committed `minimalism-directory` fixture at `m1`,
+      `open_review` returns `artifact_kind = "minimalism-directory"`.
+      Boundaries: filesystem: committed fixture. (D-70; H2; former AC1).
+
+- [ ] AC8: Given committed `minimalism-phase-range` fixture at `m1`,
+      `open_review` returns `artifact_kind = "minimalism-phase-range"`.
+      Boundaries: filesystem: committed fixture. (D-70; H2; former AC1).
+
+- [ ] AC9: Given committed `decision` fixture at `m1`, `open_review` returns
+      `artifact_kind = "decision"`. Boundaries: filesystem: committed fixture.
+      (D-70; H2; former AC1).
+
+- [ ] AC10: Given committed `diagnosis` fixture at `m1`, `open_review` returns
+      `artifact_kind = "diagnosis"`. Boundaries: filesystem: committed
+      fixture. (D-70; H2; former AC1).
+
+- [ ] AC11: Given committed `f1` in `phase` home with accepted delivery and no
+      settlement, `review_obligation` returns `{"fire":"f1",
+      "settlement":"pending", "visible":true}`. Boundaries: filesystem:
+      committed fixture. (D-70; H5; former AC1).
+
+- [ ] AC12: Given committed `f1` in `task` home with accepted delivery and no
+      settlement, `review_obligation` returns `{"fire":"f1",
+      "settlement":"pending", "visible":true}`. Boundaries: filesystem:
+      committed fixture. (D-70; H5; former AC1).
+
+- [ ] AC13: Given committed `f1` in `root` home with accepted delivery and no
+      settlement, `review_obligation` returns `{"fire":"f1",
+      "settlement":"pending", "visible":true}`. Boundaries: filesystem:
+      committed fixture. (D-70; H5; former AC1).
+
+- [ ] AC14: Given committed `f1` whose required material `e1` is unavailable,
+      `verify_settlement` returns `{"code":"missing-material", "fire":"f1",
+      "entry":"e1"}`. Boundaries: filesystem: fixture, fail retained e1 read;
+      subprocess: forbid current-source substitution. (D-70; former AC1).
+
+- [ ] AC15: Given committed `f1` plus a refused missing-material settlement,
+      `review_obligation` returns `{"fire":"f1", "settlement":"pending",
+      "visible":true}`. Boundaries: none. (D-70; former AC1).
+
+- [ ] AC16: Given committed Q accepted under `H4-1`, `open_original` returns
+      `{"identity":{"original":"o1", "validator":"H4-1",
+      "admission":"accepted", "finding_ids":["o1:0", "o1:1"]},
+      "findings":[{"file":"a.rs", "line":1, "severity":"high",
+      "claim":"quote: \"\n雪", "failure_scenario":"S"}, {"file":"a.rs", "line":1,
+      "severity":"high", "claim":"C", "failure_scenario":"S"}]}`.
+      Boundaries: filesystem: committed Q. (D-71; H4; former AC2;
+      `cadence-core/bin/review-provider.mjs:885`,
       `cadence-core/bin/review-provider.mjs:1261`,
       `cadence-core/bin/lib/adjudication-record.mjs:285`).
 
-- [ ] AC3: Start a two-voice fire through phase 9's real dispatch path. After
-      empty A returns with B pending, attempt settlement before and after
-      restart: it refuses and B remains named in the saved required roster.
-      Interrupted B and terminal failed B cannot be omitted for clean clearance.
-      Complete the admitted participation, then require one ruling per original
-      finding, separate convergent entries, derived counts and an empty-success
-      roster.
-      Invented participation, a one-character claim/scenario change, matching
-      fabricated copies of both returned text and ruling, omitted findings,
-      duplicate rulings and swapped same-artifact host returns all refuse
-      against the binary originals; no refusal changes the originals or clears
-      the gate
-      (`cadence-core/bin/lib/adjudication-record.mjs:351`,
+- [ ] AC17: Given committed accepted 100-finding Unicode boundary fixture,
+      `open_original` returns `shape_status = "accepted"`. Boundaries:
+      filesystem: committed boundary fixture. (D-71; H4; former AC2).
+
+- [ ] AC18: Given committed old bytes with contract `unknown-0` and original
+      `old1`, `open_original` returns `{"original":"old1", "verified":false,
+      "diagnostic":"unknown-contract", "contract":"unknown-0",
+      "recovery":"linked-new-review", "dispatch":null}`. Boundaries:
+      filesystem: old bytes, forbid rewrite. (D-70, D-71; former AC2).
+
+- [ ] AC19: Given literal empty findings envelope and recorded contract
+      `H4-1`, `decode_provider_return` returns `{"findings":[]}`. Boundaries:
+      none. (D-71; former AC2).
+
+- [ ] AC20: Given F with 2000 Unicode scalars in claim and contract `H4-1`,
+      `decode_provider_return` returns `accepted = true`. Boundaries: none.
+      (D-71; former AC2).
+
+- [ ] AC21: Given F with whitespace-only claim, `decode_provider_return`
+      returns `{"code":"blank-field", "index":0, "field":"claim"}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC22: Given F with unknown `fix` field, `decode_provider_return` returns
+      `{"code":"unknown-field", "index":0, "field":"fix"}`. Boundaries: none.
+      (D-71; former AC2).
+
+- [ ] AC23: Given 101 copies of F, `decode_provider_return` returns
+      `{"code":"too-many-findings", "limit":100, "actual":101}`. Boundaries:
+      none. (D-71; former AC2).
+
+- [ ] AC24: Given F with 2001-scalar claim, `decode_provider_return` returns
+      `{"code":"field-too-long", "index":0, "field":"claim", "limit":2000}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC25: Given F with line 9007199254740992, `decode_provider_return`
+      returns `{"code":"invalid-line", "index":0, "field":"line", "min":1,
+      "max":9007199254740991}`. Boundaries: none. (D-71; former AC2).
+
+- [ ] AC26: Given literal empty findings envelope and recorded contract
+      `H4-1`, `decode_settlement_findings` returns `{"findings":[]}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC27: Given F with 2000 Unicode scalars in claim and contract `H4-1`,
+      `decode_settlement_findings` returns `accepted = true`. Boundaries:
+      none. (D-71; former AC2).
+
+- [ ] AC28: Given F with whitespace-only claim, `decode_settlement_findings`
+      returns `{"code":"blank-field", "index":0, "field":"claim"}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC29: Given F with unknown `fix` field, `decode_settlement_findings`
+      returns `{"code":"unknown-field", "index":0, "field":"fix"}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC30: Given 101 copies of F, `decode_settlement_findings` returns
+      `{"code":"too-many-findings", "limit":100, "actual":101}`. Boundaries:
+      none. (D-71; former AC2).
+
+- [ ] AC31: Given F with 2001-scalar claim, `decode_settlement_findings`
+      returns `{"code":"field-too-long", "index":0, "field":"claim",
+      "limit":2000}`. Boundaries: none. (D-71; former AC2).
+
+- [ ] AC32: Given F with line 9007199254740992, `decode_settlement_findings`
+      returns `{"code":"invalid-line", "index":0, "field":"line", "min":1,
+      "max":9007199254740991}`. Boundaries: none. (D-71; former AC2).
+
+- [ ] AC33: Given literal empty findings envelope and recorded contract
+      `H4-1`, `decode_deferred_findings` returns `{"findings":[]}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC34: Given F with 2000 Unicode scalars in claim and contract `H4-1`,
+      `decode_deferred_findings` returns `accepted = true`. Boundaries: none.
+      (D-71; former AC2).
+
+- [ ] AC35: Given F with whitespace-only claim, `decode_deferred_findings`
+      returns `{"code":"blank-field", "index":0, "field":"claim"}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC36: Given F with unknown `fix` field, `decode_deferred_findings`
+      returns `{"code":"unknown-field", "index":0, "field":"fix"}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC37: Given 101 copies of F, `decode_deferred_findings` returns
+      `{"code":"too-many-findings", "limit":100, "actual":101}`. Boundaries:
+      none. (D-71; former AC2).
+
+- [ ] AC38: Given F with 2001-scalar claim, `decode_deferred_findings` returns
+      `{"code":"field-too-long", "index":0, "field":"claim", "limit":2000}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC39: Given F with line 9007199254740992, `decode_deferred_findings`
+      returns `{"code":"invalid-line", "index":0, "field":"line", "min":1,
+      "max":9007199254740991}`. Boundaries: none. (D-71; former AC2).
+
+- [ ] AC40: Given literal empty findings envelope and recorded contract
+      `H4-1`, `decode_minimalism_findings` returns `{"findings":[]}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC41: Given F with 2000 Unicode scalars in claim and contract `H4-1`,
+      `decode_minimalism_findings` returns `accepted = true`. Boundaries:
+      none. (D-71; former AC2).
+
+- [ ] AC42: Given F with whitespace-only claim, `decode_minimalism_findings`
+      returns `{"code":"blank-field", "index":0, "field":"claim"}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC43: Given F with unknown `fix` field, `decode_minimalism_findings`
+      returns `{"code":"unknown-field", "index":0, "field":"fix"}`.
+      Boundaries: none. (D-71; former AC2).
+
+- [ ] AC44: Given 101 copies of F, `decode_minimalism_findings` returns
+      `{"code":"too-many-findings", "limit":100, "actual":101}`. Boundaries:
+      none. (D-71; former AC2).
+
+- [ ] AC45: Given F with 2001-scalar claim, `decode_minimalism_findings`
+      returns `{"code":"field-too-long", "index":0, "field":"claim",
+      "limit":2000}`. Boundaries: none. (D-71; former AC2).
+
+- [ ] AC46: Given F with line 9007199254740992, `decode_minimalism_findings`
+      returns `{"code":"invalid-line", "index":0, "field":"line", "min":1,
+      "max":9007199254740991}`. Boundaries: none. (D-71; former AC2).
+
+- [ ] AC47: Given byte budget `8192` supplied by admitted-roster limits and a
+      stream of 8193 bytes, `read_settlement_envelope` returns
+      `{"code":"settlement-too-large", "limit":8192}`. Boundaries: input
+      stream: fixed chunks, stop at cap plus one. (D-71; former AC2).
+
+- [ ] AC48: Given valid 8192-byte envelope and supplied byte budget `8192`,
+      `read_settlement_envelope` returns `accepted_bytes = 8192`. Boundaries:
+      input stream: fixed chunks. (D-71; former AC2).
+
+- [ ] AC49: Given committed empty original raw bytes `{"findings":[]}` under
+      H4-1, `open_original` returns `raw_bytes = "{\"findings\":[]}"`.
+      Boundaries: filesystem: committed raw bytes. (D-71; H4; former AC2).
+
+- [ ] AC50: Given committed roster `["A", "B"]`, empty successful A, B
+      `pending`, `verify_participation` returns
+      `{"code":"incomplete-participation", "voice":"B", "state":"pending"}`.
+      Boundaries: none. (D-70, D-72; former AC3;
+      `cadence-core/bin/lib/adjudication-record.mjs:351`,
       `cadence-core/bin/lib/adjudication-record.mjs:413`,
       `.planning/ROADMAP.md:807`).
 
-- [ ] AC4: In an isolated evidence fixture, settlement with an invented
-      hex-shaped fix ID, a blob/tree ID, ambiguous ID, unreviewed citation,
-      wrong material side/line identity or fabricated counter-evidence refuses.
-      A real resolved fix and valid material references pass mechanical checks.
-      Before/after and reopened state show no refused settlement cleared a gate
-      or removed a queued finding; failed persistence cannot acknowledge a
-      successful settlement. Inject failure within the successful settlement/
-      gate/queue transaction and after commit before acknowledgment: reopened
-      state is wholly pending or has the valid settlement and its consequences,
-      never a cleared gate or suppressed queue without that settlement
-      (`cadence-core/bin/lib/adjudication-record.mjs:438`,
+- [ ] AC51: Given committed roster `["A", "B"]`, empty successful A, B
+      `interrupted`, `verify_participation` returns
+      `{"code":"incomplete-participation", "voice":"B",
+      "state":"interrupted"}`. Boundaries: none. (D-70, D-72; former AC3).
+
+- [ ] AC52: Given committed roster `["A", "B"]`, empty successful A, B
+      `uncertain`, `verify_participation` returns
+      `{"code":"incomplete-participation", "voice":"B", "state":"uncertain"}`.
+      Boundaries: none. (D-70, D-72; former AC3).
+
+- [ ] AC53: Given committed empty-success A and terminal failed B, submitted
+      roster `["A"]`, `verify_participation` returns
+      `{"code":"failed-required-voice", "voice":"B"}`. Boundaries: none.
+      (D-72; former AC3).
+
+- [ ] AC54: Given committed successful empty A and B, matching submitted
+      roster, `verify_participation` returns `{"successful_empty":["A", "B"],
+      "failed":[]}`. Boundaries: none. (D-72; former AC3).
+
+- [ ] AC55: Given committed voice A and submitted invented voice C,
+      `verify_participation` returns `{"code":"unknown-voice", "voice":"C"}`.
+      Boundaries: none. (D-72; former AC3).
+
+- [ ] AC56: Given committed A observed model unknown and submitted claimed
+      model `model-A`, `verify_participation` returns
+      `{"code":"unobserved-model", "voice":"A", "claimed":"model-A"}`.
+      Boundaries: none. (D-72; former AC3).
+
+- [ ] AC57: Given committed F at `o1:0` and submitted `claim` changed by one
+      character, `match_original` returns `{"code":"original-mismatch",
+      "finding":"o1:0", "field":"claim"}`. Boundaries: none. (D-72; former
+      AC3).
+
+- [ ] AC58: Given committed F at `o1:0` and submitted `failure_scenario`
+      changed by one character, `match_original` returns
+      `{"code":"original-mismatch", "finding":"o1:0",
+      "field":"failure_scenario"}`. Boundaries: none. (D-72; former AC3).
+
+- [ ] AC59: Given committed F at `o1:0`, caller copy and ruling both claim
+      `Fabricated`, `match_original` returns `{"code":"original-mismatch",
+      "finding":"o1:0", "field":"claim"}`. Boundaries: none. (D-70, D-72;
+      former AC3).
+
+- [ ] AC60: Given committed findings `["o1:0", "o1:1"]` and ruling only for
+      `o1:0`, `ruling_coverage` returns `{"code":"missing-ruling",
+      "finding":"o1:1"}`. Boundaries: none. (D-72; former AC3).
+
+- [ ] AC61: Given committed `o1:0` and two rulings for `o1:0`,
+      `ruling_coverage` returns `{"code":"duplicate-ruling",
+      "finding":"o1:0"}`. Boundaries: none. (D-72; former AC3).
+
+- [ ] AC62: Given committed `a1/return1` and same-artifact `a2/return2`, with
+      a1 ruling naming return2, `match_ruling_origin` returns
+      `{"code":"host-return-mismatch", "attempt":"a1", "expected":"return1",
+      "actual":"return2"}`. Boundaries: none. (D-72; former AC3).
+
+- [ ] AC63: Given matching survived rulings from A/o1:0 and B/o2:0 for
+      identical F, `derive_convergence` returns `{"entries":["o1:0", "o2:0"],
+      "convergence":2}`. Boundaries: none. (D-72; former AC3).
+
+- [ ] AC64: Given three verified entries: survived high, downgraded low and
+      refuted high, `ruling_counts` returns `{"survived":1, "downgraded":1,
+      "refuted":1}`. Boundaries: none. (D-72; former AC3).
+
+- [ ] AC65: Given committed F, pending gate, queued f1 and a claim-mismatched
+      ruling, `settle_review` returns `{"code":"original-mismatch",
+      "finding":"o1:0", "field":"claim"}`. Boundaries: filesystem: committed
+      fixture, forbid original/gate/queue writes. (D-70, D-72; former AC3).
+
+- [ ] AC66: Given supplied fix ID `abc123` and Git observation `missing`,
+      `resolve_fix` returns `{"code":"fix-not-found", "fix":"abc123"}`.
+      Boundaries: subprocess: fixed Git resolution/type result; filesystem:
+      retained-evidence writes stubbed. (D-73; former AC4;
+      `cadence-core/bin/lib/adjudication-record.mjs:438`,
       `cadence-core/bin/planning/adjudication.mjs:90`,
       `.planning/ROADMAP.md:814`, `.planning/ROADMAP.md:820`).
 
-- [ ] AC5: Consume phase-9-produced range, saved diff-file, rename/deletion and
-      never-committed snapshot manifests, then remove/change working files and
-      reopen. Each finding remains visible with exact originals and an explicit
-      base/head/snapshot
-      side; valid retained base/snapshot lines remain inspectable and can be
-      mechanically verified. Verify a valid retained supporting/counter-citation
-      outside primary changed paths, including evidence acquired later through
-      H2; original-view and later-evidence provenance stay distinct. A source
-      line cannot be replaced by the diff file's line. Deliberately unavailable
-      retained material leaves the finding visible as unverified and cannot
-      silently clear settlement
-      (`cadence-core/bin/planning/adjudication.mjs:63`,
+- [ ] AC67: Given supplied fix ID `abc123` and Git observation `blob`,
+      `resolve_fix` returns `{"code":"fix-not-commit", "fix":"abc123"}`.
+      Boundaries: subprocess: fixed Git resolution/type result; filesystem:
+      retained-evidence writes stubbed. (D-73; former AC4).
+
+- [ ] AC68: Given supplied fix ID `abc123` and Git observation `tree`,
+      `resolve_fix` returns `{"code":"fix-not-commit", "fix":"abc123"}`.
+      Boundaries: subprocess: fixed Git resolution/type result; filesystem:
+      retained-evidence writes stubbed. (D-73; former AC4).
+
+- [ ] AC69: Given supplied fix ID `abc123` and Git observation `ambiguous`,
+      `resolve_fix` returns `{"code":"fix-ambiguous", "fix":"abc123"}`.
+      Boundaries: subprocess: fixed Git resolution/type result; filesystem:
+      retained-evidence writes stubbed. (D-73; former AC4).
+
+- [ ] AC70: Given fix ID `abc123` with unambiguous commit observation
+      `0123456789012345678901234567890123456789`, `resolve_fix` returns
+      `{"commit":"0123456789012345678901234567890123456789"}`. Boundaries:
+      subprocess: fixed commit resolution and evidence bytes; filesystem:
+      retained-evidence writes. (D-73; former AC4).
+
+- [ ] AC71: Given committed source mapping `e1/base/2` and unreviewed entry
+      e9, `verify_citation` returns `{"code":"unreviewed-citation",
+      "finding":"o1:0", "field":"entry"}`. Boundaries: none. (D-73; former
+      AC4).
+
+- [ ] AC72: Given committed source mapping `e1/base/2` and e1 head instead of
+      base, `verify_citation` returns `{"code":"citation-side-mismatch",
+      "finding":"o1:0", "field":"side"}`. Boundaries: none. (D-73; former
+      AC4).
+
+- [ ] AC73: Given committed source mapping `e1/base/2` and e1 line 3 instead
+      of mapped line 2, `verify_citation` returns
+      `{"code":"citation-line-mismatch", "finding":"o1:0", "field":"line"}`.
+      Boundaries: none. (D-73; former AC4).
+
+- [ ] AC74: Given committed source mapping `e1/base/2` and counter-evidence
+      entry e9 absent from retained manifest, `verify_citation` returns
+      `{"code":"missing-counter-evidence", "finding":"o1:0",
+      "field":"entry"}`. Boundaries: none. (D-73; former AC4).
+
+- [ ] AC75: Given valid literal dispositions for `f1`, with transaction
+      failure before commit, `settle_review` returns
+      `{"code":"settlement-write-failed", "fire":"f1", "acknowledged":false}`.
+      Boundaries: filesystem: fail conditional commit; clock: `100`. (D-72;
+      former AC4).
+
+- [ ] AC76: Given valid f1 settlement and pre-commit write failure,
+      `settle_review` returns `durable_state = {"settlement":null,
+      "gate":"pending", "queue":["f1"]}`. Boundaries: filesystem: failure and
+      recovered durable image; clock: `100`. (D-72; former AC4).
+
+- [ ] AC77: Given valid f1 settlement, committed image and lost acknowledgment
+      replay, `settle_review` returns `{"settlement":"s1", "gate":"clear",
+      "queue":[], "replayed":true}`. Boundaries: filesystem: committed image;
+      clock: `100`. (D-72; former AC4).
+
+- [ ] AC78: Given committed e1/base/2 retaining literal source line `old` and
+      matching finding sidecar, `verify_citation` returns `{"finding":"o1:0",
+      "entry":"e1", "side":"base", "line":2, "verified":true}`. Boundaries:
+      filesystem: retained source bytes. (D-73; former AC4).
+
+- [ ] AC79: Given committed committed-range fixture F with `e1/head/1` and
+      current source absent, `finding_evidence` returns `{"finding":"o1:0",
+      "claim":"C", "failure_scenario":"S", "side":"head", "line":1,
+      "text":"old"}`. Boundaries: filesystem: retained `old\n`, deny
+      live-source reads; subprocess: forbid current HEAD. (D-73; H2; former
+      AC5; `cadence-core/bin/planning/adjudication.mjs:63`,
       `.planning/ROADMAP.md:775`, `.planning/ROADMAP.md:814`).
 
-- [ ] AC6: Consume actual phase-9 specialist admission/dispatch/return records
-      for file, frozen directory and resolved phase-range minimalism targets;
-      do not fabricate the specialist ledger. Each episode names the actual
-      retained target and membership, shows unchanged claim/scenario ranked by
-      deletion value, distinguishes a usable empty
-      list from failed review, and performs no deletion or PASS/FAIL transition.
-      The dispatch record shows its single specialist reviewer; the user retains
-      the deletion choice (`cadence-core/workflows/minimalism-review.md:98`,
+- [ ] AC80: Given committed saved-diff fixture F with `e1/base/1` and current
+      source absent, `finding_evidence` returns `{"finding":"o1:0",
+      "claim":"C", "failure_scenario":"S", "side":"base", "line":1,
+      "text":"old"}`. Boundaries: filesystem: retained `old\n`, deny
+      live-source reads; subprocess: forbid current HEAD. (D-73; H2; former
+      AC5).
+
+- [ ] AC81: Given committed rename fixture F with `e1/head/1` and current
+      source absent, `finding_evidence` returns `{"finding":"o1:0",
+      "claim":"C", "failure_scenario":"S", "side":"head", "line":1,
+      "text":"old"}`. Boundaries: filesystem: retained `old\n`, deny
+      live-source reads; subprocess: forbid current HEAD. (D-73; H2; former
+      AC5).
+
+- [ ] AC82: Given committed deletion fixture F with `e1/base/1` and current
+      source absent, `finding_evidence` returns `{"finding":"o1:0",
+      "claim":"C", "failure_scenario":"S", "side":"base", "line":1,
+      "text":"old"}`. Boundaries: filesystem: retained `old\n`, deny
+      live-source reads; subprocess: forbid current HEAD. (D-73; H2; former
+      AC5).
+
+- [ ] AC83: Given committed never-committed fixture F with `e1/snapshot/1` and
+      current source absent, `finding_evidence` returns `{"finding":"o1:0",
+      "claim":"C", "failure_scenario":"S", "side":"snapshot", "line":1,
+      "text":"old"}`. Boundaries: filesystem: retained `old\n`, deny
+      live-source reads; subprocess: forbid current HEAD. (D-73; H2; former
+      AC5).
+
+- [ ] AC84: Given committed supporting `e3` outside changed paths, retained
+      line `support`, provenance `original-view`, `verify_counter_citation`
+      returns `{"entry":"e3", "verified":true, "provenance":"original-view",
+      "attempt":"a1"}`. Boundaries: filesystem: retained supporting bytes.
+      (D-73; H2; former AC5).
+
+- [ ] AC85: Given committed supporting `e3` outside changed paths, retained
+      line `support`, provenance `later-evidence`, `verify_counter_citation`
+      returns `{"entry":"e3", "verified":true, "provenance":"later-evidence",
+      "attempt":null}`. Boundaries: filesystem: retained supporting bytes.
+      (D-73; H2; former AC5).
+
+- [ ] AC86: Given committed diff line 4 mapping to source base line 2,
+      citation substitutes line 4, `verify_citation` returns
+      `{"code":"citation-line-mismatch", "finding":"o1:0", "field":"line"}`.
+      Boundaries: none. (D-73; H2; former AC5).
+
+- [ ] AC87: Given committed F at e1/base/1 with retained e1 unreadable,
+      `finding_evidence` returns `{"finding":"o1:0", "claim":"C",
+      "failure_scenario":"S", "side":"base", "verified":false,
+      "diagnostic":"material-unavailable"}`. Boundaries: filesystem: fail
+      retained e1 read. (D-73; former AC5).
+
+- [ ] AC88: Given committed minimalism-file fixture with one base reviewer and
+      retained target m1, `verify_minimalism` returns `{"target":"m1",
+      "reviewers":["base"], "gate":null, "delete":[]}`. Boundaries: none.
+      (D-74; former AC6; `cadence-core/workflows/minimalism-review.md:98`,
       `cadence-core/workflows/minimalism-review.md:102`,
       `cadence-core/workflows/minimalism-review.md:126`).
 
-- [ ] AC7: Provider integration observations show FIRST trying configured
-      voices sequentially, stopping on a usable empty or nonempty return, and
-      trying local fallback when all fail. No-key, transport, HTTP, malformed
-      result and fallback failure each leave exactly one durable terminal
-      attempt outcome; restart/replay neither duplicates closure nor converts
-      failure into an empty clean review (`.planning/ROADMAP.md:768`,
+- [ ] AC89: Given committed minimalism-directory fixture with one base
+      reviewer and retained target m1, `verify_minimalism` returns
+      `{"target":"m1", "reviewers":["base"], "gate":null, "delete":[]}`.
+      Boundaries: none. (D-74; former AC6).
+
+- [ ] AC90: Given committed minimalism-phase-range fixture with one base
+      reviewer and retained target m1, `verify_minimalism` returns
+      `{"target":"m1", "reviewers":["base"], "gate":null, "delete":[]}`.
+      Boundaries: none. (D-74; former AC6).
+
+- [ ] AC91: Given committed low `o1:0` claim `L`/scenario `Keep L` and high
+      `o1:1` claim `H`/scenario `Keep H`, `minimalism_view` returns
+      `[{"id":"o1:1", "claim":"H", "failure_scenario":"Keep H"}, {"id":"o1:0",
+      "claim":"L", "failure_scenario":"Keep L"}]`. Boundaries: none. (D-74;
+      former AC6).
+
+- [ ] AC92: Given committed successful empty minimalism return,
+      `minimalism_view` returns `{"state":"usable", "findings":[],
+      "verdict":null, "deletion_choice":"human"}`. Boundaries: none. (D-74;
+      former AC6).
+
+- [ ] AC93: Given committed failed minimalism attempt, `minimalism_view`
+      returns `{"state":"failed", "findings":null, "verdict":null,
+      "deletion_choice":"human"}`. Boundaries: none. (D-74; former AC6).
+
+- [ ] AC94: Given committed directory target m1 with retained members
+      `["a.rs"]` and current membership `["b.rs"]`, `minimalism_target_view`
+      returns `{"target":"m1", "members":["a.rs"]}`. Boundaries: filesystem:
+      committed directory fixture, forbid current listing. (D-74; former AC6).
+
+- [ ] AC95: Given admitted attempt `a1` and credential absent,
+      `provider_attempt` returns `{"attempt":"a1", "state":"failed",
+      "reason":"no-key", "findings":null}`. Boundaries:
+      environment/filesystem: fixed credentials and lifecycle state; network:
+      fixed response/error; subprocess: fixed fallback result; clock: `100`.
+      (D-75; former AC7; `.planning/ROADMAP.md:768`,
       `.planning/ROADMAP.md:783`, `.planning/ROADMAP.md:829`).
 
-- [ ] AC8: Controlled provider fixtures establish environment-before-file key
-      resolution, credential-safe outbound payloads/diagnostics, no request
-      on over-cap input, bounded response accumulation, and a bounded outer
-      deadline that produces a saved failure. Compare the recorded transmitted
-      view and line mapping with the actual payload; removed material cannot
-      count as reviewed (`cadence-core/bin/review-provider.mjs:275`,
+- [ ] AC96: Given admitted attempt `a1` and transport connection failure,
+      `provider_attempt` returns `{"attempt":"a1", "state":"failed",
+      "reason":"transport", "findings":null}`. Boundaries:
+      environment/filesystem: fixed credentials and lifecycle state; network:
+      fixed response/error; subprocess: fixed fallback result; clock: `100`.
+      (D-75; former AC7).
+
+- [ ] AC97: Given admitted attempt `a1` and HTTP 503 without usage,
+      `provider_attempt` returns `{"attempt":"a1", "state":"failed",
+      "reason":"http-503", "findings":null}`. Boundaries:
+      environment/filesystem: fixed credentials and lifecycle state; network:
+      fixed response/error; subprocess: fixed fallback result; clock: `100`.
+      (D-75; former AC7).
+
+- [ ] AC98: Given admitted attempt `a1` and HTTP 200 malformed JSON,
+      `provider_attempt` returns `{"attempt":"a1", "state":"failed",
+      "reason":"malformed-return", "findings":null}`. Boundaries:
+      environment/filesystem: fixed credentials and lifecycle state; network:
+      fixed response/error; subprocess: fixed fallback result; clock: `100`.
+      (D-75; former AC7).
+
+- [ ] AC99: Given admitted attempt `a1` and local fallback process failure,
+      `provider_attempt` returns `{"attempt":"a1", "state":"failed",
+      "reason":"fallback-failed", "findings":null}`. Boundaries:
+      environment/filesystem: fixed credentials and lifecycle state; network:
+      fixed response/error; subprocess: fixed fallback result; clock: `100`.
+      (D-75; former AC7).
+
+- [ ] AC100: Given committed terminal failed a1 and identical replay,
+      `provider_attempt` returns `{"attempt":"a1", "state":"failed",
+      "replayed":true}`. Boundaries: filesystem: committed lifecycle image,
+      forbid new terminal write; network/subprocess: forbid dispatch; clock:
+      `100`. (D-75; former AC7).
+
+- [ ] AC101: Given a1 with HTTP 200 bytes `{"findings":[]}`,
+      `provider_attempt` returns `{"attempt":"a1", "state":"accepted",
+      "findings":[]}`. Boundaries: network: fixed bytes; filesystem: committed
+      a1 and successful lifecycle writes; environment: fixed credential;
+      clock: `100`. (D-75; former AC7).
+
+- [ ] AC102: Given environment key `env-key` and credential file value
+      `file-key`, `resolve_credential` returns `"env-key"`. Boundaries:
+      environment: fixed key; filesystem: forbid file read. (D-75; former AC8;
+      `cadence-core/bin/review-provider.mjs:275`,
       `cadence-core/bin/review-provider.mjs:480`,
       `cadence-core/bin/review-provider.mjs:504`,
       `cadence-core/bin/review-provider.mjs:727`,
       `cadence-core/references/review-cross-model.md:120`).
 
-- [ ] AC9: GH-237/GH-240 usage fixtures exercise invalid candidate plus valid
-      thoughts and the reverse, absent components, valid zeros, fractions,
-      negative/nonfinite/out-of-bound values and checked-sum overflow. Invalid
-      or overflowed normalized output is unavailable, never a partial total or
-      zero; valid independent input usage survives. Assert and document the
-      provider-specific omission rule and bounded sanitized raw evidence
-      (`cadence-core/bin/review-provider.mjs:988`,
-      `cadence-core/bin/review-provider.mjs:1142`, `.planning/ROADMAP.md:847`).
+- [ ] AC103: Given absent environment key and credential file value
+      `file-key`, `resolve_credential` returns `"file-key"`. Boundaries:
+      environment: absent key; filesystem: fixed file bytes. (D-75; former
+      AC8).
 
-- [ ] AC10: GH-239 fixtures return non-2xx responses with valid, partial,
-      invalid and absent usage. The saved failed attempt retains exactly the
-      available validated counts and sanitized bounded evidence before refusing
-      the review; no findings-success or second closure is recorded
-      (`cadence-core/bin/review-provider.mjs:1335`,
+- [ ] AC104: Given entry e1 lines `["public", "token=secret"]` and credential
+      `secret`, `fence_payload` returns `{"text":"public\n[REDACTED]",
+      "mapping":[{"view_line":1, "entry":"e1", "source_line":1}],
+      "removed":[{"entry":"e1", "source_line":2}]}`. Boundaries: none. (D-75;
+      former AC8).
+
+- [ ] AC105: Given text `Authorization: secret failed`, secret `secret` and
+      byte budget 128, `sanitize_diagnostic` returns
+      `"Authorization: [REDACTED] failed"`. Boundaries: none. (D-75; former
+      AC8).
+
+- [ ] AC106: Given payload of 1025 bytes and supplied cap 1024,
+      `send_provider_request` returns `{"code":"payload-too-large",
+      "limit":1024, "actual":1025}`. Boundaries: network: forbid requests;
+      clock: `100`. (D-75; former AC8).
+
+- [ ] AC107: Given 4,194,305 response bytes and cap 4,194,304,
+      `read_provider_response` returns `{"code":"return-too-large",
+      "limit":4194304}`. Boundaries: network: fixed response chunks, stop at
+      cap plus one; clock: `100`. (D-75; former AC8).
+
+- [ ] AC108: Given a1, start time 100, outer deadline 110, and response still
+      unavailable at 110, `provider_attempt` returns `{"attempt":"a1",
+      "state":"failed", "reason":"deadline", "findings":null}`. Boundaries:
+      clock: advance 100 to 110; network: stalled response; filesystem:
+      successful failure commit; environment: fixed credential. (D-75; former
+      AC8).
+
+- [ ] AC109: Given fenced view retains e1 line 1 but citation names removed
+      line 2, `verify_provider_citation` returns
+      `{"code":"unreviewed-citation", "finding":"o1:0", "field":"line"}`.
+      Boundaries: none. (D-73, D-75; former AC8).
+
+- [ ] AC110: Given value `0` and numeric bound 9007199254740991, `token_count`
+      returns `{"state":"valid", "value":0}`. Boundaries: none. (D-76; GH-237,
+      GH-240; former AC9; `cadence-core/bin/review-provider.mjs:988`,
+      `cadence-core/bin/review-provider.mjs:1142`,
+      `.planning/ROADMAP.md:847`).
+
+- [ ] AC111: Given value `7` and numeric bound 9007199254740991, `token_count`
+      returns `{"state":"valid", "value":7}`. Boundaries: none. (D-76; GH-237,
+      GH-240; former AC9).
+
+- [ ] AC112: Given value `absent` and numeric bound 9007199254740991,
+      `token_count` returns `{"state":"absent"}`. Boundaries: none. (D-76;
+      GH-237, GH-240; former AC9).
+
+- [ ] AC113: Given value `1.5` and numeric bound 9007199254740991,
+      `token_count` returns `{"state":"invalid"}`. Boundaries: none. (D-76;
+      GH-237, GH-240; former AC9).
+
+- [ ] AC114: Given value `-1` and numeric bound 9007199254740991,
+      `token_count` returns `{"state":"invalid"}`. Boundaries: none. (D-76;
+      GH-237, GH-240; former AC9).
+
+- [ ] AC115: Given value `NaN` and numeric bound 9007199254740991,
+      `token_count` returns `{"state":"invalid"}`. Boundaries: none. (D-76;
+      GH-237, GH-240; former AC9).
+
+- [ ] AC116: Given value `Infinity` and numeric bound 9007199254740991,
+      `token_count` returns `{"state":"invalid"}`. Boundaries: none. (D-76;
+      GH-237, GH-240; former AC9).
+
+- [ ] AC117: Given value `9007199254740992` and numeric bound
+      9007199254740991, `token_count` returns `{"state":"invalid"}`.
+      Boundaries: none. (D-76; GH-237, GH-240; former AC9).
+
+- [ ] AC118: Given input usage 7, candidate invalid, thoughts 3, bound
+      9007199254740991 and omission policy `unavailable`,
+      `normalize_gemini_usage` returns `{"input":7, "output":null,
+      "reason":"invalid-component"}`. Boundaries: none. (D-76; GH-237, GH-240;
+      former AC9).
+
+- [ ] AC119: Given input usage 7, candidate 3, thoughts invalid, bound
+      9007199254740991 and omission policy `unavailable`,
+      `normalize_gemini_usage` returns `{"input":7, "output":null,
+      "reason":"invalid-component"}`. Boundaries: none. (D-76; GH-237, GH-240;
+      former AC9).
+
+- [ ] AC120: Given input usage 7, candidate 0, thoughts 0, bound
+      9007199254740991 and omission policy `unavailable`,
+      `normalize_gemini_usage` returns `{"input":7, "output":0,
+      "reason":null}`. Boundaries: none. (D-76; GH-237, GH-240; former AC9).
+
+- [ ] AC121: Given input usage 7, candidate absent, thoughts absent, bound
+      9007199254740991 and omission policy `unavailable`,
+      `normalize_gemini_usage` returns `{"input":7, "output":null,
+      "reason":"absent-components"}`. Boundaries: none. (D-76; GH-237, GH-240;
+      former AC9).
+
+- [ ] AC122: Given input usage 7, candidate 3, thoughts absent, bound
+      9007199254740991 and omission policy `unavailable`,
+      `normalize_gemini_usage` returns `{"input":7, "output":null,
+      "reason":"absent-component"}`. Boundaries: none. (D-76; GH-237, GH-240;
+      former AC9).
+
+- [ ] AC123: Given input usage 7, candidate absent, thoughts 3, bound
+      9007199254740991 and omission policy `unavailable`,
+      `normalize_gemini_usage` returns `{"input":7, "output":null,
+      "reason":"absent-component"}`. Boundaries: none. (D-76; GH-237, GH-240;
+      former AC9).
+
+- [ ] AC124: Given input usage 7, candidate 9007199254740991, thoughts 1,
+      bound 9007199254740991 and omission policy `unavailable`,
+      `normalize_gemini_usage` returns `{"input":7, "output":null,
+      "reason":"overflow"}`. Boundaries: none. (D-76; GH-237, GH-240; former
+      AC9).
+
+- [ ] AC125: Given raw `secret abcdef`, secret `secret` and sanitized byte cap
+      12, `sanitize_usage_evidence` returns `"[REDACTED] a"`. Boundaries:
+      none. (D-76; former AC9).
+
+- [ ] AC126: Given HTTP 429 with input 7/output 3,
+      `classify_provider_response` returns `failure.usage = {"input":7,
+      "output":3}`. Boundaries: none. (D-77; GH-239; former AC10;
+      `cadence-core/bin/review-provider.mjs:1335`,
       `cadence-core/bin/review-provider.mjs:1350`).
 
-- [ ] AC11: Consume phase 9's deferred producer and same all-home enumerator
-      across later-session carry and restart. Empty/malformed/unreadable siblings,
-      an unrelated fire/artifact/round and forged settlement keep the member
-      visible with diagnostics. A linked round-two review over new fix material
-      and old blockers does not automatically suppress round one, even if empty.
-      Verify each linked parent disposition and commit D-79's explicit parent
-      transition: the exact round-one member is now settled, both rounds'
-      originals remain, and unresolved new child findings remain visible.
-      Forged parent links and unaddressed blockers refuse parent clearance.
-      Carry preserves originals, voices, material, selections, lineage,
-      allowance and receipts; remove the source home before reopening solely
-      from carried evidence. A conflicting destination refuses before
-      evidence is lost (`crates/cadence/src/next_action/observations.rs:192`,
+- [ ] AC127: Given HTTP 429 with input 7/output absent,
+      `classify_provider_response` returns `failure.usage = {"input":7,
+      "output":null}`. Boundaries: none. (D-77; GH-239; former AC10).
+
+- [ ] AC128: Given HTTP 429 with input invalid/output invalid,
+      `classify_provider_response` returns `failure.usage = {"input":null,
+      "output":null}`. Boundaries: none. (D-77; GH-239; former AC10).
+
+- [ ] AC129: Given HTTP 429 with absent usage, `classify_provider_response`
+      returns `failure.usage = {"input":null, "output":null}`. Boundaries:
+      none. (D-77; GH-239; former AC10).
+
+- [ ] AC130: Given HTTP 429, valid usage 7/3 and body findings `[F]`,
+      `classify_provider_response` returns `outcome = {"state":"failed",
+      "reason":"http-429", "findings":null}`. Boundaries: none. (D-77; GH-239;
+      former AC10).
+
+- [ ] AC131: Given HTTP 503 body `secret failure`, secret `secret` and
+      evidence cap 64, `classify_provider_response` returns `failure.evidence
+      = "[REDACTED] failure"`. Boundaries: none. (D-77; GH-239; former AC10).
+
+- [ ] AC132: Given committed all-home member `f1` and sibling `empty`,
+      `filter_deferred` returns `{"visible":["f1"],
+      "diagnostics":["empty-settlement"]}`. Boundaries: filesystem: committed
+      member/evidence and specified sibling observation. (D-78; former AC11;
+      `crates/cadence/src/next_action/observations.rs:192`,
       `cadence-core/bin/planning/core.mjs:1042`, `.planning/ROADMAP.md:822`).
 
-- [ ] AC12: For a blocking and a later-session deferred parent, invoke D-79's
-      combined re-arm operation. Inject crashes between the logical allowance
-      consumption and child admission mutations, exercising both mutation
-      orders before transaction commit, and after combined commit before
-      dispatch/acknowledgment. Restart and inspect allowance, replay key, parent
-      lineage, child pending record and dispatch IDs: pre-commit failure exposes
-      neither change; committed recovery exposes spent allowance plus exactly
-      one recoverable child. No dispatch is exposed by a failed transaction.
-      Replay and race requests: all committed retries return the same child and
-      attempt IDs, never a second spend or fire. Restarting only after both
-      writes is insufficient evidence for this criterion. Restart before return
-      and carry do not restore the allowance; recover uncertain sent work before
-      redispatch. Re-admitting the same parent findings under a new occurrence
-      label/home resolves the same spent root obligation or refuses.
-      Round-two failure/unusable return stops for human choice, a third automatic
-      fire refuses, and an independent fire retains its own allowance. A scoped
-      reasoned override survives restart without becoming a fix or refutation;
-      mismatched round, finding reference or fabricated evidence cannot use it
-      (`crates/cadence/src/pause_service_tests.rs:713`,
-      `cadence-core/references/triage-gate.md:138`,
-      `crates/cadence/src/evidence/overrides.rs:35`, `.planning/ROADMAP.md:825`).
+- [ ] AC133: Given committed all-home member `f1` and sibling `malformed`,
+      `filter_deferred` returns `{"visible":["f1"],
+      "diagnostics":["malformed-settlement"]}`. Boundaries: filesystem:
+      committed member/evidence and specified sibling observation. (D-78;
+      former AC11).
 
-- [ ] AC13: Filing fixtures bind human accept/decline to verified candidates,
-      create nothing for unanswered/declined candidates, deduplicate repeated
-      exact fingerprints and suppress tracker hits. Timeout after remote create
-      and crash before local confirmation recover an uncertain intent; a retry
-      reconciles instead of duplicating, including an initially stale index
-      miss. Declines remain absent from recall and available to explicit lookup
-      (`crates/cadence/src/store/items.rs:15`,
+- [ ] AC134: Given committed all-home member `f1` and sibling `unreadable`,
+      `filter_deferred` returns `{"visible":["f1"],
+      "diagnostics":["unreadable-settlement"]}`. Boundaries: filesystem:
+      committed member/evidence and specified sibling observation. (D-78;
+      former AC11).
+
+- [ ] AC135: Given committed all-home member `f1` and sibling `wrong-fire`,
+      `filter_deferred` returns `{"visible":["f1"],
+      "diagnostics":["settlement-identity-mismatch"]}`. Boundaries:
+      filesystem: committed member/evidence and specified sibling observation.
+      (D-78; former AC11).
+
+- [ ] AC136: Given committed all-home member `f1` and sibling
+      `wrong-artifact`, `filter_deferred` returns `{"visible":["f1"],
+      "diagnostics":["settlement-identity-mismatch"]}`. Boundaries:
+      filesystem: committed member/evidence and specified sibling observation.
+      (D-78; former AC11).
+
+- [ ] AC137: Given committed all-home member `f1` and sibling `wrong-round`,
+      `filter_deferred` returns `{"visible":["f1"],
+      "diagnostics":["settlement-identity-mismatch"]}`. Boundaries:
+      filesystem: committed member/evidence and specified sibling observation.
+      (D-78; former AC11).
+
+- [ ] AC138: Given committed all-home member `f1` and sibling `forged`,
+      `filter_deferred` returns `{"visible":["f1"],
+      "diagnostics":["invalid-settlement"]}`. Boundaries: filesystem:
+      committed member/evidence and specified sibling observation. (D-78;
+      former AC11).
+
+- [ ] AC139: Given committed parent f1 and linked empty round-two child f2
+      without parent settlement, `filter_deferred` returns `{"visible":["f1"],
+      "diagnostics":["parent-unsettled"]}`. Boundaries: none. (D-78, D-79;
+      former AC11).
+
+- [ ] AC140: Given committed f1 blockers and verified literal parent
+      dispositions, with unresolved child f2, `settle_parent` returns
+      `{"settled":["f1"], "visible":["f2"]}`. Boundaries: filesystem: atomic
+      settlement/gate/queue commit; clock: `100`. (D-78, D-79; former AC11).
+
+- [ ] AC141: Given committed f1/f2 lineage and forged parent link,
+      `verify_parent_transition` returns `{"code":"invalid-parent-link",
+      "parent":"f1", "child":"f2"}`. Boundaries: none. (D-79; former AC11).
+
+- [ ] AC142: Given committed f1/f2 lineage and unaddressed blocker o1:0,
+      `verify_parent_transition` returns
+      `{"code":"missing-parent-disposition", "parent":"f1", "child":"f2"}`.
+      Boundaries: none. (D-79; former AC11).
+
+- [ ] AC143: Given committed complete evidence closure C and empty
+      destination, `carry_evidence` returns `{"originals":["o1", "o2"],
+      "voices":["A", "B"], "material":["e1", "e2"], "selections":["v1:2"],
+      "lineage":{"parent":"f1", "child":"f2", "root":"root1"},
+      "allowance":"spent", "receipts":["s1", "override1"]}`.
+      Boundaries: filesystem: source fixture and successful destination
+      durable writes. (D-78, D-79; former AC11).
+
+- [ ] AC144: Given committed carried closure C and deleted original home,
+      `read_carried_evidence` returns `{"originals":["o1", "o2"],
+      "material":["e1", "e2"], "root":"root1", "allowance":"spent"}`.
+      Boundaries: filesystem: carried fixture only, original home absent.
+      (D-78; former AC11).
+
+- [ ] AC145: Given committed C and destination o1 with conflicting bytes,
+      `carry_evidence` returns `{"code":"carry-conflict", "record":"o1"}`.
+      Boundaries: filesystem: conflicting destination, forbid overwrite/source
+      removal. (D-78; former AC11).
+
+- [ ] AC146: Given committed parent f1 and child f2, literal valid parent
+      dispositions and failed combined commit, `settle_parent` returns
+      `durable_state = {"parent":"f1", "settlement":null, "visible":["f1",
+      "f2"]}`. Boundaries: filesystem: fail atomic parent transition; clock:
+      `100`. (D-78, D-79; former AC11).
+
+- [ ] AC147: Given committed blocking root1 with allowance 1 and selection
+      v1:2; failure between logical mutations in order `spend-then-admit`,
+      `rearm_review` returns `durable_state = {"allowance":1, "child":null,
+      "dispatch":null}`. Boundaries: filesystem: fail before combined commit
+      and expose durable image; clock: `100`. (D-79; former AC12;
+      `crates/cadence/src/pause_service_tests.rs:713`,
+      `cadence-core/references/triage-gate.md:138`,
+      `crates/cadence/src/evidence/overrides.rs:35`,
+      `.planning/ROADMAP.md:825`).
+
+- [ ] AC148: Given committed blocking root1 with allowance 1 and selection
+      v1:2; failure between logical mutations in order `admit-then-spend`,
+      `rearm_review` returns `durable_state = {"allowance":1, "child":null,
+      "dispatch":null}`. Boundaries: filesystem: fail before combined commit
+      and expose durable image; clock: `100`. (D-79; former AC12).
+
+- [ ] AC149: Given committed deferred root1 with allowance 1 and selection
+      v1:2; failure between logical mutations in order `spend-then-admit`,
+      `rearm_review` returns `durable_state = {"allowance":1, "child":null,
+      "dispatch":null}`. Boundaries: filesystem: fail before combined commit
+      and expose durable image; clock: `100`. (D-79; former AC12).
+
+- [ ] AC150: Given committed deferred root1 with allowance 1 and selection
+      v1:2; failure between logical mutations in order `admit-then-spend`,
+      `rearm_review` returns `durable_state = {"allowance":1, "child":null,
+      "dispatch":null}`. Boundaries: filesystem: fail before combined commit
+      and expose durable image; clock: `100`. (D-79; former AC12).
+
+- [ ] AC151: Given committed root1 and successful combined transaction with
+      acknowledgment lost, `rearm_review` returns `{"allowance":0,
+      "replay_key":"r1", "parent":"f1", "child":"f2", "round":2,
+      "state":"pending", "attempt":"a2"}`. Boundaries: filesystem: committed
+      image and replay; clock: `100`. (D-79; former AC12).
+
+- [ ] AC152: Given two identical requests r1 racing on root1 with allowance 1,
+      `rearm_review` returns `durable_state = {"allowance":0,
+      "children":["f2"], "attempts":["a2"]}`. Boundaries: filesystem:
+      conditional-write barrier; clock: `100`. (D-79; former AC12).
+
+- [ ] AC153: Given committed r1/f2/a2 and replay before the child return,
+      `rearm_review` returns `{"child":"f2", "attempt":"a2",
+      "replayed":true}`. Boundaries: filesystem: committed image; clock:
+      `100`. (D-79; former AC12).
+
+- [ ] AC154: Given carried committed root1 with spent allowance and a new
+      automatic request, `rearm_review` returns
+      `{"code":"allowance-exhausted", "root":"root1", "remaining":0}`.
+      Boundaries: filesystem: carried fixture; clock: `100`. (D-79; former
+      AC12).
+
+- [ ] AC155: Given committed f2/a2 whose host send is uncertain,
+      `recover_rearm_action` returns `{"action":"recover-observation",
+      "attempt":"a2", "dispatch":null}`. Boundaries: none. (D-79; former
+      AC12).
+
+- [ ] AC156: Given committed parent selection o1:0 under root1, resubmitted
+      with new occurrence and moved home, `repair_root` returns
+      `{"root":"root1", "allowance":"spent"}`. Boundaries: none. (D-79; former
+      AC12).
+
+- [ ] AC157: Given committed round-two child f2 with result `failed`,
+      `triage_next_action` returns `{"action":"human-choice",
+      "automatic_dispatch":null}`. Boundaries: none. (D-79; former AC12).
+
+- [ ] AC158: Given committed round-two child f2 with result `unusable`,
+      `triage_next_action` returns `{"action":"human-choice",
+      "automatic_dispatch":null}`. Boundaries: none. (D-79; former AC12).
+
+- [ ] AC159: Given committed root1 spent after round two and requested round
+      three, `rearm_review` returns `{"code":"allowance-exhausted",
+      "root":"root1", "remaining":0}`. Boundaries: filesystem: committed
+      fixture; clock: `100`. (D-79; former AC12).
+
+- [ ] AC160: Given independent initial fire f3 with no selected-parent
+      references, `repair_root` returns `{"root":"root3",
+      "allowance":"unspent"}`. Boundaries: none. (D-79; former AC12).
+
+- [ ] AC161: Given committed matching scoped receipt for o1:0 with reason
+      `Accepted risk`, round 1 and unresolved survived F, `verify_override`
+      returns `{"finding":"o1:0", "disposition":"survived",
+      "override":"Accepted risk", "fixed":false, "refuted":false}`.
+      Boundaries: none. (D-79; former AC12).
+
+- [ ] AC162: Given committed f1 and round 2 receipt for round 1,
+      `verify_override` returns `{"code":"override-round-mismatch",
+      "fire":"f1"}`. Boundaries: none. (D-79; former AC12).
+
+- [ ] AC163: Given committed f1 and receipt finding o9:0 absent from
+      originals, `verify_override` returns
+      `{"code":"override-finding-mismatch", "fire":"f1"}`. Boundaries: none.
+      (D-79; former AC12).
+
+- [ ] AC164: Given committed f1 and fabricated relied-on evidence e9,
+      `verify_override` returns `{"code":"missing-counter-evidence",
+      "fire":"f1"}`. Boundaries: none. (D-79; former AC12).
+
+- [ ] AC165: Given committed root1 with allowance 1 and stale selection
+      revision 1 against saved revision 2, `rearm_review` returns
+      `{"code":"stale-selection-revision", "expected":2, "actual":1}`.
+      Boundaries: filesystem: committed fixture, forbid writes; clock: `100`.
+      (D-79; former AC12).
+
+- [ ] AC166: Given verified candidate c1 and exact saved human choice
+      `unanswered`, `filing_action` returns `{"action":"wait-for-human",
+      "create":false}`. Boundaries: none. (D-80; former AC13;
+      `crates/cadence/src/store/items.rs:15`,
       `cadence-core/bin/issue-filing.mjs:718`,
       `cadence-core/bin/issue-filing.mjs:802`, `.planning/ROADMAP.md:833`).
 
-- [ ] AC14: GH-250 fixtures make the legacy FILED mirror unavailable while
-      native state is valid: tracker lookup still runs and a confirmed hit
-      suppresses create, with the mirror problem visible. A corrupt authoritative
-      native store refuses the filing operation; a failed local confirmation
-      never reports a fully recorded successful filing
-      (`cadence-core/bin/issue-filing.mjs:735`,
+- [ ] AC167: Given verified candidate c1 and exact saved human choice
+      `declined`, `filing_action` returns `{"action":"declined",
+      "create":false}`. Boundaries: none. (D-80; former AC13).
+
+- [ ] AC168: Given verified candidate c1 and exact saved human choice
+      `accepted`, `filing_action` returns `{"action":"lookup",
+      "create":false}`. Boundaries: none. (D-80; former AC13).
+
+- [ ] AC169: Given verified candidate c1 revision 2 and accepted answer for c1
+      revision 1, `bind_filing_choice` returns `{"code":"stale-filing-choice",
+      "candidate":"c1", "expected_revision":2, "actual_revision":1}`.
+      Boundaries: none. (D-80; former AC13).
+
+- [ ] AC170: Given two candidates with exact same file `a.rs` and claim `C`,
+      `deduplicate_candidates` returns `candidate_ids = ["c1"]`. Boundaries:
+      none. (D-80; former AC13).
+
+- [ ] AC171: Given accepted verified c1 and confirmed exact tracker hit issue
+      42, `filing_action` returns `{"action":"already-filed", "issue":42,
+      "create":false}`. Boundaries: none. (D-80; former AC13).
+
+- [ ] AC172: Given durable accepted intent i1/c1 and timeout after request
+      transmission, `create_filing` returns `{"intent":"i1",
+      "state":"uncertain", "issue":null}`. Boundaries: filesystem: durable
+      intent and uncertainty writes; network: timeout after send; clock:
+      `100`. (D-80; former AC13).
+
+- [ ] AC173: Given durable intent i1 with create sent and no local
+      confirmation, `recover_filing_action` returns `{"intent":"i1",
+      "action":"reconcile", "create":false}`. Boundaries: filesystem:
+      committed intent fixture. (D-80; former AC13).
+
+- [ ] AC174: Given uncertain intent i1 and initially stale tracker index miss,
+      `reconcile_filing` returns `{"intent":"i1", "state":"uncertain",
+      "create":false}`. Boundaries: network: fixed stale miss; filesystem:
+      uncertainty state; clock: `100`. (D-80; former AC13).
+
+- [ ] AC175: Given uncertain i1 with exact remote issue 42 found,
+      `reconcile_filing` returns `{"intent":"i1", "state":"confirmed",
+      "issue":42, "create":false}`. Boundaries: network: fixed exact hit;
+      filesystem: confirmation write; clock: `100`. (D-80; former AC13).
+
+- [ ] AC176: Given saved declined c1 and query mode `recall`,
+      `filing_evidence_view` returns `[]`. Boundaries: none. (D-80; former
+      AC13).
+
+- [ ] AC177: Given saved declined c1 and explicit lookup c1,
+      `filing_evidence_view` returns `{"candidate":"c1",
+      "choice":"declined"}`. Boundaries: none. (D-80; former AC13).
+
+- [ ] AC178: Given valid native c1, unavailable FILED mirror and remote exact
+      issue 42, `lookup_filing` returns `{"candidate":"c1", "issue":42,
+      "create":false, "diagnostics":["filed-mirror-unavailable"]}`.
+      Boundaries: filesystem: valid native fixture and denied mirror read;
+      network: fixed tracker hit. (D-81; GH-250; former AC14;
+      `cadence-core/bin/issue-filing.mjs:735`,
       `cadence-core/bin/issue-filing.mjs:763`, `.planning/ROADMAP.md:848`).
 
-- [ ] AC15: For each claimed forge, bounded lookup tests distinguish exact
-      title hits, complete misses, unavailable lookup, malformed responses and
-      page saturation. Live single-token, multiple-token, body-only and genuine
-      miss cases establish its search semantics. GitLab remains explicitly
-      unmeasured without its own observations, and an unmeasured miss cannot
-      override a confirmed local filing fact (GH-251;
-      `cadence-core/bin/lib/filing-decision.mjs:730`,
+- [ ] AC179: Given corrupt authoritative native store, `lookup_filing` returns
+      `{"code":"native-store-corrupt", "operation":"filing"}`. Boundaries:
+      filesystem: corrupt native image; network: forbid lookup/create. (D-81;
+      GH-250; former AC14).
+
+- [ ] AC180: Given remote issue 42 for durable intent i1 and local sync
+      failure, `confirm_filing` returns `{"code":"filing-confirmation-failed",
+      "intent":"i1", "issue":42, "state":"uncertain"}`. Boundaries:
+      filesystem: failed confirmation sync; clock: `100`. (D-81; GH-250;
+      former AC14).
+
+- [ ] AC181: Given a supplied forge search contract and bounded lookup
+      observation `exact title hit 42`, `classify_forge_lookup` returns
+      `{"state":"hit", "issue":42}`. Boundaries: none. (D-82; GH-251; former
+      AC15; `cadence-core/bin/lib/filing-decision.mjs:730`,
       `cadence-core/bin/lib/filing-decision.mjs:753`,
       `cadence-core/bin/issue-filing.mjs:659`, `.planning/ROADMAP.md:849`).
 
-- [ ] AC18: Drive the actual pause blocking/adjudicated continuation paths with
-      phase-9-produced dispatch/original records and phase-10 verification.
-      Low-only, empty and scoped-override cases clear only after the common
-      service accepts matching origin, full participation and disposition.
-      Try a bare legacy `AcceptedResult`, invented dispatch, changed claim,
-      invalid fix/counter-evidence and wrong-round override through pause itself:
-      each refuses clearance and survives reopen as visible unresolved evidence.
-      Reopen an outstanding old `fix`-shaped result: it remains historical and
-      unverified; inspect a linked new-review recovery without altering its
-      original bytes. Trace successful pause clearance to the same settlement
-      authority/transaction as AC4, not an alternate legacy branch.
+- [ ] AC182: Given a supplied forge search contract and bounded lookup
+      observation `complete measured miss`, `classify_forge_lookup` returns
+      `{"state":"miss", "complete":true}`. Boundaries: none. (D-82; GH-251;
+      former AC15).
 
-- [ ] AC19: Before any fix commit exists, triage an actual phase-9-produced
-      multi-finding fire with one selected-to-fix, one refuted and one unanswered
-      finding. Persist/query D-79's provisional view and required human choices,
-      restart, then drive the concrete fix-continuation adapter: it receives
-      only the selected IDs and their unchanged originals. Refuse invented
-      finding IDs and stale selection/answer revisions. This view cannot clear
-      the gate, suppress deferred work or create filing candidates. Record a
-      real fix and final verified dispositions against the same original IDs
-      and selection revision; only that later settlement may change those
-      consequences. No final fix ID is required to obtain the pre-fix list.
+- [ ] AC183: Given a supplied forge search contract and bounded lookup
+      observation `unavailable`, `classify_forge_lookup` returns
+      `{"state":"unavailable", "reason":"lookup-failed"}`. Boundaries: none.
+      (D-82; GH-251; former AC15).
+
+- [ ] AC184: Given a supplied forge search contract and bounded lookup
+      observation `malformed`, `classify_forge_lookup` returns
+      `{"state":"unavailable", "reason":"malformed-response"}`. Boundaries:
+      none. (D-82; GH-251; former AC15).
+
+- [ ] AC185: Given a supplied forge search contract and bounded lookup
+      observation `page limit saturated`, `classify_forge_lookup` returns
+      `{"state":"incomplete", "reason":"page-saturated"}`. Boundaries: none.
+      (D-82; GH-251; former AC15).
+
+- [ ] AC186: Given GitLab unmeasured empty lookup and confirmed local issue
+      42, `filing_action` returns `{"action":"already-filed", "issue":42,
+      "create":false}`. Boundaries: none. (D-82; GH-251; former AC15).
+
+- [ ] AC187: Given committed matching full-participation `low-only` fixture
+      and mechanically valid literal dispositions, `pause_settlement` returns
+      `{"fire":"f1", "clearance":"accepted", "settlement":"s1"}`. Boundaries:
+      filesystem: fixture and common atomic settlement writes; subprocess:
+      fixed evidence observations; clock: `100`. (D-70; former AC18).
+
+- [ ] AC188: Given committed matching full-participation `empty` fixture and
+      mechanically valid literal dispositions, `pause_settlement` returns
+      `{"fire":"f1", "clearance":"accepted", "settlement":"s1"}`. Boundaries:
+      filesystem: fixture and common atomic settlement writes; subprocess:
+      fixed evidence observations; clock: `100`. (D-70; former AC18).
+
+- [ ] AC189: Given committed matching full-participation `scoped-override`
+      fixture and mechanically valid literal dispositions, `pause_settlement`
+      returns `{"fire":"f1", "clearance":"accepted", "settlement":"s1"}`.
+      Boundaries: filesystem: fixture and common atomic settlement writes;
+      subprocess: fixed evidence observations; clock: `100`. (D-70; former
+      AC18).
+
+- [ ] AC190: Given committed unresolved f1 and bare legacy AcceptedResult,
+      `pause_settlement` returns `{"code":"missing-dispatch-origin",
+      "fire":"f1", "clearance":"refused"}`. Boundaries: filesystem: fixture,
+      forbid clearance/original writes; subprocess: fixed missing-fix
+      observation; clock: `100`. (D-70; former AC18).
+
+- [ ] AC191: Given committed unresolved f1 and invented dispatch a9,
+      `pause_settlement` returns `{"code":"unknown-attempt", "fire":"f1",
+      "clearance":"refused"}`. Boundaries: filesystem: fixture, forbid
+      clearance/original writes; subprocess: fixed missing-fix observation;
+      clock: `100`. (D-70; former AC18).
+
+- [ ] AC192: Given committed unresolved f1 and changed claim,
+      `pause_settlement` returns `{"code":"original-mismatch", "fire":"f1",
+      "clearance":"refused"}`. Boundaries: filesystem: fixture, forbid
+      clearance/original writes; subprocess: fixed missing-fix observation;
+      clock: `100`. (D-70; former AC18).
+
+- [ ] AC193: Given committed unresolved f1 and invalid fix abc123,
+      `pause_settlement` returns `{"code":"fix-not-found", "fire":"f1",
+      "clearance":"refused"}`. Boundaries: filesystem: fixture, forbid
+      clearance/original writes; subprocess: fixed missing-fix observation;
+      clock: `100`. (D-70; former AC18).
+
+- [ ] AC194: Given committed unresolved f1 and fabricated counter-evidence e9,
+      `pause_settlement` returns `{"code":"missing-counter-evidence",
+      "fire":"f1", "clearance":"refused"}`. Boundaries: filesystem: fixture,
+      forbid clearance/original writes; subprocess: fixed missing-fix
+      observation; clock: `100`. (D-70; former AC18).
+
+- [ ] AC195: Given committed unresolved f1 and wrong-round override,
+      `pause_settlement` returns `{"code":"override-round-mismatch",
+      "fire":"f1", "clearance":"refused"}`. Boundaries: filesystem: fixture,
+      forbid clearance/original writes; subprocess: fixed missing-fix
+      observation; clock: `100`. (D-70; former AC18).
+
+- [ ] AC196: Given committed outstanding old `fix` result old1 without
+      witnessed origin, `pause_obligation` returns `{"original":"old1",
+      "provenance":"historical", "verified":false, "visible":true,
+      "recovery":"linked-new-review"}`. Boundaries: filesystem: historical
+      bytes, forbid rewrite. (D-70; former AC18).
+
+- [ ] AC197: Given committed historical old1 and new delivered f2 with
+      explicit recovery request, `link_historical_review` returns
+      `{"historical":"old1", "new_review":"f2", "historical_verified":false}`.
+      Boundaries: filesystem: append recovery link, forbid old1 rewrite;
+      clock: `100`. (D-70; former AC18).
+
+- [ ] AC198: Given valid matching f1 dispositions with common settlement
+      transaction failure, `pause_settlement` returns `durable_state =
+      {"fire":"f1", "settlement":null, "clearance":"pending"}`. Boundaries:
+      filesystem: fail common commit and expose durable image; subprocess:
+      fixed evidence; clock: `100`. (D-70, D-72; former AC18).
+
+- [ ] AC199: Given committed findings o1:0 selected, o1:1 refuted, o1:2
+      unanswered; saved human answers at revision 2; no fix, `select_findings`
+      returns `{"kind":"provisional-selected", "revision":2,
+      "selected":["o1:0"], "refuted":["o1:1"], "unanswered":["o1:2"],
+      "fix":null}`. Boundaries: filesystem: fixture and provisional-view
+      write; clock: `100`. (D-79; former AC19).
+
+- [ ] AC200: Given committed provisional v1:2 selecting F at o1:0 without a
+      fix commit, `read_selection` returns `{"view":"v1", "revision":2,
+      "selected":["o1:0"], "fix":null}`. Boundaries: filesystem: committed
+      view fixture. (D-79; former AC19).
+
+- [ ] AC201: Given committed v1:2 selecting o1:0=F, refuting o1:1 and leaving
+      o1:2 unanswered, `fix_continuation_view` returns `[{"id":"o1:0",
+      "file":"a.rs", "line":1, "severity":"high", "claim":"C",
+      "failure_scenario":"S"}]`. Boundaries: filesystem: committed view and
+      originals. (D-79; former AC19).
+
+- [ ] AC202: Given committed o1:0 and invented selection o9:0,
+      `select_findings` returns `{"code":"unknown-finding",
+      "finding":"o9:0"}`. Boundaries: filesystem: fixture, forbid selection
+      write; clock: `100`. (D-79; former AC19).
+
+- [ ] AC203: Given committed selection revision 2 and submitted revision 1,
+      `select_findings` returns `{"code":"stale-selection-revision",
+      "expected":2, "actual":1}`. Boundaries: filesystem: fixture, forbid
+      selection write; clock: `100`. (D-79; former AC19).
+
+- [ ] AC204: Given committed answer revision 2 and submitted revision 1,
+      `select_findings` returns `{"code":"stale-answer-revision",
+      "expected":2, "actual":1}`. Boundaries: filesystem: fixture, forbid
+      selection write; clock: `100`. (D-79; former AC19).
+
+- [ ] AC205: Given committed provisional-selected v1:2 without final
+      settlement, `selection_consequences` returns `{"gate":"pending",
+      "deferred":["f1"], "filing_candidates":[]}`.
+      Boundaries: none. (D-79; former AC19).
+
+- [ ] AC206: Given committed v1:2, same original o1:0 and mechanically valid
+      final fix/counter-evidence, `bind_final_selection` returns
+      `{"view":"v1", "revision":2, "original":"o1", "finding":"o1:0"}`.
+      Boundaries: none. (D-79; former AC19).
+
+- [ ] AC207: Given committed v1:2 and final ruling naming v1:1,
+      `bind_final_selection` returns `{"code":"stale-selection-revision",
+      "expected":2, "actual":1}`. Boundaries: none. (D-79; former AC19).
+
+- [ ] AC208: Given committed v1:2 and exact f1 originals with final verified
+      fix disposition, `settle_review` returns `{"settlement":"s1",
+      "selection_revision":2, "gate":"clear", "deferred":[]}`. Boundaries:
+      filesystem: common atomic settlement writes; subprocess: fixed commit
+      evidence; clock: `100`. (D-79; former AC19).
 
 ## Flagged assumptions
 

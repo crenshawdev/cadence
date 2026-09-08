@@ -522,110 +522,317 @@ to produce this handoff.
 
 ## Acceptance criteria
 
-- [ ] AC1: In an observed local advisory loop, the dispatched contract/prompt
-      contains no findings-write or trace-append tail. The reviewer reads the
-      artifact and returns raw JSON; the invoking skill forwards it unchanged.
-      Tool events and filesystem observations, including the Bash channel,
-      show no reviewer-written artifacts and persistence/closure through the
-      binary for this episode. Run with installed hooks, including SubagentStop,
-      and inspect that it creates no competing native-attempt lifecycle close.
-      Record that Bash heredocs pass the bounded guard: absence of observed
-      reviewer writes is not prevention. No completion
-      or next-plan dispatch appears before the durable result acknowledgment;
-      blocker/high advisory findings still allow continuation and remain
-      unruled even under adjudicated combination mode. Include quotation,
-      newline and Unicode strings and compare returned, submitted and stored
-      originals exactly (
-      `.planning/ROADMAP.md:746`, `.planning/ROADMAP.md:754`,
-      `skills/cad-reviewer-contract/SKILL.md:114`,
+These are specifications for unimplemented phase work, not pending checks for
+code expected to exist already. Function names below name the proposed unit;
+they do not require public test APIs or particular module placement. Test each
+unit directly, including its stated durable output. Call deterministic internal
+collaborators for real. Stub only the listed I/O boundaries, including setup;
+filesystem images are stub inputs, not instructions to start a process. No
+criterion calls a model. Fixed finding prose is authored input data.
+
+Each result is a literal value or a named field of that unit's returned record.
+JSON `null` denotes explicit absence. Scalar/byte-limit inputs use the stated
+number of literal characters or bytes, not a production serializer. Boundary
+caps and deadlines supplied in examples are test inputs, not new product
+defaults. A forbidden boundary means the unit must not access it. References
+marked "former AC" retain the old numbering; AC references in the unchanged
+scope, decisions, HANDOFF and assumptions also retain their historical meaning.
+
+Fixture F is the literal finding
+`{"file":"a.rs","line":1,"severity":"high","claim":"C","failure_scenario":"S"}`.
+Q is a hand-authored UTF-8 return: a findings envelope containing, in order, F
+with claim `quote: \"\n雪` (a quotation mark, newline and Unicode scalar),
+then unchanged F. Its original ID is `o1`, its validator is `H4-1`, and its
+finding IDs are `o1:0` and `o1:1`. No serializer under test supplies expected
+bytes. Other named variants state their changed fields in the criterion.
+
+H is a hand-authored saved admission with these literal fields:
+
+```json
+{"fire":"f1","replay_key":"k1",
+ "scope":{"project":"p1","root":"r1","cycle":"c1"},
+ "home":{"kind":"task","id":"h1","occurrence":"occ1"},
+ "caller":"task","trigger":"risk_surface","specialist":null,
+ "discriminator":"d1","plan":null,"anchor":null,"round":1,
+ "artifact":"m1","gate":"deferred",
+ "selection":{"mode":"single","choices":["A","B"],"fallback":"local"},
+ "routing":{"answer":"local","evidence":"route1"},
+ "roster":{"required":["A"],"completion":"all-required-terminal"},
+ "contract":{"schema":"review-1","interpretation":"H1-H5",
+             "validator":"H4-1"},"settlement":"pending"}
+```
+
+Its material `m1` retains `e1`, path `a.rs`, snapshot bytes `old\n`, with
+line 1 mapped to bytes 0..3. Its attempt `a1` requests `model-A`; observed model
+is null, launch is `launch1`, return is `return1`, view is `v1`. Successful
+variants bind original `o1` containing F to that attempt. Roster variants name
+their additional attempts explicitly. A queued variant has member `f1`.
+
+Phase 9 commits independently hand-authored H1-H5 compatibility fixtures,
+including boundary returns, material sides, every home, specialists and panel
+states. Phase 10 reads those committed bytes; no test runs a producer workflow
+to create them. The producer episode retained in MANUAL (former AC15) remains
+manual evidence. Its historical ban on seeded records does not govern these
+unit inputs or phase 10's committed fixtures. This authoring pass specifies
+those fixture obligations; it does not create implementation/test files.
+
+- [ ] AC1: Given retained target `m1` and advisory mode, `advisory_contract`
+      returns
+      `"Review retained target m1. Return raw JSON findings. Do not write files or append lifecycle records."`.
+      Boundaries: none. (D-57; former AC1; `.planning/ROADMAP.md:746`,
+      `.planning/ROADMAP.md:754`, `skills/cad-reviewer-contract/SKILL.md:114`,
       `crates/cadence/src/guard/bash.rs:129`,
       `crates/cadence/src/guard/bash.rs:461`).
 
-- [ ] AC2: Drive the concrete native invoking adapters for manual plan,
-      automatic plan, task, execute, debug and verify, including ordinary diff
-      as well as plan/risk requests under equivalent effective settings.
-      Inspect actual dispatch instructions, not synthetic caller labels.
-      Each returns the same
-      gate meaning: off dispatches nothing; advisory has AC1's delivery wait;
-      deferred saves a discoverable unruled obligation and permits the run;
-      gates requiring settlement remain pending after raw delivery. Without
-      plan-floor elevation, unset plan/risk gates resolve advisory/blocking
-      respectively, and unset diff is off; explicit task deferred is honored.
-      Exercise actual-diff detector match, nonmatch, inconclusive and unanswered
-      surface cases and inspect the saved routing/gate answer and resulting
-      dispatch or wait. Specialist delivery is checked separately in AC13
-      (`.planning/ROADMAP.md:762`,
-      `cadence-core/config.schema.json:95`,
+- [ ] AC2: Given raw bytes `{"findings":[]}`, `forward_return` returns
+      `submitted_bytes = "{\"findings\":[]}"`. Boundaries: none. (D-57; former
+      AC1).
+
+- [ ] AC3: Given advisory fire `f1` with delivery `pending`,
+      `delivery_permission` returns `"wait-for-delivery"`. Boundaries: none.
+      (D-57; former AC1).
+
+- [ ] AC4: Given advisory fire `f1`, durable delivery `accepted`, severity
+      `blocker` and combination `adjudicated`, `delivery_permission` returns
+      `"continue"`. Boundaries: none. (D-57, D-65; former AC1).
+
+- [ ] AC5: Given bound attempt `a1` and raw return Q, `accept_return` returns
+      `originals[0].claim = "quote: \"\n雪"`. Boundaries: filesystem: durable
+      write/sync success; clock: `100`. (D-63; former AC1).
+
+- [ ] AC6: Given ordinary review input with effective gate `deferred`, routing
+      `local` and home `h1`, `manual_plan_request` returns
+      `{"caller":"manual-plan", "gate":"deferred", "routing":"local",
+      "home":"h1"}`. Boundaries: none. (D-58; former AC2;
+      `.planning/ROADMAP.md:762`, `cadence-core/config.schema.json:95`,
       `cadence-core/config.schema.json:101`,
       `.planning/phases/8/CONTEXT.md:280`,
       `skills/cad-plan-review/SKILL.md:39`,
       `cadence-core/references/review-record.md:128`).
 
-- [ ] AC3: Scripted reviewer outcomes prove single mode issues requests in
-      configured order: fail A, accept usable B, never invoke C; usable empty
-      findings at A invokes neither B nor C. Malformed or missing output is a
-      failed attempt, never empty success. Exhausting the configured choices
-      invokes the local fallback; both its success and failure terminate with
-      one recorded outcome per attempt. Failed-attempt usage remains visible
-      when observed, and absent observations stay unavailable. These are
-      selection tests, not claims of live external-provider support
-      (`.planning/ROADMAP.md:768`,
+- [ ] AC7: Given ordinary review input with effective gate `deferred`, routing
+      `local` and home `h1`, `automatic_plan_request` returns
+      `{"caller":"automatic-plan", "gate":"deferred", "routing":"local",
+      "home":"h1"}`. Boundaries: none. (D-58; former AC2).
+
+- [ ] AC8: Given ordinary review input with effective gate `deferred`, routing
+      `local` and home `h1`, `task_review_request` returns `{"caller":"task",
+      "gate":"deferred", "routing":"local", "home":"h1"}`. Boundaries: none.
+      (D-58; former AC2).
+
+- [ ] AC9: Given ordinary review input with effective gate `deferred`, routing
+      `local` and home `h1`, `execute_review_request` returns
+      `{"caller":"execute", "gate":"deferred", "routing":"local",
+      "home":"h1"}`. Boundaries: none. (D-58; former AC2).
+
+- [ ] AC10: Given ordinary review input with effective gate `deferred`,
+      routing `local` and home `h1`, `debug_review_request` returns
+      `{"caller":"debug", "gate":"deferred", "routing":"local", "home":"h1"}`.
+      Boundaries: none. (D-58; former AC2).
+
+- [ ] AC11: Given ordinary review input with effective gate `deferred`,
+      routing `local` and home `h1`, `verify_review_request` returns
+      `{"caller":"verify", "gate":"deferred", "routing":"local",
+      "home":"h1"}`. Boundaries: none. (D-58; former AC2).
+
+- [ ] AC12: Given gate `off` and delivery `accepted` without settlement,
+      `ordinary_gate_action` returns `"off"`. Boundaries: none. (D-58, D-65;
+      former AC2).
+
+- [ ] AC13: Given gate `advisory` and delivery `accepted` without settlement,
+      `ordinary_gate_action` returns `"continue"`. Boundaries: none. (D-58,
+      D-65; former AC2).
+
+- [ ] AC14: Given gate `deferred` and delivery `accepted` without settlement,
+      `ordinary_gate_action` returns `"enqueue-before-continuation"`.
+      Boundaries: none. (D-58, D-65; former AC2).
+
+- [ ] AC15: Given gate `blocking` and delivery `accepted` without settlement,
+      `ordinary_gate_action` returns `"wait-for-settlement"`. Boundaries:
+      none. (D-58, D-65; former AC2).
+
+- [ ] AC16: Given gate `adjudicated` and delivery `accepted` without
+      settlement, `ordinary_gate_action` returns `"wait-for-settlement"`.
+      Boundaries: none. (D-58, D-65; former AC2).
+
+- [ ] AC17: Given trigger `plan`, phase-8 resolved gate `advisory` and no
+      plan-floor elevation, `ordinary_request` returns `gate = "advisory"`.
+      Boundaries: none. (D-58; former AC2).
+
+- [ ] AC18: Given trigger `risk_surface`, phase-8 resolved gate `blocking` and
+      no plan-floor elevation, `ordinary_request` returns `gate = "blocking"`.
+      Boundaries: none. (D-58; former AC2).
+
+- [ ] AC19: Given trigger `diff`, phase-8 resolved gate `off` and no
+      plan-floor elevation, `ordinary_request` returns `gate = "off"`.
+      Boundaries: none. (D-58; former AC2).
+
+- [ ] AC20: Given supplied detector observation `match` with blocking risk
+      gate, `risk_review_action` returns `"dispatch"`. Boundaries: none.
+      (D-58; former AC2).
+
+- [ ] AC21: Given supplied detector observation `nonmatch` with blocking risk
+      gate, `risk_review_action` returns `"no-review"`. Boundaries: none.
+      (D-58; former AC2).
+
+- [ ] AC22: Given supplied detector observation `inconclusive` with blocking
+      risk gate, `risk_review_action` returns `"wait-for-evidence"`.
+      Boundaries: none. (D-58; former AC2).
+
+- [ ] AC23: Given supplied detector observation `unanswered` with blocking
+      risk gate, `risk_review_action` returns `"ask-surfaces"`. Boundaries:
+      none. (D-58; former AC2).
+
+- [ ] AC24: Given FIRST choices `["A", "B", "C"]` and terminal failure for A,
+      `select_next` returns `{"request":"B"}`. Boundaries: none. (D-59; former
+      AC3; `.planning/ROADMAP.md:768`,
       `cadence-core/references/review-triggers.md:159`,
       `cadence-core/references/review-triggers.md:217`).
 
-- [ ] AC4: Snapshot fixtures admit committed-range, staged-tree and named-file
-      reviews, then move the original refs, change the index, and overwrite or
-      delete the named files between admission and the reviewer's read.
-      Observe the dispatch reading retained bytes, not the mutable originals.
-      Reopening and querying the admitted
-      fire returns the original identity AND readable original material and
-      finding strings, never substituted HEAD or current bytes. A new fire
-      against changed material has a different artifact identity; an independent
-      initial fire against identical material has a distinct occurrence, while replay
-      preserves the old one. Cross-artifact and cross-round submissions
-      refuse without changing accepted originals. Home allocation/enumeration
-      is checked independently in AC14 (`.planning/ROADMAP.md:775`,
-      `crates/cadence/src/pause/risk.rs:129`,
+- [ ] AC25: Given FIRST choices `["A", "B", "C"]`, failed A and usable B with
+      finding F, `select_next` returns `{"request":null,
+      "not_selected":["C"]}`. Boundaries: none. (D-59; former AC3).
+
+- [ ] AC26: Given FIRST choices `["A", "B", "C"]` and usable empty A,
+      `select_next` returns `{"request":null, "not_selected":["B", "C"]}`.
+      Boundaries: none. (D-59; former AC3).
+
+- [ ] AC27: Given missing bytes, `classify_return` returns `{"state":"failed",
+      "reason":"missing-return"}`. Boundaries: none. (D-59; former AC3).
+
+- [ ] AC28: Given bytes `{"findings":`, `classify_return` returns
+      `{"state":"failed", "reason":"malformed-return"}`. Boundaries: none.
+      (D-59; former AC3).
+
+- [ ] AC29: Given FIRST choices `["A", "B"]`, both failed, and fallback
+      `local`, `select_next` returns `{"request":"local"}`. Boundaries: none.
+      (D-59; former AC3).
+
+- [ ] AC30: Given exhausted FIRST choices and `usable empty` local fallback,
+      `select_next` returns `{"state":"usable-complete", "request":null}`.
+      Boundaries: none. (D-59; former AC3).
+
+- [ ] AC31: Given exhausted FIRST choices and `failed` local fallback,
+      `select_next` returns `{"state":"complete-with-failure",
+      "request":null}`. Boundaries: none. (D-59; former AC3).
+
+- [ ] AC32: Given failed attempt `a1` with `{"input":7, "output":3}` usage,
+      `attempt_usage` returns `{"input":7, "output":3}`. Boundaries: none.
+      (D-59; former AC3).
+
+- [ ] AC33: Given failed attempt `a1` with absent usage, `attempt_usage`
+      returns `{"input":null, "output":null}`. Boundaries: none. (D-59; former
+      AC3).
+
+- [ ] AC34: Given resolved base `b1`, head `h1` and retained bytes `old\n`,
+      `retain_range` returns `{"kind":"committed-range", "base":"b1",
+      "head":"h1", "bytes":"old\n"}`. Boundaries: filesystem: reads and
+      durable writes; subprocess: fixed Git observations for range/staged,
+      forbidden for named-file; clock: `100`. (D-60; former AC4;
+      `.planning/ROADMAP.md:775`, `crates/cadence/src/pause/risk.rs:129`,
       `crates/cadence/src/pause_service.rs:799`,
       `crates/cadence/src/next_action/observations.rs:124`).
 
-- [ ] AC5: Failure-injection and reopen observations cover interruption after
-      pending admission, after host return but before submission, during result
-      persistence, and after durable acceptance but before acknowledgment.
-      No interrupted/failed fire reports an empty successful review; accepted
-      originals remain recoverable. Replaying the same accepted result creates
-      neither another finding set nor another terminal/cost record; a
-      conflicting duplicate refuses. Race identical and conflicting submissions
-      and assert the same single accepted original/terminal fact after reopen.
-      Exercise pending admission inside a caller's conditional transaction:
-      failed comparison exposes neither partial admission nor dispatch, and
-      replay after a committed-but-unacknowledged admission returns the same
-      fire/attempt IDs. Every completed or failed attempt has
-      exactly one terminal outcome and unresolved attempts remain visible.
-      Retained pause gate, deferred visibility and index-identity assertions
-      still pass when running
-      `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence pause_service_tests`
-      (`.planning/ROADMAP.md:783`,
-      `crates/cadence/src/pause_service.rs:758`,
+- [ ] AC35: Given base `b1`, authored index `t1` and bytes `old\n`,
+      `retain_staged` returns `{"kind":"staged-tree", "base":"b1",
+      "index":"t1", "head":null, "bytes":"old\n"}`. Boundaries: filesystem:
+      reads and durable writes; subprocess: fixed Git observations for
+      range/staged, forbidden for named-file; clock: `100`. (D-60; former
+      AC4).
+
+- [ ] AC36: Given named file `a.rs` with bytes `old\n`, `retain_file` returns
+      `{"kind":"named-file", "path":"a.rs", "head":null, "bytes":"old\n"}`.
+      Boundaries: filesystem: reads and durable writes; subprocess: fixed Git
+      observations for range/staged, forbidden for named-file; clock: `100`.
+      (D-60; former AC4).
+
+- [ ] AC37: Given retained entry `e1` containing `old\n`, mutable source
+      containing `new\n` and moved refs, `read_material` returns `"old\n"`.
+      Boundaries: filesystem: retained bytes, forbid mutable-source reads;
+      subprocess: forbid Git. (D-60; former AC4).
+
+- [ ] AC38: Given saved bytes `old\n` and proposed bytes `new\n`,
+      `material_matches` returns `false`. Boundaries: none. (D-60; former
+      AC4).
+
+- [ ] AC39: Given fire `f1/m1/round1` and return whose `artifact` is `m2`,
+      `bind_return` returns `{"code":"artifact-mismatch", "fire":"f1",
+      "field":"artifact"}`. Boundaries: none. (D-60, D-62; former AC4).
+
+- [ ] AC40: Given fire `f1/m1/round1` and return whose `round` is `2`,
+      `bind_return` returns `{"code":"round-mismatch", "fire":"f1",
+      "field":"round"}`. Boundaries: none. (D-60, D-62; former AC4).
+
+- [ ] AC41: Given named-file bytes `old\n`, `artifact_content_id` returns
+      `"01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee"`.
+      Boundaries: none. (D-60; former AC4).
+
+- [ ] AC42: Given named-file bytes `new\n`, `artifact_content_id` returns
+      `"7aa7a5359173d05b63cfd682e3c38487f3cb4f7f1d60659fe59fab1505977d4c"`.
+      Boundaries: none. (D-60; former AC4).
+
+- [ ] AC43: Given durable attempt `a1` in state `pending-admission` without
+      accepted originals, `recover_attempt` returns `{"attempt":"a1",
+      "delivery":"interrupted", "original":null}`. Boundaries: filesystem:
+      supplied durable image; clock: `100`. (D-62; former AC5;
+      `.planning/ROADMAP.md:783`, `crates/cadence/src/pause_service.rs:758`,
       `crates/cadence/src/pause_service_tests.rs:454`,
       `crates/cadence/src/pause_service_tests.rs:683`,
       `crates/cadence/src/pause_service_tests.rs:713`).
 
-- [ ] AC6: Concrete thin consumer adapters retrieve the same saved occurrence
-      and exact originals for plan/execute completion, execute/planned-task fix
-      continuations, reports and deferred enqueue, keeping originals distinct
-      from supplied typed provisional selections and final settlement views.
-      A fix-continuation fixture supplies phase 10 D-79's selected-finding view
-      without a fix commit; refuted, selected-to-fix and finally settled cases
-      remain distinct, and no raw high finding becomes a settled survivor.
-      Milestone-preservation and
-      landing-input fixtures retain every relevant risk_surface round and
-      identify unruled reviews separately from adjudicated entries. Reopening
-      after deleting disposable renderings recovers the same inputs from
-      binary state. Pending/failed results remain distinguishable from usable
-      empty findings, and advisory files alone never become deferred queue
-      members. These checks exercise delivery inputs, not settlement validation
-      or full prune/landing behavior (`cadence-core/workflows/plan.md:466`,
+- [ ] AC44: Given durable attempt `a1` in state
+      `host-return-before-submission` without accepted originals,
+      `recover_attempt` returns `{"attempt":"a1", "delivery":"interrupted",
+      "original":null}`. Boundaries: filesystem: supplied durable image;
+      clock: `100`. (D-62; former AC5).
+
+- [ ] AC45: Given pending `a1`, F and a result-store sync failure,
+      `accept_return` returns `{"code":"delivery-write-failed",
+      "attempt":"a1", "acknowledged":false}`. Boundaries: filesystem: fail
+      result sync; clock: `100`. (D-62; former AC5).
+
+- [ ] AC46: Given accepted `a1/o1`, identical F and lost prior acknowledgment,
+      `accept_return` returns `{"attempt":"a1", "original":"o1",
+      "terminal":"accepted", "replayed":true}`. Boundaries: filesystem:
+      accepted image and conditional writes; clock: `100`. (D-62; former AC5).
+
+- [ ] AC47: Given accepted `a1/o1` and conflicting claim `Changed`,
+      `accept_return` returns `{"code":"conflicting-return", "attempt":"a1",
+      "original":"o1"}`. Boundaries: filesystem: accepted image, forbid
+      original overwrite; clock: `100`. (D-62; former AC5).
+
+- [ ] AC48: Given replay key `k1` inside a caller transaction with failed
+      revision comparison, `admit_pending` returns
+      `{"code":"revision-conflict", "replay_key":"k1", "dispatch":null}`.
+      Boundaries: filesystem: reject conditional commit; clock: `100`. (D-62;
+      former AC5).
+
+- [ ] AC49: Given committed admission `k1/f1/a1` with acknowledgment lost,
+      `admit_pending` returns `{"fire":"f1", "attempt":"a1",
+      "replayed":true}`. Boundaries: filesystem: committed image; clock:
+      `100`. (D-62; former AC5).
+
+- [ ] AC50: Given two identical submissions for pending `a1`, with a barrier
+      at conditional commit, `accept_return` returns `durable_terminal_count =
+      1`. Boundaries: filesystem: conditional-write barrier and durable image;
+      clock: `100`. (D-62; former AC5).
+
+- [ ] AC51: Given F and conflicting claim `Changed` for `a1`, with F committed
+      first at a boundary barrier, `accept_return` returns
+      `{"code":"conflicting-return", "attempt":"a1", "original":"o1"}`.
+      Boundaries: filesystem: conditional-write barrier; clock: `100`. (D-62;
+      former AC5).
+
+- [ ] AC52: Given durable accepted `o1` and missing disposable rendering,
+      `recover_original` returns `{"file":"a.rs", "line":1, "severity":"high",
+      "claim":"C", "failure_scenario":"S"}`. Boundaries: filesystem: durable
+      F, rendering absent. (D-62; former AC5).
+
+- [ ] AC53: Given saved `f1/round1/o1` containing F, with disposable rendering
+      absent, `plan_completion_input` returns `{"kind":"raw", "fire":"f1",
+      "round":1, "original":"o1", "finding_ids":["o1:0"]}`. Boundaries:
+      filesystem: saved record, rendering absent. (D-64; former AC6;
+      `cadence-core/workflows/plan.md:466`,
       `cadence-core/workflows/execute.md:377`,
       `cadence-core/workflows/execute.md:418`,
       `cadence-core/workflows/task.md:275`,
@@ -635,74 +842,447 @@ to produce this handoff.
       `cadence-core/workflows/milestone.md:114`,
       `skills/cad-land/SKILL.md:122`).
 
-- [ ] AC8: Admit through native operations, inspect every H1 field, then change
-      the effective gate, routing/model settings and active phase cursor and
-      restart. Query returns the saved admission values, explicit applicability
-      fields, schema interpretation and original home/occurrence/round. Replay
-      returns that fire; a separately admitted initial fire gets a new occurrence.
-      No required join is reconstructed from current config or cursor.
+- [ ] AC54: Given saved `f1/round1/o1` containing F, with disposable rendering
+      absent, `execute_completion_input` returns `{"kind":"raw", "fire":"f1",
+      "round":1, "original":"o1", "finding_ids":["o1:0"]}`. Boundaries:
+      filesystem: saved record, rendering absent. (D-64; former AC6).
 
-- [ ] AC9: Admit a saved diff file with deletion and rename hunks plus supporting
-      context outside the changed paths. Inspect H2's hunk/source mappings and
-      read exact base/head/snapshot lines by entry ID. Change the supporting
-      file, delete working sources and remove ordinary reference reachability
-      in the isolated fixture; retained bytes still read after reopen. Admit
-      additional counter-evidence outside primary paths through the material
-      operation, and inspect its immutable ID and original-view versus
-      later-evidence designation. A diff-only record fails this check; no
-      citation-truth verdict is expected from phase 9.
+- [ ] AC55: Given saved `f1/round1/o1` containing F, with disposable rendering
+      absent, `report_review_input` returns `{"kind":"raw", "fire":"f1",
+      "round":1, "original":"o1", "finding_ids":["o1:0"]}`. Boundaries:
+      filesystem: saved record, rendering absent. (D-64; former AC6).
 
-- [ ] AC10: Two same-artifact attempts use different requested models and host
-      launch/return IDs. Inspect H3 after restart: requested settings and observed
-      identities/unknowns remain separate. Swapping returns or reusing a host
-      return across attempts refuses. Replay and race duplicate observations,
-      then submit late usage/model observations: exactly one terminal outcome
-      remains, with no duplicate cost and no rewritten original. A missing
-      observation stays unknown instead of acquiring the requested model.
+- [ ] AC56: Given saved `f1/round1/o1` containing F, with disposable rendering
+      absent, `deferred_enqueue_input` returns `{"kind":"raw", "fire":"f1",
+      "round":1, "original":"o1", "finding_ids":["o1:0"]}`. Boundaries:
+      filesystem: saved record, rendering absent. (D-64; former AC6).
 
-- [ ] AC11: Run H4's matrix through native local admission: accept empty and
-      100-finding returns, maximum-length scalar strings and valid boundary
-      lines; refuse 101 findings, unknown fields, blank/whitespace-only text,
-      over-limit fields, invalid scalars, fractional/zero/unsafe lines and a
-      return exceeding 4 MiB before parsing/over-accumulation. Compare accepted
-      raw bytes, strings, order, IDs and contract IDs after restart. Retain this
-      phase-9-produced boundary store for phase 10 AC1/AC2 compatibility checks.
+- [ ] AC57: Given supplied provisional revision 2 selecting `o1:0`, refuting
+      `o1:1`, and no fix commit, `execute_fix_input` returns
+      `{"kind":"provisional-selected", "revision":2, "finding_ids":["o1:0"],
+      "fix":null}`. Boundaries: none. (D-64; phase 10 D-79; former AC6).
 
-- [ ] AC12: Native panel and adjudicated-combination dispatch each freeze a
-      two-voice roster and actually request both voices. Return empty A while B
-      remains pending, then interrupt/restart: the query still names B and marks
-      the fire incomplete. Deliver B with findings, then repeat with B failing
-      and its admitted fallback succeeding or failing. Every required slot has
-      an explicit terminal outcome; incomplete, complete-with-failure and
-      usable-complete states cannot collapse into one clean result. Per-voice
-      originals remain distinct; raw delivery does not settle the gate.
+- [ ] AC58: Given supplied provisional revision 2 selecting `o1:0`, refuting
+      `o1:1`, and no fix commit, `planned_task_fix_input` returns
+      `{"kind":"provisional-selected", "revision":2, "finding_ids":["o1:0"],
+      "fix":null}`. Boundaries: none. (D-64; phase 10 D-79; former AC6).
 
-- [ ] AC13: Through callable native specialist adapters, admit/deliver minimalism
-      for a file, a directory and a phase range; inspect one base reviewer and
-      no ordinary routing in each ledger. Mutate directory membership and member
-      bytes before read; the dispatched retained listing/content remains exact.
-      Decision review delivers the selected decision plus inline context;
-      diagnosis delivers named files plus reported/cause text. Query each target,
-      raw/empty/failure result and immutable material after restart. No deletion,
-      specialist ruling or final settlement is required here.
+- [ ] AC59: Given supplied typed view `raw` at revision 2, `consumer_view`
+      returns `kind = "raw"`. Boundaries: none. (D-64; former AC6).
 
-- [ ] AC14: Native deferred operations create members in phase, task and root
-      homes, including inline/debug/diagnosis occurrences. Observe enqueue before
-      continuation, then query the same unfiltered enumerator after restart and
-      removal of disposable renderings: every member and H1–H4 reference remains.
-      Advisory-only and off requests create no deferred member. New pause delivery
-      uses the same fire/dispatch and ordinary five-field originals; old `fix`
-      records are labeled historical instead of gaining invented dispatch origin.
-      Phase 10 will test settlement filtering on this enumerator.
+- [ ] AC60: Given supplied typed view `provisional-selected` at revision 2,
+      `consumer_view` returns `kind = "provisional-selected"`. Boundaries:
+      none. (D-64; former AC6).
 
-- [ ] AC15: Produce the HANDOFF acceptance store using only phase 9's native
-      producer operations and scripted or observed host inputs. Retain the
-      command transcript, producer revision, contract IDs, artifact inventory
-      and hashes, then reopen and enumerate H1–H5 without internal record seeding
-      or backfill. Include AC8–AC14 cases and retain the accepted boundary store
-      unchanged for phase 10 AC1. Record the actual operation/test selectors so
-      the producer run can be repeated; a fixture authored directly to phase
-      10's desired schema cannot satisfy this criterion.
+- [ ] AC61: Given supplied typed view `settled` at revision 2, `consumer_view`
+      returns `kind = "settled"`. Boundaries: none. (D-64; former AC6).
+
+- [ ] AC62: Given risk_surface rounds `f1/1` unruled and `f2/2` adjudicated,
+      plus plan review `f3`, `landing_inventory` returns `{"unruled":["f1/1"],
+      "adjudicated":["f2/2"]}`. Boundaries: none. (D-64; former AC6).
+
+- [ ] AC63: Given risk_surface REVIEW/ADJUDICATION rounds 1 and 2, plus plan
+      review, `milestone_review_inputs` returns `["REVIEW-risk_surface-1.md",
+      "ADJUDICATION-risk_surface-1.md", "REVIEW-risk_surface-2.md",
+      "ADJUDICATION-risk_surface-2.md"]`. Boundaries: none. (D-64; former
+      AC6).
+
+- [ ] AC64: Given saved delivery state `pending`, `completion_review_state`
+      returns `{"state":"pending", "findings":null}`. Boundaries: none. (D-64;
+      former AC6).
+
+- [ ] AC65: Given saved delivery state `failed`, `completion_review_state`
+      returns `{"state":"failed", "findings":null}`. Boundaries: none. (D-64;
+      former AC6).
+
+- [ ] AC66: Given saved delivery state `accepted-empty`,
+      `completion_review_state` returns `{"state":"accepted", "findings":[]}`.
+      Boundaries: none. (D-64; former AC6).
+
+- [ ] AC67: Given an advisory REVIEW record with no deferred obligation,
+      `deferred_members` returns `[]`. Boundaries: none. (D-61, D-64; former
+      AC6).
+
+- [ ] AC68: Given saved admission H, current gate `off`, routing `remote` and
+      phase cursor `99`, `read_admission` returns `{"fire":"f1",
+      "replay_key":"k1", "scope":{"project":"p1", "root":"r1", "cycle":"c1"},
+      "home":{"kind":"task", "id":"h1", "occurrence":"occ1"}, "caller":"task",
+      "trigger":"risk_surface", "specialist":null, "discriminator":"d1",
+      "plan":null, "anchor":null, "round":1, "artifact":"m1",
+      "gate":"deferred", "selection":{"mode":"single", "choices":["A", "B"],
+      "fallback":"local"}, "routing":{"answer":"local", "evidence":"route1"},
+      "roster":{"required":["A"], "completion":"all-required-terminal"},
+      "contract":{"schema":"review-1", "interpretation":"H1-H5",
+      "validator":"H4-1"}, "settlement":"pending"}`.
+      Boundaries: filesystem: H, forbid current-config/cursor reads. (D-58,
+      D-61, D-62; H1; former AC8).
+
+- [ ] AC69: Given independent admission, saved sequence `1`, and material
+      already used by `occ1`, `allocate_occurrence` returns `"occ2"`.
+      Boundaries: filesystem: sequence read/write; clock: `100`. (D-61, D-62;
+      former AC8).
+
+- [ ] AC70: Given replay key `k1` already bound to `occ1`,
+      `allocate_occurrence` returns `"occ1"`. Boundaries: filesystem: saved
+      replay binding. (D-61, D-62; former AC8).
+
+- [ ] AC71: Given saved diff hunk line 4 mapped to deleted `old.rs`, entry
+      `e1`, base line 2, `source_reference` returns `{"entry":"e1",
+      "path":"old.rs", "side":"base", "line":2}`. Boundaries: none. (D-60; H2;
+      former AC9).
+
+- [ ] AC72: Given rename `old.rs` to `new.rs`, hunk line 5 mapped to head
+      entry `e2`, line 3, `source_reference` returns `{"entry":"e2",
+      "path":"new.rs", "side":"head", "line":3}`. Boundaries: none. (D-60; H2;
+      former AC9).
+
+- [ ] AC73: Given deleted `old.rs` with base entry `e1` and no head entry,
+      `material_side` returns `{"path":"old.rs", "side":"head",
+      "availability":"absent"}`. Boundaries: none. (D-60; H2; former AC9).
+
+- [ ] AC74: Given retained supporting `e3` outside primary paths, bytes
+      `support\n`, deleted sources and unreachable ordinary refs,
+      `read_material` returns `"support\n"`. Boundaries: filesystem: retained
+      e3; subprocess: forbid mutable Git resolution. (D-60; H2; former AC9).
+
+- [ ] AC75: Given manifest `m1`, later counter-evidence bytes `counter\n`,
+      next entry `e4`, time `100`, no delivered attempt, `append_material`
+      returns `{"entry":"e4", "acquired_at":100,
+      "provenance":"later-evidence", "attempt":null}`. Boundaries: filesystem:
+      append/sync; clock: `100`. (D-60; H2; former AC9).
+
+- [ ] AC76: Given supporting bytes `support\n` delivered to `a1/v1`, next
+      entry `e3`, time `100`, `append_material` returns `{"entry":"e3",
+      "acquired_at":100, "provenance":"original-view", "attempt":"a1",
+      "view":"v1"}`. Boundaries: filesystem: append/sync; clock: `100`. (D-60;
+      H2; former AC9).
+
+- [ ] AC77: Given saved diff bytes without required source entry `e1`,
+      `validate_manifest` returns `{"code":"missing-source-material",
+      "entry":"e1", "side":"base"}`. Boundaries: none. (D-60; H2; former AC9).
+
+- [ ] AC78: Given saved `a1` requested `model-A`, observed model unknown,
+      launch `launch1`, return `return1`; `a2` requests `model-B`,
+      `read_attempt` returns `{"requested_model":"model-A",
+      "observed_model":null, "launch":"launch1", "host_return":"return1"}`.
+      Boundaries: filesystem: saved attempts. (D-62; H3; former AC10).
+
+- [ ] AC79: Given return1 submitted for a2 instead of bound a1,
+      `bind_host_return` returns `{"code":"host-return-conflict",
+      "return":"return1", "bound_attempt":"a1", "submitted_attempt":"a2"}`.
+      Boundaries: none. (D-62; H3; former AC10).
+
+- [ ] AC80: Given return1 reused after acceptance for a1, now submitted for
+      a2, `bind_host_return` returns `{"code":"host-return-conflict",
+      "return":"return1", "bound_attempt":"a1", "submitted_attempt":"a2"}`.
+      Boundaries: none. (D-62; H3; former AC10).
+
+- [ ] AC81: Given accepted `a1` and duplicate observation `obs1`,
+      `record_observation` returns `{"attempt":"a1", "observation":"obs1",
+      "replayed":true}`. Boundaries: filesystem: saved observation and
+      conditional write; clock: `100`. (D-62; H3; former AC10).
+
+- [ ] AC82: Given late `obs2` with model `observed-A`, input usage 7, on
+      terminal `a1/o1`, `record_observation` returns `{"attempt":"a1",
+      "terminal_count":1, "original":"o1", "observed_model":"observed-A",
+      "input_usage":7}`. Boundaries: filesystem: append/sync; clock: `100`.
+      (D-62; H3; former AC10).
+
+- [ ] AC83: Given two identical `obs2` usage observations racing at
+      conditional commit, `record_observation` returns
+      `durable_usage_observation_count = 1`. Boundaries: filesystem:
+      conditional-write barrier; clock: `100`. (D-62; H3; former AC10).
+
+- [ ] AC84: Given bytes `{"findings":[]}`, `validate_findings` returns
+      `{"findings":[]}`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC85: Given 100 copies of F in a findings envelope, `validate_findings`
+      returns `findings.length = 100`. Boundaries: none. (D-63; H4; former
+      AC11).
+
+- [ ] AC86: Given F with `file` containing exactly 1024 copies of `雪`,
+      `validate_findings` returns `accepted = true`. Boundaries: none. (D-63;
+      H4; former AC11).
+
+- [ ] AC87: Given F with `file` containing 1025 copies of `雪`,
+      `validate_findings` returns `{"code":"field-too-long", "index":0,
+      "field":"file", "limit":1024}`. Boundaries: none. (D-63; H4; former
+      AC11).
+
+- [ ] AC88: Given F with `file` equal to empty string, `validate_findings`
+      returns `{"code":"blank-field", "index":0, "field":"file"}`. Boundaries:
+      none. (D-63; H4; former AC11).
+
+- [ ] AC89: Given F with `file` equal to string ` \t\n`, `validate_findings`
+      returns `{"code":"blank-field", "index":0, "field":"file"}`. Boundaries:
+      none. (D-63; H4; former AC11).
+
+- [ ] AC90: Given F with `claim` containing exactly 2000 copies of `雪`,
+      `validate_findings` returns `accepted = true`. Boundaries: none. (D-63;
+      H4; former AC11).
+
+- [ ] AC91: Given F with `claim` containing 2001 copies of `雪`,
+      `validate_findings` returns `{"code":"field-too-long", "index":0,
+      "field":"claim", "limit":2000}`. Boundaries: none. (D-63; H4; former
+      AC11).
+
+- [ ] AC92: Given F with `claim` equal to empty string, `validate_findings`
+      returns `{"code":"blank-field", "index":0, "field":"claim"}`.
+      Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC93: Given F with `claim` equal to string ` \t\n`, `validate_findings`
+      returns `{"code":"blank-field", "index":0, "field":"claim"}`.
+      Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC94: Given F with `failure_scenario` containing exactly 2000 copies of
+      `雪`, `validate_findings` returns `accepted = true`. Boundaries: none.
+      (D-63; H4; former AC11).
+
+- [ ] AC95: Given F with `failure_scenario` containing 2001 copies of `雪`,
+      `validate_findings` returns `{"code":"field-too-long", "index":0,
+      "field":"failure_scenario", "limit":2000}`. Boundaries: none. (D-63; H4;
+      former AC11).
+
+- [ ] AC96: Given F with `failure_scenario` equal to empty string,
+      `validate_findings` returns `{"code":"blank-field", "index":0,
+      "field":"failure_scenario"}`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC97: Given F with `failure_scenario` equal to string ` \t\n`,
+      `validate_findings` returns `{"code":"blank-field", "index":0,
+      "field":"failure_scenario"}`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC98: Given F with line `1`, `validate_findings` returns
+      `findings[0].line = 1`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC99: Given F with line `9007199254740991`, `validate_findings` returns
+      `findings[0].line = 9007199254740991`. Boundaries: none. (D-63; H4;
+      former AC11).
+
+- [ ] AC100: Given F with line `0`, `validate_findings` returns
+      `{"code":"invalid-line", "index":0, "field":"line", "min":1,
+      "max":9007199254740991}`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC101: Given F with line `1.5`, `validate_findings` returns
+      `{"code":"invalid-line", "index":0, "field":"line", "min":1,
+      "max":9007199254740991}`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC102: Given F with line `9007199254740992`, `validate_findings` returns
+      `{"code":"invalid-line", "index":0, "field":"line", "min":1,
+      "max":9007199254740991}`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC103: Given 101 copies of F, `validate_findings` returns
+      `{"code":"too-many-findings", "limit":100, "actual":101}`. Boundaries:
+      none. (D-63; H4; former AC11).
+
+- [ ] AC104: Given an empty envelope with extra field `extra`,
+      `validate_findings` returns `{"code":"unknown-field", "field":"extra"}`.
+      Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC105: Given F with extra field `fix`, `validate_findings` returns
+      `{"code":"unknown-field", "index":0, "field":"fix"}`. Boundaries: none.
+      (D-63; H4; former AC11).
+
+- [ ] AC106: Given JSON claim containing lone escaped surrogate `\uD800`,
+      `validate_findings` returns `{"code":"invalid-unicode-scalar",
+      "index":0, "field":"claim"}`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC107: Given 4,194,305 input bytes with a 4,194,304-byte cap,
+      `read_return` returns `{"code":"return-too-large", "limit":4194304}`.
+      Boundaries: input stream: fixed chunks, stop at cap plus one; no model
+      call. (D-63; H4; former AC11).
+
+- [ ] AC108: Given saved Q under `o1/H4-1` with IDs `o1:0` and `o1:1`,
+      `read_original` returns `identity = {"original":"o1", "contract":"H4-1",
+      "finding_ids":["o1:0", "o1:1"]}`. Boundaries: filesystem: saved Q.
+      (D-63; H4; former AC11).
+
+- [ ] AC109: Given saved raw Q, `read_original` returns `findings[0].claim =
+      "quote: \"\n雪"`. Boundaries: filesystem: saved Q. (D-63; H4; former
+      AC11).
+
+- [ ] AC110: Given saved literal return bytes `{"findings":[]}` under o1,
+      `read_original` returns `raw_bytes = "{\"findings\":[]}"`. Boundaries:
+      filesystem: saved original bytes. (D-63; H4; former AC11).
+
+- [ ] AC111: Given a valid JSON findings envelope padded with JSON whitespace
+      to 4,194,304 bytes and cap 4,194,304, `read_return` returns
+      `accepted_bytes = 4194304`. Boundaries: input stream: fixed chunks.
+      (D-63; H4; former AC11).
+
+- [ ] AC112: Given F with severity `blocker`, `validate_findings` returns
+      `findings[0].severity = "blocker"`. Boundaries: none. (D-63; H4; former
+      AC11).
+
+- [ ] AC113: Given F with severity `high`, `validate_findings` returns
+      `findings[0].severity = "high"`. Boundaries: none. (D-63; H4; former
+      AC11).
+
+- [ ] AC114: Given F with severity `medium`, `validate_findings` returns
+      `findings[0].severity = "medium"`. Boundaries: none. (D-63; H4; former
+      AC11).
+
+- [ ] AC115: Given F with severity `low`, `validate_findings` returns
+      `findings[0].severity = "low"`. Boundaries: none. (D-63; H4; former
+      AC11).
+
+- [ ] AC116: Given F with severity `critical`, `validate_findings` returns
+      `{"code":"invalid-severity", "index":0, "field":"severity",
+      "actual":"critical"}`. Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC117: Given F without failure_scenario, `validate_findings` returns
+      `{"code":"missing-field", "index":0, "field":"failure_scenario"}`.
+      Boundaries: none. (D-63; H4; former AC11).
+
+- [ ] AC118: Given panel admission with required voices A and B,
+      `dispatch_roster` returns `required_requests = ["A", "B"]`. Boundaries:
+      none. (D-59; H3; former AC12).
+
+- [ ] AC119: Given adjudicated admission with required voices A and B,
+      `dispatch_roster` returns `required_requests = ["A", "B"]`. Boundaries:
+      none. (D-59; H3; former AC12).
+
+- [ ] AC120: Given roster `["A", "B"]`, usable empty A and B state `pending`,
+      `delivery_completion` returns `"incomplete"`. Boundaries: none. (D-59;
+      H3; former AC12).
+
+- [ ] AC121: Given roster `["A", "B"]`, usable empty A and B state
+      `interrupted`, `delivery_completion` returns `"incomplete"`. Boundaries:
+      none. (D-59; H3; former AC12).
+
+- [ ] AC122: Given roster `["A", "B"]`, usable empty A and B state `success`,
+      `delivery_completion` returns `"usable-complete"`. Boundaries: none.
+      (D-59; H3; former AC12).
+
+- [ ] AC123: Given roster `["A", "B"]`, usable empty A and B state
+      `failed-no-fallback`, `delivery_completion` returns
+      `"complete-with-failure"`. Boundaries: none. (D-59; H3; former AC12).
+
+- [ ] AC124: Given roster `["A", "B"]`, usable empty A and B state
+      `failed-fallback-success`, `delivery_completion` returns
+      `"usable-complete"`. Boundaries: none. (D-59; H3; former AC12).
+
+- [ ] AC125: Given roster `["A", "B"]`, usable empty A and B state
+      `failed-fallback-failed`, `delivery_completion` returns
+      `"complete-with-failure"`. Boundaries: none. (D-59; H3; former AC12).
+
+- [ ] AC126: Given saved empty A and pending B after a lost process,
+      `read_roster` returns `{"required":["A", "B"], "pending":["B"]}`.
+      Boundaries: filesystem: saved roster. (D-59, D-63; H3; former AC12).
+
+- [ ] AC127: Given A has `o1:[]`, B has `o2:[F]`, `read_voice_originals`
+      returns `{"A":"o1", "B":"o2"}`. Boundaries: filesystem: saved originals.
+      (D-63, D-65; former AC12).
+
+- [ ] AC128: Given usable-complete adjudicated delivery without settlement,
+      `settlement_state` returns `"pending"`. Boundaries: none. (D-65; former
+      AC12).
+
+- [ ] AC129: Given committed A/o1 with F and B/o2 with empty findings,
+      `read_voice_originals` returns `findings = {"A":[{"file":"a.rs",
+      "line":1, "severity":"high", "claim":"C", "failure_scenario":"S"}],
+      "B":[]}`. Boundaries: filesystem: saved per-voice originals. (D-59; H3;
+      former AC12).
+
+- [ ] AC130: Given retained `file` target `m1` and ordinary routing `panel`,
+      `minimalism_request` returns `{"specialist":"minimalism", "target":"m1",
+      "reviewers":["base"], "ordinary_routing":null}`. Boundaries: none.
+      (D-58; former AC13).
+
+- [ ] AC131: Given retained `directory` target `m1` and ordinary routing
+      `panel`, `minimalism_request` returns `{"specialist":"minimalism",
+      "target":"m1", "reviewers":["base"], "ordinary_routing":null}`.
+      Boundaries: none. (D-58; former AC13).
+
+- [ ] AC132: Given retained `phase-range` target `m1` and ordinary routing
+      `panel`, `minimalism_request` returns `{"specialist":"minimalism",
+      "target":"m1", "reviewers":["base"], "ordinary_routing":null}`.
+      Boundaries: none. (D-58; former AC13).
+
+- [ ] AC133: Given retained listing `["a.rs"]` with bytes `old\n`, live
+      listing `["b.rs"]`, `read_directory_target` returns
+      `{"members":["a.rs"], "contents":{"a.rs":"old\n"}}`. Boundaries:
+      filesystem: retained listing/bytes, forbid live directory reads. (D-60;
+      H2; former AC13).
+
+- [ ] AC134: Given selected decision `D-1` text `Decision` and inline context
+      `Context`, `decision_review_target` returns `{"decision":"D-1",
+      "text":"Decision", "context":"Context"}`. Boundaries: none. (D-58, D-60;
+      former AC13).
+
+- [ ] AC135: Given named entry `e1`, reported text `Reported` and cause text
+      `Cause`, `diagnosis_target` returns `{"entries":["e1"],
+      "reported":"Reported", "cause":"Cause"}`. Boundaries: none. (D-58, D-60;
+      former AC13).
+
+- [ ] AC136: Given saved specialist result `raw`, `read_specialist_result`
+      returns `{"kind":"raw", "original":"o1"}`. Boundaries: filesystem: saved
+      specialist record. (D-58, D-63; former AC13).
+
+- [ ] AC137: Given saved specialist result `empty`, `read_specialist_result`
+      returns `{"kind":"raw", "findings":[]}`. Boundaries: filesystem: saved
+      specialist record. (D-58, D-63; former AC13).
+
+- [ ] AC138: Given saved specialist result `failed`, `read_specialist_result`
+      returns `{"kind":"failed", "findings":null}`. Boundaries: filesystem:
+      saved specialist record. (D-58, D-63; former AC13).
+
+- [ ] AC139: Given deferred fire `f1` in `phase` home with H1-H4 references,
+      `enqueue_deferred` returns `{"member":"f1", "state":"unruled",
+      "continuation":"allowed"}`. Boundaries: filesystem: atomic member
+      commit; clock: `100`. (D-61; H5; former AC14).
+
+- [ ] AC140: Given deferred fire `f1` in `task` home with H1-H4 references,
+      `enqueue_deferred` returns `{"member":"f1", "state":"unruled",
+      "continuation":"allowed"}`. Boundaries: filesystem: atomic member
+      commit; clock: `100`. (D-61; H5; former AC14).
+
+- [ ] AC141: Given deferred fire `f1` in `root-inline` home with H1-H4
+      references, `enqueue_deferred` returns `{"member":"f1",
+      "state":"unruled", "continuation":"allowed"}`. Boundaries: filesystem:
+      atomic member commit; clock: `100`. (D-61; H5; former AC14).
+
+- [ ] AC142: Given deferred fire `f1` in `root-debug` home with H1-H4
+      references, `enqueue_deferred` returns `{"member":"f1",
+      "state":"unruled", "continuation":"allowed"}`. Boundaries: filesystem:
+      atomic member commit; clock: `100`. (D-61; H5; former AC14).
+
+- [ ] AC143: Given deferred fire `f1` in `root-diagnosis` home with H1-H4
+      references, `enqueue_deferred` returns `{"member":"f1",
+      "state":"unruled", "continuation":"allowed"}`. Boundaries: filesystem:
+      atomic member commit; clock: `100`. (D-61; H5; former AC14).
+
+- [ ] AC144: Given deferred fire `f1` with failed queue sync,
+      `enqueue_deferred` returns `{"code":"enqueue-write-failed", "fire":"f1",
+      "continuation":"wait"}`. Boundaries: filesystem: fail queue sync; clock:
+      `100`. (D-61; H5; former AC14).
+
+- [ ] AC145: Given saved phase `f1`, task `f2`, root `f3` members, all
+      disposable renderings absent, `enumerate_deferred` returns `["f1", "f2",
+      "f3"]`. Boundaries: filesystem: all-home saved inventory. (D-61; H5;
+      former AC14).
+
+- [ ] AC146: Given gate `advisory` and no deferred obligation,
+      `enqueue_deferred` returns `{"member":null}`. Boundaries: filesystem:
+      forbid member writes. (D-61; H5; former AC14).
+
+- [ ] AC147: Given gate `off` and no deferred obligation, `enqueue_deferred`
+      returns `{"member":null}`. Boundaries: filesystem: forbid member writes.
+      (D-61; H5; former AC14).
+
+- [ ] AC148: Given modern pause `f1/a1`, ordinary finding F,
+      `pause_delivery_request` returns `{"fire":"f1", "attempt":"a1",
+      "fields":["file", "line", "severity", "claim", "failure_scenario"]}`.
+      Boundaries: none. (D-62, D-63; former AC14).
+
+- [ ] AC149: Given saved old finding with `fix:"S"` and no dispatch,
+      `read_pause_origin` returns `{"provenance":"historical",
+      "dispatch":null, "verified":false}`. Boundaries: filesystem: old bytes,
+      forbid rewrite. (D-63; former AC14).
+
+- [ ] AC150: Given saved f1 with H1 f1, H2 m1, H3 a1 and H4 o1 references,
+      `enumerate_deferred` returns `members[0].references = {"fire":"f1",
+      "manifest":"m1", "attempt":"a1", "original":"o1"}`. Boundaries:
+      filesystem: saved all-home inventory. (D-61; H5; former AC14).
 
 ## Flagged assumptions
 
