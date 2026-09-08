@@ -265,3 +265,131 @@ fn retain_sync_failure() {
         Error::Io("sync failed".into())
     );
 }
+
+fn read_fixture() -> Value {
+    serde_json::from_str(include_str!("fixtures/phase9/material-read.json")).unwrap()
+}
+fn saved_image(input: &Value) -> Saved {
+    Saved {
+        files: input["retained"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().as_bytes().to_vec()))
+            .collect(),
+        fail_sync: false,
+    }
+}
+#[test]
+fn read_original_ac37() {
+    let input = read_fixture();
+    let entry = serde_json::from_value(input["e1"].clone()).unwrap();
+    assert_eq!(
+        material::read_material(&mut saved_image(&input), &entry).unwrap(),
+        b"old\n"
+    );
+}
+#[test]
+#[allow(clippy::bool_assert_comparison)] // The criterion specifies literal false.
+fn read_matches_ac38() {
+    let input = read_fixture()["matches"].clone();
+    assert_eq!(
+        material::material_matches(
+            input["saved"].as_str().unwrap().as_bytes(),
+            input["proposed"].as_str().unwrap().as_bytes()
+        ),
+        false
+    );
+}
+#[test]
+fn read_supporting_ac74() {
+    let input = read_fixture();
+    let entry = serde_json::from_value(input["e3"].clone()).unwrap();
+    assert_eq!(
+        material::read_material(&mut saved_image(&input), &entry).unwrap(),
+        b"support\n"
+    );
+}
+#[test]
+fn read_directory_ac133() {
+    let input = read_fixture();
+    let manifest = model::Manifest {
+        manifest: "m1".into(),
+        fire: "f1".into(),
+        contract: model::Contract::current(),
+        target: serde_json::from_value(input["directory"].clone()).unwrap(),
+        entries: vec![serde_json::from_value(input["e1"].clone()).unwrap()],
+    };
+    let result = material::read_directory_target(&mut saved_image(&input), &manifest).unwrap();
+    assert_eq!(
+        json!({"members":result.members,"contents":result.contents.into_iter()
+        .map(|(key, bytes)| (key, String::from_utf8(bytes).unwrap())).collect::<BTreeMap<_,_>>()}),
+        json!({"members":["a.rs"],"contents":{"a.rs":"old\n"}})
+    );
+}
+#[test]
+fn read_missing_retained_bytes() {
+    let input = read_fixture();
+    let entry = serde_json::from_value(input["e1"].clone()).unwrap();
+    assert_eq!(
+        material::read_material(&mut Saved::default(), &entry),
+        Err(Error::Io("material unavailable: e1".into()))
+    );
+}
+#[test]
+fn read_changed_retained_bytes() {
+    let input = read_fixture();
+    let entry = serde_json::from_value(input["e1"].clone()).unwrap();
+    let mut saved = Saved {
+        files: [("material-e1".into(), b"new\n".to_vec())].into(),
+        fail_sync: false,
+    };
+    assert_eq!(
+        material::read_material(&mut saved, &entry),
+        Err(Error::Io("material unavailable: e1".into()))
+    );
+}
+
+struct DirectorySource(Value);
+impl MaterialIo for DirectorySource {
+    fn list(&mut self, path: &str) -> Result<DirectoryObservation> {
+        if path != "dir" {
+            panic!("forbidden directory read");
+        }
+        Ok(DirectoryObservation {
+            identity: "directory1".into(),
+            members: serde_json::from_value(self.0["members"].clone()).unwrap(),
+        })
+    }
+    fn read(&mut self, path: &str) -> Result<Observed> {
+        let bytes = self.0["contents"][path]
+            .as_str()
+            .expect("forbidden member read");
+        Ok(Observed {
+            bytes: Some(bytes.as_bytes().to_vec()),
+            identity: "member1".into(),
+            directory_identity: "directory1".into(),
+        })
+    }
+}
+#[test]
+fn read_directory_acquisition_freezes_members() {
+    let mut input = DirectorySource(read_fixture()["acquire_directory"].clone());
+    assert_eq!(
+        material::retain_directory(
+            "m1",
+            "f1",
+            "dir",
+            &mut input,
+            &mut Saved::default(),
+            &mut FixedClock
+        )
+        .unwrap()
+        .manifest
+        .target,
+        model::Target::Directory {
+            path: "dir".into(),
+            members: vec!["a.rs".into(), "b.rs".into()]
+        }
+    );
+}

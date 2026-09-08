@@ -111,6 +111,116 @@ fn save<S: Storage>(store: &mut S, result: RetainedMaterial) -> Result<RetainedM
     Ok(result)
 }
 
+/// Reads have only the retained-storage boundary. Neither a source path nor
+/// Git is a recovery fallback, including when an ordinary ref has disappeared.
+pub fn read_material<S: Storage>(store: &mut S, entry: &MaterialEntry) -> Result<Vec<u8>> {
+    let unavailable = || Error::Io(format!("material unavailable: {}", entry.entry));
+    if entry.availability != Availability::Available {
+        return Err(unavailable());
+    }
+    let key = entry.retained.as_deref().ok_or_else(unavailable)?;
+    let content = entry.content.as_deref().ok_or_else(unavailable)?;
+    let bytes = store.read(key)?.bytes.ok_or_else(unavailable)?;
+    if artifact_content_id(&bytes) != content {
+        return Err(unavailable());
+    }
+    Ok(bytes)
+}
+
+pub fn material_matches(saved: &[u8], proposed: &[u8]) -> bool {
+    saved == proposed
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DirectoryMaterial {
+    pub members: Vec<String>,
+    pub contents: BTreeMap<String, Vec<u8>>,
+}
+
+pub fn read_directory_target<S: Storage>(
+    store: &mut S,
+    manifest: &Manifest,
+) -> Result<DirectoryMaterial> {
+    let Target::Directory { path, members } = &manifest.target else {
+        return Err(Error::Invalid("expected directory target".into()));
+    };
+    let mut contents = BTreeMap::new();
+    for member in members {
+        let member_path = directory_member(path, member)?;
+        let entry = manifest
+            .entries
+            .iter()
+            .find(|entry| {
+                entry.path.as_deref() == Some(&member_path)
+                    && entry.side == Side::Snapshot
+                    && entry.role == MaterialRole::Primary
+            })
+            .ok_or_else(|| Error::Io(format!("material unavailable: {member}")))?;
+        contents.insert(member.clone(), read_material(store, entry)?);
+    }
+    Ok(DirectoryMaterial {
+        members: members.clone(),
+        contents,
+    })
+}
+
+fn directory_member(path: &str, member: &str) -> Result<String> {
+    use std::path::{Component, Path};
+    let mut components = Path::new(member).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err(Error::Invalid("invalid directory member".into()));
+    }
+    Ok(Path::new(path).join(member).to_string_lossy().into_owned())
+}
+
+pub fn retain_directory<S: Storage>(
+    manifest: &str,
+    fire: &str,
+    path: &str,
+    source: &mut impl MaterialIo,
+    store: &mut S,
+    clock: &mut impl Clock,
+) -> Result<RetainedMaterial> {
+    let mut listing = source.list(path)?;
+    listing.members.sort();
+    listing.members.dedup();
+    let mut result = empty(
+        manifest,
+        fire,
+        Target::Directory {
+            path: path.into(),
+            members: listing.members.clone(),
+        },
+    );
+    let acquired_at = clock.now();
+    for member in &listing.members {
+        let member_path = directory_member(path, member)?;
+        let mut saved = entry(
+            manifest,
+            &member_path,
+            Side::Snapshot,
+            MaterialRole::Primary,
+            acquired_at,
+            listing.identity.clone(),
+        );
+        match source.read(&member_path) {
+            Ok(observed) => {
+                saved.acquisition = format!("{}:{}", listing.identity, observed.identity);
+                match observed.bytes {
+                    Some(bytes) => {
+                        retain_bytes(store, &mut saved, &bytes)?;
+                        result.contents.insert(saved.entry.clone(), bytes);
+                    }
+                    None => saved.availability = Availability::Absent,
+                }
+            }
+            Err(error) => saved.unavailable_reason = Some(error.to_string()),
+        }
+        result.manifest.entries.push(saved);
+    }
+    save(store, result)
+}
+
 pub fn retain_file<S: Storage>(
     manifest: &str,
     fire: &str,
