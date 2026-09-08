@@ -181,16 +181,15 @@ pub fn append_material<S: Storage>(
             "original material entry is immutable".into(),
         ));
     }
-    if let Some(binding) = &delivered {
-        if binding.attempt.is_empty()
+    if let Some(binding) = &delivered
+        && (binding.attempt.is_empty()
             || binding.view.view.is_empty()
             || binding.view.manifest != manifest.manifest
-            || !binding.view.entries.contains(&additional.entry)
-        {
-            return Err(Error::Invalid(
-                "material not in supplied attempt view".into(),
-            ));
-        }
+            || !binding.view.entries.contains(&additional.entry))
+    {
+        return Err(Error::Invalid(
+            "material not in supplied attempt view".into(),
+        ));
     }
     let mut saved = entry(
         &manifest.manifest,
