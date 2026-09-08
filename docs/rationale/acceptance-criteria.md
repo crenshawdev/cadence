@@ -44,38 +44,106 @@ not write an end-to-end test to cover it.
 
 ## The test rules that fall out of them
 
-A criterion is the specification a test is written from, so each rule above
-lands as a rule about the test itself. Stated separately because a test can
-violate these even when the criterion it came from is well formed.
+A well-formed criterion can still produce a badly scoped test. These rules
+apply to the test and its setup. Paths below are relative to
+`crates/cadence/`.
 
-**One test, one unit, one boundary.** The test calls a single function and
-asserts on what it returns. It does not drive a workflow to reach that function,
-and it does not assert on a caller's behaviour to prove the callee works.
+**One test, one unit.** Call the function named by the criterion and assert on
+its result, including observable state changes when it writes. Construct its
+inputs directly; do not run a workflow to obtain them or assert on a caller to
+prove a callee. A unit may cross zero or several real boundaries. Name and
+control each one; there is no one-boundary quota.
 
-**Solitary at real boundaries, sociable through deterministic internals.** Stub
-the filesystem, the clock, a subprocess, the network. Call everything else for
-real. Mocking an internal collaborator asserts on call structure rather than
-behaviour, so the test breaks on a refactor that changed nothing observable -
-that is a false failure, and false failures are what teach people to ignore a
-suite.
+**Separate decisions from acquisition.** `src/config/merge.rs::deep_merge`,
+`src/derivation/parse.rs` and `src/next_action/select.rs::select` work on
+supplied values. They need no mocks. Files on disk are not pure inputs:
+reading them is I/O. `src/derivation/capture.rs::ArtifactIo` and
+`src/config/reload.rs::ConfigIo` are filesystem seams;
+`src/store/filesystem.rs` writes and syncs durable state.
+`src/rail/git.rs::run` starts Git. `src/guard/audit.rs::event_identity` reads
+`SystemTime` when no tool-use ID is supplied. Control these boundaries when
+testing their consumers. There is no direct network client in this crate;
+`src/main.rs::run_serve` uses MCP over stdio. Do not invent a network mock.
 
-**Rust makes this cheap, which removes the usual excuse.** Most of this
-codebase is pure derivation - config plus files in, a decision out - so it needs
-no mocks at all, and `#[cfg(test)]` reaches private functions without exposing a
-seam just to reach them. "I need a live host to test this" almost always means
-the logic was never separated from the I/O; the fix is to separate it, not to
-build a harness that starts a host.
+**Private visibility does not require a public test API.** A child test module
+can access its ancestors' private items. `#[cfg(test)]` selects test code; it
+does not relax privacy or expose library internals to `tests/*.rs`. The inline
+modules in `src/execution/plan.rs` show the placement. A direct test of
+private `src/guard/bash.rs::verb` belongs under that module, not behind a
+spawned guard. This solves access, not I/O isolation.
 
-**A test whose result moves without the code moving is not measuring the code.**
-That is the diagnostic, not a flake to be retried. It means the assertion
-depends on something outside the unit - a model's wording, a real clock, a
-network, another test's leftovers - and the test is deleted or rewritten rather
-than stabilised.
+**Use independent inputs and literal expectations.** Hand-author fixtures at
+the unit's input boundary. Do not derive the expected answer with the function
+under test or its production serializer. `tests/phase7_receipts.rs`
+hand-encodes receipt inputs;
+`exact_committed_and_null_head_staged_records_settle` asserts `State::Settled`
+and rejects changed material. The literal JSON and digest fixtures in
+`src/execution/boundary.rs` provide independent serialization oracles. Table
+rows may vary one contract without driving a chain: `tests/phase7_lease.rs`
+has `admission_rejects_trailing_file_separators_with_typed_field_error`, which
+asserts `invalid-path`. Test absent, empty, malformed and unavailable inputs
+separately where their meanings differ, as
+`empty_unavailable_binary_and_unchanged_context_stay_distinct` does in
+`tests/phase7_risk.rs`. Fixed fixture prose is input data, not model output.
 
-**No end-to-end test substitutes for a routed overflow item.** When rule 7 sends
-an item to `MANUAL.md`, the answer is not to approximate it with a broad test
-that exercises the whole chain. A human drives it, and it is expected that a
-human finds some problems.
+**Fake real boundaries; call deterministic internals.**
+`tests/derivation_inputs.rs::MemoryIo` supplies artifact observations without
+replacing derivation. Use injected failures for unreadable inputs and failed
+writes. `tests/phase7_surfaces.rs` uses `detect_observed` to inject permission
+denials; `tests/store.rs::either_sync_failure_prevents_success` injects both
+sync failures through `Filesystem::with_probe`. A temporary directory is real
+filesystem I/O, not a stub. It is useful when the filesystem adapter itself is
+the subject. Boundary assertions can include forbidden reads:
+`two_level_walk_names_extensions_skips_and_symlinks_never_open_source_bodies`
+in `tests/phase7_surfaces.rs` checks that contract. Internal call counts are
+not output contracts.
+
+**Setup must obey isolation too.** `tests/support/signing.rs::generate` starts
+GPG; `src/execution_service_tests.rs::fixture` starts Git and `ssh-keygen`.
+`tests/mcp.rs::Client` starts `cadence serve`. These are real process tests,
+even when their requests and receipts are synthetic. They cannot establish
+that a model executed the task. Supply fixed subprocess observations to a
+consumer test; keep tests of real process or persistence behavior explicitly
+scoped to those boundaries. They do not satisfy a callee's unit criterion.
+
+**The existing suite is not uniformly compliant.** Concrete violations:
+
+- `src/execution_service_tests.rs`:
+  `resident_selects_overlap_graph_durably_and_ignores_report_bodies` drives
+  lifecycle acceptance, dispatch, signed commits, patch application and
+  receipt settlement to assert plan selection. This violates granularity.
+- `tests/phase7_guard.rs`:
+  `bounded_scanner_recognizes_top_level_separators_paths_and_seven_options`
+  proves the private scanner through a spawned guard's permission output. This
+  asserts on the caller to prove the callee and leaves subprocesses real.
+- `src/derivation_service_tests.rs`:
+  `query_guards_reobserve_changes_denials_and_fresh_hit_without_write` asserts
+  an internal `Event::Derived` count as well as returned and persisted state.
+  The count binds the test to internal execution structure.
+- `src/execution/tests.rs`:
+  `phase_six_core_acceptance_inventory_runs_registered_evidence` launches its
+  test binary for `--list` and calls other tests. It tests an inventory, not
+  one production unit. Similar inventory wrappers recur in the service and
+  store suites.
+
+**Control ordering; investigate nondeterminism.** Use a boundary barrier to
+establish that an operation reached the point being tested. `tests/store.rs`
+uses channels in
+`confirmation_holds_own_reply_and_cancellation_preserves_admitted_work`; its
+timeout bounds a hang. In contrast, `tests/phase7_guard.rs` uses a 100 ms
+sleep before asserting a child is still running in
+`killed_recovery_owner_releases_waiter_and_replays_exactly_once`. That is a
+scheduling assumption, not proof that the child attempted the blocked work.
+The same file's `legacy_invocations_do_not_coalesce_by_command_digest` reaches
+the real clock, PID and sequence counter; it checks uniqueness, not a fixed
+time-derived value. An unchanged-code failure can expose an internal race as
+well as uncontrolled input. Investigate and fix the cause; a passing retry is
+not evidence that the test or code is sound.
+
+**No end-to-end test substitutes for a routed overflow item.** When rule 7
+sends an item to `MANUAL.md`, keep it there. A synthetic boundary test cannot
+prove live host behavior or model judgment. Mark criteria for missing code
+pending; do not substitute a harness, source-text search or suite inventory.
 
 ## What rule 7 replaces
 
