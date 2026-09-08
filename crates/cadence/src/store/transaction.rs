@@ -61,6 +61,21 @@ pub struct ExternalChange {
     pub bytes: Vec<u8>,
 }
 
+impl ExternalChange {
+    pub fn validate(&self, actual: &Observed, replay: bool) -> Result<&[u8]> {
+        let installed = replay
+            && actual.bytes.as_ref() == Some(&self.bytes)
+            && actual.directory_identity == self.expected.directory_identity;
+        if actual != &self.expected && !installed {
+            return Err(Error::Conflict(format!(
+                "pending participant changed: {}",
+                self.target
+            )));
+        }
+        Ok(&self.bytes)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
     /// Stable caller identity, e.g. a digest of the frozen import source set.
@@ -87,12 +102,7 @@ impl Transaction {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub(crate) struct Participant {
-    pub target: String,
-    pub expected: Observed,
-    pub bytes: Vec<u8>,
-}
+pub(crate) type Participant = ExternalChange;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -729,15 +739,7 @@ fn validate_all<S: Storage>(
     // This entire pass finishes before any participant can change.
     for participant in participants {
         let actual = storage.read(&participant.target)?;
-        let intended = replay
-            && actual.bytes.as_ref() == Some(&participant.bytes)
-            && actual.directory_identity == participant.expected.directory_identity;
-        if actual != participant.expected && !intended {
-            return Err(Error::Conflict(format!(
-                "pending participant changed: {}",
-                participant.target
-            )));
-        }
+        participant.validate(&actual, replay)?;
     }
     Ok(())
 }

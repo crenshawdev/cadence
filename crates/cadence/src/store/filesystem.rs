@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
+    OwnershipAcquired,
     Writing,
     TemporarySync,
     TemporarySynced,
@@ -36,6 +37,7 @@ pub struct Filesystem {
     sequence: u64,
     probe: Probe,
     participants: BTreeMap<String, PathBuf>,
+    directories: BTreeMap<PathBuf, Vec<(u64, u64)>>,
     #[cfg(test)]
     omit_sync: OmitSync,
 }
@@ -48,13 +50,16 @@ pub struct Prepared {
 impl Filesystem {
     /// The root is the repository's .planning directory, not the repository.
     pub fn new(root: impl Into<PathBuf>) -> Result<Self> {
-        let root = root.into();
+        let root: PathBuf = root.into();
+        let root = std::path::absolute(root)?;
         ensure_directory(&root)?;
+        let directories = [(root.clone(), directory_identity(&root)?)].into();
         Ok(Self {
             root,
             sequence: 0,
             probe: Box::new(|_, _| Ok(())),
             participants: BTreeMap::new(),
+            directories,
             #[cfg(test)]
             omit_sync: OmitSync::Neither,
         })
@@ -127,9 +132,33 @@ impl Filesystem {
             ));
         }
         ensure_directory(path.parent().unwrap())?;
+        let parent = path.parent().unwrap().to_path_buf();
+        let identity = directory_identity(&parent)?;
+        if self
+            .directories
+            .get(&parent)
+            .is_some_and(|bound| bound != &identity)
+        {
+            return Err(Error::Conflict(
+                "registered directory identity changed".into(),
+            ));
+        }
+        self.directories.insert(parent, identity);
         self.participants.insert(name.to_string(), path);
         Ok(self)
     }
+}
+
+fn directory_identity(path: &Path) -> Result<Vec<(u64, u64)>> {
+    path.ancestors()
+        .map(|ancestor| {
+            let metadata = fs::symlink_metadata(ancestor)?;
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err(Error::Conflict("unsafe directory identity".into()));
+            }
+            Ok((metadata.dev(), metadata.ino()))
+        })
+        .collect()
 }
 
 fn ensure_directory(path: &Path) -> Result<()> {
@@ -189,31 +218,43 @@ impl Storage for Filesystem {
     type Prepared = Prepared;
 
     fn acquire(&mut self) -> Result<Box<dyn Send>> {
-        // Lock the directory inode: there is no removable lock file that could
-        // split cooperating writers into separate ownership domains.
-        let directory = OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
-            .open(&self.root)?;
-        loop {
-            // The descriptor remains owned by this File for the lock lifetime.
-            if unsafe { libc::flock(directory.as_raw_fd(), libc::LOCK_EX) } == 0 {
-                break;
+        let mut ownership = BTreeMap::new();
+        for (path, expected) in &self.directories {
+            let directory = OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .open(path)?;
+            let metadata = directory.metadata()?;
+            let identity = (metadata.dev(), metadata.ino());
+            if expected.first() != Some(&identity) || directory_identity(path)? != *expected {
+                return Err(Error::Conflict(
+                    "registered directory identity changed".into(),
+                ));
             }
-            let error = std::io::Error::last_os_error();
-            if error.kind() != std::io::ErrorKind::Interrupted {
-                return Err(error.into());
+            ownership
+                .entry(identity)
+                .or_insert((directory, path.clone()));
+        }
+        for (directory, path) in ownership.values() {
+            loop {
+                if unsafe { libc::flock(directory.as_raw_fd(), libc::LOCK_EX) } == 0 {
+                    break;
+                }
+                let error = std::io::Error::last_os_error();
+                if error.kind() != std::io::ErrorKind::Interrupted {
+                    return Err(error.into());
+                }
+            }
+            (self.probe)(Stage::OwnershipAcquired, path)?;
+        }
+        for (path, expected) in &self.directories {
+            if directory_identity(path)? != *expected {
+                return Err(Error::Conflict(
+                    "registered directory identity changed".into(),
+                ));
             }
         }
-        let current = fs::symlink_metadata(&self.root)?;
-        let locked = directory.metadata()?;
-        if current.dev() != locked.dev() || current.ino() != locked.ino() {
-            return Err(Error::Conflict(
-                "store root changed while acquiring ownership".into(),
-            ));
-        }
-        // Closing the descriptor also releases ownership after an error or exit.
-        Ok(Box::new(directory))
+        Ok(Box::new(ownership))
     }
 
     fn read(&mut self, target: &str) -> Result<Observed> {

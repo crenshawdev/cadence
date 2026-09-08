@@ -56,7 +56,7 @@ pub struct Observed {
 /// and confirm must check the installed bytes before the writer acknowledges.
 pub trait Storage: Send + 'static {
     type Prepared;
-    /// Hold exclusive root ownership until the returned guard is dropped.
+    /// Hold root and registered shared-parent ownership until the guard is dropped.
     /// In-memory adapters already have one owner and need no additional lock.
     fn acquire(&mut self) -> Result<Box<dyn Send>> {
         Ok(Box::new(()))

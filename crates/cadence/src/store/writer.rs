@@ -510,6 +510,7 @@ impl<S: Storage, P: Policy> Writer<S, P> {
             if !matches!(change.target.as_str(), "repo-config" | "global-config") {
                 return Err(Error::Invalid("unknown external participant".into()));
             }
+            change.validate(&self.storage.read(&change.target)?, false)?;
             participants.push(super::transaction::Participant {
                 target: change.target,
                 expected: change.expected,
