@@ -678,6 +678,7 @@ fn prior_blocking(view: &View, scope: &Scope, kind: CommitKind) -> Result<Option
             return None;
         }
         let review: Review = serde_json::from_str(&result.evidence_text).ok()?;
+        let review = Review::parse(result, &review.fire).ok()?;
         (review.fire.commit_kind == kind && review.blocking()).then_some(review)
     });
     Ok(reviews
@@ -778,12 +779,22 @@ async fn override_review<I: ConfigIo>(
         .len()
         .try_into()
         .map_err(|_| Error::Invalid("too many risk findings".into()))?;
+    let reason = answer
+        .adjustment
+        .clone()
+        .unwrap_or_else(|| answer.actual_response.clone());
+    if !cadence::rail::receipts::consequence_permits(
+        &cadence::rail::receipts::Consequence::Override {
+            reason: reason.clone(),
+        },
+    ) {
+        return Err(Error::Invalid(
+            "risk override requires a nonblank reason".into(),
+        ));
+    }
     let value = Override {
         id: id.clone(),
-        reason: answer
-            .adjustment
-            .clone()
-            .unwrap_or_else(|| answer.actual_response.clone()),
+        reason,
         authorization: Authorization::Answer {
             id: authorization,
             question_id: gate.id.clone(),
@@ -923,6 +934,26 @@ async fn risk_gate<I: ConfigIo>(
         }
     }
     let staged = git::staged(root, &base, &receipts)?;
+    if round == 2
+        && let Some(prior) = &prior
+        && prior.fire.round == 1
+    {
+        let paths = |values: &[PathBuf]| {
+            values
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
+        if !cadence::rail::receipts::narrowed_scope(
+            &paths(&prior.fire.authored),
+            &paths(&staged.authored),
+            false,
+        ) {
+            return Ok(Response::Refused(
+                "risk re-arm must narrow the original authored scope".into(),
+            ));
+        }
+    }
     let scan = risk_diff::scan(Some(&staged.diff), &staged.authored, &surfaces)?;
     let fire = risk::Fire::new(&captured.scope, kind, round, &staged, scan)?;
     if !force_review && fire.scan.matches.is_empty() && !fire.scan.inconclusive {
@@ -950,10 +981,10 @@ async fn risk_gate<I: ConfigIo>(
             let queue = persist_deferred(planning, &captured.scope.phase, &review)?;
             captured.risk = Some(Outcome::Deferred { review, queue });
         }
-        Consequence::Blocking if !review.blocking() => {
+        Consequence::Blocking if review.permits(consequence) => {
             captured.risk = Some(Outcome::BlockingCleared(review));
         }
-        Consequence::Adjudicated if review.findings.is_empty() => {
+        Consequence::Adjudicated if review.permits(consequence) => {
             captured.risk = Some(Outcome::Adjudicated(review));
         }
         Consequence::Blocking | Consequence::Adjudicated => {

@@ -137,6 +137,7 @@ impl Fixture {
             "## Phases\n- [ ] **Phase 7: Source leases**\n",
         )
         .unwrap();
+        fs::write(root.join(".planning/config.json"), serde_json::to_vec(&serde_json::json!({"review":{"triggers":{"risk_surface":{"surfaces":cadence::rail::risk::CATEGORIES}}}})).unwrap()).unwrap();
         fs::write(root.join(".planning/phases/7/PLAN-1.md"), source(1, lease)).unwrap();
         let fixture = Self { _temp: temp, root };
         fixture.git(&["init", "-q"]);
@@ -903,6 +904,16 @@ fn wire_dispatch(fixture: &Fixture) -> Value {
     answer["dispatch"].clone()
 }
 
+fn settle_wire(client: &mut Client, dispatch: &Value) {
+    let scan = client.call("cadence_apply", json!({"operation":"risk-check","request_id":format!("settle-{}",dispatch["id"].as_str().unwrap()),
+        "scope":{"phase":7,"occurrence":"phase-7-execution","worker":"1"},
+        "source":{"kind":"execution","plan":1,"dispatch_id":dispatch["id"]},"surfaces":null}));
+    assert_eq!(scan["status"], "ok", "{scan}");
+    assert_eq!(scan["observation"]["scan"]["matches"], json!([]), "{scan}");
+    assert_eq!(scan["observation"]["scan"]["checked"], true);
+    assert_eq!(client.query()["outcome"], "complete");
+}
+
 fn task_commit(fixture: &Fixture, paths: &[&str]) -> String {
     for path in paths {
         let absolute = fixture.root.join(path);
@@ -1054,7 +1065,8 @@ fn public_git_accepts_directory_covered_rename_and_compares_merge_against_every_
     fixture.git(&["mv", "src/a.rs", "src/moved.rs"]);
     let mut client = fixture.client();
     let answer = client.call("cadence_apply", wire_patch(&dispatch, &sha));
-    assert_eq!(answer["outcome"], "complete", "{answer}");
+    assert_eq!(answer["code"], "risk-pending", "{answer}");
+    settle_wire(&mut client, &dispatch);
     client.finish();
 
     for covered in [false, true] {
@@ -1075,7 +1087,8 @@ fn public_git_accepts_directory_covered_rename_and_compares_merge_against_every_
         if covered {
             let mut client = fixture.client();
             let answer = client.call("cadence_apply", wire_patch(&dispatch, &sha));
-            assert_eq!(answer["outcome"], "complete", "{answer}");
+            assert_eq!(answer["code"], "risk-pending", "{answer}");
+            settle_wire(&mut client, &dispatch);
             client.finish();
             let paths = &fixture.read().snapshot.data["execution"]["occurrences"]["7"]["plans"][0]
                 ["commit_paths"][&sha];
@@ -1381,7 +1394,8 @@ fn public_corrected_signed_full_patch_recovers_same_dispatch_after_operator_hist
         "git-order"
     );
     let accepted = client.call("cadence_apply", wire_patch(&dispatch, &corrected));
-    assert_eq!(accepted["outcome"], "complete", "{accepted}");
+    assert_eq!(accepted["code"], "risk-pending", "{accepted}");
+    settle_wire(&mut client, &dispatch);
     client.finish();
     let view = fixture.read();
     assert!(view.decisions.contains(&refusal));
@@ -1420,7 +1434,8 @@ fn public_staged_only_operator_repair_accepts_original_in_lease_commit() {
     let mut client = fixture.client();
     assert_eq!(client.query()["dispatch"], dispatch);
     let accepted = client.call("cadence_apply", wire_patch(&dispatch, &sha));
-    assert_eq!(accepted["outcome"], "complete", "{accepted}");
+    assert_eq!(accepted["code"], "risk-pending", "{accepted}");
+    settle_wire(&mut client, &dispatch);
     client.finish();
     assert!(fixture.read().decisions.contains(&refusal));
     assert_eq!(fixture.git(&["rev-parse", "HEAD"]), sha);

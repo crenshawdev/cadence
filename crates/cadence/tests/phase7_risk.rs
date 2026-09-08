@@ -996,7 +996,7 @@ impl Repo {
             .unwrap();
         assert!(suite.status.success());
         let answer = self.call(json!({"schema":1,"kind":"executor","dispatch_id":dispatch["id"],"expected_execution_version":dispatch["expected_execution_version"],"outcome":"complete","tasks":tasks,"deviations":[],"blockers":[]}));
-        assert_eq!(answer["outcome"], "complete", "{answer}");
+        assert_eq!(answer["code"], "risk-pending", "{answer}");
         commits
     }
     fn execution_request(&self, id: &str, dispatch: &Value) -> Value {
@@ -1078,6 +1078,31 @@ fn public_execution_source_uses_only_the_retained_dispatch_base_and_accepted_tas
         assert_eq!(repo.call(input)["status"], "refused");
         assert_eq!(repo.view(), before);
     }
+    // Complete only after the latest exact scan has its contracted settlement.
+    let mut client = Client::new(&repo.root);
+    let query = json!({"operation":"risk-status","scope":{"phase":7,"occurrence":"phase-7-execution","worker":"1"},"source":{"kind":"execution","plan":1,"dispatch_id":dispatch["id"]},"surfaces":null});
+    let raw = client.call("cadence_query", query);
+    let status = &raw["result"]["structuredContent"];
+    let fire = json!({"id":"fixture-execution-fire","binding":{"boundary":status["requirement"]["boundary"],"observation":status["assessment"]["observation"],"material":status["requirement"]["material"],"surfaces":status["requirement"]["surfaces"]},"review_scope":status["review_scope"],"rearm_of":null});
+    for args in [
+        json!({"operation":"risk-fire","request_id":"fixture-fire","fire":fire}),
+        json!({"operation":"risk-consequence","request_id":"fixture-pass","receipt":{"id":"fixture-pass","fire":fire,"consequence":{"kind":"gate-pass","evidence_id":"fixture-contract"}}}),
+    ] {
+        let answer = client.call("cadence_apply", args);
+        assert_eq!(
+            answer["result"]["structuredContent"]["status"], "ok",
+            "{answer}"
+        );
+    }
+    let answer = client.call(
+        "cadence_query",
+        json!({"operation":"execute-next","phase":7}),
+    );
+    assert_eq!(
+        answer["result"]["structuredContent"]["outcome"], "complete",
+        "{answer}"
+    );
+    client.finish();
 }
 
 #[test]

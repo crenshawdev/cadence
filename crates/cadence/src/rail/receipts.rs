@@ -54,7 +54,9 @@ impl Binding {
     }
 
     pub fn matches(&self, record: &Recorded) -> bool {
-        Self::new(self.boundary.clone(), record).is_ok_and(|binding| binding == *self)
+        Self::new(self.boundary.clone(), record).is_ok_and(|binding| {
+            same_material(&self.material, &binding.material) && binding == *self
+        })
     }
 }
 
@@ -146,6 +148,29 @@ impl Receipt {
     }
 }
 
+/// Shared by the native rail and the historical pause contract adapter.
+pub fn same_material(expected: &MaterialIdentity, actual: &MaterialIdentity) -> bool {
+    expected.validate().is_ok() && actual.validate().is_ok() && expected == actual
+}
+
+pub fn narrowed_scope(original: &[String], next: &[String], already_rearmed: bool) -> bool {
+    !already_rearmed && !next.is_empty() && next.iter().all(|path| original.contains(path))
+}
+
+/// A re-arm alone never passes its new review; status accounts for its child separately.
+pub fn consequence_permits(consequence: &Consequence) -> bool {
+    match consequence {
+        Consequence::GatePass { .. } => true,
+        Consequence::Override { reason } => !reason.trim().is_empty(),
+        Consequence::Adjudication { passed, .. } => *passed,
+        Consequence::Deferral {
+            permits_continuation,
+            ..
+        } => *permits_continuation,
+        Consequence::Rearm { .. } => false,
+    }
+}
+
 pub fn validate_rearm(original: &Fire, next: &Fire) -> Result<()> {
     if original.rearm_of.is_some()
         || next.rearm_of.as_ref() != Some(&original.id)
@@ -156,11 +181,11 @@ pub fn validate_rearm(original: &Fire, next: &Fire) -> Result<()> {
         || next.binding.material.base_id() != original.binding.material.base_id()
         || std::mem::discriminant(&next.binding.material)
             != std::mem::discriminant(&original.binding.material)
-        || next.review_scope.is_empty()
-        || next
-            .review_scope
-            .iter()
-            .any(|path| !original.review_scope.contains(path))
+        || !narrowed_scope(
+            &original.review_scope,
+            &next.review_scope,
+            original.rearm_of.is_some(),
+        )
     {
         return Err(invalid(
             "one re-arm requires its original fire and narrowed material scope",
@@ -240,7 +265,12 @@ pub fn status(
     let Some(current) = current else {
         return Ok(answer);
     };
-    if current.observation.resolution.material().as_ref() != Some(&wanted.material)
+    if !current
+        .observation
+        .resolution
+        .material()
+        .as_ref()
+        .is_some_and(|actual| same_material(&wanted.material, actual))
         || current.observation.surfaces != wanted.surfaces
     {
         answer.state = if current.observation.outcome == ObservationOutcome::Unchecked {
@@ -265,8 +295,6 @@ pub fn status(
     for fire in relevant_fires {
         let receipt = receipts.iter().find(|r| r.fire == *fire);
         let permits = match receipt.map(|r| &r.consequence) {
-            Some(Consequence::GatePass { .. } | Consequence::Override { .. }) => true,
-            Some(Consequence::Adjudication { passed, .. }) => *passed,
             Some(Consequence::Deferral {
                 pending_id,
                 permits_continuation,
@@ -279,6 +307,7 @@ pub fn status(
                 // itself be submitted and its consequence examined in this loop.
                 fires.contains(next_fire)
             }
+            Some(consequence) => consequence_permits(consequence),
             None => false,
         };
         if !permits {

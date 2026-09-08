@@ -92,6 +92,7 @@ fn fixture(specs: &[(&[&str], &[&str], &str)]) -> Fixture {
         "## Phases\n- [ ] **Phase 6: Native execution**\n",
     )
     .unwrap();
+    fs::write(root.join("config.json"), serde_json::to_vec(&serde_json::json!({"review":{"triggers":{"risk_surface":{"surfaces":cadence::rail::risk::CATEGORIES}}}})).unwrap()).unwrap();
     for (index, (files, tasks, body)) in specs.iter().enumerate() {
         fs::write(
             phase.join(format!("PLAN-{}.md", index + 1)),
@@ -243,6 +244,71 @@ fn commit(fixture: &Fixture, name: &str, subject: &str, signed: bool) -> String 
     run(&fixture.project, &["rev-parse", "HEAD"])
 }
 
+async fn scan_execution(
+    server: &CadenceServer,
+    root: &Path,
+    dispatch: &ActiveDispatch,
+    id: &str,
+) -> cadence::rail::receipts::Report {
+    use cadence::rail::{receipts, risk};
+    let scope = risk::ScopeSelection {
+        phase: dispatch.phase.try_into().unwrap(),
+        occurrence: format!("phase-{}-execution", dispatch.phase),
+        worker: Some(dispatch.plan.to_string()),
+    };
+    let source = risk::Source::Execution {
+        plan: dispatch.plan.try_into().unwrap(),
+        dispatch_id: dispatch.id.clone(),
+    };
+    let scan = server
+        .service
+        .apply_rail(
+            root,
+            risk::Apply::RiskCheck {
+                request_id: id.into(),
+                scope: scope.clone(),
+                source: source.clone(),
+                surfaces: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(scan, Envelope::Ok(_)), "{scan:?}");
+    let answer = server
+        .service
+        .rail_receipt(
+            root,
+            super::rail_service::ReceiptCommand::Status(receipts::Query {
+                scope,
+                source,
+                surfaces: None,
+            }),
+        )
+        .await
+        .unwrap();
+    match answer {
+        Envelope::Ok(super::rail_service::ReceiptOutput::Status(report)) => *report,
+        _ => panic!("risk status did not return a report"),
+    }
+}
+
+async fn settle_execution(server: &CadenceServer, root: &Path, dispatch: &ActiveDispatch) {
+    let report = scan_execution(server, root, dispatch, &format!("clear-{}", dispatch.id)).await;
+    assert_eq!(
+        report.assessment.state,
+        cadence::rail::receipts::State::Clear
+    );
+    assert!(report.assessment.permits_continuation);
+}
+
+fn assert_pending(answer: ExecutionEnvelope) -> ExecutionEnvelope {
+    assert!(
+        matches!(&answer, Envelope::Refused { code, .. } if code == "risk-pending"),
+        "{answer:?}"
+    );
+    answer
+}
+
 fn completed(task_id: &str, commit: &str) -> TaskOutcome {
     TaskOutcome::Completed {
         task_id: task_id.into(),
@@ -323,23 +389,25 @@ fn resident_selects_overlap_graph_durably_and_ignores_report_bodies() {
         assert_eq!(dispatch(&server, &fixture).await, first);
 
         let first_commit = commit(&fixture, "one", "feat(phase-6): complete T1", true);
-        assert_eq!(
+        assert_pending(
             server
-                .apply_executor_patch(&fixture.root, complete_patch(&first, &[&first_commit]),)
+                .apply_executor_patch(&fixture.root, complete_patch(&first, &[&first_commit]))
                 .await
                 .unwrap(),
-            Envelope::Ok(Success::NextPlan { phase: 6, plan: 2 })
         );
+        assert_pending(server.query_execution(&fixture.root, 6).await.unwrap());
+        settle_execution(&server, &fixture.root, &first).await;
         let second = dispatch(&server, &fixture).await;
         assert_eq!(second.plan, 2);
         let second_commit = commit(&fixture, "two", "feat(phase-6): complete T2", true);
-        assert_eq!(
+        assert_pending(
             server
-                .apply_executor_patch(&fixture.root, complete_patch(&second, &[&second_commit]),)
+                .apply_executor_patch(&fixture.root, complete_patch(&second, &[&second_commit]))
                 .await
                 .unwrap(),
-            Envelope::Ok(Success::NextPlan { phase: 6, plan: 3 })
         );
+        assert_pending(server.query_execution(&fixture.root, 6).await.unwrap());
+        settle_execution(&server, &fixture.root, &second).await;
         assert_eq!(dispatch(&server, &fixture).await.plan, 3);
     });
 }
@@ -415,11 +483,15 @@ fn signed_commits_apply_in_strict_order_and_paths_survive_replay() {
         let first = commit(&fixture, "one", "feat(phase-6): complete T1", true);
         let second = commit(&fixture, "two", "fix(phase-6): complete T2", true);
         let patch = complete_patch(&dispatch, &[&first, &second]);
-        assert_eq!(
+        let pending = assert_pending(
             server
                 .apply_executor_patch(&fixture.root, patch.clone())
                 .await
                 .unwrap(),
+        );
+        settle_execution(&server, &fixture.root, &dispatch).await;
+        assert_eq!(
+            server.query_execution(&fixture.root, 6).await.unwrap(),
             Envelope::Ok(Success::Complete { phase: 6 })
         );
         assert_eq!(
@@ -427,7 +499,7 @@ fn signed_commits_apply_in_strict_order_and_paths_survive_replay() {
                 .apply_executor_patch(&fixture.root, patch)
                 .await
                 .unwrap(),
-            Envelope::Ok(Success::Complete { phase: 6 })
+            pending
         );
         let view = server
             .store(&fixture.root, Operation::ReadVerified)
@@ -636,13 +708,12 @@ fn execution_restart_child() {
             }
             "apply-lost" => {
                 let server = CadenceServer::with_factory(factory());
-                assert!(!matches!(
+                assert_pending(
                     server
                         .apply_executor_patch(&root, child_patch())
                         .await
                         .unwrap(),
-                    Envelope::Refused { .. }
-                ));
+                );
                 restart_barrier("patch-confirmed");
             }
             "summary-partial" => {
@@ -872,14 +943,7 @@ fn execution_restart_lost_apply_replays_one_immutable_transition() {
             let decisions = fs::read(fixture.root.join("decisions.jsonl")).unwrap();
             let summary = fs::read(fixture.root.join("phases/6/SUMMARY.md")).unwrap();
             let response = execution_child_result(&fixture.root, "read-apply", Some(&patch));
-            assert_eq!(
-                response,
-                if plan_count == 1 {
-                    Envelope::Ok(Success::Complete { phase: 6 })
-                } else {
-                    Envelope::Ok(Success::NextPlan { phase: 6, plan: 2 })
-                }
-            );
+            assert_pending(response.clone());
             assert_eq!(
                 fs::read(fixture.root.join("decisions.jsonl")).unwrap(),
                 decisions
@@ -896,6 +960,9 @@ fn execution_restart_lost_apply_replays_one_immutable_transition() {
                 1
             );
             disk_answer(&fixture.root, &response);
+            let server = CadenceServer::with_factory(factory());
+            settle_execution(&server, &fixture.root, &dispatch).await;
+            drop(server);
             if plan_count == 2 {
                 let later = execution_child_result(&fixture.root, "read-query", None);
                 assert!(matches!(later, Envelope::Ok(Success::Dispatch { ref dispatch, .. }) if dispatch.plan == 2));
@@ -930,10 +997,11 @@ fn execution_restart_repairs_summary_before_final_state_confirmation() {
         assert!(fixture.root.join(INTENT).exists());
         let installed = fs::read(fixture.root.join("phases/6/SUMMARY.md")).unwrap();
         assert!(String::from_utf8_lossy(&installed).contains(&sha));
-        assert_eq!(
-            execution_child_result(&fixture.root, "read-apply", Some(&patch)),
-            Envelope::Ok(Success::Complete { phase: 6 })
-        );
+        assert_pending(execution_child_result(
+            &fixture.root,
+            "read-apply",
+            Some(&patch),
+        ));
         assert!(!fixture.root.join(INTENT).exists());
         assert_eq!(
             fs::read(fixture.root.join("phases/6/SUMMARY.md")).unwrap(),
@@ -945,6 +1013,12 @@ fn execution_restart_repairs_summary_before_final_state_confirmation() {
                 .matches("| 1 | T1 | completed")
                 .count(),
             1
+        );
+        let server = CadenceServer::with_factory(factory());
+        settle_execution(&server, &fixture.root, &dispatch).await;
+        assert_eq!(
+            server.query_execution(&fixture.root, 6).await.unwrap(),
+            Envelope::Ok(Success::Complete { phase: 6 })
         );
     });
 }
@@ -1472,10 +1546,7 @@ fn execution_service_apply_resolves_active_receipt_and_foreign_dispatch_scopes()
             .apply_executor_patch(&fixture.root, patch.clone())
             .await
             .unwrap();
-        assert_eq!(
-            serde_json::to_value(&applied).unwrap(),
-            json!({"status":"ok","outcome":"complete","phase":6})
-        );
+        assert_pending(applied.clone());
         disk_answer(&fixture.root, &applied);
         let again = server
             .refuse_execution_arguments(
@@ -1784,4 +1855,220 @@ fn execution_service_name_status_reader_rejects_incomplete_and_invalid_git_bytes
     ] {
         assert!(read_name_status(bytes).is_err(), "{bytes:?}");
     }
+}
+
+#[test]
+fn execution_service_risky_skill_sequence_refuses_missing_unfired_stale_and_restart_until_settled()
+{
+    use super::rail_service::ReceiptCommand;
+    use cadence::rail::{receipts, risk};
+    runtime().block_on(async {
+        let fixture = fixture(&[(&["work/risky.txt"], &["T1"], "risky task\n")]);
+        let server = CadenceServer::with_factory(factory());
+        accept(&server, &fixture).await;
+        // This is the unchanged skill's query -> fixed executor return -> apply sequence.
+        let active = dispatch(&server, &fixture).await;
+        fs::create_dir_all(fixture.project.join("work")).unwrap();
+        fs::write(
+            fixture.project.join("work/risky.txt"),
+            "JSON.parse(input)\n",
+        )
+        .unwrap();
+        run(&fixture.project, &["add", "work/risky.txt"]);
+        run(
+            &fixture.project,
+            &["commit", "-q", "-S", "-m", "feat(7): risky fixture T1"],
+        );
+        let head = run(&fixture.project, &["rev-parse", "HEAD"]);
+        assert_eq!(run(&fixture.project, &["log", "-1", "--format=%G?"]), "G");
+        let patch = complete_patch(&active, &[&head]);
+        let pending = assert_pending(
+            server
+                .apply_executor_patch(&fixture.root, patch.clone())
+                .await
+                .unwrap(),
+        );
+        let before = server
+            .store(&fixture.root, Operation::ReadVerified)
+            .await
+            .unwrap();
+        let occurrence = &before.snapshot.data["execution"]["occurrences"]["6"];
+        assert!(occurrence["terminal"].is_null());
+        assert!(occurrence["active"].is_null());
+        assert_eq!(occurrence["plans"][0]["tasks"][0]["commit"], head);
+        assert!(risk::read(&before.snapshot.data).unwrap().is_empty());
+        assert_pending(server.query_execution(&fixture.root, 6).await.unwrap());
+        assert_eq!(
+            server
+                .apply_executor_patch(&fixture.root, patch.clone())
+                .await
+                .unwrap(),
+            pending
+        );
+        let report = scan_execution(&server, &fixture.root, &active, "matched-first").await;
+        assert_eq!(report.assessment.state, receipts::State::Unfired);
+        assert_pending(server.query_execution(&fixture.root, 6).await.unwrap());
+        let old = receipts::Fire {
+            id: "old-fire".into(),
+            binding: receipts::Binding::new(
+                report.requirement.boundary.clone(),
+                report.current_observation.as_ref().unwrap(),
+            )
+            .unwrap(),
+            review_scope: report.review_scope,
+            rearm_of: None,
+        };
+        let current = scan_execution(&server, &fixture.root, &active, "matched-current").await;
+        // A matching old material identity still lacks this scan generation.
+        for (id, mut fire) in [
+            ("stale", old.clone()),
+            ("wrong-run", old.clone()),
+            ("pre-signoff", old),
+        ] {
+            if id == "wrong-run" {
+                fire.binding.boundary.run_id = "foreign-dispatch".into();
+            }
+            if id == "pre-signoff" {
+                fire.binding.boundary.after_generation = 0;
+            }
+            let result = server
+                .service
+                .rail_receipt(
+                    &fixture.root,
+                    ReceiptCommand::Submit(receipts::Apply::Fire {
+                        request_id: id.into(),
+                        fire: Box::new(fire),
+                    }),
+                )
+                .await
+                .unwrap();
+            assert!(matches!(result, Envelope::Refused { .. }));
+            assert_pending(server.query_execution(&fixture.root, 6).await.unwrap());
+        }
+        let fire = receipts::Fire {
+            id: "current-fire".into(),
+            binding: receipts::Binding::new(
+                current.requirement.boundary.clone(),
+                current.current_observation.as_ref().unwrap(),
+            )
+            .unwrap(),
+            review_scope: current.review_scope,
+            rearm_of: None,
+        };
+        assert!(matches!(
+            server
+                .service
+                .rail_receipt(
+                    &fixture.root,
+                    ReceiptCommand::Submit(receipts::Apply::Fire {
+                        request_id: "current-fire".into(),
+                        fire: Box::new(fire.clone())
+                    })
+                )
+                .await
+                .unwrap(),
+            Envelope::Ok(_)
+        ));
+        assert_pending(server.query_execution(&fixture.root, 6).await.unwrap());
+        drop(server);
+        let replacement = CadenceServer::with_factory(factory());
+        assert_pending(replacement.query_execution(&fixture.root, 6).await.unwrap());
+        assert_eq!(
+            replacement
+                .apply_executor_patch(&fixture.root, patch.clone())
+                .await
+                .unwrap(),
+            pending
+        );
+        let receipt = receipts::Receipt {
+            id: "fixture-settlement".into(),
+            fire,
+            consequence: receipts::Consequence::GatePass {
+                evidence_id: "contracted-fixture-result".into(),
+            },
+        };
+        assert!(matches!(
+            replacement
+                .service
+                .rail_receipt(
+                    &fixture.root,
+                    ReceiptCommand::Submit(receipts::Apply::Consequence {
+                        request_id: "settle".into(),
+                        receipt: Box::new(receipt)
+                    })
+                )
+                .await
+                .unwrap(),
+            Envelope::Ok(_)
+        ));
+        // A receipt never installs terminal completion by itself.
+        let settled = replacement
+            .store(&fixture.root, Operation::ReadVerified)
+            .await
+            .unwrap();
+        assert!(settled.snapshot.data["execution"]["occurrences"]["6"]["terminal"].is_null());
+        drop(replacement);
+        let replacement = CadenceServer::with_factory(factory());
+        assert_eq!(
+            replacement.query_execution(&fixture.root, 6).await.unwrap(),
+            Envelope::Ok(Success::Complete { phase: 6 })
+        );
+        assert_eq!(
+            replacement
+                .apply_executor_patch(&fixture.root, patch)
+                .await
+                .unwrap(),
+            pending
+        );
+        let after = replacement
+            .store(&fixture.root, Operation::ReadVerified)
+            .await
+            .unwrap();
+        assert_eq!(
+            after.snapshot.data["execution"]["occurrences"]["6"]["receipts"],
+            occurrence["receipts"]
+        );
+        assert_eq!(
+            after.snapshot.data["execution"]["occurrences"]["6"]["plans"],
+            occurrence["plans"]
+        );
+        assert_eq!(run(&fixture.project, &["rev-parse", "HEAD"]), head);
+        // Even a terminal Complete is re-assessed after a new unchecked scan.
+        let bad = cadence::rail::risk::Observation {
+            version: 1,
+            request_id: "unchecked-current".into(),
+            request_digest: OUTPUT_DIGEST.into(),
+            scope: current.requirement.boundary.scope,
+            source: risk::Source::Execution {
+                plan: 1.try_into().unwrap(),
+                dispatch_id: active.id,
+            },
+            resolution: risk::Resolution::Committed {
+                base_id: Some(active.base_sha),
+                head_id: Some(head),
+            },
+            outcome: risk::ObservationOutcome::Unchecked,
+            surfaces: risk::CATEGORIES.map(str::to_owned).to_vec(),
+            scan: Some(
+                cadence::rail::risk_diff::scan(None, &[], &risk::CATEGORIES.map(str::to_owned))
+                    .unwrap(),
+            ),
+            diagnostics: vec!["injected unreadable diff".into()],
+        };
+        replacement
+            .store(
+                &fixture.root,
+                Operation::RailObservation {
+                    expected_generation: after.snapshot.generation,
+                    expected_integrity: after.snapshot.integrity,
+                    record: Box::new(
+                        risk::Recorded::new(bad, after.snapshot.generation + 1).unwrap(),
+                    ),
+                },
+            )
+            .await
+            .unwrap();
+        let refused = assert_pending(replacement.query_execution(&fixture.root, 6).await.unwrap());
+        assert!(matches!(refused, Envelope::Refused {reason,..} if reason.contains("Unchecked")));
+    });
 }

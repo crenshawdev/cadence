@@ -669,6 +669,7 @@ impl Fixture {
             "## Phases\n- [ ] **Phase 6: Native execution**\n",
         )
         .unwrap();
+        fs::write(root.join(".planning/config.json"), serde_json::to_vec(&serde_json::json!({"review":{"triggers":{"risk_surface":{"surfaces":cadence::rail::risk::CATEGORIES}}}})).unwrap()).unwrap();
         for (index, tasks) in plans.iter().enumerate() {
             let rows = tasks
                 .iter()
@@ -694,6 +695,7 @@ impl Fixture {
                 "add",
                 "src/shared.txt",
                 ".planning/ROADMAP.md",
+                ".planning/config.json",
                 ".planning/phases/6",
                 ".gitignore",
             ],
@@ -875,6 +877,15 @@ impl Fixture {
         assert_eq!(self.semantic_bytes(), before);
     }
 
+    fn settle(&self, client: &mut Client, dispatch: &Value) {
+        let scan = envelope(&client.tools_call(70, "cadence_apply", json!({"operation":"risk-check","request_id":format!("clear-{}",dispatch["id"].as_str().unwrap()),
+            "scope":{"phase":6,"occurrence":"phase-6-execution","worker":dispatch["plan"].to_string()},
+            "source":{"kind":"execution","plan":dispatch["plan"],"dispatch_id":dispatch["id"]},"surfaces":null})));
+        assert_eq!(scan["status"], "ok", "{scan}");
+        assert_eq!(scan["observation"]["scan"]["checked"], true);
+        assert_eq!(scan["observation"]["scan"]["matches"], json!([]));
+    }
+
     fn complete_patch(&self, dispatch: &Value) -> Value {
         let mut tasks = vec![];
         for task in dispatch["tasks"].as_array().unwrap() {
@@ -992,13 +1003,14 @@ fn execution_calls_confirm_dispatch_completion_and_refused_patch_semantics() {
     );
     fixture.refuse(&mut client, patch.clone(), "git-order");
     git(fixture.root(), &["checkout", "-q", "--detach", sha]);
-    let complete = fixture.call(&mut client, "cadence_apply", patch.clone());
+    let pending = fixture.call(&mut client, "cadence_apply", patch.clone());
+    assert_eq!(pending["code"], "risk-pending");
+    fixture.settle(&mut client, &first["dispatch"]);
+    assert_eq!(fixture.call(&mut client, "cadence_apply", patch), pending);
     assert_eq!(
-        complete,
+        fixture.query(&mut client),
         json!({"status":"ok","outcome":"complete","phase":6})
     );
-    assert_eq!(fixture.call(&mut client, "cadence_apply", patch), complete);
-    assert_eq!(fixture.query(&mut client), complete);
     assert!(client.finish().success());
 }
 
@@ -1294,10 +1306,9 @@ fn execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans() {
     );
     let first_patch = fixture.complete_patch(&first["dispatch"]);
     let next = fixture.call(&mut second_child, "cadence_apply", first_patch.clone());
-    assert_eq!(
-        next,
-        json!({"status":"ok","outcome":"next-plan","phase":6,"plan":2})
-    );
+    assert_eq!(next["code"], "risk-pending");
+    assert_eq!(fixture.query(&mut second_child)["code"], "risk-pending");
+    fixture.settle(&mut second_child, &first["dispatch"]);
     let first_summary = fs::read(fixture.root().join(".planning/phases/6/SUMMARY.md")).unwrap();
     assert!(String::from_utf8_lossy(&first_summary).contains("Status: executing"));
     assert!(second_child.finish().success());
@@ -1334,7 +1345,10 @@ fn execute_restart_preserves_dispatch_and_advances_overlapping_signed_plans() {
     );
     assert_eq!(fixture.query(&mut third_child), second);
     let second_patch = fixture.complete_patch(&second["dispatch"]);
-    let complete = fixture.call(&mut third_child, "cadence_apply", second_patch.clone());
+    let pending = fixture.call(&mut third_child, "cadence_apply", second_patch.clone());
+    assert_eq!(pending["code"], "risk-pending");
+    fixture.settle(&mut third_child, &second["dispatch"]);
+    let complete = fixture.query(&mut third_child);
     assert_eq!(
         complete,
         json!({"status":"ok","outcome":"complete","phase":6})

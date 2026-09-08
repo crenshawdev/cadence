@@ -52,10 +52,12 @@ impl Fire {
         if !self.staged || self.head_id.is_some() {
             return Err(Error::Invalid("pause fire is not staged material".into()));
         }
-        Ok(MaterialIdentity::Staged {
+        let material = MaterialIdentity::Staged {
             base_id: self.base.clone(),
             index_id: self.index_id.clone(),
-        })
+        };
+        material.validate()?;
+        Ok(material)
     }
 
     pub fn new(
@@ -133,7 +135,11 @@ impl Review {
         }
         let review: Self = serde_json::from_str(&record.evidence_text)
             .map_err(|_| Error::Invalid("risk review return is unusable".into()))?;
-        if review.version != 1 || review.fire != *fire || review.finding_record.trim().is_empty() {
+        if review.version != 1
+            || !crate::rail::receipts::same_material(&fire.material()?, &review.fire.material()?)
+            || review.fire != *fire
+            || review.finding_record.trim().is_empty()
+        {
             return Err(Error::Invalid("risk review return is unusable".into()));
         }
         let mut numbers = BTreeSet::new();
@@ -150,6 +156,27 @@ impl Review {
             validate_path(PathBuf::from(&finding.file).as_path())?;
         }
         Ok(review)
+    }
+
+    /// Convert the established pause policy into the shared consequence algebra.
+    pub fn permits(&self, policy: Consequence) -> bool {
+        use crate::rail::receipts::{self, Consequence as Shared};
+        let fact = match policy {
+            Consequence::Off => return false,
+            Consequence::Advisory | Consequence::Deferred => Shared::Deferral {
+                pending_id: self.finding_record.clone(),
+                permits_continuation: true,
+            },
+            Consequence::Blocking => Shared::Adjudication {
+                passed: !self.blocking(),
+                evidence_id: self.finding_record.clone(),
+            },
+            Consequence::Adjudicated => Shared::Adjudication {
+                passed: self.findings.is_empty(),
+                evidence_id: self.finding_record.clone(),
+            },
+        };
+        receipts::consequence_permits(&fact)
     }
 
     pub fn blocking(&self) -> bool {

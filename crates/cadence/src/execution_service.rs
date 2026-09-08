@@ -224,6 +224,19 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
             )
             .await;
         }
+        if let Err(reason) = execution_risk(&session, &view, &root, phase) {
+            return record_observation(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceQuery,
+                "execute-next",
+                &raw_request,
+                refused(phase, "risk-pending", reason),
+                None,
+            )
+            .await;
+        }
         if let Some(terminal) = &occurrence.terminal {
             let response = terminal_response(phase, terminal);
             return record_observation(
@@ -457,6 +470,24 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         )
         .await;
     }
+    let risk_config = session.config().map_err(store_failure)?;
+    let requirements =
+        match super::rail_service::execution_requirements(&view, &root, phase, &risk_config) {
+            Ok(requirements) => requirements,
+            Err(reason) => {
+                return record_observation(
+                    &session,
+                    &view,
+                    phase,
+                    BoundaryTool::CadenceQuery,
+                    "execute-next",
+                    &raw_request,
+                    refused(phase, "risk-pending", reason),
+                    None,
+                )
+                .await;
+            }
+        };
     let graph = match PlanGraph::build(&plans.values) {
         Ok(graph) => graph,
         Err(error) => {
@@ -481,18 +512,57 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         .map(|outcome| outcome.plan)
         .collect::<BTreeSet<_>>();
     let Some(next) = graph.next_ready(&completed) else {
-        let response = Response::Complete { phase };
-        return record_observation(
+        if let Err(reason) = reobserve(
             &session,
             &view,
+            &root,
             phase,
-            BoundaryTool::CadenceQuery,
-            "query-next",
-            &raw_request,
-            response,
+            &phase_record.plans,
+            &plans,
             None,
         )
-        .await;
+        .await
+        {
+            return record_refusal(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceQuery,
+                "execute-next",
+                &raw_request,
+                "inputs-changed",
+                reason,
+                None,
+            )
+            .await;
+        }
+        if session.config().map_err(store_failure)? != risk_config {
+            return Err(Failure::Store);
+        }
+        let response = Response::Complete { phase };
+        let decision = boundary(
+            phase,
+            BoundaryTool::CadenceQuery,
+            "execute-next",
+            &raw_request,
+            &response,
+            None,
+            None,
+        )?;
+        let written = session
+            .request(Operation::BoundaryV1 {
+                expected_generation: view.snapshot.generation,
+                expected_integrity: view.snapshot.integrity.clone(),
+                operation_id: format!("execution-finalize:{}", decision.identity()?),
+                decision: decision.clone(),
+                change: Box::new(BoundaryChange::FinalizeRisk {
+                    phase,
+                    requirements,
+                }),
+            })
+            .await
+            .map_err(store_failure)?;
+        return confirmed_boundary(&written, &decision)?.envelope(None);
     };
     let plan = plans
         .values
@@ -785,18 +855,33 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
                         && value.boundary.tool == BoundaryTool::CadenceApply
                         && value.boundary.request_digest == request
                         && value.boundary.subject_id.as_ref() == Some(&patch.dispatch_id)
-                        && matches!(
-                            value.boundary.receipt,
-                            Receipt::Compact {
-                                envelope: Envelope::Ok(_)
-                            }
-                        ) =>
+                        && (matches!(value.boundary.receipt, Receipt::Compact { envelope: Envelope::Ok(_) })
+                            || matches!(&value.boundary.receipt, Receipt::Compact { envelope: Envelope::Refused { code, .. } } if code == "risk-pending")) =>
                 {
                     Some(&value.boundary)
                 }
                 _ => None,
             })
             .ok_or(Failure::Confirmation)?;
+        if matches!(
+            prior.receipt,
+            Receipt::Compact {
+                envelope: Envelope::Ok(_)
+            }
+        ) && let Err(reason) = execution_risk(&session, &view, &root, phase)
+        {
+            return record_observation(
+                &session,
+                &view,
+                phase,
+                BoundaryTool::CadenceApply,
+                "executor",
+                &request,
+                refused(phase, "risk-pending", reason),
+                Some(patch.dispatch_id.clone()),
+            )
+            .await;
+        }
         if let Err(reason) = reobserve(
             &session,
             &view,
@@ -1020,23 +1105,6 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         )
         .await;
     }
-    let graph = match PlanGraph::build(&plans.values) {
-        Ok(graph) => graph,
-        Err(error) => {
-            return record_refusal(
-                &session,
-                &view,
-                phase,
-                BoundaryTool::CadenceApply,
-                "executor",
-                &request,
-                error.code,
-                error.detail,
-                Some(patch.dispatch_id.clone()),
-            )
-            .await;
-        }
-    };
     let next_execution = match application
         .data
         .get("execution")
@@ -1060,12 +1128,6 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         }
     };
     let next_occurrence = &next_execution.occurrences[&phase.to_string()];
-    let completed = next_occurrence
-        .plans
-        .iter()
-        .filter(|outcome| outcome.disposition == PlanDisposition::Complete)
-        .map(|outcome| outcome.plan)
-        .collect::<BTreeSet<_>>();
     let response = if application.outcome.disposition == PlanDisposition::Blocked {
         terminal_response(
             phase,
@@ -1074,10 +1136,17 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
                 .as_ref()
                 .expect("blocked patch installs a terminal outcome"),
         )
-    } else if let Some(plan) = graph.next_ready(&completed) {
-        Response::NextPlan { phase, plan }
     } else {
-        Response::Complete { phase }
+        // The accepted dispatch basis becomes available atomically with this patch.
+        // No prior execution scan can cover material which has not been accepted.
+        refused(
+            phase,
+            "risk-pending",
+            format!(
+                "Task evidence accepted for phase-{phase}-execution, plan {}, dispatch {}; continuation refused: risk evidence is Missing. Record an exact execution risk-check and any required fire/consequence, then invoke execute-next again. No terminal completion was installed; tasks must not be rerun.",
+                application.outcome.plan, patch.dispatch_id
+            ),
+        )
     };
     let answer = PreparedAnswer::new(response.into_envelope())?;
     let decision = BoundaryV1::new(
@@ -1120,6 +1189,16 @@ pub async fn apply<I: ConfigIo + Clone + Sync>(
         .await
         .map_err(store_failure)?;
     confirmed_boundary(&written, &decision)?.envelope(None)
+}
+
+fn execution_risk<I: ConfigIo>(
+    session: &Session<I>,
+    view: &View,
+    root: &Path,
+    phase: u32,
+) -> Result<Vec<cadence::rail::receipts::Requirement>, String> {
+    let config = session.config().map_err(|e| e.to_string())?;
+    super::rail_service::execution_requirements(view, root, phase, &config)
 }
 
 fn execution_snapshot(view: &View) -> Result<ExecutionSnapshot, String> {
@@ -2086,12 +2165,8 @@ pub fn risk_material(
                 && value.boundary.tool == BoundaryTool::CadenceApply
                 && value.boundary.scope == (BoundaryScope::Execution { phase })
                 && value.boundary.subject_id.as_deref() == Some(dispatch_id)
-                && matches!(
-                    &value.boundary.receipt,
-                    Receipt::Compact {
-                        envelope: Envelope::Ok(_)
-                    }
-                )
+                && (matches!(&value.boundary.receipt, Receipt::Compact { envelope: Envelope::Ok(_) })
+                    || matches!(&value.boundary.receipt, Receipt::Compact { envelope: Envelope::Refused { code, .. } } if code == "risk-pending"))
                 && confirmed_boundary(view, &value.boundary).is_ok()
         }
         _ => false,
@@ -2103,7 +2178,7 @@ pub fn risk_material(
         .commits
         .last()
         .cloned()
-        .ok_or("risk source has no accepted completed task commits")?;
+        .unwrap_or_else(|| basis.base_id.clone());
     Ok(risk::MaterialIdentity::Committed {
         base_id: basis.base_id,
         head_id,

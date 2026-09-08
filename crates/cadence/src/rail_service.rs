@@ -520,3 +520,58 @@ pub async fn receipt<I: ConfigIo + Clone + Sync>(
     }
     Ok(Envelope::Ok(ReceiptOutput::Recorded(Box::new(recorded))))
 }
+
+/// Rebuild every completed plan's requirement from confirmed native acceptance.
+/// Neither a generic scan nor a caller-selected surface set can authorize the
+/// execution continuation; its current effective selection is controlling.
+pub fn execution_requirements(
+    view: &View,
+    root: &Path,
+    phase: u32,
+    config: &crate::config::reload::Generation,
+) -> std::result::Result<Vec<receipts::Requirement>, String> {
+    use cadence::execution::model::{ExecutionSnapshot, PlanDisposition};
+    let Some(value) = view.snapshot.data.get("execution") else {
+        return Ok(Vec::new());
+    };
+    let execution: ExecutionSnapshot =
+        serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+    let Some(occurrence) = execution.occurrences.get(&phase.to_string()) else {
+        return Ok(Vec::new());
+    };
+    let completed: Vec<_> = occurrence
+        .plans
+        .iter()
+        .filter(|p| p.disposition == PlanDisposition::Complete)
+        .collect();
+    if completed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let pending = format!("phase-{phase}-execution");
+    let surfaces = merge::get(
+        &config.effective.values,
+        "review.triggers.risk_surface.surfaces",
+    )
+    .ok_or_else(|| format!("{pending}: missing risk surface selection"))
+    .and_then(|v| risk::configured_surfaces(v).map_err(|e| format!("{pending}: {e}")))?
+    .ok_or_else(|| format!("{pending}: risk surfaces are unanswered"))?;
+    receipts::confirmed_history(view).map_err(|e| format!("{pending}: {e}"))?;
+    completed.into_iter().map(|outcome| {
+        let scope = Scope {
+            project: root.parent().ok_or("planning root lacks project")?.to_string_lossy().into_owned(),
+            planning_root: root.to_string_lossy().into_owned(), cycle: "live".into(),
+            occurrence: pending.clone(), phase: phase.try_into().map_err(|_| "invalid phase")?,
+            worker: Some(outcome.plan.to_string()), plan: Some(outcome.plan.try_into().map_err(|_| "invalid plan")?),
+        };
+        let source = risk::Source::Execution { plan: scope.plan.unwrap(), dispatch_id: outcome.dispatch_id.clone() };
+        let material = super::execution_service::risk_material(view, root, phase, &pending, outcome.plan, &outcome.dispatch_id)?;
+        let wanted = receipts::Requirement {
+            boundary: receipt_boundary(view, scope, &source).map_err(|e| e.to_string())?, material, surfaces: surfaces.clone(),
+        };
+        let status = receipts::assess(&wanted, &view.snapshot.data).map_err(|e| e.to_string())?;
+        if !status.permits_continuation {
+            return Err(format!("{pending}, plan {}, dispatch {}: risk evidence is {:?}; pending fires: {}. Record an exact execution risk-check and any required fire/consequence, then invoke execute-next again. Accepted task evidence is retained; tasks must not be rerun.", outcome.plan, outcome.dispatch_id, status.state, status.pending_fires.join(", ")));
+        }
+        Ok(wanted)
+    }).collect()
+}
