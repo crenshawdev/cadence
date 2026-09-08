@@ -1,3 +1,8 @@
+> **Note, 2026-09-08.** This report records a suite run that SKIPPED the ignored
+> real-host probe. That probe (`crates/cadence/tests/phase7_live.rs`) has since been
+> deleted and its evidence withdrawn phase-wide; see the PLAN-1 and PLAN-4 records.
+> Nothing this report claims rested on it, and its counts are unaffected.
+
 PLAN COMPLETE
 Plan: `.planning/phases/7/PLAN-3.md`
 Tasks: 5 of 5 committed and satisfied.

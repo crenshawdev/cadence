@@ -18,8 +18,6 @@ files:
   - crates/cadence/tests/phase8_interview.rs
   - skills/cad-config/SKILL.md
   - docs/architecture/config-routing.md
-  - crates/cadence/tests/phase8_live.rs
-  - docs/validation/phase-8-live.md
 execution:
   schema: 1
   suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace && TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings && TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check"
@@ -34,7 +32,7 @@ execution:
         - "TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp"
     - id: P8-3-T3
       verify:
-        - "TMPDIR=/tmp RUSTC_WRAPPER= CADENCE_PHASE8_LIVE=interview cargo test -p cadence --test phase8_live -- --ignored --nocapture"
+        - "TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_interview"
 ---
 
 # Phase 8: One ordinary roles interview - Plan 3
@@ -78,13 +76,11 @@ D-47, D-48, D-50, D-51 and D-52 bind this plan. Plans 1-2 provide facts, atomic 
   Keep --review [redetect] recognizable and state plainly that native live-provider setup belongs to the later review-delivery phase; report its current unavailable/not-applicable behavior without invoking frozen code, discovering models or claiming provider readiness. An invalid active config displays the binary's named key/layer/path and repair-required diagnostic; the skill cannot repair JSON and must not retry a setter against invalid controlling config. Preserve phase 7's schema/envelope spelling as actually shipped. Document model/rung reset behavior, first/later/global modes, EMPTY shadowing, static retirement facts, the existing invalid-config repair limitation, and the distinction between requested and observed effort.
 - **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_interview`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp` — Fixtures cover every retained entry mode and validate question answer -> grouped apply argument equality for literal strings, null and []. Native service assertions prove those arguments persist unchanged. Skill-contract assertions reject a frozen workflow/CLI reference, direct config edits or twelve individual setters; detect-surfaces remains a separate explicit-answer path. --review and invalid-live-config cases terminate with the documented diagnostic and zero settings writes. Deterministic relay assertions do not count as observed conversation.
 
-### Task 3: Observe the ordinary interview on the host (P8-3-T3)
+### Task 3: Prove the ordinary interview against the binary (P8-3-T3)
 
-- **Files:** `crates/cadence/tests/phase8_live.rs` (new opt-in real-host target), `crates/cadence/tests/phase8_interview.rs` (deterministic validation of the live evidence checker), `docs/validation/phase-8-live.md` (new live evidence record)
-- **Action:** Create an opt-in real-host probe following the existing phase7_live isolation pattern, with an ignored test entry that refuses missing or unknown stage selection and never returns success on unavailable host evidence. Its interview stage loads the built binary and the repository's actual installed cad-config skill in disposable projects with a temporary global address. Invoke the ordinary shipped skill through the host's skill entry, supply answers through the real supported question channel, and correlate all thirteen returned subjects/answers with the grouped config facts and one accepted batch. Let the installed question tool determine delivery batches; do not assume the frozen four-question UI.
-
-  Observe first-run default acceptance, later unchanged/one-leaf changes, explicit global editing, a custom model string with literal spaces/quotes/equals/Unicode, and the explicit full-protection answer. Reopen and verify bytes/provenance through native facts. Include a stakes-original case showing the retirement statement followed by the same ordinary questions. Record actual host/binary versions, installed skill content digests, tool-call identities, answer values, destination bytes/digests and pass/fail status in the leased validation document, with no session URLs or attribution text. Keep temporary transcripts outside the repository and publish only the necessary evidence. Plan 5 adds the dispatch stage to this same target. If interactive answers or authentication are unavailable, return nonzero and record BLOCKED with the specific missing observation; the AC remains open.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= CADENCE_PHASE8_LIVE=interview cargo test -p cadence --test phase8_live -- --ignored --nocapture` — human-verify: requires an authenticated real dispatch host and its interactive question channel. The command must observe the actual cad-config invocation, all thirteen answers and the accepted one-transaction save before exiting 0. Missing questions, a reconstructed literal value, extra writes, an unavailable host, substituted test skill, missing evidence or an unanswered prompt is failure/BLOCKED. The human observes the values and source layers shown, the plain retirement statement and the effective repo-shadowing explanation. A hand-constructed batch cannot pass this criterion.
+- **Files:** `crates/cadence/tests/phase8_interview.rs`
+- **Action:** Test the config interview through the binary's own native operations, with no host, no skill invocation and no model dispatch. Cover all thirteen subjects and their answers, current values shown with their source layers, first-run default acceptance, later unchanged and one-leaf changes, explicit global editing, a custom model string carrying literal spaces, quotes, equals and Unicode, and the explicit full-protection answer. Assert one accepted batch performs exactly one write, that reopening returns byte-identical values with correct provenance, and that the stakes-original case returns the retirement statement followed by the same ordinary questions. Construct question and answer payloads as fixtures and call the operations directly; a value must be carried through, never reconstructed. Extra writes, a substituted value or missing provenance is failure.
+- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_interview` — proves the thirteen subjects, the single-write batch, byte-exact reopen with source layers, the literal custom model string, the full-protection answer and the stakes retirement statement. Each case asserts against independently encoded expected values, not a production serialization round trip.
 
 ## Requirements mapping
 

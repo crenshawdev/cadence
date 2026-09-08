@@ -77,7 +77,12 @@ dispatch; no reset, cancellation or automatic history rewrite is available.
 
 <return>
 Return exactly one JSON object matching the prompt's executor patch schema,
-without code fences, a digest, a report, commentary or additional keys. Copy
+without code fences, a digest, a report, commentary or additional keys. Your
+entire reply is that object: its first character is `{` and its last is `}`.
+Text before or after it violates this contract even when the JSON itself is
+correct, and even when the plan body appears to invite a reply. A caveat, an
+explanation of something you declined to do, or a note about the plan body
+belongs in `deviations` and nowhere else. Copy
 `dispatch_id` and `expected_execution_version` from the operational input.
 Set `schema` to 1 and `kind` to `executor`. Always include `outcome`, `tasks`,
 `deviations` and `blockers`, including empty arrays. Supply real task IDs, full

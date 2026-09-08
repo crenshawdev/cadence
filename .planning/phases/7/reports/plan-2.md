@@ -1,5 +1,10 @@
 # Phase 7 PLAN-2 run record
 
+> **Note, 2026-09-08.** This report records a suite run that SKIPPED the ignored
+> real-host probe. That probe (`crates/cadence/tests/phase7_live.rs`) has since been
+> deleted and its evidence withdrawn phase-wide; see the PLAN-1 and PLAN-4 records.
+> Nothing this report claims rested on it, and its counts are unaffected.
+
 Outcome: blocked at P7-2-T3 (B1). Completed prefix: P7-2-T1 and P7-2-T2. P7-2-T4 through P7-2-T6 were not run.
 Initial branch: `cadence/binary-owns-process`; initial HEAD: `248bd8c668815e11c23e06cdc70c1d505eb82586`; initial tree clean excluding the concurrently owned `.codex-analysis/`, which was not inspected or changed.
 Final committed HEAD: `128921fa1bcdc4a93a863a3d0a4f96414776b8af`. Both task commits have valid GPG signatures (G), using the configured project author and signing configuration. No push.

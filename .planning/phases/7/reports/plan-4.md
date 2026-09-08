@@ -1,5 +1,20 @@
 # Phase 7 PLAN-4 run record
 
+> **Correction, 2026-09-08 - the live-probe evidence in this report is withdrawn.**
+> `crates/cadence/tests/phase7_live.rs` and `docs/validation/phase-7-live.md` were
+> deleted, and every plan verify that ran them was removed. The probe launched a
+> real Claude Code session and asserted over its transcript, so its result was one
+> sample of a model's behaviour rather than a measurement: the same test failed and
+> then passed on the same code, and the only change between the runs was prose in a
+> contract file. It was a full end-to-end run, which this project does not test.
+> Everything below is a true record of what was RUN on the date shown. What changed
+> is what the phase CLAIMS from it: no assertion here that depends on a host loading
+> a skill, a model obeying a refusal, or an executor's returned text is claimed by
+> phase 7 any more. Guard behaviour is claimed only through
+> `cargo test -p cadence --test phase7_guard`, which feeds the binary the exact
+> input a hook sends and asserts the returned decision. Host obedience is observed
+> by a person and asserted by no test in this repository.
+
 Outcome: blocked during P7-4-T2 after discovering B1 in the required T5 integration path.
 Completed prefix: P7-4-T1 only. T2 is incomplete and uncommitted; T3 through T6 were not started.
 Initial HEAD: `fd829f7864c17ea4ac000eae89992382ec8e0287`.

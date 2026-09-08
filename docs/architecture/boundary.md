@@ -2,8 +2,9 @@
 
 The boundary is the only way a skill reaches the binary. It publishes three
 tools and nothing else: `cadence_version`, a side-effect-free diagnostic;
-`cadence_query`, which selects the next unit of work; and `cadence_apply`,
-which submits an executor's patch. `tools/list` declaring exactly three is a
+`cadence_query`, which selects execution work or reads risk/structural evidence;
+and `cadence_apply`, which submits executor patches or risk observations and
+contracted receipt facts. `tools/list` declaring exactly three is a
 pinned assertion, not an accident of registration.
 
 Validation does not live at the boundary. The handler receives
@@ -16,7 +17,7 @@ recorded decision. Calls to undeclared tool names and syntactically invalid
 JSON-RPC frames stay protocol errors and are deliberately not relabelled as
 Cadence refusals; the two layers are distinguishable by test.
 
-Every public answer is one envelope vocabulary: `dispatch`, `complete`,
+Execution answers use one envelope vocabulary: `dispatch`, `complete`,
 `refused`, `judgment-stop`, `unknown`, `not-applicable` and `next-plan`. The
 adapter maps the resident's typed outcomes onto those without recomputing
 selection, patch validity or state, so there is no second state machine at the
@@ -30,7 +31,7 @@ does not claim a recorded decision it did not record.
 
 ## What the skill does with it
 
-`skills/cad-execute/SKILL.md` is twenty-one lines and three allowed tools:
+`skills/cad-execute/SKILL.md` has three allowed tools:
 `cadence_query`, `cadence_apply` and `Task`. It has no filesystem, shell or
 JavaScript path, and no report, replay, Git, plan-parser or SUMMARY-writing
 arm. The loop is: ask `cadence_query` with the user's phase spelling unchanged;
@@ -86,3 +87,16 @@ loads the tools, that a real model honors the executor contract, or that the
 guard denies a live write; a green suite is exactly what shipped both host
 constraints above. Those clauses belong to the live UAT and are recorded in
 `.planning/phases/6/UAT.md` with their actual status, never rounded up.
+
+Phase 7 operations preserve object roots and real input properties. The
+advertised input schemas combine operation fields within properties, with
+strict per-operation schemas retained in definitions; no top-level input union
+is introduced. Runtime validators still refuse unknown fields and malformed
+operation objects. Risk and structural results use typed `ok` / `refused`
+envelopes inside the same tools.
+
+The loaded skill now encounters a durable `risk-pending` refusal after a valid
+completed patch. Task evidence remains scannable, but the loop displays the
+reason and stops. A matched scan alone cannot permit continuation. An exact
+settlement allows a fresh query to complete without another executor run.
+This describes what the binary returns and what the skill contract instructs. No test in this repository proves that a host obeys the refusal; that is observed by a person, not asserted by the suite.

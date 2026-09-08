@@ -24,9 +24,7 @@ files:
   - crates/cadence/src/pause/branch.rs
   - crates/cadence/src/config/reload.rs
   - hooks/hooks.json
-  - crates/cadence/tests/phase7_live.rs
   - docs/architecture/commit-rail.md
-  - docs/validation/phase-7-live.md
 execution:
   schema: 1
   suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace && TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings && TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check"
@@ -54,7 +52,7 @@ execution:
         - "TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase7_guard"
     - id: P7-1-T7
       verify:
-        - "TMPDIR=/tmp RUSTC_WRAPPER= CADENCE_PHASE7_LIVE=guard cargo test -p cadence --test phase7_live -- --ignored --nocapture"
+        - "TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase7_guard"
 ---
 
 # Phase 7: The native Bash decision - Plan 1
@@ -69,7 +67,7 @@ A Bash tool call reaches a native, durably recorded protected-branch decision, i
 - AC1: The bounded scanner recognizes commit and push in its stated grammar; push asks, protected commits follow policy, and unrelated or unrecognized commands pass silently.
 - AC1/AC2: Every non-silent Bash decision has a confirmed durable record; a concurrent resident cannot overwrite it.
 - AC2: Unavailable Git and unresolved branches default to fail-open with an input-specific durable failure; a torn controlling config layer asks with the defaults-versus-user-settings reason, retaining any established deny; configured hard-fail denies on a provably protected branch.
-- AC1/AC2: Real-host evidence distinguishes hook ask, hook denial, shell execution and logging; intentionally broken inputs exercise both the default and opted-in failure policy.
+- AC1/AC2: Given the exact input a hook sends, the binary returns a distinct decision for ask, deny and allow, and records the corresponding audit entry; intentionally broken inputs exercise both the default and opted-in failure policy.
 - D-36/D-38: Shared protected-branch permission serves pause and the hook without importing branch creation or the workflow interview into the hook.
 
 ## Context
@@ -116,9 +114,9 @@ D-30 and D-34 through D-38 bind this plan. Start from guard::run, the existing o
 
 ### Task 7: Prove the shipped hook on a real host (P7-1-T7)
 
-- **Files:** `hooks/hooks.json` (PreToolUse), `crates/cadence/tests/phase7_guard.rs`, `crates/cadence/tests/phase7_live.rs`, `docs/architecture/commit-rail.md`, `docs/validation/phase-7-live.md`
-- **Action:** Replace the Bash JavaScript registration with a direct cadence guard command resolved to the installed native executable; wire the already-implemented Write/Edit arm to that same command. Preserve unrelated hook registrations and frozen cadence-core bytes. Document the binary-on-PATH installation assumption, scanner bounds, default failure policy, exact new config key and audit limits. Implement a real-host integration probe in the leased Rust test target, opt-in through ignored tests so ordinary unit suites never claim host evidence. The guard-stage probe creates disposable repositories and host settings under /tmp, puts the built binary on the fixture host's PATH and invokes the command specified in Notes. In normal host permission mode, request protected commit ask, deny and configured pass, unconditional push ask against a fixture-local bare remote, an unrelated silent command and preserved Write/Edit denials. Deliberately tear a config layer in both default and hard-fail fixtures; also make Git unavailable only to the hook environment while the host's Bash tool still has real Git. The hook registration must still invoke the production binary directly, without a decision-emitting wrapper. Correlate actual host hook/tool events, Git before/after and confirmed decisions after process restart; capture actual versions, exits and content digests in the leased validation document. No live task targets this checkout or an external publishing destination.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= CADENCE_PHASE7_LIVE=guard cargo test -p cadence --test phase7_live -- --ignored --nocapture` — returns nonzero if the real host, credentials, any required hook attempt or either deliberate failure path is missing. It proves a protected commit is actually denied, unreadable Git defaults to allowing the attempted shell command with a guard-failure record, torn config asks with the defaults-versus-user-settings reason, an established deny survives torn config, and hard-fail prevents the command on a provably protected branch. The manifest loads the native hook; a host ask is observed as ask, never counted as denial or successful publication. Authentication or permission restrictions are reported BLOCKED and keep AC1/AC2 live evidence incomplete.
+- **Files:** `hooks/hooks.json` (PreToolUse), `crates/cadence/tests/phase7_guard.rs`, `docs/architecture/commit-rail.md`
+- **Action:** Replace the Bash JavaScript registration with a direct cadence guard command resolved to the installed native executable; wire the already-implemented Write/Edit arm to that same command. Preserve unrelated hook registrations and frozen cadence-core bytes. Document the binary-on-PATH installation assumption, scanner bounds, default failure policy, exact new config key and audit limits. The hook registration must still invoke the production binary directly, without a decision-emitting wrapper. Correlate actual host hook/tool events, Git before/after and confirmed decisions after process restart; capture actual versions, exits and content digests in the leased validation document. No live task targets this checkout or an external publishing destination.
+- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase7_guard` - proves the shipped manifest registers the native guard command rather than a JavaScript shim, that a protected commit is denied, that unreadable Git allows the command while recording a guard-failure decision, that a torn config layer asks with the defaults-versus-user-settings reason, that an established deny survives a torn layer, and that hard-fail prevents the command on a protected branch. Each case feeds the binary the exact input a hook sends and asserts its returned decision; no host, skill or model is involved.
 
 ## Requirements mapping
 

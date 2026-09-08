@@ -1173,6 +1173,8 @@ the binary at a versioned path. The plugin's `.mcp.json` points at that path.
 Scheduled last on purpose. It depends on phase 1's crate, packaging script and
 cross-compile matrix, and the pin cannot be filled until the version being
 released is the one that will carry the archives - which is the `4.0.0` landing,
-not any tag that exists today. Its plan was written as phase 1's second plan on
-2026-09-05 and moved out the same day; it is on disk at
-`.planning/phases/18/PLAN.md`.
+not any tag that exists today. An earlier draft plan was written as phase 1's second plan on 2026-09-05,
+moved out the same day, and deleted on 2026-09-08: it predated the phase
+renumbering, declared the wrong phase, and had no executable task block. It
+is recoverable from git history if wanted; this phase gets a plan written
+against the roadmap as it now stands.

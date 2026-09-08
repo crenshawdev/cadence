@@ -51,13 +51,8 @@ plus cwd/project, verb, branch, policy provenance, result and unavailable inputs
 If audit storage fails, stderr names the failure and does not claim durability;
 the command proceeds unless an independently established hard denial remains.
 
-The ignored phase7_live test is the real-host proof. Ordinary Rust test passes
-are not evidence that a host registered or enforced this hook. Live evidence
-separates hook ask, hook denial, tool results, Git changes and durable receipts.
-Run it with `TMPDIR=/tmp RUSTC_WRAPPER= CADENCE_PHASE7_LIVE=guard cargo test -p cadence --test phase7_live -- --ignored --nocapture`.
-The probe reads registered tools from the host's system init event and joins
-hook starts to responses by hook identity, retaining the match across interleaved
-tool calls. Missing or ambiguous evidence fails the probe. An ask observed in
-print mode is an ask requiring approval; it proves neither an interactive approval
-nor publication. Current host contracts: [hook decisions](https://code.claude.com/docs/en/hooks)
-and [streamed hook events](https://code.claude.com/docs/en/cli-reference).
+Guard behaviour is proven by `cargo test -p cadence --test phase7_guard`, which feeds the binary the exact input a hook sends and asserts the returned decision. That decides what the binary answers; it does not decide whether a host enforces the answer, and no test in this repository makes that claim.
+
+The execution continuation also requires [exact risk settlement](risk-rail.md)
+after accepting signed task evidence. The Bash guard does not perform a review
+or settle that evidence. Phase 7 adds no executor pre-commit round trip.

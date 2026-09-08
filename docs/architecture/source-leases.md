@@ -82,3 +82,10 @@ patches field-for-field. The executor preserves rejected SHAs and requests
 operator-controlled repair. Disposable unpublished integration fixtures exercise
 operator replacement while retaining the original Git object for inspection;
 those fixture commands are not a production recovery workflow.
+
+Lease acceptance and risk authorization are separate. A valid completed patch
+can retain its in-lease task evidence while returning `risk-pending`; this closes
+the task dispatch for assessment but does not authorize completion or the next
+plan. Establish exact settlement and make a fresh `execute-next` query. The
+original accepted patch receipt stays immutable. This ordering adds no lease
+exemption and grants no executor pre-commit API. See [risk-rail.md](risk-rail.md).

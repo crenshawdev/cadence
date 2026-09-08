@@ -330,10 +330,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       retired/unknown key, wrong requested scope, concurrent conflicting edit
       or failed reload saves none of the batch. Byte comparisons before/after
       refusal and session reopen prove this, including aliased destinations
-      (`crates/cadence/src/config/write.rs:90`,
-      `crates/cadence/src/config/write.rs:117`,
-      `crates/cadence/src/config/write.rs:159`,
-      `cadence-core/workflows/config.md:431`).
+      (`crates/cadence/src/config/write.rs:90`, `crates/cadence/src/config/write.rs:117`, `crates/cadence/src/config/write.rs:159`).
 
 - [ ] AC3: In isolated first-touch fixtures, a missing planning root and
       missing global parent support a saved first global interview; a second
@@ -345,20 +342,11 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       `crates/cadence/src/import/mod.rs:744`,
       `crates/cadence/src/import/tests.rs:505`).
 
-- [ ] AC4: An observed ordinary roles interview obtains six model answers,
-      six effort answers and the floor answer, showing current values and
-      source layers. Accepting first-run defaults persists all twelve global
-      role leaves plus the floor answer; reopening is no longer first run.
-      Later unchanged role answers create no repo pins, one changed role
-      leaf writes only that diff, and explicit global editing targets global.
-      Intake and accepted-suggestion service fixtures use the same config
-      service; an unanswered suggestion writes nothing. The native config
-      skill calls grouped tools for facts/writes and does not invoke the
-      frozen workflow (`cadence-core/workflows/config.md:294`,
-      `cadence-core/workflows/config.md:300`,
-      `cadence-core/workflows/suggest.md:122`,
-      `skills/cad-config/SKILL.md:35`).
-
+- [ ] AC4: A config-facts read returns all thirteen interview subjects - six
+      model, six effort and the floor - each carrying its current value and the
+      source layer that value came from. A subject with no stored value reports
+      the default and names defaults as its layer. Missing, extra or
+      wrong-ordered subjects fail.
 - [ ] AC5: A native resolver matrix covers BOTH resets independently and
       together, for all six roles: with global legacy effort `max` and model
       `opus`, explicit repo role-effort null selects that role's schema
@@ -367,9 +355,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       still win despite injected defaults. Explicit non-null role values win
       over legacy values, and inherited global role values are not mistaken
       for absence merely because repo lacks them. Assert the selected value
-      AND its source/reset explanation (`cadence-core/bin/route.mjs:971`,
-      `cadence-core/bin/route.mjs:1321`,
-      `crates/cadence/src/config/merge.rs:177`).
+      AND its source/reset explanation (`crates/cadence/src/config/merge.rs:177`).
 
 - [ ] AC6: Starting with a global waiver and then an existing repo waiver,
       choosing protection for every surface stores a literal `[]` in the
@@ -377,9 +363,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       risky declared scope now raises the floor under default gate policy;
       the actual-diff surface selection remains unchanged. First-global
       acceptance also stores `[]`; a stored identical answer may leave bytes
-      unchanged (`cadence-core/workflows/config.md:416`,
-      `cadence-core/workflows/config.md:418`,
-      `crates/cadence/src/config/merge.rs:34`).
+      unchanged (`crates/cadence/src/config/merge.rs:34`).
 
 - [ ] AC7: Import fixtures with different global/repo `stakes` values,
       including an unrecognized value, show each exact original value and
@@ -398,9 +382,7 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       string survives storage verbatim; an unsupported role string warns and
       omits the dispatch model parameter without falling through to legacy.
       Only a supported legacy override sets `pinned`, and source/reasons
-      identify every selection (`cadence-core/bin/lib/rung-agent.mjs:49`,
-      `cadence-core/bin/route.mjs:1031`,
-      `cadence-core/bin/route.mjs:1315`).
+      identify every selection.
 
 - [ ] AC9: Routing fixtures distinguish a clean named plan from a risky phase
       union, pre-plan bypass from no-phase/not-computed, and readable new-file
@@ -409,38 +391,45 @@ reference is never modified (`.planning/REQUIREMENTS.md:11`).
       gate equal to its default still wins. Return surviving gate, reviewer,
       tier, effort and surface answers; missing configured provider IDs cause
       a named filter/fallback without a provider invocation. No `phase_diff`
-      answer returns (`cadence-core/bin/route.mjs:590`,
-      `cadence-core/bin/route.mjs:1079`,
-      `cadence-core/bin/route.mjs:1112`,
-      `cadence-core/bin/route.mjs:1220`,
-      `crates/cadence/src/config/mod.rs:16`).
+      answer returns (`crates/cadence/src/config/mod.rs:16`).
 
-- [ ] AC10: A real host lists exactly the three existing tools after phase
-      7's grouped construction adaptation, successfully invokes native config
-      and route operations, and receives typed refusals for malformed calls.
-      Save executor model `sonnet`/effort `high`, then `opus`/`xhigh` before a
-      separate new dispatch: the actual host dispatch calls select the saved
-      model and `cad-executor`, then `cad-executor-xhigh`, with the returned
-      prompt intact. Reset model to null and observe omission of the model
-      parameter. The executor still returns an accepted native patch; no
-      review dispatch is added. A route JSON snapshot alone cannot pass this
-      criterion (human-verify: needs a real dispatch host;
-      `crates/cadence/src/server.rs:241`,
-      `crates/cadence/src/server.rs:397`,
-      `skills/cad-execute/SKILL.md:14`,
-      `agents/cad-executor-xhigh.md:6`,
-      `docs/architecture/boundary.md:50`).
-
-- [ ] AC11: After dispatch and session reopen, stored routing evidence names
-      the chosen agent/model/rung, source settings and requested effort.
-      Re-reading the active dispatch after a valid setting change preserves
-      its admitted choice; the next new dispatch uses the new setting. With
-      no host effort observation or receipt, those fields remain absent.
-      Injected recording failure cannot report a successfully recorded
-      dispatch (`crates/cadence/src/store/model.rs:60`,
+- [ ] AC10: The boundary advertises exactly `cadence_version`, `cadence_query`
+      and `cadence_apply` with input and output schemas, retains phase 7's
+      operations, and returns typed refusals for malformed config and route
+      calls. With executor model `sonnet` / effort `high` saved, a new dispatch
+      resolves to model `sonnet` and agent `cad-executor`; with `opus`/`xhigh`
+      saved, a separate new dispatch resolves to `opus` and
+      `cad-executor-xhigh`. Resetting model to null omits the model parameter
+      rather than substituting a default. Each case asserts the admitted
+      dispatch ID, the resolved agent/model/rung with its reason trail, and the
+      byte-exact prompt the binary emits. This decides what the binary resolves
+      from a saved setting; it does not decide whether any consumer honours
+      that resolution.
+- [ ] AC11: A recorded dispatch stores routing evidence naming the chosen
+      agent, model and rung, the source settings and the requested effort.
+      Re-reading an active dispatch after a valid setting change returns its
+      originally admitted choice unchanged; the next new dispatch uses the new
+      setting. Fields with no recorded observation stay absent rather than
+      being inferred from the requested rung. An injected recording failure
+      cannot report a successfully recorded dispatch
+      (`crates/cadence/src/store/model.rs:60`,
       `crates/cadence/src/store/decisions.rs:11`,
       `crates/cadence/src/execution_service.rs:356`).
 
+- [ ] AC12: Accepting first-run defaults persists all twelve global role leaves
+      plus the floor answer in one write, and a reopen of the same global
+      address is no longer first run.
+- [ ] AC13: Re-answering a role with its existing value creates no repo pin,
+      and changing exactly one role leaf writes only that leaf's diff. Byte
+      comparison of the untouched leaves proves it.
+- [ ] AC14: An answer marked explicit-global writes to the global address and
+      leaves the repo layer unchanged.
+- [ ] AC15: Intake and accepted-suggestion fixtures resolve through the same
+      config service and produce identical stored bytes for identical answers.
+      An unanswered suggestion writes nothing.
+- [ ] AC16: The native config path obtains its facts and performs its writes
+      through the grouped tool operations, with no separate write path. A write
+      attempted outside those operations is refused.
 ## Flagged assumptions
 
 - **The roadmap's startup claim is factually wrong.** At the recorded HEAD,

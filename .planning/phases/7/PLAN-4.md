@@ -27,12 +27,11 @@ files:
   - crates/cadence/src/execution_service.rs
   - crates/cadence/src/pause_service_tests.rs
   - crates/cadence/src/execution_service_tests.rs
-  - crates/cadence/tests/phase7_live.rs
   - docs/architecture/boundary.md
   - docs/architecture/commit-rail.md
   - docs/architecture/source-leases.md
   - docs/architecture/risk-rail.md
-  - docs/validation/phase-7-live.md
+  - skills/cad-executor-contract/SKILL.md
 execution:
   schema: 1
   suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace && TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings && TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check"
@@ -57,11 +56,6 @@ execution:
         - "TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase7_receipts"
         - "TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence pause_service"
         - "TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence execution_service"
-    - id: P7-4-T6
-      verify:
-        - "TMPDIR=/tmp RUSTC_WRAPPER= CADENCE_PHASE7_LIVE=all cargo test -p cadence --test phase7_live -- --ignored --nocapture"
-        - "TMPDIR=/tmp npx tsc -p tsconfig.ci.json && TMPDIR=/tmp node --test"
-        - "git diff --exit-code v3.7.12 -- cadence-core/"
 ---
 
 # Phase 7: Risk settlement and structural evidence - Plan 4
@@ -78,7 +72,7 @@ Risk status distinguishes detection, firing and settled consequence for the exac
 - AC9: detect-surfaces uses names, extensions and manifest dependency names only; it reports evidenced, silent and unspeakable sets, warnings and all-eight recommendation without reading source bodies.
 - AC9: Missing root refuses; unreadable child directories/manifests warn and retain the remaining structural evidence; evidence never silently chooses the user's surface set.
 - D-38/D-44: Pause and execution-scoped status use the shared material/settlement rail, while provider dispatch stays deferred and the public tool count remains exactly three.
-- AC1/AC2/AC10: The final real-host probe loads all three tools and the shipped native hook, including the deliberate guard-failure observations from PLAN-1.
+- AC1/AC2/AC10: The boundary advertises exactly the three tools with their schemas, and the guard decisions from PLAN-1 hold against the final binary.
 
 ## Context
 
@@ -116,12 +110,6 @@ D-40, D-41, D-43 and D-44 bind this plan. PLAN-3 supplies durable material obser
 - **Action:** Make pause's contracted review adapter and execution continuation consume the same exact material-identity and settlement predicates. Preserve pause's established review format, authored-material exclusions, questions, override meaning and one narrowed re-arm through explicit conversion. Gate apply's NextPlan/Complete and execute-next's dispatch/completion paths on current risk evidence for all relevant completed material from PLAN-3's execution adapter, including terminal/replay shortcuts. Missing, unchecked, stale, unfired or unsettled required evidence returns a durable refused envelope naming the pending scope; a matched scan alone cannot pass. Use Task 2's writer path to retain validated task evidence for assessment while withholding terminal completion; state that task evidence was accepted but continuation was refused, so missing accepted material cannot deadlock the scan. The unchanged cad-execute loop displays the refusal and stops. After an exact scan and any required fire/consequence settle, a fresh execute-next reevaluates current evidence and may continue or complete without rerunning tasks or rewriting immutable patch receipts. Checked-clear and explicit no-range/skipped evidence follow Task 1; reject foreign dispatch, cycle or signoff evidence and revalidate settlement before finalization. Keep fixed executor dispatch and disabled provider dispatch unchanged; no reviewer adjudication or pre-commit executor API enters this gate. Do not retain a second head-required or SHA-prefix settlement path.
 - **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase7_receipts`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence pause_service`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence execution_service` — drives the cad-execute query -> fixed executor -> unchanged patch apply sequence with signed fixture commits: a completion attempt without risk evidence is refused, task evidence remains scannable and no terminal Complete is installed. A matched scan without settlement, stale/wrong-scope receipts and restart/query/replay attempts still refuse; exact settlement permits fresh execute-next to complete without rerunning tasks. A multi-plan fixture cannot dispatch the next plan while prior risk is pending. Checked-clear/no-range cases and existing pause staged-clear/override cases retain their distinct meanings; changed authored index refuses. Task 6 must prove the loaded skill stops on the same gate; direct status-operation assertions alone do not discharge this verification.
 
-### Task 6: Prove the complete phase on a real host (P7-4-T6)
-
-- **Files:** `crates/cadence/tests/phase7_live.rs`, `crates/cadence/tests/mcp.rs` (Client / tool_schemas), `docs/architecture/boundary.md` (Two host constraints the schemas must satisfy / What is proven, and what is not), `docs/architecture/commit-rail.md`, `docs/architecture/source-leases.md`, `docs/architecture/risk-rail.md`, `docs/validation/phase-7-live.md`
-- **Action:** Extend PLAN-1's actual-host probe to the final public schemas and rail operations. Load the built server directly as cadence serve --project-root for the disposable fixture, with the final native hook registration. Parse the host's own system init tool list and require exactly the three Cadence names to be present; a raw tools/list handshake alone is insufficient. Load the installed cad-execute skill and fixed cad-executor with their existing tool allowlists. Invoke the skill on a fixture plan with answered risk surfaces and signed task changes that match the detector; observe its real executor patch attempt completion without risk evidence: the binary refuses continuation and the skill displays the reason and stops. Record a matching risk scan through the existing tool and invoke the skill again; matched risk without settlement still refuses. Supply the exact contracted fire/consequence, restart the server and invoke the skill again to prove completion without another executor run. Also exercise structural evidence, HEAD..HEAD, staged scan with null head, unmatched then matched settlement, and refusal of changed staged bytes. The review receipt is a fixture fact, not evidence of model review quality or phase-9 adjudication. Repeat PLAN-1's protected deny, unreadable-Git fail-open, torn-config ask and retained hard-fail denial against the final binary. Record versions, tool/hook and skill events, material/decision IDs, process replacement and mechanical outcomes in the validation document without raw prompts, source prose, credentials or session URLs. Document the public operations and limits, zero lease exemptions, recovery disposition and exact shared identity. Keep AC mappings separate from evidence that a reviewer ran. Execute the final Rust and frozen Node checks with the environment required in Notes.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= CADENCE_PHASE7_LIVE=all cargo test -p cadence --test phase7_live -- --ignored --nocapture`; `TMPDIR=/tmp npx tsc -p tsconfig.ci.json && TMPDIR=/tmp node --test`; `git diff --exit-code v3.7.12 -- cadence-core/` — fails if the loaded cad-execute skill's completion attempt is not refused before settlement, if a matched scan alone permits completion, or if exact settlement cannot permit completion after restart without rerunning tasks. Require the skill's actual query/apply events, stop and absent terminal Complete; a probe calling risk status directly is insufficient. Missing host tools, simulated-only hook input, unrecorded deliberate failures or absent AC8/AC10 identity checks also fail. Host credentials, signing, skill loading, hook access and interactive ask evidence cannot be skipped-as-pass. The frontmatter Rust tests, clippy and format, frozen TypeScript/Node checks and frozen-tree comparison also pass.
-
 ## Requirements mapping
 
 | Requirement or decision | Implementing tasks |
@@ -130,8 +118,7 @@ D-40, D-41, D-43 and D-44 bind this plan. PLAN-3 supplies durable material obser
 | D-41 / AC10 | P7-4-T1, P7-4-T2, P7-4-T5 |
 | D-43 / GH-248 / AC8 | P7-4-T1, P7-4-T2, P7-4-T5 |
 | D-38 | P7-4-T5 |
-| D-44 / AC10 (tool boundary) | P7-4-T2, P7-4-T4, P7-4-T6 |
-| AC7 / AC8 (live integration) | P7-4-T6 |
+| D-44 / AC10 (tool boundary) | P7-4-T2, P7-4-T4 |
 
 ## Notes
 
