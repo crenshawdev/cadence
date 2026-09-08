@@ -449,6 +449,54 @@ mod tests {
     use crate::config::{Diagnostics, Effective, reload::Input};
     use serde_json::json;
 
+    fn gap_persisted(root: &Path, repo_bytes: &[u8], global: Option<&Path>) {
+        use sha2::{Digest, Sha256};
+        std::fs::create_dir_all(root).unwrap();
+        let active = root.join("config.v4.json");
+        std::fs::write(&active, repo_bytes).unwrap();
+        let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let mut snapshot = json!({"version":1,"generation":1,"items_digest":empty,"decisions_digest":empty,
+            "data":{"import":{"format":1,"complete":true,"source_generation":"fixture","sources":[],
+                "active":{"global":global,"repo":active},"created":[],"warnings":[]}},
+            "operations":{},"integrity":""});
+        snapshot["integrity"] = json!(format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&snapshot).unwrap())
+        ));
+        std::fs::write(
+            root.join("state.json"),
+            serde_json::to_vec(&snapshot).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(root.join("items.jsonl"), b"").unwrap();
+        std::fs::write(root.join("decisions.jsonl"), b"").unwrap();
+    }
+
+    #[tokio::test]
+    async fn phase8_gap_guard_grouped_apply_stays_usable() {
+        let tree = tempfile::tempdir().unwrap();
+        let root = tree.path().join("project/.planning");
+        gap_persisted(&root, b"{}", None);
+        let factory = SessionFactory::new(None, std::sync::Arc::new(config::planning_policy));
+        let input = Command::Apply(Apply::Batch {
+            layer: Layer::Repo,
+            updates: vec![Update {
+                key: "roles.cad-executor.model".into(),
+                value: json!("sonnet"),
+            }],
+        });
+        let result = execute(&factory, &root, input).await.unwrap();
+        let (status, changed_keys) = match result {
+            Envelope::Ok(Output::Applied { changed_keys, .. }) => ("ok", changed_keys),
+            other => panic!(
+                "unexpected apply: {}",
+                serde_json::to_string(&other).unwrap()
+            ),
+        };
+        assert_eq!((status, changed_keys, std::fs::read(root.join("config.v4.json")).unwrap()),
+            ("ok", vec!["roles.cad-executor.model".to_owned()], b"{\n  \"roles\": {\n    \"cad-executor\": {\n      \"model\": \"sonnet\"\n    }\n  }\n}".to_vec()));
+    }
+
     #[test]
     fn facts_returns_literal_presence_and_default_source_from_supplied_generation() {
         let generation = Generation {

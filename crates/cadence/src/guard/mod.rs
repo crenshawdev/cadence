@@ -3,7 +3,6 @@ mod bash;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    ffi::OsString,
     io::{Read, Write},
     path::{Component, Path, PathBuf},
     process::ExitCode,
@@ -96,18 +95,42 @@ pub fn run() -> ExitCode {
     {
         return write_denial("Write/Edit event is not a PreToolUse event");
     }
-    let target = match resolve_target(&event.cwd, &event.tool_input.file_path) {
-        Ok(target) => target,
+    // Inspect native spelling first: a POSIX backslash can name a real alias.
+    let bindings = match config_destinations(&event.cwd) {
+        Ok(bindings) => bindings,
         Err(reason) => return write_denial(reason),
     };
-    match protected_target(&target) {
-        Ok(true) => write_denial(format!(
-            "Cadence owns {}; use the native execution boundary instead of Write/Edit",
-            target.display()
-        )),
-        Ok(false) => ExitCode::SUCCESS,
-        Err(reason) => write_denial(reason),
+    for spelling in [
+        event.tool_input.file_path.clone(),
+        event.tool_input.file_path.replace('\\', "/"),
+    ] {
+        let target = match resolve_target(&event.cwd, &spelling) {
+            Ok(target) => target,
+            Err(reason) => return write_denial(reason),
+        };
+        for destination in &bindings {
+            match same_destination(&target, destination) {
+                Ok(true) => {
+                    return write_denial(
+                        "Cadence owns this config destination; use cadence_apply config operations instead of Write/Edit",
+                    );
+                }
+                Ok(false) => {}
+                Err(reason) => return write_denial(reason),
+            }
+        }
+        match protected_target(&target) {
+            Ok(true) => {
+                return write_denial(format!(
+                    "Cadence owns {}; use the native execution boundary instead of Write/Edit",
+                    target.display()
+                ));
+            }
+            Ok(false) => {}
+            Err(reason) => return write_denial(reason),
+        }
     }
+    ExitCode::SUCCESS
 }
 
 fn matched_tool(bytes: &[u8]) -> bool {
@@ -159,18 +182,16 @@ fn resolve_target(cwd: &str, target: &str) -> Result<PathBuf, String> {
     if !cwd.is_dir() {
         return Err("Write/Edit cwd is not a directory".into());
     }
-    let portable = target.replace('\\', "/");
-    if portable.starts_with("//") || portable.as_bytes().get(1).is_some_and(|byte| *byte == b':') {
+    if target.starts_with("//") || target.as_bytes().get(1).is_some_and(|byte| *byte == b':') {
         return Err("Write/Edit target uses an ambiguous path prefix".into());
     }
-    let supplied = Path::new(&portable);
+    let supplied = Path::new(target);
     let joined = if supplied.is_absolute() {
         supplied.to_path_buf()
     } else {
         cwd.join(supplied)
     };
-    let normalized = lexical_normalize(&joined)?;
-    resolve_existing_prefix(&normalized)
+    resolve_existing_prefix(&joined)
 }
 
 fn validate_text(value: &str, name: &str) -> Result<(), String> {
@@ -182,60 +203,82 @@ fn validate_text(value: &str, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn lexical_normalize(path: &Path) -> Result<PathBuf, String> {
-    let mut normalized = PathBuf::new();
+fn resolve_existing_prefix(path: &Path) -> Result<PathBuf, String> {
+    let mut resolved = PathBuf::new();
     for component in path.components() {
         match component {
             Component::Prefix(_) => {
                 return Err("Write/Edit target has an unsupported path prefix".into());
             }
-            Component::RootDir => normalized.push(Path::new("/")),
+            Component::RootDir => resolved.push("/"),
             Component::CurDir => {}
             Component::ParentDir => {
-                if !normalized.pop() {
+                if !resolved.pop() {
                     return Err("Write/Edit target escapes the filesystem root".into());
                 }
             }
-            Component::Normal(value) => normalized.push(value),
+            Component::Normal(value) => {
+                match std::fs::metadata(&resolved) {
+                    Ok(metadata) if !metadata.is_dir() => {
+                        return Err("Write/Edit target has a non-directory parent".into());
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(format!("cannot inspect Write/Edit parent safely: {error}"));
+                    }
+                }
+                resolved.push(value);
+                match std::fs::symlink_metadata(&resolved) {
+                    Ok(_) => {
+                        resolved = std::fs::canonicalize(&resolved)
+                            .map_err(|error| format!("cannot resolve Write/Edit target: {error}"))?
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(format!("cannot inspect Write/Edit target safely: {error}"));
+                    }
+                }
+            }
         }
     }
-    if !normalized.is_absolute() {
-        return Err("Write/Edit target did not resolve to an absolute path".into());
-    }
-    Ok(normalized)
+    Ok(resolved)
 }
 
-fn resolve_existing_prefix(path: &Path) -> Result<PathBuf, String> {
-    let mut cursor = path.to_path_buf();
-    let mut missing = Vec::<OsString>::new();
-    loop {
-        match std::fs::symlink_metadata(&cursor) {
-            Ok(metadata) => {
-                if !missing.is_empty() && !metadata.is_dir() {
-                    return Err("Write/Edit target has a non-directory parent".into());
-                }
-                let mut resolved = std::fs::canonicalize(&cursor)
-                    .map_err(|error| format!("cannot resolve Write/Edit target: {error}"))?;
-                for component in missing.iter().rev() {
-                    resolved.push(component);
-                }
-                return Ok(resolved);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let name = cursor
-                    .file_name()
-                    .ok_or_else(|| "Write/Edit target has no resolvable ancestor".to_owned())?;
-                missing.push(name.to_os_string());
-                cursor = cursor
-                    .parent()
-                    .ok_or_else(|| "Write/Edit target escapes its root".to_owned())?
-                    .to_path_buf();
-            }
-            Err(error) => {
-                return Err(format!("cannot inspect Write/Edit target safely: {error}"));
-            }
-        }
+fn config_destinations(cwd: &str) -> Result<Vec<PathBuf>, String> {
+    let repo = resolve_target(cwd, ".planning/config.json")?;
+    let global = std::env::var_os("CADENCE_GLOBAL_CONFIG")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|home| PathBuf::from(home).join(".claude/cadence/config.json"))
+        })
+        .filter(|path| !path.as_os_str().is_empty());
+    let mut legacy = vec![repo];
+    if let Some(global) = global {
+        let absolute = std::path::absolute(global).map_err(|error| error.to_string())?;
+        legacy.push(resolve_existing_prefix(&absolute)?);
     }
+    legacy
+        .into_iter()
+        .map(|path| resolve_existing_prefix(&path.with_file_name("config.v4.json")))
+        .collect()
+}
+
+fn same_destination(target: &Path, destination: &Path) -> Result<bool, String> {
+    use std::os::unix::fs::MetadataExt;
+    if target == destination {
+        return Ok(true);
+    }
+    let metadata = |path| match std::fs::metadata(path) {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("cannot inspect config destination safely: {error}")),
+    };
+    Ok(match (metadata(target)?, metadata(destination)?) {
+        (Some(left), Some(right)) => (left.dev(), left.ino()) == (right.dev(), right.ino()),
+        _ => false,
+    })
 }
 
 fn protected_target(target: &Path) -> Result<bool, String> {

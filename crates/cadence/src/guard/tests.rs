@@ -13,6 +13,13 @@ fn guard_process_child() {
     let Ok(mode) = std::env::var("CADENCE_GUARD_CHILD") else {
         return;
     };
+    if mode == "guard-gap" {
+        std::process::exit(if super::run() == std::process::ExitCode::SUCCESS {
+            0
+        } else {
+            1
+        });
+    }
     let command = match mode.as_str() {
         "guard" => crate::Command::Guard,
         "serve" => crate::Command::Serve,
@@ -223,4 +230,299 @@ fn guard_cli_retains_the_serve_handshake() {
     stdin.flush().unwrap();
     drop(stdin);
     assert!(process.wait().unwrap().success());
+}
+
+const CONFIG_DENIAL: &[u8] = b"{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Cadence owns this config destination; use cadence_apply config operations instead of Write/Edit\"}}\n";
+
+// The temporary root maps the named /project, /global and /home/fixture trees
+// into an isolated filesystem. The child exercises only the hook's process I/O.
+fn gap_tree() -> tempfile::TempDir {
+    let tree = tempfile::tempdir().unwrap();
+    for directory in [
+        "project/.planning/subdir",
+        "global",
+        "home/fixture/.claude/cadence",
+        "server-project/.planning",
+        "unrelated",
+    ] {
+        fs::create_dir_all(tree.path().join(directory)).unwrap();
+    }
+    tree
+}
+
+fn gap_hook(tree: &Path, tool: &str, target: &str, global: Option<&str>) -> Vec<u8> {
+    let mut command = child("guard-gap");
+    command
+        .env_clear()
+        .env("CADENCE_GUARD_CHILD", "guard-gap")
+        .env("HOME", tree.join("home/fixture"))
+        .current_dir(tree.join("project"));
+    if let Some(global) = global {
+        command.env("CADENCE_GLOBAL_CONFIG", global);
+    }
+    let mut process = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    process
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&event(tool, &tree.join("project"), json!(target)))
+        .unwrap();
+    let output = process.wait_with_output().unwrap();
+    if !output.status.success() {
+        panic!("hook child failed: {}", output.status);
+    }
+    // libtest prints its preamble before entering the child function.
+    output
+        .stdout
+        .strip_prefix(b"\nrunning 1 test\n")
+        .unwrap_or(&output.stdout)
+        .to_vec()
+}
+
+#[test]
+fn phase8_gap_guard_denies_bound_config_destinations() {
+    for tool in ["Write", "Edit"] {
+        for row in [
+            "relative",
+            "absolute",
+            "dots",
+            "backslash",
+            "parent-alias",
+            "file-alias",
+            "hard-link",
+            "missing-parent-alias",
+            "global",
+            "relative-global",
+            "global-dots",
+            "global-backslash",
+            "global-parent-alias",
+            "global-file-alias",
+            "global-hard-link",
+            "global-missing-alias",
+            "global-legacy-alias",
+            "home-global",
+            "disabled-global",
+            "legacy-alias",
+            "active-alias",
+            "collapsed",
+            "cwd-repo-with-server-root",
+        ] {
+            let tree = gap_tree();
+            let root = tree.path();
+            let repo = root.join("project/.planning/config.v4.json");
+            fs::write(&repo, b"{}").unwrap();
+            fs::write(root.join("global/config.v4.json"), b"{}").unwrap();
+            fs::write(root.join("server-project/.planning/config.v4.json"), b"{}").unwrap();
+            std::os::unix::fs::symlink(root.join("project/.planning"), root.join("project/alias"))
+                .unwrap();
+            let global_path = root.join("global/config.json").to_str().unwrap().to_owned();
+            let mut global = Some(global_path.as_str());
+            let target = match row {
+                "absolute" => repo.to_str().unwrap().to_owned(),
+                "dots" => "./.planning/subdir/../config.v4.json".into(),
+                "backslash" => ".planning\\config.v4.json".into(),
+                "parent-alias" => "alias/config.v4.json".into(),
+                "missing-parent-alias" => {
+                    fs::remove_file(&repo).unwrap();
+                    "alias/config.v4.json".into()
+                }
+                "file-alias" => {
+                    std::os::unix::fs::symlink(&repo, root.join("project/file-alias")).unwrap();
+                    "file-alias".into()
+                }
+                "hard-link" => {
+                    fs::hard_link(&repo, root.join("project/hard-link")).unwrap();
+                    "hard-link".into()
+                }
+                "global" => root
+                    .join("global/config.v4.json")
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+                "global-dots" => "../global/./config.v4.json".into(),
+                "global-backslash" => "..\\global\\config.v4.json".into(),
+                "global-parent-alias" | "global-missing-alias" => {
+                    std::os::unix::fs::symlink(
+                        root.join("global"),
+                        root.join("project/global-alias"),
+                    )
+                    .unwrap();
+                    if row == "global-missing-alias" {
+                        fs::remove_file(root.join("global/config.v4.json")).unwrap();
+                    }
+                    "global-alias/config.v4.json".into()
+                }
+                "global-file-alias" => {
+                    std::os::unix::fs::symlink(
+                        root.join("global/config.v4.json"),
+                        root.join("project/global-file"),
+                    )
+                    .unwrap();
+                    "global-file".into()
+                }
+                "global-hard-link" => {
+                    fs::hard_link(
+                        root.join("global/config.v4.json"),
+                        root.join("project/global-file"),
+                    )
+                    .unwrap();
+                    "global-file".into()
+                }
+                "global-legacy-alias" => {
+                    fs::write(root.join("unrelated/config.json"), b"{}").unwrap();
+                    std::os::unix::fs::symlink(
+                        root.join("unrelated/config.json"),
+                        root.join("global/config.json"),
+                    )
+                    .unwrap();
+                    "../unrelated/config.v4.json".into()
+                }
+                "relative-global" => {
+                    global = Some("../global/config.json");
+                    "../global/config.v4.json".into()
+                }
+                "home-global" => {
+                    global = None;
+                    root.join("home/fixture/.claude/cadence/config.v4.json")
+                        .to_str()
+                        .unwrap()
+                        .to_owned()
+                }
+                "disabled-global" => {
+                    global = Some("");
+                    ".planning/config.v4.json".into()
+                }
+                "legacy-alias" => {
+                    fs::write(root.join("unrelated/config.json"), b"{}").unwrap();
+                    std::os::unix::fs::symlink(
+                        root.join("unrelated/config.json"),
+                        root.join("project/.planning/config.json"),
+                    )
+                    .unwrap();
+                    "../unrelated/config.v4.json".into()
+                }
+                "active-alias" => {
+                    fs::remove_file(&repo).unwrap();
+                    fs::write(root.join("unrelated/active"), b"{}").unwrap();
+                    std::os::unix::fs::symlink(root.join("unrelated/active"), &repo).unwrap();
+                    "../unrelated/active".into()
+                }
+                "collapsed" => {
+                    fs::write(root.join("project/.planning/config.json"), b"{}").unwrap();
+                    std::os::unix::fs::symlink(
+                        root.join("project/.planning/config.json"),
+                        root.join("global/config.json"),
+                    )
+                    .unwrap();
+                    ".planning/config.v4.json".into()
+                }
+                _ => ".planning/config.v4.json".into(),
+            };
+            assert_eq!(
+                gap_hook(root, tool, &target, global),
+                CONFIG_DENIAL,
+                "{tool}/{row}"
+            );
+        }
+    }
+}
+
+#[test]
+fn phase8_gap_guard_denies_symlink_before_parent_segment() {
+    for tool in ["Write", "Edit"] {
+        for present in [true, false] {
+            let tree = gap_tree();
+            let root = tree.path();
+            std::os::unix::fs::symlink(
+                root.join("project/.planning/subdir"),
+                root.join("project/jump"),
+            )
+            .unwrap();
+            fs::write(root.join("project/config.v4.json"), b"unrelated").unwrap();
+            if present {
+                fs::write(root.join("project/.planning/config.v4.json"), b"{}").unwrap();
+            }
+            assert_eq!(
+                gap_hook(
+                    root,
+                    tool,
+                    "jump/../config.v4.json",
+                    Some("../global/config.json")
+                ),
+                CONFIG_DENIAL,
+                "{tool}/present={present}"
+            );
+        }
+    }
+}
+
+#[test]
+fn phase8_gap_guard_denies_literal_backslash_alias() {
+    for tool in ["Write", "Edit"] {
+        let tree = gap_tree();
+        let root = tree.path();
+        fs::create_dir(root.join("project/raw")).unwrap();
+        fs::write(root.join("project/raw/alias"), b"unrelated").unwrap();
+        fs::write(root.join("project/.planning/config.v4.json"), b"{}").unwrap();
+        fs::hard_link(
+            root.join("project/.planning/config.v4.json"),
+            root.join("project/raw\\alias"),
+        )
+        .unwrap();
+        assert_eq!(
+            gap_hook(root, tool, "raw\\alias", Some("../global/config.json")),
+            CONFIG_DENIAL,
+            "{tool}"
+        );
+    }
+}
+
+#[test]
+fn phase8_gap_guard_allows_unbound_config_name() {
+    let tree = gap_tree();
+    for path in [
+        "project/.planning/config.v4.json",
+        "global/config.v4.json",
+        "unrelated/config.v4.json",
+    ] {
+        fs::write(tree.path().join(path), b"{}").unwrap();
+    }
+    assert_eq!(
+        gap_hook(
+            tree.path(),
+            "Write",
+            "../unrelated/config.v4.json",
+            Some("../global/config.json")
+        ),
+        b""
+    );
+}
+
+#[test]
+fn phase8_gap_guard_different_server_root_is_unbound() {
+    for tool in ["Write", "Edit"] {
+        let tree = gap_tree();
+        for path in [
+            "project/.planning/config.v4.json",
+            "global/config.v4.json",
+            "server-project/.planning/config.v4.json",
+        ] {
+            fs::write(tree.path().join(path), b"{}").unwrap();
+        }
+        assert_eq!(
+            gap_hook(
+                tree.path(),
+                tool,
+                "../server-project/.planning/config.v4.json",
+                Some("../global/config.json")
+            ),
+            b"",
+            "{tool}"
+        );
+    }
 }
