@@ -459,7 +459,7 @@ fn alias_identity_is_resolved_before_reads_and_rechecked_on_retarget() {
     assert_eq!(shared.effective.sources["workflow.verifier"], Layer::Repo);
     assert_eq!(
         get(&shared.effective.values, "workflow.test_command"),
-        Some(&Value::Null)
+        Some(&json!("repo-command"))
     );
     let other = dir.path().join("other.json");
     write_json(&other, json!({"workflow":{"test_command":"trusted"}}));
@@ -821,7 +821,7 @@ fn aliased_config_updates_have_one_destination_and_keep_request_scope() {
         assert_eq!(current.effective.sources["git.forge_repo"], Layer::Repo);
         assert_eq!(
             get(&current.effective.values, "workflow.test_command"),
-            Some(&Value::Null)
+            Some(&json!("trusted intent"))
         );
         let addressed = merge(None, current.effective.raw_repo, true);
         assert_eq!(

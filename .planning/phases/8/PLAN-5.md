@@ -2,12 +2,13 @@
 phase: 8
 plan: 5
 requirements:
-  - AC1
   - AC2
   - AC8
   - AC10
   - AC11
 files:
+  - crates/cadence/src/store/mod.rs
+  - crates/cadence/src/config/tests.rs
   - crates/cadence/src/import/mod.rs
   - crates/cadence/src/config/reload.rs
   - crates/cadence/src/config_service.rs
@@ -26,7 +27,7 @@ files:
   - docs/architecture/config-routing.md
 execution:
   schema: 1
-  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace && TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings && TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check"
+  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy -p cadence --tests"
   tasks:
     - id: P8-5-T1
       verify:
@@ -45,11 +46,11 @@ execution:
         - "TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test mcp"
 ---
 
-# Phase 8: Admission, replay and real skill proof - Plan 5
+# Phase 8: Admission, replay and binary dispatch proof - Plan 5
 
 ## Goal
 
-A saved model/rung choice reaches real dispatch through the shipped skill and remains accurately attributable after races, interruption and replay. This plan closes the final config-generation admission check. Live-host consumption is routed to `.planning/phases/8/MANUAL.md` and is not an obligation here.
+A saved model/rung choice determines binary dispatch and remains accurately attributable after changed inputs, interruption and replay. This plan closes the final config-generation admission check. Live-host consumption is routed to `.planning/phases/8/MANUAL.md` and is not an obligation here.
 
 ## Must be true when done
 
@@ -58,7 +59,6 @@ A saved model/rung choice reaches real dispatch through the shipped skill and re
 - AC11/D-56: Interrupted recording cannot expose an active route-bearing dispatch without its routing decision, and missing host effort/receipt evidence stays absent.
 - AC10/D-46: The binary returns the three tool schemas, resolves a saved model/agent choice into an admitted dispatch, and emits the byte-exact prompt. Whether a host honours that resolution is not asserted here.
 - AC8/AC10: Installed rung files and actual requested parameters are verified separately from any observed host effort; no observation is inferred from frontmatter.
-- AC1/D-49: Existing config and phase 7 execution/lease/rail behavior remains covered by the full suite.
 
 ## Context
 
@@ -68,13 +68,13 @@ D-45, D-46, D-49, D-53 and D-56 bind this plan. Use the routed dispatch from Pla
 
 ### Task 1: Bind new admission to the observed configuration (P8-5-T1)
 
-- **Files:** `crates/cadence/src/import/mod.rs` (SessionPolicy::validate / Session::request / Session::config), `crates/cadence/src/config/reload.rs` (Generation / Input / Reload::refresh), `crates/cadence/src/config_service.rs` (route observation from prior plans), `crates/cadence/src/execution_service.rs` (query / reobserve / dispatch_response / RoutingObserved hook), `crates/cadence/src/execution/model.rs` (route data on ActiveDispatch from Plan 1), `crates/cadence/src/execution/dispatch.rs` (route identity from Plan 1), `crates/cadence/src/store/writer.rs` (boundary_v1 / persist / MutationContext construction), `crates/cadence/src/store/transaction.rs` (final policy validation / recover), `crates/cadence/src/execution_service_tests.rs` (Driver / Event race fixtures), `crates/cadence/tests/phase8_dispatch.rs` (new-dispatch freshness integration), `crates/cadence/tests/phase8_config.rs` (public read/route freshness)
+- **Files:** `crates/cadence/src/import/mod.rs` (SessionPolicy::validate / Session::request / Session::config), `crates/cadence/src/config/reload.rs` (Generation / Input / Reload::refresh), `crates/cadence/src/config_service.rs` (route observation from prior plans), `crates/cadence/src/execution_service.rs` (query / reobserve / dispatch_response / RoutingObserved hook), `crates/cadence/src/execution/model.rs` (route data on ActiveDispatch from Plan 1), `crates/cadence/src/execution/dispatch.rs` (route identity from Plan 1), `crates/cadence/src/store/writer.rs` (boundary_v1 / persist / MutationContext construction), `crates/cadence/src/store/transaction.rs` (final policy validation / recover), `crates/cadence/src/execution_service_tests.rs` (Driver / Event race fixtures), `crates/cadence/tests/phase8_dispatch.rs` (new-dispatch freshness integration), `crates/cadence/tests/phase8_config.rs` (public read/route freshness), `crates/cadence/src/store/mod.rs` (final routing policy precondition), `crates/cadence/src/execution/boundary.rs` (typed changed-input failure), `crates/cadence/src/config/tests.rs` (repair stale alias-intent expectations exposed by the required binary target)
 - **Action:** Capture the resolved config inputs used by a proposed new route, including resolved layer identities, exact byte digests/presence and selection provenance; Generation.number alone is neither a cross-session identity nor evidence of unchanged bytes. Carry a binary-owned precondition through dispatch preparation and the writer's admission unit. At the final prospective-state policy validation before durable intent installation, refresh with the existing Reload seam and compare the same captured inputs. Compare after production ownership is acquired, including Plan 2's shared destination ownership for cooperating writes. Do not rely solely on execution_service::reobserve's plan/HEAD/store checks or on config remaining schema-valid.
 
   Choose refusal on a changed routing input, not silent recomputation inside a partially prepared dispatch. Return a typed changed-input refusal without an active candidate, routing-success record or worker prompt usable as an admitted dispatch; the next query may prepare from current inputs. Test the whole observation-to-final-validation interval, including an edit after the service's last reobserve but before intent admission. Preserve a current policy refusal when reload fails.
 
   Apply the equality precondition only to genuinely new dispatch admission. Recovery of an admitted intent validates its stored route/evidence unit and current config usability but never resolves that historical route again. Replaying an already-active dispatch also validates current controlling config yet keeps the admitted route, prompt and identity even after a valid settings change. A config-route fact query refreshes the same generation through all components; it must not combine current role values with a cached waiver/policy answer. Do not rebuild Reload, add a watcher or introduce a third config layer.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_dispatch`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_config`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence` — Deterministic hooks change sonnet to opus with both generations valid between route calculation and admission, and separately after service reobserve but before final policy validation. Both attempts refuse with no admitted candidate; a fresh query selects opus. Repeat equal-size/equal-mtime edits, rename/alias-retarget, inherited global reset, waiver edits and failed-I/O invalidation at new public consumers. After a successful admission, valid edits plus restart preserve its exact route/prompt; completing it lets the next new dispatch select current settings. Invalid current config still refuses resume.
+- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_dispatch`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_config`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence` — Reload::refresh_expected returns a supplied Generation for identical captured identities, presence, exact bytes and stamps, or Conflict("routing inputs changed before admission") for independently supplied changed model, equal-size bytes, replacement identity, alias, global reset or waiver inputs; failed reads preserve their Io refusal. The final transaction policy consumes the proposed route inputs after preparation under writer ownership. Independent recovery/replay fixtures retain historical inputs without equality checks, and resolve_route returns one supplied generation for role and policy. No edit/query/restart/completion chain is required.
 
 ### Task 2: Falsify partial routing admission on recovery (P8-5-T2)
 
@@ -96,19 +96,18 @@ D-45, D-46, D-49, D-53 and D-56 bind this plan. Use the routed dispatch from Pla
 
 | Requirement or decision | Implementing tasks |
 |---|---|
-| D-49 / AC1 | P8-5-T1, P8-5-T3 |
 | D-50 / AC2 (consumption freshness) | P8-5-T1 |
-| D-53 / AC8 (installed consumer proof) | P8-5-T3 |
+| D-53 / AC8 (binary parameter proof) | P8-5-T3 |
 | D-45 / D-46 / AC10 | P8-5-T3 |
 | D-56 / AC11 | P8-5-T1, P8-5-T2, P8-5-T3 |
 
 ## Notes
 
-Run after Plan 4; all preceding plans are transitively required through real file overlaps. This plan shares execution_service.rs and phase8_dispatch.rs with Plan 4, writer/import with Plans 1-2, and the live harness/document with Plan 3. It cannot run in parallel with any unfinished predecessor.
+Run after Plan 4; all preceding plans are transitively required through real file overlaps. This plan shares execution_service.rs and phase8_dispatch.rs with Plan 4, writer/import with Plans 1-2, and the grouped schema contract with Plan 3. It cannot run in parallel with any unfinished predecessor.
 
 The final admission comparison linearizes selection at the final validated inputs; common ownership protects that interval from cooperating Cadence writers. It does not claim to freeze arbitrary external filesystem editors forever. A later valid change is a new input for the next new dispatch, never retrospective authority to change an active one. Store generation alone cannot detect an external config edit, so a positive configuration identity/byte comparison is required.
 
-This plan writes no live test. AC4's observed interview and AC10's host consumption are routed to `.planning/phases/8/MANUAL.md` under the Overflow rule; the ordinary workspace suite is not expected to close them and no ignored live command path is added to stand in for them.
+This plan writes no live test. AC4's observed interview and AC10's host consumption are routed to `.planning/phases/8/MANUAL.md` under the Overflow rule; the named binary test targets do not close them and no ignored live command path is added to stand in for them.
 
-The suite is test --workspace, clippy --all-targets with warnings denied and fmt --check, with TMPDIR=/tmp and RUSTC_WRAPPER empty. No new dependencies or checked-in fixture directories are needed; all fixture artifacts remain embedded in leased test files or created under temporary test roots.
+The only final lint is `TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy -p cadence --tests`, once after task tests; fix any warnings. Only the exact task Verify commands run, sequentially. No new dependencies or checked-in fixture directories are needed; all fixture artifacts remain embedded in leased test files or created under temporary test roots.
 

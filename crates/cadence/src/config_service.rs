@@ -747,16 +747,7 @@ mod routing_inputs_tests {
 }
 
 pub fn routing_inputs(generation: &Generation) -> cadence::execution::model::ConfigInputs {
-    let capture = |input: &crate::config::reload::Input| cadence::execution::model::ConfigInput {
-        identity: input.identity.clone(),
-        content: input.bytes.as_deref().map(cadence::store::model::digest),
-        stamp: input.stamp,
-    };
-    cadence::execution::model::ConfigInputs {
-        repo: capture(&generation.repo),
-        global: generation.global.as_ref().map(capture),
-        global_alias: generation.effective.global_intent,
-    }
+    generation.routing_inputs()
 }
 
 #[cfg(test)]

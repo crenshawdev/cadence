@@ -57,6 +57,7 @@ pub enum Failure {
     Confirmation,
     LegacyExecution,
     RoutingEvidence,
+    RoutingInputsChanged,
     Encoding,
 }
 
@@ -68,6 +69,7 @@ impl std::fmt::Display for Failure {
             Self::Confirmation => "execution answer could not be confirmed",
             Self::LegacyExecution => "cross-format native execution resume is unsupported",
             Self::Encoding => "execution envelope encoding is invalid",
+            Self::RoutingInputsChanged => "routing inputs changed before admission",
             Self::RoutingEvidence => {
                 "execution dispatch routing evidence is unavailable or inconsistent"
             }

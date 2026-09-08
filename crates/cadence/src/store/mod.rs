@@ -42,6 +42,13 @@ pub struct MutationContext<'a> {
 }
 pub trait Policy: Send + 'static {
     fn validate(&mut self, context: &MutationContext<'_>) -> Result<()>;
+    fn validate_routing_admission(
+        &mut self,
+        context: &MutationContext<'_>,
+        _inputs: &cadence::execution::model::ConfigInputs,
+    ) -> Result<()> {
+        self.validate(context)
+    }
 }
 
 /// Adapter-owned identity tokens have no filesystem semantics in the core.

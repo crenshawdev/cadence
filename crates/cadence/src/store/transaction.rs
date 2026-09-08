@@ -823,7 +823,15 @@ pub(crate) fn commit<S: Storage, P: Policy>(
         integrity: String::new(),
     };
     intent.integrity = intent.digest()?;
-    intent.validate()?;
+    let prospective = intent.validate()?;
+    let route = match &intent.kind {
+        IntentKind::ExecutionDispatchV1 { phase, .. } => execution_snapshot(&prospective)?
+            .occurrences
+            .get(&phase.to_string())
+            .and_then(|occurrence| occurrence.active.as_ref())
+            .and_then(|dispatch| dispatch.route.clone()),
+        _ => None,
+    };
     let bytes = serde_json::to_vec(&intent)?;
     let intent_file = match storage.prepare(INTENT, &bytes) {
         Ok(file) => file,
@@ -833,7 +841,16 @@ pub(crate) fn commit<S: Storage, P: Policy>(
         }
     };
     if let Err(error) =
-        validate_all(storage, &intent.participants, false).and_then(|()| policy.validate(context))
+        validate_all(storage, &intent.participants, false).and_then(|()| match &route {
+            Some(route) => policy.validate_routing_admission(
+                &MutationContext {
+                    operation: context.operation,
+                    snapshot: &prospective,
+                },
+                &route.inputs,
+            ),
+            None => policy.validate(context),
+        })
     {
         storage.discard(intent_file)?;
         dispose(storage, prepared)?;

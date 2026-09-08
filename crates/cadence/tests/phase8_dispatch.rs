@@ -313,3 +313,179 @@ fn completed_route_resolver_keeps_saved_spending_for_separate_generations() {
         );
     }
 }
+
+#[derive(Clone)]
+struct SuppliedConfig(cadence::store::Result<cadence::config::reload::Input>);
+impl cadence::config::reload::ConfigIo for SuppliedConfig {
+    fn read(
+        &mut self,
+        _: &std::path::Path,
+    ) -> cadence::store::Result<cadence::config::reload::Input> {
+        self.0.clone()
+    }
+}
+
+#[test]
+fn final_reload_compares_bytes_presence_identity_stamp_and_alias_without_generation_numbers() {
+    use cadence::config::reload::{Input, Paths, Reload};
+    use cadence::execution::model::{ConfigInput, ConfigInputs};
+    let expected = ConfigInputs {
+        repo: ConfigInput {
+            identity: "/project/config.json".into(),
+            content: Some(
+                "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a".into(),
+            ),
+            stamp: Some((1, 2, 33188)),
+        },
+        global: None,
+        global_alias: false,
+    };
+    for (identity, bytes, stamp, alias, result) in [
+        (
+            "/project/config.json",
+            Some(b"{}".as_slice()),
+            Some((1, 2, 33188)),
+            false,
+            Ok(1),
+        ),
+        (
+            "/project/config.json",
+            Some(b"{ }".as_slice()),
+            Some((1, 2, 33188)),
+            false,
+            Err(cadence::store::Error::Conflict(
+                "routing inputs changed before admission".into(),
+            )),
+        ),
+        (
+            "/other/config.json",
+            Some(b"{}".as_slice()),
+            Some((1, 2, 33188)),
+            false,
+            Err(cadence::store::Error::Conflict(
+                "routing inputs changed before admission".into(),
+            )),
+        ),
+        (
+            "/project/config.json",
+            None,
+            None,
+            false,
+            Err(cadence::store::Error::Conflict(
+                "routing inputs changed before admission".into(),
+            )),
+        ),
+        (
+            "/project/config.json",
+            Some(b"{}".as_slice()),
+            Some((1, 3, 33188)),
+            false,
+            Err(cadence::store::Error::Conflict(
+                "routing inputs changed before admission".into(),
+            )),
+        ),
+        (
+            "/project/config.json",
+            Some(b"{}".as_slice()),
+            Some((1, 2, 33188)),
+            true,
+            Err(cadence::store::Error::Conflict(
+                "routing inputs changed before admission".into(),
+            )),
+        ),
+    ] {
+        let mut reload = Reload::new(
+            Paths {
+                repo: "/project/config.json".into(),
+                global: alias.then(|| "/project/config.json".into()),
+            },
+            SuppliedConfig(Ok(Input {
+                identity: identity.into(),
+                bytes: bytes.map(Vec::from),
+                stamp,
+            })),
+        );
+        assert_eq!(
+            reload
+                .refresh_expected(&expected)
+                .map(|generation| generation.number),
+            result
+        );
+    }
+}
+
+#[test]
+fn final_reload_preserves_failed_io_refusal() {
+    use cadence::config::reload::{Paths, Reload};
+    let route: DispatchRoute = serde_json::from_str(ROUTE).unwrap();
+    let mut reload = Reload::new(
+        Paths {
+            repo: "/project/config.json".into(),
+            global: None,
+        },
+        SuppliedConfig(Err(cadence::store::Error::Io(
+            "injected read denial".into(),
+        ))),
+    );
+    assert_eq!(
+        reload.refresh_expected(&route.inputs),
+        Err(cadence::store::Error::Io("injected read denial".into()))
+    );
+}
+
+#[test]
+fn final_reload_rejects_independent_model_reset_and_waiver_changes() {
+    use cadence::config::reload::{Input, Paths, Reload};
+    use cadence::execution::model::{ConfigInput, ConfigInputs};
+    for (before, after, global) in [
+        (
+            br#"{"roles":{"cad-executor":{"model":"sonnet"}}}"#.as_slice(),
+            br#"{"roles":{"cad-executor":{"model":"opus"}}}"#.as_slice(),
+            false,
+        ),
+        (
+            br#"{"roles":{"cad-executor":{"model":"opus"}}}"#.as_slice(),
+            br#"{"roles":{"cad-executor":{"model":"null"}}}"#.as_slice(),
+            false,
+        ),
+        (
+            br#"{"roles":{"cad-executor":{"model":"opus"}}}"#.as_slice(),
+            br#"{"roles":{"cad-executor":{"model":null}}}"#.as_slice(),
+            true,
+        ),
+        (
+            br#"{"review":{"triggers":{"risk_surface":{"waive_routing_floor":[]}}}}"#.as_slice(),
+            br#"{"review":{"triggers":{"risk_surface":{"waive_routing_floor":["auth"]}}}}"#
+                .as_slice(),
+            false,
+        ),
+    ] {
+        let input = ConfigInput {
+            identity: "/project/config.json".into(),
+            content: Some(cadence::store::model::digest(before)),
+            stamp: None,
+        };
+        let expected = ConfigInputs {
+            repo: input.clone(),
+            global: global.then_some(input),
+            global_alias: false,
+        };
+        let mut reload = Reload::new(
+            Paths {
+                repo: "/project/config.json".into(),
+                global: global.then(|| "/global/config.json".into()),
+            },
+            SuppliedConfig(Ok(Input {
+                identity: "/project/config.json".into(),
+                bytes: Some(after.to_vec()),
+                stamp: None,
+            })),
+        );
+        assert_eq!(
+            reload.refresh_expected(&expected),
+            Err(cadence::store::Error::Conflict(
+                "routing inputs changed before admission".into()
+            ))
+        );
+    }
+}

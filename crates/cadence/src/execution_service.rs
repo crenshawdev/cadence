@@ -1856,6 +1856,8 @@ fn refused(phase: u32, code: impl Into<String>, reason: impl Into<String>) -> Re
 fn store_failure(error: Error) -> Failure {
     if error == Error::Closed {
         Failure::Closed
+    } else if error == Error::Conflict("routing inputs changed before admission".into()) {
+        Failure::RoutingInputsChanged
     } else {
         Failure::Store
     }

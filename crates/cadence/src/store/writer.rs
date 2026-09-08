@@ -253,6 +253,17 @@ impl<P: Policy> Policy for CheckedPolicy<P> {
         }
         self.policy.validate(context)
     }
+
+    fn validate_routing_admission(
+        &mut self,
+        context: &MutationContext<'_>,
+        inputs: &cadence::execution::model::ConfigInputs,
+    ) -> Result<()> {
+        if let Some(check) = &mut self.check {
+            check()?;
+        }
+        self.policy.validate_routing_admission(context, inputs)
+    }
 }
 
 struct Writer<S: Storage, P: Policy> {

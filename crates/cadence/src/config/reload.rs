@@ -104,6 +104,22 @@ pub struct Generation {
     pub effective: Effective,
 }
 
+impl Generation {
+    pub fn routing_inputs(&self) -> cadence::execution::model::ConfigInputs {
+        let capture =
+            |input: &crate::config::reload::Input| cadence::execution::model::ConfigInput {
+                identity: input.identity.clone(),
+                content: input.bytes.as_deref().map(cadence::store::model::digest),
+                stamp: input.stamp,
+            };
+        cadence::execution::model::ConfigInputs {
+            repo: capture(&self.repo),
+            global: self.global.as_ref().map(capture),
+            global_alias: self.effective.global_intent,
+        }
+    }
+}
+
 pub struct Reload<I: ConfigIo = FileIo> {
     pub paths: Paths,
     io: I,
@@ -129,6 +145,19 @@ impl<I: ConfigIo> Reload<I> {
             self.current = None;
         }
         result
+    }
+
+    pub fn refresh_expected(
+        &mut self,
+        expected: &cadence::execution::model::ConfigInputs,
+    ) -> Result<Generation> {
+        let generation = self.refresh()?;
+        if generation.routing_inputs() != *expected {
+            return Err(Error::Conflict(
+                "routing inputs changed before admission".into(),
+            ));
+        }
+        Ok(generation)
     }
 
     fn load(&mut self) -> Result<Generation> {
