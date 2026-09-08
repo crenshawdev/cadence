@@ -904,6 +904,20 @@ follow config's Roles interview, which is phase 8. `cad-plan` does not own plan
 review - it fires the trigger from phase 9 and obeys the settlement from phase
 10. Crediting either to this phase would hide a dependency rather than remove it.
 
+**Acceptance criteria are validated here, not audited later.** The seven
+authoring rules in `docs/rationale/acceptance-criteria.md` are binding from
+phase 8 onward, and this phase is where they become machine-enforced: the binary
+validates a submitted criterion and returns a typed refusal naming the rule it
+breaks and the element it is missing, rather than persisting a malformed
+criterion for a later audit to find. Two consequences for this phase's own
+surface. The prompt the binary emits to the authoring agent must CARRY the rules
+- a rule that lives only in a reference file the agent never reads does not
+reach the agent doing the writing, which is how the phase-7 live probe was
+authored in the first place. And rule 7 needs a destination: an item that cannot
+be expressed as input to output is routed to `.planning/phases/<N>/MANUAL.md`
+with its original AC number preserved, never deleted, and the frozen tree's
+`(human-verify: needs <tool/service>)` tag is not reintroduced.
+
 **The plan gate stays on Claude.** The plan IS the verification instrument, so
 if the same agent authors the criteria and executes against them there is no
 independent check left. What moved is the grounding: a falsification pass reads
