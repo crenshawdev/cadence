@@ -102,7 +102,8 @@ fn empty(manifest: &str, fire: &str, target: Target) -> RetainedMaterial {
     }
 }
 
-fn save<S: Storage>(store: &mut S, result: RetainedMaterial) -> Result<RetainedMaterial> {
+fn save<S: Storage>(store: &mut S, mut result: RetainedMaterial) -> Result<RetainedMaterial> {
+    super::manifest::record_mappings(&mut result.manifest, &result.contents)?;
     retain_record(
         store,
         &format!("material-manifest-{}", result.manifest.manifest),

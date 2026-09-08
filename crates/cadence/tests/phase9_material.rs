@@ -1,4 +1,7 @@
 #[allow(dead_code)]
+#[path = "../src/review/manifest.rs"]
+mod manifest;
+#[allow(dead_code)]
 #[path = "../src/review/io.rs"]
 mod io;
 #[allow(dead_code)]
