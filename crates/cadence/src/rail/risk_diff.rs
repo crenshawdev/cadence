@@ -414,3 +414,125 @@ pub fn scan(body: Option<&[u8]>, paths: &[PathBuf], categories: &[String]) -> Re
         empty: false,
     })
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DeclaredMatch {
+    pub path: String,
+    pub category: String,
+    pub signal: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Withheld {
+    pub path: String,
+    pub category: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DeclaredScan {
+    pub matches: Vec<DeclaredMatch>,
+    pub withheld: Vec<Withheld>,
+}
+
+fn matches_pattern(pattern: &str, line: &str) -> Result<bool> {
+    RegexMatcher::new(pattern)
+        .map_err(|e| Error::Invalid(format!("invalid declared-line detector: {e}")))?
+        .is_match(line.as_bytes())
+        .map_err(|e| Error::Invalid(format!("declared-line detector failed: {e}")))
+}
+
+fn incidental(line: &str) -> Result<bool> {
+    for pattern in [
+        r"^\s*import\s+[^\s(;][^;]*;?\s*$",
+        r"^\s*from\s+\S+\s+import\s+[^;]*;?\s*$",
+        r"^\s*#\s*include\s+\S[^;]*$",
+        r"^\s*use\s+[^;]*;?\s*$",
+        r"^\s*(const|let|var)\s+[^=;]+=\s*require\s*\([^;]*\)\s*;?\s*$",
+    ] {
+        if matches_pattern(pattern, line)? {
+            return Ok(true);
+        }
+    }
+    let Some((declaration, initializer)) = line.split_once('=') else {
+        return Ok(false);
+    };
+    let constant = matches_pattern(
+        r"^\s*((export|public|private|protected|readonly)\s+)*(const|static|final|val)\s+[A-Za-z_$][^=;]*$",
+        declaration,
+    )? || matches_pattern(r"^\s*[A-Z][A-Z0-9_]*\s*(:[^=;]*)?$", declaration)?;
+    let initializer = initializer.trim().trim_end_matches(';').trim_end();
+    if !constant
+        || initializer.contains(';')
+        || !matches_pattern(
+            r#"^(['"`]|[-+]?\d|/[^/*]|\[|\{|true\b|false\b|null\b|undefined\b|None\b|nil\b)"#,
+            initializer,
+        )?
+    {
+        return Ok(false);
+    }
+    Ok(
+        matches_pattern(r"^/(?:[^/\\\n]|\\.)*/[a-z]*$", initializer)?
+            || !matches_pattern(r"[\w$\])]\s*\(", initializer)?,
+    )
+}
+
+pub fn scan_declared(
+    path: &str,
+    body: Option<&str>,
+    categories: &[String],
+) -> Result<DeclaredScan> {
+    let (sets, _) = path_sets(&[PathBuf::from(path)]);
+    let mut result = DeclaredScan::default();
+    let lower = path.to_lowercase();
+    let exclusion = if ["md", "markdown", "mdx", "txt", "rst", "adoc"]
+        .contains(&lower.rsplit('.').next().unwrap_or_default())
+    {
+        Some("document body")
+    } else if [
+        "cadence-core/bin/lib/risk-diff.mjs",
+        "cadence-core/bin/lib/surface-scan.mjs",
+        "crates/cadence/src/rail/risk_diff.rs",
+        "crates/cadence/src/rail/surfaces.rs",
+    ]
+    .iter()
+    .any(|table| lower == *table || lower.ends_with(&format!("/{table}")))
+    {
+        Some("signal-table body")
+    } else {
+        None
+    };
+    let whole: Vec<_> = body.unwrap_or_default().lines().collect();
+    let mut kept = vec![];
+    if let Some(reason) = exclusion {
+        if body.is_some() {
+            result.withheld.push(Withheld {
+                path: path.into(),
+                category: None,
+                reason: reason.into(),
+            });
+        }
+    } else {
+        for line in &whole {
+            if !incidental(line)? {
+                kept.push(*line);
+            }
+        }
+    }
+    for category in categories {
+        if let Some(signal) = signal(category, &sets, &kept)? {
+            result.matches.push(DeclaredMatch {
+                path: path.into(),
+                category: category.clone(),
+                signal: signal.replacen("changed line:", "body line:", 1),
+            });
+        } else if exclusion.is_none() && signal(category, &sets, &whole)?.is_some() {
+            result.withheld.push(Withheld {
+                path: path.into(),
+                category: Some(category.clone()),
+                reason: "only import or literal-constant lines".into(),
+            });
+        }
+    }
+    Ok(result)
+}

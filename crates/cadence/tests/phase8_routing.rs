@@ -594,14 +594,14 @@ fn route_bundle_uses_the_supplied_generation_for_policy_and_spending() {
             result.choice.model,
             result.choice.agent,
             result.policy.triggers["plan"].gate.as_str(),
-            result.floor
+            result.floor.state
         ),
         (
             17,
             Some("sonnet".into()),
             "cad-executor-xhigh".into(),
             "off",
-            "not computed: declared scope has not been read".into()
+            cadence::config::floor::State::NotComputed
         )
     );
 }
@@ -623,4 +623,670 @@ fn route_bundle_refuses_invalid_supported_policy() {
         .to_string(),
         "Policy(\"config unavailable: unusable review.triggers.plan.gate\")"
     );
+}
+
+use cadence::config::floor::{self, Access, State};
+use cadence::rail::risk_diff::{DeclaredMatch, DeclaredScan, Withheld, scan_declared};
+use std::{
+    fs, io,
+    path::Path,
+};
+
+fn native_plan(number: u32, files: &[&str], directories: &[&str]) -> String {
+    format!(
+        "---\nphase: 8\nplan: {number}\nrequirements: [AC9]\nfiles: {}\ndirectories: {}\nexecution:\n  schema: 1\n  suite: verify\n  tasks:\n    - id: T1\n      verify: [verify]\n---\nFixture body; prose/auth.rs is not a lease.\n",
+        serde_json::to_string(files).unwrap(),
+        serde_json::to_string(directories).unwrap()
+    )
+}
+fn scope_fixture(plans: &[(u32, &[&str], &[&str])], bodies: &[(&str, &[u8])]) -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".planning/phases/8")).unwrap();
+    for (number, files, directories) in plans {
+        fs::write(
+            root.path()
+                .join(format!(".planning/phases/8/PLAN-{number}.md")),
+            native_plan(*number, files, directories),
+        )
+        .unwrap();
+    }
+    for (path, bytes) in bodies {
+        let path = root.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+    root
+}
+fn categories() -> Vec<String> {
+    cadence::rail::risk::CATEGORIES
+        .iter()
+        .map(|c| (*c).into())
+        .collect()
+}
+
+#[test]
+fn floor_named_plan_is_clean_independently_of_risky_sibling() {
+    let root = scope_fixture(
+        &[(1, &["plain.rs"], &[]), (2, &["auth/new.rs"], &[])],
+        &[("plain.rs", b"fn main() {}")],
+    );
+    let result = floor::read_observed(
+        &root.path().join(".planning"),
+        "cad-executor",
+        Some(8),
+        Some(1),
+        &categories(),
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        (result.state, result.paths, result.matches),
+        (State::Complete, vec!["plain.rs".into()], vec![])
+    );
+}
+
+#[test]
+fn floor_phase_union_includes_new_file_path_evidence() {
+    let root = scope_fixture(&[(2, &["auth/new.rs"], &[]), (1, &["plain.rs"], &[])], &[]);
+    let result = floor::read_observed(
+        &root.path().join(".planning"),
+        "cad-verifier",
+        Some(8),
+        None,
+        &categories(),
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        (result.state, result.paths, result.matches, result.bytes),
+        (
+            State::Complete,
+            vec!["auth/new.rs".into(), "plain.rs".into()],
+            vec![DeclaredMatch {
+                path: "auth/new.rs".into(),
+                category: "auth".into(),
+                signal: "path segment auth".into()
+            }],
+            0
+        )
+    );
+}
+
+#[test]
+fn floor_preplan_roles_and_no_phase_do_no_filesystem_access() {
+    for (role, phase, expected) in [
+        ("cad-planner", Some(8), State::Bypassed),
+        ("cad-assumptions-analyzer", Some(8), State::Bypassed),
+        ("cad-executor", None, State::NotComputed),
+    ] {
+        assert_eq!(
+            floor::read_observed(
+                Path::new("/unobserved/.planning"),
+                role,
+                phase,
+                Some(1),
+                &categories(),
+                |_, _| panic!("forbidden filesystem observation")
+            )
+            .unwrap()
+            .state,
+            expected
+        );
+    }
+}
+
+#[test]
+fn floor_missing_named_plan_does_not_fall_back_to_a_sibling() {
+    let root = scope_fixture(&[(2, &["plain.rs"], &[])], &[]);
+    let result = floor::read_observed(
+        &root.path().join(".planning"),
+        "cad-executor",
+        Some(8),
+        Some(1),
+        &categories(),
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            result.state,
+            result.paths,
+            result
+                .diagnostics
+                .iter()
+                .map(|d| d.reason.as_str())
+                .collect::<Vec<_>>()
+        ),
+        (
+            State::Incomplete,
+            vec![],
+            vec!["plan read: plan missing", "empty total declared scope"]
+        )
+    );
+}
+
+#[test]
+fn floor_native_parser_refuses_malformed_and_empty_leases() {
+    for (bytes, reason) in [
+        (
+            native_plan(1, &["plain.rs/"], &[]),
+            "plan parse: invalid-path",
+        ),
+        (native_plan(1, &[], &[]), "plan parse: empty-lease"),
+    ] {
+        let root = scope_fixture(&[], &[]);
+        fs::write(root.path().join(".planning/phases/8/PLAN-1.md"), bytes).unwrap();
+        let result = floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(
+            (result.state, result.diagnostics[0].reason.as_str()),
+            (State::Incomplete, reason)
+        );
+    }
+}
+
+#[test]
+fn floor_plan_identity_cannot_cross_the_named_phase() {
+    let root = scope_fixture(&[(1, &["plain.rs"], &[])], &[]);
+    fs::write(
+        root.path().join(".planning/phases/8/PLAN-1.md"),
+        native_plan(1, &["plain.rs"], &[]).replace("phase: 8", "phase: 9"),
+    )
+    .unwrap();
+    assert_eq!(
+        floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |_, _| Ok(())
+        )
+        .unwrap()
+        .diagnostics[0]
+            .reason,
+        "plan parse: identity-mismatch"
+    );
+}
+
+#[test]
+fn floor_unreadable_sibling_keeps_union_incomplete() {
+    let root = scope_fixture(&[(1, &["plain.rs"], &[]), (2, &["auth/new.rs"], &[])], &[]);
+    let result = floor::read_observed(
+        &root.path().join(".planning"),
+        "cad-verifier",
+        Some(8),
+        None,
+        &categories(),
+        |access, path| {
+            if access == Access::ReadBody && path.ends_with("PLAN-2.md") {
+                Err(io::Error::other("injected plan read"))
+            } else {
+                Ok(())
+            }
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            result.state,
+            result.paths,
+            result.diagnostics[0].reason.as_str()
+        ),
+        (
+            State::Incomplete,
+            vec!["plain.rs".into()],
+            "plan read: injected plan read"
+        )
+    );
+}
+
+#[test]
+fn floor_neutral_path_metadata_failures_never_become_new_files() {
+    for (code, message) in [
+        (
+            libc::EACCES,
+            "metadata or containment: Permission denied (os error 13)",
+        ),
+        (
+            libc::ELOOP,
+            "metadata or containment: Too many levels of symbolic links (os error 40)",
+        ),
+        (
+            libc::ENOTDIR,
+            "metadata or containment: Not a directory (os error 20)",
+        ),
+    ] {
+        let root = scope_fixture(
+            &[(1, &["plain.rs"], &[])],
+            &[("plain.rs", b"jwt.verify(token)")],
+        );
+        let result = floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |access, path| {
+                if access == Access::Metadata && path.ends_with("plain.rs") {
+                    Err(io::Error::from_raw_os_error(code))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (result.state, result.matches, result.diagnostics),
+            (
+                State::Incomplete,
+                vec![],
+                vec![floor::Diagnostic {
+                    path: "plain.rs".into(),
+                    reason: message.into()
+                }]
+            )
+        );
+    }
+}
+
+#[test]
+fn floor_source_read_and_canonicalization_failures_are_incomplete() {
+    for (access, expected) in [
+        (Access::ReadBody, "body read: injected failure"),
+        (
+            Access::Canonicalize,
+            "metadata or containment: injected failure",
+        ),
+    ] {
+        let root = scope_fixture(
+            &[(1, &["plain.rs"], &[])],
+            &[("plain.rs", b"jwt.verify(token)")],
+        );
+        let result = floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |a, path| {
+                if a == access && path.ends_with("plain.rs") {
+                    Err(io::Error::other("injected failure"))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (result.state, result.diagnostics[0].reason.as_str()),
+            (State::Incomplete, expected)
+        );
+    }
+}
+
+#[test]
+fn floor_outside_symlinked_parent_refuses_existing_and_missing_leaves() {
+    for exists in [false, true] {
+        let outside = tempfile::tempdir().unwrap();
+        if exists {
+            fs::write(outside.path().join("plain.rs"), b"jwt.verify(token)").unwrap();
+        }
+        let root = scope_fixture(&[(1, &["link/plain.rs"], &[])], &[]);
+        std::os::unix::fs::symlink(outside.path(), root.path().join("link")).unwrap();
+        let result = floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                result.state,
+                result.bytes,
+                result.diagnostics[0].reason.as_str()
+            ),
+            (
+                State::Incomplete,
+                0,
+                "metadata or containment: path resolves outside the project"
+            )
+        );
+    }
+}
+
+#[test]
+fn floor_final_symlink_and_fifo_are_rejected_before_open() {
+    for symlink in [false, true] {
+        let root = scope_fixture(&[(1, &["plain.rs"], &[])], &[]);
+        if symlink {
+            std::os::unix::fs::symlink("/dev/zero", root.path().join("plain.rs")).unwrap();
+        } else {
+            use std::{ffi::CString, os::unix::ffi::OsStrExt};
+            let path = CString::new(root.path().join("plain.rs").as_os_str().as_bytes()).unwrap();
+            let result = unsafe { libc::mkfifo(path.as_ptr(), 0o600) };
+            if result != 0 {
+                panic!("fixture FIFO: {}", io::Error::last_os_error());
+            }
+        }
+        let result = floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |access, path| {
+                if path.ends_with("plain.rs") && access == Access::OpenBody {
+                    panic!("nonregular body opened");
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                result.state,
+                result.bytes,
+                result.diagnostics[0].reason.as_str()
+            ),
+            (
+                State::Incomplete,
+                0,
+                if symlink {
+                    "metadata or containment: final symlink is not declared evidence"
+                } else {
+                    "body read: not a regular file"
+                }
+            )
+        );
+    }
+}
+
+#[test]
+fn floor_body_growth_and_replacement_are_incomplete() {
+    for access in [Access::OpenBody, Access::ReadBody, Access::AfterRead] {
+        let root = scope_fixture(&[(1, &["plain.rs"], &[])], &[("plain.rs", b"safe")]);
+        let result = floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |a, path| {
+                if a == access && path.ends_with("plain.rs") {
+                    if access == Access::OpenBody {
+                        let replacement = path.with_extension("replacement");
+                        fs::write(&replacement, b"safe")?;
+                        fs::rename(replacement, path)?;
+                    } else {
+                        fs::write(path, b"jwt.verify(token)")?;
+                    }
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (result.state, result.diagnostics[0].reason.as_str()),
+            (
+                State::Incomplete,
+                if access == Access::OpenBody {
+                    "body read: body replaced before open"
+                } else {
+                    "body read: body replaced or grew during read"
+                }
+            )
+        );
+    }
+}
+
+#[test]
+fn floor_body_size_and_invalid_utf8_are_incomplete() {
+    for (bytes, expected) in [
+        (
+            vec![b'x'; floor::MAX_BODY_BYTES + 1],
+            "body read: body size or total read budget exceeded",
+        ),
+        (vec![255], "body is not UTF-8"),
+    ] {
+        let root = scope_fixture(&[(1, &["plain.rs"], &[])], &[("plain.rs", &bytes)]);
+        let result = floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(
+            (result.state, result.diagnostics[0].reason.as_str()),
+            (State::Incomplete, expected)
+        );
+    }
+}
+
+#[test]
+fn floor_directory_walk_ignores_ignore_rules_and_deduplicates_overlap() {
+    let root = scope_fixture(
+        &[(1, &["src/plain.rs"], &["src", "src/auth"])],
+        &[
+            ("src/plain.rs", b"safe"),
+            ("src/auth/new.rs", b"safe"),
+            ("src/.gitignore", b"*"),
+        ],
+    );
+    let result = floor::read_observed(
+        &root.path().join(".planning"),
+        "cad-executor",
+        Some(8),
+        Some(1),
+        &categories(),
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        (result.state, result.paths, result.bytes),
+        (
+            State::Complete,
+            vec![
+                "src",
+                "src/.gitignore",
+                "src/auth",
+                "src/auth/new.rs",
+                "src/plain.rs"
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>(),
+            9
+        )
+    );
+}
+
+#[test]
+fn floor_directory_and_phase_enumeration_failures_are_incomplete() {
+    for (suffix, plan, reason) in [
+        ("src", Some(1), "directory enumeration: injected listing"),
+        ("phases/8", None, "phase listing: injected listing"),
+    ] {
+        let root = scope_fixture(&[(1, &[], &["src"])], &[("src/plain.rs", b"safe")]);
+        let result = floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            plan,
+            &categories(),
+            |access, path| {
+                if access == Access::ListDirectory && path.ends_with(suffix) {
+                    Err(io::Error::other("injected listing"))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (result.state, result.diagnostics[0].reason.as_str()),
+            (State::Incomplete, reason)
+        );
+    }
+}
+
+#[test]
+fn floor_directory_walk_entry_bound_reports_incomplete() {
+    let root = scope_fixture(&[(1, &[], &["src"])], &[]);
+    fs::create_dir(root.path().join("src")).unwrap();
+    for i in 0..4097 {
+        fs::write(root.path().join(format!("src/{i}")), b"").unwrap();
+    }
+    assert_eq!(
+        floor::read_observed(
+            &root.path().join(".planning"),
+            "cad-executor",
+            Some(8),
+            Some(1),
+            &categories(),
+            |_, _| Ok(())
+        )
+        .unwrap()
+        .diagnostics[0]
+            .reason,
+        "directory enumeration: directory exceeds 4096 entry bound"
+    );
+}
+
+#[test]
+fn floor_total_source_read_budget_is_not_silently_truncated() {
+    let root = scope_fixture(&[(1, &[], &["src"])], &[]);
+    fs::create_dir(root.path().join("src")).unwrap();
+    for i in 0..33 {
+        fs::write(
+            root.path().join(format!("src/{i:02}.md")),
+            vec![b'x'; 512 * 1024],
+        )
+        .unwrap();
+    }
+    let result = floor::read_observed(
+        &root.path().join(".planning"),
+        "cad-executor",
+        Some(8),
+        Some(1),
+        &categories(),
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        (result.state, result.bytes, result.diagnostics),
+        (
+            State::Incomplete,
+            16 * 1024 * 1024,
+            vec![floor::Diagnostic {
+                path: "src/32.md".into(),
+                reason: "body read: body size or total read budget exceeded".into()
+            }]
+        )
+    );
+}
+
+#[test]
+fn declared_documents_keep_path_hits_and_name_body_exclusion() {
+    assert_eq!(
+        scan_declared(
+            "docs/auth/guide.md",
+            Some("jwt.verify(token)\nJSON.parse(input)"),
+            &categories()
+        )
+        .unwrap(),
+        DeclaredScan {
+            matches: vec![DeclaredMatch {
+                path: "docs/auth/guide.md".into(),
+                category: "auth".into(),
+                signal: "path segment auth".into()
+            }],
+            withheld: vec![Withheld {
+                path: "docs/auth/guide.md".into(),
+                category: None,
+                reason: "document body".into()
+            }]
+        }
+    );
+}
+
+#[test]
+fn declared_signal_tables_exclude_only_the_documented_paths() {
+    assert_eq!(
+        scan_declared(
+            "crates/cadence/src/rail/risk_diff.rs",
+            Some("jwt.verify(token)"),
+            &categories()
+        )
+        .unwrap(),
+        DeclaredScan {
+            matches: vec![],
+            withheld: vec![Withheld {
+                path: "crates/cadence/src/rail/risk_diff.rs".into(),
+                category: None,
+                reason: "signal-table body".into()
+            }]
+        }
+    );
+}
+
+#[test]
+fn declared_import_and_literal_constants_name_withheld_categories() {
+    assert_eq!(
+        scan_declared(
+            "plain.js",
+            Some("import jwt from 'jsonwebtoken';\nconst API_TOKEN = 'literal';"),
+            &categories()
+        )
+        .unwrap(),
+        DeclaredScan {
+            matches: vec![],
+            withheld: vec![
+                Withheld {
+                    path: "plain.js".into(),
+                    category: Some("auth".into()),
+                    reason: "only import or literal-constant lines".into()
+                },
+                Withheld {
+                    path: "plain.js".into(),
+                    category: Some("secrets".into()),
+                    reason: "only import or literal-constant lines".into()
+                }
+            ]
+        }
+    );
+}
+
+#[test]
+fn declared_executable_initializers_and_calls_after_imports_still_count() {
+    for body in [
+        "const value = JSON.parse(input);",
+        "const value = [JSON.parse(input)];",
+        "import parser from 'module'; JSON.parse(input);",
+    ] {
+        assert_eq!(
+            scan_declared("plain.js", Some(body), &categories()).unwrap(),
+            DeclaredScan {
+                matches: vec![DeclaredMatch {
+                    path: "plain.js".into(),
+                    category: "untrusted_input".into(),
+                    signal: "body line: a JSON.parse call".into()
+                }],
+                withheld: vec![]
+            }
+        );
+    }
 }

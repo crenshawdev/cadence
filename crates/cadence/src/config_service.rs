@@ -372,7 +372,7 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
                 Ok(generation) => generation,
                 Err(error) => return Ok(unavailable(&error)),
             };
-            return Ok(match resolve_route(&generation, &request) {
+            return Ok(match route_at(&generation, &request, root) {
                 Ok(route) => Envelope::Ok(Output::Route {
                     route: Box::new(route),
                 }),
@@ -554,7 +554,7 @@ pub struct Route {
     pub choice: roles::Resolution,
     pub generation: u64,
     pub policy: config::policy::Policy,
-    pub floor: String,
+    pub floor: config::floor::Scope,
     pub deep_verification: bool,
 }
 
@@ -564,9 +564,25 @@ pub fn resolve_route(generation: &Generation, request: &RouteRequest) -> Result<
         choice: resolve_role(generation, request)?,
         generation: generation.number,
         policy,
-        floor: "not computed: declared scope has not been read".into(),
+        floor: config::floor::Scope::pending(&request.role, request.phase.map(|phase| phase.get())),
         deep_verification: false,
     })
+}
+
+pub fn route_at(
+    generation: &Generation,
+    request: &RouteRequest,
+    planning_root: &Path,
+) -> Result<Route> {
+    let mut route = resolve_route(generation, request)?;
+    route.floor = config::floor::read(
+        planning_root,
+        &request.role,
+        request.phase.map(|phase| phase.get()),
+        request.plan.map(|plan| plan.get()),
+        &route.policy.floor_categories,
+    )?;
+    Ok(route)
 }
 
 pub fn resolve_role(generation: &Generation, request: &RouteRequest) -> Result<roles::Resolution> {
