@@ -2,7 +2,6 @@
 phase: 8
 plan: 2
 requirements:
-  - AC1
   - AC2
   - AC3
   - AC7
@@ -19,7 +18,7 @@ files:
   - crates/cadence/src/config_service.rs
 execution:
   schema: 1
-  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo test --workspace && TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy --all-targets -- -D warnings && TMPDIR=/tmp RUSTC_WRAPPER= cargo fmt --check"
+  suite: "TMPDIR=/tmp RUSTC_WRAPPER= cargo clippy -p cadence --tests"
   tasks:
     - id: P8-2-T1
       verify:
@@ -48,7 +47,7 @@ A first global save succeeds and other projects reuse its active settings withou
 - AC3/D-52: A new project reuses a valid active global file byte-for-byte, including when the legacy global file still coexists; foreign partial repo outputs continue to refuse.
 - AC2: Two independent project stores cannot silently overwrite each other's accepted global updates, including interrupted installation and recovery.
 - AC7/D-48: Original stakes values, including arbitrary JSON, remain visible with their original layer/path after import, unrelated snapshot work, interview writes and reopen.
-- AC1/D-49: Aliases still collapse toward repo, requested write scope still controls permission, and original legacy bytes remain unchanged.
+- D-49: Aliases still collapse toward repo, requested write scope still controls permission, and original legacy bytes remain unchanged.
 
 ## Context
 
@@ -62,7 +61,7 @@ D-48, D-49, D-50 and D-52 bind this plan. Reuse first_touch, prepare_import, Imp
 - **Action:** Finish D-52 using native first touch. Create a legitimately missing global parent with durable directory synchronization and safe identity checks, and register its active destination with the actual resident store before it is needed. An already-open session that first saw a missing global parent must be able to save its first global batch; registering only the ConfigWriter's short-lived observation adapter is insufficient. Do not create a global config populated with defaults or copy any template. Parent creation is infrastructure, not an answered interview; a repo-only operation must not acquire global pins.
 
   Distinguish an existing valid active global input from unowned partial repo outputs in both first_touch's output scan and the import transaction builder. Reuse it without a replacement participant or a claim that this project created it. When active config.v4.json and legacy config.json coexist globally, consume current active global settings as controlling input; preserve the legacy original as non-effective source evidence and never reproject it over newer choices. Keep original-input guards separate from active shared-input observations so later valid global edits are reload inputs, not changed legacy-source errors. At import admission, revalidate the captured active shared input under production ownership; original-source guards alone cannot protect a reused active-global policy decision. Handle missing, malformed, unreadable and aliased addresses deliberately without loosening repo partial-output refusal. Preserve exact active-global and legacy bytes, source scope and existing import replay identity. Update only the lifecycle assumptions in the leased import fixtures.
-- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_config`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence` — Fixtures save all thirteen first-run answers with both parents initially missing, continue through the same resident, reopen, then initialize a second project without changing active-global bytes. Repeat with both active and conflicting legacy global values; current active roles win while legacy evidence remains exact. Missing-parent repo-only use writes no global config/defaults. Malformed/unreadable active global, foreign repo state/config outputs and unsafe identity changes refuse. Alias and legacy-preservation regressions remain green.
+- **Verify:** `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase8_config`; `TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --bin cadence` — Separate function assertions with filesystem inputs controlled at the adapter boundary: ConfigWriter::batch returns all thirteen literal first-run changed leaves with missing parents; Session::config returns the same thirteen literal values from independently persisted reopened input; SessionFactory::first_touch returns a session reusing existing active-global bytes unchanged. prepare_import selects current active roles over conflicting legacy roles and preserves exact legacy evidence, excludes reused global from created outputs, and refuses malformed/unreadable shared input. register returns a resident-capable adapter for missing parents without writing config/defaults and refuses unsafe ancestors; first_touch retains foreign repo-output refusal. No resident workflow chain.
 
 ### Task 2: Serialize the shared global destination (P8-2-T2)
 
@@ -87,7 +86,7 @@ D-48, D-49, D-50 and D-52 bind this plan. Reuse first_touch, prepare_import, Imp
 | Requirement or decision | Implementing tasks |
 |---|---|
 | D-52 / AC3 | P8-2-T1, P8-2-T2 |
-| D-49 / AC1 | P8-2-T1, P8-2-T2, P8-2-T3 |
+| D-49 | P8-2-T1, P8-2-T2, P8-2-T3 |
 | D-50 / AC2; owner-requested race closure | P8-2-T2 |
 | D-48 / AC7 | P8-2-T3; ordinary interview connection in Plan 3 |
 

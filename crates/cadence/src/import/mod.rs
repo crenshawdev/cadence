@@ -70,6 +70,8 @@ pub struct ImportManifest {
     pub active: Paths,
     pub created: Vec<PathBuf>,
     pub warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_global: Option<SourceGuard>,
 }
 
 struct ImportInputs {
@@ -189,11 +191,24 @@ fn parse_input(input: &Input) -> Result<Option<Value>> {
         .transpose()
 }
 
+fn validate_shared<I: ConfigIo>(io: &mut I, manifest: &ImportManifest) -> Result<()> {
+    if let Some(expected) = &manifest.shared_global {
+        let current = observe(io, &expected.path)?;
+        if guard(expected.path.clone(), &current) != *expected {
+            return Err(Error::Conflict(
+                "active shared config changed during import".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn prepare_import<I: ConfigIo>(
     root: &Path,
     legacy: &Paths,
     active: &Paths,
     io: &mut I,
+    owns_global: bool,
 ) -> Result<ImportInputs> {
     let repo_identity = reload::identity(&legacy.repo)?;
     let global_identity = legacy.global.as_deref().map(reload::identity).transpose()?;
@@ -202,13 +217,27 @@ fn prepare_import<I: ConfigIo>(
         _ => None,
     };
     let repo = io.read(&repo_identity)?;
-    let effective = translate_config(
-        global.as_ref().map(parse_input).transpose()?.flatten(),
-        parse_input(&repo)?,
-    )?;
+    let shared = match &active.global {
+        Some(path) if path != &active.repo && !owns_global => Some(observe(io, path)?),
+        _ => None,
+    };
+    let reused = shared.as_ref().filter(|input| input.bytes.is_some());
+    let effective = if let Some(input) = reused {
+        let current = parse_input(input)?;
+        reload::validate_effective(&merge::merge(current.clone(), None, false))?;
+        let translated = translate_config(None, parse_input(&repo)?)?;
+        let effective = merge::merge(current, Some(translated.repo), false);
+        reload::validate_effective(&effective)?;
+        effective
+    } else {
+        translate_config(
+            global.as_ref().map(parse_input).transpose()?.flatten(),
+            parse_input(&repo)?,
+        )?
+    };
     let generation = Generation {
         number: 0,
-        global: global.clone(),
+        global: reused.cloned().or_else(|| global.clone()),
         repo: repo.clone(),
         effective,
     };
@@ -322,7 +351,7 @@ fn prepare_import<I: ConfigIo>(
         .map(|name| root.join(name))
         .collect();
     created.push(active.repo.clone());
-    if global.as_ref().is_some_and(|g| g.bytes.is_some()) {
+    if reused.is_none() && global.as_ref().is_some_and(|g| g.bytes.is_some()) {
         created.push(active.global.clone().expect("global source address"));
     }
     let source_generation = digest(&serde_json::to_vec(&guards)?);
@@ -334,6 +363,12 @@ fn prepare_import<I: ConfigIo>(
         active: active.clone(),
         created,
         warnings,
+        shared_global: shared
+            .as_ref()
+            .filter(|_| {
+                reused.is_some() || global.as_ref().is_none_or(|input| input.bytes.is_none())
+            })
+            .map(|input| guard(active.global.clone().unwrap(), input)),
     };
     let snapshot = json!({"import":manifest,"cursor":decisions.cursor,"source_evidence":evidence,
         "archive":{"path":root.join("ARCHIVE.md"),"maintained":false,"available":sources.contains_key("ARCHIVE.md")}});
@@ -369,9 +404,12 @@ impl<I: ConfigIo> Policy for SessionPolicy<I> {
             .map_err(|_| Error::Policy("import guard unavailable".into()))?;
         let generation = if let Some(inputs) = pending.as_ref() {
             validate_sources(&mut self.io, &inputs.manifest.sources)?;
+            validate_shared(&mut self.io, &inputs.manifest)?;
             if context.operation == "recovery"
-                && context.snapshot.data["import"]["source_generation"]
+                && (context.snapshot.data["import"]["source_generation"]
                     != inputs.manifest.source_generation
+                    || context.snapshot.data["import"]["shared_global"]
+                        != serde_json::to_value(&inputs.manifest.shared_global)?)
             {
                 return Err(Error::Conflict(
                     "pending import source generation changed".into(),
@@ -658,6 +696,7 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
         let pending = observe(&mut io, &root.join(INTENT))?.bytes;
         let state = observe(&mut io, &root.join(STATE))?.bytes;
         let mut pending_audit = false;
+        let mut owns_global = false;
         let pending_import = if let Some(bytes) = &pending {
             let intent: Value = serde_json::from_slice(bytes)?;
             pending_audit = intent["kind"]["operation"] == "guard-audit";
@@ -667,6 +706,11 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
                 .ok_or_else(|| Error::Conflict("pending intent lacks snapshot".into()))?;
             let bytes: Vec<u8> = serde_json::from_value(participant["bytes"].clone())?;
             let snapshot: Snapshot = serde_json::from_slice(&bytes)?;
+            owns_global = active.global.as_ref().is_some_and(|global| {
+                snapshot.data["import"]["created"]
+                    .as_array()
+                    .is_some_and(|created| created.contains(&json!(global)))
+            });
             let previous: Option<Vec<u8>> =
                 serde_json::from_value(participant["expected"]["bytes"].clone())?;
             snapshot.data["import"]["complete"] == true
@@ -685,16 +729,19 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
             .is_some_and(|s| cadence::store::writer::audit::audit_only(&s));
         let importing = Arc::new(Mutex::new(
             if state.is_none() || pending_import || audit_only {
-                Some(prepare_import(&root, &legacy, &active, &mut io)?)
+                Some(prepare_import(
+                    &root,
+                    &legacy,
+                    &active,
+                    &mut io,
+                    owns_global,
+                )?)
             } else {
                 None
             },
         ));
         if pending.is_none() && state.is_none() {
-            for path in [root.join(ITEMS), root.join(DECISIONS), active.repo.clone()]
-                .into_iter()
-                .chain(active.global.clone())
-            {
+            for path in [root.join(ITEMS), root.join(DECISIONS), active.repo.clone()].into_iter() {
                 if observe(&mut io, &path)?.bytes.is_some() {
                     return Err(Error::Conflict(format!(
                         "unrelated partial output: {}",
@@ -710,21 +757,11 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
             io: self.io.clone(),
             evaluate: self.evaluate.clone(),
         };
-        // A legitimately absent global parent has no participant to register.
-        // Its absent config is still checked on every policy reload.
-        let mut registered = active.clone();
-        if registered
-            .global
-            .as_ref()
-            .is_some_and(|p| !p.parent().is_some_and(Path::is_dir))
-        {
-            registered.global = None;
-        }
         let guard_for_prepare = importing.clone();
         let mut source_io = self.io.clone();
         #[cfg(test)]
         let probe = self.probe.clone();
-        let mut storage = write::register(&root, &registered)?.with_probe(move |stage, path| {
+        let mut storage = write::register(&root, &active)?.with_probe(move |stage, path| {
             #[cfg(test)]
             if let Some(probe) = &probe {
                 probe(stage, path)?;
@@ -738,6 +775,7 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
                     .as_ref()
             {
                 validate_sources(&mut source_io, &inputs.manifest.sources)?;
+                validate_shared(&mut source_io, &inputs.manifest)?;
             }
             Ok(())
         });
@@ -768,6 +806,7 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
                 .global
                 .as_ref()
                 .is_some_and(|g| g.bytes.is_some())
+                && inputs.manifest.shared_global.is_none()
             {
                 add("global-config", &inputs.generation.effective.global)?;
             }

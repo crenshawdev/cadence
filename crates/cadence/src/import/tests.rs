@@ -1201,3 +1201,235 @@ fn derivation_snapshot_preserves_full_data_and_restart_manifest() {
         );
     });
 }
+
+fn first_run_answers() -> Vec<write::Update> {
+    serde_json::from_value(json!([
+        {"key":"roles.cad-planner.model","value":null},
+        {"key":"roles.cad-planner.effort","value":"high"},
+        {"key":"roles.cad-assumptions-analyzer.model","value":null},
+        {"key":"roles.cad-assumptions-analyzer.effort","value":"high"},
+        {"key":"roles.cad-verifier.model","value":null},
+        {"key":"roles.cad-verifier.effort","value":"high"},
+        {"key":"roles.cad-reviewer.model","value":null},
+        {"key":"roles.cad-reviewer.effort","value":"medium"},
+        {"key":"roles.cad-executor.model","value":null},
+        {"key":"roles.cad-executor.effort","value":"high"},
+        {"key":"roles.cad-plan-checker.model","value":null},
+        {"key":"roles.cad-plan-checker.effort","value":"low"},
+        {"key":"review.triggers.risk_surface.waive_routing_floor","value":[]}
+    ]))
+    .unwrap()
+}
+
+const FIRST_RUN: &[u8] = br#"{"roles":{"cad-planner":{"model":null,"effort":"high"},"cad-assumptions-analyzer":{"model":null,"effort":"high"},"cad-verifier":{"model":null,"effort":"high"},"cad-reviewer":{"model":null,"effort":"medium"},"cad-executor":{"model":null,"effort":"high"},"cad-plan-checker":{"model":null,"effort":"low"}},"review":{"triggers":{"risk_surface":{"waive_routing_floor":[]}}}}"#;
+
+#[tokio::test]
+async fn first_global_batch_returns_thirteen_leaves_from_missing_parent_registration() {
+    let fixture = external_temp();
+    let root = fixture.path().join("project/.planning");
+    let active = Paths {
+        repo: root.join("config.v4.json"),
+        global: Some(fixture.path().join("global/nested/config.v4.json")),
+    };
+    let storage = write::register(&root, &active).unwrap();
+    let writer = write::ConfigWriter {
+        root,
+        active: active.clone(),
+        store: Store::open(storage, Allow).await.unwrap(),
+        config: Arc::new(Mutex::new(Reload::new(active, FileIo))),
+    };
+    let result = writer
+        .batch(Layer::Global, &first_run_answers())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.changed_keys,
+        [
+            "review.triggers.risk_surface.waive_routing_floor",
+            "roles.cad-assumptions-analyzer.effort",
+            "roles.cad-assumptions-analyzer.model",
+            "roles.cad-executor.effort",
+            "roles.cad-executor.model",
+            "roles.cad-plan-checker.effort",
+            "roles.cad-plan-checker.model",
+            "roles.cad-planner.effort",
+            "roles.cad-planner.model",
+            "roles.cad-reviewer.effort",
+            "roles.cad-reviewer.model",
+            "roles.cad-verifier.effort",
+            "roles.cad-verifier.model",
+        ]
+    );
+}
+
+#[derive(Clone)]
+struct SuppliedConfig(BTreeMap<PathBuf, Vec<u8>>);
+impl ConfigIo for SuppliedConfig {
+    fn read(&mut self, path: &Path) -> Result<Input> {
+        Ok(Input {
+            identity: path.into(),
+            bytes: self.0.get(path).cloned(),
+            stamp: None,
+        })
+    }
+}
+
+#[tokio::test]
+async fn session_config_reads_thirteen_independently_persisted_reopened_values() {
+    let fixture = external_temp();
+    let root = fixture.path();
+    let active = Paths {
+        repo: root.join("config.v4.json"),
+        global: Some(root.join("global/config.v4.json")),
+    };
+    let session = Session {
+        root: root.into(),
+        store: Store::open(Filesystem::new(root).unwrap(), Allow)
+            .await
+            .unwrap(),
+        config: Arc::new(Mutex::new(Reload::new(
+            active.clone(),
+            SuppliedConfig([(active.global.clone().unwrap(), FIRST_RUN.to_vec())].into()),
+        ))),
+        manifest: serde_json::from_value(
+            json!({"format":1,"complete":true,"source_generation":"fixture",
+            "sources":[],"active":active,"created":[],"warnings":[]}),
+        )
+        .unwrap(),
+    };
+    assert_eq!(
+        session.config().unwrap().effective.raw_global,
+        Some(json!({
+            "roles": {
+                "cad-planner":{"model":null,"effort":"high"},
+                "cad-assumptions-analyzer":{"model":null,"effort":"high"},
+                "cad-verifier":{"model":null,"effort":"high"},
+                "cad-reviewer":{"model":null,"effort":"medium"},
+                "cad-executor":{"model":null,"effort":"high"},
+                "cad-plan-checker":{"model":null,"effort":"low"}
+            },"review":{"triggers":{"risk_surface":{"waive_routing_floor":[]}}}
+        }))
+    );
+}
+
+#[tokio::test]
+async fn initialize_second_project_reuses_active_global_bytes_and_preserves_legacy() {
+    let fixture = external_temp();
+    let global = fixture.path().join("global");
+    std::fs::create_dir(&global).unwrap();
+    std::fs::write(global.join("config.v4.json"), FIRST_RUN).unwrap();
+    let legacy = br#"{"roles":{"cad-executor":{"model":"opus"}},"stakes":{"old":[1,null]}}"#;
+    std::fs::write(global.join("config.json"), legacy).unwrap();
+    let factory = SessionFactory::new(Some(global.join("config.json")), allow_evaluation());
+    let result = factory
+        .first_touch(&fixture.path().join("second/.planning"))
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            result
+                .manifest
+                .created
+                .contains(&global.join("config.v4.json")),
+            std::fs::read(global.join("config.v4.json")).unwrap(),
+            std::fs::read(global.join("config.json")).unwrap(),
+        ),
+        (false, FIRST_RUN.to_vec(), legacy.to_vec())
+    );
+}
+
+#[test]
+fn prepare_import_uses_active_roles_and_retains_conflicting_legacy_evidence() {
+    let root = Path::new("/fixture/project/.planning");
+    let legacy = Paths {
+        repo: root.join("config.json"),
+        global: Some("/fixture/global/config.json".into()),
+    };
+    let active = Paths {
+        repo: root.join("config.v4.json"),
+        global: Some("/fixture/global/config.v4.json".into()),
+    };
+    let original = br#"{"roles":{"cad-executor":{"model":"opus"}},"stakes":{"old":3}}"#;
+    let mut io = SuppliedConfig(
+        [
+            (legacy.global.clone().unwrap(), original.to_vec()),
+            (
+                active.global.clone().unwrap(),
+                br#"{"roles":{"cad-executor":{"model":"sonnet"}}}"#.to_vec(),
+            ),
+        ]
+        .into(),
+    );
+    let result = prepare_import(root, &legacy, &active, &mut io, false).unwrap();
+    assert_eq!(
+        (
+            result.generation.effective.raw_global,
+            result.transaction.snapshot.unwrap()["source_evidence"].clone()
+        ),
+        (
+            Some(json!({"roles":{"cad-executor":{"model":"sonnet"}}})),
+            json!([{
+                "source":{"path":"/fixture/global/config.json","bytes":original.as_slice()},
+                "generation":"4811eab5b9e5fb01dd97de0e9e9d7c06d57b6a84e0dc63bdce9a4fa8638e0884","label":"non_effective_original_source"
+            }])
+        )
+    );
+}
+
+#[test]
+fn register_missing_global_parent_creates_infrastructure_without_config_pins() {
+    let fixture = external_temp();
+    let root = fixture.path().join("project/.planning");
+    let active = Paths {
+        repo: root.join("config.v4.json"),
+        global: Some(fixture.path().join("global/nested/config.v4.json")),
+    };
+    let mut result = write::register(&root, &active).unwrap();
+    assert_eq!(
+        (
+            result.read("repo-config").unwrap().bytes,
+            result.read("global-config").unwrap().bytes
+        ),
+        (None, None)
+    );
+}
+
+#[test]
+fn register_refuses_symlink_ancestors() {
+    let fixture = external_temp();
+    std::os::unix::fs::symlink(fixture.path(), fixture.path().join("alias")).unwrap();
+    let active = Paths {
+        repo: fixture.path().join("config.v4.json"),
+        global: Some(fixture.path().join("alias/nested/config.v4.json")),
+    };
+    assert_eq!(
+        write::register(fixture.path(), &active).err(),
+        Some(Error::Conflict("unsafe directory identity".into()))
+    );
+}
+
+#[test]
+fn prepare_import_refuses_unusable_active_global_without_legacy_normalization() {
+    let root = Path::new("/fixture/project/.planning");
+    let legacy = Paths {
+        repo: root.join("config.json"),
+        global: Some("/fixture/global/config.json".into()),
+    };
+    let active = Paths {
+        repo: root.join("config.v4.json"),
+        global: Some("/fixture/global/config.v4.json".into()),
+    };
+    let mut io = SuppliedConfig(
+        [(
+            active.global.clone().unwrap(),
+            br#"{"roles":{"cad-executor":{"effort":"invalid"}}}"#.to_vec(),
+        )]
+        .into(),
+    );
+    assert_eq!(
+        prepare_import(root, &legacy, &active, &mut io, false).err(),
+        Some(Error::Policy(
+            "config unavailable: unusable roles.cad-executor.effort".into()
+        ))
+    );
+}

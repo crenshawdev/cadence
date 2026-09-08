@@ -49,7 +49,7 @@ impl Filesystem {
     /// The root is the repository's .planning directory, not the repository.
     pub fn new(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
-        fs::create_dir_all(&root)?;
+        ensure_directory(&root)?;
         Ok(Self {
             root,
             sequence: 0,
@@ -115,21 +115,55 @@ impl Filesystem {
         Ok(self.root.join(target))
     }
 
-    /// Config/import participants are registered by the factory, never resolved
-    /// from paths supplied by a persisted intent. Their parent must exist.
+    /// Participants bind factory-owned paths, never paths from persisted intents.
     pub fn with_participant(mut self, name: &str, path: impl Into<PathBuf>) -> Result<Self> {
         if !matches!(name, "repo-config" | "global-config") {
             return Err(Error::Invalid("unknown config participant".into()));
         }
         let path = path.into();
-        if !path.is_absolute() || !path.parent().is_some_and(Path::is_dir) {
+        if !path.is_absolute() || path.parent().is_none() {
             return Err(Error::Invalid(
-                "config participant needs an absolute path and existing parent".into(),
+                "config participant needs an absolute path and parent".into(),
             ));
         }
+        ensure_directory(path.parent().unwrap())?;
         self.participants.insert(name.to_string(), path);
         Ok(self)
     }
+}
+
+fn ensure_directory(path: &Path) -> Result<()> {
+    let absolute = std::path::absolute(path)?;
+    let mut directories: Vec<_> = absolute.ancestors().collect();
+    directories.reverse();
+    for directory in directories {
+        match fs::symlink_metadata(directory) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Ok(_) => return Err(Error::Conflict("unsafe directory identity".into())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                match fs::create_dir(directory) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                    Err(error) => return Err(error.into()),
+                }
+                let file = OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                    .open(directory)?;
+                file.sync_all()?;
+                if let Some(parent) = directory.parent() {
+                    File::open(parent)?.sync_all()?;
+                }
+                let current = fs::symlink_metadata(directory)?;
+                let opened = file.metadata()?;
+                if current.dev() != opened.dev() || current.ino() != opened.ino() {
+                    return Err(Error::Conflict("directory changed during creation".into()));
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn phase_summary_target(target: &str) -> Result<Option<u32>> {
