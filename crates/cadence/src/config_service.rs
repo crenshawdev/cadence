@@ -351,6 +351,18 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
             ),
         )
     };
+    if let Command::Apply(Apply::Interview {
+        accepted, answers, ..
+    }) = &command
+        && (!accepted || answers.is_none())
+    {
+        return Ok(match factory.observe_config(root) {
+            Ok((generation, snapshot)) => Envelope::Ok(Output::Unchanged {
+                facts: observed_facts(&generation, snapshot.as_ref(), interview::Mode::Roles),
+            }),
+            Err(error) => unavailable(&error),
+        });
+    }
     let session = match factory.first_touch(root).await {
         Ok(session) => session,
         Err(error) => return Ok(unavailable(&error)),
@@ -495,6 +507,157 @@ mod tests {
         };
         assert_eq!((status, changed_keys, std::fs::read(root.join("config.v4.json")).unwrap()),
             ("ok", vec!["roles.cad-executor.model".to_owned()], b"{\n  \"roles\": {\n    \"cad-executor\": {\n      \"model\": \"sonnet\"\n    }\n  }\n}".to_vec()));
+    }
+
+    fn gap_answers() -> Vec<Update> {
+        serde_json::from_str(
+            r#"[
+            {"key":"roles.cad-planner.model","value":null},
+            {"key":"roles.cad-planner.effort","value":"high"},
+            {"key":"roles.cad-assumptions-analyzer.model","value":null},
+            {"key":"roles.cad-assumptions-analyzer.effort","value":"high"},
+            {"key":"roles.cad-verifier.model","value":null},
+            {"key":"roles.cad-verifier.effort","value":"high"},
+            {"key":"roles.cad-reviewer.model","value":null},
+            {"key":"roles.cad-reviewer.effort","value":"medium"},
+            {"key":"roles.cad-executor.model","value":"opus"},
+            {"key":"roles.cad-executor.effort","value":"xhigh"},
+            {"key":"roles.cad-plan-checker.model","value":null},
+            {"key":"roles.cad-plan-checker.effort","value":"low"},
+            {"key":"review.triggers.risk_surface.waive_routing_floor","value":[]}
+        ]"#,
+        )
+        .unwrap()
+    }
+
+    #[derive(Clone)]
+    struct GapAbsentIo;
+    impl ConfigIo for GapAbsentIo {
+        fn read(&mut self, path: &Path) -> Result<Input> {
+            Ok(Input {
+                identity: path.into(),
+                bytes: None,
+                stamp: None,
+            })
+        }
+    }
+
+    async fn gap_no_answer(
+        accepted: bool,
+        answers: Option<Vec<Update>>,
+    ) -> (&'static str, Vec<String>, bool, bool) {
+        let tree = tempfile::tempdir().unwrap();
+        let root = tree.path().join("project/.planning");
+        let global = tree.path().join("global/config.json");
+        let mutations = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = mutations.clone();
+        let factory = SessionFactory::with_io(
+            Some(global.clone()),
+            GapAbsentIo,
+            std::sync::Arc::new(config::planning_policy),
+        )
+        .with_probe(std::sync::Arc::new(move |stage, path| {
+            observed
+                .lock()
+                .unwrap()
+                .push(format!("{stage:?}:{}", path.display()));
+            Ok(())
+        }));
+        let stale_capture = interview::Captured {
+            repo: interview::Input {
+                identity: "/stale/config.v4.json".into(),
+                content: Some("stale".into()),
+                stamp: Some((1, 2, 3)),
+            },
+            global: None,
+            global_alias: false,
+        };
+        let input = Command::Apply(Apply::Interview {
+            mode: interview::Mode::Suggestion,
+            captured: stale_capture,
+            accepted,
+            answers,
+        });
+        let result = execute(&factory, &root, input).await.unwrap();
+        let variant = match result {
+            Envelope::Ok(Output::Unchanged { .. }) => "Unchanged",
+            _ => "other",
+        };
+        let observations = mutations.lock().unwrap().clone();
+        (
+            variant,
+            observations,
+            root.exists(),
+            global.parent().unwrap().exists(),
+        )
+    }
+
+    #[tokio::test]
+    async fn phase8_gap_unanswered_suggestion_has_zero_writes() {
+        assert_eq!(
+            gap_no_answer(true, None).await,
+            ("Unchanged", vec![], false, false)
+        );
+    }
+
+    #[tokio::test]
+    async fn phase8_gap_declined_suggestion_has_zero_writes() {
+        assert_eq!(
+            gap_no_answer(false, Some(gap_answers())).await,
+            ("Unchanged", vec![], false, false)
+        );
+    }
+
+    fn gap_capture(path: &Path, bytes: &[u8]) -> interview::Input {
+        use sha2::{Digest, Sha256};
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::metadata(path).unwrap();
+        interview::Input {
+            identity: path.into(),
+            content: Some(format!("{:x}", Sha256::digest(bytes))),
+            stamp: Some((metadata.dev(), metadata.ino(), metadata.mode())),
+        }
+    }
+
+    #[tokio::test]
+    async fn phase8_gap_accepted_entries_store_identical_literal_bytes() {
+        const ACCEPTED_REPO: &[u8] = b"{\n  \"roles\": {\n    \"cad-executor\": {\n      \"model\": \"opus\",\n      \"effort\": \"xhigh\"\n    }\n  },\n  \"review\": {\n    \"triggers\": {\n      \"risk_surface\": {\n        \"waive_routing_floor\": []\n      }\n    }\n  }\n}";
+        for mode in [
+            interview::Mode::NewProject,
+            interview::Mode::Adopt,
+            interview::Mode::Suggestion,
+        ] {
+            let tree = tempfile::tempdir().unwrap();
+            let root = tree.path().join("project/.planning");
+            let global = tree.path().join("global/config.v4.json");
+            std::fs::create_dir_all(global.parent().unwrap()).unwrap();
+            std::fs::write(&global, b"{\"roles\":{}}").unwrap();
+            gap_persisted(&root, b"{}", Some(&global));
+            let captured = interview::Captured {
+                repo: gap_capture(&root.join("config.v4.json"), b"{}"),
+                global: Some(gap_capture(&global, b"{\"roles\":{}}")),
+                global_alias: false,
+            };
+            let factory = SessionFactory::new(
+                Some(global.with_file_name("config.json")),
+                std::sync::Arc::new(config::planning_policy),
+            );
+            let input = Command::Apply(Apply::Interview {
+                mode,
+                captured,
+                accepted: true,
+                answers: Some(gap_answers()),
+            });
+            let _result = execute(&factory, &root, input).await.unwrap();
+            assert_eq!(
+                (
+                    std::fs::read(root.join("config.v4.json")).unwrap(),
+                    std::fs::read(&global).unwrap()
+                ),
+                (ACCEPTED_REPO.to_vec(), b"{\"roles\":{}}".to_vec()),
+                "{mode:?}"
+            );
+        }
     }
 
     #[test]

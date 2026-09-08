@@ -713,6 +713,76 @@ impl<I: ConfigIo + Clone> SessionFactory<I> {
         })
     }
 
+    /// Observe unanswered interview facts without acquiring storage ownership or
+    /// replaying an intent. An uninitialized project can reuse an active global.
+    pub fn observe_config(&self, root: &Path) -> Result<(Generation, Option<Value>)> {
+        let legacy = Paths {
+            repo: root.join("config.json"),
+            global: self.global.clone(),
+        };
+        let active = write::active_paths(&legacy)?;
+        let mut io = self.io.clone();
+        let snapshot = observe(&mut io, &root.join(STATE))?
+            .bytes
+            .as_deref()
+            .map(serde_json::from_slice::<Snapshot>)
+            .transpose()?;
+        if let Some(snapshot) = snapshot
+            .as_ref()
+            .filter(|s| s.data["import"]["complete"] == true)
+        {
+            return Ok((
+                Reload::new(active, io).refresh()?,
+                Some(snapshot.data.clone()),
+            ));
+        }
+        let repo = observe(&mut io, &legacy.repo)?;
+        let global = legacy
+            .global
+            .as_ref()
+            .map(|path| observe(&mut io, path))
+            .transpose()?;
+        let alias = global
+            .as_ref()
+            .is_some_and(|input| input.identity == repo.identity);
+        let shared = active
+            .global
+            .as_ref()
+            .filter(|path| *path != &active.repo)
+            .map(|path| observe(&mut io, path))
+            .transpose()?;
+        let reused = shared.filter(|input| input.bytes.is_some());
+        let effective = if let Some(input) = &reused {
+            let current = parse_input(input)?;
+            reload::validate_effective(&merge::merge(current.clone(), None, false))?;
+            let translated = translate_config(None, parse_input(&repo)?)?;
+            let effective = merge::merge(current, Some(translated.repo), false);
+            reload::validate_effective(&effective)?;
+            effective
+        } else {
+            let mut effective = translate_config(
+                global
+                    .as_ref()
+                    .filter(|_| !alias)
+                    .map(parse_input)
+                    .transpose()?
+                    .flatten(),
+                parse_input(&repo)?,
+            )?;
+            effective.global_intent = alias;
+            effective
+        };
+        Ok((
+            Generation {
+                number: 0,
+                repo,
+                global: reused.or(global.filter(|_| !alias)),
+                effective,
+            },
+            snapshot.map(|s| s.data),
+        ))
+    }
+
     pub fn guard_config(&self, root: &Path) -> Result<Generation> {
         let legacy = Paths {
             repo: root.join("config.json"),
