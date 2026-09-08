@@ -1,6 +1,6 @@
 # State
 
-Phase: 8 of 19 (Config and routing)
+Phase: 9 of 19 (Review delivery and identity)
 Status: phase complete
-Next: /cad-context 9
+Next: /cad-plan 10
 Updated: 2026-09-08
