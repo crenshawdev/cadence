@@ -448,7 +448,7 @@ fn incidental(line: &str) -> Result<bool> {
         r"^\s*from\s+\S+\s+import\s+[^;]*;?\s*$",
         r"^\s*#\s*include\s+\S[^;]*$",
         r"^\s*use\s+[^;]*;?\s*$",
-        r"^\s*(const|let|var)\s+[^=;]+=\s*require\s*\([^;]*\)\s*;?\s*$",
+        r#"^\s*(const|let|var)\s+[^=;]+=\s*require\s*\(\s*("([^"\\]|\\.)*"|'([^'\\]|\\.)*')\s*\)\s*;?\s*$"#,
     ] {
         if matches_pattern(pattern, line)? {
             return Ok(true);

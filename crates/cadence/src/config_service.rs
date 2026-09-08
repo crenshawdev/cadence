@@ -553,6 +553,7 @@ pub struct Route {
     #[serde(flatten)]
     pub choice: roles::Resolution,
     pub generation: u64,
+    pub config_diagnostics: config::Diagnostics,
     pub policy: config::policy::Policy,
     pub floor: config::floor::Scope,
     pub deep_verification: bool,
@@ -563,6 +564,7 @@ pub fn resolve_route(generation: &Generation, request: &RouteRequest) -> Result<
     Ok(Route {
         choice: resolve_role(generation, request)?,
         generation: generation.number,
+        config_diagnostics: generation.effective.diagnostics.clone(),
         policy,
         floor: config::floor::Scope::pending(&request.role, request.phase.map(|phase| phase.get())),
         deep_verification: false,
@@ -574,15 +576,26 @@ pub fn route_at(
     request: &RouteRequest,
     planning_root: &Path,
 ) -> Result<Route> {
-    let mut route = resolve_route(generation, request)?;
-    route.floor = config::floor::read(
+    let route = resolve_route(generation, request)?;
+    let scope = config::floor::read(
         planning_root,
         &request.role,
         request.phase.map(|phase| phase.get()),
         request.plan.map(|plan| plan.get()),
         &route.policy.floor_categories,
     )?;
-    Ok(route)
+    Ok(route.with_scope(scope))
+}
+
+impl Route {
+    pub fn with_scope(mut self, scope: config::floor::Scope) -> Self {
+        let recommendation = config::floor::recommend(&scope, &self.policy.waived_categories);
+        self.deep_verification = recommendation.deep_verification;
+        self.policy = self.policy.with_floor(self.deep_verification);
+        self.floor = scope;
+        self.floor.reasons = recommendation.reasons;
+        self
+    }
 }
 
 pub fn resolve_role(generation: &Generation, request: &RouteRequest) -> Result<roles::Resolution> {

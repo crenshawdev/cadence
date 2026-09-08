@@ -107,3 +107,26 @@ pub fn resolve(effective: &Effective) -> Result<Policy> {
     }
     Ok(policy)
 }
+
+impl Policy {
+    pub fn with_floor(mut self, raised: bool) -> Self {
+        if raised && let Some(plan) = self.triggers.get_mut("plan") {
+            if let Some(layer) = plan.gate_source {
+                self.reasons.push(format!(
+                    "Explicit {layer:?} plan gate {} wins; the floor does not replace it.",
+                    plan.gate
+                ));
+            } else if matches!(plan.gate.as_str(), "blocking" | "adjudicated") {
+                self.reasons.push(format!(
+                    "Plan gate {} already meets the blocking floor.",
+                    plan.gate
+                ));
+            } else {
+                plan.gate = "blocking".into();
+                self.reasons
+                    .push("The floor raises the default plan gate to blocking.".into());
+            }
+        }
+        self
+    }
+}

@@ -453,3 +453,48 @@ pub fn read_observed(
     );
     Ok(scope)
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Recommendation {
+    pub deep_verification: bool,
+    pub reasons: Vec<String>,
+}
+
+pub fn recommend(scope: &Scope, waived: &[String]) -> Recommendation {
+    let mut result = Recommendation {
+        deep_verification: false,
+        reasons: scope.reasons.clone(),
+    };
+    if matches!(scope.state, State::Bypassed | State::NotComputed) {
+        return result;
+    }
+    if scope.state == State::Incomplete {
+        result.deep_verification = true;
+        result.reasons.push("Incomplete required scope recommends deep verification; category waivers cannot waive failed observations.".into());
+    }
+    for hit in &scope.matches {
+        if waived.contains(&hit.category) {
+            result.reasons.push(format!(
+                "{}: {} ({}) is waived for the plan-time floor",
+                hit.path, hit.category, hit.signal
+            ));
+        } else {
+            result.deep_verification = true;
+            result.reasons.push(format!(
+                "{}: unwaived {} ({}) recommends deep verification",
+                hit.path, hit.category, hit.signal
+            ));
+        }
+    }
+    if !result.deep_verification {
+        result.reasons.push(
+            if scope.matches.is_empty() {
+                "Complete scope has no selected risk match; no floor raise."
+            } else {
+                "Every matched category is waived; no floor raise."
+            }
+            .into(),
+        );
+    }
+    result
+}

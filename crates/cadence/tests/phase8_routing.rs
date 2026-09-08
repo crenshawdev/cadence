@@ -627,10 +627,7 @@ fn route_bundle_refuses_invalid_supported_policy() {
 
 use cadence::config::floor::{self, Access, State};
 use cadence::rail::risk_diff::{DeclaredMatch, DeclaredScan, Withheld, scan_declared};
-use std::{
-    fs, io,
-    path::Path,
-};
+use std::{fs, io, path::Path};
 
 fn native_plan(number: u32, files: &[&str], directories: &[&str]) -> String {
     format!(
@@ -1289,4 +1286,231 @@ fn declared_executable_initializers_and_calls_after_imports_still_count() {
             }
         );
     }
+}
+
+fn scope_value(state: State, hits: &[(&str, &str, &str)]) -> floor::Scope {
+    floor::Scope {
+        state,
+        paths: vec!["plain.rs".into()],
+        matches: hits
+            .iter()
+            .map(|(path, category, signal)| DeclaredMatch {
+                path: (*path).into(),
+                category: (*category).into(),
+                signal: (*signal).into(),
+            })
+            .collect(),
+        withheld: vec![],
+        diagnostics: vec![],
+        bytes: 4,
+        reasons: vec!["literal scope observation".into()],
+    }
+}
+
+fn route_value(
+    gate: &str,
+    source: Option<Layer>,
+    waivers: &[&str],
+) -> cadence::config_service::Route {
+    cadence::config_service::Route {
+        choice: serde_json::from_value(json!({"role":"cad-executor","agent":"cad-executor-xhigh","rung":"xhigh","starting_rung":"high","model":"sonnet",
+            "effort_source":{"kind":"role","key":"roles.cad-executor.effort","layer":"global","stored":"high"},"model_source":{"kind":"role","key":"roles.cad-executor.model","layer":"repo","stored":"sonnet"},"attempt":3,"escalated":true,"pinned":false,"reasons":["saved choice"],"warnings":[]})).unwrap(),
+        generation: 17, config_diagnostics: Default::default(),
+        policy: policy::Policy { mode: "adjudicated".into(),
+            triggers: [
+                ("plan".into(), policy::Trigger { gate: gate.into(), gate_source: source, reviewers: vec!["openai".into()], tier: "flagship".into(), effort: "high".into() }),
+                ("diff".into(), policy::Trigger { gate: "off".into(), gate_source: None, reviewers: vec!["claude-subagent".into()], tier: "cheap".into(), effort: "minimal".into() }),
+                ("risk_surface".into(), policy::Trigger { gate: "blocking".into(), gate_source: Some(Layer::Repo), reviewers: vec!["gemini".into()], tier: "balanced".into(), effort: "medium".into() }),
+            ].into(),
+            surfaces: policy::SurfaceAnswer::Answered { categories: vec!["auth".into(), "secrets".into()] }, floor_categories: vec!["auth".into(), "secrets".into()],
+            waived_categories: waivers.iter().map(|c| (*c).into()).collect(), reasons: vec![], diagnostics: vec![],
+        }, floor: scope_value(State::NotComputed, &[]), deep_verification: false,
+    }
+}
+
+#[test]
+fn route_floor_effect_matrix_changes_only_deep_and_the_default_plan_gate() {
+    for (state, hits, waivers, deep, gate) in [
+        (State::Complete, vec![], vec![], false, "advisory"),
+        (
+            State::Complete,
+            vec![("plain.rs", "auth", "body line: a JWT sign/verify call")],
+            vec![],
+            true,
+            "blocking",
+        ),
+        (
+            State::Complete,
+            vec![("plain.rs", "auth", "body line: a JWT sign/verify call")],
+            vec!["auth"],
+            false,
+            "advisory",
+        ),
+        (
+            State::Complete,
+            vec![
+                ("plain.rs", "auth", "body line: a JWT sign/verify call"),
+                ("plain.rs", "secrets", "body line: a crypto primitive call"),
+            ],
+            vec!["auth"],
+            true,
+            "blocking",
+        ),
+        (
+            State::Incomplete,
+            vec![],
+            vec!["auth", "secrets"],
+            true,
+            "blocking",
+        ),
+        (State::Bypassed, vec![], vec![], false, "advisory"),
+        (State::NotComputed, vec![], vec![], false, "advisory"),
+    ] {
+        let result = route_value("advisory", None, &waivers).with_scope(scope_value(state, &hits));
+        assert_eq!(
+            (
+                result.choice.model.as_deref(),
+                result.choice.starting_rung.as_str(),
+                result.choice.rung.as_str(),
+                result.choice.agent.as_str(),
+                result.choice.attempt,
+                result.choice.escalated,
+                result.policy.triggers["diff"].clone(),
+                result.policy.triggers["risk_surface"].clone(),
+                result.policy.surfaces,
+                result.deep_verification,
+                result.policy.triggers["plan"].gate.as_str(),
+            ),
+            (
+                Some("sonnet"),
+                "high",
+                "xhigh",
+                "cad-executor-xhigh",
+                3,
+                true,
+                policy::Trigger {
+                    gate: "off".into(),
+                    gate_source: None,
+                    reviewers: vec!["claude-subagent".into()],
+                    tier: "cheap".into(),
+                    effort: "minimal".into()
+                },
+                policy::Trigger {
+                    gate: "blocking".into(),
+                    gate_source: Some(Layer::Repo),
+                    reviewers: vec!["gemini".into()],
+                    tier: "balanced".into(),
+                    effort: "medium".into()
+                },
+                policy::SurfaceAnswer::Answered {
+                    categories: vec!["auth".into(), "secrets".into()]
+                },
+                deep,
+                gate,
+            )
+        );
+    }
+}
+
+#[test]
+fn route_explicit_gate_matrix_keeps_both_layers_and_all_valid_gates() {
+    for source in [Layer::Global, Layer::Repo] {
+        for gate in ["advisory", "off", "deferred", "blocking", "adjudicated"] {
+            let result = route_value(gate, Some(source), &[])
+                .with_scope(scope_value(State::Incomplete, &[]));
+            assert_eq!(
+                (
+                    result.deep_verification,
+                    result.policy.triggers["plan"].gate.as_str(),
+                    result.policy.triggers["plan"].gate_source
+                ),
+                (true, gate, Some(source))
+            );
+        }
+    }
+}
+
+#[test]
+fn route_floor_preserves_a_gate_already_at_or_above_blocking() {
+    for gate in ["blocking", "adjudicated"] {
+        let result = route_value(gate, None, &[]).with_scope(scope_value(State::Incomplete, &[]));
+        assert_eq!(
+            (
+                result.deep_verification,
+                result.policy.triggers["plan"].gate.as_str()
+            ),
+            (true, gate)
+        );
+    }
+}
+
+#[test]
+fn route_floor_names_waived_and_unwaived_causes_and_explicit_gate() {
+    let result = route_value("advisory", Some(Layer::Global), &["auth"]).with_scope(scope_value(
+        State::Complete,
+        &[
+            ("auth/new.rs", "auth", "path segment auth"),
+            ("plain.rs", "secrets", "body line: a crypto primitive call"),
+        ],
+    ));
+    assert_eq!((result.floor.reasons, result.policy.reasons), (
+        vec!["literal scope observation", "auth/new.rs: auth (path segment auth) is waived for the plan-time floor", "plain.rs: unwaived secrets (body line: a crypto primitive call) recommends deep verification"].into_iter().map(str::to_owned).collect::<Vec<_>>(),
+        vec!["Explicit Global plan gate advisory wins; the floor does not replace it.".into()],
+    ));
+}
+
+#[test]
+fn floor_incomplete_reason_cannot_be_removed_by_waivers() {
+    assert_eq!(floor::recommend(&scope_value(State::Incomplete, &[]), &categories()), floor::Recommendation { deep_verification: true, reasons: vec!["literal scope observation".into(), "Incomplete required scope recommends deep verification; category waivers cannot waive failed observations.".into()] });
+}
+
+#[test]
+fn policy_layered_waiver_values_keep_empty_replacement_and_repo_precedence() {
+    for (global, repo, expected) in [
+        (json!(["auth"]), json!([]), vec![]),
+        (json!([]), json!(["secrets"]), vec!["secrets".to_owned()]),
+        (
+            json!(["auth"]),
+            json!(["secrets"]),
+            vec!["secrets".to_owned()],
+        ),
+    ] {
+        let effective = merge::merge(
+            Some(json!({"review":{"triggers":{"risk_surface":{"waive_routing_floor":global}}}})),
+            Some(
+                json!({"review":{"triggers":{"risk_surface":{"waive_routing_floor":repo,"surfaces":["auth","secrets"]}}}}),
+            ),
+            false,
+        );
+        let result = policy::resolve(&effective).unwrap();
+        assert_eq!(
+            (result.waived_categories, result.surfaces),
+            (
+                expected,
+                policy::SurfaceAnswer::Answered {
+                    categories: vec!["auth".into(), "secrets".into()]
+                }
+            )
+        );
+    }
+}
+
+#[test]
+fn declared_commonjs_initializer_calls_are_not_import_only_evidence() {
+    assert_eq!(
+        scan_declared(
+            "plain.js",
+            Some("const value = require('module').parse(JSON.parse(input));"),
+            &categories()
+        )
+        .unwrap(),
+        DeclaredScan {
+            matches: vec![DeclaredMatch {
+                path: "plain.js".into(),
+                category: "untrusted_input".into(),
+                signal: "body line: a JSON.parse call".into()
+            }],
+            withheld: vec![]
+        }
+    );
 }

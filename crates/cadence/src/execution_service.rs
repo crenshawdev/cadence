@@ -604,7 +604,7 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
         }
     };
     let config = session.config().map_err(store_failure)?;
-    let choice = match super::config_service::resolve_role(
+    let choice = match super::config_service::route_at(
         &config,
         &super::config_service::RouteRequest {
             role: "cad-executor".into(),
@@ -612,8 +612,9 @@ pub async fn query<I: ConfigIo + Clone + Sync>(
             plan: std::num::NonZeroU32::new(plan.plan),
             attempt: None,
         },
+        &root,
     ) {
-        Ok(choice) => choice,
+        Ok(route) => route.choice,
         Err(error) => {
             return record_refusal(
                 &session,

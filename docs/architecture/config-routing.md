@@ -73,3 +73,57 @@ Absence permits legacy fallback; injected defaults are not stored pins. Model
 text remains literal through storage; dispatch resolution owns compatibility.
 Requested effort records intent and does not establish observed host effort or
 receipt evidence. Live host behavior belongs to the phase's manual checklist.
+
+The public `route` bundle includes the saved role choice and its source/reset,
+attempt, escalation and pin explanations, plus the current generation and review
+policy. Policy contains only surviving schema gate rows: `plan`, `diff` and
+`risk_surface`, each with gate, explicit gate layer, reviewer set, tier and
+requested effort. A provider qualifies only when its configured model ID at that
+trigger's tier is nonblank. `claude-subagent` always qualifies; an empty result
+falls back to it with a reason naming the trigger and tier. Diagnostics name
+every dropped provider and missing setting. These are configured eligibility
+facts, without provider discovery, credentials, review invocation or settlement.
+Surface answers share phase 7's distinction between unanswered null/absence,
+invalid empty arrays and answered valid arrays. Unanswered or invalid selection
+keeps every category in the declared-floor scan and is reported explicitly.
+
+Planner and assumptions analyzer bypass declared-scope I/O. Without an explicit
+phase, the floor is not computed. A named plan is read only at that phase's
+`PLAN-N.md` address; otherwise the floor uses the numeric-order union of the
+phase's native plans. Each plan must pass `parse_plan`, including its exact file
+and directory lease grammar. Task prose never contributes paths. Missing,
+unreadable, malformed or empty scope produces an incomplete result.
+
+Declared bodies use the shared risk signal table with whole-body evidence labels.
+Documents and the documented signal-table files exclude body matching while
+retaining path signals. Import-only and literal-constant-only category evidence
+is withheld with a reason; executable initializer calls still count. These
+exclusions do not affect actual Git diff classification or excuse a failed read.
+
+Native scope acquisition corrects the frozen reference's catch-all metadata
+failure: only genuine NotFound contributes a new file path without a body.
+Metadata, traversal and canonicalization errors remain incomplete observations.
+Even missing leaves require a contained observable parent. Final symlinks and
+nonregular bodies are rejected before opening; regular bodies are opened through
+contained directory handles with identity checks and bounded reads. Replacement,
+growth, invalid UTF-8 and failed reads remain incomplete. Directory leases walk
+all descendants in sorted order, including ignored paths, without following
+symlinks; overlapping paths are counted once. Each body is bounded to 512 KiB,
+source reads to 16 MiB, and the walk to 4096 entries. Crossing a bound reports
+incomplete scope; it never supplies a silently truncated clean answer.
+
+An unwaived selected-category match or incomplete required scope recommends deep
+verification and raises a default plan gate to blocking. A valid explicitly
+stored plan gate wins, including an inherited global value equal to the schema
+default. Blocking and adjudicated gates remain at least blocking. Waivers apply
+per category and cannot waive failed observations. Repo [] clears an inherited
+waiver; global [] leaves a stronger repo waiver visible. The floor changes no
+model, starting or escalated rung, other review gate, or actual-diff surface set.
+Deep verification is a recommendation and records no verifier execution.
+
+Public routing and new execution admission use the same completed resolver over
+one refreshed configuration generation. Execution retains the existing disabled
+review-dispatch policy; the bundle supplies routing facts only. A replay keeps
+its admitted model/rung, while a new dispatch and fresh public facts resolve
+current settings. Failed config reload still refuses through the existing
+synchronous validation seam.

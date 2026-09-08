@@ -248,3 +248,68 @@ fn writer_admits_the_route_and_routing_record_in_one_persistence_result() {
         );
     });
 }
+
+#[test]
+fn completed_route_resolver_keeps_saved_spending_for_separate_generations() {
+    use cadence::{
+        config::{
+            merge,
+            reload::{Generation, Input},
+        },
+        config_service::{RouteRequest, resolve_route},
+    };
+    for (number, model, effort, expected_agent) in [
+        (18, json!("sonnet"), "high", "cad-executor"),
+        (19, json!("opus"), "xhigh", "cad-executor-xhigh"),
+        (20, Value::Null, "high", "cad-executor"),
+    ] {
+        let generation = Generation {
+            number,
+            global: None,
+            repo: Input {
+                identity: "/project/.planning/config.v4.json".into(),
+                bytes: None,
+                stamp: None,
+            },
+            effective: merge::merge(
+                None,
+                Some(
+                    json!({"roles":{"cad-executor":{"model":model,"effort":effort}},"review":{"triggers":{"plan":{"gate":"off"}}}}),
+                ),
+                false,
+            ),
+        };
+        let result = resolve_route(
+            &generation,
+            &RouteRequest {
+                role: "cad-executor".into(),
+                phase: None,
+                plan: None,
+                attempt: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                result.generation,
+                result.choice.agent.as_str(),
+                result.choice.rung.as_str(),
+                result.choice.model.as_deref(),
+                result.choice.model_source.kind.as_str(),
+                result.choice.effort_source.layer.as_str()
+            ),
+            (
+                number,
+                expected_agent,
+                effort,
+                match number {
+                    18 => Some("sonnet"),
+                    19 => Some("opus"),
+                    _ => None,
+                },
+                if number == 20 { "reset" } else { "role" },
+                "repo"
+            )
+        );
+    }
+}
