@@ -1,6 +1,6 @@
 ---
 phase: 9
-status: verifying
+status: complete
 completed: 2026-09-08
 ---
 
@@ -36,6 +36,13 @@ trace; the invoking skill forwards their raw JSON unchanged.
   ordinary delivery, and historical pause origin exposed without promotion.
 - Plan 7: the seven goal-backward gaps below, none of which any acceptance
   criterion had asked about.
+- Plan 8: the execution boundary's captured generation, route and gate carried
+  into admission as one typed internal resolution, with the off gate deciding
+  before material acquisition and every other ordinary caller keeping its
+  current decoding and configuration refresh.
+- Plan 9: the test seam that fabricated a committed view removed, so admission
+  tests and release share the real persistence call, and the supplied-resolution
+  criterion reproven against durable storage with a counted configuration read.
 
 ## The seven gaps, and why they needed plan 7
 
@@ -146,3 +153,4 @@ The evidence record is [plan-1](reports/plan-1.md), [plan-2](reports/plan-2.md),
 | 7 | 6 | `42fb7908` | fix(review): retain nested directory file membership and bytes |
 | 7 | 7 | `6873ea6b` | fix(review): bound raw returns before transport deserialization |
 | 8 | 1 | `ac2c76b1` | fix(9): carry review resolution P9-8-T1 |
+| 9 | 1 | `1447a354` | fix(9): exercise real admission commit P9-9-T1 |
