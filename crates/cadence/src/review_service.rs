@@ -476,7 +476,12 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
                             choice.clone()
                         },
                         model,
-                        effort: Some(route.choice.rung.clone()),
+                        effort: if local {
+                            Some(route.choice.rung.clone())
+                        } else {
+                            trigger.as_ref().and_then(|name| route.policy.triggers.get(name))
+                                .map(|policy| policy.effort.clone())
+                        },
                         routing: saved_routing.clone(),
                         selection_evidence: routing.evidence.clone(),
                     })
@@ -543,6 +548,18 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
         let mut data = records;
         if let (Some(routing), Some(route)) = (&routing, &route) {
             persistence::insert(&mut data, "routes", &routing.evidence, route)?;
+            if let Some(generation) = &generation {
+                let values = &generation.effective.values;
+                let defaults = review::provider::Settings::default();
+                let settings = review::provider::Settings {
+                    key_file: merge::get(values, "review.key_file").and_then(Value::as_str).map(str::to_owned),
+                    max_prompt_tokens: merge::get(values, "review.max_prompt_tokens")
+                        .and_then(Value::as_u64).filter(|value| *value > 0).unwrap_or(defaults.max_prompt_tokens),
+                    request_timeout_ms: merge::get(values, "review.request_timeout_ms")
+                        .and_then(Value::as_u64).filter(|value| *value > 0).unwrap_or(defaults.request_timeout_ms).min(600_000),
+                };
+                persistence::insert(&mut data, "provider_settings", &fire, &settings)?;
+            }
         } else {
             let selected = review::specialist::minimalism_selection(&manifest)
                 .map_err(|e| Error::Invalid(e.into()))?;

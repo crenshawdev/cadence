@@ -3,7 +3,21 @@ pub mod credentials;
 pub mod delivery;
 pub mod diagnostics;
 pub mod openai;
+pub mod payload;
 pub mod transport;
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Settings {
+    pub key_file: Option<String>,
+    pub max_prompt_tokens: u64,
+    pub request_timeout_ms: u64,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { key_file: None, max_prompt_tokens: 120_000, request_timeout_ms: transport::DEFAULT_TIMEOUT_MS }
+    }
+}
 
 pub struct Extracted {
     pub text: Option<String>,
