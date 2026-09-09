@@ -556,8 +556,12 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
                     max_prompt_tokens: merge::get(values, "review.max_prompt_tokens")
                         .and_then(Value::as_u64).filter(|value| *value > 0).unwrap_or(defaults.max_prompt_tokens),
                     request_timeout_ms: merge::get(values, "review.request_timeout_ms")
-                        .and_then(Value::as_u64).filter(|value| *value > 0).unwrap_or(defaults.request_timeout_ms).min(600_000),
+                        .and_then(Value::as_u64).map(review::provider::transport::effective_timeout).unwrap_or(defaults.request_timeout_ms),
                 };
+                let mut settings = serde_json::to_value(settings)?;
+                settings["provider_work_timeout_ms"] = json!(review::provider::transport::PROVIDER_WORK_TIMEOUT_MS);
+                settings["acknowledgment_budget_ms"] = json!(review::provider::transport::ACKNOWLEDGMENT_BUDGET_MS);
+                settings["attempt_budget_ms"] = json!(review::provider::transport::ATTEMPT_BUDGET_MS);
                 persistence::insert(&mut data, "provider_settings", &fire, &settings)?;
             }
         } else {
@@ -1276,6 +1280,12 @@ pub(super) async fn next(store: &Store, fire: &str) -> Answer {
                     .first()
                     .ok_or_else(|| Error::Invalid("empty saved roster".into()))?
                     .clone();
+                // A provider's fenced entries belong to that provider attempt.
+                // The local host receives the retained admission view, not
+                // another attempt's private transformed delivery.
+                if let Some(source) = records["provider_payloads"][&attempt.attempt].get("source_view") {
+                    attempt.view = serde_json::from_value(source.clone())?;
+                }
                 let route: cadence::execution::model::RoleResolution = serde_json::from_value({
                     let mut route =
                         records["routes"][&attempt.requested.selection_evidence].clone();
@@ -1332,6 +1342,7 @@ pub(super) async fn next(store: &Store, fire: &str) -> Answer {
                 review::provider::delivery::Environment {
                     credentials: boundaries.credentials.clone(),
                     transport: boundaries.transport.clone(),
+                    sleep: boundaries.sleep.clone(),
                 }
             }).unwrap_or(environment);
             let owned_store = store.clone();
@@ -1341,7 +1352,8 @@ pub(super) async fn next(store: &Store, fire: &str) -> Answer {
                     eprintln!("provider delivery: {}", review::provider::diagnostics::excerpt(&error.to_string()));
                 }
             });
-            return output("review-next", json!({"state":"pending","attempt":attempt,"admission":admission}));
+            return output("review-next", json!({"state":"pending","attempt":attempt,"admission":admission,
+                "guidance":PROVIDER_POLL_GUIDANCE}));
         }
         return output(
             "review-next",
@@ -1374,9 +1386,12 @@ pub(super) async fn next(store: &Store, fire: &str) -> Answer {
         .map(|gate| review::policy::ordinary_gate_action(gate, &delivery, &admission.settlement));
     output(
         "review-next",
-        json!({"state":"delivery","completion":completion,"delivery":delivery,"action":action,"deferred":records["deferred"][fire],"admission":admission}),
+        json!({"state":"delivery","completion":completion,"delivery":delivery,"action":action,"deferred":records["deferred"][fire],"admission":admission,
+            "guidance":PROVIDER_POLL_GUIDANCE}),
     )
 }
+
+const PROVIDER_POLL_GUIDANCE: &str = "Provider work belongs to the resident binary. Poll cadence_query review-next with the same fire while pending; canceling a poll does not cancel or restart a paid request. Wait for durable closure before advancing. If local dispatch is returned, run it once and follow its WAIT/observation/unchanged-return acknowledgment contract. After a killed binary, interrupted or uncertain work requires recovery, never automatic resend.";
 
 pub async fn execute<I: ConfigIo + Clone + Sync>(
     factory: &SessionFactory<I>,

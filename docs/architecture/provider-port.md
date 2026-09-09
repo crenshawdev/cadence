@@ -1,6 +1,6 @@
 # Native provider port
 
-Phase 10, PLAN-1. Contract recorded 2026-09-09.
+Phase 10, PLAN-1 and PLAN-2. Contract recorded 2026-09-09.
 
 ## Usage contract
 
@@ -69,8 +69,11 @@ names that delivered view.
 The contacted adapter supplies observed provider identity. Response `model`
 (OpenAI/DeepSeek) or `modelVersion` (Gemini) supplies observed model; a missing
 model stays null. Requested model and trigger effort remain in `RequestedVoice`.
-Accounting and identity are saved before return acceptance, including empty
-usable results. These numeric observations do not contribute to host-role totals.
+Accounting and identity are saved before HTTP status refusal and return
+acceptance, including charged errors and empty usable results. A non-2xx response
+always fails, even if its text contains valid findings. Bounded sanitized raw
+usage is independent of the bounded sanitized error excerpt. Missing accounting
+stays unavailable. These numeric observations do not contribute to host-role totals.
 
 `review.provider_evidence[attempt].identity` retains bounded, credential-fenced
 provider `response_id` and HTTP `request_id` when supplied. The separately named
@@ -86,6 +89,51 @@ its `records.provider_evidence` collection, alongside the original phase-9
 admissions, attempts, observations, closures and retained material. Reopening
 the filesystem store recovers that same namespace.
 
+## Resident deadlines and acknowledgment
+
+These effective, non-secret limits are saved at admission in
+`review.provider_settings[fire]`, visible through `review-inventory`:
+
+| Saved field | Effective value |
+|---|---|
+| `request_timeout_ms` | Positive configured timeout capped at **540000 ms**; default **540000 ms** |
+| `provider_work_timeout_ms` | **570000 ms** |
+| `acknowledgment_budget_ms` | **30000 ms** |
+| `attempt_budget_ms` | **600000 ms** |
+
+The request deadline covers HTTP send and bounded body acquisition. The outer
+deadline begins before reading attempt inputs and preparing credentials/payload,
+and includes response handling. Expiry drops the actual HTTP read. Preparation
+and JSON parsing run off the resident executor; any computation still finishing
+after expiry has no authority to send a request or write the store.
+
+Failure acknowledgment runs outside the canceled work future, with the store
+owner alive and 30000 ms reserved after the outer deadline. It rereads the saved
+attempt, preserves observed usage, and closes through the existing launch-failure
+or return operation. A timer alone never acknowledges closure. A genuinely
+unavailable store returns a delivery error and remains unacknowledged.
+These are Cadence's internal limits; MCP does not inherit a Bash timeout.
+
+`cadence_query review-next` returns provider `state: pending` promptly.
+Poll the same fire; later responses may express pending as
+`state: delivery, delivery: pending`. The resident owns the worker independently
+of any polling request. Closing a poll's reply receiver neither stops work nor
+authorizes another request, and the mailbox remains available for other calls.
+FIRST visits the saved configured order once, then issues the saved local
+fallback once if all providers fail. Only durable closure advances selection.
+A killed binary retains phase 9's interrupted/uncertain recovery: never infer a
+return or automatically resend a possibly charged request.
+
+Local `state: dispatch` carries the existing dispatch and compiled WAIT guidance.
+The host runs it and forwards actual events and unchanged output, then waits for
+the durable return receipt. An empty valid findings envelope is usable; missing
+or malformed output and definite launch failure are failed outcomes.
+Repeated next/return calls reuse immutable closures and originals.
+
+Tokio cancellation behavior was consulted through Context7 on 2026-09-09:
+<https://docs.rs/tokio/latest/tokio/macro.select.html> and
+<https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html>.
+
 ## O1 live-pilot handoff
 
 O1 is carried verbatim from CONTEXT.md dated 2026-09-09, attributed there to the
@@ -100,9 +148,8 @@ owner:
 
 The owner-seen phase-6 evidence above is preserved. No phase-10 live run or
 observation time was supplied. O1 remains **not seen**. An accepted observation
-caps T1 at **concerns** under the acceptance design; deterministic tests cannot
-make or replace this observation. PLAN-2 completes the failed-call/fallback
-portion before the combined live pilot.
+caps T1 and T5 at **concerns** under the acceptance design; deterministic tests
+cannot make or replace this observation.
 
 Use the resident MCP host opened on the real project. Configure `review.mode`
 as `single`, place the desired provider first in `review.reviewers`, and configure
@@ -144,11 +191,31 @@ Then use these actual public operations:
    observed provider/model/usage with `requested`, and retain the observation,
    closure and provider response references. Restart the host and repeat these
    reads to confirm recovery.
-4. After PLAN-2, make a separate deliberate provider failure with a fresh replay
-   key and discriminator. Poll `review-next` through local fallback, execute its
-   existing local WAIT/unchanged-return procedure, and inspect the real fallback
-   outcome and one closure per issued attempt. The provider failure itself must
-   stay visible.
+4. Read `records.provider_settings[fire]` from `review-inventory` and retain
+   the effective request, work, acknowledgment and attempt limits from the table
+   above. Make a separate deliberate provider failure with a fresh replay key
+   and discriminator. Poll `review-next` until it returns `state: dispatch`.
+   Run that exact `dispatch` once in the local review host.
+5. Forward each actual launch/return event with `cadence_apply` operation
+   `review-observation`, putting the event in `observation`. Read retained
+   entries with `review-material` using the dispatch's attempt and entry IDs.
+   WAIT for the local host's actual return. Call `cadence_apply review-return`
+   with `identity: {fire, occurrence, artifact, view, attempt, round}` copied
+   from the returned admission/attempt, observed `launch` and `host_return`,
+   unchanged `raw`, `failure_event: null`, `host_failure: null` and
+   `citations: []`. For a definite launch failure, forward its actual
+   `failure_event` and `host_failure` with null launch/host_return/raw. For a
+   launched host that produces no return, retain the launch and submit null
+   raw/host_return; never invent an empty successful review.
+6. Wait for `review-return`'s durable receipt (`durable_terminal_count: 1`).
+   Repeat that identical return and confirm `replayed: true`. Poll
+   `review-next` for `usable-complete` or `complete-with-failure` according
+   to the actual fallback result. Read every issued `review-attempt`, the
+   successful fallback's `review-original` if present, and
+   `review-inventory`. Confirm exactly one `records.closures[attempt]` for
+   each issued provider/fallback, saved provider failures, and the actual local
+   voice/findings. Restart the resident and repeat those readbacks and next
+   calls: no second fallback, request, original or closure.
 
 Fill this record only from the owner's actual pilot:
 

@@ -395,6 +395,9 @@ pub struct PublicServer {
 }
 
 impl PublicServer {
+    // Public calls await resident mailbox replies, not native provider work.
+    // Dropping a tool's reply receiver leaves accepted mailbox work and the
+    // separately owned provider task alive; review-next reconnects by fire.
     async fn review_handoff(
         &self,
         phase: Option<u32>,
@@ -539,12 +542,12 @@ impl ServerHandler for PublicServer {
                 ),
                 tool::<QueryOutput>(
                     "cadence_query",
-                    "Read supported configuration, role routing, native execution, exact material risk status or structural surface evidence in the bound project.",
+                    "Read supported configuration, role routing, native execution, review records, exact material risk status or structural surface evidence in the bound project. review-next returns provider pending promptly: poll the same fire; canceling a poll does not cancel or restart resident provider work. A local dispatch requires the host to run it once, WAIT, and forward actual observations and its unchanged return through cadence_apply before advancing.",
                     query_schema(),
                 ),
                 tool::<ApplyOutput>(
                     "cadence_apply",
-                    "Apply an atomic config batch, executor patch, risk-check, contracted risk fire or consequence.",
+                    "Apply an atomic config batch, executor patch, risk-check, contracted risk fire or consequence. For review dispatches, review-observation forwards actual launch/return events and review-return forwards unchanged raw output or definite launch failure with the supplied identity. Missing or malformed output is failure. Wait for durable acknowledgment, then poll review-next; replay never authorizes a second dispatch.",
                     apply_schema(),
                 ),
             ],

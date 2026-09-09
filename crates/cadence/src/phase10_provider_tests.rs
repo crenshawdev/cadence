@@ -11,7 +11,7 @@ tokio::task_local! {
 pub(super) struct Boundaries {
     pub credentials: Arc<dyn credentials::Inputs>,
     pub transport: Arc<dyn transport::Transport>,
-    pub sleep: Arc<dyn Fn(Duration) -> transport::Pending<'static, ()> + Send + Sync>,
+    pub sleep: transport::Sleep,
 }
 
 struct Credentials;
@@ -571,6 +571,27 @@ async fn phase10_fallback_closes_once() {
                     assert_eq!(failed["observed_model"], Value::Null);
                     assert_eq!(failed["usage"], json!({"input":null,"output":null,"cost":null,"currency":null}));
                 }
+                let session = factory.first_touch(&root).await.unwrap();
+                review::provider::delivery::run(session.review_store().clone(), attempt_id.clone(),
+                    review::provider::delivery::Environment {
+                        credentials: boundaries.credentials.clone(), transport: wire.clone(), sleep: boundaries.sleep.clone(),
+                    }).await.unwrap();
+                // Replaying a provider callback must use the saved closure.
+                assert_eq!(failed_attempt(&factory, &root, &attempt_id).await, failed);
+                if timed {
+                    let saved = result(execute(&factory, &root, Command::Query(Query::Inventory {})).await.unwrap());
+                    let submitted = &saved["records"]["failed_returns"][&attempt_id];
+                    let late = result(execute(&factory, &root, Command::Apply(Apply::Return {
+                        identity: submitted["identity"].clone(),
+                        launch: submitted["launch"].as_str().map(str::to_owned),
+                        host_return: submitted["host_return"].as_str().map(str::to_owned),
+                        raw: Some(r#"{"findings":[]}"#.into()), host_failure: None,
+                        failure_event: None, citations: vec![],
+                    })).await.unwrap());
+                    assert_eq!(late["code"], "conflicting-return");
+                    assert_eq!(failed_attempt(&factory, &root, &attempt_id).await, failed,
+                        "{row}: late completion cannot replace timeout");
+                }
                 let next = result(execute(&factory, &root, Command::Query(Query::Next { fire: fire.clone() })).await.unwrap());
                 if ordinal == 1 {
                     assert_eq!(next["state"], "pending");
@@ -608,6 +629,7 @@ async fn phase10_fallback_closes_once() {
                 })).await.unwrap());
                 assert_eq!(original["findings"], json!([{"file":"subject.rs","line":1,"severity":"medium",
                     "claim":"The fixed answer discards configuration.","failure_scenario":"A caller requiring a configured answer receives 42."}]));
+                assert_eq!(original["raw_bytes"], json!(br#"{"findings":[{"file":"subject.rs","line":1,"severity":"medium","claim":"The fixed answer discards configuration.","failure_scenario":"A caller requiring a configured answer receives 42."}]}"#.to_vec()));
                 assert_eq!(records["originals"].as_object().unwrap().len(), 1);
             } else {
                 assert_eq!(fallback["original"], Value::Null);
@@ -617,13 +639,16 @@ async fn phase10_fallback_closes_once() {
             assert_eq!(records["provider_settings"][&fire]["provider_work_timeout_ms"], 570000);
             assert_eq!(records["provider_settings"][&fire]["acknowledgment_budget_ms"], 30000);
             assert_eq!(records["provider_settings"][&fire]["attempt_budget_ms"], 600000);
-            let requests = wire.requests.lock().unwrap();
-            assert_eq!(requests.len(), if matches!(row, "no-key" | "over-cap") {0} else {2});
-            if !requests.is_empty() {
-                assert!(requests[0].0.contains("api.openai.com"));
-                assert!(requests[1].0.contains("generativelanguage.googleapis.com"));
+            {
+                let requests = wire.requests.lock().unwrap();
+                assert_eq!(requests.len(), if matches!(row, "no-key" | "over-cap") {0} else {2});
+                if !requests.is_empty() {
+                    assert!(requests[0].0.contains("api.openai.com"));
+                    assert!(requests[1].0.contains("generativelanguage.googleapis.com"));
+                    assert!(requests.iter().all(|(_, timeout)| *timeout == Duration::from_millis(
+                        if row == "native-timeout" {100} else {540000})));
+                }
             }
-            drop(requests);
             drop(factory);
             let store = reopen(&root).await;
             let recovered = result(query_saved(&store, &root, Query::Inventory {}).await.unwrap());
