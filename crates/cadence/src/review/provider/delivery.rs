@@ -76,11 +76,11 @@ pub async fn run(store: Store, attempt_id: String, environment: Environment) -> 
     let (raw, failure) = match response {
         Err(reason) => (None, Some(reason)),
         Ok(response) if !(200..300).contains(&response.status) => (None, Some(diagnostics::excerpt(&format!("HTTP {}: {}", response.status, String::from_utf8_lossy(&response.raw))))),
-        Ok(response) => match response.json {
+        Ok(response) => match response.json.as_ref() {
             None => (None, Some("malformed provider response".into())),
             Some(json) => {
-                let extracted = super::extract(provider, &json);
-                super::records::save_accounting(&store, &attempt, provider, extracted.usage.as_ref()).await?;
+                let extracted = super::extract(provider, json);
+                super::records::save_response(&store, &attempt, provider, &response, &extracted).await?;
                 match extracted.text {
                     Some(text) => (Some(text.into_bytes()), None),
                     None => (None, Some("missing provider response text".into())),

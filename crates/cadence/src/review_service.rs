@@ -1045,10 +1045,15 @@ async fn query_saved(store: &Store, root: &Path, query: Query) -> Answer {
             "review-admission",
             admission::read_admission(store, &fire).await?,
         ),
-        Query::Attempt { attempt } => output(
-            "review-attempt",
-            review::attempts::read_attempt(store, &attempt).await?,
-        ),
+        Query::Attempt { attempt } => {
+            let view = persistence::read(store).await?;
+            let records = persistence::records(&view.snapshot.data)?;
+            let mut saved = serde_json::to_value(persistence::get::<Attempt>(&records, "attempts", &attempt)?)?;
+            if let Some(evidence) = records["provider_evidence"].get(&attempt) {
+                saved["provider_evidence"] = evidence.clone();
+            }
+            output("review-attempt", saved)
+        }
         Query::Original { original } => output(
             "review-original",
             review::originals::read_original(store, &original).await?,
