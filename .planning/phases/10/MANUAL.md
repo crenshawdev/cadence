@@ -1,5 +1,9 @@
 # Phase 10: manual checklist
 
+**Retired 2026-09-09.** The rescope to five truths replaced this list with the
+single observation O1 in CONTEXT.md, run and seen on 2026-09-09 (see
+`reports/pilot.md`). Kept for the record; nothing below is owed.
+
 Items routed here under the Overflow rule: they need a live host, a human eye or
 a running system, so they cannot be expressed as input -> output and are not
 acceptance criteria. A human drives these. They are NOT covered by any test, and

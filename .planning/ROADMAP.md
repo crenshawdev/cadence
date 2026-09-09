@@ -357,7 +357,7 @@ settled:
 - [x] **Phase 7: The commit rail and the risk gates** - `git-guard`, the protected-branch decision, the lease and the risk check: what sixteen skills commit through
 - [x] **Phase 8: Config and routing** - two-layer effective config, the roles interview, retired-key migration, and `route resolve`
 - [x] **Phase 9: Review delivery and identity** - raw reviewer returns persisted by the binary, shared gate settings, first usable review, and durable snapshot identity
-- [ ] **Phase 10: Provider port** - the cross-model provider arm in the binary, on phase 9's delivery lifecycle, with GH-237/239/240 repaired
+- [x] **Phase 10: Provider port** - the cross-model provider arm in the binary, on phase 9's delivery lifecycle, with GH-237/239/240 repaired
 - [ ] **Phase 11: Planning intake** - `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context`, `cad-plan`
 - [ ] **Phase 12: Execution and tasks** - `cad-execute` in full, and `cad-task`
 - [ ] **Phase 13: Verification and audit** - `cad-verify`, the merged `cad-review` command surface, `cad-audit`

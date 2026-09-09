@@ -114,7 +114,8 @@ or return operation. A timer alone never acknowledges closure. A genuinely
 unavailable store returns a delivery error and remains unacknowledged.
 These are Cadence's internal limits; MCP does not inherit a Bash timeout.
 
-`cadence_query review-next` returns provider `state: pending` promptly.
+`cadence_query review-next` returns provider `state: pending` promptly, then
+`state: delivery` with `delivery: pending` while the resident owns the work.
 Poll the same fire; later responses may express pending as
 `state: delivery, delivery: pending`. The resident owns the worker independently
 of any polling request. Closing a poll's reply receiver neither stops work nor
@@ -147,9 +148,10 @@ owner:
 > real host.
 
 The owner-seen phase-6 evidence above is preserved. No phase-10 live run or
-observation time was supplied. O1 remains **not seen**. An accepted observation
-caps T1 and T5 at **concerns** under the acceptance design; deterministic tests
-cannot make or replace this observation.
+The phase-10 run is recorded in the table at the end of this section and was
+seen by the owner on 2026-09-09. O1 is **seen**; it caps T1 and T5 at
+**concerns** under the acceptance design; deterministic tests cannot make or
+replace this observation.
 
 Use the resident MCP host opened on the real project. Configure `review.mode`
 as `single`, place the desired provider first in `review.reviewers`, and configure
@@ -183,7 +185,9 @@ Then use these actual public operations:
 
 2. Take the returned `fire` and `attempt`. Call `cadence_query` with
    `{"operation":"review-next","fire":"<returned fire>"}`. The provider arm
-   returns `state: pending`; poll the same operation until delivery is terminal.
+   returns `state: pending`, then `state: delivery` with `delivery: pending`;
+   poll the same operation until `delivery` is terminal (`usable-complete` or
+   `complete-with-failure`, mirrored in `completion`).
    Repeated polls read the issued attempt and never authorize another spend.
 3. Read `{"operation":"review-attempt","attempt":"<returned attempt>"}`,
    then `{"operation":"review-original","original":"<saved original>"}`
@@ -221,4 +225,4 @@ Fill this record only from the owner's actual pilot:
 
 | Observer | Observation time | Project/run reference | Successful fire/attempt | Failed fire/provider attempt | Local fallback attempt | Seen/not-seen result |
 |---|---|---|---|---|---|---|
-| | | | | | | |
+| John Crenshaw | 2026-09-09 19:52-19:54 UTC | scratchpad pilot project, `.planning/phases/10/reports/pilot.md`, binary at `ad24e085` | f1 / f1-a1 (openai, observed `gpt-5-mini-2025-08-07`, usage 921/718, one closure) | f2 / f2-a1 (HTTP 401 `invalid_api_key`, usage absent, one closure) | f2 / f2-a2 (host codex, two findings, one closure, replay `true`, equal after restart) | seen |
