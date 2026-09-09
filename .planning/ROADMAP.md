@@ -357,7 +357,7 @@ settled:
 - [x] **Phase 7: The commit rail and the risk gates** - `git-guard`, the protected-branch decision, the lease and the risk check: what sixteen skills commit through
 - [x] **Phase 8: Config and routing** - two-layer effective config, the roles interview, retired-key migration, and `route resolve`
 - [x] **Phase 9: Review delivery and identity** - raw reviewer returns persisted by the binary, shared gate settings, first usable review, and durable snapshot identity
-- [ ] **Phase 10: Review evidence verification** - verified settlement, the provider and filing arms with their five repairs, deferred settlement and durable triage re-arm
+- [ ] **Phase 10: Provider port** - the cross-model provider arm in the binary, on phase 9's delivery lifecycle, with GH-237/239/240 repaired
 - [ ] **Phase 11: Planning intake** - `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context`, `cad-plan`
 - [ ] **Phase 12: Execution and tasks** - `cad-execute` in full, and `cad-task`
 - [ ] **Phase 13: Verification and audit** - `cad-verify`, the merged `cad-review` command surface, `cad-audit`
@@ -367,6 +367,8 @@ settled:
 - [ ] **Phase 17: Contract enforcement** - the residual obligations that live today as prose instructions and belong to no single cluster
 - [ ] **Phase 18: The acceptance gate** - scenario-bounded workflow episodes, asserted with contract checks rather than an output diff
 - [ ] **Phase 19: The release path** - a tagged release that publishes four checksum-verified archives, and a SessionStart hook that fetches and installs the pinned binary
+- [ ] **Phase 20: Filing port** - human-chosen issue filing on GitHub with fingerprint deduplication and ambiguous-create reconciliation, GH-250/251 repaired
+- [ ] **Phase 21: Deferred review completion** - carry, retention and verified supersession for deferred reviews, and durable re-arm across restart
 
 ## Phase Details
 
@@ -796,70 +798,31 @@ edits. The owner inspects those episodes and accepts the stated semantic
 limitations. A valid JSON fixture cannot establish that a real review happened;
 deterministic identity, persistence and replay checks do not replace this pilot.
 
-### Phase 10: Review evidence verification
+### Phase 10: Provider port
 
-**Goal.** Settlement verifies original findings, reviewer participation, fix
-commits and citations before it can clear a gate or supply findings for filing.
+**Goal.** The cross-model review provider arm runs in the binary: OpenAI,
+Gemini and DeepSeek adapters with credential lookup, bounded payloads,
+transport, sanitized diagnostics and the outer timeout, every attempt on
+phase 9's delivery lifecycle, and GH-237, GH-239 and GH-240 repaired in that
+code as it lands.
 
-**It follows delivery because evidence must have a recorded origin.** The
-binary-persisted originals, dispatch voices and immutable artifacts from phase 9
-are the inputs to settlement. It precedes planning, execution, verification and
-landing so those skill clusters consume one verified result instead of each
-accepting their own settlement text.
+**Truths** (`.planning/phases/10/CONTEXT.md`): the run record holds the
+provider's voice, model and usage as observed, never as requested; an error
+status with usage in the body keeps the usage and the failure (GH-239); usage
+that cannot be read as whole numbers is unavailable, never zero (GH-237,
+GH-240); a usable empty findings list is an empty result with its voice,
+distinct from a failure; a failed provider with the local fallback closes the
+dispatch exactly once. Five truths, five checks.
 
-**Settlement verifies evidence, not just its shape.** Use one bounded findings
-validator and compare every ruling with binary-persisted originals and recorded
-dispatch voices, with one ruling per finding. Refuse paraphrased claims or
-`failure_scenario` text and fabricated participation. Minimalism preserves both
-strings verbatim while retaining its deletion-value meaning and the user's
-choice of what to delete.
+**Rescoped 2026-09-09 under the acceptance design and the owner's "slow add"
+rule.** The original phase carried eleven capabilities and 187 criteria and
+was refused by its own planner. The settlement-verification layer is dropped
+as new behaviour nobody has hit. The filing port is Phase 20; deferred-review
+completion is Phase 21. GitLab is out; GitHub is the first-class forge.
 
-Resolve supplied fix commits and validate cited material, line identity and any
-relied-on counter-evidence against the reviewed artifact. Missing or deleted
-source remains visible with explicit base, head or snapshot-side evidence. The
-current hex-pattern check for a fix ID
-(`cadence-core/bin/lib/adjudication-record.mjs:438`) and path-exists-at-head
-citation check (`cadence-core/bin/planning/adjudication.mjs:90`) are insufficient.
-Invalid or fabricated settlement is refused, not recorded as a cleared gate.
-
-**Deferred settlement must match before it supersedes a queue member.** Reuse
-the existing deferred producer and reader, extend carry and retention to every
-admitted home, and replace sibling-file existence checks with matching valid
-settlement. Reuse scoped override receipts and generalize the one-extra-round
-triage allowance so it is consumed durably across sessions. A restart cannot
-re-arm an exhausted fire.
-
-**The cross-model provider and remote filing arms land with their repairs.**
-Provider credential lookup, bounded payloads, transport, sanitized diagnostics
-and the outer timeout feed the delivery contract from phase 9. Record actual
-voices and usage, distinguish usable empty findings from failure, and close
-failed-provider and local-fallback outcomes exactly once. Filing preserves human
-choice, exact fingerprint deduplication, bounded tracker lookup and reconciliation
-after an ambiguous create. Reuse filed/declined item bookkeeping; a local
-transaction cannot make remote creation atomic.
-
-**Five open GitHub issues land here with the code they repair:** `GH-237`
-(`review-provider.mjs:1142-1148` turns an invalid one of Gemini's two output
-components into zero when the other is usable), `GH-239` (`:1335-1350` exits on
-non-2xx before extracting response usage), `GH-240` (`:988-989` accepts any finite
-nonnegative number, and Gemini sums without a checked integer bound), `GH-250`
-(`issue-filing.mjs:727-763` refuses on the local FILED read before forge
-resolution and tracker lookup), and `GH-251`
-(`lib/filing-decision.mjs:730-755` leaves GitLab lookup unmeasured and space-joins
-fingerprints; Forgejo's historical measurement is at `:678-700`). Invalid or
-overflowed usage is unavailable, not zero, and available response usage survives
-an HTTP refusal. An unavailable legacy mirror is distinct from a corrupt
-authoritative store; the latter still refuses. GitLab lookup remains explicitly
-unmeasured until live evidence establishes its search semantics.
-
-**Acceptance requires an owner-reviewed live pilot.** Record real provider
-participation and failure/local-fallback closure, per-voice rulings checked
-against source, refused fabricated evidence, deferred settlement and exhausted
-re-arm after restart, and human-authorized filing, deduplication and
-reconciliation on each claimed forge. The owner inspects the episodes and
-accepts their stated semantic limitations. A valid JSON fixture cannot establish
-that a real review happened. Missing provider or forge cases remain unverified;
-another backend's success does not establish them.
+**Acceptance still requires the owner to see it live.** One real provider
+call and one deliberately failed one, observed in the run record; that is an
+observation in the evidence map and caps its truths at `concerns` until seen.
 
 ### Phase 11: Planning intake
 
@@ -1228,3 +1191,28 @@ moved out the same day, and deleted on 2026-09-08: it predated the phase
 renumbering, declared the wrong phase, and had no executable task block. It
 is recoverable from git history if wanted; this phase gets a plan written
 against the roadmap as it now stands.
+
+### Phase 20: Filing port
+
+**Goal.** Issue filing moves from frozen JavaScript
+(`cadence-core/bin/issue-filing.mjs`, `lib/filing-decision.mjs`) into the
+binary, GitHub first-class, GH-250 and GH-251 repaired as it lands. Parked
+here 2026-09-09 under the owner's "slow add" rule; it was the second
+deliverable inside the original phase 10.
+
+**Truths, drafted, to be approved at `/cad-context`:** the tracker gets a new
+issue only after a person has chosen to file it; an issue whose exact
+fingerprint already exists on the tracker gets no second issue (GH-251); when
+the local filed record cannot be read, filing still looks up the tracker
+before deciding (GH-250); an ambiguous create marks the item uncertain and a
+later reconciliation resolves it. GitLab lookup is not owed.
+
+### Phase 21: Deferred review completion
+
+**Goal.** Complete the half-built deferred-review capability: carry and
+retention across every admitted home, supersession only by matching valid
+settlement (never a sibling file), and a one-extra-round allowance consumed
+durably so a restart cannot re-arm an exhausted fire. Parked here 2026-09-09;
+binding decision D-78 from the 2026-09-07 phase-10 context
+(`998f2187:.planning/phases/10/CONTEXT.md`) carries forward when this phase
+is contexted.
