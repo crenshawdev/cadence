@@ -17,6 +17,7 @@ pub mod model;
 pub mod originals;
 pub mod persistence;
 pub mod policy;
+pub mod provider;
 pub mod recovery;
 pub mod returns;
 pub mod selection;
