@@ -1,6 +1,6 @@
 # State
 
-Phase: 9 of 19 (Review delivery and identity)
-Status: phase complete
-Next: /cad-plan 10
-Updated: 2026-09-08
+Phase: 10 of 21 (Provider port)
+Status: planned
+Next: /cad-execute 10
+Updated: 2026-09-09
