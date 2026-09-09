@@ -10,12 +10,12 @@
 //   - plans were given and a function is absent from every Coverage table
 //     (rule 9: shipped without a listed criterion).
 //
-// Test code = paths under tests/, files named *_tests.rs or tests.rs, and any
-// function whose preceding added line is #[test] / #[tokio::test]. Inline
-// #[cfg(test)] modules are excluded only when the diff shows the attribute in
-// the same file before the function; a function added deep inside an existing
-// test module can slip past. Trait-impl methods have no by-name caller; the
-// Coverage table declares them.
+// Test code = paths under tests/, files named *_tests.rs or tests.rs, functions
+// carrying #[test] / #[tokio::test], and anything inside a #[cfg(test)] module.
+// Test-ness is resolved against the file at <head> by brace-matching each
+// #[cfg(test)] mod block, NOT against the diff, so a function added inside a
+// test module that already existed is correctly excluded. Trait-impl methods
+// have no by-name caller; the Coverage table declares them.
 //
 // Scaffolding for the hand-driven 4.0 rewrite; the phase that owns closing a
 // phase implements this in the binary. Exit 1 on any refusal.
@@ -33,21 +33,94 @@ const isTestPath = (p) => /(^|\/)tests\//.test(p) || /(_tests|\/tests)\.rs$/.tes
 const FN = /^\+\s*(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)/;
 
 // 1. Added functions in non-test code.
-const diff = git("diff", "--unified=0", range, "--", "crates/*/src/*.rs", "crates/*/src/**/*.rs");
-const added = [];
-let file = null, inTestMod = false, prevAttrTest = false;
-for (const line of diff.split("\n")) {
-  if (line.startsWith("+++ ")) { file = line.slice(6); inTestMod = false; prevAttrTest = false; continue; }
-  if (!line.startsWith("+") || line.startsWith("+++")) continue;
-  if (/^\+\s*#\[cfg\(test\)\]/.test(line)) { inTestMod = true; continue; }
-  if (/^\+\s*#\[(tokio::)?test\b/.test(line)) { prevAttrTest = true; continue; }
-  const m = line.match(FN);
-  if (m) {
-    if (!(isTestPath(file) || inTestMod || prevAttrTest)) added.push({ name: m[1], file });
-    prevAttrTest = false;
-    continue;
+//
+// Test-ness is resolved against the FILE AT <head>, not against the diff. A
+// function added inside a #[cfg(test)] module that already existed shows no
+// cfg(test) line in the diff, and a diff-scoped flag would call it production
+// (and, being sticky, would call everything after a cfg(test) line test).
+// Both errors were live before this was rewritten.
+
+// Line ranges (1-based, inclusive) covered by a #[cfg(test)] item. The item may
+// be a mod, an impl, a struct, a trait or a bare fn: gap158 puts test doubles in
+// `#[cfg(test)] impl ... {}` blocks outside any test module, so restricting this
+// to `mod` misses them and their methods read as production code.
+function testRanges(text) {
+  const lines = text.split("\n");
+  const ranges = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*#\[cfg\(test\)\]/.test(lines[i])) continue;
+    // skip further attributes, comments and blank lines to reach the item
+    let j = i + 1;
+    while (j < lines.length && /^\s*(#\[|\/\/|$)/.test(lines[j])) j++;
+    if (j >= lines.length) continue;
+    const strip = (s) => s.replace(/"(\\.|[^"\\])*"/g, '""').replace(/\/\/.*$/, "");
+    // an item with no brace on its first line and a trailing ; covers one line
+    if (!/\{/.test(strip(lines[j])) && /;\s*$/.test(strip(lines[j]))) {
+      ranges.push([i + 1, j + 1]);
+      continue;
+    }
+    let depth = 0, started = false, k = j;
+    for (; k < lines.length; k++) {
+      for (const ch of strip(lines[k])) {
+        if (ch === "{") { depth++; started = true; }
+        else if (ch === "}") depth--;
+      }
+      if (started && depth <= 0) break;
+    }
+    if (!started) { ranges.push([i + 1, j + 1]); continue; }
+    ranges.push([i + 1, Math.min(k, lines.length - 1) + 1]);
   }
-  if (!/^\+\s*#\[/.test(line) && !/^\+\s*$/.test(line)) prevAttrTest = false;
+  return ranges;
+}
+
+const headFile = new Map();
+function fileAtHead(path) {
+  if (headFile.has(path)) return headFile.get(path);
+  let text = "";
+  try { text = git("show", `${head}:${path}`); } catch { text = ""; }
+  headFile.set(path, text);
+  return text;
+}
+
+// Is the line where an added function was defined inside test code at <head>?
+// Anchored by LINE, not by name: several distinct functions in one file can
+// share a name (three `fn read` in review_service.rs), so a name-based check
+// mixes a production definition with a test one and mis-classifies both.
+const rangeCache = new Map();
+function testRangesAtHead(path) {
+  if (!rangeCache.has(path)) rangeCache.set(path, testRanges(fileAtHead(path)));
+  return rangeCache.get(path);
+}
+function isTestLine(path, lineNo) {
+  const text = fileAtHead(path);
+  if (!text) return false;                       // gone at head; treat as production
+  if (testRangesAtHead(path).some(([a, b]) => lineNo >= a && lineNo <= b)) return true;
+  const lines = text.split("\n");
+  return lines
+    .slice(Math.max(0, lineNo - 4), lineNo - 1)
+    .some((l) => /^\s*#\[(tokio::)?test\b/.test(l));
+}
+
+const diff = git("diff", "--unified=0", range, "--", "crates/*/src/*.rs", "crates/*/src/**/*.rs");
+const seen = new Set();
+const added = [];
+let file = null, newLine = 0;
+for (const line of diff.split("\n")) {
+  if (line.startsWith("+++ ")) { file = line.slice(6); continue; }
+  const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  if (hunk) { newLine = Number(hunk[1]); continue; }
+  if (line.startsWith("---") || line.startsWith("+++")) continue;
+  if (line.startsWith("-")) continue;            // old side: no new-file line consumed
+  if (!line.startsWith("+")) { newLine++; continue; }
+  const at = newLine++;
+  const m = line.match(FN);
+  if (!m) continue;
+  const name = m[1];
+  const key = `${file}::${name}::${at}`;
+  if (seen.has(key)) continue;
+  seen.add(key);
+  if (isTestPath(file) || isTestLine(file, at)) continue;
+  added.push({ name, file, line: at });
 }
 
 // 2. Coverage tables from any plans given.
