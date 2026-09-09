@@ -255,3 +255,56 @@ async fn phase10_invalid_usage_is_unavailable() {
         }).await;
     }
 }
+
+#[tokio::test]
+async fn phase10_provider_records_observed_identity() {
+    let findings = "{\"findings\":[{\"file\":\"subject.rs\",\"line\":1,\"severity\":\"medium\",\"claim\":\"The return value discards the configured answer.\",\"failure_scenario\":\"A caller requiring the configured answer always receives 42.\"}]}";
+    for (provider, model, usage, expected_input, expected_output, provider_id) in [
+        ("openai", Some("served-openai"), Some("{\"input_tokens\":11,\"output_tokens\":5,\"output_tokens_details\":{\"reasoning_tokens\":2}}"), Some(11), Some(5), "resp-fixture"),
+        ("gemini", Some("served-gemini"), Some("{\"promptTokenCount\":13,\"candidatesTokenCount\":3,\"thoughtsTokenCount\":2}"), Some(13), Some(5), "gemini-fixture"),
+        ("deepseek", Some("served-deepseek"), Some("{\"prompt_tokens\":17,\"completion_tokens\":7,\"completion_tokens_details\":{\"reasoning_tokens\":4}}"), Some(17), Some(7), "deepseek-fixture"),
+        ("openai", None, None, None, None, "resp-fixture"),
+        ("gemini", None, None, None, None, "gemini-fixture"),
+        ("deepseek", None, None, None, None, "deepseek-fixture"),
+    ] {
+        let (_tree, root, factory) = fixture(&[provider]);
+        let wire = Wire::new(vec![response(provider, model, usage, findings)]);
+        BOUNDARIES.scope(wire.boundaries(), async {
+            let (fire, attempt_id) = dispatch(&factory, &root, "identity").await;
+            complete(&factory, &root, &fire).await;
+            drop(factory);
+            let store = reopen(&root).await;
+            let attempt = result(query_saved(&store, &root, Query::Attempt { attempt: attempt_id.clone() }).await.unwrap());
+            assert_eq!(attempt["observed_host"], provider);
+            assert_eq!(attempt["observed_model"], json!(model), "served identity for {provider}");
+            assert_eq!(attempt["usage"], json!({"input":expected_input,"output":expected_output,"cost":null,"currency":null}));
+            assert_eq!(attempt["requested"]["model"], "requested-alias");
+            assert_eq!(attempt["requested"]["effort"], "high");
+            let original = result(query_saved(&store, &root, Query::Original { original: attempt["original"].as_str().unwrap().into() }).await.unwrap());
+            assert_eq!(original["raw_bytes"], json!(findings.as_bytes()));
+            let inventory = result(query_saved(&store, &root, Query::Inventory {}).await.unwrap());
+            let evidence = &inventory["records"]["provider_evidence"][&attempt_id];
+            assert_eq!(attempt["provider_evidence"], *evidence);
+            assert_eq!(evidence["identity"]["provider"], provider);
+            assert_eq!(evidence["identity"]["response_model"], json!(model));
+            assert_eq!(evidence["identity"]["response_id"], provider_id);
+            assert_eq!(evidence["identity"]["request_id"], "wire-request-1");
+            assert_eq!(evidence["identity"]["native_invocation"], format!("native-invocation:{attempt_id}"));
+            assert_eq!(evidence["identity"]["native_return"], format!("native-response:{attempt_id}"));
+            let observation = &inventory["records"]["observations"][evidence["observation"].as_str().unwrap()];
+            assert_eq!(observation["model"], json!(model));
+            assert_eq!(observation["usage"], attempt["usage"]);
+            assert_eq!(observation["host"], provider);
+            assert_ne!(attempt["host_return"], provider_id);
+            let requests = wire.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            match provider {
+                "gemini" => {
+                    assert_eq!(requests[0].0, "https://generativelanguage.googleapis.com/v1beta/models/requested-alias:generateContent");
+                    assert_eq!(requests[0].1["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high");
+                }
+                _ => assert_eq!(requests[0].1["model"], "requested-alias"),
+            }
+        }).await;
+    }
+}
