@@ -75,18 +75,28 @@ pub async fn run(store: Store, attempt_id: String, environment: Environment) -> 
     let response = transport::request(environment.transport.as_ref(), request, Duration::from_millis(settings.request_timeout_ms)).await;
     let (raw, failure) = match response {
         Err(reason) => (None, Some(reason)),
-        Ok(response) if !(200..300).contains(&response.status) => (None, Some(diagnostics::excerpt(&format!("HTTP {}: {}", response.status, String::from_utf8_lossy(&response.raw))))),
-        Ok(response) => match response.json.as_ref() {
-            None => (None, Some("malformed provider response".into())),
-            Some(json) => {
+        Ok(response) => {
+            // Accounting describes the call, including charged HTTP failures.
+            // Persist it before refusing status; error text is never findings.
+            let extracted = match response.json.as_ref() {
+                Some(json) => {
                 let extracted = super::extract(provider, json);
                 super::records::save_response(&store, &attempt, provider, &response, &extracted).await?;
+                    Some(extracted)
+                }
+                None => None,
+            };
+            if !(200..300).contains(&response.status) {
+                (None, Some(diagnostics::excerpt(&format!("HTTP {}: {}", response.status, String::from_utf8_lossy(&response.raw)))))
+            } else if let Some(extracted) = extracted {
                 match extracted.text {
                     Some(text) => (Some(text.into_bytes()), None),
                     None => (None, Some("missing provider response text".into())),
                 }
+            } else {
+                (None, Some("malformed provider response".into()))
             }
-        },
+        }
     };
     // These are native host event references, not IDs supplied by a provider.
     let return_id = format!("native-response:{attempt_id}");

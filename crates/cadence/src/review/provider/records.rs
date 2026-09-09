@@ -10,6 +10,12 @@ fn safe_identity(value: Option<&str>) -> Option<String> {
 }
 
 pub async fn save_response(store: &Store, attempt: &Attempt, provider: Provider, response: &Acquired, extracted: &Extracted) -> Result<()> {
+    // An acknowledgment retry must retain the first saved accounting, even if
+    // the caller no longer has usable response bytes.
+    let saved = persistence::read(store).await?;
+    if persistence::records(&saved.snapshot.data)?["provider_evidence"].get(&attempt.attempt).is_some() {
+        return Ok(());
+    }
     let accounting = usage::normalize(provider, extracted.usage.as_ref());
     let model = safe_identity(extracted.model.as_deref());
     let response_id = safe_identity(response.json.as_ref()
