@@ -1,5 +1,7 @@
 //! Native cross-model review adapters on the existing delivery lifecycle.
 pub mod credentials;
+pub mod diagnostics;
+pub mod transport;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Provider {

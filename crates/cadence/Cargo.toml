@@ -20,7 +20,9 @@ publish = false
 # cold build.
 [dependencies]
 rmcp = { version = "3.2.0", features = ["server", "macros", "transport-io"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+regex = "1"
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde-saphyr = { version = "1.2.0", default-features = false, features = ["deserialize"] }
@@ -30,7 +32,7 @@ serde-saphyr = { version = "1.2.0", default-features = false, features = ["deser
 # did not author, so neither feature is load-bearing yet; they are declared here
 # rather than later because the config and record layers that will do exactly
 # that must not inherit them from a transitive enable another crate could drop.
-serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip", "arbitrary_precision"] }
 schemars = "1"
 clap = { version = "4", features = ["derive", "env"] }
 libc = "0.2"
