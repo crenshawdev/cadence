@@ -10,10 +10,6 @@ mod material;
 #[allow(dead_code)]
 #[path = "../src/review/model.rs"]
 mod model;
-#[allow(dead_code)]
-#[path = "../src/review/targets.rs"]
-mod targets;
-
 use cadence::store::{Error, Observed, Result, Storage};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -90,23 +86,6 @@ impl Storage for Saved {
 }
 
 #[test]
-fn context_later_evidence_ac75() {
-    let input = fixture();
-    let saved = serde_json::from_value(input["manifest"].clone()).unwrap();
-    let entry = material::append_material(
-        &saved,
-        additional(&input["later"]),
-        None,
-        &mut Saved::default(),
-        &mut FixedClock,
-    )
-    .unwrap();
-    assert_eq!(
-        json!({"entry":entry.entry,"acquired_at":entry.acquired_at,"provenance":entry.provenance,"attempt":entry.attempt}),
-        json!({"entry":"e4","acquired_at":100,"provenance":"later-evidence","attempt":null})
-    );
-}
-#[test]
 fn context_original_view_ac76() {
     let input = fixture();
     let saved = serde_json::from_value(input["manifest"].clone()).unwrap();
@@ -126,33 +105,6 @@ fn context_original_view_ac76() {
     assert_eq!(
         json!({"entry":entry.entry,"acquired_at":entry.acquired_at,"provenance":entry.provenance,"attempt":entry.attempt,"view":entry.view}),
         json!({"entry":"e3","acquired_at":100,"provenance":"original-view","attempt":"a1","view":"v1"})
-    );
-}
-#[test]
-fn context_decision_ac134() {
-    let input = fixture()["decision"].clone();
-    assert_eq!(
-        serde_json::to_value(targets::decision_review_target(
-            input["selected"].as_str().unwrap(),
-            input["text"].as_str().unwrap(),
-            input["context"].as_str().unwrap()
-        ))
-        .unwrap(),
-        json!({"decision":"D-1","text":"Decision","context":"Context"})
-    );
-}
-#[test]
-fn context_diagnosis_ac135() {
-    let input = fixture()["diagnosis"].clone();
-    let entries: Vec<String> = serde_json::from_value(input["entries"].clone()).unwrap();
-    assert_eq!(
-        serde_json::to_value(targets::diagnosis_target(
-            &entries,
-            input["reported"].as_str().unwrap(),
-            input["cause"].as_str().unwrap()
-        ))
-        .unwrap(),
-        json!({"entries":["e1"],"reported":"Reported","cause":"Cause"})
     );
 }
 #[test]

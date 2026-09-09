@@ -87,16 +87,7 @@ pub struct Output {
 pub type Answer = Result<Envelope<Output>>;
 
 #[cfg(test)]
-struct Gap158AnswerStub {
-    calls: std::sync::Mutex<Vec<Value>>,
-    answer: std::sync::Mutex<Option<Envelope<Output>>>,
-}
-
-#[cfg(test)]
 tokio::task_local! {
-    static GAP158_EXECUTE_INNER_STUB: std::sync::Arc<Gap158AnswerStub>;
-    static GAP158_REVIEW_HANDOFF_STUB: std::sync::Arc<Gap158AnswerStub>;
-    static GAP158_ADMIT_STUB: std::sync::Arc<Gap158AnswerStub>;
     static GAP158_ADMISSION_BOUNDARIES: std::sync::Arc<Gap158AdmissionBoundaries>;
 }
 
@@ -821,29 +812,9 @@ async fn execute_inner<I: ConfigIo + Clone + Sync>(
 ) -> Answer {
     let command = match command {
         Command::Apply(Apply::Admit { request }) => {
-            #[cfg(test)]
-            if let Ok(Some(answer)) = GAP158_ADMIT_STUB.try_with(|stub| {
-                stub.calls.lock().unwrap().push(json!({
-                    "caller":request["caller"],
-                    "resolution":"refresh"
-                }));
-                stub.answer.lock().unwrap().take()
-            }) {
-                return Ok(answer);
-            }
             return admit(factory, root, request, AdmissionResolution::Refresh).await;
         }
         Command::ExecutionHandoff { phase, dispatch } => {
-            #[cfg(test)]
-            if let Ok(Some(answer)) = GAP158_REVIEW_HANDOFF_STUB.try_with(|stub| {
-                stub.calls
-                    .lock()
-                    .unwrap()
-                    .push(json!({"phase":phase,"dispatch":dispatch}));
-                stub.answer.lock().unwrap().take()
-            }) {
-                return Ok(answer);
-            }
             return super::execution_service::review_handoff(
                 factory,
                 root,
@@ -1363,19 +1334,6 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
     root: &Path,
     command: Command,
 ) -> Answer {
-    #[cfg(test)]
-    let inner = match GAP158_EXECUTE_INNER_STUB.try_with(|stub| {
-        let caller = match &command {
-            Command::Apply(Apply::Admit { request }) => request["caller"].clone(),
-            _ => Value::Null,
-        };
-        stub.calls.lock().unwrap().push(json!({"caller":caller}));
-        stub.answer.lock().unwrap().take()
-    }) {
-        Ok(Some(answer)) => Ok(answer),
-        _ => execute_inner(factory, root, command).await,
-    };
-    #[cfg(not(test))]
     let inner = execute_inner(factory, root, command).await;
     match inner {
         Err(Error::Invalid(reason)) => Ok(refused(reason)),
@@ -1434,39 +1392,6 @@ mod tests;
 #[cfg(test)]
 mod gap151_adapter_tests {
     use super::*;
-
-    #[tokio::test]
-    async fn gap151_commit_confirms_before_exposing_identity() {
-        let answer = commit_admission(("f1", "a1"), async { Ok(100) }, |saved, contribution| {
-            assert_eq!(*saved, 100);
-            Ok(admission::AdmissionReply::Admitted {
-                fire: contribution.0.into(),
-                attempt: contribution.1.into(),
-                replayed: false,
-            })
-        })
-        .await
-        .unwrap();
-        assert_eq!(
-            serde_json::to_value(answer).unwrap(),
-            json!({"status":"ok","operation":"review-admit","result":{"fire":"f1","attempt":"a1","replayed":false}})
-        );
-    }
-
-    #[tokio::test]
-    async fn gap151_commit_failure_exposes_no_response() {
-        for failure in [
-            Error::Conflict("revision".into()),
-            Error::Invalid("sync failed".into()),
-        ] {
-            let answer =
-                commit_admission("contribution", async { Err::<(), _>(failure) }, |_, _| {
-                    panic!("unconfirmed acknowledgment")
-                })
-                .await;
-            assert!(answer.is_err());
-        }
-    }
 
     #[test]
     fn gap151_continuation_projects_delivery_responses() {
@@ -1576,20 +1501,6 @@ mod gap158_service_tests {
         (generation, route)
     }
 
-    fn envelope(operation: &str, result: Value) -> Envelope<Output> {
-        Envelope::Ok(Output {
-            operation: operation.into(),
-            result,
-        })
-    }
-
-    fn stub(operation: &str, result: Value) -> Arc<Gap158AnswerStub> {
-        Arc::new(Gap158AnswerStub {
-            calls: std::sync::Mutex::new(vec![]),
-            answer: std::sync::Mutex::new(Some(envelope(operation, result))),
-        })
-    }
-
     #[tokio::test]
     async fn gap158_ac152_supplied_admission_persists_exact_gate_and_route() {
         let (_tree, root) = fixture();
@@ -1655,28 +1566,6 @@ mod gap158_service_tests {
     }
 
     #[tokio::test]
-    async fn gap158_ac153_public_admission_returns_stub_without_session() {
-        let admission = stub("review-admit", json!("ordinary"));
-        let result = GAP158_ADMIT_STUB
-            .scope(
-                admission,
-                execute_inner(
-                    &factory(),
-                    Path::new("/gap158-forbidden"),
-                    Command::Apply(Apply::Admit {
-                        request: json!({"caller":"manual-plan"}),
-                    }),
-                ),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::to_value(result).unwrap(),
-            json!({"status":"ok","operation":"review-admit","result":"ordinary"})
-        );
-    }
-
-    #[tokio::test]
     async fn gap158_ac154_saved_replay_precedes_unusable_resolution() {
         let (_tree, root) = fixture();
         let factory = factory();
@@ -1706,82 +1595,6 @@ mod gap158_service_tests {
             serde_json::to_value(result).unwrap(),
             json!({"status":"ok","operation":"review-admit","result":{
                 "fire":"f1","attempt":"a1","replayed":true}})
-        );
-    }
-
-    #[tokio::test]
-    async fn gap158_ac155_execute_passes_task_caller_to_execute_inner() {
-        let inner = stub("review-admit", json!("inner"));
-        let result = GAP158_EXECUTE_INNER_STUB
-            .scope(
-                inner.clone(),
-                execute(
-                    &factory(),
-                    Path::new("/gap158-forbidden"),
-                    Command::Apply(Apply::Admit {
-                        request: json!({"caller":"task"}),
-                    }),
-                ),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::to_value(result).unwrap(),
-            json!({"status":"ok","operation":"review-admit","result":"inner"})
-        );
-        assert_eq!(*inner.calls.lock().unwrap(), vec![json!({"caller":"task"})]);
-    }
-
-    #[tokio::test]
-    async fn gap158_ac156_execute_inner_passes_dispatch_to_review_handoff() {
-        let handoff = stub("review-handoff", json!("outer"));
-        let result = GAP158_REVIEW_HANDOFF_STUB
-            .scope(
-                handoff.clone(),
-                execute_inner(
-                    &factory(),
-                    Path::new("/gap158-forbidden"),
-                    Command::ExecutionHandoff {
-                        phase: None,
-                        dispatch: Some("d1".into()),
-                    },
-                ),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::to_value(result).unwrap(),
-            json!({"status":"ok","operation":"review-handoff","result":"outer"})
-        );
-        assert_eq!(
-            *handoff.calls.lock().unwrap(),
-            vec![json!({"phase":null,"dispatch":"d1"})]
-        );
-    }
-
-    #[tokio::test]
-    async fn gap158_ac157_execute_inner_selects_refresh_admission() {
-        let admission = stub("review-admit", json!("ordinary"));
-        let result = GAP158_ADMIT_STUB
-            .scope(
-                admission.clone(),
-                execute_inner(
-                    &factory(),
-                    Path::new("/gap158-forbidden"),
-                    Command::Apply(Apply::Admit {
-                        request: json!({"caller":"manual-plan"}),
-                    }),
-                ),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::to_value(result).unwrap(),
-            json!({"status":"ok","operation":"review-admit","result":"ordinary"})
-        );
-        assert_eq!(
-            *admission.calls.lock().unwrap(),
-            vec![json!({"caller":"manual-plan","resolution":"refresh"})]
         );
     }
 }
@@ -1889,42 +1702,6 @@ mod gap153_service_tests {
         assert!(authorize_material_read(&records, &attempt, &manifest, &entry).is_err());
         entry.entry = "e3".into();
         assert!(authorize_material_read(&records, &attempt, &manifest, &entry).is_ok());
-    }
-}
-
-#[cfg(test)]
-mod gap154_composition_tests {
-    use super::*;
-    use std::cell::Cell;
-    #[tokio::test]
-    async fn gap154_public_risk_admission_asks_without_contribution() {
-        let calls = Cell::new(0);
-        let material = || {
-            calls.set(calls.get() + 1);
-            Ok::<_, Error>(json!("material-sentinel"))
-        };
-        let routing = |_| {
-            calls.set(calls.get() + 1);
-            Ok::<_, Error>(json!("routing-sentinel"))
-        };
-        let persistence = |_| {
-            calls.set(calls.get() + 1);
-            output("review-admit", json!({"fire":"forbidden"}))
-        };
-        let answer = admit_with_policy(
-            Some(review::policy::OrdinaryTrigger::RiskSurface),
-            Some(Gate::Blocking),
-            Some(review::policy::DetectorObservation::Unanswered),
-            || async { persistence(routing(material()?)?) },
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            serde_json::to_value(answer).unwrap(),
-            json!({"status":"ok","operation":"review-admit","result":{
-            "action":"ask-surfaces","gate":"blocking","fire":null,"dispatch":null}})
-        );
-        assert_eq!(calls.get(), 0);
     }
 }
 

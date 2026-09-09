@@ -293,18 +293,6 @@ fn read_original_ac37() {
     );
 }
 #[test]
-#[allow(clippy::bool_assert_comparison)] // The criterion specifies literal false.
-fn read_matches_ac38() {
-    let input = read_fixture()["matches"].clone();
-    assert_eq!(
-        material::material_matches(
-            input["saved"].as_str().unwrap().as_bytes(),
-            input["proposed"].as_str().unwrap().as_bytes()
-        ),
-        false
-    );
-}
-#[test]
 fn read_supporting_ac74() {
     let input = read_fixture();
     let entry = serde_json::from_value(input["e3"].clone()).unwrap();

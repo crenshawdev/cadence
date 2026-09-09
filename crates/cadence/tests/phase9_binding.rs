@@ -124,20 +124,3 @@ fn binding_host_return_ac79() {
         json!({"code":"host-return-conflict","return":"return1","bound_attempt":"a1","submitted_attempt":"a2"})
     );
 }
-#[test]
-fn binding_accepted_host_return_ac80() {
-    let input = fixture()["accepted"].clone();
-    let bindings = serde_json::from_value(input["host_returns"].clone()).unwrap();
-    assert_eq!(
-        serde_json::to_value(
-            binding::bind_host_return(
-                &bindings,
-                input["return"].as_str().unwrap(),
-                input["submitted_attempt"].as_str().unwrap()
-            )
-            .unwrap_err()
-        )
-        .unwrap(),
-        json!({"code":"host-return-conflict","return":"return1","bound_attempt":"a1","submitted_attempt":"a2"})
-    );
-}

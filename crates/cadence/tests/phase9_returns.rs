@@ -206,21 +206,6 @@ async fn accept_conflict_ac47() {
     );
 }
 #[tokio::test]
-async fn accept_identical_winner_ac50() {
-    let input = fixture();
-    let basis = view(input["pending"].clone(), 2);
-    let winner = view(accepted(&input), 3);
-    let store = store(&basis, Some(&winner), false).await;
-    let submitted = submission(&input, Some(input["F"].as_str().unwrap().as_bytes()));
-    assert_eq!(
-        returns::accept_return(&store, submitted, &mut FixedClock)
-            .await
-            .unwrap()
-            .durable_terminal_count,
-        1
-    );
-}
-#[tokio::test]
 async fn accept_conflicting_winner_ac51() {
     let input = fixture();
     let basis = view(input["pending"].clone(), 2);

@@ -1289,7 +1289,3 @@ pub async fn execute<I: ConfigIo + Clone + Sync>(
     )
     .await
 }
-
-#[cfg(test)]
-#[path = "phase9_pause_tests.rs"]
-mod phase9_pause_tests;

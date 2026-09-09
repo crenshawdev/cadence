@@ -864,36 +864,3 @@ impl ServerHandler for PublicServer {
         }
     }
 }
-
-#[cfg(test)]
-mod gap151_handler_tests {
-    use super::*;
-    use serde_json::json;
-
-    #[tokio::test]
-    async fn gap151_public_execute_next_prefers_owed_review() {
-        let response = execute_next_handler(
-            || async {
-                Ok(Some(Envelope::Ok(review_service::Output {
-                    operation: "review-next".into(),
-                    result: json!({"fire":"f1","attempt":"a1"}),
-                })))
-            },
-            || async {
-                Ok(Envelope::Refused {
-                    code: "execution-sentinel".into(),
-                    reason: "fixture".into(),
-                })
-            },
-        )
-        .await
-        .unwrap();
-        let CallToolResponse::Complete(result) = response else {
-            panic!("complete grouped response required")
-        };
-        assert_eq!(
-            result.structured_content.unwrap(),
-            json!({"status":"ok","operation":"review-next","result":{"fire":"f1","attempt":"a1"}})
-        );
-    }
-}

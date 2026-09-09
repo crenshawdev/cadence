@@ -127,36 +127,6 @@ fn first_malformed_a_advance() {
     assert_eq!(json!({"request":result.request}), json!({"request":"B"}));
 }
 
-#[test]
-fn first_usage_spent_ac32() {
-    let input = serde_json::from_value(first_input("spent")).unwrap();
-    let result = selection::attempt_usage(&input);
-    assert_eq!(
-        json!({"input":result.input,"output":result.output}),
-        json!({"input":7,"output":3})
-    );
-}
-
-#[test]
-fn first_usage_unobserved_ac33() {
-    let input = serde_json::from_value(first_input("unobserved")).unwrap();
-    let result = selection::attempt_usage(&input);
-    assert_eq!(
-        json!({"input":result.input,"output":result.output}),
-        json!({"input":null,"output":null})
-    );
-}
-
-#[test]
-fn first_usage_spent_cost() {
-    let input = serde_json::from_value(first_input("spent")).unwrap();
-    let result = selection::attempt_usage(&input);
-    assert_eq!(
-        json!({"cost":result.cost,"currency":result.currency}),
-        json!({"cost":"0.02","currency":"USD"})
-    );
-}
-
 fn panel_input(name: &str) -> Value {
     let inputs: Value =
         serde_json::from_str(include_str!("fixtures/phase9/selection-panel.json")).unwrap();

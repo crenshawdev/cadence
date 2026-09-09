@@ -132,20 +132,6 @@
       "bytes": 1000
     },
     {
-      "path": "policy-requests.json",
-      "contracts": [
-        "H1",
-        "H1-H5"
-      ],
-      "cases": "manual/automatic plan, task, execute, debug, verify and configured defaults",
-      "joins": [
-        "caller -> admitted gate/routing/home h1"
-      ],
-      "content": "supplied effective policy; no mutable configuration acquisition",
-      "sha256": "dae3ad97a89e4d0c4f727c9935c0a2146044ccff92eb3edf6f4adcebbe5c9270",
-      "bytes": 2263
-    },
-    {
       "path": "policy-actions.json",
       "contracts": [
         "H1",
@@ -327,23 +313,6 @@
       "content": "complete independent saved-record images, absent renderings, original raw bytes and content hashes",
       "sha256": "df928482c13276318521b6817d7be1b0e1868f2d1e40fe688de817ff2440fc1d",
       "bytes": 41278
-    },
-    {
-      "path": "h5-selected-views.json",
-      "contracts": [
-        "H5",
-        "H1-H5",
-        "H4-1"
-      ],
-      "cases": "execute/planned-task revision 2; raw/provisional-selected/settled slots",
-      "joins": [
-        "f1/round1/o1 -> selected o1:0",
-        "o1:1 refuted in supplied selection",
-        "adj1 -> provisional view with fix null; adj2/fix1 -> supplied settled slot"
-      ],
-      "content": "supplied typed values only; no phase-9 adjudication",
-      "sha256": "423f4ba8a6db1fc211404733b3402d647dd0014ab56c8c02f24bb17bbcdbed50",
-      "bytes": 1548
     },
     {
       "path": "h5-inventories.json",

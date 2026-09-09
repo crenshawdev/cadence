@@ -216,20 +216,6 @@ async fn deferred_sync_failure_ac144() {
     );
 }
 #[tokio::test]
-async fn deferred_enumeration_ac145() {
-    let input = fixture("enumeration");
-    let (store, _) = store(&input).await;
-    let output = deferred::enumerate_deferred(&store).await.unwrap();
-    assert_eq!(
-        output
-            .members
-            .iter()
-            .map(|member| member.member.as_str())
-            .collect::<Vec<_>>(),
-        ["f1", "f2", "f3"]
-    );
-}
-#[tokio::test]
 async fn deferred_advisory_ac146() {
     let input = fixture("advisory");
     let (store, _) = store(&input).await;

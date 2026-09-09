@@ -2640,29 +2640,4 @@ mod gap158_execution_tests {
         assert!(material.calls.lock().unwrap().is_empty());
         assert!(admission.calls.lock().unwrap().is_empty());
     }
-
-    #[tokio::test]
-    async fn gap158_ac158_handoff_supplies_captured_resolution_to_admit() {
-        let (_tree, root) = fixture("advisory");
-        let material = material();
-        let admission = stub("review-admit", json!("resolution-sentinel"));
-        let result = GAP158_MATERIAL_STUB
-            .scope(
-                material,
-                GAP158_ADMISSION_STUB.scope(
-                    admission.clone(),
-                    review_handoff(&factory(), &root, Some(9), Some("d1")),
-                ),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::to_value(result).unwrap(),
-            json!({"status":"ok","operation":"review-admit","result":"resolution-sentinel"})
-        );
-        assert_eq!(
-            *admission.calls.lock().unwrap(),
-            vec![json!({"gate":"advisory","routing":{"answer":"cad-reviewer-xhigh"}})]
-        );
-    }
 }

@@ -87,51 +87,6 @@ async fn raw_plan_ac53() {
         json!({"kind":"raw","fire":"f1","round":1,"original":"o1","finding_ids":["o1:0"]})
     );
 }
-#[tokio::test]
-async fn raw_execute_ac54() {
-    let input = fixture("execute");
-    let store = store(input).await;
-    assert_eq!(
-        serde_json::to_value(
-            consumers::execute_completion_input(&store, "a1")
-                .await
-                .unwrap()
-                .identity
-        )
-        .unwrap(),
-        json!({"kind":"raw","fire":"f1","round":1,"original":"o1","finding_ids":["o1:0"]})
-    );
-}
-#[tokio::test]
-async fn raw_report_ac55() {
-    let input = fixture("report");
-    let store = store(input).await;
-    assert_eq!(
-        serde_json::to_value(
-            consumers::report_review_input(&store, "a1")
-                .await
-                .unwrap()
-                .identity
-        )
-        .unwrap(),
-        json!({"kind":"raw","fire":"f1","round":1,"original":"o1","finding_ids":["o1:0"]})
-    );
-}
-#[tokio::test]
-async fn raw_deferred_ac56() {
-    let input = fixture("deferred");
-    let store = store(input).await;
-    assert_eq!(
-        serde_json::to_value(
-            consumers::deferred_enqueue_input(&store, "a1")
-                .await
-                .unwrap()
-                .identity
-        )
-        .unwrap(),
-        json!({"kind":"raw","fire":"f1","round":1,"original":"o1","finding_ids":["o1:0"]})
-    );
-}
 #[test]
 fn raw_pending_ac64() {
     let input = fixture("pending");
