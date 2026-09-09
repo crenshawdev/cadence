@@ -866,6 +866,15 @@ another backend's success does not establish them.
 **Goal.** `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context` and
 `cad-plan` run against the binary, and none of them writes a permanent file.
 
+**Carries `.planning/tools/plan-gate.mjs` into the binary.** The eleven
+acceptance-criteria rules (`docs/rationale/acceptance-criteria.md`) are enforced
+today by that hand-run script, which is its executable spec. This phase owns the
+two authoring points the rules name, so the coverage check in both directions,
+the rule 8 wiring shape and the rule 10 durable-write refusal land here. The
+binary must also carry the rules text itself, to inject into the dispatch
+prompts it builds and to refuse a violating criterion. Open: whether the rules
+are embedded or written into a project where a user could edit them.
+
 This is the largest concentration of prose-owned permanent writes in the frozen
 tree, and it is therefore where the "only the binary writes" rule is actually
 tested. The families it must cover: idempotent initialize and adopt with typed
@@ -926,6 +935,15 @@ are FALSE, scoped to criteria that make a claim about code that already exists.
 
 ### Phase 12: Execution and tasks
 
+**Owns rule 11 of the acceptance-criteria rules.** A criterion asserting an
+absence carries a demonstrated failing variant: the change that should break it
+is made, the failure observed, the change reverted, and the result recorded. A
+plan cannot prove a test failed, so this is `cad-execute`'s obligation on the
+executor, not a planning gate. **Deletes `~/.claude/hooks/rules-gate.mjs` at
+close.** That hook guards hand-assembled dispatch prompts; once this phase's
+executor dispatches are built by the binary from state, the rules are carried by
+construction and the guard has nothing to catch.
+
 **Goal.** `cad-execute` in full and `cad-task` run against the binary, with the
 receipts they produce owned by the binary rather than assembled by a
 coordinator.
@@ -963,6 +981,12 @@ refusal, byte-exact pathname handling and the intentional lockfile and report
 exceptions.
 
 ### Phase 13: Verification and audit
+
+**Carries `.planning/tools/tree-gate.mjs` into the binary.** The gate runs
+after execute and before verify, refusing a production function the range adds
+that has no caller outside test code or no row in a plan's Coverage table. Its
+test detection resolves against the tree rather than the diff; see the header of
+the script, which is its executable spec.
 
 **Goal.** `cad-verify` (with `cad-coverage` folded in), the merged `cad-review`,
 and `cad-audit` run against the binary.

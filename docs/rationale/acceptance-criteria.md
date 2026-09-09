@@ -80,6 +80,36 @@ observed failure with the criterion. A test that never reaches the code it
 constrains passes for the same reason a correct one does, so an absence never
 shown to fail is not evidence.
 
+
+## How these rules are enforced in 4.0, and what is scaffolding until then
+
+The rules are enforced today by three hand-run artifacts. All three are
+temporary, and each has a phase that owns replacing it. This section exists so
+the obligation survives whoever is holding it.
+
+| Enforcing today | Lands in | Why that phase |
+|---|---|---|
+| `.planning/tools/plan-gate.mjs` | Phase 11 | owns `cad-context`, which writes criteria, and `cad-plan`, which writes verifies - the two authoring points these rules name |
+| `.planning/tools/tree-gate.mjs` | Phase 13 | owns `cad-verify` and the phase close; the gate runs after execute and before verify |
+| Rule 11's demonstrated failing variant | Phase 12 | a plan cannot prove a test failed, so `cad-execute` must require it of the executor and record the result |
+| `~/.claude/hooks/rules-gate.mjs` | deleted, not ported | see below |
+
+**The rules text must become product.** It is repo rationale today. For the
+binary to inject it into the dispatch prompts it builds, and to refuse a
+criterion that violates it, the binary has to carry it. Open question, and a
+product call rather than a technical one: whether the binary embeds the rules or
+writes them into a project's `.planning/` where a user could edit them. That
+decides whether a user can opt out of their own criteria discipline.
+
+**The dispatch hook is deleted rather than ported.** `architecture-v4.md`
+already specifies that the dispatch prompt is built by the binary from state.
+The hook exists only because prompts are hand-assembled during the rewrite, so
+once the binary composes them the rules are carried by construction and a
+pre-dispatch guard has nothing left to catch. Remove it when phase 12 closes,
+not at release: until executor dispatches go through the binary it still guards
+a prompt written by hand outside the workflow. It is a personal hook and ships
+in no Cadence version.
+
 ## Rules 10 and 11 were added on 2026-09-08, and they are not retrofitted
 
 Phase 9's AC152 asserted that the supplied admission path reads no current
