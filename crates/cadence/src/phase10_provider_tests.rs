@@ -147,3 +147,111 @@ async fn phase10_empty_provider_result_is_usable() {
         assert_eq!(wire.requests.lock().unwrap()[0].0, "https://api.openai.com/v1/responses");
     }).await;
 }
+
+fn response(provider: &str, model: Option<&str>, usage: Option<&str>, findings: &str) -> Vec<u8> {
+    let mut body = match provider {
+        "openai" => json!({"id":"resp-fixture","output_text":findings}),
+        "gemini" => json!({"responseId":"gemini-fixture","candidates":[{"content":{"parts":[{"text":findings}]}}]}),
+        "deepseek" => json!({"id":"deepseek-fixture","choices":[{"message":{"content":findings}}]}),
+        _ => panic!("unknown fixture provider"),
+    };
+    if let Some(model) = model {
+        body[if provider == "gemini" { "modelVersion" } else { "model" }] = json!(model);
+    }
+    let mut wire = body.to_string();
+    if let Some(usage) = usage {
+        // Insert the hand-authored numeric lexeme without first parsing it.
+        // The production response parser is the first JSON-number boundary.
+        wire.pop();
+        let field = if provider == "gemini" { "usageMetadata" } else { "usage" };
+        wire.push_str(&format!(",\"{field}\":{usage}}}"));
+    }
+    wire.into_bytes()
+}
+
+struct UsageCase {
+    provider: &'static str,
+    raw: Option<String>,
+    input: Option<u64>,
+    output: Option<u64>,
+    states: (&'static str, &'static str),
+    retention: &'static str,
+}
+
+#[tokio::test]
+async fn phase10_invalid_usage_is_unavailable() {
+    let mut cases = vec![];
+    for (provider, input, output) in [
+        ("openai", "input_tokens", "output_tokens"),
+        ("deepseek", "prompt_tokens", "completion_tokens"),
+    ] {
+        cases.push(UsageCase { provider, raw: Some(format!("{{\"{input}\":0,\"{output}\":0}}")),
+            input: Some(0), output: Some(0), states: ("valid", "valid"), retention: "retained" });
+        for invalid in ["1.5", "-1", "\"7\"", "null", "true", "9007199254740992", "18446744073709551616", "9007199254740990.5"] {
+            cases.push(UsageCase { provider, raw: Some(format!("{{\"{input}\":{invalid},\"{output}\":{invalid}}}")),
+                input: None, output: None, states: ("invalid", "invalid"), retention: "retained" });
+        }
+        cases.push(UsageCase { provider, raw: Some(format!("{{\"{input}\":11}}")),
+            input: Some(11), output: None, states: ("valid", "absent"), retention: "retained" });
+        cases.push(UsageCase { provider, raw: None, input: None, output: None,
+            states: ("absent", "absent"), retention: "absent" });
+    }
+    for invalid in ["1.5", "-1", "\"7\"", "null", "false", "9007199254740992", "18446744073709551616", "9007199254740990.5"] {
+        for (candidate, thoughts) in [(invalid, "2"), ("3", invalid)] {
+            cases.push(UsageCase { provider: "gemini",
+                raw: Some(format!("{{\"promptTokenCount\":11,\"candidatesTokenCount\":{candidate},\"thoughtsTokenCount\":{thoughts}}}")),
+                input: Some(11), output: None, states: ("valid", "invalid"), retention: "retained" });
+        }
+    }
+    for (raw, output, output_state) in [
+        ("{\"promptTokenCount\":11,\"candidatesTokenCount\":9007199254740991,\"thoughtsTokenCount\":1}", None, "invalid"),
+        ("{\"promptTokenCount\":11,\"candidatesTokenCount\":3}", None, "absent"),
+        ("{\"promptTokenCount\":11,\"thoughtsTokenCount\":2}", None, "absent"),
+        ("{\"promptTokenCount\":11,\"candidatesTokenCount\":0,\"thoughtsTokenCount\":0}", Some(0), "valid"),
+        ("{\"promptTokenCount\":11,\"candidatesTokenCount\":3,\"thoughtsTokenCount\":2}", Some(5), "valid"),
+    ] {
+        cases.push(UsageCase { provider: "gemini", raw: Some(raw.into()), input: Some(11), output,
+            states: ("valid", output_state), retention: "retained" });
+    }
+    cases.push(UsageCase { provider: "gemini", raw: None, input: None, output: None,
+        states: ("absent", "absent"), retention: "absent" });
+    cases.push(UsageCase { provider: "openai",
+        raw: Some(format!("{{\"input_tokens\":11,\"output_tokens\":5,\"note\":\"{}\"}}", "x".repeat(2049))),
+        input: Some(11), output: Some(5), states: ("valid", "valid"), retention: "oversized" });
+    cases.push(UsageCase { provider: "openai",
+        raw: Some("{\"input_tokens\":11,\"output_tokens\":5,\"apiSecret\":\"must-not-persist\"}".into()),
+        input: Some(11), output: Some(5), states: ("valid", "valid"), retention: "credential-bearing" });
+
+    for (index, case) in cases.into_iter().enumerate() {
+        let (_tree, root, factory) = fixture(&[case.provider]);
+        let wire = Wire::new(vec![response(case.provider, None, case.raw.as_deref(), "{\"findings\":[]}")]);
+        BOUNDARIES.scope(wire.boundaries(), async {
+            let (fire, attempt_id) = dispatch(&factory, &root, &format!("usage-{index}")).await;
+            complete(&factory, &root, &fire).await;
+            drop(factory);
+            let store = reopen(&root).await;
+            let attempt = result(query_saved(&store, &root, Query::Attempt { attempt: attempt_id.clone() }).await.unwrap());
+            assert_eq!(attempt["usage"]["input"], json!(case.input), "input row {index}");
+            assert_eq!(attempt["usage"]["output"], json!(case.output), "output row {index}");
+            assert_eq!(attempt["usage"]["cost"], Value::Null);
+            let original = result(query_saved(&store, &root, Query::Original { original: attempt["original"].as_str().unwrap().into() }).await.unwrap());
+            assert_eq!(original["findings"], json!([]));
+            let inventory = result(query_saved(&store, &root, Query::Inventory {}).await.unwrap());
+            let evidence = &inventory["records"]["provider_evidence"][&attempt_id];
+            let accounting = &evidence["accounting"];
+            assert_eq!(accounting["input"]["state"], case.states.0, "input evidence row {index}");
+            assert_eq!(accounting["output"]["state"], case.states.1, "output evidence row {index}");
+            assert_eq!(accounting["raw_retention"], case.retention, "retention row {index}");
+            assert_eq!(evidence["attempt"], attempt_id);
+            let observation_id = evidence["observation"].as_str().expect("accounting must name an actual observation");
+            assert_eq!(inventory["records"]["observations"][observation_id]["attempt"], attempt_id);
+            if case.retention == "retained" {
+                assert_eq!(accounting["raw_usage"], serde_json::from_str::<Value>(case.raw.as_deref().unwrap()).unwrap());
+            } else {
+                assert_eq!(accounting["raw_usage"], Value::Null);
+            }
+            assert!(!inventory.to_string().contains("must-not-persist"));
+            assert_eq!(wire.requests.lock().unwrap().len(), 1);
+        }).await;
+    }
+}
