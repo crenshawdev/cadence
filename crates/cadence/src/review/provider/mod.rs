@@ -2,6 +2,7 @@
 pub mod credentials;
 pub mod delivery;
 pub mod diagnostics;
+pub mod gemini;
 pub mod openai;
 pub mod payload;
 pub mod transport;
@@ -28,6 +29,7 @@ pub struct Extracted {
 pub fn build_request(provider: Provider, model: &str, effort: Option<&str>, system: &str, user: &str, key: &credentials::Key) -> Result<transport::Request, String> {
     match provider {
         Provider::OpenAi => Ok(openai::request(model, effort, system, user, key)),
+        Provider::Gemini => Ok(gemini::request(model, effort, system, user, key)),
         _ => Err("provider adapter unavailable".into()),
     }
 }
@@ -35,6 +37,7 @@ pub fn build_request(provider: Provider, model: &str, effort: Option<&str>, syst
 pub fn extract(provider: Provider, response: &serde_json::Value) -> Extracted {
     match provider {
         Provider::OpenAi => openai::extract(response),
+        Provider::Gemini => gemini::extract(response),
         _ => Extracted { text: None, model: None, usage: None },
     }
 }
