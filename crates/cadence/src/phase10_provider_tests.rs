@@ -30,12 +30,16 @@ impl transport::Body for Chunks {
 }
 
 struct Wire {
+    status: u16,
     responses: Mutex<VecDeque<Vec<u8>>>,
     requests: Mutex<Vec<(String, Value)>>,
 }
 impl Wire {
     fn new(responses: Vec<Vec<u8>>) -> Arc<Self> {
-        Arc::new(Self { responses: Mutex::new(responses.into()), requests: Mutex::new(vec![]) })
+        Self::with_status(200, responses)
+    }
+    fn with_status(status: u16, responses: Vec<Vec<u8>>) -> Arc<Self> {
+        Arc::new(Self { status, responses: Mutex::new(responses.into()), requests: Mutex::new(vec![]) })
     }
     fn boundaries(self: &Arc<Self>) -> Arc<Boundaries> {
         Arc::new(Boundaries { credentials: Arc::new(Credentials), transport: self.clone() })
@@ -47,7 +51,7 @@ impl transport::Transport for Wire {
             self.requests.lock().unwrap().push((request.url, request.body));
             let bytes = self.responses.lock().unwrap().pop_front().expect("unexpected HTTP spend");
             Ok(transport::Response {
-                status: 200,
+                status: self.status,
                 headers: BTreeMap::from([("x-request-id".into(), "wire-request-1".into())]),
                 body: Box::new(Chunks(bytes.chunks(31).map(<[u8]>::to_vec).collect())),
             })
@@ -176,6 +180,61 @@ struct UsageCase {
     output: Option<u64>,
     states: (&'static str, &'static str),
     retention: &'static str,
+}
+
+async fn failed_attempt(factory: &SessionFactory, root: &Path, attempt: &str) -> Value {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let saved = result(execute(factory, root, Command::Query(Query::Attempt { attempt: attempt.into() })).await.unwrap());
+            if saved["state"] == "failed" { return saved; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("provider did not durably fail")
+}
+
+#[tokio::test]
+async fn phase10_error_status_retains_usage() {
+    for (provider, usage) in [
+        ("openai", Some(r#"{"input_tokens":23,"output_tokens":9}"#)),
+        ("gemini", Some(r#"{"promptTokenCount":23,"candidatesTokenCount":4,"thoughtsTokenCount":5}"#)),
+        ("deepseek", Some(r#"{"prompt_tokens":23,"completion_tokens":9}"#)),
+        ("openai", None),
+    ] {
+        let (_tree, root, factory) = fixture(&[provider]);
+        let mut body: Value = serde_json::from_slice(&response(provider, Some("served-error-model"), usage, r#"{"findings":[]}"#)).unwrap();
+        body["error"] = json!({"message":format!("Authorization: Bearer must-not-persist {}", "x".repeat(5000))});
+        let wire = Wire::with_status(503, vec![serde_json::to_vec(&body).unwrap()]);
+        BOUNDARIES.scope(wire.boundaries(), async {
+            let (_fire, attempt_id) = dispatch(&factory, &root, "http-error").await;
+            let before = failed_attempt(&factory, &root, &attempt_id).await;
+            let inventory = result(execute(&factory, &root, Command::Query(Query::Inventory {})).await.unwrap());
+            drop(factory);
+            let store = reopen(&root).await;
+            let saved = result(query_saved(&store, &root, Query::Attempt { attempt: attempt_id.clone() }).await.unwrap());
+            assert_eq!(saved, before);
+            let recovered = result(query_saved(&store, &root, Query::Inventory {}).await.unwrap());
+            assert_eq!(recovered, inventory);
+            assert_eq!(saved["usage"]["input"], json!(usage.map(|_| 23)), "HTTP 503 input accounting for {provider}");
+            assert_eq!(saved["usage"]["output"], json!(usage.map(|_| 9)));
+            assert_eq!(saved["observed_model"], "served-error-model");
+            assert_eq!(saved["state"], "failed");
+            assert_eq!(saved["original"], Value::Null);
+            let failure = saved["failure"].as_str().unwrap();
+            assert!(failure.contains("HTTP 503"), "{failure}");
+            assert!(failure.contains("<redacted>"));
+            assert!(failure.len() <= 1024);
+            assert!(!recovered.to_string().contains("must-not-persist"));
+            let records = &recovered["records"];
+            assert_eq!(persistence::terminal_count(records, &attempt_id), 1);
+            assert_eq!(records["closures"][&attempt_id]["terminal"], "failed");
+            assert!(records["originals"].as_object().is_none_or(|items| items.is_empty()));
+            let evidence = &records["provider_evidence"][&attempt_id];
+            assert_eq!(evidence["accounting"]["raw_usage"], usage.map(|raw| serde_json::from_str::<Value>(raw).unwrap()).unwrap_or(Value::Null));
+            let observation = &records["observations"][evidence["observation"].as_str().unwrap()];
+            assert_eq!(observation["usage"], saved["usage"]);
+            assert_eq!(wire.requests.lock().unwrap().len(), 1);
+        }).await;
+    }
 }
 
 #[tokio::test]
