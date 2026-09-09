@@ -11,6 +11,7 @@ tokio::task_local! {
 pub(super) struct Boundaries {
     pub credentials: Arc<dyn credentials::Inputs>,
     pub transport: Arc<dyn transport::Transport>,
+    pub sleep: Arc<dyn Fn(Duration) -> transport::Pending<'static, ()> + Send + Sync>,
 }
 
 struct Credentials;
@@ -42,7 +43,8 @@ impl Wire {
         Arc::new(Self { status, responses: Mutex::new(responses.into()), requests: Mutex::new(vec![]) })
     }
     fn boundaries(self: &Arc<Self>) -> Arc<Boundaries> {
-        Arc::new(Boundaries { credentials: Arc::new(Credentials), transport: self.clone() })
+        Arc::new(Boundaries { credentials: Arc::new(Credentials), transport: self.clone(),
+            sleep: Arc::new(|duration| Box::pin(async move { tokio::time::sleep(duration).await; Ok(()) })) })
     }
 }
 impl transport::Transport for Wire {
@@ -364,6 +366,270 @@ async fn phase10_provider_records_observed_identity() {
                 }
                 _ => assert_eq!(requests[0].1["model"], "requested-alias"),
             }
+        }).await;
+    }
+}
+
+#[derive(Default)]
+struct ManualTime {
+    state: Mutex<(u64, Vec<std::task::Waker>)>,
+}
+impl ManualTime {
+    fn advance(&self, millis: u64) {
+        let wake = {
+            let mut state = self.state.lock().unwrap();
+            state.0 += millis;
+            std::mem::take(&mut state.1)
+        };
+        for waker in wake { waker.wake(); }
+    }
+    fn sleep(self: &Arc<Self>, duration: Duration) -> transport::Pending<'static, ()> {
+        let clock = self.clone();
+        let deadline = self.state.lock().unwrap().0 + duration.as_millis() as u64;
+        Box::pin(std::future::poll_fn(move |cx| {
+            let mut state = clock.state.lock().unwrap();
+            if state.0 >= deadline { std::task::Poll::Ready(Ok(())) }
+            else {
+                state.1.push(cx.waker().clone());
+                std::task::Poll::Pending
+            }
+        }))
+    }
+}
+
+struct FailureCredentials {
+    row: &'static str,
+    clock: Arc<ManualTime>,
+}
+impl credentials::Inputs for FailureCredentials {
+    fn env(&self, name: &str) -> Option<String> {
+        if !matches!(name, "OPENAI_API_KEY" | "GEMINI_API_KEY") { return None; }
+        if self.row == "no-key" { return None; }
+        // Preparation consumes 31 seconds before the HTTP deadline begins.
+        if self.row == "outer-expiry/canceled-poll" { self.clock.advance(31_000); }
+        Some("fixture-key".into())
+    }
+    fn read(&self, _: &Path) -> Option<String> { None }
+}
+
+#[derive(Default)]
+struct ReadControl {
+    reading: std::sync::atomic::AtomicUsize,
+    dropped: std::sync::atomic::AtomicUsize,
+    released: std::sync::atomic::AtomicBool,
+    release: tokio::sync::Notify,
+}
+struct DelayedBody {
+    control: Arc<ReadControl>,
+    bytes: Option<Vec<u8>>,
+}
+impl Drop for DelayedBody {
+    fn drop(&mut self) { self.control.dropped.fetch_add(1, std::sync::atomic::Ordering::SeqCst); }
+}
+impl transport::Body for DelayedBody {
+    fn chunk(&mut self) -> transport::Pending<'_, Option<Vec<u8>>> {
+        Box::pin(async move {
+            self.control.reading.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            while !self.control.released.load(std::sync::atomic::Ordering::SeqCst) {
+                self.control.release.notified().await;
+            }
+            Ok(self.bytes.take())
+        })
+    }
+}
+struct FailureWire {
+    row: &'static str,
+    requests: Mutex<Vec<(String, Duration)>>,
+    control: Arc<ReadControl>,
+}
+impl transport::Transport for FailureWire {
+    fn send(&self, request: transport::Request, timeout: Duration) -> transport::Pending<'_, transport::Response> {
+        Box::pin(async move {
+            self.requests.lock().unwrap().push((request.url.clone(), timeout));
+            if self.row == "transport" { return Err("connection refused".into()); }
+            let provider = if request.url.contains("openai.com") { "openai" } else { "gemini" };
+            let bytes = match self.row {
+                "malformed-response" => b"not-json".to_vec(),
+                "missing-text" => b"{}".to_vec(),
+                "oversized-response" => vec![b'x'; 4_194_305],
+                _ => response(provider, None, None, r#"{"findings":[]}"#),
+            };
+            let body: Box<dyn transport::Body> = if matches!(self.row, "native-timeout" | "outer-expiry/canceled-poll") {
+                Box::new(DelayedBody { control: self.control.clone(), bytes: Some(bytes) })
+            } else { Box::new(Chunks(VecDeque::from([bytes]))) };
+            Ok(transport::Response { status: if self.row == "http-error" { 503 } else { 200 },
+                headers: BTreeMap::new(), body })
+        })
+    }
+}
+
+// The external host supplies only its actual launch/return (or launch failure).
+// Selection, local dispatch construction, material reads and acceptance run real.
+async fn local_host(factory: &SessionFactory, root: &Path, dispatch: &Value, outcome: &str) -> (Apply, Value) {
+    assert_eq!(dispatch["dispatch"]["local"], true);
+    assert!(dispatch["guidance"].as_str().unwrap().contains("WAIT"));
+    let attempt: Attempt = serde_json::from_value(dispatch["attempt"].clone()).unwrap();
+    let admission: Admission = serde_json::from_value(dispatch["admission"].clone()).unwrap();
+    let identity = json!({"fire":admission.fire,"occurrence":admission.home.occurrence,
+        "artifact":admission.artifact,"view":attempt.view.view,"attempt":attempt.attempt,"round":attempt.round});
+    let event = |name: &str, kind: &str, launch: Option<&str>, returned: Option<&str>| json!({
+        "observation":format!("local:{}:{name}", attempt.attempt), "attempt":attempt.attempt,
+        "launch":launch,"host_return":returned,"kind":kind,"reference":format!("local-event:{name}"),
+        "observed_at":100,"host":if launch.is_some() {Some("claude-subagent")} else {None},
+        "model":if launch.is_some() {Some("served-local")} else {None},
+        "usage":{"input":null,"output":null,"cost":null,"currency":null},"contract":attempt.contract});
+    let launch = format!("local-launch:{}", attempt.attempt);
+    let returned = format!("local-return:{}", attempt.attempt);
+    let raw = match outcome {
+        "success" => Some(r#"{"findings":[{"file":"subject.rs","line":1,"severity":"medium","claim":"The fixed answer discards configuration.","failure_scenario":"A caller requiring a configured answer receives 42."}]}"#.to_owned()),
+        "malformed" => Some("not-json".into()),
+        _ => None,
+    };
+    let apply = if outcome == "launch-failure" {
+        Apply::Return { identity, launch: None, host_return: None, raw: None, citations: vec![],
+            failure_event: Some(event("launch-failure", "launch-failure", None, None)),
+            host_failure: Some("external host refused launch".into()) }
+    } else {
+        result(execute(factory, root, Command::Apply(Apply::Observation {
+            observation: event("launch", "launch", Some(&launch), None),
+        })).await.unwrap());
+        for entry in &attempt.view.entries {
+            result(execute(factory, root, Command::Query(Query::Material {
+                attempt: attempt.attempt.clone(), entry: entry.clone(),
+            })).await.unwrap());
+        }
+        if raw.is_some() {
+            result(execute(factory, root, Command::Apply(Apply::Observation {
+                observation: event("return", "return", Some(&launch), Some(&returned)),
+            })).await.unwrap());
+        }
+        Apply::Return { identity, launch: Some(launch), host_return: raw.as_ref().map(|_| returned),
+            raw, citations: vec![], failure_event: None, host_failure: None }
+    };
+    let receipt = result(execute(factory, root, Command::Apply(apply.clone())).await.unwrap());
+    assert_eq!(receipt["terminal"], if outcome == "success" { "accepted" } else { "failed" }, "{receipt}");
+    assert_eq!(receipt["durable_terminal_count"], 1);
+    (apply, receipt)
+}
+
+#[tokio::test]
+async fn phase10_fallback_closes_once() {
+    use std::sync::atomic::Ordering::SeqCst;
+    for (row, local) in [
+        ("outer-expiry/canceled-poll", "success"),
+        ("no-key", "success"), ("over-cap", "success"), ("transport", "success"),
+        ("http-error", "success"), ("malformed-response", "success"),
+        ("missing-text", "success"), ("oversized-response", "success"), ("native-timeout", "success"),
+        ("transport", "launch-failure"), ("transport", "missing"), ("transport", "malformed"),
+    ] {
+        let (_tree, root, factory) = fixture(&["openai", "gemini"]);
+        let mut config: Value = serde_json::from_slice(&fs::read(root.join("config.v4.json")).unwrap()).unwrap();
+        if row == "over-cap" { config["review"]["max_prompt_tokens"] = json!(1); }
+        config["review"]["request_timeout_ms"] = json!(if row == "native-timeout" { 100 } else { 600000 });
+        fs::write(root.join("config.v4.json"), serde_json::to_vec(&config).unwrap()).unwrap();
+        let clock = Arc::new(ManualTime::default());
+        let control = Arc::new(ReadControl::default());
+        let wire = Arc::new(FailureWire { row, requests: Mutex::new(vec![]), control: control.clone() });
+        let sleeper = clock.clone();
+        let boundaries = Arc::new(Boundaries {
+            credentials: Arc::new(FailureCredentials { row, clock: clock.clone() }),
+            transport: wire.clone(), sleep: Arc::new(move |duration| sleeper.sleep(duration)),
+        });
+        BOUNDARIES.scope(boundaries.clone(), async {
+            let (fire, first) = dispatch(&factory, &root, row).await;
+            // The admitted order remains authoritative even if config changes.
+            config["review"]["reviewers"] = json!(["deepseek"]);
+            fs::write(root.join("config.v4.json"), serde_json::to_vec(&config).unwrap()).unwrap();
+            let timed = matches!(row, "native-timeout" | "outer-expiry/canceled-poll");
+            let mut attempt_id = first;
+            for ordinal in 1..=2 {
+                if timed {
+                    tokio::time::timeout(Duration::from_secs(2), async {
+                        while control.reading.load(SeqCst) < ordinal { tokio::task::yield_now().await; }
+                    }).await.expect("HTTP read never started");
+                    // Poll once to Pending then drop the request. The provider
+                    // operation must remain resident, independent of that poll.
+                    {
+                        let mut poll = Box::pin(execute(&factory, &root, Command::Query(Query::Next { fire: fire.clone() })));
+                        std::future::poll_fn(|cx| {
+                            assert!(std::future::Future::poll(poll.as_mut(), cx).is_pending());
+                            std::task::Poll::Ready(())
+                        }).await;
+                    }
+                    clock.advance(if row == "native-timeout" { 100 } else { 539_000 });
+                }
+                let failed = tokio::time::timeout(Duration::from_secs(2), failed_attempt(&factory, &root, &attempt_id))
+                    .await.unwrap_or_else(|_| panic!("{row}: expired operation did not durably close after canceled poll within acknowledgment budget"));
+                assert_eq!(failed["state"], "failed", "{row}");
+                if timed {
+                    assert_eq!(control.dropped.load(SeqCst), ordinal, "{row}: actual HTTP body must be canceled");
+                    assert!(failed["failure"].as_str().unwrap().contains(if row == "native-timeout" { "request timed out after 100ms" } else { "provider work timed out after 570000ms" }));
+                }
+                if matches!(row, "no-key" | "over-cap") {
+                    assert_eq!(failed["launch"], Value::Null);
+                    assert_eq!(failed["observed_host"], Value::Null);
+                    assert_eq!(failed["observed_model"], Value::Null);
+                    assert_eq!(failed["usage"], json!({"input":null,"output":null,"cost":null,"currency":null}));
+                }
+                let next = result(execute(&factory, &root, Command::Query(Query::Next { fire: fire.clone() })).await.unwrap());
+                if ordinal == 1 {
+                    assert_eq!(next["state"], "pending");
+                    assert_eq!(next["attempt"]["slot"], "gemini");
+                    attempt_id = next["attempt"]["attempt"].as_str().unwrap().into();
+                } else {
+                    assert_eq!(next["state"], "dispatch", "{row}");
+                    assert_eq!(next["attempt"]["slot"], "claude-subagent");
+                    let (apply, _) = local_host(&factory, &root, &next, local).await;
+                    let replay = result(execute(&factory, &root, Command::Apply(apply)).await.unwrap());
+                    assert_eq!(replay["replayed"], true);
+                    assert_eq!(replay["durable_terminal_count"], 1);
+                }
+            }
+            control.released.store(true, SeqCst);
+            control.release.notify_waiters();
+            clock.advance(30_000);
+            for _ in 0..2 {
+                let terminal = result(execute(&factory, &root, Command::Query(Query::Next { fire: fire.clone() })).await.unwrap());
+                assert_eq!(terminal["delivery"], if local == "success" { "usable-complete" } else { "complete-with-failure" });
+            }
+            let inventory = result(execute(&factory, &root, Command::Query(Query::Inventory {})).await.unwrap());
+            let records = &inventory["records"];
+            assert_eq!(records["issued"].as_object().unwrap().len(), 3);
+            assert_eq!(records["closures"].as_object().unwrap().len(), 3);
+            for id in records["issued"].as_object().unwrap().keys() {
+                assert_eq!(persistence::terminal_count(records, id), 1, "{row} {id}");
+            }
+            let fallback = records["attempts"].as_object().unwrap().values().find(|a| a["slot"] == "claude-subagent").unwrap();
+            if local == "success" {
+                assert_eq!(fallback["observed_host"], "claude-subagent");
+                assert_eq!(fallback["observed_model"], "served-local");
+                let original = result(execute(&factory, &root, Command::Query(Query::Original {
+                    original: fallback["original"].as_str().unwrap().into(),
+                })).await.unwrap());
+                assert_eq!(original["findings"], json!([{"file":"subject.rs","line":1,"severity":"medium",
+                    "claim":"The fixed answer discards configuration.","failure_scenario":"A caller requiring a configured answer receives 42."}]));
+                assert_eq!(records["originals"].as_object().unwrap().len(), 1);
+            } else {
+                assert_eq!(fallback["original"], Value::Null);
+                assert!(records["originals"].as_object().is_none_or(|o| o.is_empty()));
+            }
+            assert_eq!(records["provider_settings"][&fire]["request_timeout_ms"], if row == "native-timeout" {100} else {540000});
+            assert_eq!(records["provider_settings"][&fire]["provider_work_timeout_ms"], 570000);
+            assert_eq!(records["provider_settings"][&fire]["acknowledgment_budget_ms"], 30000);
+            assert_eq!(records["provider_settings"][&fire]["attempt_budget_ms"], 600000);
+            let requests = wire.requests.lock().unwrap();
+            assert_eq!(requests.len(), if matches!(row, "no-key" | "over-cap") {0} else {2});
+            if !requests.is_empty() {
+                assert!(requests[0].0.contains("api.openai.com"));
+                assert!(requests[1].0.contains("generativelanguage.googleapis.com"));
+            }
+            drop(requests);
+            drop(factory);
+            let store = reopen(&root).await;
+            let recovered = result(query_saved(&store, &root, Query::Inventory {}).await.unwrap());
+            assert_eq!(recovered, inventory, "{row}: filesystem recovery");
+            assert_eq!(result(query_saved(&store, &root, Query::Next { fire }).await.unwrap())["delivery"],
+                if local == "success" { "usable-complete" } else { "complete-with-failure" });
         }).await;
     }
 }
