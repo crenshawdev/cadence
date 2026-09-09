@@ -1,5 +1,6 @@
 //! Native cross-model review adapters on the existing delivery lifecycle.
 pub mod credentials;
+pub mod deepseek;
 pub mod delivery;
 pub mod diagnostics;
 pub mod gemini;
@@ -30,7 +31,7 @@ pub fn build_request(provider: Provider, model: &str, effort: Option<&str>, syst
     match provider {
         Provider::OpenAi => Ok(openai::request(model, effort, system, user, key)),
         Provider::Gemini => Ok(gemini::request(model, effort, system, user, key)),
-        _ => Err("provider adapter unavailable".into()),
+        Provider::DeepSeek => Ok(deepseek::request(model, effort, system, user, key)),
     }
 }
 
@@ -38,7 +39,7 @@ pub fn extract(provider: Provider, response: &serde_json::Value) -> Extracted {
     match provider {
         Provider::OpenAi => openai::extract(response),
         Provider::Gemini => gemini::extract(response),
-        _ => Extracted { text: None, model: None, usage: None },
+        Provider::DeepSeek => deepseek::extract(response),
     }
 }
 
