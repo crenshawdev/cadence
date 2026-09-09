@@ -104,7 +104,6 @@ tokio::task_local! {
 struct Gap158AdmissionBoundaries {
     now: u64,
     acquisitions: std::sync::Mutex<u64>,
-    committed: std::sync::Mutex<Option<Value>>,
 }
 
 #[cfg(test)]
@@ -581,24 +580,6 @@ pub(super) async fn admit<I: ConfigIo + Clone + Sync>(
             && session.config()? != *generation
         {
             return Err(Error::Conflict("review routing inputs changed".into()));
-        }
-        #[cfg(test)]
-        if let Ok(committed) = GAP158_ADMISSION_BOUNDARIES.try_with(|boundaries| {
-            let data = transaction
-                .snapshot
-                .clone()
-                .unwrap_or_else(|| view.snapshot.data.clone());
-            *boundaries.committed.lock().unwrap() = Some(data.clone());
-            let mut committed = view.clone();
-            committed.snapshot.data = data;
-            committed
-        }) {
-            return commit_admission(
-                contribution,
-                std::future::ready(Ok(committed)),
-                admission::acknowledge_admission,
-            )
-            .await;
         }
         commit_admission(
             contribution,
@@ -1520,7 +1501,26 @@ mod gap151_adapter_tests {
 #[cfg(test)]
 mod gap158_service_tests {
     use super::*;
-    use std::{fs, path::PathBuf, sync::Arc};
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    #[derive(Clone)]
+    struct CountingConfigIo {
+        reads: Arc<AtomicUsize>,
+    }
+
+    impl ConfigIo for CountingConfigIo {
+        fn read(&mut self, path: &Path) -> Result<crate::config::reload::Input> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            crate::config::reload::FileIo.read(path)
+        }
+    }
 
     fn factory() -> SessionFactory {
         SessionFactory::new(None, Arc::new(|_, _| Ok(())))
@@ -1593,15 +1593,30 @@ mod gap158_service_tests {
     #[tokio::test]
     async fn gap158_ac152_supplied_admission_persists_exact_gate_and_route() {
         let (_tree, root) = fixture();
-        let factory = factory();
-        factory.first_touch(&root).await.unwrap();
-        fs::write(root.join("config.v4.json"), b"{").unwrap();
+        fs::write(
+            root.join("config.v4.json"),
+            serde_json::to_vec(&json!({
+                "roles":{"cad-reviewer":{"model":"sonnet","effort":"high"}},
+                "review":{"triggers":{"diff":{"gate":"blocking"}}}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let reads = Arc::new(AtomicUsize::new(0));
+        let factory = SessionFactory::with_io(
+            None,
+            CountingConfigIo {
+                reads: reads.clone(),
+            },
+            Arc::new(|_, _| Ok(())),
+        );
+        let session = factory.first_touch(&root).await.unwrap();
+        reads.store(0, Ordering::SeqCst);
         let (generation, route) = resolution();
         assert_eq!(route.choice.agent, "cad-reviewer-xhigh");
         let boundaries = Arc::new(Gap158AdmissionBoundaries {
             now: 100,
             acquisitions: std::sync::Mutex::new(0),
-            committed: std::sync::Mutex::new(None),
         });
         let result = GAP158_ADMISSION_BOUNDARIES
             .scope(
@@ -1625,16 +1640,18 @@ mod gap158_service_tests {
                 "fire":"f1","attempt":"f1-a1","replayed":false}})
         );
         assert_eq!(*boundaries.acquisitions.lock().unwrap(), 1);
-        let committed = boundaries.committed.lock().unwrap().clone().unwrap();
+        let view = persistence::read(session.review_store()).await.unwrap();
+        let records = persistence::records(&view.snapshot.data).unwrap();
         assert_eq!(
             json!({
-                "gate":committed["review"]["admissions"]["f1"]["gate"],
-                "routing":committed["review"]["admissions"]["f1"]["routing"]
+                "gate":records["admissions"]["f1"]["gate"],
+                "routing":records["admissions"]["f1"]["routing"]
             }),
             json!({"gate":"advisory","routing":{
                 "answer":"cad-reviewer-xhigh","evidence":"route:f1"}})
         );
-        assert_eq!(committed["review"]["replays"]["k1"]["admitted_at"], 100);
+        assert_eq!(records["replays"]["k1"]["admitted_at"], 100);
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
