@@ -1200,7 +1200,7 @@ binary, GitHub first-class, GH-250 and GH-251 repaired as it lands. Parked
 here 2026-09-09 under the owner's "slow add" rule; it was the second
 deliverable inside the original phase 10.
 
-**Truths, drafted, to be approved at `/cad-context`:** the tracker gets a new
+**Truths, approved by the owner 2026-09-09:** the tracker gets a new
 issue only after a person has chosen to file it; an issue whose exact
 fingerprint already exists on the tracker gets no second issue (GH-251); when
 the local filed record cannot be read, filing still looks up the tracker
