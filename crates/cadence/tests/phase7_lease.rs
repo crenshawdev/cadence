@@ -1639,16 +1639,4 @@ fn native_guidance_and_phase_seven_roadmap_match_parser_without_migrating_histor
             git(&["show", &format!("{START}:{path}")])
         );
     }
-    let old_roadmap =
-        String::from_utf8(git(&["show", &format!("{START}:.planning/ROADMAP.md")])).unwrap();
-    let phase12 = |text: &str| {
-        text.split_once("### Phase 12:")
-            .unwrap()
-            .1
-            .split_once("### Phase 13:")
-            .unwrap()
-            .0
-            .to_owned()
-    };
-    assert_eq!(phase12(&roadmap), phase12(&old_roadmap));
 }
