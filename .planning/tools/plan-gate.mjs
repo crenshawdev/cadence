@@ -20,7 +20,7 @@
 //
 // Scaffolding for the hand-driven 4.0 rewrite. Phase 11 implements this in the
 // binary; this script is its executable spec until then. Exit 1 on any refusal.
-// Rules: docs/rationale/acceptance-criteria.md, "## The nine rules".
+// Rules: docs/rationale/acceptance-criteria.md, "## The eleven rules".
 
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -83,6 +83,31 @@ function wiringShape(text) {
   return problems;
 }
 
+// Rule 10 (Boundary): a criterion may not stub the boundary it asserts about.
+// Narrow on purpose. It fires only on the class that actually shipped a false
+// green: a criterion claiming a value is durable while stubbing the write that
+// would make it durable. Measured over 158 phase-9 criteria it flags exactly the
+// one defective version and nothing in the repaired one. A looser word-overlap
+// check flagged five, four of them topic-word collisions, so it was not shipped.
+const WRITE_SEAM = /\b(commit|commits|persist|persistence|persisted|storage|store|stores|write|writes)\b/i;
+const DURABLE_CLAIM = /\b(durable|durably|persisted|saved to|stored|read back|from the (real )?store)\b/i;
+function stubsItsOwnBoundary(text) {
+  const i = text.search(/Boundaries:/i);
+  if (i < 0) return null;
+  const assertion = text.slice(0, i), bounds = text.slice(i);
+  const stubs = [...bounds.matchAll(/stub(?:bed)?\s+([^;]*)/gi)].map((m) => m[1]).join(" | ");
+  if (!stubs.trim()) return null;
+  if (/exercised for real|for real/i.test(bounds)) return null;   // says outright it is not stubbed
+  if (WRITE_SEAM.test(stubs) && DURABLE_CLAIM.test(assertion)) return stubs.trim();
+  return null;
+}
+
+// Rule 11 (Falsifiability): absence assertions need a demonstrated failing
+// variant. That is a run-time obligation, not statically provable from a plan,
+// so it is reported rather than refused: the count tells the author how many
+// negative controls the execution owes.
+const ABSENCE = /\b(forbid|forbidden|no current|without |never |not call|does not|no new |absent|omits|no second)\b/i;
+
 for (const plan of plans) {
   if (!existsSync(plan)) { fail(plan, "file not found"); continue; }
   const text = readFileSync(plan, "utf8");
@@ -107,6 +132,11 @@ for (const plan of plans) {
       const p = wiringShape(criteria.get(id));
       if (p.length) fail(plan, `${r.fn}: ${id} is not a wiring criterion (rule 8): ${p.join("; ")}`);
     }
+    for (const id of [...u, ...w]) {
+      if (!criteria.has(id)) continue;
+      const s = stubsItsOwnBoundary(criteria.get(id));
+      if (s) fail(plan, `${r.fn}: ${id} asserts a durable value while stubbing the write that makes it durable (rule 10): stubs "${s}"`);
+    }
   }
   // Reverse direction (rule 9): every criterion the plan claims must be owned by
   // a Coverage row. Without this, an out-of-scope criterion with no row passes.
@@ -121,7 +151,13 @@ for (const plan of plans) {
   }
 
   if (!failures.some((f) => f.startsWith(path.relative(process.cwd(), plan))))
+{
+    const cited = [...new Set(rows.flatMap((r) => [...ids(r.unit), ...ids(r.wiring)]))];
+    const absence = cited.filter((id) => criteria.has(id) && ABSENCE.test(criteria.get(id)));
     console.log(`PASS ${path.relative(process.cwd(), plan)}: ${rows.length} functions, each with unit and wiring coverage`);
+    if (absence.length)
+      console.log(`  rule 11: ${absence.length} of ${cited.length} criteria assert an absence and owe a demonstrated failing variant: ${absence.join(", ")}`);
+  }
 }
 
 if (failures.length) {

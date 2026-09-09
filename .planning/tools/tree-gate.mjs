@@ -19,7 +19,7 @@
 //
 // Scaffolding for the hand-driven 4.0 rewrite; the phase that owns closing a
 // phase implements this in the binary. Exit 1 on any refusal.
-// Rules: docs/rationale/acceptance-criteria.md, "## The nine rules".
+// Rules: docs/rationale/acceptance-criteria.md, "## The eleven rules".
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";

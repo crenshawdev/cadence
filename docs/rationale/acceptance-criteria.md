@@ -10,7 +10,7 @@ is found phases later when something cannot pass. These rules are enforced at
 authoring time, in `/cad-context` when criteria are written and `/cad-plan` when
 verifies are written, rather than at audit time when the cost is already sunk.
 
-## The nine rules
+## The eleven rules
 
 **1. Scope.** A phase's acceptance criteria test only the code that phase adds
 or modifies. Existing code is already covered by its own criteria. A phase that
@@ -61,6 +61,41 @@ under rule 8, listed per function in the plan. A function missing either is
 refused when the plan is checked, not found at audit. A function the phase
 only modifies keeps its existing unit criteria and gains a wiring criterion
 for each call site the modification touches.
+
+**10. Boundary.** A criterion may not stub the boundary it asserts about. A seam
+may stand in for a collaborator the criterion is not testing - a clock, a
+network, an unrelated store - but never the one whose behaviour the assertion
+names. If the criterion says a value reaches durable storage, the write runs for
+real and the value is read back from it. If the criterion says a call is not
+made, the code that would make that call runs. A criterion whose stubbed
+boundary appears in its own expected value is refused at planning. Rule 8's
+wiring criteria are the one exception, and only for their named callee: the seam
+IS the subject there, and what crossed it is what is asserted.
+
+**11. Falsifiability.** A criterion that asserts an absence - that a call is not
+made, a value not read, a path not taken - carries a demonstrated failing
+variant. Before it is accepted, the change that should break it is made, the
+test is observed to fail, and the change is reverted. Record the change and the
+observed failure with the criterion. A test that never reaches the code it
+constrains passes for the same reason a correct one does, so an absence never
+shown to fail is not evidence.
+
+## Rules 10 and 11 were added on 2026-09-08, and they are not retrofitted
+
+Phase 9's AC152 asserted that the supplied admission path reads no current
+configuration, and listed "stub ... successful contribution/commit" among its
+boundaries. The test therefore replaced the very commit whose behaviour the
+criterion was about, and passed in a state where release failed. Nothing in
+rules 1 through 9 forbade that: rule 3 requires naming the stubbed boundaries
+and says nothing about which boundary may be stubbed.
+
+The criterion authorized its own bypass, so this was a planning defect rather
+than an execution one. The executor did exactly what the plan specified. Rule 10
+closes it, and rule 11 closes the reason it went unnoticed: an absence assertion
+that is never shown to fail cannot distinguish a passing test from an absent one.
+
+Both bind work authored from 2026-09-08 forward. Phases 1 through 9 are NOT
+retrofitted; phase 9's own instance is recorded as D-67 in its context.
 
 ## Rule 4 was replaced on 2026-09-08, and it is not retrofitted
 
