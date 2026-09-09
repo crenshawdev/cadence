@@ -358,7 +358,7 @@ settled:
 - [x] **Phase 8: Config and routing** - two-layer effective config, the roles interview, retired-key migration, and `route resolve`
 - [x] **Phase 9: Review delivery and identity** - raw reviewer returns persisted by the binary, shared gate settings, first usable review, and durable snapshot identity
 - [x] **Phase 10: Provider port** - the cross-model provider arm in the binary, on phase 9's delivery lifecycle, with GH-237/239/240 repaired
-- [ ] **Phase 11: Planning intake** - `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context`, `cad-plan`
+- [ ] **Phase 11: First approved context** - truths authored through the binary as typed slots, refused at authoring, persisted only on approval
 - [ ] **Phase 12: Execution and tasks** - `cad-execute` in full, and `cad-task`
 - [ ] **Phase 13: Verification and audit** - `cad-verify`, the merged `cad-review` command surface, `cad-audit`
 - [ ] **Phase 14: Receipts and retune** - `cad-progress`, `cad-why`, `cad-suggest`, `cad-capture`
@@ -369,6 +369,15 @@ settled:
 - [ ] **Phase 19: The release path** - a tagged release that publishes four checksum-verified archives, and a SessionStart hook that fetches and installs the pinned binary
 - [ ] **Phase 20: Filing port** - human-chosen issue filing on GitHub with fingerprint deduplication and ambiguous-create reconciliation, GH-250/251 repaired
 - [ ] **Phase 21: Deferred review completion** - carry, retention and verified supersession for deferred reviews, and durable re-arm across restart
+- [ ] **Phase 22: Structured planning documents** - PROJECT, REQUIREMENTS and ROADMAP sections validated and persisted by the binary
+- [ ] **Phase 23: Bootstrap front doors** - `cad-new-project` and `cad-adopt`, idempotent, on the document operations and phase 8's interview
+- [ ] **Phase 24: Small roadmap changes** - `cad-phase` add and edit through the structured roadmap boundary
+- [ ] **Phase 25: Structural phase changes** - `cad-phase` insert and remove with historical-row protection, GH-259 repaired, previews and recovery
+- [ ] **Phase 26: Context revision** - truth versions on changed text, and the approved requirement-correction write
+- [ ] **Phase 27: Plan persistence and allocation** - plans stored at distinct identities with replay-safe number allocation
+- [ ] **Phase 28: Evidence associations** - the evidence map attached to current phase truths, orphans refused
+- [ ] **Phase 29: Check and link limits** - a check needs a command and expected output, one check per truth, links only where the truth names a value
+- [ ] **Phase 30: Plan review handoff** - `cad-plan` fires the review trigger and persists only selected review edits
 
 ## Phase Details
 
@@ -824,7 +833,35 @@ completion is Phase 21. GitLab is out; GitHub is the first-class forge.
 call and one deliberately failed one, observed in the run record; that is an
 observation in the evidence map and caps its truths at `concerns` until seen.
 
-### Phase 11: Planning intake
+### Phase 11: First approved context
+
+**Goal.** A phase's truths are authored through the binary and persisted only
+on the owner's approval. Seven truths in `.planning/phases/11/CONTEXT.md`,
+approved 2026-09-09: an approved submission lands as CONTEXT.md; a truth that
+breaks the sentence shape, names an internal outcome, rests on a model
+answer, or is the eighth in its set is refused at authoring with the rule and
+slot named; an identity collision is refused; and ending without approval
+leaves the prior context unchanged.
+
+**Rescoped 2026-09-09.** The original "Planning intake" phase below overflowed
+the seven-truth cap: fifty candidate truths in ten slices. The first slice is
+this phase; the other nine are phases 22-30, appended in dependency order
+under the owner's "slow add" rule. The text below is kept because phases
+22-30 are contexted from it; where a paragraph names phase 11 it now means
+the slice that owns it.
+
+**How a truth is submitted (D-79).** Typed slots - trigger, observer, verb,
+outcome, kind - rendered by the binary into the one sentence. The binary
+refuses structure it can decide: an "or" in the trigger, a second observer,
+a verb outside sees / gets / is refused, an empty slot, more than seven, a
+reused identity. The internal-name and prose-oracle refusals are the owner's
+attestation on each truth, recorded with the approval; the binary refuses a
+truth without it. This amends the sentence "the binary refuses a set that ...
+names no observer, rests on model prose" below.
+
+---
+
+*Original phase text, now the source for phases 22-30:*
 
 **Goal.** `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context` and
 `cad-plan` run against the binary, and none of them writes a permanent file.
@@ -1231,3 +1268,70 @@ when this phase is contexted.
 Three truths, three checks. The two known holes - a sibling file hiding a
 member (`crates/cadence/src/pause_service.rs:711`) and the extra round
 re-arming after restart - are T1 and T2.
+
+### Phase 22: Structured planning documents
+
+**Goal.** Approved PROJECT, REQUIREMENTS and ROADMAP sections are validated
+and persisted by the binary; a submission that breaks its section schema or
+leaves an active requirement without exactly one roadmap assignment is
+refused with the offender named. Parked from phase 11 on 2026-09-09; the
+first of its nine slices, and the shared write boundary for 23-25. Truths are
+authored when the phase is contexted (candidates T07-T12 in the research
+draft).
+
+### Phase 23: Bootstrap front doors
+
+**Goal.** `cad-new-project` and `cad-adopt` initialize and adopt through the
+phase-22 document operations and phase 8's roles interview, idempotently,
+with typed creation receipts; an unreadable brief or a non-repository root is
+refused. Parked from phase 11 on 2026-09-09 (candidates T01-T06, T12).
+
+### Phase 24: Small roadmap changes
+
+**Goal.** `cad-phase` add and edit go through the structured roadmap
+boundary. Parked from phase 11 on 2026-09-09 (candidates T13-T14).
+
+### Phase 25: Structural phase changes
+
+**Goal.** `cad-phase` insert and remove with approved reference decisions,
+completed-row protection so an insert never rewrites a shipped requirement's
+history (GH-259), an exact preview, and recovery of an interrupted mutation.
+Parked from phase 11 on 2026-09-09 (candidates T15-T20). Until this lands, do
+NOT use `/cad-phase insert` on this repository.
+
+### Phase 26: Context revision
+
+**Goal.** Approved changed truth text yields a new version of the same truth,
+and context intake's approved requirement-wording correction goes through the
+binary, refusing an unserved row. Parked from phase 11 on 2026-09-09
+(candidates T28-T30).
+
+### Phase 27: Plan persistence and allocation
+
+**Goal.** Plans are stored at safe, distinct identities; a mismatched
+identity or an out-of-phase path is refused; number allocation is a
+transaction that a retry cannot double-allocate; replacement needs owner
+authorization. Parked from phase 11 on 2026-09-09 (candidates T31-T37).
+Whether `/cad-plan` may run without approved truths is decided here.
+
+### Phase 28: Evidence associations
+
+**Goal.** A plan's evidence map attaches to the phase's current truths; a
+map that leaves a truth uncovered, an item naming no truth, or an item
+naming a stale truth version is refused. Parked from phase 11 on 2026-09-09
+(candidates T38-T42). Must land before phase 13 needs verdicts.
+
+### Phase 29: Check and link limits
+
+**Goal.** A check without a command or expected output, a second check on
+one truth, and a link its truth does not need are refused. Parked from phase
+11 on 2026-09-09 (candidates T43-T46). Layer 2 of the acceptance design is
+complete only when this lands.
+
+### Phase 30: Plan review handoff
+
+**Goal.** A completed plan reaches the enabled review trigger with its
+reference material, and only owner-selected review edits are persisted into
+the PLAN files, refused against a plan changed since review. Parked from
+phase 11 on 2026-09-09 (candidates T47-T50). Blocked on an explicit
+replacement for the settlement dependency phase 10 dropped.
