@@ -6,7 +6,9 @@ pub mod diagnostics;
 pub mod gemini;
 pub mod openai;
 pub mod payload;
+pub mod records;
 pub mod transport;
+pub mod usage;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Settings {

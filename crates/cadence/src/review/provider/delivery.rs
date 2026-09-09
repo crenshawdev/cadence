@@ -78,10 +78,14 @@ pub async fn run(store: Store, attempt_id: String, environment: Environment) -> 
         Ok(response) if !(200..300).contains(&response.status) => (None, Some(diagnostics::excerpt(&format!("HTTP {}: {}", response.status, String::from_utf8_lossy(&response.raw))))),
         Ok(response) => match response.json {
             None => (None, Some("malformed provider response".into())),
-            Some(json) => match super::extract(provider, &json).text {
-                Some(text) => (Some(text.into_bytes()), None),
-                None => (None, Some("missing provider response text".into())),
-            },
+            Some(json) => {
+                let extracted = super::extract(provider, &json);
+                super::records::save_accounting(&store, &attempt, provider, extracted.usage.as_ref()).await?;
+                match extracted.text {
+                    Some(text) => (Some(text.into_bytes()), None),
+                    None => (None, Some("missing provider response text".into())),
+                }
+            }
         },
     };
     // These are native host event references, not IDs supplied by a provider.
