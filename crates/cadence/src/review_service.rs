@@ -1189,6 +1189,14 @@ pub(super) async fn next(store: &Store, fire: &str) -> Answer {
         if a.state == AttemptState::Intended && records["issued"].get(&a.attempt).is_none() {
             continue;
         }
+        // Selection advances only on the existing durable acknowledgment, for
+        // providers and local returns alike. A terminal-looking attempt alone
+        // is not permission to issue its successor.
+        if matches!(a.state, AttemptState::Accepted | AttemptState::Failed)
+            && records["closures"].get(&a.attempt).is_none()
+        {
+            return Err(Error::Invalid("missing-terminal-closure".into()));
+        }
         let raw = match &a.original {
             Some(id) => Some(
                 String::from_utf8(review::originals::read_original(store, id).await?.raw_bytes)
@@ -1337,7 +1345,8 @@ pub(super) async fn next(store: &Store, fire: &str) -> Answer {
         }
         return output(
             "review-next",
-            json!({"state":"dispatch","dispatch":review::invoking::local_dispatch(&admission,&attempt),"attempt":attempt,"admission":admission}),
+            json!({"state":"dispatch","dispatch":review::invoking::local_dispatch(&admission,&attempt),"attempt":attempt,"admission":admission,
+                "guidance":"WAIT: run this local dispatch once. Forward actual launch and return events with cadence_apply review-observation; forward the unchanged raw return with review-return using this admission/attempt identity. For definite launch failure, use review-return with failure_event and host_failure, without a launch or raw return. For a launched host with no return, forward its observed launch and a missing return. Wait for the durable review-return acknowledgment, then poll review-next. Missing or malformed output is failure."}),
         );
     }
     let mut changed = false;

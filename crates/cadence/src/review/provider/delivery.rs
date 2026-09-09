@@ -47,7 +47,12 @@ pub async fn run(store: Store, attempt_id: String, environment: Environment) -> 
     let records = persistence::records(&persistence::read(&store).await?.snapshot.data)?;
     let admission: Admission = persistence::get(&records, "admissions", &persistence::get::<Attempt>(&records, "attempts", &attempt_id)?.fire)?;
     let attempt: Attempt = persistence::get(&records, "attempts", &attempt_id)?;
-    if records["issued"].get(&attempt_id).is_none() || attempt.launch.is_some() || records["closures"].get(&attempt_id).is_some() {
+    // A callback after acknowledgment (including a lost acknowledgment) reads
+    // the saved terminal result. It never authorizes another paid request.
+    if records["closures"].get(&attempt_id).is_some() {
+        return Ok(());
+    }
+    if records["issued"].get(&attempt_id).is_none() || attempt.launch.is_some() {
         return Err(Error::Invalid("provider attempt is not newly issued".into()));
     }
     let provider = Provider::parse(&attempt.requested.agent).ok_or_else(|| Error::Invalid("not a provider voice".into()))?;
@@ -80,8 +85,8 @@ pub async fn run(store: Store, attempt_id: String, environment: Environment) -> 
             // Persist it before refusing status; error text is never findings.
             let extracted = match response.json.as_ref() {
                 Some(json) => {
-                let extracted = super::extract(provider, json);
-                super::records::save_response(&store, &attempt, provider, &response, &extracted).await?;
+                    let extracted = super::extract(provider, json);
+                    super::records::save_response(&store, &attempt, provider, &response, &extracted).await?;
                     Some(extracted)
                 }
                 None => None,
@@ -98,14 +103,20 @@ pub async fn run(store: Store, attempt_id: String, environment: Environment) -> 
             }
         }
     };
+    finish(&store, &admission, &attempt, raw, failure).await
+}
+
+async fn finish(store: &Store, admission: &Admission, attempt: &Attempt, raw: Option<Vec<u8>>, failure: Option<String>) -> Result<()> {
+    let attempt_id = &attempt.attempt;
+    let launch_id = attempt.launch.clone().unwrap_or_else(|| format!("native-invocation:{attempt_id}"));
     // These are native host event references, not IDs supplied by a provider.
     let return_id = format!("native-response:{attempt_id}");
-    let mut returned = event(&attempt, "return", ObservationKind::Return);
+    let mut returned = event(attempt, "return", ObservationKind::Return);
     returned.launch = Some(launch_id.clone());
     returned.host_return = Some(return_id.clone());
-    attempts::record_observation(&store, returned, &mut WallClock).await?;
-    returns::accept_return(&store, returns::ReturnSubmission {
-        identity: identity(&admission, &attempt), launch: launch_id,
+    attempts::record_observation(store, returned, &mut WallClock).await?;
+    returns::accept_return(store, returns::ReturnSubmission {
+        identity: identity(admission, attempt), launch: launch_id,
         host_return: Some(return_id), raw, host_failure: failure, citations: vec![],
     }, &mut WallClock).await.map_err(|error| Error::Invalid(format!("provider return acknowledgment: {error:?}")))?;
     Ok(())
