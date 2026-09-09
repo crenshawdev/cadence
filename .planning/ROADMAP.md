@@ -866,14 +866,19 @@ another backend's success does not establish them.
 **Goal.** `cad-new-project`, `cad-adopt`, `cad-phase`, `cad-context` and
 `cad-plan` run against the binary, and none of them writes a permanent file.
 
-**Carries `.planning/tools/plan-gate.mjs` into the binary.** The eleven
-acceptance-criteria rules (`docs/rationale/acceptance-criteria.md`) are enforced
-today by that hand-run script, which is its executable spec. This phase owns the
-two authoring points the rules name, so the coverage check in both directions,
-the rule 8 wiring shape and the rule 10 durable-write refusal land here. The
-binary must also carry the rules text itself, to inject into the dispatch
-prompts it builds and to refuse a violating criterion. Open: whether the rules
-are embedded or written into a project where a user could edit them.
+**Builds the acceptance subsystem's first two layers**
+(`docs/architecture/acceptance.md`). `cad-context` authors the phase's
+truths with the owner - at most seven, each "When <trigger>, <observer>
+sees / gets / is refused <outcome>" - and the binary refuses a set that is
+not in that shape, names no observer, rests on model prose, or exceeds seven.
+`cad-plan` builds the evidence map: one check per truth, artifacts for what
+must exist, links only where a truth names a value crossing; the binary
+refuses a truth with no check, an item with no truth, a check without a
+command and expected output, and a link its truth does not need. Each task's
+verify names the narrowest command that settles it. Every instruction these
+roles see is compiled into the binary; the `.md` Claude Code requires is
+rendered from it; there is no user override. The hand-run
+`.planning/tools/plan-gate.mjs` is retired, not ported.
 
 This is the largest concentration of prose-owned permanent writes in the frozen
 tree, and it is therefore where the "only the binary writes" rule is actually
@@ -913,36 +918,34 @@ follow config's Roles interview, which is phase 8. `cad-plan` does not own plan
 review - it fires the trigger from phase 9 and obeys the settlement from phase
 10. Crediting either to this phase would hide a dependency rather than remove it.
 
-**Acceptance criteria are validated here, not audited later.** The seven
-authoring rules in `docs/rationale/acceptance-criteria.md` are binding from
-phase 8 onward, and this phase is where they become machine-enforced: the binary
-validates a submitted criterion and returns a typed refusal naming the rule it
-breaks and the element it is missing, rather than persisting a malformed
-criterion for a later audit to find. Two consequences for this phase's own
-surface. The prompt the binary emits to the authoring agent must CARRY the rules
-- a rule that lives only in a reference file the agent never reads does not
-reach the agent doing the writing, which is how the phase-7 live probe was
-authored in the first place. And rule 7 needs a destination: an item that cannot
-be expressed as input to output is routed to `.planning/phases/<N>/MANUAL.md`
-with its original AC number preserved, never deleted, and the frozen tree's
-`(human-verify: needs <tool/service>)` tag is not reintroduced.
+**Truths are refused at authoring, never audited later.** A malformed truth
+comes back as a typed refusal naming the rule it broke and the slot it is
+missing, in the same envelope as every other answer, and nothing is
+persisted until the owner approves the set. An item that needs a person or a
+live system is an `observation` in the evidence map, visible, never routed
+out of sight; the frozen tree's `(human-verify: ...)` tag is not reintroduced.
 
-**The plan gate stays on Claude.** The plan IS the verification instrument, so
-if the same agent authors the criteria and executes against them there is no
-independent check left. What moved is the grounding: a falsification pass reads
-a finished plan against the frozen tree and reports which acceptance criteria
-are FALSE, scoped to criteria that make a claim about code that already exists.
+**The falsification pass stays on Claude.** The plan is the verification
+instrument, so if the same agent authors the evidence map and executes
+against it there is no independent check left. A falsification pass reads a
+finished plan against the frozen tree and reports which evidence items make
+a FALSE claim about code that already exists.
 
 ### Phase 12: Execution and tasks
 
-**Owns rule 11 of the acceptance-criteria rules.** A criterion asserting an
-absence carries a demonstrated failing variant: the change that should break it
-is made, the failure observed, the change reverted, and the result recorded. A
-plan cannot prove a test failed, so this is `cad-execute`'s obligation on the
-executor, not a planning gate. **Deletes `~/.claude/hooks/rules-gate.mjs` at
+**Owns the executor's side of the acceptance design.** For every check a
+task delivers, the executor writes the test first, records the commit where
+it failed, implements, and records the commit where it passed; the binary
+refuses a task close with either missing, or with a check that stubs its own
+subject. The executor runs only what the task names while working and the
+full suite once per plan, at the close. When the project has set no test
+style it is given the classical default as guidance - test a unit through
+what it exposes, fake only files, clock, other programs and network, skip
+trivial code, write the expected value by hand - and nothing about style is
+ever refused or counted. **Deletes `~/.claude/hooks/rules-gate.mjs` at
 close.** That hook guards hand-assembled dispatch prompts; once this phase's
-executor dispatches are built by the binary from state, the rules are carried by
-construction and the guard has nothing to catch.
+executor dispatches are built by the binary from state, the role text is
+carried by construction and the guard has nothing to catch.
 
 **Goal.** `cad-execute` in full and `cad-task` run against the binary, with the
 receipts they produce owned by the binary rather than assembled by a
@@ -982,11 +985,19 @@ exceptions.
 
 ### Phase 13: Verification and audit
 
-**Carries `.planning/tools/tree-gate.mjs` into the binary.** The gate runs
-after execute and before verify, refusing a production function the range adds
-that has no caller outside test code or no row in a plan's Coverage table. Its
-test detection resolves against the tree rather than the diff; see the header of
-the script, which is its executable spec.
+**Owns the verdict.** The verifier is handed the phase's truths and their
+evidence map, inspects every item for real - opens the artifact, runs the
+check, traces the link, records the observation - and returns one verdict
+per item: accepted, rejected or not seen, with what it observed. The binary
+derives each truth's status from the verdicts: all accepted and no
+observation is `met`; all accepted with an observation is `concerns`; any
+rejected or unseen is `unmet`. The verifier has no field for a phase-level
+pass. The owner may waive a truth with a reason, a name and a date, reported
+as waived beside the met ones and never among them. Rejected evidence stays
+visible with why. CI status is shown at landing as information in its own
+column, never as evidence. The hand-run `.planning/tools/tree-gate.mjs` is
+retired, not ported; the evidence map's artifact and link inspection is what
+replaces "does this function have a caller".
 
 **Goal.** `cad-verify` (with `cad-coverage` folded in), the merged `cad-review`,
 and `cad-audit` run against the binary.
@@ -1000,10 +1011,11 @@ aliases. What this phase adds is the target selection and the prompt per target;
 the trigger, the dispatch, the provider arm and the adjudication were built in
 phases 9 and 10 and are fired, not reimplemented.
 
-**The verifier stops writing its own findings file.** It submits findings to the
-binary, which stores input provenance and the merge or rejected-entry result.
-Two semantic records may still be worth keeping - what was claimed and what was
-rejected - but "two files, two writers" is the obsolete part, not the evidence.
+**The verifier stops writing its own findings file.** It submits verdicts to
+the binary as a patch, and the binary stores input provenance and the
+accepted or rejected result per item. What was claimed and what was rejected
+both remain on the record; "two files, two writers" is the obsolete part,
+not the evidence.
 
 **A human UAT result must never be overwritten by a verifier**, and only full
 completion advances status. Binary persistence does not turn a model claim into

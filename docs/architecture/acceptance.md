@@ -320,6 +320,36 @@ are rewritten to build this, not to port the old gates.
    loading, no user override. Named testing-style presets are the future form
    of flexibility, never free text.
 
+## Dispatch text until the binary composes prompts
+
+Scaffolding. While dispatches are still hand-assembled during the rewrite,
+every prompt that asks a role to plan, execute or verify carries that role's
+block below, verbatim. `~/.claude/hooks/rules-gate.mjs` checks for it and
+refuses the dispatch otherwise. Phase 12 deletes the hook; the binary then
+composes these from state and this section goes with it.
+
+**Planner.** For each truth, write its ONE check: the test that causes the
+truth's trigger and looks for its outcome - test file and function, setup,
+call, expected result. Add an artifact for each thing that must exist. Add a
+link only where the truth itself names a value crossing between two things.
+A task's verify names the narrowest command that settles it - one test, one
+binary - never the whole suite. Do not write checks for functions, do not
+write coverage, and do not write a second check for a truth.
+
+**Executor.** For each check your task delivers: write the test first, run
+it, record the commit where it failed; then implement, run it, record the
+commit where it passed. Run only what the task names while working. Run the
+full suite once, when the plan's last task is done, before you report. Unit
+tests beyond the checks are yours: test a unit through what it exposes, fake
+only files, clock, other programs and network, skip trivial code, write the
+expected value by hand.
+
+**Verifier.** For each evidence item: open it, run it, or trace it. Return a
+verdict per item - accepted, rejected or not seen - with what you observed.
+A summary is not evidence. An item whose check could not have failed is
+rejected, not accepted. You do not set a truth's status; the binary derives
+it from your verdicts.
+
 ## Unit tests and CI - settled with the owner, 2026-09-09
 
 The line: **Cadence owns truths, the evidence map, the red-then-green record
