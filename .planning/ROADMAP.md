@@ -1212,7 +1212,22 @@ later reconciliation resolves it. GitLab lookup is not owed.
 **Goal.** Complete the half-built deferred-review capability: carry and
 retention across every admitted home, supersession only by matching valid
 settlement (never a sibling file), and a one-extra-round allowance consumed
-durably so a restart cannot re-arm an exhausted fire. Parked here 2026-09-09;
-binding decision D-78 from the 2026-09-07 phase-10 context
-(`998f2187:.planning/phases/10/CONTEXT.md`) carries forward when this phase
-is contexted.
+durably so a restart cannot re-arm an exhausted fire. Parked here 2026-09-09
+under the owner's "slow add" rule; binding decision D-78 from the 2026-09-07
+phase-10 context (`998f2187:.planning/phases/10/CONTEXT.md`) carries forward
+when this phase is contexted.
+
+**Truths, approved by the owner 2026-09-09:**
+
+- T1. When a deferred review has no settlement that matches its fire, round
+  and recorded voices, the next-action reader still lists it, whatever files
+  sit beside it.
+- T2. When a fix answer has used its one extra review round, a restarted
+  session is refused a further round for that fire.
+- T3. When a deferred review is admitted in any home the binary knows, a
+  later session in that home finds it with its originals and lifecycle state
+  intact.
+
+Three truths, three checks. The two known holes - a sibling file hiding a
+member (`crates/cadence/src/pause_service.rs:711`) and the extra round
+re-arming after restart - are T1 and T2.
