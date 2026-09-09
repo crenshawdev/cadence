@@ -1,15 +1,5 @@
-#[allow(dead_code)]
-#[path = "../src/review/io.rs"]
-mod io;
-#[allow(dead_code)]
-#[path = "../src/review/manifest.rs"]
-mod manifest;
-#[allow(dead_code)]
-#[path = "../src/review/material.rs"]
-mod material;
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
+use cadence::review::{io, material, model};
+
 use cadence::store::{Error, Observed, Result, Storage};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;

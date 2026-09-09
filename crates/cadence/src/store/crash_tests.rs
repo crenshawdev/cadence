@@ -1,9 +1,6 @@
 //! Real-process tests of the production store. Barriers live only in this driver.
-// Compile the exact production source with cfg(test), so sync omissions and the
-// pre-send marker cannot exist in a shipped library or binary. No writer is copied.
-#[allow(dead_code)]
-#[path = "../src/store/mod.rs"]
-mod production_store;
+// The library test harness owns the driver and its test-only store hooks.
+use crate::store as production_store;
 use production_store::filesystem::{Filesystem, Stage};
 use production_store::model::{
     Decision, DecisionRecord, Disposition, Evidence, ItemRecord, Origin, VERSION,
@@ -124,7 +121,7 @@ fn crash_child() {
 
 fn kill_at(root: &Path, stage: &str, target: &str, mode: &str) {
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "crash_child", "--nocapture"])
+        .args(["--exact", "store::crash_tests::crash_child", "--nocapture"])
         .env("CADENCE_CRASH_ROOT", root)
         .env("CADENCE_CRASH_STAGE", stage)
         .env("CADENCE_CRASH_TARGET", target)
@@ -231,7 +228,7 @@ fn acknowledged_operations_survive_normal_process_restart() {
     let root = tempfile::tempdir().unwrap();
     for mode in ["write", "read"] {
         let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "crash_child", "--nocapture"])
+            .args(["--exact", "store::crash_tests::crash_child", "--nocapture"])
             .env("CADENCE_CRASH_ROOT", root.path())
             .env("CADENCE_CRASH_STAGE", "disabled")
             .env("CADENCE_CRASH_TARGET", "state.json")
@@ -506,7 +503,7 @@ fn ac8_syscall_order() {
             .args(["-f", "-yy", "-o"])
             .arg(&trace_file)
             .arg(std::env::current_exe().unwrap())
-            .args(["--exact", "crash_child", "--nocapture"])
+            .args(["--exact", "store::crash_tests::crash_child", "--nocapture"])
             .env("CADENCE_CRASH_ROOT", root.path())
             .env("CADENCE_AC8_MODE", mode)
             .stdin(Stdio::null())

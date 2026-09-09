@@ -1,18 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/review/io.rs"]
-mod io;
-#[allow(dead_code)]
-#[path = "../src/review/attempts.rs"]
-mod attempts;
-#[allow(dead_code)]
-#[path = "../src/review/binding.rs"]
-mod binding;
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
-#[allow(dead_code)]
-#[path = "../src/review/persistence.rs"]
-mod persistence;
+use cadence::review::{attempts, binding};
 
 use cadence::store::model::{DECISIONS, ITEMS, STATE, Snapshot};
 use cadence::store::writer::{PlanningPolicy, Store};

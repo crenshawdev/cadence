@@ -1,18 +1,5 @@
-#[allow(dead_code)]
-#[path = "../src/review/deferred.rs"]
-mod deferred;
-#[allow(dead_code)]
-#[path = "../src/review/io.rs"]
-mod io;
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
-#[allow(dead_code)]
-#[path = "../src/review/originals.rs"]
-mod originals;
-#[allow(dead_code)]
-#[path = "../src/review/persistence.rs"]
-mod persistence;
+use cadence::review::{deferred, io};
+
 use cadence::store::model::{DECISIONS, ITEMS, STATE, Snapshot};
 use cadence::store::writer::{PlanningPolicy, Store};
 use cadence::store::{Error, Observed, Result, Storage};

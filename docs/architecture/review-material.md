@@ -77,7 +77,7 @@ H2 direct checks, from the repository root:
 ```sh
 TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase9_material retain_
 TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase9_material read_
-TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase9_manifest source_
+TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --lib review::manifest
 TMPDIR=/tmp RUSTC_WRAPPER= cargo test -p cadence --test phase9_context context_
 ```
 

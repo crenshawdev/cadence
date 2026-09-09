@@ -1,5 +1,7 @@
+#[path = "config/binary.rs"]
 pub mod config;
 mod guard;
+#[path = "import/binary.rs"]
 pub mod import;
 mod review_hook;
 mod review_ingress;

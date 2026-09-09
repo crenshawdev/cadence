@@ -1,5 +1,4 @@
-#[path = "../src/review/stream.rs"]
-mod stream;
+use cadence::review::stream;
 
 use serde_json::{Value, json};
 use std::io::{self, Read};

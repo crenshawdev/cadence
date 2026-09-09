@@ -260,13 +260,8 @@ fn recovery_refuses_foreign_participant_bytes_before_replacement() {
     assert!(!root.path().join("state.json").exists());
 }
 
-// Include binary-owned import/config modules to exercise the production factory.
-#[allow(dead_code)]
-#[path = "../src/config/mod.rs"]
-mod config;
-#[allow(dead_code)]
-#[path = "../src/import/mod.rs"]
-mod import;
+// Exercise the production factory through the library modules.
+use cadence::{config, import};
 use cadence::store::writer::audit::{self, Audit, Outcome, Unavailable, Verb};
 fn audit_event(root: &Path, id: &str) -> Audit {
     Audit {

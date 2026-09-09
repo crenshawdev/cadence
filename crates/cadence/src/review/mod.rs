@@ -24,3 +24,6 @@ pub mod specialist;
 pub mod stream;
 pub mod targets;
 pub mod views;
+
+#[cfg(test)]
+mod manifest_tests;

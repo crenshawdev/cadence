@@ -1,9 +1,5 @@
-#[allow(dead_code)]
-#[path = "../src/review/inventory.rs"]
-mod inventory;
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
+use cadence::review::inventory;
+
 use serde_json::{Value, json};
 fn fixture(name: &str) -> Vec<inventory::InventoryEntry> {
     let input: Value =

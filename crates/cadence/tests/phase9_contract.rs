@@ -1,12 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/review/contract.rs"]
-mod contract;
-#[allow(dead_code)]
-#[path = "../src/review/io.rs"]
-mod io;
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
+use cadence::review::contract;
 
 use contract::{classify_return, validate_findings};
 use serde_json::{Value, json};

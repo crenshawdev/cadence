@@ -1,9 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
-#[allow(dead_code)]
-#[path = "../src/review/specialist.rs"]
-mod specialist;
+use cadence::review::{model, specialist};
 
 use serde_json::{Value, json};
 

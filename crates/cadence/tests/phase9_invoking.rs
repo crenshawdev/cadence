@@ -1,9 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/review/invoking.rs"]
-mod invoking;
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
+use cadence::review::{invoking, model};
 
 #[test]
 fn advisory_retained_read_only_contract() {

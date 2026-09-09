@@ -115,11 +115,14 @@ From the project root, with `TMPDIR=/tmp CARGO_NET_OFFLINE=true RUSTC_WRAPPER=`:
 | Owning plan | Named cargo check targets |
 |---|---|
 | 1 | `cargo check -p cadence --test phase9_contract --test phase9_stream` |
-| 2 | `cargo check -p cadence --test phase9_material --test phase9_manifest --test phase9_context` |
+| 2 | `cargo check -p cadence --test phase9_material --test phase9_context` |
 | 3 | `cargo check -p cadence --test phase9_policy --test phase9_selection --test phase9_specialist` |
 | 4 | `cargo check -p cadence --test phase9_admission --test phase9_binding --test phase9_observations --test phase9_returns --test phase9_recovery` |
 | 5 | `cargo check -p cadence --test phase9_consumers --test phase9_views --test phase9_inventory --test phase9_deferred` |
 | 6 T1 | `cargo test -p cadence --test phase9_forward forward_` |
+
+The manifest checks belong to the library test binary; compile them with
+`cargo test -p cadence --lib review::manifest --no-run`.
 
 These are local module checks. Installed tool loading, hook behavior and native
 producer/restart episodes remain in the phase's manual checklist.

@@ -1,4 +1,3 @@
-//! Two persisted layers; defaults and migration evidence are never a layer.
 pub mod floor;
 pub mod interview;
 pub mod merge;
@@ -90,9 +89,6 @@ pub fn capture_report(records: &[cadence::store::model::ItemRecord], bound: u64)
         unit: "items",
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 pub fn planning_policy(
     context: &cadence::store::MutationContext<'_>,

@@ -1,15 +1,5 @@
-#[allow(dead_code)]
-#[path = "../src/review/consumers.rs"]
-mod consumers;
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
-#[allow(dead_code)]
-#[path = "../src/review/originals.rs"]
-mod originals;
-#[allow(dead_code)]
-#[path = "../src/review/persistence.rs"]
-mod persistence;
+use cadence::review::consumers;
+
 use cadence::store::model::{DECISIONS, ITEMS, STATE, Snapshot};
 use cadence::store::writer::{PlanningPolicy, Store};
 use cadence::store::{Observed, Result, Storage};

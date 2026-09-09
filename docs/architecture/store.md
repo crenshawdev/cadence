@@ -95,7 +95,7 @@ of successful file and directory synchronization before acknowledgement.
 
 ## Process-kill regression guard (AC4)
 
-`cargo test -p cadence --test store_crash` drives the production writer in child
+`cargo test -p cadence --lib store::crash_tests` drives the production writer in child
 processes. Test-driver callbacks park at partial temporary writing, completed
 file synchronization, rename before directory synchronization, and completed
 directory synchronization before reply. The parent observes a barrier and sends
@@ -103,7 +103,7 @@ SIGKILL, then compares every semantic target with independently recorded complet
 old/new byte strings. Initial creation uses absence as the old candidate. Replay
 is also killed at deterministic production stages. Acknowledged operations
 survive a normal child restart; stable operation retries do not duplicate records.
-The callbacks that block or kill are confined to the integration-test driver;
+The callbacks that block or kill are confined to the library test driver;
 normal filesystem construction has a no-op observer and no process barriers.
 
 This guards the old-or-new property already provided by frozen `atomicWrite`'s
@@ -115,7 +115,7 @@ failure and do not prove AC8's successful-fsync-before-acknowledgement ordering.
 
 ## Synchronization ordering fixture (AC8)
 
-Run `cargo test -p cadence --test store_crash ac8_syscall_order` on Linux with
+Run `cargo test -p cadence --lib store::crash_tests::ac8_syscall_order` on Linux with
 `strace` installed and permission to trace a spawned child. The fixture runs
 `strace -f -yy -o <trace>` without status filtering, so all threads share one
 ordered output. Missing strace, denied tracing, or missing request markers is

@@ -65,7 +65,7 @@ mod execution_service_tests;
 #[path = "rail_service.rs"]
 pub mod rail_service;
 
-#[path = "config_service.rs"]
+#[path = "config_service_binary.rs"]
 pub mod config_service;
 
 #[path = "review_service.rs"]

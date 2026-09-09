@@ -1,9 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
-#[allow(dead_code)]
-#[path = "../src/review/policy.rs"]
-mod policy;
+use cadence::review::policy;
 
 use serde_json::{Value, json};
 

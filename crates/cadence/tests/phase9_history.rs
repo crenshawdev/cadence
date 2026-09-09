@@ -1,6 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/review/history.rs"]
-mod history;
+use cadence::review::history;
 
 struct SavedBytes;
 impl history::HistoricalIo for SavedBytes {

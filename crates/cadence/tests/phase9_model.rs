@@ -1,6 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
+use cadence::review::model;
 
 use model::RequestedVoice;
 use serde_json::{Value, json};

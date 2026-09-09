@@ -1,21 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/review/admission.rs"]
-mod admission;
-#[allow(dead_code)]
-#[path = "../src/review/io.rs"]
-mod io;
-#[allow(dead_code)]
-#[path = "../src/review/manifest.rs"]
-mod manifest;
-#[allow(dead_code)]
-#[path = "../src/review/material.rs"]
-mod material;
-#[allow(dead_code)]
-#[path = "../src/review/model.rs"]
-mod model;
-#[allow(dead_code)]
-#[path = "../src/review/persistence.rs"]
-mod persistence;
+use cadence::review::{admission, io, persistence};
 
 use cadence::store::model::{DECISIONS, ITEMS, STATE, Snapshot};
 use cadence::store::writer::{PlanningPolicy, Store, View};
