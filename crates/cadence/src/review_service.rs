@@ -1390,6 +1390,10 @@ fn historical_input(root: &Path, path: &str) -> Answer {
 mod tests;
 
 #[cfg(test)]
+#[path = "phase10_provider_tests.rs"]
+mod phase10_provider_tests;
+
+#[cfg(test)]
 mod gap151_adapter_tests {
     use super::*;
 
