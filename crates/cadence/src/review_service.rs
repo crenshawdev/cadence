@@ -1295,6 +1295,24 @@ pub(super) async fn next(store: &Store, fire: &str) -> Answer {
             &json!({"attempt":attempt.attempt,"state":"issued"}),
         )?;
         persistence::update(store, &view, &format!("issue:{}", attempt.attempt), records).await?;
+        if review::provider::Provider::parse(&attempt.requested.agent).is_some() {
+            let environment = review::provider::delivery::Environment::default();
+            #[cfg(test)]
+            let environment = phase10_provider_tests::BOUNDARIES.try_with(|boundaries| {
+                review::provider::delivery::Environment {
+                    credentials: boundaries.credentials.clone(),
+                    transport: boundaries.transport.clone(),
+                }
+            }).unwrap_or(environment);
+            let owned_store = store.clone();
+            let attempt_id = attempt.attempt.clone();
+            tokio::spawn(async move {
+                if let Err(error) = review::provider::delivery::run(owned_store, attempt_id, environment).await {
+                    eprintln!("provider delivery: {}", review::provider::diagnostics::excerpt(&error.to_string()));
+                }
+            });
+            return output("review-next", json!({"state":"pending","attempt":attempt,"admission":admission}));
+        }
         return output(
             "review-next",
             json!({"state":"dispatch","dispatch":review::invoking::local_dispatch(&admission,&attempt),"attempt":attempt,"admission":admission}),
