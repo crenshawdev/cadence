@@ -74,12 +74,28 @@ pub fn payload_digest(submission: &Submission, approval: &Approval) -> Result<St
     Ok(digest(&serde_json::to_vec(&(submission, approval))?))
 }
 
+/// The durable request receipt precedes inventory, allocation and replacement
+/// checks. A retry observes history; it is never a new publication transaction.
+pub fn replay(previous: &Value, submission: &Submission, approval: Option<&Approval>) -> Result<Option<Receipt>> {
+    let Some(occurrence) = saved(previous, submission.phase.get())? else { return Ok(None) };
+    let Some(receipt) = occurrence.receipts.get(&submission.request_id) else { return Ok(None) };
+    let digest = approval.map(|a| payload_digest(submission, a)).transpose()?;
+    if occurrence.id != submission.occurrence || digest.as_ref() != Some(&receipt.payload_digest) {
+        let identities = receipt.results.iter().map(|p| format!("phase {} plan {}", p.identity.phase, p.identity.plan)).collect::<Vec<_>>().join(", ");
+        return Err(Error::Conflict(format!("request-id-reuse: request {} in {} is bound to {identities} and its exact approved payload", submission.request_id, occurrence.id)));
+    }
+    Ok(Some(receipt.clone()))
+}
+
 pub fn contribute(
     previous: &Value,
     submission: &Submission,
     approval: &Approval,
     inventory: &Inventory,
 ) -> Result<(Value, Vec<Publication>)> {
+    if let Some(receipt) = replay(previous, submission, Some(approval))? {
+        return Ok((previous.clone(), receipt.results));
+    }
     approve(submission, approval)?;
     let phase = submission.phase.get();
     if cadence::context::persistence::saved(previous, phase)?.is_none() {

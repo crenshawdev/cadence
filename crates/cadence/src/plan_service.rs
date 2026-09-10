@@ -103,6 +103,11 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                 Ok(value) => value,
                 Err(error) => return Ok(model::refused("submission", error.to_string())),
             };
+            match persistence::replay(&data, &submission, approval.as_ref()) {
+                Ok(Some(receipt)) => return replay_answer(root, &data, receipt),
+                Ok(None) => {}
+                Err(error) => return path_error(error),
+            }
             if approval.as_ref().is_some_and(|a| a.approved) {
                 if let Some(refusal) = cadence::plan::validation::identities(&submission) {
                     return Ok(refusal);
@@ -163,6 +168,11 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
             let view = store
                 .request(cadence::store::writer::Operation::ReadVerified)
                 .await?;
+            match persistence::replay(&view.snapshot.data, &submission, Some(&approval)) {
+                Ok(Some(receipt)) => return replay_answer(root, &view.snapshot.data, receipt),
+                Ok(None) => {}
+                Err(error) => return path_error(error),
+            }
             let inventory = match inventory::read(root, &submission.phase.to_string(), &view.snapshot.data) {
                 Ok(value) => value,
                 Err(error) => return Ok(model::refused("inventory", error.to_string())),
@@ -221,17 +231,59 @@ pub async fn execute<I: crate::config::reload::ConfigIo + Clone + Sync>(
                     "plan-submit",
                     json!({"persisted":true,"results":results}),
                 )),
-                Err(error) => path_error(error),
+                Err(error) => {
+                    // Another approved request may have won after our owned
+                    // read. Resolve its historical result, without constructing
+                    // another transaction fingerprint or retargeting a number.
+                    if let Some(latest) = persistence::read_snapshot(root)? {
+                        match persistence::replay(&latest.data, &submission, Some(&approval)) {
+                            Ok(Some(receipt)) => return replay_answer(root, &latest.data, receipt),
+                            Ok(None) => {}
+                            Err(error) => return path_error(error),
+                        }
+                    }
+                    path_error(error)
+                }
             }
         }
     }
+}
+
+fn replay_answer(root: &Path, data: &Value, receipt: model::Receipt) -> Result<Answer> {
+    let mut projections = Vec::new();
+    for historical in &receipt.results {
+        let phase = historical.identity.phase.get();
+        let plan = historical.identity.plan.get();
+        let current = persistence::saved(data, phase)?;
+        let current = current.as_ref().and_then(|o| o.publications.get(&plan));
+        let status = if cadence::store::filesystem::validate_plan_path(root, phase, plan).is_err() {
+            "drifted"
+        } else {
+            match std::fs::read(root.join(format!("phases/{phase}/PLAN-{plan}.md"))) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => "missing",
+                Err(error) => return Err(error.into()),
+                Ok(bytes) => match current {
+                    Some(current) if cadence::store::model::digest(&bytes) == current.revision => {
+                        if current.revision == historical.revision { "installed" } else { "newer-authorized" }
+                    }
+                    _ => "drifted",
+                },
+            }
+        };
+        projections.push(json!({"identity":historical.identity,"status":status,
+            "current_revision":current.map(|p| &p.revision)}));
+    }
+    Ok(model::ok("plan-submit", json!({"persisted":true,"replayed":true,
+        "results":receipt.results,"projections":projections})))
 }
 
 fn path_error(error: cadence::store::Error) -> Result<Answer> {
     match error {
         cadence::store::Error::Io(_) | cadence::store::Error::Closed => Err(error),
         _ => Ok(model::refused(
-            if error.to_string().contains("replacement-authorization") {
+            if error.to_string().contains("request-id-reuse") {
+                "request-id-reuse"
+            } else if error.to_string().contains("replacement-authorization") {
                 "replacement-authorization"
             } else if error.to_string().contains("stale-target") {
                 "stale-target"
