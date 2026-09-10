@@ -443,3 +443,78 @@ fn phase27_approved_plan_is_published_at_returned_identity() {
         1
     );
 }
+
+#[test]
+fn phase27_identity_mismatch_is_refused() {
+    let temp = fixture();
+    let project = temp.path();
+    native_context(project, 27);
+    native_context(project, 28);
+    let mut client = Client::open(project);
+    let preview = client.read("27", Some(1));
+    let winner = client.call(
+        "cadence_apply",
+        approve(request(&preview, 27, "winner", &["# Keep the winner\n"])),
+    );
+    assert_eq!(winner["persisted"], true, "{winner}");
+    client.finish();
+    let before = tree(project);
+    for (phase, plan) in [(28, 2), (27, 1)] {
+        let mut client = Client::open(project);
+        let preview = client.read("27", Some(1));
+        assert_eq!(preview["targets"], json!([{"phase":27,"plan":2}]));
+        let mut input = request(&preview, 27, "mismatch", &["# Refuse this copy\n"]);
+        input["submission"]["plans"][0]["content"]["phase"] = json!(phase);
+        input["submission"]["plans"][0]["content"]["plan"] = json!(plan);
+        let answer = client.call("cadence_apply", approve(input));
+        assert_eq!(answer["status"], "refused", "{answer}");
+        assert_eq!(
+            answer["rule"], "identity-mismatch",
+            "mismatch must be a typed plan refusal: {answer}"
+        );
+        let reason = answer["reason"].as_str().unwrap();
+        assert!(
+            reason.contains(&format!("phase {phase} plan {plan}")),
+            "{answer}"
+        );
+        assert!(reason.contains("phase 27 plan 2"), "{answer}");
+        client.finish();
+        assert_eq!(
+            tree(project),
+            before,
+            "no file, allocation or prior record changes"
+        );
+    }
+    let mut client = Client::open(project);
+    let preview = client.read("27", Some(1));
+    let answer = client.call(
+        "cadence_apply",
+        approve(request(
+            &preview,
+            27,
+            "matching",
+            &["# Matching approval\n"],
+        )),
+    );
+    assert_eq!(answer["persisted"], true, "{answer}");
+    assert_eq!(
+        answer["results"][0]["identity"],
+        json!({"phase":27,"plan":2})
+    );
+    client.finish();
+    let view = reopened(project);
+    assert_eq!(
+        view.snapshot.data["plan_publications"]["phases"]["27"]["publications"]["1"]["content"]["body"],
+        "# Keep the winner\n"
+    );
+    assert_eq!(
+        cadence::execution::plan::parse_plan(
+            &fs::read(project.join(".planning/phases/27/PLAN-2.md")).unwrap(),
+            27,
+            2
+        )
+        .unwrap()
+        .body,
+        "# Matching approval\n"
+    );
+}
