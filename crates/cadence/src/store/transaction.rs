@@ -956,6 +956,15 @@ fn validate_all<S: Storage>(
     replay: bool,
     kind: &IntentKind,
 ) -> Result<()> {
+    if let IntentKind::NativeTaskV1 {request,root_binding}=kind
+        && let cadence::execution::history::Event::Close(proof)=&request.event
+    {
+        let mut filesystem=super::filesystem::Filesystem::new(&proof.planning_root)?;
+        if filesystem.read(STATE)?.directory_identity!=*root_binding {
+            return Err(Error::Invalid("native close project differs from bound store".into()));
+        }
+        cadence::execution::receipts::reobserve_source(&proof.project,&proof.dispatch,&request.task.task,&proof.source)?;
+    }
     if let IntentKind::NativeAdmissionV1 {request,root_binding,inventory}=kind {
         let observed=storage.read(&format!("phase-plan-inventory:{}",request.contract.phase))?;
         if observed!=*inventory || storage.read(STATE)?.directory_identity!=*root_binding {

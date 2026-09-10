@@ -283,6 +283,7 @@ enum QueryArguments {
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum ApplyArguments {
+    NativeClose(cadence::execution::receipts::CloseApply),
     NativeOwner(cadence::execution::receipts::OwnerApply),
     NativeRunner(cadence::execution::runner::Apply),
     NativeExecution(cadence::execution::boundary::NativeApply),
@@ -940,6 +941,10 @@ impl ServerHandler for PublicServer {
                     Some(ApplyArguments::NativeOwner(request)) => {
                         return structured_result(self.server.service.native_execution_apply(&self.root,
                             serde_json::to_value(request).expect("native owner operation")).await.map(ApplyOutput::NativeExecution));
+                    }
+                    Some(ApplyArguments::NativeClose(request)) => {
+                        return structured_result(self.server.service.native_execution_apply(&self.root,
+                            serde_json::to_value(request).expect("native close operation")).await.map(ApplyOutput::NativeExecution));
                     }
                     None if raw
                         .as_ref()

@@ -52,6 +52,10 @@ struct Plans {
 }
 
 pub(super) fn native_error(error:Error) -> Value {
+    if let Error::Invalid(message) = &error
+        && let Some(encoded) = message.strip_prefix("native-task-refusal:")
+        && let Ok(answer) = serde_json::from_str::<Value>(encoded)
+    { return answer; }
     if let Error::Invalid(message)|Error::Conflict(message)=&error
         && let Some(encoded)=message.strip_prefix("plan-refusal:")
         && let Ok(diagnostic)=serde_json::from_str::<cadence::plan::model::Diagnostic>(encoded)
@@ -60,6 +64,9 @@ pub(super) fn native_error(error:Error) -> Value {
 }
 
 pub async fn native_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root:&Path,raw:Value) -> cadence::store::Result<Value> {
+    if matches!(raw["operation"].as_str(), Some("execution-task-close" | "execution-classify-run")) {
+        return native_close_apply(factory, root, raw).await;
+    }
     if raw["operation"] == "execution-owner-attest" {
         use cadence::execution::{history, receipts::OwnerApply, runner};
         let input = match serde_json::from_value::<OwnerApply>(raw) {
@@ -131,6 +138,56 @@ pub async fn native_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root
             Ok(json!({"status":"ok","authorization":answered}))
         }
     }
+}
+
+async fn native_close_apply<I:ConfigIo+Clone+Sync>(factory:&SessionFactory<I>,root:&Path,raw:Value) -> cadence::store::Result<Value> {
+    use cadence::execution::{history::{self,Event}, receipts::{self,CloseApply,CloseProof}, runner};
+    let session=factory.first_touch(root).await?;
+    let view=session.derivation_view().await?;
+    let input=match serde_json::from_value::<CloseApply>(raw.clone()) {
+        Ok(input)=>input,
+        Err(error)=>{
+            if raw["operation"]=="execution-task-close"
+                && let Ok(task)=serde_json::from_value::<history::Task>(raw["request"]["task"].clone()) {
+                let checks=receipts::allocated(&view.snapshot.data,&task).unwrap_or_default();
+                return Ok(native_error(receipts::unsatisfied(&task,"red-green",checks,&format!("malformed close evidence: {error}"))));
+            }
+            return Ok(native_error(Error::Invalid(error.to_string())));
+        }
+    };
+    let result=match input {
+        CloseApply::Classify {request}=>runner::append(session.review_store(),history::Request {request_id:request.request_id,task:request.task,
+            attempt:request.attempt,expected_version:request.expected_version,event:Event::OwnerClassification(request.statement)}).await,
+        CloseApply::Close {request}=>{
+            let records=history::records(&view.snapshot.data,request.task.phase)?;
+            if let Some(prior)=records.iter().find(|r|r.request.request_id==request.request_id) {
+                return Ok(match &prior.request.event {
+                    Event::Close(proof) if proof.submission==request=>json!({"status":"ok","receipt":prior}),
+                    _=>native_error(cadence::execution::admission::refuse(request.task.phase,"task-request-reuse","request_id",&request.request_id,"request already names another close payload")),
+                });
+            }
+            if history::project(&records,&request.task).completed {
+                return Ok(native_error(cadence::execution::admission::refuse(request.task.phase,"task-completed","task",&request.task.task,"task already completed")));
+            }
+            let project=root.parent().ok_or_else(||Error::Invalid("project root missing".into()))?;
+            if let Err(error)=receipts::validate_pairs(&view.snapshot.data,&records,&request,project) {return Ok(native_error(error));}
+            let active:ActiveDispatch=match serde_json::from_value(view.snapshot.data["execution"]["occurrences"][request.task.phase.to_string()]["active"].clone()) {
+                Ok(active)=>active,Err(error)=>return Ok(native_error(Error::Invalid(error.to_string()))),
+            };
+            if records.iter().any(|r|matches!(&r.request.event,Event::Close(proof) if proof.submission.completion==request.completion)) {
+                return Ok(native_error(Error::Invalid("completion commit already closes another task".into())));
+            }
+            let mut evidence=Vec::new();
+            for pair in &request.checks {for commit in [&pair.red_commit,&pair.green_commit] {if !evidence.contains(commit) {evidence.push(commit.clone());}}}
+            let source=match receipts::observe_source(project,&active,&request.task.task,&request.completion,&evidence) {
+                Ok(source)=>source,Err(error)=>return Ok(native_error(error)),
+            };
+            let event=Event::Close(Box::new(CloseProof {submission:request.clone(),project:project.to_path_buf(),planning_root:root.to_path_buf(),dispatch:active,source}));
+            runner::append(session.review_store(),history::Request {request_id:request.request_id,task:request.task,attempt:request.attempt,
+                expected_version:request.expected_version,event}).await
+        }
+    };
+    Ok(match result {Ok(receipt)=>json!({"status":"ok","receipt":receipt}),Err(error)=>native_error(error)})
 }
 
 fn execution_ready(root:&Path,data:&Value,phase:u32) -> cadence::store::Result<()> {

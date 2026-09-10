@@ -20,6 +20,7 @@ pub struct Task {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Event {
+    Close(Box<CloseProof>),
     Attempt { predecessor: Option<String>, checks: Vec<Check>, base_commit: String },
     Launch(Launch),
     Result(RunResult),
@@ -73,6 +74,7 @@ pub fn project(records: &[Record], task: &Task) -> Projection {
     for record in records.iter().filter(|r| r.request.task == *task) {
         projection.version = record.version;
         match &record.request.event {
+            Event::Close(_) => projection.completed = true,
             Event::Attempt { .. } => projection.attempt = Some(record.request.attempt.clone()),
             Event::Launch(launch) => projection.unknown_runs.push(launch.run_id.clone()),
             Event::Result(result) => projection.unknown_runs.retain(|id| id != &result.run_id),
@@ -117,6 +119,9 @@ pub fn contribute(data: &Value, root: &str, request: &Request) -> Result<(Value,
     }
     let mut history = records(data, task.phase)?;
     let projection = project(&history, task);
+    if projection.completed {
+        return Err(refuse("task-completed", "task already has a confirmed completion"));
+    }
     if request.expected_version != projection.version {
         return Err(refuse("task-version", "expected task version is stale"));
     }
@@ -129,6 +134,13 @@ pub fn contribute(data: &Value, root: &str, request: &Request) -> Result<(Value,
         }
         _ if projection.attempt.as_deref() != Some(&request.attempt) => {
             return Err(refuse("task-attempt", "event requires the current named attempt"));
+        }
+        Event::Close(proof) => {
+            if proof.submission.task != *task || proof.submission.request_id != request.request_id || proof.submission.attempt != request.attempt
+                || proof.submission.expected_version != request.expected_version {
+                return Err(refuse("task-close", "close event differs from its public submission"));
+            }
+            super::receipts::validate_close(data, &history, proof)?;
         }
         Event::Launch(launch) => {
             if launch.run_id.is_empty() || launch.material.commit.is_empty() || launch.material.tree.is_empty()
@@ -157,6 +169,7 @@ pub fn contribute(data: &Value, root: &str, request: &Request) -> Result<(Value,
             super::receipts::validate_inspection(&history, task, statement)?;
         }
         Event::OwnerClassification(statement) => {
+            super::receipts::validate_classification(&history, task, statement)?;
             let classification = &statement.submission;
             let result = history.iter().find_map(|r| match &r.request.event {
                 Event::Result(result) if r.request.task == *task && result.run_id == classification.run_id => Some(result),
@@ -176,6 +189,10 @@ pub fn contribute(data: &Value, root: &str, request: &Request) -> Result<(Value,
     let namespace = proposed.as_object_mut().ok_or_else(|| refuse("task-shape", "snapshot must be an object"))?
         .entry(NAMESPACE).or_insert_with(|| json!({"schema":"native-tasks-1","phases":{}}));
     namespace["phases"][task.phase.to_string()] = serde_json::to_value(history)?;
+    if let Event::Close(proof) = &request.event {
+        let basis = crate::rail::risk::NativeExecutionBasis::new(&proof.dispatch, task.clone(), proof.source.clone(), record.request_digest.clone())?;
+        proposed = crate::rail::risk::project_native_execution_basis(&proposed, &basis)?;
+    }
     Ok((proposed, record))
 }
 
