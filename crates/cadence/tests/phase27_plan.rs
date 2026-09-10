@@ -667,6 +667,94 @@ fn replacement_request(preview: &Value, number: u32, id: &str, old: &str, revisi
 }
 
 #[test]
+fn phase27_acknowledged_allocation_replays_original_identity() {
+    for state in ["installed", "newer-authorized", "missing", "drifted"] {
+        let temp = fixture();
+        let project = temp.path();
+        native_context(project, 27);
+        let mut client = Client::open(project);
+        let preview = client.read("27", Some(2));
+        let input = approve(request(&preview, 27, "durable-allocation", &["# Original one\n", "# Original two\n"]));
+        let first = client.call("cadence_apply", input.clone());
+        assert_eq!(first["persisted"], true, "{first}");
+        assert_eq!(first["results"].as_array().unwrap().iter().map(|p| p["identity"].clone()).collect::<Vec<_>>(), [json!({"phase":27,"plan":1}),json!({"phase":27,"plan":2})]);
+        // Retry on the same connection only after its successful acknowledgment.
+        let before = tree(project);
+        let replay = client.call("cadence_apply", input.clone());
+        assert_eq!(replay["replayed"], true, "acknowledged request must replay: {replay}");
+        assert_eq!(replay["results"], first["results"]);
+        assert_eq!(replay["projections"][0]["status"], "installed");
+        assert_eq!(replay["projections"][1]["status"], "installed");
+        client.finish();
+        assert_eq!(tree(project), before, "same-connection replay is read-only");
+        let prior = reopened(project).snapshot;
+        assert_eq!(prior.data["plan_publications"]["phases"]["27"]["high_water"], 2);
+
+        let mut client = Client::open(project);
+        let preview = client.read("27", Some(1));
+        assert_eq!(preview["targets"], json!([{"phase":27,"plan":3}]));
+        let other = client.call("cadence_apply", approve(request(&preview, 27, "intervening", &["# Intervening three\n"])));
+        assert_eq!(other["persisted"], true, "{other}");
+        let path = project.join(".planning/phases/27/PLAN-1.md");
+        let old = fs::read_to_string(&path).unwrap();
+        let mut current_revision = first["results"][0]["revision"].clone();
+        if state == "newer-authorized" {
+            let preview = client.read("27", None);
+            let replacement = replacement_request(&preview, 1, "authorized-newer", &old, &current_revision, "# Newer authorized one\n");
+            let answer = client.call("cadence_apply", replacement);
+            assert_eq!(answer["persisted"], true, "{answer}");
+            assert_ne!(answer["results"][0]["revision"], current_revision);
+            current_revision = answer["results"][0]["revision"].clone();
+        }
+        client.finish();
+        match state {
+            "missing" => fs::remove_file(&path).unwrap(),
+            "drifted" => fs::write(&path, "External drift, not approved\n").unwrap(),
+            _ => {}
+        }
+        let before = tree(project);
+        let saved = snapshot(project);
+        for _ in 0..2 {
+            let mut client = Client::open(project);
+            let replay = client.call("cadence_apply", input.clone());
+            assert_eq!(replay["status"], "ok", "{state}: {replay}");
+            assert_eq!(replay["replayed"], true, "{state}: {replay}");
+            assert_eq!(replay["results"], first["results"], "historical ordered revisions survive intervening publications");
+            assert_eq!(replay["projections"][0]["identity"], json!({"phase":27,"plan":1}));
+            assert_eq!(replay["projections"][0]["status"], state);
+            assert_eq!(replay["projections"][0]["current_revision"], current_revision);
+            assert_eq!(replay["projections"][1]["status"], "installed");
+            client.finish();
+            assert_eq!(tree(project), before, "replay must never repair drift or resurrect old content");
+            assert_eq!(snapshot(project), saved);
+        }
+        let mut client = Client::open(project);
+        let mut changed = input.clone();
+        changed["submission"]["plans"][0]["content"]["body"] = json!("# Different payload\n");
+        let refused = client.call("cadence_apply", approve(changed));
+        assert_eq!(refused["rule"], "request-id-reuse", "{refused}");
+        let reason = refused["reason"].as_str().unwrap();
+        assert!(reason.contains("durable-allocation") && reason.contains("active-cycle:phase:27") && reason.contains("phase 27 plan 1"), "{refused}");
+        client.finish();
+        assert_eq!(tree(project), before);
+        let final_snapshot = if matches!(state, "missing" | "drifted") { snapshot(project) } else { reopened(project).snapshot };
+        assert_eq!(final_snapshot, saved);
+        let occurrence = &final_snapshot.data["plan_publications"]["phases"]["27"];
+        assert_eq!(occurrence["high_water"], 3);
+        assert_eq!(occurrence["consumed"], json!([1,2,3]));
+        assert_eq!(occurrence["receipts"]["durable-allocation"], prior.data["plan_publications"]["phases"]["27"]["receipts"]["durable-allocation"]);
+        assert_eq!(plan_names(project), if state == "missing" { vec!["PLAN-2.md", "PLAN-3.md"] } else { vec!["PLAN-1.md", "PLAN-2.md", "PLAN-3.md"] });
+        if state == "drifted" { assert_eq!(fs::read_to_string(path).unwrap(), "External drift, not approved\n"); }
+        else if state != "missing" {
+            assert_eq!(cadence::execution::plan::parse_plan(&fs::read(path).unwrap(),27,1).unwrap().body,
+                if state == "newer-authorized" { "# Newer authorized one\n" } else { "# Original one\n" });
+        }
+        assert_eq!(cadence::execution::plan::parse_plan(&fs::read(project.join(".planning/phases/27/PLAN-2.md")).unwrap(),27,2).unwrap().body, "# Original two\n");
+        assert_eq!(cadence::execution::plan::parse_plan(&fs::read(project.join(".planning/phases/27/PLAN-3.md")).unwrap(),27,3).unwrap().body, "# Intervening three\n");
+    }
+}
+
+#[test]
 fn phase27_unauthorized_replacement_is_refused() {
     let temp = fixture();
     let project = temp.path();
