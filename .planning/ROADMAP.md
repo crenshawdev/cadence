@@ -394,7 +394,7 @@ Delivery order after phase 11 is 27, 28, 29, 12, 13, then 14 onward; see
 - [ ] **Phase 26: Context revision** - truth versions on changed text, and the approved requirement-correction write
 - [x] **Phase 27: Plan persistence and allocation** - plans stored at distinct identities with replay-safe number allocation
 - [x] **Phase 28: Evidence associations** - the evidence map attached to current phase truths, orphans refused
-- [ ] **Phase 29: Check and link limits** - a check needs a command and expected output, one check per truth, links only where the truth names a value
+- [x] **Phase 29: Check and link limits** - a check needs a command and expected output, one check per truth, links only where the truth names a value
 - [ ] **Phase 30: Plan review handoff** - `cad-plan` fires the review trigger and persists only selected review edits
 
 ## Phase Details
