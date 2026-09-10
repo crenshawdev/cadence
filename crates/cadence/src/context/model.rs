@@ -56,15 +56,29 @@ pub struct Approval {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-pub enum Kind { Literal, Property }
+pub enum Kind {
+    Literal,
+    Property,
+}
 
 #[derive(JsonSchema)]
 #[serde(rename_all = "lowercase")]
-pub enum Verb { Sees, Gets, #[serde(rename = "is refused")] IsRefused }
+pub enum Verb {
+    Sees,
+    Gets,
+    #[serde(rename = "is refused")]
+    IsRefused,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-pub enum Status { Pending, Met, Concerns, Unmet, Waived }
+pub enum Status {
+    Pending,
+    Met,
+    Concerns,
+    Unmet,
+    Waived,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Truth {
@@ -88,13 +102,20 @@ pub struct ApprovedContext {
 #[serde(tag = "operation", deny_unknown_fields)]
 pub enum Apply {
     #[serde(rename = "context-submit")]
-    Submit { submission: Submission, approval: Option<Approval> },
+    Submit {
+        submission: Submission,
+        approval: Option<Approval>,
+    },
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub enum Answer {
-    Ok { operation: String, #[serde(flatten)] data: serde_json::Map<String, Value> },
+    Ok {
+        operation: String,
+        #[serde(flatten)]
+        data: serde_json::Map<String, Value>,
+    },
     Refused {
         code: String,
         reason: String,
@@ -104,14 +125,36 @@ pub enum Answer {
         entry: Option<usize>,
         id: Option<String>,
     },
-    Unknown { reason: String },
-    NotApplicable { reason: String },
+    Unknown {
+        reason: String,
+    },
+    NotApplicable {
+        reason: String,
+    },
 }
 
 pub fn ok(operation: &str, data: Value) -> Answer {
-    Answer::Ok { operation: operation.into(), data: data.as_object().expect("context output object").clone() }
+    Answer::Ok {
+        operation: operation.into(),
+        data: data.as_object().expect("context output object").clone(),
+    }
 }
 
-pub fn refused(rule: &str, slot: &str, reason: impl Into<String>, phase: Option<u32>, entry: Option<usize>, id: Option<String>) -> Answer {
-    Answer::Refused { code: "invalid-context".into(), reason: reason.into(), rule: rule.into(), slot: slot.into(), phase, entry, id }
+pub fn refused(
+    rule: &str,
+    slot: &str,
+    reason: impl Into<String>,
+    phase: Option<u32>,
+    entry: Option<usize>,
+    id: Option<String>,
+) -> Answer {
+    Answer::Refused {
+        code: "invalid-context".into(),
+        reason: reason.into(),
+        rule: rule.into(),
+        slot: slot.into(),
+        phase,
+        entry,
+        id,
+    }
 }
