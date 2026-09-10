@@ -382,3 +382,32 @@ fn phase11_prose_oracle_attestation_is_refused() {
         }
     }
 }
+
+#[test]
+fn phase11_eighth_truth_requires_phase_split() {
+    for approved in [false, true] {
+        let temp = initialized_fixture(true);
+        fs::write(temp.path().join(".planning/phases/11/CONTEXT.md"), "# Prior context\nKeep this text.\n").unwrap();
+        let before = tree(temp.path());
+        let mut request = submission();
+        let truths = (1..=8).map(|i| {
+            let mut truth = request["submission"]["truths"][0].clone();
+            truth["id"] = json!(format!("T{i}"));
+            truth
+        }).collect::<Vec<_>>();
+        request["submission"]["truths"] = json!(truths);
+        let mut client = Client::open(temp.path());
+        let answer = client.call("cadence_apply", if approved { approve(request.clone()) } else { request.clone() });
+        assert_eq!(answer["status"], "refused", "{answer}");
+        assert_eq!(answer["rule"], "seven-truths", "{answer}");
+        assert_eq!(answer["slot"], "truths", "{answer}");
+        assert_eq!(answer["phase"], 11);
+        assert!(answer["reason"].as_str().unwrap().contains("split the phase"));
+        request["submission"]["truths"].as_array_mut().unwrap().pop();
+        let control = client.call("cadence_apply", request);
+        assert_eq!(control["status"], "ok", "{control}");
+        assert_eq!(control["persisted"], false);
+        client.finish();
+        assert_eq!(tree(temp.path()), before);
+    }
+}
