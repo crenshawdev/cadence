@@ -8,6 +8,9 @@ pub fn validate(raw: &Value) -> Option<Answer> {
     let Some(truths) = submission["truths"].as_array().filter(|truths| !truths.is_empty()) else {
         return Some(refused("required-slot", "truths", "a context needs a nonempty truth set", phase, None, None));
     };
+    if truths.len() > 7 {
+        return Some(refused("seven-truths", "truths", "at most seven truths: split the phase", phase, None, None));
+    }
     for (entry, truth) in truths.iter().enumerate() {
         let failure = |rule, slot, reason| Some(refused(rule, slot, reason, phase, Some(entry), truth["id"].as_str().map(str::to_owned)));
         for slot in ["trigger", "observer", "verb", "outcome", "kind"] {
